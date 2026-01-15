@@ -1,0 +1,64 @@
+# ===========================================================
+# Laravel Dockerfile Template - PHP 8.1 (for Laravel 9.x)
+# ===========================================================
+
+# Stage 1: Composer Dependencies
+FROM composer:2 AS composer
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
+COPY . .
+RUN composer dump-autoload --optimize --no-dev
+
+# Stage 2: Frontend Assets
+FROM node:18-alpine AS frontend
+WORKDIR /app
+COPY package*.json ./
+RUN if [ -f package.json ]; then npm ci --only=production 2>/dev/null || npm install; fi
+COPY . .
+RUN if [ -f package.json ]; then npm run build 2>/dev/null || npm run production 2>/dev/null || true; fi
+
+# Stage 3: Production
+FROM php:8.1-fpm-alpine
+
+LABEL maintainer="Laravel PaaS"
+LABEL description="Laravel 9.x with PHP 8.1"
+
+RUN apk add --no-cache \
+    nginx supervisor curl zip unzip git \
+    libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev oniguruma-dev
+
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip opcache
+
+RUN { \
+    echo 'opcache.memory_consumption=128'; \
+    echo 'opcache.interned_strings_buffer=8'; \
+    echo 'opcache.max_accelerated_files=4000'; \
+    echo 'opcache.revalidate_freq=0'; \
+    echo 'opcache.validate_timestamps=0'; \
+    echo 'opcache.fast_shutdown=1'; \
+    echo 'opcache.enable_cli=1'; \
+} > /usr/local/etc/php/conf.d/opcache.ini
+
+WORKDIR /var/www/html
+
+COPY --from=composer /app/vendor ./vendor
+COPY --from=frontend /app/public/build ./public/build 2>/dev/null || true
+COPY . .
+
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage \
+    && chmod -R 755 /var/www/html/bootstrap/cache
+
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

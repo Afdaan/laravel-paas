@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build outputs
+dist/
+build/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# Storage (student projects)
+storage/projects/*/
+
+# Docker volumes
+mysql_data/
+redis_data/
+letsencrypt/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.temp

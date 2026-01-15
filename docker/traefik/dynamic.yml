@@ -1,0 +1,79 @@
+# ===========================================
+# Traefik Dynamic Configuration
+# ===========================================
+# Middleware and static routes
+# ===========================================
+
+http:
+  # Middlewares
+  middlewares:
+    # Security headers for all routes
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Powered-By: ""
+    
+    # Rate limiting
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+    
+    # CORS for API
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - Content-Type
+          - Authorization
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+
+  # Routers for PaaS platform
+  routers:
+    # Frontend dashboard
+    frontend:
+      rule: "Host(`${BASE_DOMAIN}`) || Host(`www.${BASE_DOMAIN}`)"
+      service: frontend
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
+    
+    # Backend API
+    api:
+      rule: "Host(`${BASE_DOMAIN}`) && PathPrefix(`/api`)"
+      service: backend
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - cors
+        - security-headers
+        - rate-limit
+
+  # Services
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:80"
+    
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:8080"
