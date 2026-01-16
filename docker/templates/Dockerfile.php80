@@ -11,28 +11,15 @@ FROM composer:2 AS composer
 
 WORKDIR /app
 
-# Copy only composer files first (better caching)
-COPY composer.json ./
-COPY composer.lock* ./
-
-# Install dependencies without dev packages
+# Copy all files and install dependencies
+COPY . .
 RUN composer install \
     --no-dev \
     --no-scripts \
     --no-autoloader \
     --prefer-dist \
-    --ignore-platform-reqs || \
-    composer install \
-    --no-dev \
-    --no-scripts \
-    --no-autoloader \
-    --prefer-dist \
-    --ignore-platform-reqs \
-    --no-lock
-
-# Copy rest of app and generate autoloader
-COPY . .
-RUN composer dump-autoload --optimize --no-dev
+    --ignore-platform-reqs && \
+    composer dump-autoload --optimize --no-dev
 
 
 # -----------------------------
