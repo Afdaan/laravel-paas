@@ -211,12 +211,25 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion string) 
 
 	// Build image
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-	cmd := exec.Command("docker", "build", "-t", imageName, projectPath)
-	var stderr bytes.Buffer
+
+	var stdout, stderr bytes.Buffer
+
+	buildArgs := []string{"buildx", "build", "--load", "-t", imageName, projectPath}
+	cmd := exec.Command("docker", buildArgs...)
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("docker build failed: %s", stderr.String())
+		// Fallback to classic build for environments without buildx
+		stdout.Reset()
+		stderr.Reset()
+
+		cmd = exec.Command("docker", "build", "-t", imageName, projectPath)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err2 := cmd.Run(); err2 != nil {
+			return "", fmt.Errorf("docker build failed: %s%s", stdout.String(), stderr.String())
+		}
 	}
 
 	// Generate container name
@@ -245,7 +258,8 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion string) 
 	}
 
 	cmd = exec.Command("docker", runArgs...)
-	var stdout bytes.Buffer
+	stdout.Reset()
+	stderr.Reset()
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
