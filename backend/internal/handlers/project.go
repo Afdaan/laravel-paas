@@ -213,9 +213,10 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 }
 // deployProject handles the full deployment process
 func (h *ProjectHandler) deployProject(project *models.Project) {
-	// Update status to building
-	h.db.Model(project).Select("status", "updated_at").Updates(map[string]interface{}{
-		"status": models.StatusBuilding,
+	// Update status to building and clear old error logs
+	h.db.Model(project).Select("status", "error_log", "updated_at").Updates(map[string]interface{}{
+		"status":    models.StatusBuilding,
+		"error_log": nil,
 	})
 
 	// Step 1: Clone repository

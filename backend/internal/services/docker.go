@@ -394,14 +394,16 @@ func GenerateSubdomain(name string) string {
 	clean = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(clean, "-")
 	clean = strings.Trim(clean, "-")
 
-	// Limit length
-	if len(clean) > 20 {
-		clean = clean[:20]
+	// Limit length (25 chars for Name + prefix)
+	if len(clean) > 25 {
+		clean = clean[:25]
 	}
 
 	// Add random suffix
 	suffix := generateRandomString(6)
-	return fmt.Sprintf("%s-%s", clean, suffix)
+	// Using 'p-' prefix to stay at level 1 subdomain (SSL Safe on CF)
+	// Example: p-laravel-afdaan-9r2k6e.horn-yastudio.com
+	return fmt.Sprintf("p-%s-%s", clean, suffix)
 }
 
 // generateRandomString creates a random alphanumeric string
