@@ -63,16 +63,29 @@ function AdminSettings() {
         <h2 className="text-lg font-semibold text-white mb-4">Domain Configuration</h2>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-300 mb-1">Base Domain</label>
+            <label className="block text-sm text-slate-300 mb-1">Base Domain (System)</label>
             <input
               type="text"
               value={settings.base_domain || ''}
               onChange={(e) => handleChange('base_domain', e.target.value)}
               className="w-full px-4 py-2 border"
-              placeholder="example.com"
+              placeholder="paas.example.com"
             />
             <p className="text-sm text-slate-500 mt-1">
-              Student projects will use subdomains: project-name.{settings.base_domain || 'example.com'}
+              Used for the dashboard and API access.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm text-slate-300 mb-1">Project Domain (Students)</label>
+            <input
+              type="text"
+              value={settings.project_domain || ''}
+              onChange={(e) => handleChange('project_domain', e.target.value)}
+              className="w-full px-4 py-2 border"
+              placeholder="hosting-siswa.com"
+            />
+            <p className="text-sm text-slate-500 mt-1">
+              Student projects will use subdomains: project-name.{settings.project_domain || 'example.com'}
             </p>
           </div>
         </div>

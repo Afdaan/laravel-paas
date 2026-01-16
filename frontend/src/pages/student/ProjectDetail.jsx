@@ -109,7 +109,7 @@ function StudentProjectDetail() {
   
   if (!project) return null
   
-  const projectUrl = `https://${project.subdomain}.${window.location.hostname}`
+  const projectUrl = project.url
   
   return (
     <div className="space-y-6">

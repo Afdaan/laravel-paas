@@ -181,7 +181,7 @@ func (s *DockerService) DropDatabase(dbName string) error {
 // ===========================================
 
 // BuildAndRun builds and starts a container for a project
-func (s *DockerService) BuildAndRun(project *models.Project, phpVersion string) (string, error) {
+func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	// Copy appropriate Dockerfile
@@ -205,7 +205,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion string) 
 		filepath.Join(projectPath, "docker", "supervisord.conf"))
 
 	// Create .env file for Laravel
-	if err := s.createEnvFile(project, projectPath); err != nil {
+	if err := s.createEnvFile(project, projectPath, projectDomain); err != nil {
 		return "", fmt.Errorf("failed to create .env: %w", err)
 	}
 
@@ -250,7 +250,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion string) 
 		// Traefik labels for automatic SSL
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
-			project.Subdomain, project.Subdomain, s.cfg.BaseDomain),
+			project.Subdomain, project.Subdomain, projectDomain),
 		"--label", fmt.Sprintf("traefik.http.routers.%s.entrypoints=websecure", project.Subdomain),
 		"--label", fmt.Sprintf("traefik.http.routers.%s.tls.certresolver=letsencrypt", project.Subdomain),
 		"--label", "traefik.http.services." + project.Subdomain + ".loadbalancer.server.port=80",
@@ -280,7 +280,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion string) 
 }
 
 // createEnvFile generates .env for Laravel project
-func (s *DockerService) createEnvFile(project *models.Project, projectPath string) error {
+func (s *DockerService) createEnvFile(project *models.Project, projectPath, projectDomain string) error {
 	envContent := fmt.Sprintf(`APP_NAME="%s"
 APP_ENV=production
 APP_DEBUG=false
@@ -298,7 +298,7 @@ SESSION_DRIVER=file
 QUEUE_CONNECTION=sync
 `,
 		project.Name,
-		project.Subdomain, s.cfg.BaseDomain,
+		project.Subdomain, projectDomain,
 		project.DatabaseName,
 		project.DatabaseName,
 		project.DatabaseName,

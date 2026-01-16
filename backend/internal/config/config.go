@@ -33,8 +33,9 @@ type Config struct {
 	RedisPassword string
 
 	// Domain
-	BaseDomain string
-	ACMEEmail  string
+	BaseDomain    string
+	ProjectDomain string
+	ACMEEmail     string
 
 	// Docker
 	DockerSocket   string
@@ -67,8 +68,9 @@ func Load() *Config {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		// Domain
-		BaseDomain: getEnv("BASE_DOMAIN", "localhost"),
-		ACMEEmail:  getEnv("ACME_EMAIL", "admin@localhost"),
+		BaseDomain:    getEnv("BASE_DOMAIN", "localhost"),
+		ProjectDomain: getEnv("PROJECT_DOMAIN", getEnv("BASE_DOMAIN", "localhost")),
+		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
 		// Docker
 		DockerSocket:  getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),

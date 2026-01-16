@@ -80,6 +80,9 @@ type Project struct {
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`
+
+	// Virtual field for frontend
+	URL string `gorm:"-" json:"url,omitempty"`
 }
 
 // ===========================================

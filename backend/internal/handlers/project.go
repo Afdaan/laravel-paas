@@ -52,6 +52,8 @@ func (h *ProjectHandler) ListOwn(c *fiber.Ctx) error {
 		})
 	}
 
+	h.populateURLs(projects)
+
 	return c.JSON(fiber.Map{
 		"data": projects,
 	})
@@ -87,6 +89,8 @@ func (h *ProjectHandler) ListAll(c *fiber.Ctx) error {
 		})
 	}
 
+	h.populateURLs(projects)
+
 	return c.JSON(fiber.Map{
 		"data":  projects,
 		"total": total,
@@ -120,6 +124,8 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 			"error": "Project not found",
 		})
 	}
+
+	h.populateURL(&project)
 
 	return c.JSON(project)
 }
@@ -205,10 +211,12 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	// Start deployment in background
 	go h.deployProject(&project)
 
+	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
+
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"project": project,
 		"message": "Deployment started",
-		"url":     "https://" + project.GetFullDomain(h.cfg.BaseDomain),
+		"url":     "https://" + project.GetFullDomain(projectDomain),
 	})
 }
 // deployProject handles the full deployment process
@@ -245,7 +253,8 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	}
 
 	// Step 4: Build and run container
-	containerID, err := h.dockerService.BuildAndRun(project, phpVersion)
+	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
+	containerID, err := h.dockerService.BuildAndRun(project, phpVersion, projectDomain)
 	if err != nil {
 		h.updateProjectError(project, "Failed to deploy container: "+err.Error())
 		return
@@ -483,4 +492,16 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	return nil // The proxy handler takes care of the response
+}
+
+func (h *ProjectHandler) populateURL(project *models.Project) {
+	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
+	project.URL = "https://" + project.GetFullDomain(projectDomain)
+}
+
+func (h *ProjectHandler) populateURLs(projects []models.Project) {
+	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
+	for i := range projects {
+		projects[i].URL = "https://" + projects[i].GetFullDomain(projectDomain)
+	}
 }

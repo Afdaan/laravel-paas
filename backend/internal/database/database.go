@@ -97,6 +97,7 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 		{Key: "cpu_limit_percent", Value: "50", Description: "CPU limit per container (%)", Type: "int"},
 		{Key: "memory_limit_mb", Value: "512", Description: "Memory limit per container (MB)", Type: "int"},
 		{Key: "base_domain", Value: cfg.BaseDomain, Description: "Base domain for subdomains", Type: "string"},
+		{Key: "project_domain", Value: cfg.ProjectDomain, Description: "Dedicated domain for student projects", Type: "string"},
 	}
 
 	for _, setting := range defaultSettings {

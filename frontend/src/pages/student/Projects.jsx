@@ -134,7 +134,7 @@ function StudentProjects() {
                   
                   {project.status === 'running' && (
                     <a 
-                      href={`https://${project.subdomain}.${window.location.hostname}`}
+                      href={project.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="btn btn-primary text-sm"
