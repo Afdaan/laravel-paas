@@ -108,11 +108,12 @@ docker run -d \
     --network paas-network \
     --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
     -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
     -e MYSQL_HOST=paas-mysql \
-    -e MYSQL_USER=$MYSQL_USER \
-    -e MYSQL_PASSWORD=$MYSQL_ROOT_PASSWORD \
+    -e MYSQL_USER=${MYSQL_USER:-"root"} \
+    -e MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"} \
     -e MYSQL_DATABASE=$MYSQL_DATABASE \
     -e JWT_SECRET=$JWT_SECRET \
     -e BASE_DOMAIN=$BASE_DOMAIN \
