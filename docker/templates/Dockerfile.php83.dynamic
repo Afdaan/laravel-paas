@@ -1,0 +1,209 @@
+# ===========================================================
+# Laravel Dockerfile Template - PHP 8.3 (Dynamic Extensions)
+# ===========================================================
+# This version allows dynamic PHP extension installation based on composer.json
+
+# Stage 1: Extension Detection and Composer Dependencies
+FROM composer:2 AS composer
+WORKDIR /app
+
+# Copy composer files first
+COPY composer.json composer.lock* ./
+
+# Create extension detection script
+RUN cat > detect_extensions.php << 'EOF'
+<?php
+$composer = json_decode(file_get_contents('composer.json'), true);
+$extensions = [];
+
+// Map package names to PHP extensions
+$package_extensions = [
+    'intervention/image' => ['gd', 'imagick'],
+    'league/flysystem-aws-s3-v3' => ['curl'],
+    'pusher/pusher-php-server' => ['curl'],
+    'guzzlehttp/guzzle' => ['curl'],
+    'predis/predis' => [],
+    'phpredis/phpredis' => ['redis'],
+    'ext-redis' => ['redis'],
+    'ext-memcached' => ['memcached'],
+    'ext-imagick' => ['imagick'],
+    'ext-gmp' => ['gmp'],
+    'ext-intl' => ['intl'],
+    'ext-ldap' => ['ldap'],
+    'ext-soap' => ['soap'],
+    'ext-sockets' => ['sockets'],
+    'ext-xmlrpc' => ['xmlrpc'],
+];
+
+// Check required packages
+foreach (['require', 'require-dev'] as $section) {
+    if (isset($composer[$section])) {
+        foreach ($composer[$section] as $package => $version) {
+            if (isset($package_extensions[$package])) {
+                $extensions = array_merge($extensions, $package_extensions[$package]);
+            }
+        }
+    }
+}
+
+// Add default Laravel extensions
+$default_extensions = ['pdo_mysql', 'mbstring', 'exif', 'pcntl', 'bcmath', 'gd', 'zip', 'opcache'];
+$extensions = array_merge($extensions, $default_extensions);
+
+// Remove duplicates and output
+$extensions = array_unique($extensions);
+echo implode(' ', $extensions);
+EOF
+
+# Install dependencies
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
+    composer install --no-dev --prefer-dist --ignore-platform-reqs
+
+# Copy source files for autoload
+COPY app/ app/
+COPY bootstrap/ bootstrap/
+COPY config/ config/
+COPY database/ database/
+COPY routes/ routes/
+COPY public/index.php public/index.php
+
+# Generate optimized autoloader and detect extensions
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative && \
+    php detect_extensions.php > /tmp/required_extensions.txt
+
+# Stage 2: Frontend Assets
+FROM node:20-alpine AS frontend
+WORKDIR /app
+
+COPY package*.json ./
+RUN if [ -f package.json ]; then \
+        npm ci --only=production 2>/dev/null || \
+        npm install --production 2>/dev/null || \
+        true; \
+    fi
+
+COPY resources/ resources/ 2>/dev/null || true
+COPY public/ public/ 2>/dev/null || true
+COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
+
+RUN if [ -f package.json ] && [ -d resources ]; then \
+        npm run build 2>/dev/null || \
+        npm run production 2>/dev/null || \
+        true; \
+    fi
+
+# Stage 3: Production with Dynamic Extensions
+FROM php:8.3-fpm-alpine
+
+LABEL maintainer="Laravel PaaS"
+LABEL description="Laravel 11.x with PHP 8.3 (Dynamic Extensions)"
+
+# Copy extension requirements
+COPY --from=composer /tmp/required_extensions.txt /tmp/
+
+# Install system dependencies based on required extensions
+RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
+    apk add --no-cache nginx supervisor curl zip unzip git && \
+    \
+    # Install extension-specific dependencies
+    if echo "$REQUIRED_EXTS" | grep -q "gd"; then \
+        apk add --no-cache libpng-dev libjpeg-turbo-dev freetype-dev; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "imagick"; then \
+        apk add --no-cache imagemagick-dev; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "zip"; then \
+        apk add --no-cache libzip-dev; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "mbstring"; then \
+        apk add --no-cache oniguruma-dev; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "intl"; then \
+        apk add --no-cache icu-dev; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "ldap"; then \
+        apk add --no-cache openldap-dev; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "soap"; then \
+        apk add --no-cache libxml2-dev; \
+    fi && \
+    \
+    # Configure and install PHP extensions
+    if echo "$REQUIRED_EXTS" | grep -q "gd"; then \
+        docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "intl"; then \
+        docker-php-ext-configure intl; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "ldap"; then \
+        docker-php-ext-configure ldap; \
+    fi && \
+    \
+    # Install all required extensions
+    docker-php-ext-install -j$(nproc) $REQUIRED_EXTS && \
+    \
+    # Install PECL extensions if needed
+    if echo "$REQUIRED_EXTS" | grep -q "redis"; then \
+        pecl install redis && docker-php-ext-enable redis; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "imagick"; then \
+        pecl install imagick && docker-php-ext-enable imagick; \
+    fi && \
+    if echo "$REQUIRED_EXTS" | grep -q "memcached"; then \
+        apk add --no-cache libmemcached-dev && \
+        pecl install memcached && docker-php-ext-enable memcached; \
+    fi && \
+    \
+    # Clean up
+    rm -rf /var/cache/apk/* /tmp/pear /tmp/required_extensions.txt
+
+# Optimized PHP configuration
+RUN { \
+    echo 'opcache.memory_consumption=128'; \
+    echo 'opcache.interned_strings_buffer=8'; \
+    echo 'opcache.max_accelerated_files=4000'; \
+    echo 'opcache.revalidate_freq=0'; \
+    echo 'opcache.validate_timestamps=0'; \
+    echo 'opcache.fast_shutdown=1'; \
+    echo 'opcache.enable_cli=1'; \
+    echo 'opcache.jit_buffer_size=100M'; \
+    echo 'opcache.jit=1255'; \
+    echo 'memory_limit=256M'; \
+    echo 'upload_max_filesize=32M'; \
+    echo 'post_max_size=32M'; \
+    echo 'max_execution_time=60'; \
+    echo 'max_input_vars=3000'; \
+} > /usr/local/etc/php/conf.d/optimization.ini
+
+WORKDIR /var/www/html
+
+# Copy application files
+COPY --from=composer /app/vendor ./vendor
+COPY --from=frontend /app/public/build ./public/build 2>/dev/null || true
+
+COPY app/ app/
+COPY bootstrap/ bootstrap/
+COPY config/ config/
+COPY database/ database/
+COPY public/ public/
+COPY resources/ resources/
+COPY routes/ routes/
+COPY storage/ storage/
+COPY .env* ./
+
+# Set up directories and permissions
+RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 storage bootstrap/cache \
+    && chmod -R 775 storage/logs storage/framework
+
+# Copy configuration
+COPY docker/templates/nginx.conf /etc/nginx/http.d/default.conf
+COPY docker/templates/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
