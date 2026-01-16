@@ -43,25 +43,27 @@ http:
 
   # Routers for PaaS platform
   routers:
-    # Frontend dashboard
-    frontend:
-      rule: "Host(`{{BASE_DOMAIN}}`) || Host(`www.{{BASE_DOMAIN}}`)"
-      service: frontend
-      entryPoints:
-        - web
-      middlewares:
-        - security-headers
-    
-    # Backend API
+    # Backend API (higher priority - must match before frontend)
     api:
       rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
       service: backend
       entryPoints:
         - web
+      priority: 100
       middlewares:
         - cors
         - security-headers
         - rate-limit
+    
+    # Frontend dashboard (lower priority - catch all)
+    frontend:
+      rule: "Host(`{{BASE_DOMAIN}}`) || Host(`www.{{BASE_DOMAIN}}`)"
+      service: frontend
+      entryPoints:
+        - web
+      priority: 1
+      middlewares:
+        - security-headers
 
   # Services
   services:
