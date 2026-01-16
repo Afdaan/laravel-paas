@@ -149,20 +149,37 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	// Check if database name is unique
+	// Check if database name is unique (including soft-deleted records for MySQL constraint)
 	var existing models.Project
-	if h.db.Where("database_name = ?", req.DatabaseName).First(&existing).Error == nil {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-			"error": "Database name already in use",
-		})
+	
+	// First check with Unscoped to find any record (including soft-deleted)
+	if err := h.db.Unscoped().Where("database_name = ?", req.DatabaseName).First(&existing).Error; err == nil {
+		// Record exists - check if it's soft-deleted
+		if existing.DeletedAt.Valid {
+			// Soft-deleted record exists - permanently delete it to free up the database_name
+			h.db.Unscoped().Delete(&existing)
+		} else {
+			// Active record exists
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Database name already in use",
+			})
+		}
 	}
 
-	// Generate unique subdomain
+	// Generate unique subdomain (also check unscoped)
 	subdomain := services.GenerateSubdomain(req.Name)
 	for {
-		if h.db.Where("subdomain = ?", subdomain).First(&existing).Error != nil {
+		if err := h.db.Unscoped().Where("subdomain = ?", subdomain).First(&existing).Error; err != nil {
+			// No record found, subdomain is available
 			break
 		}
+		// Record exists
+		if existing.DeletedAt.Valid {
+			// Soft-deleted, permanently delete to free up subdomain
+			h.db.Unscoped().Delete(&existing)
+			break
+		}
+		// Active record, generate new subdomain
 		subdomain = services.GenerateSubdomain(req.Name)
 	}
 
@@ -319,8 +336,8 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	// Drop database
 	h.dockerService.DropDatabase(project.DatabaseName)
 
-	// Delete project record
-	if err := h.db.Delete(&project).Error; err != nil {
+	// Hard delete project record (not soft delete) to free up database_name and subdomain
+	if err := h.db.Unscoped().Delete(&project).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to delete project",
 		})
