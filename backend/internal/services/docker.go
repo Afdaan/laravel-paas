@@ -7,6 +7,7 @@ package services
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -279,9 +280,15 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 
 // createEnvFile generates .env for Laravel project
 func (s *DockerService) createEnvFile(project *models.Project, projectPath, projectDomain string) error {
+	// Generate random 32-byte key for APP_KEY
+	key := make([]byte, 32)
+	rand.Read(key)
+	appKey := base64.StdEncoding.EncodeToString(key)
+
 	envContent := fmt.Sprintf(`APP_NAME="%s"
 APP_ENV=production
-APP_DEBUG=false
+APP_KEY=base64:%s
+APP_DEBUG=true
 APP_URL=https://%s.%s
 
 DB_CONNECTION=mysql
@@ -296,6 +303,7 @@ SESSION_DRIVER=file
 QUEUE_CONNECTION=sync
 `,
 		project.Name,
+		appKey,
 		project.Subdomain, projectDomain,
 		project.DatabaseName,
 		project.DatabaseName,
@@ -365,8 +373,9 @@ type ContainerStats struct {
 
 // GetContainerStats retrieves container resource usage
 func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, error) {
+	// Use templating to get clean output without headers
 	cmd := exec.Command("docker", "stats", "--no-stream", "--format",
-		`{"cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}"}`, containerID)
+		"{{.CPUPerc}};{{.MemUsage}}", containerID)
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -375,24 +384,67 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 		return nil, err
 	}
 
-	// Parse the output
-	output := stdout.String()
-	stats := &ContainerStats{}
+	output := strings.TrimSpace(stdout.String())
+	// Output format: 0.15%;12.5MiB / 1.94GiB
 
-	// Extract CPU percentage
-	cpuRe := regexp.MustCompile(`"cpu":"([\d.]+)%"`)
-	if matches := cpuRe.FindStringSubmatch(output); len(matches) > 1 {
-		stats.CPUPercent, _ = strconv.ParseFloat(matches[1], 64)
+	parts := strings.Split(output, ";")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid stats output format: %s", output)
 	}
 
-	// Extract memory usage
-	memRe := regexp.MustCompile(`"mem":"([\d.]+)MiB / ([\d.]+)MiB"`)
-	if matches := memRe.FindStringSubmatch(output); len(matches) > 2 {
-		stats.MemoryMB, _ = strconv.ParseFloat(matches[1], 64)
-		stats.MemoryMax, _ = strconv.ParseFloat(matches[2], 64)
+	stats := &ContainerStats{}
+
+	// 1. Parse CPU (remove % and trim)
+	cpuStr := strings.ReplaceAll(parts[0], "%", "")
+	stats.CPUPercent, _ = strconv.ParseFloat(strings.TrimSpace(cpuStr), 64)
+
+	// 2. Parse Memory (format: USAGE / LIMIT)
+	memParts := strings.Split(parts[1], "/")
+	if len(memParts) >= 2 {
+		stats.MemoryMB = parseMemoryBytes(strings.TrimSpace(memParts[0]))
+		stats.MemoryMax = parseMemoryBytes(strings.TrimSpace(memParts[1]))
 	}
 
 	return stats, nil
+}
+
+// Helper to convert docker memory headers (GiB, MiB, kiB, B) to MB
+func parseMemoryBytes(memStr string) float64 {
+	// Remove non-alphanumeric chars (except .)
+	input := strings.TrimSpace(memStr)
+	valueStr := ""
+	unit := ""
+	
+	// Separate number and unit
+	for i, r := range input {
+		if (r < '0' || r > '9') && r != '.' {
+			valueStr = input[:i]
+			unit = strings.TrimSpace(input[i:])
+			break
+		}
+	}
+	
+	if valueStr == "" {
+		return 0
+	}
+
+	val, err := strconv.ParseFloat(valueStr, 64)
+	if err != nil {
+		return 0
+	}
+
+	switch strings.ToLower(unit) {
+	case "gib", "gb":
+		return val * 1024
+	case "mib", "mb":
+		return val
+	case "kib", "kb":
+		return val / 1024
+	case "b":
+		return val / 1024 / 1024
+	default:
+		return val // Assume already MB or unknown
+	}
 }
 
 // ===========================================
