@@ -6,9 +6,12 @@
 package handlers
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/proxy"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
@@ -33,8 +36,8 @@ func NewProjectHandler(db *gorm.DB, cfg *config.Config) *ProjectHandler {
 
 // CreateProjectRequest represents project creation payload
 type CreateProjectRequest struct {
-	Name        string `json:"name"`
-	GithubURL   string `json:"github_url"`
+	Name         string `json:"name"`
+	GithubURL    string `json:"github_url"`
 	DatabaseName string `json:"database_name"`
 }
 
@@ -151,7 +154,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 
 	// Check if database name is unique (including soft-deleted records for MySQL constraint)
 	var existing models.Project
-	
+
 	// First check with Unscoped to find any record (including soft-deleted)
 	if err := h.db.Unscoped().Where("database_name = ?", req.DatabaseName).First(&existing).Error; err == nil {
 		// Record exists - check if it's soft-deleted
@@ -448,4 +451,35 @@ func (h *ProjectHandler) AdminStats(c *fiber.Ctx) error {
 		"running_projects": runningProjects,
 		"total_students":   totalStudents,
 	})
+}
+
+// ProxyToProject forwards requests to the correct project container
+func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
+	// Extract subdomain from host
+	host := c.Hostname()
+	subdomain := strings.Split(host, ".")[0]
+
+	// Find the project by subdomain
+	var project models.Project
+	if err := h.db.Where("subdomain = ? AND status = ?", subdomain, models.StatusRunning).First(&project).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Database error"})
+	}
+
+	// Ensure project has a port
+	if project.Port == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project port not configured"})
+	}
+
+	// Create the proxy URL
+	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+
+	// Forward the request
+	if err := proxy.Forward(targetURL)(c); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return nil // The proxy handler takes care of the response
 }
