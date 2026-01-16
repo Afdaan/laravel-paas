@@ -194,7 +194,9 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 // deployProject handles the full deployment process
 func (h *ProjectHandler) deployProject(project *models.Project) {
 	// Update status to building
-	h.db.Model(project).Update("status", models.StatusBuilding)
+	h.db.Model(project).Select("status", "updated_at").Updates(map[string]interface{}{
+		"status": models.StatusBuilding,
+	})
 
 	// Step 1: Clone repository
 	projectPath, err := h.dockerService.CloneRepository(project.GithubURL, project.Subdomain)

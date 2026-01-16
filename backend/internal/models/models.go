@@ -63,7 +63,7 @@ type Project struct {
 	GithubURL    string         `gorm:"size:500;not null" json:"github_url"`
 	Subdomain    string         `gorm:"uniqueIndex;size:100;not null" json:"subdomain"`
 	DatabaseName string         `gorm:"uniqueIndex;size:100;not null" json:"database_name"`
-	Status       ProjectStatus  `gorm:"size:20;not null;default:pending" json:"status"`
+	Status       ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
 	Port         *int           `json:"port,omitempty"`
 	ErrorLog     *string        `gorm:"type:text" json:"error_log,omitempty"`
@@ -79,7 +79,7 @@ type Project struct {
 	ExpiresAt *time.Time     `json:"expires_at,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	DeletedAt gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`
 }
 
 // ===========================================

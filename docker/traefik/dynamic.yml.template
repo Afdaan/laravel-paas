@@ -43,9 +43,19 @@ http:
 
   # Routers for PaaS platform
   routers:
-    # Backend API (higher priority - must match before frontend)
+    # Student projects (highest priority - subdomain matching)
+    student-projects:
+      rule: "HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.{{BASE_DOMAIN}}`)"
+      service: dynamic-projects
+      entryPoints:
+        - web
+      priority: 200
+      middlewares:
+        - security-headers
+    
+    # Backend API (high priority)
     api:
-      rule: "PathPrefix(`/api`)"
+      rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
       service: backend
       entryPoints:
         - web
@@ -55,9 +65,9 @@ http:
         - security-headers
         - rate-limit
     
-    # Frontend dashboard (lower priority - catch all)
+    # Frontend dashboard (lowest priority)
     frontend:
-      rule: "PathPrefix(`/`)"
+      rule: "Host(`{{BASE_DOMAIN}}`)"
       service: frontend
       entryPoints:
         - web
@@ -76,3 +86,9 @@ http:
       loadBalancer:
         servers:
           - url: "http://paas-backend:8080"
+    
+    # Dynamic service - will route to student containers
+    dynamic-projects:
+      loadBalancer:
+        servers:
+          - url: "http://paas-backend:8080/proxy"

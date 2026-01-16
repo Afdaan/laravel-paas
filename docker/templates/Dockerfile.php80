@@ -104,10 +104,8 @@ RUN chown -R www-data:www-data /var/www/html \
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Cache Laravel configuration
-RUN php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
+# Skip cache commands in production build for faster deployment
+# They will be cached on first request instead
 
 # Expose port
 EXPOSE 80

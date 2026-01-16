@@ -52,6 +52,11 @@ func Setup(db *gorm.DB, cfg *config.Config) *fiber.App {
 	projectHandler := handlers.NewProjectHandler(db, cfg)
 	settingHandler := handlers.NewSettingHandler(db)
 
+	// ===========================================
+	// Subdomain Proxy for Student Projects
+	// ===========================================
+	app.All("/proxy/*", projectHandler.ProxyToProject)
+
 	// -----------------------------
 	// Auth Routes (public)
 	// -----------------------------
