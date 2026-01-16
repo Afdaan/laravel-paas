@@ -85,8 +85,8 @@ RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cac
     && chmod -R 775 storage/logs storage/framework
 
 # Copy configuration files
-COPY docker/templates/nginx.conf /etc/nginx/http.d/default.conf
-COPY docker/templates/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 80
 
