@@ -38,7 +38,7 @@ RUN apk add --no-cache \
     icu-dev libxml2-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
-    && docker-php-ext-install -j$(nproc) pdo_mysql mbstring exif pcntl bcmath gd zip opcache intl xml \
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip opcache intl xml \
     && rm -rf /var/cache/apk/*
 
 # PHP 8.0 optimized opcache

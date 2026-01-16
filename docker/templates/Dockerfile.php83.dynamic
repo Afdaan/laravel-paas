@@ -141,7 +141,7 @@ RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
     fi && \
     \
     # Install all required extensions
-    docker-php-ext-install -j$(nproc) $REQUIRED_EXTS && \
+    docker-php-ext-install $REQUIRED_EXTS && \
     \
     # Install PECL extensions if needed
     if echo "$REQUIRED_EXTS" | grep -q "redis"; then \
