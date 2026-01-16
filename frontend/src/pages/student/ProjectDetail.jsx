@@ -111,13 +111,15 @@ function StudentProjectDetail() {
   }
   
   const handleRedeploy = async () => {
+    if (!confirm('Are you sure you want to redeploy this project? Current container will be replaced.')) return
+    
     toast.promise(
       projectsAPI.redeploy(id),
       {
-        loading: 'Starting deployment...',
+        loading: 'Initiating deployment...',
         success: () => {
           fetchProject()
-          return 'Deployment started! Check logs for progress.'
+          return 'Deployment started in background'
         },
         error: 'Failed to start deployment',
       }
@@ -125,35 +127,34 @@ function StudentProjectDetail() {
   }
   
   const handleUpdatePHP = async (newVersion) => {
+    if (!confirm(`Are you sure you want to change PHP version to ${newVersion}? This will trigger a redeploy.`)) return
+
     try {
       await projectsAPI.update(id, { php_version: newVersion })
       setProject(prev => ({ ...prev, php_version: newVersion, is_manual_version: true }))
+      
       toast((t) => (
         <div className="flex flex-col gap-2">
-          <span>PHP Version set to <b>{newVersion}</b></span>
-          <button 
-            onClick={() => {
-              handleRedeploy()
-              toast.dismiss(t.id)
-            }}
-            className="btn btn-sm btn-primary py-1 px-2 text-xs"
-          >
-            Redeploy Now
-          </button>
+          <span className="font-semibold">PHP Version updated</span>
+          <span className="text-xs">System will now rebuild your project with PHP {newVersion}</span>
         </div>
-      ), { duration: 5000, icon: '⚠️' })
+      ))
+      
+      // Auto trigger redeploy after update
+      handleRedeploy()
+      
     } catch (err) {
       toast.error('Failed to update PHP version')
     }
   }
   
   const handleDelete = async () => {
-    if (!confirm('Are you sure? This will permanently delete your project and data.')) return
+    if (!confirm('DANGER: Are you sure you want to delete this project? All data (files & database) will be permanently lost.')) return
     
     toast.promise(
       projectsAPI.delete(id),
       {
-        loading: 'Deleting project...',
+        loading: 'Deleting resources...',
         success: 'Project deleted successfully',
         error: 'Failed to delete project',
       }
@@ -162,8 +163,12 @@ function StudentProjectDetail() {
   
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <div className="relative">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary-500"></div>
+          <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-primary-500">PaaS</div>
+        </div>
+        <div className="text-slate-400 animate-pulse">Loading project configuration...</div>
       </div>
     )
   }
@@ -173,6 +178,25 @@ function StudentProjectDetail() {
   
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-20">
+      
+      {/* Building Banner */}
+      {project.status === 'building' && (
+        <div className="bg-blue-600/10 border border-blue-500/30 rounded-xl p-6 relative overflow-hidden">
+           <div className="absolute inset-0 bg-blue-500/5 animate-pulse-slow"></div>
+           <div className="relative flex items-center gap-4">
+              <div className="p-3 bg-blue-500/20 rounded-full text-blue-400 animate-spin-slow">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              </div>
+              <div>
+                 <h3 className="text-lg font-bold text-blue-400">Building Application...</h3>
+                 <p className="text-blue-200/60 text-sm">
+                   We are compiling your container, installing dependencies, and configuring the environment. 
+                   <br/>Container logs will be available once the build process completes.
+                 </p>
+              </div>
+           </div>
+        </div>
+      )}
       
       {/* Header / Top Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-6">

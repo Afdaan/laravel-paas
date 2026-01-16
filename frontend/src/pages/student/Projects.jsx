@@ -39,6 +39,8 @@ function StudentProjects() {
   
   const handleRedeploy = async (id, e) => {
     e.preventDefault()
+    if (!confirm('Are you sure you want to redeploy this project?')) return
+
     toast.promise(
       projectsAPI.redeploy(id),
       {
@@ -51,7 +53,7 @@ function StudentProjects() {
   
   const handleDelete = async (id, e) => {
     e.preventDefault()
-    if (!confirm('Are you sure you want to delete this project?')) return
+    if (!confirm('DANGER: This will permanently delete the project and all its data. Continue?')) return
     
     try {
       await projectsAPI.delete(id)
