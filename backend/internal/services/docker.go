@@ -251,8 +251,6 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
 			project.Subdomain, project.Subdomain, projectDomain),
-		"--label", fmt.Sprintf("traefik.http.routers.%s.entrypoints=websecure", project.Subdomain),
-		"--label", fmt.Sprintf("traefik.http.routers.%s.tls.certresolver=letsencrypt", project.Subdomain),
 		"--label", "traefik.http.services." + project.Subdomain + ".loadbalancer.server.port=80",
 		imageName,
 	}
@@ -318,6 +316,20 @@ func (s *DockerService) RemoveContainer(containerID string) error {
 	exec.Command("docker", "stop", containerID).Run()
 	exec.Command("docker", "rm", containerID).Run()
 	return nil
+}
+
+// RemoveImage removes a project's docker image
+func (s *DockerService) RemoveImage(subdomain string) error {
+	imageName := fmt.Sprintf("paas-%s", subdomain)
+	// Try both with and without the paas- prefix in case naming varies
+	exec.Command("docker", "rmi", imageName).Run()
+	return nil
+}
+
+// PruneImages removes dangling images (labeled <none>)
+func (s *DockerService) PruneImages() error {
+	// docker image prune -f removes dangling images
+	return exec.Command("docker", "image prune", "-f").Run()
 }
 
 // CleanupProject removes project files

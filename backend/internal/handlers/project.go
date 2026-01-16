@@ -255,6 +255,10 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	// Step 4: Build and run container
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 	containerID, err := h.dockerService.BuildAndRun(project, phpVersion, projectDomain)
+	
+	// Always prune images after a build attempt to clean up <none> images
+	go h.dockerService.PruneImages()
+
 	if err != nil {
 		h.updateProjectError(project, "Failed to deploy container: "+err.Error())
 		return
@@ -342,6 +346,12 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	if project.ContainerID != nil {
 		h.dockerService.RemoveContainer(*project.ContainerID)
 	}
+
+	// Remove project image
+	h.dockerService.RemoveImage(project.Subdomain)
+
+	// Clean up dangling images (<none>)
+	go h.dockerService.PruneImages()
 
 	// Remove project files
 	h.dockerService.CleanupProject(project.Subdomain)
