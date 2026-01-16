@@ -20,6 +20,7 @@ COPY config/ config/
 COPY database/ database/
 COPY routes/ routes/
 COPY public/index.php public/index.php
+COPY artisan artisan
 
 # Generate optimized autoloader
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
@@ -67,6 +68,7 @@ COPY database/ database/
 COPY public/index.php public/
 COPY routes/ routes/
 COPY storage/ storage/
+COPY artisan artisan
 COPY .env* ./
 
 # Create Laravel public directory structure (minimal)

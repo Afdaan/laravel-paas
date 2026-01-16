@@ -66,6 +66,7 @@ COPY config/ config/
 COPY database/ database/
 COPY routes/ routes/
 COPY public/index.php public/index.php
+COPY artisan artisan
 
 # Generate optimized autoloader and detect extensions
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative && \
@@ -189,6 +190,7 @@ COPY public/ public/
 COPY resources/ resources/
 COPY routes/ routes/
 COPY storage/ storage/
+COPY artisan artisan
 COPY .env* ./
 
 # Set up directories and permissions
