@@ -29,6 +29,9 @@ mysql_data/
 redis_data/
 letsencrypt/
 
+# Generated config (from template)
+docker/traefik/dynamic.yml
+
 # OS files
 .DS_Store
 Thumbs.db

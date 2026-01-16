@@ -79,6 +79,18 @@ if [ ! -f "${PROJECT_ROOT}/docker/traefik/traefik.yml" ]; then
     exit 1
 fi
 
+# Generate dynamic.yml from template with BASE_DOMAIN
+echo -e "${YELLOW}Generating Traefik dynamic config...${NC}"
+if [ -f "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" ]; then
+    sed "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
+        "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" > \
+        "${PROJECT_ROOT}/docker/traefik/dynamic.yml"
+    echo -e "${GREEN}✓ Generated dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN${NC}"
+else
+    echo -e "${RED}Error: dynamic.yml.template not found${NC}"
+    exit 1
+fi
+
 docker run -d \
     --name paas-traefik \
     --network paas-network \

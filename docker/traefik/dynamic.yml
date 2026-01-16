@@ -44,23 +44,19 @@ http:
   routers:
     # Frontend dashboard
     frontend:
-      rule: "Host(`${BASE_DOMAIN}`) || Host(`www.${BASE_DOMAIN}`)"
+      rule: "Host(`laravel-paas.horn-yastudio.com`) || Host(`www.laravel-paas.horn-yastudio.com`)"
       service: frontend
       entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
+        - web
       middlewares:
         - security-headers
     
     # Backend API
     api:
-      rule: "Host(`${BASE_DOMAIN}`) && PathPrefix(`/api`)"
+      rule: "Host(`laravel-paas.horn-yastudio.com`) && PathPrefix(`/api`)"
       service: backend
       entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
+        - web
       middlewares:
         - cors
         - security-headers
@@ -71,9 +67,9 @@ http:
     frontend:
       loadBalancer:
         servers:
-          - url: "http://frontend:80"
+          - url: "http://paas-frontend:80"
     
     backend:
       loadBalancer:
         servers:
-          - url: "http://backend:8080"
+          - url: "http://paas-backend:8080"
