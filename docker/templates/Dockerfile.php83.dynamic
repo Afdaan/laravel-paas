@@ -191,6 +191,7 @@ COPY resources/ resources/
 COPY routes/ routes/
 COPY storage/ storage/
 COPY artisan artisan
+COPY composer.json composer.lock* ./
 COPY .env* ./
 
 # Set up directories and permissions

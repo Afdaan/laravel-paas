@@ -75,6 +75,7 @@ COPY public/index.php public/
 COPY routes/ routes/
 COPY storage/ storage/
 COPY artisan artisan
+COPY composer.json composer.lock* ./
 COPY .env* ./
 
 # Create Laravel public directory structure (minimal)
