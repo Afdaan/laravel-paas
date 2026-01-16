@@ -23,16 +23,28 @@ echo -e "Project root: ${PROJECT_ROOT}"
 # Change to project root
 cd "$PROJECT_ROOT"
 
-# Load environment
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+# Load environment variables from .env file
+if [ -f "$PROJECT_ROOT/.env" ]; then
+    echo -e "${YELLOW}Loading .env file...${NC}"
+    # Read .env file line by line, ignore comments and empty lines
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Ignore comments and empty lines
+        if [[ ! "$line" =~ ^# && -n "$line" ]]; then
+            # Export the variable
+            export "$line"
+        fi
+    done < "$PROJECT_ROOT/.env"
+else
+    echo -e "${YELLOW}Warning: .env file not found at $PROJECT_ROOT/.env${NC}"
 fi
 
-# Default values
+# Set default values if not provided in .env
 MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"}
+MYSQL_USER=${MYSQL_USER:-"root"}
 MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
 ACME_EMAIL=${ACME_EMAIL:-"admin@localhost"}
+JWT_SECRET=${JWT_SECRET:-"change-me-please-12345"}
 
 # Create Docker network if not exists
 echo -e "${YELLOW}Creating Docker network...${NC}"
@@ -99,9 +111,10 @@ docker run -d \
     -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
     -e MYSQL_HOST=paas-mysql \
+    -e MYSQL_USER=$MYSQL_USER \
     -e MYSQL_PASSWORD=$MYSQL_ROOT_PASSWORD \
     -e MYSQL_DATABASE=$MYSQL_DATABASE \
-    -e JWT_SECRET=${JWT_SECRET:-$(openssl rand -hex 32)} \
+    -e JWT_SECRET=$JWT_SECRET \
     -e BASE_DOMAIN=$BASE_DOMAIN \
     -e DOCKER_NETWORK=paas-network \
     --label "traefik.enable=true" \
