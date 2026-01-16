@@ -39,11 +39,8 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/main .
 
-# Copy templates (needed for deployment)
-COPY --from=builder /app/../docker/templates /app/docker/templates
-
-# Create directories
-RUN mkdir -p /app/storage/projects
+# Create directories for runtime mounts
+RUN mkdir -p /app/storage/projects /app/docker/templates
 
 # Non-root user
 RUN adduser -D -g '' appuser
