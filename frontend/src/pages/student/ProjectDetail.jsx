@@ -45,6 +45,8 @@ function MetricCard({ title, value, subtext, color = 'primary' }) {
   )
 }
 
+import ConfirmationModal from '../../components/ConfirmationModal'
+
 function StudentProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -55,10 +57,25 @@ function StudentProjectDetail() {
   const [activeTab, setActiveTab] = useState('workload')
   const logsEndRef = useRef(null)
   
+  // Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger',
+    onConfirm: () => {},
+    confirmText: 'Confirm'
+  })
+
+  const openConfirm = (opts) => {
+    setConfirmModal({ ...opts, isOpen: true })
+  }
+
   // Polling for status updates
   useEffect(() => {
     fetchProject()
     const interval = setInterval(() => {
+    // ... existing polling logic ...
       if (project?.status === 'building' || activeTab === 'stats') {
         fetchProject()
         if (activeTab === 'stats') fetchStats()
@@ -92,7 +109,6 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.logs(id, 200)
       setLogs(response.data.logs)
-      // Auto-scroll to bottom
       if (logsEndRef.current) {
         logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
       }
@@ -111,54 +127,72 @@ function StudentProjectDetail() {
   }
   
   const handleRedeploy = async () => {
-    if (!confirm('Are you sure you want to redeploy this project? Current container will be replaced.')) return
-    
-    toast.promise(
-      projectsAPI.redeploy(id),
-      {
-        loading: 'Initiating deployment...',
-        success: () => {
-          fetchProject()
-          return 'Deployment started in background'
-        },
-        error: 'Failed to start deployment',
+    openConfirm({
+      title: 'Redeploy Project?',
+      message: 'This will rebuild your container. The application will be briefly unavailable during deployment.',
+      type: 'warning',
+      confirmText: 'Redeploy Now',
+      onConfirm: () => {
+        toast.promise(
+          projectsAPI.redeploy(id),
+          {
+            loading: 'Initiating deployment...',
+            success: () => {
+              fetchProject()
+              return 'Deployment started in background'
+            },
+            error: 'Failed to start deployment',
+          }
+        )
       }
-    )
+    })
   }
   
   const handleUpdatePHP = async (newVersion) => {
-    if (!confirm(`Are you sure you want to change PHP version to ${newVersion}? This will trigger a redeploy.`)) return
+    openConfirm({
+      title: `Update PHP to ${newVersion}?`,
+      message: `Changing the PHP version requires a complete rebuild of your container. Your site will be redeployed immediately.`,
+      type: 'warning',
+      confirmText: 'Update & Redeploy',
+      onConfirm: async () => {
+        try {
+          await projectsAPI.update(id, { php_version: newVersion })
+          setProject(prev => ({ ...prev, php_version: newVersion, is_manual_version: true }))
+          
+          toast((t) => (
+            <div className="flex flex-col gap-2">
+              <span className="font-semibold">PHP Version updated</span>
+              <span className="text-xs">System will now rebuild your project with PHP {newVersion}</span>
+            </div>
+          ))
+          
+          // Trigger actual redeployment
+          projectsAPI.redeploy(id).then(() => fetchProject())
 
-    try {
-      await projectsAPI.update(id, { php_version: newVersion })
-      setProject(prev => ({ ...prev, php_version: newVersion, is_manual_version: true }))
-      
-      toast((t) => (
-        <div className="flex flex-col gap-2">
-          <span className="font-semibold">PHP Version updated</span>
-          <span className="text-xs">System will now rebuild your project with PHP {newVersion}</span>
-        </div>
-      ))
-      
-      // Auto trigger redeploy after update
-      handleRedeploy()
-      
-    } catch (err) {
-      toast.error('Failed to update PHP version')
-    }
+        } catch (err) {
+          toast.error('Failed to update PHP version')
+        }
+      }
+    })
   }
   
   const handleDelete = async () => {
-    if (!confirm('DANGER: Are you sure you want to delete this project? All data (files & database) will be permanently lost.')) return
-    
-    toast.promise(
-      projectsAPI.delete(id),
-      {
-        loading: 'Deleting resources...',
-        success: 'Project deleted successfully',
-        error: 'Failed to delete project',
+    openConfirm({
+      title: 'Delete Project Permanently?',
+      message: 'This action cannot be undone. All project files, database, and configurations will be permanently destroyed.',
+      type: 'danger',
+      confirmText: 'Yes, Delete it',
+      onConfirm: () => {
+        toast.promise(
+          projectsAPI.delete(id),
+          {
+            loading: 'Deleting resources...',
+            success: 'Project deleted successfully',
+            error: 'Failed to delete project',
+          }
+        ).then(() => navigate('/projects'))
       }
-    ).then(() => navigate('/projects'))
+    })
   }
   
   if (isLoading) {
@@ -178,6 +212,11 @@ function StudentProjectDetail() {
   
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-20">
+      <ConfirmationModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        {...confirmModal}
+      />
       
       {/* Building Banner */}
       {project.status === 'building' && (

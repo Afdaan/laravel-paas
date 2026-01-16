@@ -18,9 +18,25 @@ function StatusDot({ status }) {
   return <div className={`w-2.5 h-2.5 rounded-full ${styles[status] || styles.pending}`} />
 }
 
+import ConfirmationModal from '../../components/ConfirmationModal'
+
 function StudentProjects() {
   const [projects, setProjects] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  
+  // Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger',
+    onConfirm: () => {},
+    confirmText: 'Confirm'
+  })
+
+  const openConfirm = (opts) => {
+    setConfirmModal({ ...opts, isOpen: true })
+  }
   
   useEffect(() => {
     fetchProjects()
@@ -39,33 +55,52 @@ function StudentProjects() {
   
   const handleRedeploy = async (id, e) => {
     e.preventDefault()
-    if (!confirm('Are you sure you want to redeploy this project?')) return
-
-    toast.promise(
-      projectsAPI.redeploy(id),
-      {
-        loading: 'Starting redeploy...',
-        success: 'Redeploy started',
-        error: 'Failed to redeploy'
+    
+    openConfirm({
+      title: 'Redeploy Project?',
+      message: 'This will rebuild your container and apply any configuration changes. The site will be temporarily offline.',
+      type: 'warning',
+      confirmText: 'Redeploy Now',
+      onConfirm: () => {
+        toast.promise(
+          projectsAPI.redeploy(id),
+          {
+            loading: 'Starting redeploy...',
+            success: 'Redeploy started',
+            error: 'Failed to redeploy'
+          }
+        ).then(fetchProjects)
       }
-    ).then(fetchProjects)
+    })
   }
   
   const handleDelete = async (id, e) => {
     e.preventDefault()
-    if (!confirm('DANGER: This will permanently delete the project and all its data. Continue?')) return
     
-    try {
-      await projectsAPI.delete(id)
-      toast.success('Project deleted')
-      fetchProjects()
-    } catch (error) {
-      toast.error('Delete failed')
-    }
+    openConfirm({
+      title: 'Delete Project?',
+      message: 'This action cannot be undone. All files and database data will be lost forever.',
+      type: 'danger',
+      confirmText: 'Delete Project',
+      onConfirm: async () => {
+        try {
+          await projectsAPI.delete(id)
+          toast.success('Project deleted')
+          fetchProjects()
+        } catch (error) {
+          toast.error('Delete failed')
+        }
+      }
+    })
   }
   
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      <ConfirmationModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        {...confirmModal}
+      />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-6">
         <div>
