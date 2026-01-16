@@ -12,7 +12,8 @@ FROM composer:2 AS composer
 WORKDIR /app
 
 # Copy only composer files first (better caching)
-COPY composer.json composer.lock ./
+COPY composer.json ./
+COPY composer.lock* ./
 
 # Install dependencies without dev packages
 RUN composer install \
@@ -20,7 +21,14 @@ RUN composer install \
     --no-scripts \
     --no-autoloader \
     --prefer-dist \
-    --ignore-platform-reqs
+    --ignore-platform-reqs || \
+    composer install \
+    --no-dev \
+    --no-scripts \
+    --no-autoloader \
+    --prefer-dist \
+    --ignore-platform-reqs \
+    --no-lock
 
 # Copy rest of app and generate autoloader
 COPY . .

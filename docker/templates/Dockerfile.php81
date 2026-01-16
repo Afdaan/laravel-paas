@@ -5,8 +5,10 @@
 # Stage 1: Composer Dependencies
 FROM composer:2 AS composer
 WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
+COPY composer.json ./
+COPY composer.lock* ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
+    composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs --no-lock
 COPY . .
 RUN composer dump-autoload --optimize --no-dev
 
