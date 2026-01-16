@@ -59,7 +59,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	// Update each setting
 	for key, value := range req.Settings {
 		result := h.db.Model(&models.Setting{}).
-			Where("key = ?", key).
+			Where("setting_key = ?", key).
 			Update("value", value)
 		
 		if result.Error != nil {
@@ -77,7 +77,7 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 // GetSetting helper to get a setting value
 func GetSetting(db *gorm.DB, key string, defaultValue string) string {
 	var setting models.Setting
-	if err := db.Where("key = ?", key).First(&setting).Error; err != nil {
+	if err := db.Where("setting_key = ?", key).First(&setting).Error; err != nil {
 		return defaultValue
 	}
 	return setting.Value

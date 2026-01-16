@@ -89,7 +89,7 @@ type Project struct {
 // Setting represents a configurable system setting
 type Setting struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
-	Key         string `gorm:"uniqueIndex;size:100;not null" json:"key"`
+	Key         string `gorm:"column:setting_key;uniqueIndex:idx_settings_key;size:100;not null" json:"key"`
 	Value       string `gorm:"type:text;not null" json:"value"`
 	Description string `gorm:"size:500" json:"description,omitempty"`
 	Type        string `gorm:"size:20;default:string" json:"type"` // string, int, bool

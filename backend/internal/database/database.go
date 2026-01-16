@@ -101,7 +101,7 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 
 	for _, setting := range defaultSettings {
 		var existing models.Setting
-		if db.Where("key = ?", setting.Key).First(&existing).Error != nil {
+		if db.Where("setting_key = ?", setting.Key).First(&existing).Error != nil {
 			if err := db.Create(&setting).Error; err != nil {
 				log.Printf("Warning: failed to create setting %s: %v", setting.Key, err)
 			}
