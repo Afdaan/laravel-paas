@@ -26,14 +26,11 @@ cd "$PROJECT_ROOT"
 # Load environment variables from .env file
 if [ -f "$PROJECT_ROOT/.env" ]; then
     echo -e "${YELLOW}Loading .env file...${NC}"
-    # Read .env file line by line, ignore comments and empty lines
-    while IFS= read -r line || [ -n "$line" ]; do
-        # Ignore comments and empty lines
-        if [[ ! "$line" =~ ^# && -n "$line" ]]; then
-            # Export the variable
-            export "$line"
-        fi
-    done < "$PROJECT_ROOT/.env"
+    # Use set -a to auto-export all variables, then source the file
+    set -a
+    source "$PROJECT_ROOT/.env"
+    set +a
+    echo -e "${GREEN}✓ .env file loaded successfully${NC}"
 else
     echo -e "${YELLOW}Warning: .env file not found at $PROJECT_ROOT/.env${NC}"
 fi
