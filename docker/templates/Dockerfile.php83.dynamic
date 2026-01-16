@@ -195,10 +195,9 @@ COPY composer.json composer.lock* ./
 COPY .env* ./
 
 # Set up directories and permissions
-RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache /var/log/supervisor \
+RUN mkdir -p storage/logs storage/framework/{cache/data,sessions,views} bootstrap/cache /var/log/supervisor \
     && chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 storage bootstrap/cache \
-    && chmod -R 775 storage/logs storage/framework
+    && chmod -R 775 storage bootstrap/cache
 
 # Copy configuration
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
