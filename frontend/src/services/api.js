@@ -109,6 +109,9 @@ export const projectsAPI = {
   redeploy: (id) => 
     api.post(`/projects/${id}/redeploy`),
   
+  update: (id, data) =>
+    api.put(`/projects/${id}`, data),
+  
   delete: (id) => 
     api.delete(`/projects/${id}`),
   

@@ -184,9 +184,32 @@ function StudentProjectDetail() {
                 <dt className="text-slate-400">Laravel Version</dt>
                 <dd className="text-white">{project.laravel_version || 'Detecting...'}</dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-slate-400">PHP Version</dt>
-                <dd className="text-white">{project.php_version || 'Detecting...'}</dd>
+                <dd className="flex items-center gap-2">
+                  <select 
+                    value={project.php_version?.replace('8.3.dynamic', '8.3') || '8.2'}
+                    onChange={async (e) => {
+                      const newVersion = e.target.value
+                      try {
+                        await projectsAPI.update(id, { php_version: newVersion })
+                        toast.success('PHP Version updated. Please redeploy to apply.')
+                        setProject(prev => ({ ...prev, php_version: newVersion, is_manual_version: true }))
+                      } catch (err) {
+                        toast.error('Failed to update PHP version')
+                      }
+                    }}
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-primary-500"
+                  >
+                    <option value="8.0">8.0</option>
+                    <option value="8.1">8.1</option>
+                    <option value="8.2">8.2</option>
+                    <option value="8.3">8.3</option>
+                  </select>
+                  {project.is_manual_version && (
+                    <span className="text-xs text-amber-500" title="Manual Override">⚠️</span>
+                  )}
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-400">Database</dt>

@@ -100,6 +100,7 @@ func Setup(db *gorm.DB, cfg *config.Config) *fiber.App {
 	projects.Get("/", projectHandler.ListOwn)
 	projects.Post("/", projectHandler.Create)
 	projects.Get("/:id", projectHandler.Get)
+	projects.Put("/:id", projectHandler.Update)
 	projects.Post("/:id/redeploy", projectHandler.Redeploy)
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)

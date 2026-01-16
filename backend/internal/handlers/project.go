@@ -130,6 +130,65 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 	return c.JSON(project)
 }
 
+// UpdateProjectRequest represents project update payload
+type UpdateProjectRequest struct {
+	PHPVersion string `json:"php_version"`
+}
+
+// Update modifies project settings
+func (h *ProjectHandler) Update(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid project ID",
+		})
+	}
+
+	var req UpdateProjectRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+
+	userID := c.Locals("user_id").(uint)
+	role := c.Locals("role").(string)
+
+	var project models.Project
+	query := h.db
+
+	if role == string(models.RoleStudent) {
+		query = query.Where("user_id = ?", userID)
+	}
+
+	if err := query.First(&project, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Project not found",
+		})
+	}
+
+	updates := map[string]interface{}{}
+	
+	// If PHP version provided, update it and set manual flag
+	if req.PHPVersion != "" {
+		updates["php_version"] = req.PHPVersion
+		updates["is_manual_version"] = true
+	}
+
+	if len(updates) > 0 {
+		if err := h.db.Model(&project).Updates(updates).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to update project",
+			})
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Project updated successfully",
+		"project": project,
+	})
+}
+
 // Create deploys a new project
 func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	var req CreateProjectRequest
@@ -241,9 +300,16 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		return
 	}
 
+	
+	// Use manual PHP version if set, otherwise use detected version
+	finalPHPVersion := phpVersion
+	if project.IsManualVersion && project.PHPVersion != "" {
+		finalPHPVersion = project.PHPVersion
+	}
+
 	h.db.Model(project).Updates(map[string]interface{}{
 		"laravel_version": laravelVersion,
-		"php_version":     phpVersion,
+		"php_version":     finalPHPVersion,
 	})
 
 	// Step 3: Create database
@@ -254,7 +320,7 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 
 	// Step 4: Build and run container
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
-	containerID, err := h.dockerService.BuildAndRun(project, phpVersion, projectDomain)
+	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
 	
 	// Always prune images after a build attempt to clean up <none> images
 	go h.dockerService.PruneImages()
