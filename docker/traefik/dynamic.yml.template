@@ -45,7 +45,7 @@ http:
   routers:
     # Backend API (higher priority - must match before frontend)
     api:
-      rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
+      rule: "PathPrefix(`/api`)"
       service: backend
       entryPoints:
         - web
@@ -57,7 +57,7 @@ http:
     
     # Frontend dashboard (lower priority - catch all)
     frontend:
-      rule: "Host(`{{BASE_DOMAIN}}`) || Host(`www.{{BASE_DOMAIN}}`)"
+      rule: "PathPrefix(`/`)"
       service: frontend
       entryPoints:
         - web
