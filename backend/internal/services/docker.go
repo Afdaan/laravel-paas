@@ -42,6 +42,13 @@ func NewDockerService(cfg *config.Config) *DockerService {
 func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
 
+	// Check if .env exists and backup its content
+	var envBackup []byte
+	envPath := filepath.Join(projectPath, ".env")
+	if data, err := os.ReadFile(envPath); err == nil {
+		envBackup = data
+	}
+
 	// Remove existing directory if present
 	os.RemoveAll(projectPath)
 
@@ -54,6 +61,13 @@ func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (st
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("git clone failed: %s", stderr.String())
+	}
+
+	// Restore .env if backup exists
+	if envBackup != nil {
+		if err := os.WriteFile(envPath, envBackup, 0644); err != nil {
+			fmt.Printf("Warning: Failed to restore .env file: %v\n", err)
+		}
 	}
 
 	// Verify it's a Laravel project
