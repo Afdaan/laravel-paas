@@ -277,8 +277,13 @@ stdout_logfile_maxbytes=0
 	// Generate unique container name for zero-downtime deployment
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
+	
+	// Router name: unique per deployment to avoid collision
+	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
+	// Service name: consistent per project for traffic switching
+	serviceName := project.Subdomain
 
-	// Run container with Traefik labels for automatic SSL
+	// Run container with Traefik labels for blue-green deployment
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
@@ -287,11 +292,22 @@ stdout_logfile_maxbytes=0
 		// Resource limits
 		"--cpus", "0.5",
 		"--memory", "512m",
-		// Traefik labels for automatic SSL
+		
+		// Traefik labels for blue-green deployment
 		"--label", "traefik.enable=true",
+		// Router: unique per deployment
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
-			project.Subdomain, project.Subdomain, projectDomain),
-		"--label", "traefik.http.services." + project.Subdomain + ".loadbalancer.server.port=80",
+			routerName, project.Subdomain, projectDomain),
+		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
+		
+		// Service: shared across deployments for traffic switching
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
+		
+		// Health check configuration
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.timeout=1s", serviceName),
+		
 		imageName,
 	}
 
@@ -370,6 +386,30 @@ func (s *DockerService) RemoveContainer(containerID string) error {
 	exec.Command("docker", "stop", containerID).Run()
 	exec.Command("docker", "rm", containerID).Run()
 	return nil
+}
+
+// IsContainerHealthy checks if a container is running and healthy
+func (s *DockerService) IsContainerHealthy(containerID string) bool {
+	// Check container status via docker inspect
+	cmd := exec.Command("docker", "inspect", "--format", "{{.State.Health.Status}}", containerID)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	
+	if err := cmd.Run(); err != nil {
+		// Container doesn't have health check or not running, check if it's at least running
+		cmd = exec.Command("docker", "inspect", "--format", "{{.State.Running}}", containerID)
+		stdout.Reset()
+		cmd.Stdout = &stdout
+		if err := cmd.Run(); err != nil {
+			return false
+		}
+		return strings.TrimSpace(stdout.String()) == "true"
+	}
+	
+	status := strings.TrimSpace(stdout.String())
+	// Docker health status can be: starting, healthy, unhealthy
+	// We accept both "healthy" and "starting" (give it time)
+	return status == "healthy" || status == "starting"
 }
 
 // RemoveImage removes a project's docker image

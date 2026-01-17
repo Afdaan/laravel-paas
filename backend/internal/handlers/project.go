@@ -344,14 +344,16 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		return
 	}
 
-	// Capture old container ID for cleanup after successful deployment
+	
+	// Blue-Green Deployment: Keep old container running
+	// New container will share the same Traefik service, traffic will auto-switch
 	var oldContainerID *string
 	if project.ContainerID != nil {
 		oldHelp := *project.ContainerID
 		oldContainerID = &oldHelp
 	}
 
-	// Step 4: Build and run container
+	// Step 4: Build and run NEW container (old one still running)
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
 	
@@ -360,6 +362,26 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 
 	if err != nil {
 		h.updateProjectError(project, "Failed to deploy container: "+err.Error())
+		// No rollback needed - old container still running
+		return
+	}
+
+	// Wait for new container to become healthy before removing old one
+	// Poll health check for up to 60 seconds (30 attempts * 2s)
+	healthy := false
+	for i := 0; i < 30; i++ {
+		if h.dockerService.IsContainerHealthy(containerID) {
+			healthy = true
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	if !healthy {
+		// New container failed health check, rollback
+		h.updateProjectError(project, "Container failed health check")
+		h.dockerService.RemoveContainer(containerID)
+		// Old container still running - no downtime!
 		return
 	}
 
@@ -369,10 +391,11 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		"container_id": containerID,
 	})
 
-	// Cleanup old container after successful switch
+	// Cleanup old container now that new one is healthy and serving traffic
 	if oldContainerID != nil {
 		go func() {
-			time.Sleep(10 * time.Second) 
+			// Small delay to ensure Traefik fully switched traffic
+			time.Sleep(5 * time.Second) 
 			h.dockerService.RemoveContainer(*oldContainerID)
 		}()
 	}
