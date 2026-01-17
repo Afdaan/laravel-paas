@@ -21,6 +21,7 @@ import DatabaseManager from './pages/student/DatabaseManager'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminUsers from './pages/admin/Users'
 import AdminProjects from './pages/admin/Projects'
+import AdminSettings from './pages/admin/Settings'
 import StudentDatabases from './pages/student/Databases'
 
 // Protected Route Component
