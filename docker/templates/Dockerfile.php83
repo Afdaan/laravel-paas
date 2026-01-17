@@ -59,20 +59,11 @@ RUN { \
 
 WORKDIR /var/www/html
 
+# Copy all application files
+COPY . .
+
 # Copy optimized vendor from composer stage
 COPY --from=composer /app/vendor ./vendor
-
-# Copy only necessary application files (Laravel core only)
-COPY app/ app/
-COPY bootstrap/ bootstrap/
-COPY config/ config/
-COPY database/ database/
-COPY public/index.php public/
-COPY routes/ routes/
-COPY storage/ storage/
-COPY artisan artisan
-COPY composer.json composer.lock* ./
-COPY .env* ./
 
 # Create Laravel public directory structure (minimal)
 RUN mkdir -p public/css public/js public/images \
