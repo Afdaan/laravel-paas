@@ -350,7 +350,7 @@ function StudentProjectDetail() {
       {/* Tabs Layout */}
       <div>
         <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit mb-6 overflow-x-auto">
-           {['workload', 'console', 'environment', 'logs', 'settings'].map(tab => (
+           {['workload', 'console', 'environment', 'database', 'logs', 'settings'].map(tab => (
              <button
                key={tab}
                onClick={() => setActiveTab(tab)}
@@ -496,6 +496,17 @@ function StudentProjectDetail() {
                <div className="p-2 bg-yellow-500/10 text-yellow-500 text-xs px-4 border-t border-slate-800">
                   ⚠️ Changing environment variables may require a redeployment to take full effect.
                </div>
+            </div>
+          )}
+
+          {/* Database Tab */}
+          {activeTab === 'database' && (
+            <div className="card p-0 overflow-hidden h-[800px]">
+              <iframe 
+                src={`/projects/${id}/database`} 
+                title="Database Manager"
+                className="w-full h-full border-none bg-slate-900"
+              />
             </div>
           )}
 
