@@ -226,7 +226,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		workerConfig := `
 [program:laravel-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /var/www/html/artisan queue:work database --sleep=3 --tries=3
+command=/bin/sh -c "sleep 20 && php /var/www/html/artisan queue:work database --sleep=3 --tries=3"
 autostart=true
 autorestart=true
 user=www-data

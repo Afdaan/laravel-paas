@@ -14,7 +14,6 @@ function StudentNewProject() {
     name: '',
     github_url: '',
     branch: '',
-    branch: '',
     database_name: '',
     queue_enabled: false,
   })
