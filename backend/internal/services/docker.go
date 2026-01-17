@@ -232,7 +232,8 @@ autorestart=true
 user=www-data
 numprocs=1
 redirect_stderr=true
-stdout_logfile=/var/www/html/storage/logs/worker.log
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
 `
 		f, err := os.OpenFile(filepath.Join(projectPath, "docker", "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
 		if err == nil {
