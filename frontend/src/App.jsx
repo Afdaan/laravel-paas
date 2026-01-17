@@ -10,6 +10,7 @@ import useAuthStore from './stores/authStore'
 
 // Layouts
 import DashboardLayout from './components/DashboardLayout'
+import LoadingScreen from './components/LoadingScreen'
 
 // Pages
 import Login from './pages/Login'
@@ -30,11 +31,7 @@ function ProtectedRoute({ children, requireAdmin = false }) {
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
   
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
-      </div>
-    )
+    return <LoadingScreen />
   }
   
   if (!token) {
