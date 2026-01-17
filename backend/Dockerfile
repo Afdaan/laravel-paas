@@ -42,11 +42,6 @@ COPY --from=builder /app/main .
 # Create directories for runtime mounts
 RUN mkdir -p /app/storage/projects /app/docker/templates
 
-# Non-root user
-RUN adduser -D -g '' appuser
-RUN chown -R appuser:appuser /app
-USER appuser
-
 EXPOSE 8080
 
 CMD ["./main"]

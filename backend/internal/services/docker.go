@@ -384,11 +384,13 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	// Use JSON formatting for reliable parsing
 	cmd := exec.Command("docker", "stats", "--no-stream", "--format", "{{json .}}", containerID)
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, err
+		fmt.Printf("Error running docker stats: %v. Stderr: %s\n", err, stderr.String())
+		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
 	}
 
 	// Output might contain multiple lines if multiple containers match (unlikely here)
