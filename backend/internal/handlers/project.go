@@ -23,14 +23,16 @@ type ProjectHandler struct {
 	db            *gorm.DB
 	cfg           *config.Config
 	dockerService *services.DockerService
+	redisService  *services.RedisService
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(db *gorm.DB, cfg *config.Config) *ProjectHandler {
+func NewProjectHandler(db *gorm.DB, cfg *config.Config, redisService *services.RedisService) *ProjectHandler {
 	return &ProjectHandler{
 		db:            db,
 		cfg:           cfg,
 		dockerService: services.NewDockerService(cfg),
+		redisService:  redisService,
 	}
 }
 
@@ -275,15 +277,23 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	// Start deployment in background
-	go h.deployProject(&project)
+	// Enqueue deployment job to Redis
+	if err := h.redisService.EnqueueDeployment(project.ID, userID, "deploy"); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to queue deployment: " + err.Error(),
+		})
+	}
+
+	// Get queue position
+	queueLength, _ := h.redisService.GetQueueLength()
 
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"project": project,
-		"message": "Deployment started",
-		"url":     "https://" + project.GetFullDomain(projectDomain),
+		"project":        project,
+		"message":        "Deployment queued successfully",
+		"url":            "https://" + project.GetFullDomain(projectDomain),
+		"queue_position": queueLength,
 	})
 }
 // deployProject handles the full deployment process
@@ -394,13 +404,19 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		})
 	}
 
+	// Enqueue redeployment job to Redis
+	if err := h.redisService.EnqueueDeployment(project.ID, userID, "redeploy"); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to queue redeployment: " + err.Error(),
+		})
+	}
 
-
-	// Redeploy in background
-	go h.deployProject(&project)
+	// Get queue position
+	queueLength, _ := h.redisService.GetQueueLength()
 
 	return c.JSON(fiber.Map{
-		"message": "Redeployment started",
+		"message":        "Redeployment queued successfully",
+		"queue_position": queueLength,
 	})
 }
 
@@ -737,6 +753,20 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	return nil // The proxy handler takes care of the response
+}
+
+// GetQueueStats returns deployment queue statistics
+func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
+	stats, err := h.redisService.GetDeploymentStats()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to get queue stats",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"stats": stats,
+	})
 }
 
 func (h *ProjectHandler) populateURL(project *models.Project) {

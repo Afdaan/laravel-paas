@@ -13,11 +13,12 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/handlers"
 	"github.com/laravel-paas/backend/internal/middleware"
+	"github.com/laravel-paas/backend/internal/services"
 	"gorm.io/gorm"
 )
 
 // Setup initializes the Fiber app with all routes
-func Setup(db *gorm.DB, cfg *config.Config) *fiber.App {
+func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
 		AppName:      "Laravel PaaS API",
@@ -49,7 +50,7 @@ func Setup(db *gorm.DB, cfg *config.Config) *fiber.App {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
-	projectHandler := handlers.NewProjectHandler(db, cfg)
+	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
 	settingHandler := handlers.NewSettingHandler(db)
 
 	// ===========================================
@@ -92,6 +93,9 @@ func Setup(db *gorm.DB, cfg *config.Config) *fiber.App {
 	// Admin project overview
 	admin.Get("/projects", projectHandler.ListAll)
 	admin.Get("/stats", projectHandler.AdminStats)
+	
+	// Queue statistics (admin only)
+	admin.Get("/queue/stats", projectHandler.GetQueueStats)
 
 	// -----------------------------
 	// Project Routes (Students)

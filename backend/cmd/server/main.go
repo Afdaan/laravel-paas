@@ -11,6 +11,7 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/database"
 	"github.com/laravel-paas/backend/internal/routes"
+	"github.com/laravel-paas/backend/internal/services"
 )
 
 func main() {
@@ -38,8 +39,22 @@ func main() {
 		log.Fatalf("Failed to seed database: %v", err)
 	}
 
+	// Initialize Redis service
+	log.Println("🔌 Connecting to Redis...")
+	redisService, err := services.NewRedisService(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	defer redisService.Close()
+	log.Println("✅ Redis connected successfully")
+
+	// Initialize and start deployment worker
+	worker := services.NewDeploymentWorker(db, cfg, redisService)
+	worker.Start()
+	defer worker.Stop()
+
 	// Initialize and start server
-	app := routes.Setup(db, cfg)
+	app := routes.Setup(db, cfg, redisService)
 
 	port := os.Getenv("PORT")
 	if port == "" {
