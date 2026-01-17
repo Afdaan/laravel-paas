@@ -256,7 +256,9 @@ stdout_logfile_maxbytes=0
 
 	var stdout, stderr bytes.Buffer
 
-	buildArgs := []string{"buildx", "build", "--load", "-t", imageName, projectPath}
+	buildArgs := []string{"buildx", "build", "--load", 
+		"--label", "com.paas.project=true",
+		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -266,7 +268,9 @@ stdout_logfile_maxbytes=0
 		stdout.Reset()
 		stderr.Reset()
 
-		cmd = exec.Command("docker", "build", "-t", imageName, projectPath)
+		cmd = exec.Command("docker", "build", 
+			"--label", "com.paas.project=true",
+			"-t", imageName, projectPath)
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		if err2 := cmd.Run(); err2 != nil {
@@ -411,8 +415,13 @@ func (s *DockerService) RemoveImage(subdomain string) error {
 
 // PruneImages removes dangling images (labeled <none>)
 func (s *DockerService) PruneImages() error {
-	// docker image prune -f removes dangling images
-	return exec.Command("docker", "image prune", "-f").Run()
+	// Remove dangling images (<none>)
+	exec.Command("docker", "image", "prune", "-f").Run()
+	
+	// Also remove unused project images (paas-*)
+	exec.Command("docker", "image", "prune", "-a", "-f", "--filter", "label=com.paas.project=true").Run()
+	
+	return nil
 }
 
 // CleanupProject removes project files
