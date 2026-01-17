@@ -62,12 +62,19 @@ docker run -d \
 # Start Redis
 echo -e "${YELLOW}Starting Redis...${NC}"
 docker rm -f paas-redis 2>/dev/null || true
+
+# Check if REDIS_PASSWORD is set
+REDIS_CMD=""
+if [ ! -z "$REDIS_PASSWORD" ]; then
+    REDIS_CMD="redis-server --requirepass $REDIS_PASSWORD"
+fi
+
 docker run -d \
     --name paas-redis \
     --network paas-network \
     --restart unless-stopped \
     -v paas-redis-data:/data \
-    redis:alpine
+    redis:alpine $REDIS_CMD
 
 # Start Traefik
 echo -e "${YELLOW}Starting Traefik...${NC}"
@@ -124,6 +131,9 @@ docker run -d \
     -e MYSQL_USER=${MYSQL_USER:-"root"} \
     -e MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"} \
     -e MYSQL_DATABASE=$MYSQL_DATABASE \
+    -e REDIS_HOST=paas-redis \
+    -e REDIS_PORT=${REDIS_PORT:-6379} \
+    -e REDIS_PASSWORD=$REDIS_PASSWORD \
     -e JWT_SECRET=$JWT_SECRET \
     -e BASE_DOMAIN=$BASE_DOMAIN \
     -e DOCKER_NETWORK=paas-network \
@@ -152,4 +162,3 @@ docker run -d \
 
 echo -e "${GREEN}✅ Laravel PaaS is running!${NC}"
 echo -e "${GREEN}Dashboard: http://$BASE_DOMAIN${NC}"
-echo -e "${GREEN}Default login: admin@localhost / admin123${NC}"

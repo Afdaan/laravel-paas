@@ -11,7 +11,6 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -65,30 +64,6 @@ func Migrate(db *gorm.DB) error {
 // Seed creates default data if not exists
 func Seed(db *gorm.DB, cfg *config.Config) error {
 	log.Println("Seeding database...")
-
-	// Create superadmin if not exists
-	var superadmin models.User
-	result := db.Where("role = ?", models.RoleSuperAdmin).First(&superadmin)
-	if result.Error != nil {
-		// Hash default password
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("failed to hash password: %w", err)
-		}
-
-		superadmin = models.User{
-			Email:    "admin@localhost",
-			Password: string(hashedPassword),
-			Name:     "Super Admin",
-			Role:     models.RoleSuperAdmin,
-		}
-
-		if err := db.Create(&superadmin).Error; err != nil {
-			return fmt.Errorf("failed to create superadmin: %w", err)
-		}
-
-		log.Println("✅ Created default superadmin (email: admin@localhost, password: admin123)")
-	}
 
 	// Create default settings if not exists
 	defaultSettings := []models.Setting{

@@ -63,7 +63,7 @@ func Load() *Config {
 		JWTExpiryHours: getEnvInt("JWT_EXPIRY_HOURS", 24),
 
 		// Redis
-		RedisHost:     getEnv("REDIS_HOST", "redis"),
+		RedisHost:     getEnv("REDIS_HOST", "paas-redis"),
 		RedisPort:     getEnv("REDIS_PORT", "6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
