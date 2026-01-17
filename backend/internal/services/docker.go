@@ -448,6 +448,61 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	return stats, nil
 }
 
+// GetAllContainerStats retrieves resource usage for all containers
+func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error) {
+	// Use custom formatting for easier parsing: ID|Name|CPU|MemUsage
+	cmd := exec.Command("docker", "stats", "--no-stream", "--format", "{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Error running docker stats: %v. Stderr: %s\n", err, stderr.String())
+		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
+	}
+
+	result := make(map[string]ContainerStats)
+	output := stdout.String()
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		parts := strings.Split(line, "|")
+		if len(parts) < 4 {
+			continue
+		}
+
+
+		containerID := parts[0]
+		// containerName := parts[1] 
+		cpuPerc := parts[2]
+		memUsage := parts[3]
+
+		stats := ContainerStats{}
+
+		// Parse CPU
+		cpuStr := strings.ReplaceAll(cpuPerc, "%", "")
+		if val, err := strconv.ParseFloat(strings.TrimSpace(cpuStr), 64); err == nil {
+			stats.CPUPercent = val
+		}
+
+		// Parse Memory (Usage / Limit)
+		memParts := strings.Split(memUsage, "/")
+		if len(memParts) >= 2 {
+			stats.MemoryMB = parseMemoryBytes(strings.TrimSpace(memParts[0]))
+			stats.MemoryMax = parseMemoryBytes(strings.TrimSpace(memParts[1]))
+		}
+
+		result[containerID] = stats
+	}
+
+	return result, nil
+}
+
 // Helper to convert docker memory headers (GiB, MiB, kiB, B) to MB
 func parseMemoryBytes(memStr string) float64 {
 	// Remove non-alphanumeric chars (except .)

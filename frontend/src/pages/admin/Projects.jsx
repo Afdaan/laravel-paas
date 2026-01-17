@@ -18,8 +18,36 @@ function StatusBadge({ status }) {
   return <span className={`badge ${statusClasses[status]}`}>{status}</span>
 }
 
+
+function ResourceBar({ label, value, max, unit, suffix = '' }) {
+  const percentage = max ? Math.min((value / max) * 100, 100) : Math.min(value, 100)
+  
+  let color = 'bg-emerald-500'
+  if (percentage > 80) color = 'bg-red-500'
+  else if (percentage > 50) color = 'bg-amber-500'
+
+  return (
+    <div className="w-32 text-xs">
+      <div className="flex justify-between mb-0.5">
+        <span className="text-slate-500 font-medium">{label}</span>
+        <span className="text-slate-300">
+          {typeof value === 'number' ? value.toFixed(1) : value}{suffix}
+          {max ? <span className="text-slate-500">/{max.toFixed(0)}{suffix}</span> : ''}
+        </span>
+      </div>
+      <div className="h-1.5 w-full bg-slate-700/50 rounded-full overflow-hidden">
+        <div 
+          className={`h-full ${color} transition-all duration-500`}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function AdminProjects() {
   const [projects, setProjects] = useState([])
+  const [stats, setStats] = useState({})
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -29,6 +57,22 @@ function AdminProjects() {
   useEffect(() => {
     fetchProjects()
   }, [page, search, statusFilter])
+
+  // Poll stats every 5 seconds
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await projectsAPI.listStats()
+        setStats(response.data.stats || {})
+      } catch (error) {
+        console.error("Failed to fetch stats", error)
+      }
+    }
+
+    fetchStats() // Initial fetch
+    const interval = setInterval(fetchStats, 5000)
+    return () => clearInterval(interval)
+  }, [])
   
   const fetchProjects = async () => {
     setIsLoading(true)
@@ -60,12 +104,12 @@ function AdminProjects() {
           placeholder="Search projects..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 px-4 py-2 border"
+          className="flex-1 px-4 py-2 border rounded-lg bg-slate-800 border-slate-700 text-white focus:outline-none focus:border-primary-500"
         />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border"
+          className="px-4 py-2 border rounded-lg bg-slate-800 border-slate-700 text-white focus:outline-none focus:border-primary-500"
         >
           <option value="">All Status</option>
           <option value="running">Running</option>
@@ -85,49 +129,69 @@ function AdminProjects() {
         ) : projects.length === 0 ? (
           <div className="p-12 text-center text-slate-400">No projects found</div>
         ) : (
-          <table>
-            <thead>
-              <tr className="border-b border-slate-700">
-                <th>Project</th>
-                <th>Owner</th>
-                <th>Status</th>
-                <th>Laravel</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.map((project) => (
-                <tr key={project.id}>
-                  <td>
-                    <div>
-                      <p className="font-medium text-white">{project.name}</p>
-                      <p className="text-sm text-slate-500">{project.subdomain}</p>
-                    </div>
-                  </td>
-                  <td>
-                    <p className="text-slate-300">{project.user?.name || 'Unknown'}</p>
-                    <p className="text-sm text-slate-500">{project.user?.email}</p>
-                  </td>
-                  <td><StatusBadge status={project.status} /></td>
-                  <td className="text-slate-400">
-                    {project.laravel_version ? `v${project.laravel_version}` : '-'}
-                  </td>
-                  <td className="text-slate-400">
-                    {new Date(project.created_at).toLocaleDateString()}
-                  </td>
-                  <td>
-                    <Link 
-                      to={`/projects/${project.id}`}
-                      className="text-primary-400 hover:text-primary-300"
-                    >
-                      View →
-                    </Link>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-700 text-left">
+                  <th className="p-4 text-slate-400 font-medium text-sm">PROJECT</th>
+                  <th className="p-4 text-slate-400 font-medium text-sm">OWNER</th>
+                  <th className="p-4 text-slate-400 font-medium text-sm">STATUS</th>
+                  <th className="p-4 text-slate-400 font-medium text-sm">RESOURCES</th>
+                  <th className="p-4 text-slate-400 font-medium text-sm">LARAVEL</th>
+                  <th className="p-4 text-slate-400 font-medium text-sm">CREATED</th>
+                  <th className="p-4"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {projects.map((project) => {
+                  const hasStats = stats[project.id]
+                  return (
+                    <tr key={project.id} className="hover:bg-slate-800/50">
+                      <td className="p-4">
+                        <div>
+                          <p className="font-medium text-white">{project.name}</p>
+                          <p className="text-xs text-slate-500 font-mono">{project.subdomain}</p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div>
+                          <p className="text-slate-300 text-sm">{project.user?.name || 'Unknown'}</p>
+                          <p className="text-xs text-slate-500">{project.user?.email}</p>
+                        </div>
+                      </td>
+                      <td className="p-4"><StatusBadge status={project.status} /></td>
+                      <td className="p-4 space-y-2">
+                        {project.status === 'running' && hasStats ? (
+                          <>
+                            <ResourceBar label="CPU" value={hasStats.cpu_percent} suffix="%" />
+                            <ResourceBar label="RAM" value={hasStats.memory_mb} max={hasStats.memory_max_mb} suffix="MB" />
+                          </>
+                        ) : project.status === 'running' ? (
+                          <div className="text-xs text-slate-500 animate-pulse">Loading stats...</div>
+                        ) : (
+                          <div className="text-xs text-slate-600">-</div>
+                        )}
+                      </td>
+                      <td className="p-4 text-slate-400 text-sm">
+                        {project.laravel_version ? `v${project.laravel_version}` : '-'}
+                      </td>
+                      <td className="p-4 text-slate-400 text-sm">
+                        {new Date(project.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="p-4 text-right">
+                        <Link 
+                          to={`/projects/${project.id}`}
+                          className="text-primary-400 hover:text-primary-300 text-sm font-medium"
+                        >
+                          View →
+                        </Link>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
         
         {/* Pagination */}

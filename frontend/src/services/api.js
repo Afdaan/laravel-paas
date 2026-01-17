@@ -133,6 +133,9 @@ export const projectsAPI = {
   // Admin endpoints
   listAll: (params = {}) => 
     api.get('/admin/projects', { params }),
+
+  listStats: () => 
+    api.get('/admin/projects/stats'),
   
   adminStats: () => 
     api.get('/admin/stats'),

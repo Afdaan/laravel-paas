@@ -769,6 +769,44 @@ func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
 	})
 }
 
+// GetProjectsStats returns real-time resource usage for all running projects
+func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
+	// 1. Get bulk stats from Docker
+	statsMap, err := h.dockerService.GetAllContainerStats()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch container stats: " + err.Error(),
+		})
+	}
+
+	// 2. Fetch all running projects
+	var projects []models.Project
+	if err := h.db.Where("status = ? AND container_id IS NOT NULL", models.StatusRunning).Find(&projects).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch projects",
+		})
+	}
+
+	// 3. Map project ID to stats
+	projectStats := make(map[uint]services.ContainerStats)
+
+	for _, p := range projects {
+		if p.ContainerID == nil || len(*p.ContainerID) < 12 {
+			continue
+		}
+
+		shortID := (*p.ContainerID)[:12]
+
+		if stat, exists := statsMap[shortID]; exists {
+			projectStats[p.ID] = stat
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"stats": projectStats,
+	})
+}
+
 func (h *ProjectHandler) populateURL(project *models.Project) {
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 	project.URL = "https://" + project.GetFullDomain(projectDomain)

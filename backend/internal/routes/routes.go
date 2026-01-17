@@ -96,6 +96,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
+	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
 
 	// -----------------------------
 	// Project Routes (Students)
