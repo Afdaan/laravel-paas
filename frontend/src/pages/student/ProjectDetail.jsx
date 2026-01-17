@@ -79,17 +79,18 @@ function StudentProjectDetail() {
     setConfirmModal({ ...opts, isOpen: true })
   }
 
-  // Polling for status updates
+  // Polling for status updates and stats
   useEffect(() => {
     fetchProject()
     const interval = setInterval(() => {
-      if (project?.status === 'building' || activeTab === 'stats') {
-        fetchProject()
-        if (activeTab === 'stats') fetchStats()
+      fetchProject()
+      // Always fetch stats if project is running (regardless of active tab)
+      if (project?.status === 'running') {
+        fetchStats()
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [id, activeTab, project?.status])
+  }, [id, project?.status])
   
   // Fetch logs when tab is active
   useEffect(() => {
