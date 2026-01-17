@@ -39,14 +39,16 @@ func NewDockerService(cfg *config.Config) *DockerService {
 // ===========================================
 
 // CloneRepository clones a GitHub repository
-func (s *DockerService) CloneRepository(githubURL, subdomain string) (string, error) {
+func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
 
 	// Remove existing directory if present
 	os.RemoveAll(projectPath)
 
-	// Clone the repository
-	cmd := exec.Command("git", "clone", "--depth=1", githubURL, projectPath)
+	// Clone specific branch
+	args := []string{"clone", "--depth=1", "-b", branch, githubURL, projectPath}
+	cmd := exec.Command("git", args...)
+	
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -371,11 +373,16 @@ type ContainerStats struct {
 	MemoryMax  float64 `json:"memory_max_mb"`
 }
 
+// DockerStatsJSON represents the raw JSON output from docker stats
+type DockerStatsJSON struct {
+	CPUPerc  string `json:"CPUPerc"`
+	MemUsage string `json:"MemUsage"`
+}
+
 // GetContainerStats retrieves container resource usage
 func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, error) {
-	// Use templating to get clean output without headers
-	cmd := exec.Command("docker", "stats", "--no-stream", "--format",
-		"{{.CPUPerc}};{{.MemUsage}}", containerID)
+	// Use JSON formatting for reliable parsing
+	cmd := exec.Command("docker", "stats", "--no-stream", "--format", "{{json .}}", containerID)
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -384,25 +391,28 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 		return nil, err
 	}
 
+	// Output might contain multiple lines if multiple containers match (unlikely here)
+	// or just one JSON object.
 	output := strings.TrimSpace(stdout.String())
-	// Output format: 0.15%;12.5MiB / 1.94GiB
-
-	parts := strings.Split(output, ";")
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid stats output format: %s", output)
+	
+	var rawStats DockerStatsJSON
+	if err := json.Unmarshal([]byte(output), &rawStats); err != nil {
+		fmt.Printf("Error unmarshalling docker stats: %v. Output: %s\n", err, output)
+		return nil, fmt.Errorf("failed to parse docker stats: %v", err)
 	}
 
 	stats := &ContainerStats{}
 
 	// 1. Parse CPU (remove % and trim)
-	cpuStr := strings.ReplaceAll(parts[0], "%", "")
+	cpuStr := strings.ReplaceAll(rawStats.CPUPerc, "%", "")
 	stats.CPUPercent, _ = strconv.ParseFloat(strings.TrimSpace(cpuStr), 64)
 
 	// 2. Parse Memory (format: USAGE / LIMIT)
-	memParts := strings.Split(parts[1], "/")
-	if len(memParts) >= 2 {
-		stats.MemoryMB = parseMemoryBytes(strings.TrimSpace(memParts[0]))
-		stats.MemoryMax = parseMemoryBytes(strings.TrimSpace(memParts[1]))
+	// Example: "12.5MiB / 1.94GiB"
+	parts := strings.Split(rawStats.MemUsage, "/")
+	if len(parts) >= 2 {
+		stats.MemoryMB = parseMemoryBytes(strings.TrimSpace(parts[0]))
+		stats.MemoryMax = parseMemoryBytes(strings.TrimSpace(parts[1]))
 	}
 
 	return stats, nil

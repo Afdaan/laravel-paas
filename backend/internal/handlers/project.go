@@ -204,6 +204,12 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 			"error": "Name, GitHub URL, and database name are required",
 		})
 	}
+	
+	// Default branch to main if empty
+	branch := req.Branch
+	if branch == "" {
+		branch = "main"
+	}
 
 	userID := c.Locals("user_id").(uint)
 
@@ -287,7 +293,7 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	})
 
 	// Step 1: Clone repository
-	projectPath, err := h.dockerService.CloneRepository(project.GithubURL, project.Subdomain)
+	projectPath, err := h.dockerService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
 	if err != nil {
 		h.updateProjectError(project, "Failed to clone repository: "+err.Error())
 		return

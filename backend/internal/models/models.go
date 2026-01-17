@@ -61,6 +61,7 @@ type Project struct {
 	User         User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Name         string         `gorm:"size:255;not null" json:"name"`
 	GithubURL    string         `gorm:"size:500;not null" json:"github_url"`
+	Branch       string         `gorm:"size:200;not null;default:main" json:"branch"`
 	Subdomain    string         `gorm:"uniqueIndex;size:100;not null" json:"subdomain"`
 	DatabaseName string         `gorm:"uniqueIndex;size:100;not null" json:"database_name"`
 	Status       ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`

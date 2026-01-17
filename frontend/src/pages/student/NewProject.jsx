@@ -13,6 +13,7 @@ function StudentNewProject() {
   const [formData, setFormData] = useState({
     name: '',
     github_url: '',
+    branch: '',
     database_name: '',
   })
   
@@ -77,23 +78,43 @@ function StudentNewProject() {
         </div>
         
         {/* GitHub URL */}
-        <div>
-          <label htmlFor="github_url" className="block text-sm font-medium text-slate-300 mb-2">
-            GitHub Repository URL
-          </label>
-          <input
-            id="github_url"
-            name="github_url"
-            type="url"
-            value={formData.github_url}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border"
-            placeholder="https://github.com/username/repository"
-            required
-          />
-          <p className="text-sm text-slate-500 mt-1">
-            Must be a public repository containing a Laravel project
-          </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-2">
+            <label htmlFor="github_url" className="block text-sm font-medium text-slate-300 mb-2">
+              GitHub Repository URL
+            </label>
+            <input
+              id="github_url"
+              name="github_url"
+              type="url"
+              value={formData.github_url}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border"
+              placeholder="https://github.com/username/repository"
+              required
+            />
+            <p className="text-sm text-slate-500 mt-1">
+               Public repository containing Laravel project
+            </p>
+          </div>
+          
+          <div>
+            <label htmlFor="branch" className="block text-sm font-medium text-slate-300 mb-2">
+              Branch
+            </label>
+            <input
+              id="branch"
+              name="branch"
+              type="text"
+              value={formData.branch}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border"
+              placeholder="main"
+            />
+             <p className="text-sm text-slate-500 mt-1">
+               Default: main
+            </p>
+          </div>
         </div>
         
         {/* Database Name */}
