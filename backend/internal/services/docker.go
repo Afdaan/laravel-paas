@@ -236,12 +236,13 @@ stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 `
 		f, err := os.OpenFile(filepath.Join(projectPath, "docker", "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
-		if err == nil {
-			if _, err := f.WriteString(workerConfig); err != nil {
-				f.Close()
-				return "", fmt.Errorf("failed to append supervisor config: %w", err)
-			}
-			f.Close()
+		if err != nil {
+			return "", fmt.Errorf("failed to open supervisor config: %w", err)
+		}
+		defer f.Close()
+		
+		if _, err := f.WriteString(workerConfig); err != nil {
+			return "", fmt.Errorf("failed to append supervisor config: %w", err)
 		}
 	}
 

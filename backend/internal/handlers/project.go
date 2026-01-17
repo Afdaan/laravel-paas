@@ -371,8 +371,7 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	// Cleanup old container after successful switch
 	if oldContainerID != nil {
 		go func() {
-			// Small buffer to allow Traefik to propagate route changes
-			// time.Sleep(5 * time.Second) 
+			time.Sleep(10 * time.Second) 
 			h.dockerService.RemoveContainer(*oldContainerID)
 		}()
 	}
