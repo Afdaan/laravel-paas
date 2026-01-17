@@ -346,7 +346,6 @@ QUEUE_CONNECTION=sync
 		project.DatabaseName,
 		project.DatabaseName,
 		project.DatabaseName,
-		project.DatabaseName,
 	)
 	
 	// Set QUEUE_CONNECTION dynamically
