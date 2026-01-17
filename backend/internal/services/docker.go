@@ -401,13 +401,18 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error running docker stats: %v. Stderr: %s\n", err, stderr.String())
+		fmt.Printf("Error running docker stats for container %s: %v. Stderr: %s\n", containerID, err, stderr.String())
 		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
 	}
 
 	// Output might contain multiple lines if multiple containers match (unlikely here)
 	// or just one JSON object.
 	output := strings.TrimSpace(stdout.String())
+	
+	if output == "" {
+		fmt.Printf("Empty output from docker stats for container %s\n", containerID)
+		return nil, fmt.Errorf("container not found or not running")
+	}
 	
 	var rawStats DockerStatsJSON
 	if err := json.Unmarshal([]byte(output), &rawStats); err != nil {
@@ -419,7 +424,13 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 
 	// 1. Parse CPU (remove % and trim)
 	cpuStr := strings.ReplaceAll(rawStats.CPUPerc, "%", "")
-	stats.CPUPercent, _ = strconv.ParseFloat(strings.TrimSpace(cpuStr), 64)
+	cpuVal, err := strconv.ParseFloat(strings.TrimSpace(cpuStr), 64)
+	if err != nil {
+		fmt.Printf("Warning: Failed to parse CPU percent '%s': %v\n", cpuStr, err)
+		stats.CPUPercent = 0
+	} else {
+		stats.CPUPercent = cpuVal
+	}
 
 	// 2. Parse Memory (format: USAGE / LIMIT)
 	// Example: "12.5MiB / 1.94GiB"
@@ -427,7 +438,12 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	if len(parts) >= 2 {
 		stats.MemoryMB = parseMemoryBytes(strings.TrimSpace(parts[0]))
 		stats.MemoryMax = parseMemoryBytes(strings.TrimSpace(parts[1]))
+	} else {
+		fmt.Printf("Warning: Unexpected memory format: %s\n", rawStats.MemUsage)
 	}
+
+	fmt.Printf("Stats for container %s: CPU=%.2f%%, Memory=%.2fMB/%.2fMB\n", 
+		containerID, stats.CPUPercent, stats.MemoryMB, stats.MemoryMax)
 
 	return stats, nil
 }
