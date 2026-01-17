@@ -326,6 +326,13 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		return
 	}
 
+	// Capture old container ID for cleanup after successful deployment
+	var oldContainerID *string
+	if project.ContainerID != nil {
+		oldHelp := *project.ContainerID
+		oldContainerID = &oldHelp
+	}
+
 	// Step 4: Build and run container
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
@@ -338,11 +345,20 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		return
 	}
 
-	// Update project as running
+	// Update project as running with new container ID
 	h.db.Model(project).Updates(map[string]interface{}{
 		"status":       models.StatusRunning,
 		"container_id": containerID,
 	})
+
+	// Cleanup old container after successful switch
+	if oldContainerID != nil {
+		go func() {
+			// Small buffer to allow Traefik to propagate route changes
+			// time.Sleep(5 * time.Second) 
+			h.dockerService.RemoveContainer(*oldContainerID)
+		}()
+	}
 }
 
 // updateProjectError sets project status to failed
@@ -378,10 +394,7 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		})
 	}
 
-	// Stop existing container if running
-	if project.ContainerID != nil {
-		h.dockerService.StopContainer(*project.ContainerID)
-	}
+
 
 	// Redeploy in background
 	go h.deployProject(&project)

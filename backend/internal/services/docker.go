@@ -249,11 +249,9 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		}
 	}
 
-	// Generate container name
-	containerName := fmt.Sprintf("paas-project-%s", project.Subdomain)
-
-	// Remove existing container if present
-	exec.Command("docker", "rm", "-f", containerName).Run()
+	// Generate unique container name for zero-downtime deployment
+	timestamp := time.Now().Unix()
+	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
 
 	// Run container with Traefik labels for automatic SSL
 	runArgs := []string{
