@@ -5,12 +5,14 @@
 // ===========================================
 
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { databaseAPI, projectsAPI } from '../../services/api'
+import ConfirmationModal from '../../components/ConfirmationModal'
 
 export default function DatabaseManager() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [project, setProject] = useState(null)
   const [activeTab, setActiveTab] = useState('tables')
   const [tables, setTables] = useState([])
@@ -31,8 +33,16 @@ export default function DatabaseManager() {
   
   // Modals
   const [showCredentials, setShowCredentials] = useState(false)
-  const [showResetConfirm, setShowResetConfirm] = useState(false)
   
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger',
+    onConfirm: () => {},
+    confirmText: 'Confirm'
+  })
+
   useEffect(() => {
     fetchProject()
     fetchTables()
@@ -45,6 +55,7 @@ export default function DatabaseManager() {
       setProject(res.data)
     } catch (err) {
       toast.error('Failed to load project')
+      if (err.response?.status === 404) navigate('/projects')
     }
   }
 
@@ -72,6 +83,7 @@ export default function DatabaseManager() {
   const selectTable = async (tableName) => {
     setSelectedTable(tableName)
     setLoading(true)
+    setTableData(null)
     try {
       const [structureRes, dataRes] = await Promise.all([
         databaseAPI.getStructure(id, tableName),
@@ -111,7 +123,7 @@ export default function DatabaseManager() {
       a.download = `${project?.database_name}_backup.sql`
       a.click()
       window.URL.revokeObjectURL(url)
-      toast.success('Database exported!')
+      toast.success('Database exported successfully!')
     } catch (err) {
       toast.error('Export failed')
     }
@@ -139,11 +151,21 @@ export default function DatabaseManager() {
     }
   }
 
+  const confirmReset = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset Database?',
+      message: 'This will PERMANENTLY DELETE all tables and data in this database. This action cannot be undone.',
+      type: 'danger',
+      confirmText: 'Yes, Reset Database',
+      onConfirm: handleReset
+    })
+  }
+
   const handleReset = async () => {
     try {
       const res = await databaseAPI.reset(id)
       toast.success(`Database reset! Dropped ${res.data.dropped} tables`)
-      setShowResetConfirm(false)
       setSelectedTable(null)
       setTableData(null)
       fetchTables()
@@ -152,312 +174,300 @@ export default function DatabaseManager() {
     }
   }
 
-  const tabs = [
-    { id: 'tables', label: '📋 Tables', icon: '📋' },
-    { id: 'query', label: '⚡ Query', icon: '⚡' },
-    { id: 'import', label: '📥 Import/Export', icon: '📥' },
-  ]
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied')
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto pb-20">
+      <ConfirmationModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        {...confirmModal}
+      />
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-6">
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <Link to={`/projects/${id}`} className="text-gray-400 hover:text-white">
-              ← Back to Project
+          <div className="flex items-center gap-2 mb-2">
+            <Link to={`/projects/${id}`} className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm">
+              <span className="i-lucide-arrow-left">←</span> Back to Project
             </Link>
           </div>
-          <h1 className="text-2xl font-bold text-white">
-            🗄️ Database Manager
+          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+            <span className="i-lucide-database text-primary-500"></span>
+            Database Manager
           </h1>
-          <p className="text-gray-400 mt-1">
-            {project?.name} • {project?.database_name}
+          <p className="text-slate-400 mt-1 font-mono text-sm">
+            {project?.database_name}
           </p>
         </div>
         <div className="flex gap-3">
           <button 
             onClick={() => setShowCredentials(true)}
-            className="btn-secondary"
+            className="btn btn-secondary flex items-center gap-2"
           >
-            🔑 Credentials
+            <span className="i-lucide-key"></span> Credentials
           </button>
           <button 
-            onClick={() => setShowResetConfirm(true)}
-            className="btn-danger"
+            onClick={confirmReset}
+            className="btn btn-danger flex items-center gap-2"
           >
-            🗑️ Reset DB
+            <span className="i-lucide-trash"></span> Reset DB
           </button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-700 pb-4">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              activeTab === tab.id 
-                ? 'bg-primary-600 text-white' 
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <div>
+         <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit mb-6">
+           {[
+             { id: 'tables', label: 'Tables' },
+             { id: 'query', label: 'SQL Query' },
+             { id: 'import', label: 'Import / Export' },
+           ].map(tab => (
+             <button
+               key={tab.id}
+               onClick={() => setActiveTab(tab.id)}
+               className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${
+                 activeTab === tab.id 
+                 ? 'bg-slate-700 text-white shadow-sm' 
+                 : 'text-slate-400 hover:text-slate-200'
+               }`}
+             >
+               {tab.label}
+             </button>
+           ))}
+        </div>
 
-      {/* Tables Tab */}
-      {activeTab === 'tables' && (
-        <div className="grid grid-cols-12 gap-6">
-          {/* Table List */}
-          <div className="col-span-3">
-            <div className="card">
-              <h3 className="font-semibold text-white mb-4">Tables</h3>
-              {loading && !tables.length ? (
-                <div className="text-gray-400 text-center py-4">Loading...</div>
-              ) : tables.length === 0 ? (
-                <div className="text-gray-400 text-center py-4">
-                  No tables found
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {tables.map(table => (
+        {/* Tables Tab */}
+        {activeTab === 'tables' && (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[700px]">
+            {/* Table List Sidebar */}
+            <div className="lg:col-span-1 flex flex-col h-full card p-0 overflow-hidden bg-slate-900 border-slate-800">
+              <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex justify-between items-center">
+                <h3 className="font-semibold text-white">Tables</h3>
+                <button onClick={fetchTables} className="text-slate-400 hover:text-white" title="Refresh">
+                  <span className="i-lucide-refresh-cw">↻</span>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {tables.length === 0 && !loading ? (
+                   <div className="text-center py-10 text-slate-500 text-sm">No tables found</div>
+                ) : (
+                  tables.map(table => (
                     <button
                       key={table.name}
                       onClick={() => selectTable(table.name)}
-                      className={`w-full text-left px-3 py-2 rounded-lg transition-all ${
+                      className={`w-full text-left px-3 py-2.5 rounded-md transition-all flex justify-between items-baseline group ${
                         selectedTable === table.name 
-                          ? 'bg-primary-600 text-white' 
-                          : 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                          ? 'bg-primary-600 text-white shadow-md' 
+                          : 'text-slate-300 hover:bg-slate-800'
                       }`}
                     >
-                      <div className="font-medium">{table.name}</div>
-                      <div className="text-xs opacity-70">
-                        {table.rows} rows • {table.size}
-                      </div>
+                      <span className="font-medium truncate">{table.name}</span>
+                      <span className={`text-xs ${selectedTable === table.name ? 'text-primary-200' : 'text-slate-500 group-hover:text-slate-400'}`}>
+                        {table.rows}
+                      </span>
                     </button>
-                  ))}
-                </div>
-              )}
-              <button 
-                onClick={fetchTables}
-                className="w-full mt-4 btn-secondary text-sm"
-              >
-                🔄 Refresh
-              </button>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Table Data */}
-          <div className="col-span-9">
-            {selectedTable ? (
-              <div className="card">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-white text-lg">
-                    📊 {selectedTable}
-                  </h3>
-                  {tableData && (
-                    <span className="text-gray-400 text-sm">
-                      {tableData.total} rows total
-                    </span>
-                  )}
-                </div>
-
-                {/* Structure Toggle */}
-                {tableStructure && (
-                  <details className="mb-4">
-                    <summary className="text-primary-400 cursor-pointer hover:text-primary-300">
-                      View Structure ({tableStructure.length} columns)
-                    </summary>
-                    <div className="mt-2 overflow-x-auto">
-                      <table className="table text-sm">
-                        <thead>
+            {/* Table Data View */}
+            <div className="lg:col-span-3 flex flex-col h-full card p-0 overflow-hidden border-slate-800">
+              {selectedTable ? (
+                <>
+                  <div className="p-4 border-b border-slate-800 bg-slate-800/30 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <h3 className="font-bold text-white text-lg">{selectedTable}</h3>
+                      {tableData && (
+                        <span className="text-xs px-2 py-0.5 bg-slate-700 rounded text-slate-300">
+                          {tableData.total} rows
+                        </span>
+                      )}
+                    </div>
+                    {/* Could add structure toggle here if needed */}
+                  </div>
+                  
+                  <div className="flex-1 overflow-auto bg-slate-900/50">
+                    {loading ? (
+                      <div className="flex items-center justify-center h-full text-slate-500">Loading data...</div>
+                    ) : tableData && tableData.rows?.length > 0 ? (
+                      <table className="w-full text-left text-sm border-collapse">
+                        <thead className="bg-slate-800 sticky top-0 z-10 text-slate-300">
                           <tr>
-                            <th>Column</th>
-                            <th>Type</th>
-                            <th>Nullable</th>
-                            <th>Key</th>
-                            <th>Extra</th>
+                            {tableData.columns?.map(col => (
+                              <th key={col} className="px-4 py-3 font-mono text-xs uppercase tracking-wider border-b border-slate-700 whitespace-nowrap">
+                                {col}
+                              </th>
+                            ))}
                           </tr>
                         </thead>
-                        <tbody>
-                          {tableStructure.map(col => (
-                            <tr key={col.name}>
-                              <td className="font-mono text-primary-400">{col.name}</td>
-                              <td className="text-gray-400">{col.type}</td>
-                              <td>{col.nullable ? '✓' : '✗'}</td>
-                              <td className="text-yellow-400">{col.key}</td>
-                              <td className="text-gray-500">{col.extra}</td>
+                        <tbody className="divide-y divide-slate-800 text-slate-300">
+                          {tableData.rows.map((row, i) => (
+                            <tr key={i} className="hover:bg-slate-800/50 transition-colors">
+                              {tableData.columns?.map(col => (
+                                <td key={col} className="px-4 py-2 max-w-xs truncate border-r border-slate-800/50 last:border-0 font-mono text-xs">
+                                  {row[col] === null ? (
+                                    <span className="text-slate-600 italic">NULL</span>
+                                  ) : (
+                                    String(row[col])
+                                  )}
+                                </td>
+                              ))}
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                    </div>
-                  </details>
-                )}
-
-                {/* Data Table */}
-                {loading ? (
-                  <div className="text-center py-8 text-gray-400">Loading data...</div>
-                ) : tableData && tableData.rows?.length > 0 ? (
-                  <div className="overflow-x-auto max-h-96">
-                    <table className="table text-sm">
-                      <thead className="sticky top-0 bg-gray-800">
-                        <tr>
-                          {tableData.columns?.map(col => (
-                            <th key={col} className="font-mono">{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tableData.rows.map((row, i) => (
-                          <tr key={i}>
-                            {tableData.columns?.map(col => (
-                              <td key={col} className="truncate max-w-xs">
-                                {row[col] !== null && row[col] !== undefined 
-                                  ? String(row[col]).substring(0, 100) 
-                                  : <span className="text-gray-500">NULL</span>}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
+                        <div className="text-4xl opacity-20">📭</div>
+                        <div>Table is empty</div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-400">
-                    No data in this table
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="card text-center py-16">
-                <div className="text-6xl mb-4">👈</div>
-                <p className="text-gray-400">Select a table to view its data</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Query Tab */}
-      {activeTab === 'query' && (
-        <div className="card">
-          <h3 className="font-semibold text-white mb-4">⚡ Run SQL Query</h3>
-          <textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="SELECT * FROM users LIMIT 10;"
-            className="input w-full h-32 font-mono text-sm"
-            spellCheck="false"
-          />
-          <div className="flex gap-3 mt-4">
-            <button 
-              onClick={executeQuery}
-              disabled={queryLoading || !query.trim()}
-              className="btn-primary"
-            >
-              {queryLoading ? '⏳ Executing...' : '▶️ Run Query'}
-            </button>
-            <button 
-              onClick={() => setQuery('')}
-              className="btn-secondary"
-            >
-              Clear
-            </button>
-          </div>
-
-          {/* Query Result */}
-          {queryResult && (
-            <div className="mt-6">
-              <div className="flex items-center gap-4 mb-3">
-                <h4 className="font-medium text-white">Results</h4>
-                <span className="text-sm text-gray-400">
-                  {queryResult.rows ? `${queryResult.rows.length} rows` : `${queryResult.rows_affected} rows affected`}
-                  {' • '}{queryResult.duration}
-                </span>
-              </div>
-              
-              {queryResult.rows && queryResult.rows.length > 0 ? (
-                <div className="overflow-x-auto max-h-96">
-                  <table className="table text-sm">
-                    <thead className="sticky top-0 bg-gray-800">
-                      <tr>
-                        {queryResult.columns?.map(col => (
-                          <th key={col} className="font-mono">{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {queryResult.rows.map((row, i) => (
-                        <tr key={i}>
-                          {queryResult.columns?.map(col => (
-                            <td key={col} className="truncate max-w-xs">
-                              {row[col] !== null ? String(row[col]) : <span className="text-gray-500">NULL</span>}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : queryResult.rows_affected !== undefined ? (
-                <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 text-green-400">
-                  ✓ Query executed successfully. {queryResult.rows_affected} rows affected.
-                </div>
+                </>
               ) : (
-                <div className="text-gray-400">No results</div>
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
+                  <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-3xl opacity-50">👈</div>
+                  <p>Select a table from the sidebar to view data</p>
+                </div>
               )}
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Import/Export Tab */}
-      {activeTab === 'import' && (
-        <div className="grid grid-cols-2 gap-6">
-          {/* Export */}
-          <div className="card">
-            <h3 className="font-semibold text-white mb-4">📤 Export Database</h3>
-            <p className="text-gray-400 mb-4">
-              Download a backup of your database as a SQL file.
-            </p>
-            <button onClick={handleExport} className="btn-primary w-full">
-              📥 Download SQL Backup
-            </button>
           </div>
+        )}
 
-          {/* Import */}
-          <div className="card">
-            <h3 className="font-semibold text-white mb-4">📥 Import SQL</h3>
-            <p className="text-gray-400 mb-4">
-              Paste SQL content to import into your database.
-            </p>
-            <textarea
-              value={importSQL}
-              onChange={(e) => setImportSQL(e.target.value)}
-              placeholder="-- Paste your SQL here...&#10;CREATE TABLE...&#10;INSERT INTO..."
-              className="input w-full h-40 font-mono text-sm mb-4"
-              spellCheck="false"
-            />
-            <button 
-              onClick={handleImport}
-              disabled={importing || !importSQL.trim()}
-              className="btn-primary w-full"
-            >
-              {importing ? '⏳ Importing...' : '📥 Import SQL'}
-            </button>
+        {/* Query Tab */}
+        {activeTab === 'query' && (
+          <div className="h-[700px] flex flex-col gap-6">
+            <div className="card p-0 overflow-hidden flex flex-col h-1/2 border-slate-800">
+              <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
+                 <h3 className="font-semibold text-white text-sm">SQL Editor</h3>
+                 <div className="flex gap-2">
+                    <button onClick={() => setQuery('')} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700">Clear</button>
+                    <button 
+                      onClick={executeQuery}
+                      disabled={queryLoading || !query.trim()}
+                      className="bg-primary-600 hover:bg-primary-500 text-white text-xs px-3 py-1 rounded font-medium disabled:opacity-50 transition-colors flex items-center gap-1"
+                    >
+                      {queryLoading ? 'Executing...' : '▶ Run Query'}
+                    </button>
+                 </div>
+              </div>
+              <textarea
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="SELECT * FROM users;"
+                className="flex-1 bg-black text-emerald-300 font-mono text-sm p-4 focus:outline-none resize-none"
+                spellCheck="false"
+              />
+            </div>
+
+            <div className="card p-0 overflow-hidden flex flex-col h-1/2 border-slate-800">
+               <div className="p-3 bg-slate-800 border-b border-slate-700">
+                 <h3 className="font-semibold text-white text-sm">Results</h3>
+               </div>
+               <div className="flex-1 overflow-auto bg-slate-900/50 p-4">
+                  {queryResult ? (
+                    <div>
+                      <div className="mb-4 flex items-center gap-2 text-xs">
+                        {queryResult.rows ? (
+                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/20">
+                            {queryResult.rows.length} rows retrieved
+                          </span>
+                        ) : (
+                           <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
+                            {queryResult.rows_affected} rows affected
+                          </span>
+                        )}
+                        <span className="text-slate-500">in {queryResult.duration}</span>
+                      </div>
+
+                      {queryResult.rows && queryResult.rows.length > 0 && (
+                        <div className="overflow-x-auto rounded border border-slate-700">
+                           <table className="w-full text-left text-sm border-collapse">
+                            <thead className="bg-slate-800 text-slate-300">
+                              <tr>
+                                {queryResult.columns?.map(col => (
+                                  <th key={col} className="px-4 py-2 font-mono text-xs border-b border-slate-600 whitespace-nowrap">
+                                    {col}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700 text-slate-300 bg-slate-900">
+                              {queryResult.rows.map((row, i) => (
+                                <tr key={i} className="hover:bg-slate-800/50">
+                                  {queryResult.columns?.map(col => (
+                                    <td key={col} className="px-4 py-2 max-w-xs truncate font-mono text-xs border-r border-slate-800 last:border-0">
+                                      {row[col] !== null ? String(row[col]) : <span className="text-slate-600">NULL</span>}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                           </table>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-slate-600 text-sm italic">
+                      Execute a query to see results
+                    </div>
+                  )}
+               </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Import/Export Tab */}
+        {activeTab === 'import' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="card border-slate-800 p-6">
+               <h3 className="font-bold text-white text-lg mb-2">📤 Export Database</h3>
+               <p className="text-slate-400 text-sm mb-6">
+                 Download a complete SQL dump of your database structure and data.
+               </p>
+               <button onClick={handleExport} className="btn btn-secondary w-full justify-center py-3">
+                 <span className="i-lucide-download mr-2"></span> Download SQL Backup
+               </button>
+            </div>
+
+            <div className="card border-slate-800 p-6">
+              <h3 className="font-bold text-white text-lg mb-2">📥 Import SQL</h3>
+              <p className="text-slate-400 text-sm mb-4">
+                Execute SQL commands to restore a backup or initialize table structures.
+              </p>
+              <textarea
+                 value={importSQL}
+                 onChange={(e) => setImportSQL(e.target.value)}
+                 placeholder="Paste your SQL commands here..."
+                 className="w-full h-40 bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-300 font-mono text-xs focus:outline-none focus:border-primary-500 mb-4 resize-none"
+               />
+               <button 
+                 onClick={handleImport}
+                 disabled={importing || !importSQL.trim()}
+                 className="btn btn-primary w-full justify-center py-2"
+               >
+                 {importing ? 'Importing...' : 'Run Import'}
+               </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Credentials Modal */}
       {showCredentials && credentials && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="card w-full max-w-md">
-            <h3 className="font-semibold text-white text-lg mb-4">🔑 Database Credentials</h3>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+          <div className="card w-full max-w-md bg-slate-900 border-slate-700 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-white text-lg">🔑 Database Credentials</h3>
+              <button onClick={() => setShowCredentials(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            
             <div className="space-y-3">
               {[
                 { label: 'Host', value: credentials.host },
@@ -466,45 +476,28 @@ export default function DatabaseManager() {
                 { label: 'Username', value: credentials.username },
                 { label: 'Password', value: credentials.password },
               ].map(item => (
-                <div key={item.label} className="flex justify-between items-center bg-gray-700/50 rounded-lg p-3">
-                  <span className="text-gray-400">{item.label}</span>
-                  <code className="text-primary-400 font-mono">{item.value}</code>
+                <div key={item.label} className="group flex justify-between items-center bg-slate-800 rounded-lg p-3 border border-slate-700">
+                  <span className="text-slate-400 text-sm font-medium">{item.label}</span>
+                  <div className="flex items-center gap-2">
+                    <code className="text-primary-400 font-mono text-sm">{item.value}</code>
+                    <button 
+                      onClick={() => copyToClipboard(item.value)}
+                      className="text-slate-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Copy"
+                    >
+                      📋
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
+            
             <button 
               onClick={() => setShowCredentials(false)}
-              className="btn-secondary w-full mt-4"
+              className="btn btn-secondary w-full mt-6"
             >
               Close
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Reset Confirmation Modal */}
-      {showResetConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="card w-full max-w-md">
-            <h3 className="font-semibold text-red-400 text-lg mb-4">⚠️ Reset Database</h3>
-            <p className="text-gray-300 mb-4">
-              This will <strong className="text-red-400">permanently delete all tables and data</strong> in your database. 
-              This action cannot be undone!
-            </p>
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setShowResetConfirm(false)}
-                className="btn-secondary flex-1"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleReset}
-                className="btn-danger flex-1"
-              >
-                Yes, Reset Database
-              </button>
-            </div>
           </div>
         </div>
       )}

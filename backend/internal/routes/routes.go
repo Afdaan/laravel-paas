@@ -105,6 +105,9 @@ func Setup(db *gorm.DB, cfg *config.Config) *fiber.App {
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
 	projects.Get("/:id/stats", projectHandler.Stats)
+	projects.Post("/:id/artisan", projectHandler.RunArtisan)
+	projects.Get("/:id/env", projectHandler.GetEnv)
+	projects.Put("/:id/env", projectHandler.UpdateEnv)
 
 	// -----------------------------
 	// Database Management Routes

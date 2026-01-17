@@ -57,6 +57,13 @@ function StudentProjectDetail() {
   const [activeTab, setActiveTab] = useState('workload')
   const logsEndRef = useRef(null)
   
+  // New features state
+  const [envContent, setEnvContent] = useState('')
+  const [consoleOutput, setConsoleOutput] = useState('')
+  const [consoleCommand, setConsoleCommand] = useState('')
+  const [isExecuting, setIsExecuting] = useState(false)
+  const [isSavingEnv, setIsSavingEnv] = useState(false)
+  
   // Modal State
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -75,7 +82,6 @@ function StudentProjectDetail() {
   useEffect(() => {
     fetchProject()
     const interval = setInterval(() => {
-    // ... existing polling logic ...
       if (project?.status === 'building' || activeTab === 'stats') {
         fetchProject()
         if (activeTab === 'stats') fetchStats()
@@ -92,6 +98,13 @@ function StudentProjectDetail() {
       return () => clearInterval(interval)
     }
   }, [activeTab, project])
+
+  // Fetch Env when tab is active
+  useEffect(() => {
+    if (activeTab === 'environment') {
+      fetchEnv()
+    }
+  }, [activeTab, id])
 
   const fetchProject = async () => {
     try {
@@ -123,6 +136,46 @@ function StudentProjectDetail() {
       setStats(response.data)
     } catch (error) {
       setStats(null)
+    }
+  }
+
+  const fetchEnv = async () => {
+    try {
+      const response = await projectsAPI.getEnv(id)
+      setEnvContent(response.data.content)
+    } catch (error) {
+      toast.error('Failed to load .env file')
+    }
+  }
+
+  const handleSaveEnv = async () => {
+    setIsSavingEnv(true)
+    try {
+      await projectsAPI.updateEnv(id, envContent)
+      toast.success('Environment variables updated')
+    } catch (error) {
+      toast.error('Failed to save .env file')
+    } finally {
+      setIsSavingEnv(false)
+    }
+  }
+
+  const handleConsoleSubmit = async (e) => {
+    e.preventDefault()
+    if (!consoleCommand.trim()) return
+
+    setIsExecuting(true)
+    setConsoleOutput(prev => prev + `\n$ php artisan ${consoleCommand}\n`)
+    
+    try {
+      const response = await projectsAPI.runArtisan(id, consoleCommand)
+      setConsoleOutput(prev => prev + response.data.output + '\n')
+      setConsoleCommand('')
+    } catch (error) {
+      const errOut = error.response?.data?.output || error.message
+      setConsoleOutput(prev => prev + `Error: ${errOut}\n`)
+    } finally {
+      setIsExecuting(false)
     }
   }
   
@@ -158,17 +211,13 @@ function StudentProjectDetail() {
         try {
           await projectsAPI.update(id, { php_version: newVersion })
           setProject(prev => ({ ...prev, php_version: newVersion, is_manual_version: true }))
-          
           toast((t) => (
             <div className="flex flex-col gap-2">
               <span className="font-semibold">PHP Version updated</span>
               <span className="text-xs">System will now rebuild your project with PHP {newVersion}</span>
             </div>
           ))
-          
-          // Trigger actual redeployment
           projectsAPI.redeploy(id).then(() => fetchProject())
-
         } catch (err) {
           toast.error('Failed to update PHP version')
         }
@@ -193,6 +242,11 @@ function StudentProjectDetail() {
         ).then(() => navigate('/projects'))
       }
     })
+  }
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
   }
   
   if (isLoading) {
@@ -295,12 +349,12 @@ function StudentProjectDetail() {
 
       {/* Tabs Layout */}
       <div>
-        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit mb-6">
-           {['workload', 'logs', 'settings'].map(tab => (
+        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit mb-6 overflow-x-auto">
+           {['workload', 'console', 'environment', 'logs', 'settings'].map(tab => (
              <button
                key={tab}
                onClick={() => setActiveTab(tab)}
-               className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${
+               className={`px-6 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
                  activeTab === tab 
                  ? 'bg-slate-700 text-white shadow-sm' 
                  : 'text-slate-400 hover:text-slate-200'
@@ -317,6 +371,11 @@ function StudentProjectDetail() {
           {/* Workload Tab */}
           {activeTab === 'workload' && (
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* ... existing Workload content ... */} 
+                {/* Re-inserting existing workload content for context, but truncated for brevity in replacement if needed. 
+                    However, since I'm replacing the whole component logic block, I should ensure I don't lose the existing Workload UI. 
+                    The user implementation will paste the full block.
+                */}
                 <div className="lg:col-span-2 space-y-6">
                    <div className="card p-0 overflow-hidden">
                       <div className="p-4 border-b border-slate-700 bg-slate-800/50">
@@ -358,6 +417,13 @@ function StudentProjectDetail() {
                             <div className="text-sm text-slate-300 break-all">{project.github_url}</div>
                          </div>
                          <div>
+                            <label className="text-xs text-slate-500 uppercase font-medium">Branch</label>
+                            <div className="flex items-center gap-2">
+                               <span className="i-lucide-git-branch text-slate-500"></span>
+                               <span className="text-sm text-white font-mono bg-slate-800 px-2 py-0.5 rounded">{project.branch || 'main'}</span>
+                            </div>
+                         </div>
+                         <div>
                             <label className="text-xs text-slate-500 uppercase font-medium">Laravel Version</label>
                             <div className="text-sm text-white">{project.laravel_version || 'Unknown'}</div>
                          </div>
@@ -365,6 +431,72 @@ function StudentProjectDetail() {
                    </div>
                 </div>
              </div>
+          )}
+
+          {/* Console Tab */}
+          {activeTab === 'console' && (
+            <div className="card p-0 overflow-hidden flex flex-col h-[600px]">
+              <div className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex gap-2">
+                   <div className="w-3 h-3 rounded-full bg-red-500"/>
+                   <div className="w-3 h-3 rounded-full bg-yellow-500"/>
+                   <div className="w-3 h-3 rounded-full bg-green-500"/>
+                </div>
+                <span className="text-xs text-slate-500 font-mono">php artisan runner</span>
+              </div>
+              <div className="flex-1 bg-black p-4 overflow-auto font-mono text-sm text-slate-300 whitespace-pre-wrap">
+                <div className="text-slate-500 mb-2"># enter artisan command without 'php artisan' prefix (e.g. 'migrate')</div>
+                {consoleOutput}
+                {isExecuting && <div className="text-primary-400 animate-pulse">Running...</div>}
+              </div>
+              <form onSubmit={handleConsoleSubmit} className="p-3 bg-slate-800 border-t border-slate-700 flex gap-2">
+                <div className="flex items-center px-3 bg-slate-900 rounded text-slate-400 font-mono text-sm select-none">
+                  php artisan
+                </div>
+                <input 
+                  type="text" 
+                  value={consoleCommand}
+                  onChange={(e) => setConsoleCommand(e.target.value)}
+                  placeholder="command..."
+                  className="flex-1 bg-transparent text-white font-mono text-sm focus:outline-none"
+                  autoFocus
+                />
+                <button 
+                  type="submit" 
+                  disabled={isExecuting || !consoleCommand.trim()}
+                  className="px-4 py-1.5 bg-primary-600 text-white text-xs font-medium rounded hover:bg-primary-500 disabled:opacity-50"
+                >
+                  Run
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Environment Tab */}
+          {activeTab === 'environment' && (
+            <div className="card p-0 overflow-hidden h-[600px] flex flex-col">
+               <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
+                  <h3 className="font-semibold text-white">Environment Variables (.env)</h3>
+                  <button 
+                    onClick={handleSaveEnv}
+                    disabled={isSavingEnv}
+                    className="btn btn-primary text-sm py-1.5"
+                  >
+                    {isSavingEnv ? 'Saving...' : 'Save Changes'}
+                  </button>
+               </div>
+               <div className="flex-1 relative">
+                 <textarea
+                   value={envContent}
+                   onChange={(e) => setEnvContent(e.target.value)}
+                   className="absolute inset-0 w-full h-full bg-slate-900 text-slate-300 font-mono text-sm p-4 focus:outline-none resize-none"
+                   spellCheck="false"
+                 />
+               </div>
+               <div className="p-2 bg-yellow-500/10 text-yellow-500 text-xs px-4 border-t border-slate-800">
+                  ⚠️ Changing environment variables may require a redeployment to take full effect.
+               </div>
+            </div>
           )}
 
           {/* Logs Tab */}
@@ -420,28 +552,55 @@ function StudentProjectDetail() {
 
                 <div className="card p-6">
                    <h3 className="font-semibold text-white mb-4">Database Credentials</h3>
-                   <div className="space-y-3">
-                      <div>
-                         <label className="text-xs text-slate-500 uppercase">Host</label>
-                         <div className="font-mono text-white bg-slate-900 px-2 py-1 rounded">mysql</div>
+                   <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="text-xs text-slate-500 uppercase font-medium">Host</label>
+                            <div className="flex items-center gap-2 mt-1">
+                               <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">paas-mysql</code>
+                               <button onClick={() => copyToClipboard('paas-mysql')} className="p-2 hover:bg-slate-800 rounded text-slate-400">
+                                  <span className="i-lucide-copy">📋</span>
+                               </button>
+                            </div>
+                         </div>
+                         <div>
+                            <label className="text-xs text-slate-500 uppercase font-medium">Port</label>
+                            <div className="flex items-center gap-2 mt-1">
+                               <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">3306</code>
+                            </div>
+                         </div>
                       </div>
+                      
                       <div>
-                         <label className="text-xs text-slate-500 uppercase">Database Name</label>
-                         <div className="font-mono text-white bg-slate-900 px-2 py-1 rounded">{project.database_name}</div>
+                         <label className="text-xs text-slate-500 uppercase font-medium">Database Name</label>
+                         <div className="flex items-center gap-2 mt-1">
+                            <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">{project.database_name}</code>
+                            <button onClick={() => copyToClipboard(project.database_name)} className="p-2 hover:bg-slate-800 rounded text-slate-400">
+                               <span className="i-lucide-copy">📋</span>
+                            </button>
+                         </div>
                       </div>
+
                       <div>
-                         <label className="text-xs text-slate-500 uppercase">User</label>
-                         <div className="font-mono text-white bg-slate-900 px-2 py-1 rounded">{project.database_name}</div>
+                         <label className="text-xs text-slate-500 uppercase font-medium">User</label>
+                         <div className="flex items-center gap-2 mt-1">
+                            <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">{project.database_name}</code>
+                            <button onClick={() => copyToClipboard(project.database_name)} className="p-2 hover:bg-slate-800 rounded text-slate-400">
+                               <span className="i-lucide-copy">📋</span>
+                            </button>
+                         </div>
                       </div>
+
                       <div>
-                         <label className="text-xs text-slate-500 uppercase">Password</label>
-                         <div className="font-mono text-white bg-slate-900 px-2 py-1 rounded">*** (Same as DB Name)</div>
+                         <label className="text-xs text-slate-500 uppercase font-medium">Password</label>
+                         <div className="flex items-center gap-2 mt-1">
+                            <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded tracking-widest">••••••••••••</code>
+                            <button onClick={() => copyToClipboard(project.database_name)} className="p-2 hover:bg-slate-800 rounded text-slate-400" title="Copy Password">
+                               <span className="i-lucide-copy">📋</span>
+                            </button>
+                         </div>
+                         <p className="text-xs text-slate-500 mt-1">Password is same as database name</p>
                       </div>
-                   </div>
-                   <div className="mt-4">
-                      <Link to={`/projects/${id}/database`} className="btn btn-secondary w-full justify-center">
-                         Open Database Manager
-                      </Link>
                    </div>
                 </div>
              </div>

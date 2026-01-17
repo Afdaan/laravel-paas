@@ -459,6 +459,46 @@ func parseMemoryBytes(memStr string) float64 {
 	}
 }
 
+// ExecLaravelCommand runs artisan commands inside container
+func (s *DockerService) ExecLaravelCommand(containerID, command string) (string, error) {
+	// Split command string into args to avoiding shell injection
+	// This assumes the command is a space-separated list of args for artisan
+	// e.g. "migrate --force" -> ["migrate", "--force"]
+	args := strings.Fields(command)
+	
+	dockerArgs := []string{"exec", containerID, "php", "artisan"}
+	dockerArgs = append(dockerArgs, args...)
+
+	cmd := exec.Command("docker", dockerArgs...)
+	
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		output := stdout.String() + "\n" + stderr.String()
+		return output, fmt.Errorf("command failed: %s", output)
+	}
+
+	return stdout.String(), nil
+}
+
+// GetEnvFile reads the .env file for a project
+func (s *DockerService) GetEnvFile(subdomain string) (string, error) {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+	content, err := os.ReadFile(filepath.Join(projectPath, ".env"))
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// SaveEnvFile updates the .env file for a project
+func (s *DockerService) SaveEnvFile(subdomain, content string) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(content), 0644)
+}
+
 // ===========================================
 // Helpers
 // ===========================================

@@ -120,6 +120,15 @@ export const projectsAPI = {
   
   stats: (id) => 
     api.get(`/projects/${id}/stats`),
+
+  runArtisan: (id, command) =>
+    api.post(`/projects/${id}/artisan`, { command }),
+
+  getEnv: (id) =>
+    api.get(`/projects/${id}/env`),
+
+  updateEnv: (id, content) =>
+    api.put(`/projects/${id}/env`, { content }),
   
   // Admin endpoints
   listAll: (params = {}) => 
