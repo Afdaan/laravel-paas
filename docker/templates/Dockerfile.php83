@@ -80,7 +80,7 @@ RUN mkdir -p public/css public/js public/images \
     && echo "// Laravel JS" > public/js/app.js
 
 # Create directories that might not exist and set permissions
-RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache /var/log/supervisor \
+RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 755 storage bootstrap/cache \
     && chmod -R 775 storage/logs storage/framework
