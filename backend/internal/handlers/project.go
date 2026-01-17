@@ -38,6 +38,7 @@ func NewProjectHandler(db *gorm.DB, cfg *config.Config) *ProjectHandler {
 type CreateProjectRequest struct {
 	Name         string `json:"name"`
 	GithubURL    string `json:"github_url"`
+	Branch       string `json:"branch"`
 	DatabaseName string `json:"database_name"`
 }
 
@@ -262,6 +263,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		UserID:       userID,
 		Name:         req.Name,
 		GithubURL:    req.GithubURL,
+		Branch:       branch,
 		Subdomain:    subdomain,
 		DatabaseName: req.DatabaseName,
 		Status:       models.StatusPending,
