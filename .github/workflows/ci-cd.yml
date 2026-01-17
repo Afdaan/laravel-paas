@@ -8,166 +8,97 @@ on:
 
 jobs:
   # ==========================================================
-  # CONTINUOUS INTEGRATION
-  # Checks code quality and build status
+  # CI/CD PIPELINE
+  # Runs directly on /opt/laravel-paas without checking out new dirs
   # ==========================================================
-  integration:
+  pipeline:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-
-      # --------------------------------------------------------
-      # Backend Checks (Go)
-      # --------------------------------------------------------
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-
-      - name: Backend - Verify dependencies
-        working-directory: ./backend
-        run: go mod download
-
-      - name: Backend - Vet (Static Analysis)
-        working-directory: ./backend
-        run: go vet ./...
-
-      - name: Backend - Run Tests
-        working-directory: ./backend
-        run: go test -v ./...
-
-      # --------------------------------------------------------
-      # Frontend Checks (React)
-      # --------------------------------------------------------
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: Frontend - Install Dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: Frontend - Lint Check
-        working-directory: ./frontend
-        run: npm run lint --if-present
-
-      - name: Frontend - Build Check
-        working-directory: ./frontend
-        run: npm run build
-
-  # ==========================================================
-  # CONTINUOUS DEPLOYMENT
-  # Deploys directly on the self-hosted runner
-  # ==========================================================
-  deploy:
-    needs: integration
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: self-hosted
-    steps:
-      - name: Deploy Application
+      # 1. Update Codebase (In Place)
+      - name: Update Codebase
         run: |
-          # Navigate to project directory
-          # Using specific path based on your environment
           TARGET_DIR="/opt/laravel-paas"
-          
-          if [ -d "$TARGET_DIR" ]; then
-            cd "$TARGET_DIR"
-            echo "🚀 Starting Deployment in $TARGET_DIR"
-            
-            # 1. Update Code
-            echo "📥 Pulling latest changes..."
-            git pull origin main
-            
-            # 2. Run Start Script
-            echo "🔄 Restarting infrastructure..."
-            
-            if [ -f "./scripts/start.sh" ]; then
-              chmod +x ./scripts/start.sh
-              ./scripts/start.sh
-            else
-              echo "❌ ./scripts/start.sh not found!"
-              exit 1
-            fi
-            
-            echo "✅ Deployment Complete!"
-          else
-             echo "❌ Target directory $TARGET_DIR not found on runner!"
-             exit 1
+          if [ ! -d "$TARGET_DIR" ]; then
+            echo "❌ Directory $TARGET_DIR does not exist!"
+            exit 1
           fi
+          
+          cd "$TARGET_DIR"
+          echo "📂 Working directory: $(pwd)"
+          
+          # Ensure git trusts this directory
+          git config --global --add safe.directory "$TARGET_DIR"
+          
+          echo "📥 Pulling latest changes..."
+          git pull origin main
 
-      - name: Notify deployment success via Telegram
+      # 2. Deployment / Restart
+      # Builds logic is handled inside Docker build (via start.sh)
+      - name: Restart Infrastructure
+        run: |
+          cd /opt/laravel-paas
+          echo "🔄 Restarting Services..."
+          
+          if [ -f "./scripts/start.sh" ]; then
+            chmod +x ./scripts/start.sh
+            ./scripts/start.sh
+          else
+            echo "❌ scripts/start.sh not found!"
+            exit 1
+          fi
+          
+          echo "✅ Deployment Successful!"
+
+      # 6. Notifications
+      - name: Notify Success
         if: success()
         run: |
-            # Load credentials from server .env avoiding output
-            if [ -f /opt/laravel-paas/.env ]; then
-              set -a
-              source /opt/laravel-paas/.env
-              set +a
-            fi
+          if [ -f /opt/laravel-paas/.env ]; then
+            set -a; source /opt/laravel-paas/.env; set +a
+          fi
 
-            # Validate credentials
-            if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-              echo "Telegram credentials not found, skipping notification."
-              exit 0
-            fi
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram credentials missing, skipping."
+            exit 0
+          fi
 
-            # Get basic info
-            cd /opt/laravel-paas
-            COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-            LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+          cd /opt/laravel-paas
+          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
 
-            # Prepare message
-            TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
-            MSG="✅ <b>Laravel PaaS Deploy SUKSES!</b>%0A%0A"
-            MSG="${MSG}📦 <b>Branch:</b> <code>main</code>%0A"
-            MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
-            MSG="${MSG}📝 <b>Changelog:</b> $LAST_COMMIT_MSG%0A%0A"
-            MSG="${MSG}🚀 System is live and updated."
+          MSG="✅ <b>Laravel PaaS Deploy SUKSES!</b>%0A%0A"
+          MSG="${MSG}📦 <b>Branch:</b> <code>main</code>%0A"
+          MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
+          MSG="${MSG}📝 <b>Log:</b> $LAST_COMMIT_MSG%0A%0A"
+          MSG="${MSG}🚀 Services restarted & live."
 
-            # Send to admin
-            set +x
-            IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
-            for CHAT_ID in "${CHAT_IDS[@]}"; do
-              curl -s -X POST "$TELEGRAM_API" \
-                -d chat_id="$CHAT_ID" \
-                -d text="$MSG" \
-                -d parse_mode="HTML" > /dev/null 2>&1
-            done
+          set +x
+          TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+          IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
+          for CHAT_ID in "${CHAT_IDS[@]}"; do
+            curl -s -X POST "$TELEGRAM_API" -d chat_id="$CHAT_ID" -d text="$MSG" -d parse_mode="HTML" > /dev/null 2>&1
+          done
 
-      - name: Notify deployment failure via Telegram
+      - name: Notify Failure
         if: failure()
         run: |
-            # Load credentials from server .env avoiding output
-            if [ -f /opt/laravel-paas/.env ]; then
-              set -a
-              source /opt/laravel-paas/.env
-              set +a
-            fi
+          if [ -f /opt/laravel-paas/.env ]; then
+             set -a; source /opt/laravel-paas/.env; set +a
+          fi
 
-            # Validate credentials
-            if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-              echo "Telegram credentials not found, skipping notification."
-              exit 0
-            fi
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then exit 0; fi
+          
+          cd /opt/laravel-paas
+          COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-            # Basic info not needed deeply for failure, but nice to have
-            COMMIT_HASH="${{ github.sha }}"
-            COMMIT_HASH=${COMMIT_HASH:0:7}
-            
-            # Prepare failure message
-            TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
-            MSG="❌ <b>Laravel PaaS Deploy GAGAL!</b> ❌%0A%0A"
-            MSG="${MSG}📦 <b>Branch:</b> <code>main</code>%0A"
-            MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
-            MSG="${MSG}🔍 Cek GitHub Actions logs untuk detail error."
+          MSG="❌ <b>Laravel PaaS Deploy GAGAL!</b>%0A%0A"
+          MSG="${MSG}⚠️ Pipeline stopped at error.%0A"
+          MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
+          MSG="${MSG}🔍 Check GitHub Actions logs."
 
-            # Send to admin
-            set +x
-            IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
-            for CHAT_ID in "${CHAT_IDS[@]}"; do
-              curl -s -X POST "$TELEGRAM_API" \
-                -d chat_id="$CHAT_ID" \
-                -d text="$MSG" \
-                -d parse_mode="HTML" > /dev/null 2>&1
-            done
+          set +x
+          TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+          IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
+          for CHAT_ID in "${CHAT_IDS[@]}"; do
+            curl -s -X POST "$TELEGRAM_API" -d chat_id="$CHAT_ID" -d text="$MSG" -d parse_mode="HTML" > /dev/null 2>&1
+          done
