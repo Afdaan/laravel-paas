@@ -274,16 +274,11 @@ stdout_logfile_maxbytes=0
 		}
 	}
 
-	// Generate unique container name for zero-downtime deployment
+	// Generate unique container name
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
-	
-	// Router name: unique per deployment to avoid collision
-	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
-	// Service name: consistent per project for traffic switching
-	serviceName := project.Subdomain
 
-	// Run container with Traefik labels for blue-green deployment
+	// Run container with Traefik labels
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
@@ -292,22 +287,11 @@ stdout_logfile_maxbytes=0
 		// Resource limits
 		"--cpus", "0.5",
 		"--memory", "512m",
-		
-		// Traefik labels for blue-green deployment
+		// Traefik labels for automatic SSL
 		"--label", "traefik.enable=true",
-		// Router: unique per deployment
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
-			routerName, project.Subdomain, projectDomain),
-		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
-		
-		// Service: shared across deployments for traffic switching
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
-		
-		// Health check configuration
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.timeout=1s", serviceName),
-		
+			project.Subdomain, project.Subdomain, projectDomain),
+		"--label", "traefik.http.services." + project.Subdomain + ".loadbalancer.server.port=80",
 		imageName,
 	}
 

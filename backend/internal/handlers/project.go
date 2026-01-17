@@ -7,6 +7,7 @@ package handlers
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -345,15 +346,16 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	}
 
 	
-	// Blue-Green Deployment: Keep old container running
-	// New container will share the same Traefik service, traffic will auto-switch
+	// Stop old container FIRST to avoid Traefik router collision
 	var oldContainerID *string
 	if project.ContainerID != nil {
 		oldHelp := *project.ContainerID
 		oldContainerID = &oldHelp
+		// Stop old container to free up router name
+		exec.Command("docker", "stop", *oldContainerID).Run()
 	}
 
-	// Step 4: Build and run NEW container (old one still running)
+	// Step 4: Build and run container
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
 	
@@ -362,26 +364,10 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 
 	if err != nil {
 		h.updateProjectError(project, "Failed to deploy container: "+err.Error())
-		// No rollback needed - old container still running
-		return
-	}
-
-	// Wait for new container to become healthy before removing old one
-	// Poll health check for up to 60 seconds (30 attempts * 2s)
-	healthy := false
-	for i := 0; i < 30; i++ {
-		if h.dockerService.IsContainerHealthy(containerID) {
-			healthy = true
-			break
+		// Try to restart old container if deployment failed
+		if oldContainerID != nil {
+			exec.Command("docker", "start", *oldContainerID).Run()
 		}
-		time.Sleep(2 * time.Second)
-	}
-
-	if !healthy {
-		// New container failed health check, rollback
-		h.updateProjectError(project, "Container failed health check")
-		h.dockerService.RemoveContainer(containerID)
-		// Old container still running - no downtime!
 		return
 	}
 
@@ -391,11 +377,10 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		"container_id": containerID,
 	})
 
-	// Cleanup old container now that new one is healthy and serving traffic
+	// Cleanup old container after successful deployment
 	if oldContainerID != nil {
 		go func() {
-			// Small delay to ensure Traefik fully switched traffic
-			time.Sleep(5 * time.Second) 
+			time.Sleep(10 * time.Second) 
 			h.dockerService.RemoveContainer(*oldContainerID)
 		}()
 	}
