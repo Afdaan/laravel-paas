@@ -136,6 +136,7 @@ docker run -d \
     -e REDIS_PASSWORD=$REDIS_PASSWORD \
     -e JWT_SECRET=$JWT_SECRET \
     -e BASE_DOMAIN=$BASE_DOMAIN \
+    -e PROJECT_DOMAIN=${PROJECT_DOMAIN:-$BASE_DOMAIN} \
     -e DOCKER_NETWORK=paas-network \
     --label "traefik.enable=true" \
     --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
