@@ -10,9 +10,10 @@ import toast from 'react-hot-toast'
 import { databaseAPI, projectsAPI } from '../../services/api'
 import ConfirmationModal from '../../components/ConfirmationModal'
 
-export default function DatabaseManager() {
-  const { id } = useParams()
+export default function DatabaseManager({ embedded = false, projectId = null }) {
+  const params = useParams()
   const navigate = useNavigate()
+  const id = projectId || params.id
   const [project, setProject] = useState(null)
   const [activeTab, setActiveTab] = useState('tables')
   const [tables, setTables] = useState([])
@@ -187,37 +188,39 @@ export default function DatabaseManager() {
         {...confirmModal}
       />
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Link to={`/projects/${id}`} className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm">
-              <span className="i-lucide-arrow-left">←</span> Back to Project
-            </Link>
+      {/* Header - Only show if not embedded */}
+      {!embedded && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-6">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Link to={`/projects/${id}`} className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm">
+                <span className="i-lucide-arrow-left">←</span> Back to Project
+              </Link>
+            </div>
+            <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+              <span className="i-lucide-database text-primary-500"></span>
+              Database Manager
+            </h1>
+            <p className="text-slate-400 mt-1 font-mono text-sm">
+              {project?.database_name}
+            </p>
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <span className="i-lucide-database text-primary-500"></span>
-            Database Manager
-          </h1>
-          <p className="text-slate-400 mt-1 font-mono text-sm">
-            {project?.database_name}
-          </p>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => setShowCredentials(true)}
+              className="btn btn-secondary flex items-center gap-2"
+            >
+              <span className="i-lucide-key"></span> Credentials
+            </button>
+            <button 
+              onClick={confirmReset}
+              className="btn btn-danger flex items-center gap-2"
+            >
+              <span className="i-lucide-trash"></span> Reset DB
+            </button>
+          </div>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setShowCredentials(true)}
-            className="btn btn-secondary flex items-center gap-2"
-          >
-            <span className="i-lucide-key"></span> Credentials
-          </button>
-          <button 
-            onClick={confirmReset}
-            className="btn btn-danger flex items-center gap-2"
-          >
-            <span className="i-lucide-trash"></span> Reset DB
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Tabs */}
       <div>

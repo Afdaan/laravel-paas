@@ -21,7 +21,7 @@ import DatabaseManager from './pages/student/DatabaseManager'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminUsers from './pages/admin/Users'
 import AdminProjects from './pages/admin/Projects'
-import AdminSettings from './pages/admin/Settings'
+import StudentDatabases from './pages/student/Databases'
 
 // Protected Route Component
 function ProtectedRoute({ children, requireAdmin = false }) {
@@ -72,6 +72,7 @@ function App() {
         <Route path="projects" element={<StudentProjects />} />
         <Route path="projects/new" element={<StudentNewProject />} />
         <Route path="projects/:id" element={<StudentProjectDetail />} />
+        <Route path="databases" element={<StudentDatabases />} />
         <Route path="projects/:id/database" element={<DatabaseManager />} />
       </Route>
       

@@ -45,6 +45,12 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   ),
+  Database: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+        d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+    </svg>
+  ),
 }
 
 function DashboardLayout({ isAdmin = false }) {
@@ -67,6 +73,7 @@ function DashboardLayout({ isAdmin = false }) {
     : [
         { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
         { to: '/projects', icon: Icons.Projects, label: 'My Projects' },
+        { to: '/databases', icon: Icons.Database, label: 'Databases' },
       ]
   
   return (

@@ -45,6 +45,7 @@ function MetricCard({ title, value, subtext, color = 'primary' }) {
   )
 }
 
+import DatabaseManager from './DatabaseManager'
 import ConfirmationModal from '../../components/ConfirmationModal'
 
 function StudentProjectDetail() {
@@ -501,13 +502,9 @@ function StudentProjectDetail() {
 
           {/* Database Tab */}
           {activeTab === 'database' && (
-            <div className="card p-0 overflow-hidden h-[800px]">
-              <iframe 
-                src={`/projects/${id}/database`} 
-                title="Database Manager"
-                className="w-full h-full border-none bg-slate-900"
-              />
-            </div>
+             <div className="min-h-[600px]">
+                <DatabaseManager embedded={true} projectId={id} />
+             </div>
           )}
 
           {/* Logs Tab */}
