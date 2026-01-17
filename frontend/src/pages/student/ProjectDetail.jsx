@@ -226,6 +226,25 @@ function StudentProjectDetail() {
       }
     })
   }
+
+  const handleUpdateQueue = async (enabled) => {
+    openConfirm({
+      title: `${enabled ? 'Enable' : 'Disable'} Queue Worker?`,
+      message: `Changing queue worker configuration requires a complete rebuild of your container. Your site will be redeployed immediately.`,
+      type: 'warning',
+      confirmText: enabled ? 'Enable & Redeploy' : 'Disable & Redeploy',
+      onConfirm: async () => {
+        try {
+          await projectsAPI.update(id, { queue_enabled: enabled })
+          setProject(prev => ({ ...prev, queue_enabled: enabled }))
+          toast.success(`Queue Worker ${enabled ? 'Enabled' : 'Disabled'}`)
+          projectsAPI.redeploy(id).then(() => fetchProject())
+        } catch (err) {
+          toast.error('Failed to update settings')
+        }
+      }
+    })
+  }
   
   const handleDelete = async () => {
     openConfirm({
@@ -562,6 +581,25 @@ function StudentProjectDetail() {
                       <p className="text-xs text-slate-500 mt-2">
                          Changing the PHP version requires a redeployment.
                       </p>
+                   </div>
+                </div>
+
+                <div className="card p-6">
+                   <h3 className="font-semibold text-white mb-4">Background Worker</h3>
+                   <div>
+                      <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm text-slate-400">Queue Worker Status</label>
+                          <button 
+                             onClick={() => handleUpdateQueue(!project.queue_enabled)}
+                             className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors border-none focus:ring-0 ${project.queue_enabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                          >
+                             <div className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${project.queue_enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                          </button>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-3 space-y-1">
+                         <p>Activating this runs <code>php artisan queue:work</code> (database driver).</p>
+                         <p className="text-amber-500/80">⚠️ Changing this triggers a redeploy.</p>
+                      </div>
                    </div>
                 </div>
 

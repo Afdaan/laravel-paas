@@ -136,7 +136,8 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 // UpdateProjectRequest represents project update payload
 type UpdateProjectRequest struct {
-	PHPVersion string `json:"php_version"`
+	PHPVersion   string `json:"php_version"`
+	QueueEnabled *bool  `json:"queue_enabled"`
 }
 
 // Update modifies project settings
@@ -177,6 +178,10 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 	if req.PHPVersion != "" {
 		updates["php_version"] = req.PHPVersion
 		updates["is_manual_version"] = true
+	}
+
+	if req.QueueEnabled != nil {
+		updates["queue_enabled"] = *req.QueueEnabled
 	}
 
 	if len(updates) > 0 {
