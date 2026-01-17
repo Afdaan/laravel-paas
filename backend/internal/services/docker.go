@@ -274,24 +274,29 @@ stdout_logfile_maxbytes=0
 		}
 	}
 
-	// Generate unique container name
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
+	
+	// Blue-green deployment: unique router per deployment, shared service for traffic switching
+	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
+	serviceName := project.Subdomain
 
-	// Run container with Traefik labels
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
 		"--network", s.cfg.DockerNetwork,
 		"--restart", "unless-stopped",
-		// Resource limits
 		"--cpus", "0.5",
 		"--memory", "512m",
-		// Traefik labels for automatic SSL
+		
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
-			project.Subdomain, project.Subdomain, projectDomain),
-		"--label", "traefik.http.services." + project.Subdomain + ".loadbalancer.server.port=80",
+			routerName, project.Subdomain, projectDomain),
+		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
+		
 		imageName,
 	}
 

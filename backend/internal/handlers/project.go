@@ -7,7 +7,6 @@ package handlers
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -346,41 +345,46 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	}
 
 	
-	// Stop old container FIRST to avoid Traefik router collision
 	var oldContainerID *string
 	if project.ContainerID != nil {
 		oldHelp := *project.ContainerID
 		oldContainerID = &oldHelp
-		// Stop old container to free up router name
-		exec.Command("docker", "stop", *oldContainerID).Run()
 	}
 
-	// Step 4: Build and run container
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
 	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
 	
-	// Always prune images after a build attempt to clean up <none> images
 	go h.dockerService.PruneImages()
 
 	if err != nil {
 		h.updateProjectError(project, "Failed to deploy container: "+err.Error())
-		// Try to restart old container if deployment failed
-		if oldContainerID != nil {
-			exec.Command("docker", "start", *oldContainerID).Run()
-		}
 		return
 	}
 
-	// Update project as running with new container ID
+	// Wait for health check (max 60s)
+	healthy := false
+	for i := 0; i < 30; i++ {
+		if h.dockerService.IsContainerHealthy(containerID) {
+			healthy = true
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	if !healthy {
+		h.updateProjectError(project, "Container failed health check")
+		h.dockerService.RemoveContainer(containerID)
+		return
+	}
+
 	h.db.Model(project).Updates(map[string]interface{}{
 		"status":       models.StatusRunning,
 		"container_id": containerID,
 	})
 
-	// Cleanup old container after successful deployment
 	if oldContainerID != nil {
 		go func() {
-			time.Sleep(10 * time.Second) 
+			time.Sleep(5 * time.Second) 
 			h.dockerService.RemoveContainer(*oldContainerID)
 		}()
 	}
