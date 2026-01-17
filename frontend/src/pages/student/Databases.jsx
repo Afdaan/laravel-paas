@@ -21,7 +21,7 @@ export default function Databases() {
 
   const fetchProjects = async () => {
     try {
-      const response = await projectsAPI.list()
+      const response = await projectsAPI.listOwn()
       const data = response.data.data || []
       setProjects(data)
       // Auto-select first project if available
