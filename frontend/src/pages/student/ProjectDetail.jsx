@@ -322,7 +322,7 @@ function StudentProjectDetail() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
          <MetricCard 
             title="CPU Usage" 
             value={stats ? `${stats.cpu_percent.toFixed(1)}%` : '0%'} 
@@ -346,6 +346,12 @@ function StudentProjectDetail() {
             value="MySQL" 
             subtext={project.database_name}
             color="primary"
+         />
+         <MetricCard 
+            title="Queue Worker" 
+            value={project.queue_enabled ? 'Active' : 'Disabled'} 
+            subtext={project.queue_enabled ? 'Database Driver' : 'Sync Driver'}
+            color={project.queue_enabled ? 'emerald' : 'primary'}
          />
       </div>
 

@@ -221,6 +221,29 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	copyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"),
 		filepath.Join(projectPath, "docker", "supervisord.conf"))
 
+	// Append Config for Queue Worker if enabled
+	if project.QueueEnabled {
+		workerConfig := `
+[program:laravel-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /var/www/html/artisan queue:work database --sleep=3 --tries=3
+autostart=true
+autorestart=true
+user=www-data
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/var/www/html/storage/logs/worker.log
+`
+		f, err := os.OpenFile(filepath.Join(projectPath, "docker", "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
+		if err == nil {
+			if _, err := f.WriteString(workerConfig); err != nil {
+				f.Close()
+				return "", fmt.Errorf("failed to append supervisor config: %w", err)
+			}
+			f.Close()
+		}
+	}
+
 	// Create .env file for Laravel
 	if err := s.createEnvFile(project, projectPath, projectDomain); err != nil {
 		return "", fmt.Errorf("failed to create .env: %w", err)
@@ -322,7 +345,15 @@ QUEUE_CONNECTION=sync
 		project.DatabaseName,
 		project.DatabaseName,
 		project.DatabaseName,
+		project.DatabaseName,
 	)
+	
+	// Set QUEUE_CONNECTION dynamically
+	queueConn := "sync"
+	if project.QueueEnabled {
+		queueConn = "database"
+	}
+	envContent = strings.Replace(envContent, "QUEUE_CONNECTION=sync", "QUEUE_CONNECTION="+queueConn, 1)
 
 	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(envContent), 0644)
 }

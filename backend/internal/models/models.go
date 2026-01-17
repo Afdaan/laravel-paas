@@ -73,6 +73,7 @@ type Project struct {
 	LaravelVersion string `gorm:"size:20" json:"laravel_version,omitempty"`
 	PHPVersion     string `gorm:"size:20" json:"php_version,omitempty"`
 	IsManualVersion bool  `gorm:"default:false" json:"is_manual_version"`
+	QueueEnabled    bool  `gorm:"default:false" json:"queue_enabled"` // Enables worker process
 	
 	// Resource limits (override defaults)
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`

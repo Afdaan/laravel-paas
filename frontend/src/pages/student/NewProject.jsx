@@ -14,12 +14,17 @@ function StudentNewProject() {
     name: '',
     github_url: '',
     branch: '',
+    branch: '',
     database_name: '',
+    queue_enabled: false,
   })
   
   const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    const { name, value, type, checked } = e.target
+    setFormData(prev => ({ 
+        ...prev, 
+        [name]: type === 'checkbox' ? checked : value 
+    }))
     
     // Auto-generate database name from project name
     if (name === 'name') {
@@ -136,6 +141,27 @@ function StudentNewProject() {
           <p className="text-sm text-slate-500 mt-1">
             Lowercase letters, numbers, and underscores only
           </p>
+        </div>
+
+        {/* Queue Worker Checkbox */}
+        <div className="flex items-start gap-3 p-4 bg-slate-800 rounded-lg border border-slate-700">
+           <div className="flex items-center h-5">
+              <input 
+                 id="queue_enabled"
+                 name="queue_enabled"
+                 type="checkbox"
+                 checked={formData.queue_enabled}
+                 onChange={handleChange}
+                 className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500 focus:ring-offset-slate-800"
+              />
+           </div>
+           <div>
+              <label htmlFor="queue_enabled" className="block text-sm font-medium text-white">Enable Queue Worker (Optional)</label>
+              <p className="text-sm text-slate-400">
+                 Automatically run <code>php artisan queue:work</code> using <strong>database</strong> driver. 
+                 <span className="block text-amber-500 text-xs mt-1">Make sure to run <code>php artisan queue:table && php artisan migrate</code> in your project.</span>
+              </p>
+           </div>
         </div>
         
         {/* Info Box */}

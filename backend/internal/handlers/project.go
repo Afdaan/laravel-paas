@@ -42,6 +42,7 @@ type CreateProjectRequest struct {
 	GithubURL    string `json:"github_url"`
 	Branch       string `json:"branch"`
 	DatabaseName string `json:"database_name"`
+	QueueEnabled bool   `json:"queue_enabled"`
 }
 
 // ListOwn returns user's own projects
@@ -269,6 +270,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		Subdomain:    subdomain,
 		DatabaseName: req.DatabaseName,
 		Status:       models.StatusPending,
+		QueueEnabled: req.QueueEnabled,
 	}
 
 	if err := h.db.Create(&project).Error; err != nil {
