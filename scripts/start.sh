@@ -61,22 +61,25 @@ docker run -d \
     -v paas-mysql-data:/var/lib/mysql \
     mariadb:10.11
 
-# Start Redis
-echo -e "${YELLOW}Starting Redis...${NC}"
-docker rm -f paas-redis 2>/dev/null || true
-
-# Check if REDIS_PASSWORD is set
-REDIS_CMD=""
-if [ ! -z "$REDIS_PASSWORD" ]; then
-    REDIS_CMD="redis-server --requirepass $REDIS_PASSWORD"
-fi
-
 docker run -d \
     --name paas-redis \
     --network paas-network \
     --restart unless-stopped \
     -v paas-redis-data:/data \
-    redis:alpine $REDIS_CMD
+
+# Use an array for optional command arguments
+echo -e "${YELLOW}Starting Redis...${NC}"
+docker rm -f paas-redis 2>/dev/null || true
+REDIS_ARGS=()
+if [ ! -z "$REDIS_PASSWORD" ]; then
+    REDIS_ARGS=("redis-server" "--requirepass" "$REDIS_PASSWORD")
+fi
+docker run -d \
+    --name paas-redis \
+    --network paas-network \
+    --restart unless-stopped \
+    -v paas-redis-data:/data \
+    redis:alpine "${REDIS_ARGS[@]}"
 
 # Start Traefik
 echo -e "${YELLOW}Starting Traefik...${NC}"
@@ -84,18 +87,13 @@ docker rm -f paas-traefik 2>/dev/null || true
 
 # Check if traefik config exists
 
-    # Use an array for optional command arguments
-REDIS_ARGS=()
-if [ ! -z "$REDIS_PASSWORD" ]; then
-    REDIS_ARGS=("redis-server" "--requirepass" "$REDIS_PASSWORD")
-fi
 
 
 # Generate dynamic.yml from template with BASE_DOMAIN
 echo -e "${YELLOW}Generating Traefik dynamic config...${NC}"
 if [ -f "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" ]; then
     sed "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
-    redis:alpine "${REDIS_ARGS[@]}"
+        "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" > \
         "${PROJECT_ROOT}/docker/traefik/dynamic.yml"
     echo -e "${GREEN}✓ Generated dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN${NC}"
 else
