@@ -56,6 +56,8 @@ docker run -d \
     --restart unless-stopped \
     -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
     -e MYSQL_DATABASE=$MYSQL_DATABASE \
+    -e MYSQL_USER=$MYSQL_USER \
+    -e MYSQL_PASSWORD=$MYSQL_PASSWORD \
     -v paas-mysql-data:/var/lib/mysql \
     mariadb:10.11
 
@@ -81,16 +83,19 @@ echo -e "${YELLOW}Starting Traefik...${NC}"
 docker rm -f paas-traefik 2>/dev/null || true
 
 # Check if traefik config exists
-if [ ! -f "${PROJECT_ROOT}/docker/traefik/traefik.yml" ]; then
-    echo -e "${RED}Error: traefik.yml not found at ${PROJECT_ROOT}/docker/traefik/traefik.yml${NC}"
-    exit 1
+
+    # Use an array for optional command arguments
+REDIS_ARGS=()
+if [ ! -z "$REDIS_PASSWORD" ]; then
+    REDIS_ARGS=("redis-server" "--requirepass" "$REDIS_PASSWORD")
 fi
+
 
 # Generate dynamic.yml from template with BASE_DOMAIN
 echo -e "${YELLOW}Generating Traefik dynamic config...${NC}"
 if [ -f "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" ]; then
     sed "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
-        "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" > \
+    redis:alpine "${REDIS_ARGS[@]}"
         "${PROJECT_ROOT}/docker/traefik/dynamic.yml"
     echo -e "${GREEN}✓ Generated dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN${NC}"
 else

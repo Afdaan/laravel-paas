@@ -2,43 +2,40 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   # ==========================================================
   # CI/CD PIPELINE
-  # Runs directly on /opt/laravel-paas without checking out new dirs
+  # Uses variables for directory and branch
   # ==========================================================
   pipeline:
     runs-on: self-hosted
+    env:
+      TARGET_DIR: /opt/laravel-paas
+      BRANCH: main
     steps:
       # 1. Update Codebase (In Place)
       - name: Update Codebase
         run: |
-          TARGET_DIR="/opt/laravel-paas"
           if [ ! -d "$TARGET_DIR" ]; then
             echo "❌ Directory $TARGET_DIR does not exist!"
             exit 1
           fi
-          
           cd "$TARGET_DIR"
           echo "📂 Working directory: $(pwd)"
-          
           # Ensure git trusts this directory
           git config --global --add safe.directory "$TARGET_DIR"
-          
           echo "📥 Pulling latest changes..."
-          git pull origin main
+          git pull origin "$BRANCH"
 
       # 2. Deployment / Restart
-      # Builds logic is handled inside Docker build (via start.sh)
       - name: Restart Infrastructure
         run: |
-          cd /opt/laravel-paas
+          cd "$TARGET_DIR"
           echo "🔄 Restarting Services..."
-          
           if [ -f "./scripts/start.sh" ]; then
             chmod +x ./scripts/start.sh
             ./scripts/start.sh
@@ -46,32 +43,27 @@ jobs:
             echo "❌ scripts/start.sh not found!"
             exit 1
           fi
-          
           echo "✅ Deployment Successful!"
 
-      # 6. Notifications
+      # 3. Notifications
       - name: Notify Success
         if: success()
         run: |
-          if [ -f /opt/laravel-paas/.env ]; then
-            set -a; source /opt/laravel-paas/.env; set +a
+          if [ -f "$TARGET_DIR/.env" ]; then
+            set -a; source "$TARGET_DIR/.env"; set +a
           fi
-
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
             echo "Telegram credentials missing, skipping."
             exit 0
           fi
-
-          cd /opt/laravel-paas
+          cd "$TARGET_DIR"
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
           LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
-
           MSG="✅ <b>Laravel PaaS Deploy SUKSES!</b>%0A%0A"
-          MSG="${MSG}📦 <b>Branch:</b> <code>main</code>%0A"
+          MSG="${MSG}📦 <b>Branch:</b> <code>$BRANCH</code>%0A"
           MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
           MSG="${MSG}📝 <b>Log:</b> $LAST_COMMIT_MSG%0A%0A"
           MSG="${MSG}🚀 Services restarted & live."
-
           set +x
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
           IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
@@ -82,20 +74,16 @@ jobs:
       - name: Notify Failure
         if: failure()
         run: |
-          if [ -f /opt/laravel-paas/.env ]; then
-             set -a; source /opt/laravel-paas/.env; set +a
+          if [ -f "$TARGET_DIR/.env" ]; then
+             set -a; source "$TARGET_DIR/.env"; set +a
           fi
-
           if [ -z "$TELEGRAM_BOT_TOKEN" ]; then exit 0; fi
-          
-          cd /opt/laravel-paas
+          cd "$TARGET_DIR"
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-
           MSG="❌ <b>Laravel PaaS Deploy GAGAL!</b>%0A%0A"
           MSG="${MSG}⚠️ Pipeline stopped at error.%0A"
           MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
           MSG="${MSG}🔍 Check GitHub Actions logs."
-
           set +x
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
           IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
