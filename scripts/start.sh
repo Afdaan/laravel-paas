@@ -61,25 +61,29 @@ docker run -d \
     -v paas-mysql-data:/var/lib/mysql \
     mariadb:10.11
 
-docker run -d \
-    --name paas-redis \
-    --network paas-network \
-    --restart unless-stopped \
-    -v paas-redis-data:/data \
 
-# Use an array for optional command arguments
+# Start Redis
 echo -e "${YELLOW}Starting Redis...${NC}"
 docker rm -f paas-redis 2>/dev/null || true
 REDIS_ARGS=()
 if [ ! -z "$REDIS_PASSWORD" ]; then
     REDIS_ARGS=("redis-server" "--requirepass" "$REDIS_PASSWORD")
 fi
-docker run -d \
-    --name paas-redis \
-    --network paas-network \
-    --restart unless-stopped \
-    -v paas-redis-data:/data \
-    redis:alpine "${REDIS_ARGS[@]}"
+if [ ${#REDIS_ARGS[@]} -eq 0 ]; then
+    docker run -d \
+        --name paas-redis \
+        --network paas-network \
+        --restart unless-stopped \
+        -v paas-redis-data:/data \
+        redis:alpine
+else
+    docker run -d \
+        --name paas-redis \
+        --network paas-network \
+        --restart unless-stopped \
+        -v paas-redis-data:/data \
+        redis:alpine "${REDIS_ARGS[@]}"
+fi
 
 # Start Traefik
 echo -e "${YELLOW}Starting Traefik...${NC}"
