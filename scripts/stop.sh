@@ -26,6 +26,6 @@ fi
 if [ "$1" == "--purge" ]; then
     echo "🗑️  Removing containers and volumes..."
     docker rm paas-frontend paas-backend paas-traefik paas-redis paas-mysql 2>/dev/null || true
-    docker volume rm paas-mysql-data paas-redis-data paas-letsencrypt 2>/dev/null || true
-    echo "✅ Containers and volumes removed"
+    docker volume rm paas-redis-data paas-letsencrypt 2>/dev/null || true
+    echo "✅ Containers removed; Redis and TLS volumes purged (MySQL data preserved in storage/mysql)"
 fi

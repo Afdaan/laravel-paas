@@ -43,6 +43,11 @@ BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
 ACME_EMAIL=${ACME_EMAIL:-"admin@localhost"}
 JWT_SECRET=${JWT_SECRET:-"change-me-please-12345"}
 
+# Ensure MYSQL_PASSWORD has a value; default to root password if none provided
+if [ -z "$MYSQL_PASSWORD" ]; then
+    MYSQL_PASSWORD="$MYSQL_ROOT_PASSWORD"
+fi
+
 # Create Docker network if not exists
 echo -e "${YELLOW}Creating Docker network...${NC}"
 docker network create paas-network 2>/dev/null || true
@@ -50,13 +55,17 @@ docker network create paas-network 2>/dev/null || true
 # Start MariaDB (more compatible than MySQL 8)
 echo -e "${YELLOW}Starting MariaDB...${NC}"
 docker rm -f paas-mysql 2>/dev/null || true
+# Ensure local storage directory for MySQL exists
+mkdir -p "${PROJECT_ROOT}/storage/mysql"
 docker run -d \
     --name paas-mysql \
     --network paas-network \
     --restart unless-stopped \
     -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
     -e MYSQL_DATABASE=$MYSQL_DATABASE \
-    -v paas-mysql-data:/var/lib/mysql \
+    -e MYSQL_USER=$MYSQL_USER \
+    -e MYSQL_PASSWORD=$MYSQL_PASSWORD \
+    -v "${PROJECT_ROOT}/storage/mysql:/var/lib/mysql" \
     mariadb:10.11
 
 # Start Redis
@@ -128,8 +137,8 @@ docker run -d \
     -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
     -e MYSQL_HOST=paas-mysql \
-    -e MYSQL_USER=${MYSQL_USER:-"root"} \
-    -e MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"} \
+    -e MYSQL_USER=$MYSQL_USER \
+    -e MYSQL_PASSWORD=$MYSQL_PASSWORD \
     -e MYSQL_DATABASE=$MYSQL_DATABASE \
     -e REDIS_HOST=paas-redis \
     -e REDIS_PORT=${REDIS_PORT:-6379} \
