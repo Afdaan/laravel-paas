@@ -16,4 +16,7 @@ providers:
     watch: true
 
 log:
-  level: INFO
+  level: DEBUG
+
+# Log every request (helps debug Host header / router matching)
+accessLog: {}
