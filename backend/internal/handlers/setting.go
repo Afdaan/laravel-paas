@@ -7,18 +7,21 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/services"
 	"gorm.io/gorm"
 )
 
 // SettingHandler handles settings endpoints
 type SettingHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	cfg *config.Config
 }
 
 // NewSettingHandler creates a new setting handler
-func NewSettingHandler(db *gorm.DB) *SettingHandler {
-	return &SettingHandler{db: db}
+func NewSettingHandler(db *gorm.DB, cfg *config.Config) *SettingHandler {
+	return &SettingHandler{db: db, cfg: cfg}
 }
 
 // List returns all settings
@@ -69,9 +72,25 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{
-		"message": "Settings updated successfully",
-	})
+	// Regenerate Traefik file-provider config so domain changes take effect immediately.
+	traefikUpdated := false
+	var traefikErr error
+	if h.cfg != nil {
+		baseDomain := GetSetting(h.db, "base_domain", h.cfg.BaseDomain)
+		projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
+		traefikErr = services.GenerateTraefikDynamicConfig(h.cfg, baseDomain, projectDomain)
+		traefikUpdated = traefikErr == nil
+	}
+
+	resp := fiber.Map{
+		"message":               "Settings updated successfully",
+		"traefik_config_updated": traefikUpdated,
+	}
+	if traefikErr != nil {
+		resp["traefik_error"] = traefikErr.Error()
+	}
+
+	return c.JSON(resp)
 }
 
 // GetSetting helper to get a setting value

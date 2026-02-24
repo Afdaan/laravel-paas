@@ -209,7 +209,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg 
 // getProjectDomain gets project domain from settings
 func (w *DeploymentWorker) getProjectDomain() string {
 	var setting models.Setting
-	if err := w.db.Where("key = ?", "project_domain").First(&setting).Error; err != nil {
+	if err := w.db.Where("setting_key = ?", "project_domain").First(&setting).Error; err != nil {
 		return w.cfg.ProjectDomain
 	}
 	return setting.Value

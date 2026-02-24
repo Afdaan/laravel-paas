@@ -145,7 +145,7 @@ function StudentDashboard() {
                     <td>
                       {project.status === 'running' ? (
                         <a 
-                          href={`https://${project.subdomain}.${window.location.hostname}`}
+                          href={project.url || `https://${project.subdomain}.${window.location.hostname}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary-400 hover:text-primary-300"

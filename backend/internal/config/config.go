@@ -42,6 +42,10 @@ type Config struct {
 	ProjectsPath   string
 	TemplatesPath  string
 	DockerNetwork  string
+
+	// Traefik dynamic config (file provider)
+	TraefikDynamicTemplatePath string
+	TraefikDynamicConfigPath   string
 }
 
 // Load reads configuration from environment variables
@@ -77,6 +81,10 @@ func Load() *Config {
 		ProjectsPath:  getEnv("PROJECTS_PATH", "/app/storage/projects"),
 		TemplatesPath: getEnv("TEMPLATES_PATH", "/app/docker/templates"),
 		DockerNetwork: getEnv("DOCKER_NETWORK", "paas-network"),
+
+		// Traefik dynamic config
+		TraefikDynamicTemplatePath: getEnv("TRAEFIK_DYNAMIC_TEMPLATE_PATH", "/app/docker/traefik/dynamic.yml.template"),
+		TraefikDynamicConfigPath:   getEnv("TRAEFIK_DYNAMIC_CONFIG_PATH", "/app/docker/traefik/dynamic.yml"),
 	}
 }
 

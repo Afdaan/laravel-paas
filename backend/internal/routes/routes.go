@@ -51,7 +51,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	userHandler := handlers.NewUserHandler(db)
 	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
-	settingHandler := handlers.NewSettingHandler(db)
+	settingHandler := handlers.NewSettingHandler(db, cfg)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects

@@ -40,6 +40,7 @@ MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"}
 MYSQL_USER=${MYSQL_USER:-"root"}
 MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
+PROJECT_DOMAIN=${PROJECT_DOMAIN:-$BASE_DOMAIN}
 ACME_EMAIL=${ACME_EMAIL:-"admin@localhost"}
 JWT_SECRET=${JWT_SECRET:-"change-me-please-12345"}
 
@@ -93,13 +94,15 @@ docker rm -f paas-traefik 2>/dev/null || true
 
 
 
-# Generate dynamic.yml from template with BASE_DOMAIN
+# Generate dynamic.yml from template with BASE_DOMAIN + PROJECT_DOMAIN
 echo -e "${YELLOW}Generating Traefik dynamic config...${NC}"
 if [ -f "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" ]; then
-    sed "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
+    sed \
+        -e "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
+        -e "s/{{PROJECT_DOMAIN}}/$PROJECT_DOMAIN/g" \
         "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" > \
         "${PROJECT_ROOT}/docker/traefik/dynamic.yml"
-    echo -e "${GREEN}✓ Generated dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN${NC}"
+    echo -e "${GREEN}✓ Generated dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN PROJECT_DOMAIN=$PROJECT_DOMAIN${NC}"
 else
     echo -e "${RED}Error: dynamic.yml.template not found${NC}"
     exit 1
@@ -134,6 +137,7 @@ docker run -d \
     -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
     -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+    -v "${PROJECT_ROOT}/docker/traefik:/app/docker/traefik" \
     -e MYSQL_HOST=paas-mysql \
     -e MYSQL_USER=${MYSQL_USER:-"root"} \
     -e MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"} \
@@ -143,7 +147,9 @@ docker run -d \
     -e REDIS_PASSWORD=$REDIS_PASSWORD \
     -e JWT_SECRET=$JWT_SECRET \
     -e BASE_DOMAIN=$BASE_DOMAIN \
-    -e PROJECT_DOMAIN=${PROJECT_DOMAIN:-$BASE_DOMAIN} \
+    -e PROJECT_DOMAIN=$PROJECT_DOMAIN \
+    -e TRAEFIK_DYNAMIC_TEMPLATE_PATH=/app/docker/traefik/dynamic.yml.template \
+    -e TRAEFIK_DYNAMIC_CONFIG_PATH=/app/docker/traefik/dynamic.yml \
     -e DOCKER_NETWORK=paas-network \
     --label "traefik.enable=true" \
     --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
