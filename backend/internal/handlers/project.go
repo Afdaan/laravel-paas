@@ -278,6 +278,9 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		Status:       models.StatusPending,
 		QueueEnabled: req.QueueEnabled,
 	}
+	
+	defaultPort := 80
+	project.Port = &defaultPort
 
 	if err := h.db.Create(&project).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -759,12 +762,13 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// Ensure project has a port
-	if project.Port == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project port not configured"})
+	port := 80
+	if project.Port != nil && *project.Port != 0 {
+		port = *project.Port
 	}
 
-	// Create the proxy URL
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+	// Create the proxy URL (local loopback; Traefik already handles Host matching)
+	targetURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	// Forward the request
 	if err := proxy.Forward(targetURL)(c); err != nil {
