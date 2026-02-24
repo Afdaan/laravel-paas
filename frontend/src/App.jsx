@@ -67,7 +67,6 @@ function App() {
           <DashboardLayout />
         </ProtectedRoute>
       }>
-        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<StudentDashboard />} />
         <Route path="projects" element={<StudentProjects />} />
         <Route path="projects/new" element={<StudentNewProject />} />
@@ -90,7 +89,7 @@ function App() {
       </Route>
       
       {/* Fallback */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
