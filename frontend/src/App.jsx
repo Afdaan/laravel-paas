@@ -13,6 +13,7 @@ import DashboardLayout from './components/DashboardLayout'
 import LoadingScreen from './components/LoadingScreen'
 
 // Pages
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import StudentDashboard from './pages/student/Dashboard'
 import StudentProjects from './pages/student/Projects'
@@ -57,6 +58,7 @@ function App() {
   return (
     <Routes>
       {/* Public Routes */}
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       
       {/* Student Routes */}
