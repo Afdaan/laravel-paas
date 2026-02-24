@@ -36,7 +36,6 @@ const useAuthStore = create((set, get) => ({
     try {
       await authAPI.logout()
     } catch (error) {
-      // Ignore logout errors
     }
     
     localStorage.removeItem('token')
@@ -49,13 +48,19 @@ const useAuthStore = create((set, get) => ({
       set({ isLoading: false })
       return
     }
-    
+
+    set({ isLoading: true })
     try {
       const response = await authAPI.me()
       set({ user: response.data, isLoading: false })
     } catch (error) {
-      localStorage.removeItem('token')
-      set({ token: null, user: null, isLoading: false })
+      const status = error?.response?.status
+      if (status === 401 || status === 403) {
+        localStorage.removeItem('token')
+        set({ token: null, user: null, isLoading: false })
+      } else {
+        set({ isLoading: false })
+      }
     }
   },
 }))

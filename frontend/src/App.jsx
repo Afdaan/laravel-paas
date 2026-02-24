@@ -47,13 +47,13 @@ function ProtectedRoute({ children, requireAdmin = false }) {
 }
 
 function App() {
-  const { fetchUser, token } = useAuthStore()
-  
+  const { fetchUser, token, user } = useAuthStore()
+
   useEffect(() => {
-    if (token) {
+    if (token && !user) {
       fetchUser()
     }
-  }, [token, fetchUser])
+  }, [])
   
   return (
     <Routes>
