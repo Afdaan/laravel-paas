@@ -11,7 +11,7 @@ const useAuthStore = create((set, get) => ({
   // State
   user: null,
   token: localStorage.getItem('token'),
-  isLoading: true,
+  isLoading: !!localStorage.getItem('token'),
   
   // Computed
   isAuthenticated: () => !!get().token,
