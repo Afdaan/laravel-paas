@@ -108,7 +108,7 @@ docker run -d \
     -v "${PROJECT_ROOT}/docker/traefik/traefik.yml:/traefik.yml:ro" \
     -v "${PROJECT_ROOT}/docker/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro" \
     -v paas-letsencrypt:/letsencrypt \
-    traefik:v3.0
+    traefik:v3.6
 
 # Build and start backend
 echo -e "${YELLOW}Building and starting backend...${NC}"
