@@ -45,7 +45,7 @@ http:
   routers:
     # Student projects (highest priority - subdomain matching)
     student-projects:
-      rule: "HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.{{PROJECT_DOMAIN}}`) && !Host(`{{BASE_DOMAIN}}`)"
+      rule: "HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.{{PROJECT_DOMAIN}}`)"
       service: dynamic-projects
       entryPoints:
         - web
