@@ -48,11 +48,20 @@ function ProtectedRoute({ children, requireAdmin = false }) {
 
 function App() {
   const { fetchUser, token, user } = useAuthStore()
+  const logout = useAuthStore((state) => state.logout)
 
   useEffect(() => {
     if (token && !user) {
       fetchUser()
     }
+  }, [])
+
+  useEffect(() => {
+    const handleExpired = () => {
+      useAuthStore.setState({ token: null, user: null, isLoading: false })
+    }
+    window.addEventListener('auth:expired', handleExpired)
+    return () => window.removeEventListener('auth:expired', handleExpired)
   }, [])
   
   return (

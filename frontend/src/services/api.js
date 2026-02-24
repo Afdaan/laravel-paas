@@ -29,7 +29,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      window.dispatchEvent(new Event('auth:expired'))
     }
     return Promise.reject(error)
   }

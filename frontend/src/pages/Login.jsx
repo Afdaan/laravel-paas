@@ -2,7 +2,7 @@
 // Login Page
 // ===========================================
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import useAuthStore from '../stores/authStore'
@@ -13,7 +13,16 @@ function Login() {
   const [isLoading, setIsLoading] = useState(false)
   
   const login = useAuthStore((state) => state.login)
+  const token = useAuthStore((state) => state.token)
+  const user = useAuthStore((state) => state.user)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (token && user) {
+      const isAdmin = user.role === 'superadmin' || user.role === 'admin'
+      navigate(isAdmin ? '/admin/dashboard' : '/dashboard', { replace: true })
+    }
+  }, [token, user, navigate])
   
   const handleSubmit = async (e) => {
     e.preventDefault()
