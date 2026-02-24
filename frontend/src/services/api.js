@@ -27,7 +27,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const wasAuthenticated = !!error.config?.headers?.Authorization
+    if (error.response?.status === 401 && wasAuthenticated) {
       localStorage.removeItem('token')
       window.dispatchEvent(new Event('auth:expired'))
     }
