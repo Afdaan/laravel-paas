@@ -94,18 +94,30 @@ docker rm -f paas-traefik 2>/dev/null || true
 
 
 
-# Generate dynamic.yml from template with BASE_DOMAIN + PROJECT_DOMAIN
-echo -e "${YELLOW}Generating Traefik dynamic config...${NC}"
-if [ -f "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" ]; then
-    sed \
-        -e "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
-        -e "s/{{PROJECT_DOMAIN}}/$PROJECT_DOMAIN/g" \
-        "${PROJECT_ROOT}/docker/traefik/dynamic.yml.template" > \
-        "${PROJECT_ROOT}/docker/traefik/dynamic.yml"
-    echo -e "${GREEN}✓ Generated dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN PROJECT_DOMAIN=$PROJECT_DOMAIN${NC}"
+echo -e "${YELLOW}Preparing Traefik dynamic config directory...${NC}"
+TRAEFIK_DYNAMIC_DIR="${PROJECT_ROOT}/docker/traefik/dynamic"
+TRAEFIK_DYNAMIC_TEMPLATE="${PROJECT_ROOT}/docker/traefik/dynamic.yml.template"
+TRAEFIK_DYNAMIC_FILE="${TRAEFIK_DYNAMIC_DIR}/dynamic.yml"
+
+mkdir -p "${TRAEFIK_DYNAMIC_DIR}"
+
+# Only generate a default dynamic.yml if it doesn't exist.
+# Source of truth after first boot is DB (panel settings) and backend will regenerate on startup + on updates.
+if [ -f "${TRAEFIK_DYNAMIC_FILE}" ]; then
+    echo -e "${GREEN}✓ Keeping existing dynamic.yml (won't overwrite panel/DB settings)${NC}"
 else
-    echo -e "${RED}Error: dynamic.yml.template not found${NC}"
-    exit 1
+    echo -e "${YELLOW}Generating initial dynamic.yml from .env defaults...${NC}"
+    if [ -f "${TRAEFIK_DYNAMIC_TEMPLATE}" ]; then
+        sed \
+            -e "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" \
+            -e "s/{{PROJECT_DOMAIN}}/$PROJECT_DOMAIN/g" \
+            "${TRAEFIK_DYNAMIC_TEMPLATE}" > \
+            "${TRAEFIK_DYNAMIC_FILE}"
+        echo -e "${GREEN}✓ Generated initial dynamic.yml with BASE_DOMAIN=$BASE_DOMAIN PROJECT_DOMAIN=$PROJECT_DOMAIN${NC}"
+    else
+        echo -e "${RED}Error: dynamic.yml.template not found${NC}"
+        exit 1
+    fi
 fi
 
 docker run -d \
@@ -116,7 +128,7 @@ docker run -d \
     -p 443:443 \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "${PROJECT_ROOT}/docker/traefik/traefik.yml:/traefik.yml:ro" \
-    -v "${PROJECT_ROOT}/docker/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro" \
+    -v "${PROJECT_ROOT}/docker/traefik/dynamic:/etc/traefik/dynamic:ro" \
     -v paas-letsencrypt:/letsencrypt \
     traefik:v3.0
 
@@ -149,7 +161,7 @@ docker run -d \
     -e BASE_DOMAIN=$BASE_DOMAIN \
     -e PROJECT_DOMAIN=$PROJECT_DOMAIN \
     -e TRAEFIK_DYNAMIC_TEMPLATE_PATH=/app/docker/traefik/dynamic.yml.template \
-    -e TRAEFIK_DYNAMIC_CONFIG_PATH=/app/docker/traefik/dynamic.yml \
+    -e TRAEFIK_DYNAMIC_CONFIG_PATH=/app/docker/traefik/dynamic/dynamic.yml \
     -e DOCKER_NETWORK=paas-network \
     --label "traefik.enable=true" \
     --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \

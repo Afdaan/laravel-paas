@@ -84,7 +84,7 @@ func Load() *Config {
 
 		// Traefik dynamic config
 		TraefikDynamicTemplatePath: getEnv("TRAEFIK_DYNAMIC_TEMPLATE_PATH", "/app/docker/traefik/dynamic.yml.template"),
-		TraefikDynamicConfigPath:   getEnv("TRAEFIK_DYNAMIC_CONFIG_PATH", "/app/docker/traefik/dynamic.yml"),
+		TraefikDynamicConfigPath:   getEnv("TRAEFIK_DYNAMIC_CONFIG_PATH", "/app/docker/traefik/dynamic/dynamic.yml"),
 	}
 }
 

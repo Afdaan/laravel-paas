@@ -39,6 +39,12 @@ func main() {
 		log.Fatalf("Failed to seed database: %v", err)
 	}
 
+	// Sync Traefik dynamic config from persisted settings so panel-changed domains
+	// survive restarts. Best-effort: if Traefik paths aren't mounted, backend still runs.
+	if err := services.SyncTraefikDynamicConfigFromDB(db, cfg); err != nil {
+		log.Printf("Warning: failed to sync Traefik dynamic config: %v", err)
+	}
+
 	// Initialize Redis service
 	log.Println("🔌 Connecting to Redis...")
 	redisService, err := services.NewRedisService(cfg)

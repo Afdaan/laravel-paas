@@ -30,7 +30,7 @@ redis_data/
 letsencrypt/
 
 # Generated config (from template)
-docker/traefik/dynamic.yml
+docker/traefik/dynamic/dynamic.yml
 
 # OS files
 .DS_Store
