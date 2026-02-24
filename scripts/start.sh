@@ -125,7 +125,6 @@ docker run -d \
     --network paas-network \
     --restart unless-stopped \
     -p 80:80 \
-    -p 443:443 \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "${PROJECT_ROOT}/docker/traefik/traefik.yml:/traefik.yml:ro" \
     -v "${PROJECT_ROOT}/docker/traefik/dynamic:/etc/traefik/dynamic:ro" \
