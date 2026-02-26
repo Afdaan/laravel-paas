@@ -60,109 +60,157 @@ function DashboardLayout({ isAdmin = false }) {
   
   // Navigation items based on role
   const navItems = isAdmin
-    ? [
-        { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
-        { to: '/admin/users', icon: Icons.Users, label: 'Users' },
-        { to: '/admin/projects', icon: Icons.Projects, label: 'Projects' },
-        { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
-      ]
-    : [
-        { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
-        { to: '/projects', icon: Icons.Projects, label: 'My Projects' },
-        { to: '/databases', icon: Icons.Database, label: 'Databases' },
-      ]
+    ? {
+        management: [
+          { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
+          { to: '/admin/users', icon: Icons.Users, label: 'Users' },
+          { to: '/admin/projects', icon: Icons.Projects, label: 'Projects' },
+          { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
+        ],
+        resources: [
+          { to: '/admin/dashboard#containers', icon: Icons.Plus, label: 'Containers' },
+          { to: '/admin/dashboard#images', icon: Icons.Database, label: 'Images' },
+          { to: '/admin/dashboard#networks', icon: Icons.Projects, label: 'Networks' },
+          { to: '/admin/dashboard#volumes', icon: Icons.Database, label: 'Volumes' },
+        ]
+      }
+    : {
+        management: [
+          { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
+          { to: '/projects', icon: Icons.Projects, label: 'My Projects' },
+          { to: '/databases', icon: Icons.Database, label: 'Databases' },
+        ]
+      }
   
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[#0a0a0c]">
       {/* Sidebar */}
-      <aside className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col">
+      <aside className="w-64 bg-[#0f0f12] border-r border-white/5 flex flex-col shadow-2xl z-50">
         {/* Logo */}
-        <div className="p-6 border-b border-slate-700">
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <span className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              🚀
+        <div className="p-8 pb-4">
+          <h1 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter">
+            <span className="w-10 h-10 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center text-lg shadow-lg shadow-purple-500/20">
+              AR
             </span>
-            Laravel PaaS
+            <span className="uppercase tracking-[0.2em] text-sm font-bold opacity-80">Arcane</span>
           </h1>
           {isAdmin && (
-            <span className="text-xs bg-primary-600/20 text-primary-400 px-2 py-0.5 rounded mt-2 inline-block">
-              Admin Panel
-            </span>
+            <div className="flex items-center gap-2 mt-4 ml-1">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">
+                    Local Docker
+                </span>
+            </div>
           )}
         </div>
         
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-primary-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-                }`
-              }
-            >
-              <item.icon />
-              {item.label}
-            </NavLink>
-          ))}
+        <nav className="flex-1 p-6 space-y-8 overflow-y-auto">
+          {/* Management Section */}
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-slate-700 uppercase tracking-[0.2em] mb-4 ml-1">Management</p>
+            {navItems.management.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                    isActive
+                      ? 'bg-gradient-to-r from-purple-600/10 to-transparent text-purple-400 border-l-2 border-purple-500'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.02]'
+                  }`
+                }
+              >
+                <span className="transition-transform group-hover:scale-110">
+                  <item.icon />
+                </span>
+                <span className="text-sm font-semibold tracking-wide">{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+
+          {/* Resources Section (Admin only) */}
+          {isAdmin && navItems.resources && (
+            <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-700 uppercase tracking-[0.2em] mb-4 ml-1">Resources</p>
+                {navItems.resources.map((item) => (
+                <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                    `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                        isActive
+                        ? 'bg-gradient-to-r from-purple-600/10 to-transparent text-purple-400 border-l-2 border-purple-500'
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.02]'
+                    }`
+                    }
+                >
+                    <span className="transition-transform group-hover:scale-110">
+                    <item.icon />
+                    </span>
+                    <span className="text-sm font-semibold tracking-wide">{item.label}</span>
+                </NavLink>
+                ))}
+            </div>
+          )}
           
           {/* New Project Button (Students only) */}
           {!isAdmin && (
             <NavLink
               to="/projects/new"
-              className="flex items-center gap-3 px-4 py-3 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors mt-4"
+              className="flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-bold text-sm shadow-lg shadow-emerald-500/10 hover:brightness-110 transition-all mt-8"
             >
               <Icons.Plus />
-              New Project
+              NEW PROJECT
             </NavLink>
           )}
         </nav>
         
         {/* User Info & Logout */}
-        <div className="p-4 border-t border-slate-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-white font-bold">
+        <div className="p-6 border-t border-white/5 bg-[#0a0a0c]/50">
+          <div className="flex items-center gap-3 mb-6 p-2 rounded-xl bg-white/[0.02] border border-white/5">
+            <div className="w-10 h-10 bg-gradient-to-br from-slate-700 to-slate-800 rounded-full flex items-center justify-center text-white font-bold ring-2 ring-white/5">
               {user?.name?.charAt(0)?.toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-              <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+              <p className="text-xs font-bold text-white truncate uppercase tracking-tight">{user?.name}</p>
+              <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
             </div>
           </div>
           
-          {/* Switch to Admin (if admin viewing student dashboard) */}
-          {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
-            <NavLink
-              to="/admin"
-              className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors mb-2 text-sm"
+          <div className="space-y-1">
+            {/* Switch to Admin (if admin viewing student dashboard) */}
+            {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
+              <NavLink
+                to="/admin"
+                className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-500 hover:text-slate-300 transition-colors text-xs font-bold uppercase tracking-widest"
+              >
+                <Icons.Settings />
+                Admin Panel
+              </NavLink>
+            )}
+            
+            {/* Switch to Student (if admin) */}
+            {isAdmin && (
+              <NavLink
+                to="/dashboard"
+                className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-500 hover:text-slate-300 transition-colors text-xs font-bold uppercase tracking-widest"
+              >
+                <Icons.Dashboard />
+                Student View
+              </NavLink>
+            )}
+            
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:text-red-400 transition-all w-full text-xs font-bold uppercase tracking-widest group"
             >
-              <Icons.Settings />
-              Admin Panel
-            </NavLink>
-          )}
-          
-          {/* Switch to Student (if admin) */}
-          {isAdmin && (
-            <NavLink
-              to="/dashboard"
-              className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors mb-2 text-sm"
-            >
-              <Icons.Dashboard />
-              Student View
-            </NavLink>
-          )}
-          
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-300 hover:bg-red-600/20 hover:text-red-400 transition-colors w-full"
-          >
-            <Icons.Logout />
-            Logout
-          </button>
+              <span className="group-hover:translate-x-1 transition-transform">
+                <Icons.Logout />
+              </span>
+              Logout
+            </button>
+          </div>
         </div>
       </aside>
       

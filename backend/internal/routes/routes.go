@@ -52,6 +52,8 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	userHandler := handlers.NewUserHandler(db)
 	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
 	settingHandler := handlers.NewSettingHandler(db)
+	dockerService := services.NewDockerService(cfg)
+	systemHandler := handlers.NewSystemHandler(dockerService)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects
@@ -97,6 +99,10 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
+
+	// System monitoring (Arcane style)
+	admin.Get("/system/stats", systemHandler.GetStats)
+	admin.Post("/system/prune", systemHandler.PruneSystem)
 
 	// -----------------------------
 	// Project Routes (Students)

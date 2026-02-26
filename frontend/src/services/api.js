@@ -182,4 +182,16 @@ export const databaseAPI = {
     api.post(`/projects/${projectId}/database/reset`),
 }
 
+// ===========================================
+// System API (Admin)
+// ===========================================
+
+export const systemAPI = {
+  getStats: () => 
+    api.get('/admin/system/stats'),
+  
+  prune: () => 
+    api.post('/admin/system/prune'),
+}
+
 export default api

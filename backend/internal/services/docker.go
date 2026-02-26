@@ -573,6 +573,153 @@ func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error
 	return result, nil
 }
 
+// ===========================================
+// System & Global Docker Info
+// ===========================================
+
+// GetSystemStats retrieves host machine resource usage
+func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
+	stats := &models.SystemStats{
+		DiskPath: s.cfg.ProjectsPath,
+		OS:       "Linux",
+		CPUCores: 1,
+	}
+
+	// Hostname
+	if hostname, err := os.Hostname(); err == nil {
+		stats.Hostname = hostname
+	}
+
+	// CPU Usage
+	cmd := exec.Command("sh", "-c", "top -bn1 | grep 'CPU:' | head -n1 | awk '{print $2}' | cut -d% -f1")
+	if output, err := cmd.Output(); err == nil {
+		cpuStr := strings.TrimSpace(string(output))
+		if val, err := strconv.ParseFloat(cpuStr, 64); err == nil {
+			stats.CPUUsage = val
+		}
+	}
+
+	// CPU Cores
+	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
+		stats.CPUCores = strings.Count(string(data), "processor")
+	}
+
+	// Memory Usage
+	cmd = exec.Command("free", "-b")
+	if output, err := cmd.Output(); err == nil {
+		lines := strings.Split(string(output), "\n")
+		if len(lines) >= 2 {
+			fields := strings.Fields(lines[1])
+			if len(fields) >= 3 {
+				total, _ := strconv.ParseUint(fields[1], 10, 64)
+				used, _ := strconv.ParseUint(fields[2], 10, 64)
+				stats.MemoryTotal = total
+				stats.MemoryUsed = used
+			}
+		}
+	}
+
+	// Disk Usage
+	cmd = exec.Command("df", "-b", s.cfg.ProjectsPath)
+	if output, err := cmd.Output(); err == nil {
+		lines := strings.Split(string(output), "\n")
+		if len(lines) >= 2 {
+			fields := strings.Fields(lines[1])
+			if len(fields) >= 3 {
+				total, _ := strconv.ParseUint(fields[1], 10, 64)
+				used, _ := strconv.ParseUint(fields[2], 10, 64)
+				stats.DiskTotal = total
+				stats.DiskUsed = used
+			}
+		}
+	}
+
+	return stats, nil
+}
+
+// ListAllContainers returns all containers on the host
+func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
+	// Format: ID|Names|Image|State|Status|CreatedAt
+	cmd := exec.Command("docker", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []models.DockerContainer
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 6 {
+			continue
+		}
+
+		created, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", parts[5])
+
+		result = append(result, models.DockerContainer{
+			ID:        parts[0],
+			Names:     strings.Split(parts[1], ","),
+			Image:     parts[2],
+			State:     parts[3],
+			Status:    parts[4],
+			CreatedAt: created,
+		})
+	}
+
+	return result, nil
+}
+
+// ListAllImages returns all images on the host
+func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
+	// Format: ID|Repo|Tag|Size|CreatedAt
+	cmd := exec.Command("docker", "images", "--format", "{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedAt}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get used images to mark status
+	usedImages := make(map[string]bool)
+	cmdUsed := exec.Command("docker", "ps", "-a", "--format", "{{.Image}}")
+	outUsed, _ := cmdUsed.Output()
+	for _, img := range strings.Split(string(outUsed), "\n") {
+		usedImages[strings.TrimSpace(img)] = true
+	}
+
+	var result []models.DockerImage
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 5 {
+			continue
+		}
+
+		repo := parts[1]
+		tag := parts[2]
+		
+		status := "Unused"
+		if usedImages[repo] || usedImages[repo+":"+tag] || usedImages[parts[0]] {
+			status = "In Use"
+		}
+
+		result = append(result, models.DockerImage{
+			ID:         parts[0],
+			Repository: repo,
+			Tag:        tag,
+			SizeHuman:  parts[3],
+			Status:     status,
+		})
+	}
+
+	return result, nil
+}
+
 // Helper to convert docker memory headers (GiB, MiB, kiB, B) to MB
 func parseMemoryBytes(memStr string) float64 {
 	// Remove non-alphanumeric chars (except .)
