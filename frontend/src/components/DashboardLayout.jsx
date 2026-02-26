@@ -68,10 +68,10 @@ function DashboardLayout({ isAdmin = false }) {
           { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
         ],
         resources: [
-          { to: '/admin/dashboard#containers', icon: Icons.Plus, label: 'Containers' },
-          { to: '/admin/dashboard#images', icon: Icons.Database, label: 'Images' },
-          { to: '/admin/dashboard#networks', icon: Icons.Projects, label: 'Networks' },
-          { to: '/admin/dashboard#volumes', icon: Icons.Database, label: 'Volumes' },
+          { to: '/admin/containers', icon: Icons.Plus, label: 'Containers' },
+          { to: '/admin/images', icon: Icons.Database, label: 'Images' },
+          { to: '/admin/networks', icon: Icons.Projects, label: 'Networks' },
+          { to: '/admin/volumes', icon: Icons.Database, label: 'Volumes' },
         ]
       }
     : {

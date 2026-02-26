@@ -2,7 +2,8 @@
 // Admin Dashboard (PaaS Style)
 // ===========================================
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { systemAPI, projectsAPI } from '../../services/api'
 import toast from 'react-hot-toast'
 
@@ -15,13 +16,7 @@ function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [isPruning, setIsPruning] = useState(false)
 
-  useEffect(() => {
-    fetchData()
-    const interval = setInterval(fetchData, 10000) // Auto refresh every 10s
-    return () => clearInterval(interval)
-  }, [])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const res = await systemAPI.getStats()
       setData(res.data)
@@ -30,7 +25,13 @@ function AdminDashboard() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+    const interval = setInterval(fetchData, 10000) // Auto refresh every 10s
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   const handlePrune = async () => {
     if (!window.confirm('Are you sure you want to prune the system? This will remove unused images and volumes.')) return
@@ -58,12 +59,16 @@ function AdminDashboard() {
 
   if (isLoading && !data.system) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0c]">
-        <div className="relative w-20 h-20">
-            <div className="absolute inset-0 rounded-full border-4 border-purple-500/20"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-t-purple-500 animate-spin"></div>
+      <div className="flex flex-col items-center justify-center h-[60vh] bg-transparent">
+        <div className="relative mb-6">
+          <div className="absolute -inset-2 bg-purple-500/20 rounded-2xl blur-xl animate-pulse"></div>
+          <div className="relative w-16 h-16 bg-[#111114] border border-white/5 rounded-2xl flex items-center justify-center shadow-2xl">
+            <span className="text-xl font-black tracking-tighter bg-gradient-to-br from-white to-slate-500 bg-clip-text text-transparent">LP</span>
+          </div>
         </div>
-        <p className="mt-4 text-purple-400 font-medium animate-pulse">Initializing PaaS Monitor...</p>
+        <p className="text-slate-500 text-[10px] font-bold tracking-[0.3em] uppercase animate-pulse">
+          Loading Registry
+        </p>
       </div>
     )
   }
@@ -82,6 +87,7 @@ function AdminDashboard() {
           icon={<ContainerIcon />}
           data={containers}
           type="containers"
+          viewAllPath="/admin/containers"
         />
 
         <ResourceTable 
@@ -90,6 +96,7 @@ function AdminDashboard() {
           icon={<ImageIcon />}
           data={images}
           type="images"
+          viewAllPath="/admin/images"
         />
       </div>
     </div>
@@ -100,7 +107,7 @@ function AdminDashboard() {
 // Helper Components
 // ===========================================
 
-function Header({ onRefresh, onPrune, isPruning }) {
+const Header = memo(({ onRefresh, onPrune, isPruning }) => {
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
       <div>
@@ -127,9 +134,9 @@ function Header({ onRefresh, onPrune, isPruning }) {
       </div>
     </div>
   )
-}
+})
 
-function SystemOverview({ system, formatBytes }) {
+const SystemOverview = memo(({ system, formatBytes }) => {
   const memUsagePath = (system?.memory_used / system?.memory_total) * 100 || 0
   const diskUsagePath = (system?.disk_used / system?.disk_total) * 100 || 0
 
@@ -175,9 +182,9 @@ function SystemOverview({ system, formatBytes }) {
       </div>
     </div>
   )
-}
+})
 
-function StatCard({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt }) {
+const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt }) => {
     const gradients = {
         purple: "from-purple-500 to-indigo-500",
         blue: "from-blue-500 to-cyan-500",
@@ -208,7 +215,7 @@ function StatCard({ title, subtitle, value, capacity, percent, color, icon, meta
                 </div>
                 <div className="h-2 bg-white/5 rounded-full overflow-hidden">
                     <div 
-                        className={`h-full bg-gradient-to-r ${gradients[color]} rounded-full transition-all duration-1000`}
+                        className={`h-full bg-gradient-to-r ${gradients[color]} rounded-full transition-all duration-1000 will-change-transform`}
                         style={{ width: `${percent}%` }}
                     ></div>
                 </div>
@@ -219,9 +226,9 @@ function StatCard({ title, subtitle, value, capacity, percent, color, icon, meta
             </div>
         </div>
     )
-}
+})
 
-function ResourceTable({ title, subtitle, icon, data, type }) {
+const ResourceTable = memo(({ title, subtitle, icon, data, type, viewAllPath }) => {
     return (
         <div className="bg-[#111114] border border-white/[0.03] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
             <div className="p-6 border-b border-white/[0.03] flex items-center justify-between">
@@ -234,7 +241,7 @@ function ResourceTable({ title, subtitle, icon, data, type }) {
                         <p className="text-xs text-slate-500">{subtitle}</p>
                     </div>
                 </div>
-                <button className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest">View All</button>
+                <Link to={viewAllPath} className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest">View All</Link>
             </div>
             
             <div className="overflow-x-auto">
@@ -251,9 +258,9 @@ function ResourceTable({ title, subtitle, icon, data, type }) {
             )}
         </div>
     )
-}
+})
 
-function ContainerTableBody({ data }) {
+const ContainerTableBody = memo(({ data }) => {
     return (
         <>
             <thead className="text-[10px] uppercase tracking-[0.15em] text-slate-600 font-bold border-b border-white/[0.03]">
@@ -295,9 +302,9 @@ function ContainerTableBody({ data }) {
             </tbody>
         </>
     )
-}
+})
 
-function ImageTableBody({ data }) {
+const ImageTableBody = memo(({ data }) => {
     return (
         <>
             <thead className="text-[10px] uppercase tracking-[0.15em] text-slate-600 font-bold border-b border-white/[0.03]">
@@ -335,7 +342,7 @@ function ImageTableBody({ data }) {
             </tbody>
         </>
     )
-}
+})
 
 // ===========================================
 // Icons

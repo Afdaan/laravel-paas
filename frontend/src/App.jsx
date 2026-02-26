@@ -24,6 +24,10 @@ const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
 const AdminUsers = lazy(() => import('./pages/admin/Users'))
 const AdminProjects = lazy(() => import('./pages/admin/Projects'))
 const AdminSettings = lazy(() => import('./pages/admin/Settings'))
+const AdminContainers = lazy(() => import('./pages/admin/Containers'))
+const AdminImages = lazy(() => import('./pages/admin/Images'))
+const AdminNetworks = lazy(() => import('./pages/admin/Networks'))
+const AdminVolumes = lazy(() => import('./pages/admin/Volumes'))
 const StudentDatabases = lazy(() => import('./pages/student/Databases'))
 
 // Protected Route Component
@@ -95,6 +99,10 @@ function App() {
           <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="projects" element={<AdminProjects />} />
+          <Route path="containers" element={<AdminContainers />} />
+          <Route path="images" element={<AdminImages />} />
+          <Route path="networks" element={<AdminNetworks />} />
+          <Route path="volumes" element={<AdminVolumes />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
         
