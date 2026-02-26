@@ -73,12 +73,12 @@ function AdminDashboard() {
     )
   }
 
-  const { system, containers, images } = data
+  const { system, containers, images, networks, volumes } = data
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-slate-200 p-4 lg:p-8 font-sans">
       <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
-      <SystemOverview system={system} formatBytes={formatBytes} />
+      <SystemOverview system={system} containers={containers} images={images} networks={networks} volumes={volumes} formatBytes={formatBytes} />
       
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <ResourceTable 
@@ -136,14 +136,14 @@ const Header = memo(({ onRefresh, onPrune, isPruning }) => {
   )
 })
 
-const SystemOverview = memo(({ system, formatBytes }) => {
+const SystemOverview = memo(({ system, containers, images, networks, volumes, formatBytes }) => {
   const memUsagePath = (system?.memory_used / system?.memory_total) * 100 || 0
   const diskUsagePath = (system?.disk_used / system?.disk_total) * 100 || 0
 
   return (
     <div className="mb-10">
       <h2 className="text-lg font-semibold text-white mb-4">System Overview</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <StatCard 
           title="CPU Usage" 
           subtitle="Processor utilization"
@@ -169,15 +169,51 @@ const SystemOverview = memo(({ system, formatBytes }) => {
         />
 
         <StatCard 
-          title="Disk Usage" 
-          subtitle={`Storage utilization at ${system?.disk_path}`}
-          value={formatBytes(system?.disk_used || 0)}
-          capacity={formatBytes(system?.disk_total || 0)}
-          percent={diskUsagePath}
+          title="Containers" 
+          subtitle="Active & Inactive"
+          value={containers?.length || 0}
+          capacity="All Containers"
+          percent={Math.min((containers?.filter(c => c.state === 'running').length / containers?.length) * 100 || 0, 100)}
           color="orange"
-          icon={<DiskIcon />}
-          meta={`Usage: ${diskUsagePath.toFixed(1)}%`}
-          metaAlt={`Free: ${formatBytes((system?.disk_total - system?.disk_used) || 0)}`}
+          icon={<ContainerIcon />}
+          meta={`${containers?.filter(c => c.state === 'running').length || 0} Running`}
+          metaAlt={`${containers?.length || 0} Total`}
+        />
+
+        <StatCard 
+          title="Images" 
+          subtitle="Storage locally"
+          value={images?.length || 0}
+          capacity="Local registry"
+          percent={100}
+          color="purple"
+          icon={<ImageIcon />}
+          meta={`${images?.filter(img => img.status === 'In Use').length || 0} In Use`}
+          metaAlt={`${images?.length || 0} Total`}
+        />
+
+        <StatCard 
+          title="Networks" 
+          subtitle="Docker networks"
+          value={networks?.length || 0}
+          capacity="Virtual stacks"
+          percent={100}
+          color="blue"
+          icon={<NetworkIcon />}
+          meta={`${networks?.length || 0} Total`}
+          metaAlt="Active Scope"
+        />
+
+        <StatCard 
+          title="Volumes" 
+          subtitle="Persistent storage"
+          value={volumes?.length || 0}
+          capacity="Docker storage"
+          percent={100}
+          color="orange"
+          icon={<VolumeIcon />}
+          meta={`${volumes?.length || 0} Total`}
+          metaAlt="Storage Active"
         />
       </div>
     </div>
@@ -387,6 +423,18 @@ const MemoryIcon = () => (
 const DiskIcon = () => (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+    </svg>
+)
+
+const NetworkIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+    </svg>
+)
+
+const VolumeIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
     </svg>
 )
 

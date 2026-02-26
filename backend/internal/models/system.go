@@ -17,13 +17,16 @@ type SystemStats struct {
 
 // DockerContainer represents a container running on the host
 type DockerContainer struct {
-	ID        string    `json:"id"`
-	Names     []string  `json:"names"`
-	Image     string    `json:"image"`
-	State     string    `json:"state"`
-	Status    string    `json:"status"`
-	Ports     []string  `json:"ports"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Names         []string  `json:"names"`
+	Image         string    `json:"image"`
+	State         string    `json:"state"`
+	Status        string    `json:"status"`
+	Ports         []string  `json:"ports"`
+	IPAddress     string    `json:"ip_address"`
+	CPUPercent    float64   `json:"cpu_percent"`
+	MemoryUsage   float64   `json:"memory_usage"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // DockerImage represents an image stored on the host
@@ -40,9 +43,12 @@ type DockerImage struct {
 
 // DockerVolume represents a docker volume
 type DockerVolume struct {
-	Name       string `json:"name"`
-	Driver     string `json:"driver"`
-	Mountpoint string `json:"mountpoint"`
+	Name       string    `json:"name"`
+	Driver     string    `json:"driver"`
+	Mountpoint string    `json:"mountpoint"`
+	Status     string    `json:"status"` // "In Use" or "Unused"
+	Size       string    `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // DockerNetwork represents a docker network
@@ -51,4 +57,5 @@ type DockerNetwork struct {
 	Name   string `json:"name"`
 	Driver string `json:"driver"`
 	Scope  string `json:"scope"`
+	Status string `json:"status"` // "In Use" or "Unused"
 }

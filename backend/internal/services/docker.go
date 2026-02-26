@@ -637,10 +637,14 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	return stats, nil
 }
 
-// ListAllContainers returns all containers on the host
+// ListAllContainers returns all containers on the host with stats
 func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
-	// Format: ID|Names|Image|State|Status|CreatedAt
-	cmd := exec.Command("docker", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}")
+	// 1. Get stats for info merging
+	statsMap, _ := s.GetAllContainerStats()
+
+	// 2. Get container list with detailed info
+	// Format: ID|Names|Image|State|Status|CreatedAt|IPAddress|Ports
+	cmd := exec.Command("docker", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Networks}}|{{.Ports}}")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -653,23 +657,60 @@ func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
 			continue
 		}
 		parts := strings.Split(line, "|")
-		if len(parts) < 6 {
+		if len(parts) < 8 {
 			continue
 		}
 
 		created, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", parts[5])
 
-		result = append(result, models.DockerContainer{
-			ID:        parts[0],
+		id := parts[0]
+		
+		// Get IP Address via inspect if not available in format (Format doesn't easily give IP)
+		ipAddr := ""
+		inspectCmd := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", id)
+		if ipOut, err := inspectCmd.Output(); err == nil {
+			ipAddr = strings.TrimSpace(string(ipOut))
+		}
+
+		container := models.DockerContainer{
+			ID:        id,
 			Names:     strings.Split(parts[1], ","),
 			Image:     parts[2],
 			State:     parts[3],
 			Status:    parts[4],
 			CreatedAt: created,
-		})
+			IPAddress: ipAddr,
+			Ports:     parsePorts(parts[7]),
+		}
+
+		// Merge stats if available
+		if stats, ok := statsMap[id]; ok {
+			container.CPUPercent = stats.CPUPercent
+			container.MemoryUsage = stats.MemoryMB
+		} else {
+			// Try by name since ID might be truncated in stats
+			for _, name := range container.Names {
+				if stats, ok := statsMap[name]; ok {
+					container.CPUPercent = stats.CPUPercent
+					container.MemoryUsage = stats.MemoryMB
+					break
+				}
+			}
+		}
+
+		result = append(result, container)
 	}
 
 	return result, nil
+}
+
+// parsePorts converts docker port string to slice
+func parsePorts(portStr string) []string {
+	if portStr == "" {
+		return []string{}
+	}
+	// Example: "0.0.0.0:80->80/tcp, :::80->80/tcp" or "80/tcp"
+	return strings.Split(portStr, ", ")
 }
 
 // ListAllImages returns all images on the host
@@ -686,7 +727,10 @@ func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 	cmdUsed := exec.Command("docker", "ps", "-a", "--format", "{{.Image}}")
 	outUsed, _ := cmdUsed.Output()
 	for _, img := range strings.Split(string(outUsed), "\n") {
-		usedImages[strings.TrimSpace(img)] = true
+		img = strings.TrimSpace(img)
+		if img != "" {
+			usedImages[img] = true
+		}
 	}
 
 	var result []models.DockerImage
@@ -704,6 +748,7 @@ func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 		tag := parts[2]
 		
 		status := "Unused"
+		// Match against full name or ID
 		if usedImages[repo] || usedImages[repo+":"+tag] || usedImages[parts[0]] {
 			status = "In Use"
 		}
@@ -714,6 +759,85 @@ func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 			Tag:        tag,
 			SizeHuman:  parts[3],
 			Status:     status,
+		})
+	}
+
+	return result, nil
+}
+
+// ListAllNetworks returns all networks on the host
+func (s *DockerService) ListAllNetworks() ([]models.DockerNetwork, error) {
+	// Format: ID|Name|Driver|Scope
+	cmd := exec.Command("docker", "network", "ls", "--format", "{{.ID}}|{{.Name}}|{{.Driver}}|{{.Scope}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get used networks
+	usedNets := make(map[string]bool)
+	cmdUsed := exec.Command("docker", "ps", "-a", "--format", "{{.Networks}}")
+	outUsed, _ := cmdUsed.Output()
+	for _, netLine := range strings.Split(string(outUsed), "\n") {
+		for _, net := range strings.Split(netLine, ",") {
+			usedNets[strings.TrimSpace(net)] = true
+		}
+	}
+
+	var result []models.DockerNetwork
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 4 {
+			continue
+		}
+
+		name := parts[1]
+		status := "Unused"
+		if usedNets[name] {
+			status = "In Use"
+		}
+
+		result = append(result, models.DockerNetwork{
+			ID:     parts[0],
+			Name:   name,
+			Driver: parts[2],
+			Scope:  parts[3],
+			Status: status,
+		})
+	}
+
+	return result, nil
+}
+
+// ListAllVolumes returns all volumes on the host
+func (s *DockerService) ListAllVolumes() ([]models.DockerVolume, error) {
+	// Format: Name|Driver|Mountpoint
+	cmd := exec.Command("docker", "volume", "ls", "--format", "{{.Name}}|{{.Driver}}|{{.Mountpoint}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []models.DockerVolume
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 3 {
+			continue
+		}
+
+		result = append(result, models.DockerVolume{
+			Name:       parts[0],
+			Driver:     parts[1],
+			Mountpoint: parts[2],
+			Status:     "Active", // Volume status is harder to determine simply
 		})
 	}
 

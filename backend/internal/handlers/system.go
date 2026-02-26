@@ -31,10 +31,22 @@ func (h *SystemHandler) GetStats(c *fiber.Ctx) error {
 		images = []models.DockerImage{}
 	}
 
+	networks, err := h.dockerService.ListAllNetworks()
+	if err != nil {
+		networks = []models.DockerNetwork{}
+	}
+
+	volumes, err := h.dockerService.ListAllVolumes()
+	if err != nil {
+		volumes = []models.DockerVolume{}
+	}
+
 	return c.JSON(fiber.Map{
 		"system":     stats,
 		"containers": containers,
 		"images":     images,
+		"networks":   networks,
+		"volumes":    volumes,
 	})
 }
 
