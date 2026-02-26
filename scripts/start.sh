@@ -63,7 +63,8 @@ mkdir -p "$DB_DATA_DIR"
 if [ -d "$DB_DATA_DIR" ] && [ "$(ls -A "$DB_DATA_DIR")" ]; then
     BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
     echo -e "${YELLOW}Backing up MySQL data to $BACKUP_FILE ...${NC}"
-    tar czf "$BACKUP_FILE" -C "$DB_DATA_DIR" .
+    sudo tar czf "$BACKUP_FILE" -C "$DB_DATA_DIR" .
+    sudo chown $(id -u):$(id -g) "$BACKUP_FILE"
     echo -e "${GREEN}✓ Backup complete${NC}"
 fi
 
