@@ -93,70 +93,33 @@ RUN if [ -f package.json ] && [ -d resources ]; then \
         true; \
     fi
 
-# Stage 3: Production with Dynamic Extensions
-FROM php:8.3-fpm-alpine
+# Stage 3: Production (Optimized Runtime)
+FROM paas-runtime-php:8.3-alpine
 
 LABEL maintainer="Laravel PaaS"
-LABEL description="Laravel 11.x with PHP 8.3 (Dynamic Extensions)"
+LABEL description="Laravel 11.x with PHP 8.3 (Dynamic & Fast)"
 
 # Copy extension requirements
 COPY --from=composer /tmp/required_extensions.txt /tmp/
 
-# Install system dependencies based on required extensions
+# Install ONLY missing extensions (most are already in paas-runtime)
 RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
-    apk add --no-cache nginx supervisor curl zip unzip git && \
+    # Filter out extensions already installed in base (pdo_mysql, gd, redis, etc.)
+    MISSING_EXTS="" && \
+    for ext in $REQUIRED_EXTS; do \
+        if ! php -m | grep -qi "^$ext$"; then \
+            MISSING_EXTS="$MISSING_EXTS $ext" && \
+            echo "Extension $ext is missing, adding to install list..."; \
+        fi \
+    done && \
     \
-    # Install extension-specific dependencies
-    if echo "$REQUIRED_EXTS" | grep -q "gd"; then \
-        apk add --no-cache libpng-dev libjpeg-turbo-dev freetype-dev; \
+    if [ -n "$MISSING_EXTS" ]; then \
+        echo "Installing missing extensions: $MISSING_EXTS" && \
+        apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+        && docker-php-ext-install $MISSING_EXTS \
+        && apk del .build-deps; \
     fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "imagick"; then \
-        apk add --no-cache imagemagick-dev; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "zip"; then \
-        apk add --no-cache libzip-dev; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "mbstring"; then \
-        apk add --no-cache oniguruma-dev; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "intl"; then \
-        apk add --no-cache icu-dev; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "ldap"; then \
-        apk add --no-cache openldap-dev; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "soap"; then \
-        apk add --no-cache libxml2-dev; \
-    fi && \
-    \
-    # Configure and install PHP extensions
-    if echo "$REQUIRED_EXTS" | grep -q "gd"; then \
-        docker-php-ext-configure gd --with-freetype --with-jpeg; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "intl"; then \
-        docker-php-ext-configure intl; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "ldap"; then \
-        docker-php-ext-configure ldap; \
-    fi && \
-    \
-    # Install all required extensions
-    docker-php-ext-install $REQUIRED_EXTS && \
-    \
-    # Install PECL extensions if needed
-    if echo "$REQUIRED_EXTS" | grep -q "redis"; then \
-        pecl install redis && docker-php-ext-enable redis; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "imagick"; then \
-        pecl install imagick && docker-php-ext-enable imagick; \
-    fi && \
-    if echo "$REQUIRED_EXTS" | grep -q "memcached"; then \
-        apk add --no-cache libmemcached-dev && \
-        pecl install memcached && docker-php-ext-enable memcached; \
-    fi && \
-    \
-    # Clean up
-    rm -rf /var/cache/apk/* /tmp/pear /tmp/required_extensions.txt
+    rm -rf /var/cache/apk/* /tmp/required_extensions.txt
 
 # Optimized PHP configuration
 RUN { \

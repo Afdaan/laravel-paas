@@ -1,0 +1,79 @@
+# Optimized Base Image for Laravel PaaS Runtime
+# This image contains all necessary PHP extensions pre-compiled to speed up project builds.
+ARG PHP_VERSION=8.3
+FROM php:${PHP_VERSION}-fpm-alpine
+
+# Set build arguments for customization
+ARG INSTALL_REDIS=true
+ARG INSTALL_IMAGICK=true
+
+# Install system dependencies
+RUN apk add --no-cache \
+    nginx \
+    supervisor \
+    curl \
+    zip \
+    unzip \
+    git \
+    libpng-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
+    libzip-dev \
+    oniguruma-dev \
+    icu-dev \
+    libxml2-dev \
+    imagemagick-dev \
+    libmemcached-dev \
+    openldap-dev \
+    gmp-dev \
+    postgresql-dev \
+    libpq-dev \
+    sqlite-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure intl \
+    && docker-php-ext-configure ldap \
+    && docker-php-ext-install -j$(nproc) \
+        pdo_mysql \
+        pdo_pgsql \
+        mbstring \
+        exif \
+        pcntl \
+        bcmath \
+        gd \
+        zip \
+        opcache \
+        intl \
+        xml \
+        soap \
+        sockets \
+        gmp \
+        ldap \
+    && if [ "$INSTALL_REDIS" = "true" ]; then \
+        printf "\n" | pecl install redis && docker-php-ext-enable redis; \
+    fi \
+    && if [ "$INSTALL_IMAGICK" = "true" ]; then \
+        printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
+    fi \
+    && rm -rf /var/cache/apk/* /tmp/pear
+
+# PHP configuration optimization
+RUN { \
+    echo 'opcache.memory_consumption=128'; \
+    echo 'opcache.interned_strings_buffer=8'; \
+    echo 'opcache.max_accelerated_files=4000'; \
+    echo 'opcache.revalidate_freq=0'; \
+    echo 'opcache.validate_timestamps=0'; \
+    echo 'opcache.fast_shutdown=1'; \
+    echo 'opcache.enable_cli=1'; \
+    echo 'opcache.jit_buffer_size=100M'; \
+    echo 'opcache.jit=1255'; \
+    echo 'memory_limit=512M'; \
+    echo 'upload_max_filesize=64M'; \
+    echo 'post_max_size=64M'; \
+    echo 'max_execution_time=60'; \
+} > /usr/local/etc/php/conf.d/paas-optimized.ini
+
+WORKDIR /var/www/html
+
+# The remaining project-specific steps will be handled by the project Dockerfile
+# which will start FROM this image.

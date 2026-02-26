@@ -5,84 +5,26 @@
 # Stage 1: Composer Dependencies
 FROM composer:2 AS composer
 WORKDIR /app
-
-# Copy composer files first for better layer caching
 COPY composer.json composer.lock* ./
-
-# Install dependencies without autoloader for faster install
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
     composer install --no-dev --prefer-dist --ignore-platform-reqs
-
-# Copy only necessary source files for composer autoload
-COPY app/ app/
-COPY bootstrap/ bootstrap/
-COPY config/ config/
-COPY database/ database/
-COPY routes/ routes/
-COPY public/index.php public/index.php
-COPY artisan artisan
-
-# Generate optimized autoloader
+COPY . .
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
-# Stage 2: Production (Pure Laravel)
-FROM php:8.3-fpm-alpine
-
-LABEL maintainer="Laravel PaaS"
-LABEL description="Laravel 11.x with PHP 8.3 (Pure Laravel - No Frontend Assets)"
-
-# Install system dependencies in single layer
-RUN apk add --no-cache \
-    nginx supervisor curl zip unzip git \
-    libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev oniguruma-dev \
-    icu-dev libxml2-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-configure intl \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip opcache intl xml \
-    && rm -rf /var/cache/apk/*
-
-# PHP 8.3 optimized opcache with JIT
-RUN { \
-    echo 'opcache.memory_consumption=128'; \
-    echo 'opcache.interned_strings_buffer=8'; \
-    echo 'opcache.max_accelerated_files=4000'; \
-    echo 'opcache.revalidate_freq=0'; \
-    echo 'opcache.validate_timestamps=0'; \
-    echo 'opcache.fast_shutdown=1'; \
-    echo 'opcache.enable_cli=1'; \
-    echo 'opcache.jit_buffer_size=100M'; \
-    echo 'opcache.jit=1255'; \
-    echo 'memory_limit=256M'; \
-    echo 'upload_max_filesize=32M'; \
-    echo 'post_max_size=32M'; \
-} > /usr/local/etc/php/conf.d/opcache.ini
-
+# Stage 2: Production (Laravel Runtime)
+FROM paas-runtime-php:8.3-alpine
 WORKDIR /var/www/html
-
-# Copy all application files
 COPY . .
-
-# Copy optimized vendor from composer stage
 COPY --from=composer /app/vendor ./vendor
 
-# Create Laravel public directory structure (minimal)
-RUN mkdir -p public/css public/js public/images \
-    && echo "/* Laravel CSS */" > public/css/app.css \
-    && echo "// Laravel JS" > public/js/app.js
-
-# Create directories that might not exist and set permissions
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
     && chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 storage bootstrap/cache \
-    && chmod -R 775 storage/logs storage/framework
+    && chmod -R 775 storage bootstrap/cache
 
-# Copy configuration files
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 80
-
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
-
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
