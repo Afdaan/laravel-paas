@@ -7,7 +7,7 @@ FROM php:${PHP_VERSION}-fpm-alpine
 ARG INSTALL_REDIS=true
 ARG INSTALL_IMAGICK=true
 
-# Install system dependencies
+# Install core runtime dependencies (Nginx, Supervisor, libraries)
 RUN apk add --no-cache \
     nginx \
     supervisor \
@@ -15,20 +15,37 @@ RUN apk add --no-cache \
     zip \
     unzip \
     git \
-    libpng-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    libzip-dev \
-    oniguruma-dev \
-    icu-dev \
-    libxml2-dev \
-    imagemagick-dev \
-    libmemcached-dev \
-    openldap-dev \
-    gmp-dev \
-    postgresql-dev \
-    libpq-dev \
-    sqlite-dev \
+    icu-data-full \
+    libpng \
+    libjpeg-turbo \
+    freetype \
+    libzip \
+    oniguruma \
+    icu-libs \
+    libxml2 \
+    imagemagick \
+    libmemcached-libs \
+    openldap \
+    gmp \
+    libpq
+
+# Build and Install Extensions
+RUN apk add --no-cache --virtual .build-deps \
+        $PHPIZE_DEPS \
+        zlib-dev \
+        libpng-dev \
+        libjpeg-turbo-dev \
+        freetype-dev \
+        libzip-dev \
+        oniguruma-dev \
+        icu-dev \
+        libxml2-dev \
+        imagemagick-dev \
+        libmemcached-dev \
+        openldap-dev \
+        gmp-dev \
+        postgresql-dev \
+        linux-headers \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
     && docker-php-ext-configure ldap \
@@ -52,8 +69,10 @@ RUN apk add --no-cache \
         printf "\n" | pecl install redis && docker-php-ext-enable redis; \
     fi \
     && if [ "$INSTALL_IMAGICK" = "true" ]; then \
+        # Handle cases where Imagick version might be unstable for certain PHP versions
         printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
     fi \
+    && apk del .build-deps \
     && rm -rf /var/cache/apk/* /tmp/pear
 
 # PHP configuration optimization
@@ -74,6 +93,3 @@ RUN { \
 } > /usr/local/etc/php/conf.d/paas-optimized.ini
 
 WORKDIR /var/www/html
-
-# The remaining project-specific steps will be handled by the project Dockerfile
-# which will start FROM this image.
