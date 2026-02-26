@@ -60,12 +60,19 @@ DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 mkdir -p "$DB_DATA_DIR"
 
 # Backup MySQL data before starting (safety for production)
-if [ -d "$DB_DATA_DIR" ] && [ "$(ls -A "$DB_DATA_DIR")" ]; then
-    BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-    echo -e "${YELLOW}Backing up MySQL data to $BACKUP_FILE ...${NC}"
-    sudo tar czf "$BACKUP_FILE" -C "$DB_DATA_DIR" .
+if [ "$SKIP_BACKUP" = "true" ]; then
+    echo -e "${YELLOW}⏩ Skipping MySQL backup...${NC}"
+elif [ -d "$DB_DATA_DIR" ] && [ "$(ls -A "$DB_DATA_DIR")" ]; then
+    BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-backup-$(date +%Y%m%d-%H%M%S).tar"
+    echo -e "${YELLOW}Backing up core database ($MYSQL_DATABASE) to $BACKUP_FILE ...${NC}"
+    sudo tar cf "$BACKUP_FILE" -C "$DB_DATA_DIR" \
+        "./$MYSQL_DATABASE" \
+        ./ibdata1 \
+        ./ib_logfile* \
+        ./aria_log* \
+        ./multi-master.info 2>/dev/null || true
     sudo chown $(id -u):$(id -g) "$BACKUP_FILE"
-    echo -e "${GREEN}✓ Backup complete${NC}"
+    echo -e "${GREEN}✓ Targeted backup complete${NC}"
 fi
 
 # Ensure correct ownership for MariaDB (UID 999)
