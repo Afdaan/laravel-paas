@@ -321,11 +321,13 @@ function StudentProjectDetail() {
           </div>
           <div className="flex items-center gap-2 text-slate-400 font-mono text-sm">
              <span>{project.subdomain}</span>
-             {project.status === 'running' && (
+              {project.status === 'running' && (
                 <a href={projectUrl} target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">
-                  <span className="i-lucide-external-link"></span> ↗
+                  <svg className="w-4 h-4 inline-block ml-1" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
                 </a>
-             )}
+              )}
           </div>
         </div>
         
@@ -611,9 +613,11 @@ function StudentProjectDetail() {
                             <label className="text-xs text-slate-500 uppercase font-medium">Host</label>
                             <div className="flex items-center gap-2 mt-1">
                                <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">paas-mysql</code>
-                               <button onClick={() => copyToClipboard('paas-mysql')} className="p-2 hover:bg-slate-800 rounded text-slate-400">
-                                  <span className="i-lucide-copy">📋</span>
-                               </button>
+                                <button onClick={() => copyToClipboard('paas-mysql')} className="p-2 hover:bg-slate-800 rounded text-slate-400">
+                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                   </svg>
+                                </button>
                             </div>
                          </div>
                          <div>

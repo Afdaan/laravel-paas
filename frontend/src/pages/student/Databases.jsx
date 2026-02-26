@@ -71,7 +71,10 @@ export default function Databases() {
       <div className="w-full md:w-80 flex-shrink-0 flex flex-col gap-4">
          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
             <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-              <span className="i-lucide-database text-primary-500"></span> Databases
+              <svg className="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75M3.75 10.125v3.75m16.5 0v3.75M3.75 13.875v3.75" />
+              </svg>
+              Databases
             </h2>
             <p className="text-slate-400 text-xs mb-4">Select a project to manage</p>
             
@@ -83,7 +86,11 @@ export default function Databases() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary-500"
               />
-              <span className="absolute left-3 top-2.5 text-slate-500 i-lucide-search text-xs">🔍</span>
+              <span className="absolute left-3 top-2.5 text-slate-500">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+              </span>
             </div>
          </div>
 
@@ -106,7 +113,10 @@ export default function Databases() {
                     <span className={`w-2 h-2 rounded-full ${p.status === 'running' ? 'bg-emerald-500' : 'bg-slate-500'}`} />
                   </div>
                   <div className="flex items-center gap-1 text-xs text-slate-500 font-mono truncate">
-                    <span className="i-lucide-database w-3 h-3"></span> {p.database_name}
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75M3.75 10.125v3.75m16.5 0v3.75M3.75 13.875v3.75" />
+                    </svg>
+                    {p.database_name}
                   </div>
                 </button>
               ))
@@ -126,7 +136,11 @@ export default function Databases() {
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4 opacity-75">
-             <div className="w-16 h-16 rounded-full bg-slate-700/50 flex items-center justify-center text-3xl">👈</div>
+             <div className="w-16 h-16 rounded-full bg-slate-700/50 flex items-center justify-center text-slate-400">
+               <svg className="w-8 h-8 rotate-180" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+               </svg>
+             </div>
              <p>Select a project from the sidebar</p>
           </div>
         )}

@@ -10,32 +10,57 @@ import useAuthStore from '../stores/authStore'
 
 const features = [
   {
-    icon: '🚀',
+    icon: (
+      <svg className="w-8 h-8 text-primary-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699-2.7c-.91.91-1.076 2.05-.365 2.71c.71.71 1.85.545 2.76-.365c.911-.911 1.077-2.051.366-2.711c-.71-.71-1.85-.545-2.761.366z" />
+      </svg>
+    ),
     title: 'Deploy Instantly',
     desc: 'Push your Laravel project from GitHub and it will be live in minutes, automatically.',
   },
   {
-    icon: '🗄️',
+    icon: (
+      <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75M3.75 10.125v3.75m16.5 0v3.75M3.75 13.875v3.75" />
+      </svg>
+    ),
     title: 'Database Included',
     desc: 'Each project gets its own isolated MariaDB database. No manual setup needed.',
   },
   {
-    icon: '🌐',
+    icon: (
+      <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.041 9.041 0 01-2.427-.328 12.035 12.035 0 01-5.264-3.551 12.035 12.035 0 01-3.551-5.264A9.041 9.041 0 011 9.573a9.041 9.041 0 01.328-2.427 12.035 12.035 0 013.551-5.264 12.035 12.035 0 015.264-3.551A9.041 9.041 0 0112 1a9.041 9.041 0 012.427.328 12.035 12.035 0 015.264 3.551 12.035 12.035 0 013.551 5.264 9.041 9.041 0 01.328 2.427 9.041 9.041 0 01-.328 2.427 12.035 12.035 0 01-3.551 5.264 12.035 12.035 0 01-5.264 3.551A9.041 9.041 0 0112 21z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a9 9 0 00-9 9m9-9a9 9 0 019 9m-9-9v18m0-18C8.5 1 5.5 4 5.5 10s3 9 6.5 9m0-18c3.5 0 6.5 3 6.5 9s-3 9-6.5 9M1.2 12.5h21.6M2.5 7h19M2.5 17h19" />
+      </svg>
+    ),
     title: 'Custom Subdomain',
     desc: 'Every project is accessible via a unique subdomain right after deployment.',
   },
   {
-    icon: '📦',
+    icon: (
+      <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-10.5v10.5" />
+      </svg>
+    ),
     title: 'PHP Version Control',
     desc: 'Choose PHP 8.0 – 8.4 per project. We handle the container configuration for you.',
   },
   {
-    icon: '🔄',
+    icon: (
+      <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+      </svg>
+    ),
     title: 'One-Click Redeploy',
     desc: 'Update your app by triggering a redeploy anytime from the dashboard.',
   },
   {
-    icon: '🛠️',
+    icon: (
+      <svg className="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.83-5.83m-5.83 5.83a2.652 2.652 0 11-3.75-3.75l5.83-5.83m5.83 5.83V9a3 3 0 00-3-3H9m-6 3l3.181 3.182a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+      </svg>
+    ),
     title: 'Artisan & Logs',
     desc: 'Run Artisan commands and view real-time container logs directly from the panel.',
   },
@@ -70,8 +95,10 @@ export default function Landing() {
       {/* Navbar */}
       <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-            <span className="text-lg">🚀</span>
+          <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 text-white">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699-2.7c-.91.91-1.076 2.05-.365 2.71c.71.71 1.85.545 2.76-.365" />
+            </svg>
           </div>
           <span className="text-xl font-bold tracking-tight">Laravel PaaS</span>
         </div>
@@ -82,6 +109,7 @@ export default function Landing() {
           Sign In
         </Link>
       </header>
+
 
       {/* Hero */}
       <section className="relative z-10 text-center px-6 pt-20 pb-24 max-w-4xl mx-auto">

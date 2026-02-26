@@ -55,8 +55,24 @@ docker network create paas-network 2>/dev/null || true
 # Start MariaDB (more compatible than MySQL 8)
 echo -e "${YELLOW}Starting MariaDB...${NC}"
 docker rm -f paas-mysql 2>/dev/null || true
+DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 # Ensure local storage directory for MySQL exists
-mkdir -p "${PROJECT_ROOT}/storage/mysql"
+mkdir -p "$DB_DATA_DIR"
+
+# Backup MySQL data before starting (safety for production)
+if [ -d "$DB_DATA_DIR" ] && [ "$(ls -A "$DB_DATA_DIR")" ]; then
+    BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+    echo -e "${YELLOW}Backing up MySQL data to $BACKUP_FILE ...${NC}"
+    tar czf "$BACKUP_FILE" -C "$DB_DATA_DIR" .
+    echo -e "${GREEN}✓ Backup complete${NC}"
+fi
+
+# Ensure correct ownership for MariaDB (UID 999)
+if [ "$(stat -c '%u' "$DB_DATA_DIR")" != "999" ]; then
+    echo -e "${YELLOW}Fixing storage/mysql owner to UID 999 (mysql)...${NC}"
+    sudo chown -R 999:999 "$DB_DATA_DIR"
+    echo -e "${GREEN}✓ storage/mysql owner fixed${NC}"
+fi
 docker run -d \
     --name paas-mysql \
     --network paas-network \
