@@ -100,7 +100,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
 
-	// System monitoring (Arcane style)
+	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)
 	admin.Post("/system/prune", systemHandler.PruneSystem)
 

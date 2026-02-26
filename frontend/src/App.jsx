@@ -4,7 +4,7 @@
 // Handles routing and layout
 // ===========================================
 
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './stores/authStore'
 
@@ -12,19 +12,19 @@ import useAuthStore from './stores/authStore'
 import DashboardLayout from './components/DashboardLayout'
 import LoadingScreen from './components/LoadingScreen'
 
-// Pages
-import Landing from './pages/Landing'
-import Login from './pages/Login'
-import StudentDashboard from './pages/student/Dashboard'
-import StudentProjects from './pages/student/Projects'
-import StudentNewProject from './pages/student/NewProject'
-import StudentProjectDetail from './pages/student/ProjectDetail'
-import DatabaseManager from './pages/student/DatabaseManager'
-import AdminDashboard from './pages/admin/Dashboard'
-import AdminUsers from './pages/admin/Users'
-import AdminProjects from './pages/admin/Projects'
-import AdminSettings from './pages/admin/Settings'
-import StudentDatabases from './pages/student/Databases'
+// Lazy loaded pages for performance
+const Landing = lazy(() => import('./pages/Landing'))
+const Login = lazy(() => import('./pages/Login'))
+const StudentDashboard = lazy(() => import('./pages/student/Dashboard'))
+const StudentProjects = lazy(() => import('./pages/student/Projects'))
+const StudentNewProject = lazy(() => import('./pages/student/NewProject'))
+const StudentProjectDetail = lazy(() => import('./pages/student/ProjectDetail'))
+const DatabaseManager = lazy(() => import('./pages/student/DatabaseManager'))
+const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
+const AdminUsers = lazy(() => import('./pages/admin/Users'))
+const AdminProjects = lazy(() => import('./pages/admin/Projects'))
+const AdminSettings = lazy(() => import('./pages/admin/Settings'))
+const StudentDatabases = lazy(() => import('./pages/student/Databases'))
 
 // Protected Route Component
 function ProtectedRoute({ children, requireAdmin = false }) {
@@ -65,41 +65,43 @@ function App() {
   }, [])
   
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      
-      {/* Student Routes */}
-      <Route element={
-        <ProtectedRoute>
-          <DashboardLayout />
-        </ProtectedRoute>
-      }>
-        <Route path="/dashboard" element={<StudentDashboard />} />
-        <Route path="/projects" element={<StudentProjects />} />
-        <Route path="/projects/new" element={<StudentNewProject />} />
-        <Route path="/projects/:id" element={<StudentProjectDetail />} />
-        <Route path="/databases" element={<StudentDatabases />} />
-        <Route path="/projects/:id/database" element={<DatabaseManager />} />
-      </Route>
-      
-      {/* Admin Routes */}
-      <Route path="/admin" element={
-        <ProtectedRoute requireAdmin>
-          <DashboardLayout isAdmin />
-        </ProtectedRoute>
-      }>
-        <Route index element={<Navigate to="/admin/dashboard" replace />} />
-        <Route path="dashboard" element={<AdminDashboard />} />
-        <Route path="users" element={<AdminUsers />} />
-        <Route path="projects" element={<AdminProjects />} />
-        <Route path="settings" element={<AdminSettings />} />
-      </Route>
-      
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        
+        {/* Student Routes */}
+        <Route element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }>
+          <Route path="/dashboard" element={<StudentDashboard />} />
+          <Route path="/projects" element={<StudentProjects />} />
+          <Route path="/projects/new" element={<StudentNewProject />} />
+          <Route path="/projects/:id" element={<StudentProjectDetail />} />
+          <Route path="/databases" element={<StudentDatabases />} />
+          <Route path="/projects/:id/database" element={<DatabaseManager />} />
+        </Route>
+        
+        {/* Admin Routes */}
+        <Route path="/admin" element={
+          <ProtectedRoute requireAdmin>
+            <DashboardLayout isAdmin />
+          </ProtectedRoute>
+        }>
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="projects" element={<AdminProjects />} />
+          <Route path="settings" element={<AdminSettings />} />
+        </Route>
+        
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
 

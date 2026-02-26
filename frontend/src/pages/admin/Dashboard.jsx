@@ -1,5 +1,5 @@
 // ===========================================
-// Admin Dashboard (Arcane Style)
+// Admin Dashboard (PaaS Style)
 // ===========================================
 
 import { useState, useEffect } from 'react'
@@ -63,7 +63,7 @@ function AdminDashboard() {
             <div className="absolute inset-0 rounded-full border-4 border-purple-500/20"></div>
             <div className="absolute inset-0 rounded-full border-4 border-t-purple-500 animate-spin"></div>
         </div>
-        <p className="mt-4 text-purple-400 font-medium animate-pulse">Initializing Arcane Monitor...</p>
+        <p className="mt-4 text-purple-400 font-medium animate-pulse">Initializing PaaS Monitor...</p>
       </div>
     )
   }
