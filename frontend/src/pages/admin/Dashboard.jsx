@@ -12,6 +12,9 @@ function AdminDashboard() {
     system: null,
     containers: [],
     images: [],
+    networks: [],
+    volumes: [],
+    recentProjects: []
   })
   const [isLoading, setIsLoading] = useState(true)
   const [isPruning, setIsPruning] = useState(false)

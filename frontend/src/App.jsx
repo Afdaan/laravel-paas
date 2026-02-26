@@ -46,6 +46,11 @@ function ProtectedRoute({ children, requireAdmin = false }) {
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/dashboard" replace />
   }
+
+  // If user is admin but accessing student dashboard, redirect them to admin dashboard
+  if (!requireAdmin && isAdmin && window.location.pathname === '/dashboard') {
+    return <Navigate to="/admin/dashboard" replace />
+  }
   
   return children
 }
