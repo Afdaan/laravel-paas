@@ -29,6 +29,8 @@ const AdminImages = lazy(() => import('./pages/admin/Images'))
 const AdminNetworks = lazy(() => import('./pages/admin/Networks'))
 const AdminVolumes = lazy(() => import('./pages/admin/Volumes'))
 const StudentDatabases = lazy(() => import('./pages/student/Databases'))
+const StudentFeedback = lazy(() => import('./pages/student/Feedback'))
+const AdminFeedback = lazy(() => import('./pages/admin/Feedback'))
 
 // Protected Route Component
 function ProtectedRoute({ children, requireAdmin = false }) {
@@ -92,6 +94,7 @@ function App() {
           <Route path="/projects/:id" element={<StudentProjectDetail />} />
           <Route path="/databases" element={<StudentDatabases />} />
           <Route path="/projects/:id/database" element={<DatabaseManager />} />
+          <Route path="/feedback" element={<StudentFeedback />} />
         </Route>
         
         {/* Admin Routes */}
@@ -109,6 +112,7 @@ function App() {
           <Route path="networks" element={<AdminNetworks />} />
           <Route path="volumes" element={<AdminVolumes />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="feedback" element={<AdminFeedback />} />
         </Route>
         
         {/* Fallback */}

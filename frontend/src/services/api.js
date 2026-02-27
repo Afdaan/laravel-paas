@@ -183,8 +183,26 @@ export const databaseAPI = {
 }
 
 // ===========================================
-// System API (Admin)
+// Feedback API
 // ===========================================
+
+export const feedbackAPI = {
+  submit: (data) => 
+    api.post('/feedback', data),
+  
+  listOwn: () => 
+    api.get('/feedback'),
+  
+  // Admin endpoints
+  listAll: (params = {}) => 
+    api.get('/admin/feedback', { params }),
+  
+  updateStatus: (id, status) => 
+    api.put(`/admin/feedback/${id}/status`, { status }),
+  
+  delete: (id) => 
+    api.delete(`/admin/feedback/${id}`),
+}
 
 export const systemAPI = {
   getStats: () => 

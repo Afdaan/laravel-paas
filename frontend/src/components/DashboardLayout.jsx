@@ -65,6 +65,11 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
     </svg>
   ),
+  Feedback: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3h9m-9 3h3m-6.75 3.75a2.25 2.25 0 002.25 2.25h10.5a2.25 2.25 0 002.25-2.25v-10.5a2.25 2.25 0 00-2.25-2.25H4.01a2.25 2.25 0 00-2.25 2.25V18a2.25 2.25 0 002.25 2.25h.49a1.125 1.125 0 011.05 1.5l-.75 2.25 4.5-4.5z" />
+    </svg>
+  ),
 }
 
 
@@ -84,6 +89,7 @@ function DashboardLayout({ isAdmin = false }) {
           { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
           { to: '/admin/users', icon: Icons.Users, label: 'Users' },
           { to: '/admin/projects', icon: Icons.Projects, label: 'Projects' },
+          { to: '/admin/feedback', icon: Icons.Feedback, label: 'Feedback' },
           { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
         ],
         resources: [
@@ -98,6 +104,7 @@ function DashboardLayout({ isAdmin = false }) {
           { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
           { to: '/projects', icon: Icons.Projects, label: 'My Projects' },
           { to: '/databases', icon: Icons.Database, label: 'Databases' },
+          { to: '/feedback', icon: Icons.Feedback, label: 'Feedback' },
         ]
       }
   

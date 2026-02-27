@@ -133,3 +133,38 @@ func (u *User) IsSuperAdmin() bool {
 func (p *Project) GetFullDomain(baseDomain string) string {
 	return p.Subdomain + "." + baseDomain
 }
+
+// ===========================================
+// Feedback Model
+// ===========================================
+
+// FeedbackType represents kind of feedback
+type FeedbackType string
+
+const (
+	FeedbackSuggestion FeedbackType = "suggestion"
+	FeedbackTrouble    FeedbackType = "trouble"
+	FeedbackBug        FeedbackType = "bug"
+)
+
+// FeedbackStatus represents status of feedback
+type FeedbackStatus string
+
+const (
+	FeedbackStatusPending FeedbackStatus = "pending"
+	FeedbackStatusInReview FeedbackStatus = "in_review"
+	FeedbackStatusResolved FeedbackStatus = "resolved"
+)
+
+// Feedback represents user feedback or bug report
+type Feedback struct {
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	UserID    uint           `gorm:"not null;index" json:"user_id"`
+	User      User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Title     string         `gorm:"size:255;not null" json:"title"`
+	Content   string         `gorm:"type:text;not null" json:"content"`
+	Type      FeedbackType   `gorm:"size:20;not null;default:suggestion" json:"type"`
+	Status    FeedbackStatus `gorm:"size:20;not null;default:pending" json:"status"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}

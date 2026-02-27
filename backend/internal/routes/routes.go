@@ -54,6 +54,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	settingHandler := handlers.NewSettingHandler(db)
 	dockerService := services.NewDockerService(cfg)
 	systemHandler := handlers.NewSystemHandler(dockerService)
+	feedbackHandler := handlers.NewFeedbackHandler(db)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects
@@ -75,6 +76,10 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
 
+	// Feedback (common)
+	protected.Post("/feedback", feedbackHandler.Create)
+	protected.Get("/feedback", feedbackHandler.ListOwn)
+
 	// -----------------------------
 	// Admin Routes
 	// -----------------------------
@@ -95,6 +100,11 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// Admin project overview
 	admin.Get("/projects", projectHandler.ListAll)
 	admin.Get("/stats", projectHandler.AdminStats)
+	
+	// Feedback management (Admin)
+	admin.Get("/feedback", feedbackHandler.ListAll)
+	admin.Put("/feedback/:id/status", feedbackHandler.UpdateStatus)
+	admin.Delete("/feedback/:id", feedbackHandler.Delete)
 	
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
