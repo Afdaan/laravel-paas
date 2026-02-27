@@ -67,7 +67,7 @@ const Icons = {
   ),
   Feedback: () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3h9m-9 3h3m-6.75 3.75a2.25 2.25 0 002.25 2.25h10.5a2.25 2.25 0 002.25-2.25v-10.5a2.25 2.25 0 00-2.25-2.25H4.01a2.25 2.25 0 00-2.25 2.25V18a2.25 2.25 0 002.25 2.25h.49a1.125 1.125 0 011.05 1.5l-.75 2.25 4.5-4.5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
     </svg>
   ),
 }
@@ -89,7 +89,6 @@ function DashboardLayout({ isAdmin = false }) {
           { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
           { to: '/admin/users', icon: Icons.Users, label: 'Users' },
           { to: '/admin/projects', icon: Icons.Projects, label: 'Projects' },
-          { to: '/admin/feedback', icon: Icons.Feedback, label: 'Feedback' },
           { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
         ],
         resources: [
@@ -104,7 +103,6 @@ function DashboardLayout({ isAdmin = false }) {
           { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
           { to: '/projects', icon: Icons.Projects, label: 'My Projects' },
           { to: '/databases', icon: Icons.Database, label: 'Databases' },
-          { to: '/feedback', icon: Icons.Feedback, label: 'Feedback' },
         ]
       }
   
@@ -240,10 +238,31 @@ function DashboardLayout({ isAdmin = false }) {
         </div>
       </aside>
       
-      {/* Main Content */}
-      <main className="flex-1 p-8 overflow-auto">
-        <Outlet />
-      </main>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top bar with Inbox icon */}
+        <header className="h-16 flex items-center justify-end px-8 bg-transparent border-b border-white/[0.02] backdrop-blur-sm sticky top-0 z-40">
+           <NavLink 
+            to={isAdmin ? "/admin/feedback" : "/feedback"}
+            className={({ isActive }) => 
+              `relative p-2.5 rounded-xl transition-all duration-300 ${
+                isActive 
+                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' 
+                : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent'
+              }`
+            }
+            title={isAdmin ? "Feedback Inbox" : "Contact Support"}
+           >
+              <Icons.Feedback />
+              {/* Pulsing notification dot */}
+              <span className="absolute top-2 right-2 w-2 h-2 bg-purple-500 rounded-full border-2 border-[#0a0a0c] shadow-lg shadow-purple-500/50 animate-pulse"></span>
+           </NavLink>
+        </header>
+
+        <main className="flex-1 p-8 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }
