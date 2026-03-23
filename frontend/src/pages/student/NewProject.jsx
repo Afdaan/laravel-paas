@@ -40,7 +40,10 @@ function StudentNewProject() {
     
     try {
       const response = await projectsAPI.create(formData)
-      toast.success('Project deployment started!')
+      toast.success('Deployment queued! Your project will be built shortly.', {
+        duration: 5000,
+        icon: '⏳'
+      })
       navigate(`/projects/${response.data.project.id}`)
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to create project')

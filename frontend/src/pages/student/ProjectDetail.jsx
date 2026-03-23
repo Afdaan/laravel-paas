@@ -11,19 +11,19 @@ import { projectsAPI } from '../../services/api'
 // Status Indicator Component
 function StatusIndicator({ status }) {
   const styles = {
-    running: { bg: 'bg-emerald-500', text: 'text-emerald-500', label: 'Active' },
-    building: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Building', pulse: true },
+    running: { bg: 'bg-emerald-500', text: 'text-emerald-500', label: 'Active', shadow: 'shadow-[0_0_8px_rgba(16,185,129,0.3)]' },
+    building: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Building...', pulse: true, shadow: 'shadow-[0_0_8px_rgba(59,130,246,0.3)]' },
     failed: { bg: 'bg-red-500', text: 'text-red-500', label: 'Failed' },
-    pending: { bg: 'bg-slate-500', text: 'text-slate-500', label: 'Pending' },
+    pending: { bg: 'bg-amber-500', text: 'text-amber-500', label: 'In Queue', bounce: true, shadow: 'shadow-[0_0_8px_rgba(245,158,11,0.3)]' },
     stopped: { bg: 'bg-slate-500', text: 'text-slate-500', label: 'Stopped' },
   }
   
   const current = styles[status] || styles.pending
   
   return (
-    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700">
-      <div className={`w-2.5 h-2.5 rounded-full ${current.bg} ${current.pulse ? 'animate-pulse' : ''}`} />
-      <span className={`text-sm font-medium ${current.text}`}>{current.label}</span>
+    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/50 border border-slate-700/50 backdrop-blur-sm">
+      <div className={`w-2 h-2 rounded-full ${current.bg} ${current.pulse ? 'animate-pulse' : ''} ${current.bounce ? 'animate-bounce' : ''} ${current.shadow || ''}`} />
+      <span className={`text-[11px] font-bold uppercase tracking-wider ${current.text}`}>{current.label}</span>
     </div>
   )
 }

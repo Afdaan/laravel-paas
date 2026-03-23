@@ -27,7 +27,7 @@ FROM paas-runtime-php:8.2-alpine
 WORKDIR /var/www/html
 COPY . .
 COPY --from=composer /app/vendor ./vendor
-COPY --from=frontend /app/public/build ./public/build 2>/dev/null || true
+COPY --from=frontend /app/public/build ./public/build
 
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
     && chown -R www-data:www-data /var/www/html \
@@ -43,4 +43,5 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+
 
