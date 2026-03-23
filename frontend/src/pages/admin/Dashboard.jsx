@@ -80,10 +80,12 @@ function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-slate-200 p-4 lg:p-8 font-sans">
-      <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
+      <div className="animate-pop-in">
+        <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
+      </div>
       <SystemOverview system={system} containers={containers} images={images} networks={networks} volumes={volumes} formatBytes={formatBytes} />
       
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-pop-in" style={{ animationDelay: '400ms' }}>
         <ResourceTable 
           title="Containers" 
           subtitle="Recent active containers"
@@ -157,6 +159,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<CPUIcon />}
           meta={`Usage: ${(system?.cpu_usage || 0).toFixed(1)}%`}
           metaAlt="Load: Low"
+          index={0}
         />
 
         <StatCard 
@@ -169,6 +172,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<MemoryIcon />}
           meta={`Usage: ${memUsagePath.toFixed(1)}%`}
           metaAlt={`Free: ${formatBytes((system?.memory_total - system?.memory_used) || 0)}`}
+          index={1}
         />
 
         <StatCard 
@@ -181,6 +185,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<ContainerIcon />}
           meta={`${containers?.filter(c => c.state === 'running').length || 0} Running`}
           metaAlt={`${containers?.length || 0} Total`}
+          index={2}
         />
 
         <StatCard 
@@ -193,6 +198,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<ImageIcon />}
           meta={`${images?.filter(img => img.status === 'In Use').length || 0} In Use`}
           metaAlt={`${images?.length || 0} Total`}
+          index={3}
         />
 
         <StatCard 
@@ -205,6 +211,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<NetworkIcon />}
           meta={`${networks?.length || 0} Total`}
           metaAlt="Active Scope"
+          index={4}
         />
 
         <StatCard 
@@ -217,13 +224,14 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<VolumeIcon />}
           meta={`${volumes?.length || 0} Total`}
           metaAlt="Storage Active"
+          index={5}
         />
       </div>
     </div>
   )
 })
 
-const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt }) => {
+const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt, index }) => {
     const gradients = {
         purple: "from-purple-500 to-indigo-500",
         blue: "from-blue-500 to-cyan-500",
@@ -236,7 +244,10 @@ const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon,
     }
 
     return (
-        <div className="bg-[#111114] border border-white/[0.03] rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+        <div 
+            className="bg-[#111114] border border-white/[0.03] rounded-2xl p-6 shadow-2xl relative overflow-hidden group animate-pop-in"
+            style={{ animationDelay: `${index * 80}ms` }}
+        >
             <div className="flex items-center gap-4 mb-6">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBgs[color]}`}>
                     {icon}
