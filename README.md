@@ -198,5 +198,3 @@ Contributions welcome! Please open an issue first to discuss changes.
 ---
 
 Made with ❤️ for education
-
-<!-- Trigger CI/CD: 2026-03-23T17:31:02 -->
