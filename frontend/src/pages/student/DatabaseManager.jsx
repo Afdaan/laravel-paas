@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Database, Key, Trash, RefreshCw, PackageOpen, HandClick, Play, Download, Inbox, Copy, X } from 'lucide-react'
+import { ArrowLeft, Database, Key, Trash, RefreshCw, PackageOpen, MousePointer2, Play, Download, Inbox, Copy, X } from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
 import ConfirmationModal from '../../components/ConfirmationModal'
 
@@ -336,7 +336,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-                  <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center opacity-50"><HandClick className="w-8 h-8" /></div>
+                  <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center opacity-50"><MousePointer2 className="w-8 h-8" /></div>
                   <p>Select a table from the sidebar to view data</p>
                 </div>
               )}
