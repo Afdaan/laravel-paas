@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { systemAPI, projectsAPI } from '../../services/api'
 import toast from 'react-hot-toast'
 import ConfirmationModal from '../../components/ConfirmationModal'
+import { RefreshCw } from 'lucide-react'
 
 function AdminDashboard() {
   const [data, setData] = useState({
@@ -139,12 +140,16 @@ const Header = memo(({ onRefresh, onPrune, isPruning }) => {
           onClick={() => {
             onRefresh()
             toast.success('System statistics updated', {
-              icon: '🔄',
+              icon: <RefreshCw className="w-4 h-4 text-white" />,
               style: {
-                borderRadius: '10px',
-                background: '#1a1a1e',
+                borderRadius: '12px',
+                background: '#111114',
                 color: '#fff',
-                border: '1px solid rgba(255,255,255,0.05)'
+                border: '1px solid rgba(255,255,255,0.08)',
+                padding: '12px 16px',
+                fontSize: '13px',
+                fontWeight: '600',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
               },
             })
           }}
