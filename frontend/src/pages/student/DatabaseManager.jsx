@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { ArrowLeft, Database, Key, Trash, RefreshCw, PackageOpen, HandClick, Play, Download, Inbox, Copy, X } from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
 import ConfirmationModal from '../../components/ConfirmationModal'
 
@@ -194,11 +195,11 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Link to={`/projects/${id}`} className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm">
-                <span className="i-lucide-arrow-left">←</span> Back to Project
+                <ArrowLeft className="w-4 h-4" /> Back to Project
               </Link>
             </div>
             <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-              <span className="i-lucide-database text-primary-500"></span>
+              <Database className="w-8 h-8 text-primary-500" />
               Database Manager
             </h1>
             <p className="text-slate-400 mt-1 font-mono text-sm">
@@ -210,13 +211,13 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
               onClick={() => setShowCredentials(true)}
               className="btn btn-secondary flex items-center gap-2"
             >
-              <span className="i-lucide-key"></span> Credentials
+              <Key className="w-4 h-4" /> Credentials
             </button>
             <button 
               onClick={confirmReset}
               className="btn btn-danger flex items-center gap-2"
             >
-              <span className="i-lucide-trash"></span> Reset DB
+              <Trash className="w-4 h-4" /> Reset DB
             </button>
           </div>
         </div>
@@ -252,7 +253,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
               <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex justify-between items-center">
                 <h3 className="font-semibold text-white">Tables</h3>
                 <button onClick={fetchTables} className="text-slate-400 hover:text-white" title="Refresh">
-                  <span className="i-lucide-refresh-cw">↻</span>
+                  <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -327,7 +328,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                       </table>
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
-                        <div className="text-4xl opacity-20">📭</div>
+                        <PackageOpen className="w-12 h-12 opacity-20" />
                         <div>Table is empty</div>
                       </div>
                     )}
@@ -335,7 +336,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-                  <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-3xl opacity-50">👈</div>
+                  <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center opacity-50"><HandClick className="w-8 h-8" /></div>
                   <p>Select a table from the sidebar to view data</p>
                 </div>
               )}
@@ -356,7 +357,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                       disabled={queryLoading || !query.trim()}
                       className="bg-primary-600 hover:bg-primary-500 text-white text-xs px-3 py-1 rounded font-medium disabled:opacity-50 transition-colors flex items-center gap-1"
                     >
-                      {queryLoading ? 'Executing...' : '▶ Run Query'}
+                      {queryLoading ? 'Executing...' : <><Play className="w-3 h-3" /> Run Query</>}
                     </button>
                  </div>
               </div>
@@ -430,17 +431,17 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
         {activeTab === 'import' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card border-slate-800 p-6">
-               <h3 className="font-bold text-white text-lg mb-2">📤 Export Database</h3>
+               <h3 className="font-bold text-white text-lg mb-2 flex items-center gap-2"><Download className="w-5 h-5 text-primary-400" /> Export Database</h3>
                <p className="text-slate-400 text-sm mb-6">
                  Download a complete SQL dump of your database structure and data.
                </p>
-               <button onClick={handleExport} className="btn btn-secondary w-full justify-center py-3">
-                 <span className="i-lucide-download mr-2"></span> Download SQL Backup
+               <button onClick={handleExport} className="btn btn-secondary w-full justify-center py-3 flex items-center">
+                 <Download className="w-4 h-4 mr-2" /> Download SQL Backup
                </button>
             </div>
 
             <div className="card border-slate-800 p-6">
-              <h3 className="font-bold text-white text-lg mb-2">📥 Import SQL</h3>
+              <h3 className="font-bold text-white text-lg mb-2 flex items-center gap-2"><Inbox className="w-5 h-5 text-primary-400" /> Import SQL</h3>
               <p className="text-slate-400 text-sm mb-4">
                 Execute SQL commands to restore a backup or initialize table structures.
               </p>
@@ -467,8 +468,8 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
           <div className="card w-full max-w-md bg-slate-900 border-slate-700 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-white text-lg">🔑 Database Credentials</h3>
-              <button onClick={() => setShowCredentials(false)} className="text-slate-400 hover:text-white">✕</button>
+              <h3 className="font-bold text-white text-lg flex items-center gap-2"><Key className="w-5 h-5 text-primary-400" /> Database Credentials</h3>
+              <button onClick={() => setShowCredentials(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             
             <div className="space-y-3">
@@ -488,7 +489,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                       className="text-slate-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
                       title="Copy"
                     >
-                      📋
+                      <Copy className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
