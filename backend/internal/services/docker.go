@@ -213,6 +213,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	}
 
 	dstDockerfile := filepath.Join(projectPath, "Dockerfile")
+	fmt.Printf("Using Dockerfile template: %s for project %s\n", srcDockerfile, project.Subdomain)
 
 	if err := copyFile(srcDockerfile, dstDockerfile); err != nil {
 		return "", fmt.Errorf("failed to copy Dockerfile (%s): %w", dockerfile, err)

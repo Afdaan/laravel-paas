@@ -83,8 +83,8 @@ RUN if [ -f package.json ]; then \
         true; \
     fi
 
-COPY resources/ resources/ 2>/dev/null || true
-COPY public/ public/ 2>/dev/null || true
+COPY resources/ resources/
+COPY public/ public/
 COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
 RUN if [ -f package.json ] && [ -d resources ]; then \
@@ -146,7 +146,7 @@ WORKDIR /var/www/html
 COPY . .
 
 COPY --from=composer /app/vendor ./vendor
-COPY --from=frontend /app/public/build ./public/build 2>/dev/null || true
+COPY --from=frontend /app/public/build ./public/build
 
 # Set up directories and permissions
 RUN mkdir -p storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
