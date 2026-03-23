@@ -201,13 +201,21 @@ func (s *DockerService) DropDatabase(dbName string) error {
 func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
-	// Copy appropriate Dockerfile
-	dockerfile := fmt.Sprintf("Dockerfile.php%s", strings.ReplaceAll(phpVersion, ".", ""))
+	// Copy appropriate Dockerfile (try .dynamic version first for better support)
+	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
+	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
 	srcDockerfile := filepath.Join(s.cfg.TemplatesPath, dockerfile)
+	
+	// If .dynamic doesn't exist, fallback to regular version
+	if _, err := os.Stat(srcDockerfile); os.IsNotExist(err) {
+		dockerfile = fmt.Sprintf("Dockerfile.php%s", phpSlug)
+		srcDockerfile = filepath.Join(s.cfg.TemplatesPath, dockerfile)
+	}
+
 	dstDockerfile := filepath.Join(projectPath, "Dockerfile")
 
 	if err := copyFile(srcDockerfile, dstDockerfile); err != nil {
-		return "", fmt.Errorf("failed to copy Dockerfile: %w", err)
+		return "", fmt.Errorf("failed to copy Dockerfile (%s): %w", dockerfile, err)
 	}
 
 	// Copy nginx and supervisor configs
