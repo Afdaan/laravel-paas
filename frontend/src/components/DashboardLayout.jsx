@@ -108,7 +108,7 @@ function DashboardLayout({ isAdmin = false }) {
       }
   
   return (
-    <div className="flex min-h-screen bg-[#0a0a0c]">
+    <div className="flex h-screen bg-[#0a0a0c] overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 bg-[#0f0f12] border-r border-white/5 flex flex-col shadow-2xl z-50">
         {/* Logo */}
