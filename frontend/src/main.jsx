@@ -14,6 +14,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       </ErrorBoundary>
       <Toaster 
         position="top-center"
+        gutter={16}
+        containerStyle={{
+          top: 40,
+        }}
         toastOptions={{
           duration: 4000,
           style: {
