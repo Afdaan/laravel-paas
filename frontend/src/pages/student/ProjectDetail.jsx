@@ -706,8 +706,8 @@ function StudentProjectDetail() {
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative overflow-hidden">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative">
                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
                    
                    <div className="flex items-center gap-4 mb-10">
@@ -790,7 +790,7 @@ function StudentProjectDetail() {
                    </div>
                 </div>
 
-                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative overflow-hidden">
+                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative">
                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl pointer-events-none"></div>
                    
                    <div className="flex items-center gap-4 mb-10">
@@ -828,7 +828,7 @@ function StudentProjectDetail() {
                    </div>
                 </div>
 
-                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative overflow-hidden md:col-span-2">
+                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative md:col-span-2">
                    <div className="absolute top-0 right-0 w-[400px] h-40 bg-indigo-500/5 blur-[100px] pointer-events-none"></div>
                    
                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
