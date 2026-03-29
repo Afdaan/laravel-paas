@@ -19,7 +19,8 @@ import {
   HardDrive,
   Info,
   Box,
-  Monitor
+  Monitor,
+  RefreshCw
 } from 'lucide-react'
 
 const StatusBadge = ({ status }) => {
