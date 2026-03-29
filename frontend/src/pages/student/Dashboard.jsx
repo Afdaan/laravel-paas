@@ -6,30 +6,40 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../../services/api'
 import useAuthStore from '../../stores/authStore'
+import { 
+  Rocket, 
+  Activity, 
+  CheckCircle2, 
+  Package, 
+  ExternalLink, 
+  ArrowRight,
+  Plus,
+  Clock,
+  AlertCircle,
+  PauseCircle,
+  Zap,
+  Layout,
+  Terminal,
+  ChevronRight
+} from 'lucide-react'
 
 // Status badge component
 function StatusBadge({ status }) {
-  const statusClasses = {
-    pending: 'badge-pending animate-bounce',
-    building: 'badge-building animate-pulse',
-    running: 'badge-running',
-    failed: 'badge-failed',
-    stopped: 'badge-stopped',
+  const configs = {
+    pending: { color: 'text-amber-400', border: 'border-amber-400/20', bg: 'bg-amber-400/10', icon: Clock, label: 'In Queue' },
+    building: { color: 'text-blue-400', border: 'border-blue-400/20', bg: 'bg-blue-400/10', icon: Activity, label: 'Building', pulse: true },
+    running: { color: 'text-emerald-400', border: 'border-emerald-400/20', bg: 'bg-emerald-400/10', icon: CheckCircle2, label: 'Running' },
+    failed: { color: 'text-rose-400', border: 'border-rose-400/20', bg: 'bg-rose-400/10', icon: AlertCircle, label: 'Failed' },
+    stopped: { color: 'text-slate-400', border: 'border-slate-400/20', bg: 'bg-slate-400/10', icon: PauseCircle, label: 'Stopped' },
   }
 
-  const labelMap = {
-    pending: 'In Queue',
-    building: 'Building',
-    running: 'Running',
-    failed: 'Failed',
-    stopped: 'Stopped',
-  }
+  const config = configs[status] || configs.pending
+  const Icon = config.icon
   
   return (
-    <span className={`badge ${statusClasses[status] || 'badge-pending'} flex items-center gap-1.5 w-fit`}>
-      {status === 'building' && <div className="w-1 h-1 rounded-full bg-blue-400 animate-ping" />}
-      {status === 'pending' && <div className="w-1 h-1 rounded-full bg-yellow-400 animate-ping" />}
-      {labelMap[status] || status}
+    <span className={`px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest flex items-center gap-2 w-fit ${config.color} ${config.border} ${config.bg}`}>
+      <Icon className={`w-3 h-3 ${config.pulse ? 'animate-spin' : ''}`} />
+      {config.label}
     </span>
   )
 }
@@ -58,134 +68,145 @@ function StudentDashboard() {
   const totalProjects = projects.length
   
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white">
-          Welcome back, {user?.name?.split(' ')[0]}! 👋
-        </h1>
-        <p className="text-slate-400 mt-1">
-          Here's an overview of your deployed projects.
-        </p>
+    <div className="space-y-12 animate-pop-in relative">
+      <div className="absolute top-0 right-0 w-[40vw] h-[40vw] bg-indigo-600/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
+
+      {/* Welcome Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 relative z-10">
+        <div>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4">
+            Command <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 animate-gradient-x">Center</span>
+          </h1>
+          <p className="text-slate-400 text-lg font-medium max-w-xl leading-relaxed">
+            Welcome back, <span className="text-white font-bold">{user?.name?.split(' ')[0]}</span>. Your infrastructure fleet is currently operating across <span className="text-indigo-400 font-bold">{runningProjects} isolated services</span>.
+          </p>
+        </div>
+        <Link to="/projects/new" className="btn btn-primary shadow-[0_0_30px_rgba(99,102,241,0.2)]">
+          <Plus className="w-5 h-5" />
+          Deploy New Architecture
+        </Link>
       </div>
       
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-400 text-sm">Total Projects</p>
-              <p className="text-3xl font-bold text-white mt-1">{totalProjects}</p>
-            </div>
-            <div className="w-12 h-12 bg-primary-600/20 rounded-xl flex items-center justify-center text-primary-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.375a3 3 0 003 3h15a3 3 0 003-3m-18-6h15a3 3 0 013 3v.375m-18-3.375A3 3 0 003 10.875v.375m18-3.375V6a3 3 0 00-3-3H6a3 3 0 00-3 3v.375m3 0V6" />
-              </svg>
-            </div>
-          </div>
-        </div>
-        
-        <div className="card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-400 text-sm">Running</p>
-              <p className="text-3xl font-bold text-emerald-400 mt-1">{runningProjects}</p>
-            </div>
-            <div className="w-12 h-12 bg-emerald-600/20 rounded-xl flex items-center justify-center text-emerald-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-        </div>
-        
-        <div className="card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-400 text-sm">Quick Action</p>
-              <Link 
-                to="/projects/new" 
-                className="btn btn-primary mt-2 inline-block px-4 py-1 text-sm font-semibold rounded-lg"
-              >
-                + New Project
+      {/* Core Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+        <StatCard 
+          label="active deployments" 
+          value={totalProjects} 
+          icon={Package} 
+          color="indigo" 
+        />
+        <StatCard 
+          label="operational services" 
+          value={runningProjects} 
+          icon={Activity} 
+          color="emerald" 
+          suffix={`/ ${totalProjects}`}
+        />
+        <div className="card-glass p-8 bg-gradient-to-br from-indigo-600/10 to-transparent border-white/10 group hover:scale-[1.02] transition-all duration-500 overflow-hidden relative">
+           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl rounded-full translate-x-10 -translate-y-10"></div>
+           <div className="relative z-10 h-full flex flex-col justify-between">
+              <div>
+                <Zap className="w-8 h-8 text-indigo-400 mb-4" />
+                <h3 className="text-xl font-black text-white uppercase tracking-tight">Need Support?</h3>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Our engineers are standing by</p>
+              </div>
+              <Link to="/feedback" className="flex items-center gap-2 text-white font-black text-xs uppercase tracking-[0.2em] group-hover:gap-4 transition-all mt-6">
+                 Open Ticket <ArrowRight className="w-4 h-4 text-indigo-400" />
               </Link>
-            </div>
-            <div className="w-12 h-12 bg-purple-600/20 rounded-xl flex items-center justify-center text-purple-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699-2.7c-.91.91-1.076 2.05-.365 2.71c.71.71 1.85.545 2.76-.365" />
-              </svg>
-            </div>
-          </div>
+           </div>
         </div>
       </div>
       
-      {/* Recent Projects */}
-      <div className="card">
-        <div className="p-6 border-b border-slate-700">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">My Projects</h2>
-            <Link to="/projects" className="text-primary-400 hover:text-primary-300 text-sm">
-              View all →
-            </Link>
+      {/* Recent Activity Table */}
+      <div className="card-glass overflow-hidden border-white/10 relative z-10">
+        <div className="p-10 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+          <div className="flex items-center gap-4">
+             <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Layout className="w-5 h-5 text-slate-400" />
+             </div>
+             <div>
+                <h2 className="text-xl font-black text-white tracking-tight uppercase">Recent Workloads</h2>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">Latest fleet activity</p>
+             </div>
           </div>
+          <Link to="/projects" className="group flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all">
+            Browse All <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
         </div>
         
         {isLoading ? (
-          <div className="p-12 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500 mx-auto"></div>
+          <div className="p-32 flex flex-col items-center justify-center gap-6">
+            <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest animate-pulse">Syncing Cluster State...</p>
           </div>
         ) : projects.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5L12 12L3.75 7.5M12 12V21m-6.75-13.5L12 3l6.75 4.5M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-19.5 0A2.25 2.25 0 004.5 15h15a2.25 2.25 0 002.25-2.25" />
-              </svg>
+          <div className="p-32 text-center flex flex-col items-center max-w-sm mx-auto">
+            <div className="w-24 h-24 bg-white/5 border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-8">
+              <Rocket className="w-12 h-12 text-slate-700" />
             </div>
-            <p className="text-slate-400">No projects yet</p>
-            <Link to="/projects/new" className="btn btn-primary mt-4 inline-block">
-              Deploy your first project
+            <h4 className="text-2xl font-black text-white tracking-tight mb-3">Void Detected</h4>
+            <p className="text-slate-500 font-medium mb-10 text-sm">Your infrastructure fleet is empty. Deploy your first workload to initialize monitoring.</p>
+            <Link to="/projects/new" className="btn btn-primary w-full py-5">
+              Execute First Launch
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table>
+          <div className="table-container">
+            <table className="premium-table">
               <thead>
-                <tr className="border-b border-slate-700">
-                  <th>Name</th>
-                  <th>URL</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th></th>
+                <tr>
+                  <th>Architecture</th>
+                  <th>Ingress Point</th>
+                  <th>Logic State</th>
+                  <th>Timestamp</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {projects.slice(0, 5).map((project) => (
-                  <tr key={project.id}>
-                    <td className="font-medium text-white">{project.name}</td>
+                  <tr key={project.id} className="group">
+                    <td>
+                       <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs uppercase group-hover:border-indigo-500/30 group-hover:text-indigo-400 transition-all">
+                             {project.name.charAt(0)}
+                          </div>
+                          <div>
+                            <span className="font-black text-sm text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{project.name}</span>
+                            <div className="flex items-center gap-1.5 mt-0.5 opacity-40">
+                               <Terminal className="w-3 h-3" />
+                               <span className="text-[10px] font-mono italic">laravel-v10-pro</span>
+                            </div>
+                          </div>
+                       </div>
+                    </td>
                     <td>
                       {project.status === 'running' ? (
                         <a 
                           href={`https://${project.subdomain}.${window.location.hostname}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-primary-400 hover:text-primary-300"
+                          className="flex items-center gap-2 group/link"
                         >
-                          {project.subdomain}
+                          <span className="font-mono text-[11px] text-slate-500 group-hover/link:text-indigo-400 transition-colors">{project.subdomain}</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-slate-700 group-hover/link:text-indigo-400 group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-all" />
                         </a>
                       ) : (
-                        <span className="text-slate-500">{project.subdomain}</span>
+                        <span className="text-slate-800 font-mono text-[11px] italic uppercase">Inactive</span>
                       )}
                     </td>
                     <td><StatusBadge status={project.status} /></td>
-                    <td className="text-slate-400">
-                      {new Date(project.created_at).toLocaleDateString()}
-                    </td>
                     <td>
+                        <div className="flex flex-col">
+                           <span className="text-slate-400 font-bold text-xs">{new Date(project.created_at).toLocaleDateString()}</span>
+                           <span className="text-[9px] text-slate-600 uppercase font-black tracking-widest mt-0.5">{new Date(project.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                    </td>
+                    <td className="text-right">
                       <Link 
                         to={`/projects/${project.id}`}
-                        className="text-primary-400 hover:text-primary-300"
+                        className="btn bg-white/5 border border-white/5 hover:border-indigo-500/20 hover:bg-indigo-500/10 text-slate-500 hover:text-indigo-400 py-2 px-4 text-[10px] uppercase font-black tracking-widest"
                       >
-                        Details →
+                        Interface
                       </Link>
                     </td>
                   </tr>
@@ -195,6 +216,30 @@ function StudentDashboard() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function StatCard({ label, value, icon: Icon, color, suffix }) {
+  const colors = {
+    indigo: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
+    emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+  }
+  
+  return (
+    <div className="card-glass p-8 group hover:scale-[1.02] transition-all duration-500 border-white/10 bg-white/[0.02]">
+       <div className="flex justify-between items-start">
+          <div>
+             <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-3">{label}</p>
+             <div className="flex items-baseline gap-2">
+                <h3 className="text-5xl font-black text-white tracking-tighter">{value}</h3>
+                {suffix && <span className="text-slate-600 font-black text-lg">{suffix}</span>}
+             </div>
+          </div>
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-500 group-hover:rotate-12 ${colors[color] || colors.indigo}`}>
+             <Icon className="w-8 h-8" />
+          </div>
+       </div>
     </div>
   )
 }

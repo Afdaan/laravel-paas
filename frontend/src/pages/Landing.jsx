@@ -7,69 +7,63 @@
 import { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
+import { Rocket, Database, Globe, Compass, RefreshCw, Terminal, ArrowRight, CheckCircle2, ChevronRight, Github } from 'lucide-react'
 
 const features = [
   {
-    icon: (
-      <svg className="w-8 h-8 text-primary-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699-2.7c-.91.91-1.076 2.05-.365 2.71c.71.71 1.85.545 2.76-.365c.911-.911 1.077-2.051.366-2.711c-.71-.71-1.85-.545-2.761.366z" />
-      </svg>
-    ),
+    icon: Rocket,
+    iconColor: 'text-indigo-500',
+    bgLight: 'bg-indigo-500/10',
+    borderLight: 'border-indigo-500/20',
     title: 'Deploy Instantly',
-    desc: 'Push your Laravel project from GitHub and it will be live in minutes, automatically.',
+    desc: 'Push your Laravel project from GitHub and watch it go live in minutes. No manual configuration needed.',
   },
   {
-    icon: (
-      <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75M3.75 10.125v3.75m16.5 0v3.75M3.75 13.875v3.75" />
-      </svg>
-    ),
+    icon: Database,
+    iconColor: 'text-fuchsia-500',
+    bgLight: 'bg-fuchsia-500/10',
+    borderLight: 'border-fuchsia-500/20',
     title: 'Database Included',
-    desc: 'Each project gets its own isolated MariaDB database. No manual setup needed.',
+    desc: 'Every project automatically provisions an isolated, secure MariaDB database out of the box.',
   },
   {
-    icon: (
-      <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.041 9.041 0 01-2.427-.328 12.035 12.035 0 01-5.264-3.551 12.035 12.035 0 01-3.551-5.264A9.041 9.041 0 011 9.573a9.041 9.041 0 01.328-2.427 12.035 12.035 0 013.551-5.264 12.035 12.035 0 015.264-3.551A9.041 9.041 0 0112 1a9.041 9.041 0 012.427.328 12.035 12.035 0 015.264 3.551 12.035 12.035 0 013.551 5.264 9.041 9.041 0 01.328 2.427 9.041 9.041 0 01-.328 2.427 12.035 12.035 0 01-3.551 5.264 12.035 12.035 0 01-5.264 3.551A9.041 9.041 0 0112 21z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a9 9 0 00-9 9m9-9a9 9 0 019 9m-9-9v18m0-18C8.5 1 5.5 4 5.5 10s3 9 6.5 9m0-18c3.5 0 6.5 3 6.5 9s-3 9-6.5 9M1.2 12.5h21.6M2.5 7h19M2.5 17h19" />
-      </svg>
-    ),
+    icon: Globe,
+    iconColor: 'text-blue-500',
+    bgLight: 'bg-blue-500/10',
+    borderLight: 'border-blue-500/20',
     title: 'Custom Subdomain',
-    desc: 'Every project is accessible via a unique subdomain right after deployment.',
+    desc: 'Share your work instantly. Every project is assigned a unique subdomain the moment it deploys.',
   },
   {
-    icon: (
-      <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-10.5v10.5" />
-      </svg>
-    ),
+    icon: Compass,
+    iconColor: 'text-emerald-500',
+    bgLight: 'bg-emerald-500/10',
+    borderLight: 'border-emerald-500/20',
     title: 'PHP Version Control',
-    desc: 'Choose PHP 8.0 – 8.4 per project. We handle the container configuration for you.',
+    desc: 'Seamlessly switch between PHP 8.0, 8.1, 8.2, 8.3, or 8.4 on a per-project basis with a single click.',
   },
   {
-    icon: (
-      <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-      </svg>
-    ),
+    icon: RefreshCw,
+    iconColor: 'text-amber-500',
+    bgLight: 'bg-amber-500/10',
+    borderLight: 'border-amber-500/20',
     title: 'One-Click Redeploy',
-    desc: 'Update your app by triggering a redeploy anytime from the dashboard.',
+    desc: 'Updated your code? Trigger a fresh deployment straight from the dashboard to keep your live app current.',
   },
   {
-    icon: (
-      <svg className="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.83-5.83m-5.83 5.83a2.652 2.652 0 11-3.75-3.75l5.83-5.83m5.83 5.83V9a3 3 0 00-3-3H9m-6 3l3.181 3.182a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-      </svg>
-    ),
+    icon: Terminal,
+    iconColor: 'text-rose-500',
+    bgLight: 'bg-rose-500/10',
+    borderLight: 'border-rose-500/20',
     title: 'Artisan & Logs',
-    desc: 'Run Artisan commands and view real-time container logs directly from the panel.',
+    desc: 'Run Artisan commands securely from your browser and monitor real-time container logs for easy debugging.',
   },
 ]
 
 const steps = [
-  { number: '01', title: 'Login', desc: 'Log in with your student account provided by the admin.' },
-  { number: '02', title: 'Connect GitHub', desc: 'Paste your public GitHub repository URL and choose a branch.' },
-  { number: '03', title: 'Deploy', desc: 'Hit Deploy — your app is cloned, built, and served on a subdomain.' },
+  { step: '01', title: 'Authenticate', desc: 'Securely log in using your student credentials provided by your instructor.' },
+  { step: '02', title: 'Connect Repo', desc: 'Link your public GitHub repository containing your Laravel build.' },
+  { step: '03', title: 'Launch', desc: 'Hit deploy and let the platform orchestrate your container, database, and routing.' },
 ]
 
 export default function Landing() {
@@ -80,123 +74,250 @@ export default function Landing() {
   const dashboardPath = isAdmin ? '/admin/dashboard' : '/dashboard'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-      {/* Background blobs */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/3 -left-1/4 w-2/3 h-2/3 bg-primary-600/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-1/3 -right-1/4 w-2/3 h-2/3 bg-purple-600/10 rounded-full blur-3xl" />
+    <div className="min-h-screen bg-[#030305] text-white selection:bg-purple-500/30 overflow-hidden font-sans">
+      {/* Dynamic Ambient Background Elements */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-900/20 blur-[150px] mix-blend-screen opacity-50 animate-pulse-slow"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-fuchsia-900/20 blur-[150px] mix-blend-screen opacity-50 animate-pulse-slow font-delay-200"></div>
+        {/* Subtle grid pattern overlay */}
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdHRoIGQ9Ik0gNDAgMCBMIDAgMCAwIDQwIiBmaWxsPSJub25lIiBzdHJva2U9InJnYmEoMjU1LDI1NSwyNTUsMC4wMykiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9Ijk5OTkiIGhlaWdodD0iOTk5OSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')] [mask-image:linear-gradient(to_bottom,white_0%,transparent_100%)]"></div>
       </div>
 
-      {/* Navbar */}
-      <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 text-white">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699-2.7c-.91.91-1.076 2.05-.365 2.71c.71.71 1.85.545 2.76-.365" />
-            </svg>
+      {/* Navbar View */}
+      <header className="relative z-40 w-full backdrop-blur-md border-b border-white/5 bg-[#030305]/50 sticky top-0">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <span className="text-xl font-bold text-white tracking-tighter">LP</span>
+            </div>
+            <span className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
+              Laravel PaaS
+            </span>
           </div>
-          <span className="text-xl font-bold tracking-tight">Laravel PaaS</span>
+          <div className="flex items-center gap-4">
+            <a href="#features" className="hidden md:block text-sm font-medium text-slate-400 hover:text-white transition-colors">Features</a>
+            <a href="#how-it-works" className="hidden md:block text-sm font-medium text-slate-400 hover:text-white transition-colors">How it works</a>
+            
+            <Link
+              to={token ? dashboardPath : "/login"}
+              className="ml-4 group relative inline-flex items-center justify-center px-6 py-2.5 text-sm font-semibold text-white transition-all duration-200 bg-white/5 border border-white/10 rounded-full overflow-hidden hover:bg-white/10 hover:border-white/20"
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                {token ? 'Go to Dashboard' : 'Sign In'}
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </span>
+            </Link>
+          </div>
         </div>
-        <Link
-          to={token ? dashboardPath : "/login"}
-          className="btn btn-primary px-5 py-2 text-sm font-semibold rounded-xl"
-        >
-          {token ? 'Dashboard' : 'Sign In'}
-        </Link>
       </header>
 
-
-      {/* Hero */}
-      <section className="relative z-10 text-center px-6 pt-20 pb-24 max-w-4xl mx-auto">
-        <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary-400 bg-primary-600/10 border border-primary-600/20 rounded-full px-4 py-1.5 mb-6">
-          <span className="w-2 h-2 rounded-full bg-primary-400 animate-pulse" />
-          Student Hosting Platform
-        </span>
-        <h1 className="text-5xl sm:text-6xl font-extrabold leading-tight tracking-tight mb-6">
-          Deploy your Laravel app
-          <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-purple-400">
-            in minutes, not hours.
+      {/* Hero Section */}
+      <section className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto flex flex-col items-center text-center">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-8 animate-pop-in">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span className="text-sm font-medium text-slate-300">v2.0 Student Hosting Platform is live</span>
+        </div>
+        
+        <h1 className="text-6xl md:text-8xl font-black tracking-tighter mb-8 leading-[1.1] max-w-5xl">
+          Deploy Laravel <br className="hidden md:block" />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-400">
+            Without the Headache.
           </span>
         </h1>
-        <p className="text-slate-400 text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-10">
-          A self-hosted PaaS built for students. Connect your GitHub repo,
-          pick a PHP version, and get a live URL — everything else is handled for you.
+        
+        <p className="text-lg md:text-xl text-slate-400 max-w-2xl leading-relaxed mb-12">
+          The premium self-hosted PaaS tailored for students. Connect your GitHub repository, select your PHP runtime, and get a production-ready URL instantly.
         </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+
+        <div className="flex flex-col sm:flex-row items-center gap-5 w-full sm:w-auto">
           <Link
             to={token ? dashboardPath : "/login"}
-            className="btn btn-primary px-8 py-3.5 text-base font-semibold rounded-xl w-full sm:w-auto"
+            className="group relative flex items-center justify-center gap-3 w-full sm:w-auto px-8 py-4 text-white font-bold text-lg rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-xl shadow-indigo-500/25 transition-all outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#030305] focus:ring-indigo-500 transform hover:-translate-y-1"
           >
-            {token ? 'Go to Dashboard' : 'Get Started →'}
+            {token ? 'Open Dashboard' : 'Start Deploying'}
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </Link>
+          
           <a
-            href="#how-it-works"
-            className="text-slate-400 hover:text-white transition-colors text-sm font-medium"
+            href="https://github.com"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-3 w-full sm:w-auto px-8 py-4 text-white font-semibold text-lg rounded-2xl bg-[#111114] border border-white/10 hover:bg-[#1a1a1f] hover:border-white/20 transition-all outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#030305] focus:ring-slate-500"
           >
-            How it works ↓
+            <Github className="w-5 h-5" />
+            View Documentation
           </a>
         </div>
-      </section>
-
-      {/* Features */}
-      <section className="relative z-10 px-6 pb-24 max-w-6xl mx-auto">
-        <h2 className="text-center text-2xl font-bold text-slate-200 mb-12">
-          Everything you need to ship
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {features.map((f) => (
-            <div
-              key={f.title}
-              className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6 hover:border-primary-600/40 hover:bg-slate-800/80 transition-all"
-            >
-              <div className="text-3xl mb-4">{f.icon}</div>
-              <h3 className="text-white font-semibold text-base mb-2">{f.title}</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section id="how-it-works" className="relative z-10 px-6 pb-28 max-w-4xl mx-auto">
-        <h2 className="text-center text-2xl font-bold text-slate-200 mb-12">How it works</h2>
-        <div className="relative flex flex-col gap-8">
-          {/* Vertical line */}
-          <div className="absolute left-[2.1rem] top-4 bottom-4 w-px bg-slate-700 hidden sm:block" />
-          {steps.map((s) => (
-            <div key={s.number} className="flex items-start gap-6">
-              <div className="shrink-0 w-[4.2rem] h-[4.2rem] rounded-2xl bg-primary-600/20 border border-primary-600/30 flex flex-col items-center justify-center z-10">
-                <span className="text-xs text-primary-400 font-bold">{s.number}</span>
+        
+        {/* Mockup Preview */}
+        <div className="w-full max-w-5xl mt-24 relative perspective-[2000px]">
+          <div className="absolute inset-0 bg-gradient-to-t from-[#030305] via-[#030305]/80 to-transparent z-10 bottom-0 top-1/2"></div>
+          <div className="relative rounded-t-3xl border border-white/10 bg-[#0f0f12] overflow-hidden shadow-2xl shadow-indigo-500/10 transform rotate-x-12 translate-y-10 scale-[0.98]">
+            {/* Fake macOS Window Header */}
+            <div className="h-12 border-b border-white/5 bg-[#111114] flex items-center px-4 gap-2">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-rose-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
               </div>
-              <div className="pt-1">
-                <h3 className="text-white font-semibold text-base mb-1">{s.title}</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">{s.desc}</p>
+              <div className="mx-auto flex items-center gap-2 px-3 py-1 rounded-md bg-white/5 text-xs text-slate-400 font-mono">
+                <Globe className="w-3 h-3" />
+                your-project.student-paas.local
               </div>
             </div>
-          ))}
+            {/* Fake Content area */}
+            <div className="p-8 grid grid-cols-3 gap-6 opacity-80 h-[400px]">
+               <div className="col-span-2 space-y-4">
+                  <div className="h-24 rounded-2xl bg-white/5 border border-white/5"></div>
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="h-32 rounded-2xl bg-white/5 border border-white/5"></div>
+                     <div className="h-32 rounded-2xl bg-white/5 border border-white/5"></div>
+                  </div>
+               </div>
+               <div className="col-span-1 space-y-4">
+                  <div className="h-40 rounded-2xl bg-indigo-500/10 border border-indigo-500/20"></div>
+                  <div className="h-16 rounded-2xl bg-white/5 border border-white/5"></div>
+               </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* CTA Banner */}
-      <section className="relative z-10 px-6 pb-24 max-w-4xl mx-auto">
-        <div className="bg-gradient-to-r from-primary-600/20 to-purple-600/20 border border-primary-600/20 rounded-3xl px-8 py-12 text-center">
-          <h2 className="text-3xl font-bold mb-4">Ready to deploy?</h2>
-          <p className="text-slate-400 mb-8 max-w-md mx-auto">
-            Sign in with your student account and launch your first Laravel project today.
-          </p>
-          <Link
-            to={token ? dashboardPath : "/login"}
-            className="btn btn-primary px-8 py-3.5 text-base font-semibold rounded-xl inline-block"
-          >
-            {token ? 'Back to Dashboard' : 'Sign In to Get Started'}
-          </Link>
+      {/* Features Grid */}
+      <section id="features" className="relative z-10 py-32 px-6 bg-[#0a0a0c]">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-sm font-bold tracking-widest text-indigo-400 uppercase mb-3">Platform Features</h2>
+            <h3 className="text-4xl md:text-5xl font-bold text-white mb-6">Everything you need to ship.</h3>
+            <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+              We took the complexity out of server management so you can focus entirely on writing great Laravel code.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {features.map((item, idx) => {
+              const Icon = item.icon
+              return (
+                <div key={idx} className="group p-8 rounded-3xl bg-[#111114] border border-white/[0.03] hover:border-white/[0.08] transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50">
+                  <div className={`w-14 h-14 rounded-2xl ${item.bgLight} ${item.borderLight} border flex items-center justify-center mb-6`}>
+                    <Icon className={`w-7 h-7 ${item.iconColor}`} />
+                  </div>
+                  <h4 className="text-xl font-bold text-white mb-3">{item.title}</h4>
+                  <p className="text-slate-400 text-sm leading-relaxed">{item.desc}</p>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-slate-800 px-6 py-8 max-w-6xl mx-auto text-center text-slate-600 text-sm">
-        © {new Date().getFullYear()} Laravel PaaS — Student Hosting Platform
+      {/* How it Works Workflow */}
+      <section id="how-it-works" className="relative z-10 py-32 px-6 overflow-hidden">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            
+            <div className="order-2 lg:order-1 relative">
+               <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-purple-500/10 rounded-3xl blur-3xl"></div>
+               <div className="relative aspect-square border border-white/10 rounded-3xl bg-[#0a0a0c]/80 backdrop-blur top-0 p-8 flex flex-col justify-between">
+                  {/* Fake Code representation block */}
+                  <div className="space-y-4">
+                     <div className="flex items-center gap-3">
+                        <Terminal className="w-5 h-5 text-slate-400" />
+                        <span className="font-mono text-sm text-slate-300">git clone ...</span>
+                     </div>
+                     <div className="p-4 rounded-xl bg-black/50 border border-white/5 font-mono text-xs text-emerald-400 leading-loose">
+                        &gt; starting build process...<br/>
+                        &gt; configuring php 8.2...<br/>
+                        &gt; installing composer dependencies...<br/>
+                        &gt; provisioning mariadb...<br/>
+                        <span className="text-indigo-400">&gt; running migrations...</span><br/>
+                        &gt; configuring nginx routing...<br/>
+                        <span className="text-white mt-2 block font-bold">✓ Project Live: https://app.paas.local</span>
+                     </div>
+                  </div>
+                  
+                  {/* Deployment status card */}
+                  <div className="p-5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center gap-4">
+                     <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                        <CheckCircle2 className="w-6 h-6 text-indigo-400" />
+                     </div>
+                     <div>
+                        <h5 className="text-white font-bold">Deployment Successful</h5>
+                        <p className="text-slate-400 text-sm">Takes less than 30 seconds average</p>
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="order-1 lg:order-2">
+              <h2 className="text-sm font-bold tracking-widest text-fuchsia-400 uppercase mb-3">Workflow</h2>
+              <h3 className="text-4xl md:text-5xl font-bold text-white mb-8">From repository to production instantly.</h3>
+              
+              <div className="space-y-8">
+                {steps.map((step, idx) => (
+                  <div key={idx} className="flex gap-6 group">
+                    <div className="flex flex-col items-center">
+                      <div className="w-12 h-12 rounded-2xl bg-[#111114] border border-white/10 flex items-center justify-center font-mono font-bold text-slate-300 group-hover:bg-white border group-hover:border-white group-hover:text-black transition-all">
+                        {step.step}
+                      </div>
+                      {idx !== steps.length - 1 && (
+                        <div className="w-px h-16 bg-gradient-to-b from-white/10 to-transparent mt-2"></div>
+                      )}
+                    </div>
+                    <div className="pt-2">
+                       <h4 className="text-xl font-bold text-white mb-2">{step.title}</h4>
+                       <p className="text-slate-400 text-base">{step.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Box */}
+      <section className="relative z-10 py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="relative rounded-[2.5rem] overflow-hidden bg-gradient-to-r from-indigo-900/50 to-purple-900/50 border border-white/10 p-12 md:p-20 text-center">
+             <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdHRoIGQ9Ik0gNDAgMCBMIDAgMCAwIDQwIiBmaWxsPSJub25lIiBzdHJva2U9InJnYmEoMjU1LDI1NSwyNTUsMC4wMSkiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9Ijk5OTkiIGhlaWdodD0iOTk5OSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')]"></div>
+             
+             <div className="relative z-10">
+               <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Ready to ship?</h2>
+               <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-10">
+                 Stop wrestling with Nginx configurations and Dockerfiles. Let the platform do the heavy lifting.
+               </p>
+               
+               <Link
+                 to={token ? dashboardPath : "/login"}
+                 className="inline-flex items-center gap-2 px-8 py-4 bg-white text-black font-bold text-lg rounded-2xl hover:bg-slate-200 hover:scale-105 transition-all shadow-xl shadow-white/10"
+               >
+                 {token ? "Return to Dashboard" : "Sign in to deploy"}
+                 <ArrowRight className="w-5 h-5" />
+               </Link>
+             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Modern Footer */}
+      <footer className="relative z-10 border-t border-white/5 bg-[#030305] pt-16 pb-8 px-6">
+         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-3">
+               <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center">
+                 <span className="text-sm font-bold text-white">LP</span>
+               </div>
+               <span className="text-slate-400 font-medium tracking-tight">Laravel PaaS</span>
+            </div>
+            
+            <p className="text-slate-500 text-sm">
+               &copy; {new Date().getFullYear()} Advanced Student Hosting. All rights reserved.
+            </p>
+         </div>
       </footer>
     </div>
   )

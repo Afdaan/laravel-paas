@@ -6,6 +6,19 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
+import { 
+  Rocket, 
+  Github, 
+  Database, 
+  Settings, 
+  Activity, 
+  Info,
+  ChevronLeft,
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+  Cpu
+} from 'lucide-react'
 
 function StudentNewProject() {
   const navigate = useNavigate()
@@ -25,7 +38,6 @@ function StudentNewProject() {
         [name]: type === 'checkbox' ? checked : value 
     }))
     
-    // Auto-generate database name from project name
     if (name === 'name') {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
@@ -40,172 +52,235 @@ function StudentNewProject() {
     
     try {
       const response = await projectsAPI.create(formData)
-      toast.success('Deployment queued! Your project will be built shortly.', {
+      toast.success('Deployment Request Received', {
         duration: 5000,
-        icon: '⏳'
+        style: {
+          borderRadius: '16px',
+          background: '#111114',
+          color: '#fff',
+          border: '1px solid rgba(255,255,255,0.08)',
+        },
       })
       navigate(`/projects/${response.data.project.id}`)
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to create project')
+      toast.error(error.response?.data?.error || 'Failed to initialize deployment')
     } finally {
       setIsLoading(false)
     }
   }
   
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Deploy New Project</h1>
-        <p className="text-slate-400 mt-1">
-          Enter your GitHub repository URL to deploy a Laravel application
-        </p>
-      </div>
-      
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="card p-8 space-y-6">
-        {/* Project Name */}
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-slate-300 mb-2">
-            Project Name
-          </label>
-          <input
-            id="name"
-            name="name"
-            type="text"
-            value={formData.name}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border"
-            placeholder="My Laravel App"
-            required
-          />
-          <p className="text-sm text-slate-500 mt-1">
-            A friendly name for your project
-          </p>
-        </div>
-        
-        {/* GitHub URL */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2">
-            <label htmlFor="github_url" className="block text-sm font-medium text-slate-300 mb-2">
-              GitHub Repository URL
-            </label>
-            <input
-              id="github_url"
-              name="github_url"
-              type="url"
-              value={formData.github_url}
-              onChange={handleChange}
-              className="w-full px-4 py-3 border"
-              placeholder="https://github.com/username/repository"
-              required
-            />
-            <p className="text-sm text-slate-500 mt-1">
-               Public repository containing Laravel project
-            </p>
-          </div>
-          
-          <div>
-            <label htmlFor="branch" className="block text-sm font-medium text-slate-300 mb-2">
-              Branch
-            </label>
-            <input
-              id="branch"
-              name="branch"
-              type="text"
-              value={formData.branch}
-              onChange={handleChange}
-              className="w-full px-4 py-3 border"
-              placeholder="main"
-            />
-             <p className="text-sm text-slate-500 mt-1">
-               Default: main
-            </p>
-          </div>
-        </div>
-        
-        {/* Database Name */}
-        <div>
-          <label htmlFor="database_name" className="block text-sm font-medium text-slate-300 mb-2">
-            Database Name
-          </label>
-          <input
-            id="database_name"
-            name="database_name"
-            type="text"
-            value={formData.database_name}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border"
-            placeholder="my_laravel_app"
-            pattern="[a-z0-9_]+"
-            required
-          />
-          <p className="text-sm text-slate-500 mt-1">
-            Lowercase letters, numbers, and underscores only
-          </p>
-        </div>
+    <div className="max-w-4xl mx-auto space-y-10 relative">
+      {/* Background Orbs */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[60vw] h-[60vw] bg-indigo-600/5 blur-[120px] rounded-full pointer-events-none z-0"></div>
 
-        {/* Queue Worker Checkbox */}
-        <div className="flex items-start gap-3 p-4 bg-slate-800 rounded-lg border border-slate-700">
-           <div className="flex items-center h-5">
-              <input 
-                 id="queue_enabled"
-                 name="queue_enabled"
-                 type="checkbox"
-                 checked={formData.queue_enabled}
-                 onChange={handleChange}
-                 className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500 focus:ring-offset-slate-800"
-              />
-           </div>
-           <div>
-              <label htmlFor="queue_enabled" className="block text-sm font-medium text-white">Enable Queue Worker (Optional)</label>
-              <p className="text-sm text-slate-400">
-                 Automatically run <code>php artisan queue:work</code> using <strong>database</strong> driver. 
-                 <span className="block text-amber-500 text-xs mt-1">Make sure to run <code>php artisan queue:table && php artisan migrate</code> in your project.</span>
-              </p>
-           </div>
+      <div className="relative z-10">
+        <button 
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-6 group bg-white/5 px-4 py-2 rounded-xl border border-white/5"
+        >
+          <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-widest">Back to fleet</span>
+        </button>
+
+        <div className="mb-10 animate-pop-in">
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Initialize <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Deployment</span></h1>
+          <p className="text-slate-400 font-medium text-lg">Scale your Laravel application in seconds with automated infrastructure provisioning.</p>
         </div>
         
-        {/* Info Box */}
-        <div className="bg-primary-600/10 border border-primary-600/30 rounded-lg p-4">
-          <h3 className="text-primary-400 font-medium mb-2">What happens next?</h3>
-          <ul className="text-sm text-slate-400 space-y-1">
-            <li>• Your repository will be cloned</li>
-            <li>• Laravel version will be auto-detected</li>
-            <li>• A database will be created and configured</li>
-            <li>• Your app will be built and deployed with HTTPS</li>
-          </ul>
-        </div>
-        
-        {/* Submit */}
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="btn btn-secondary"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="btn btn-primary flex-1 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Deploying...
-              </span>
-            ) : (
-              '🚀 Deploy Project'
-            )}
-          </button>
-        </div>
-      </form>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-pop-in" style={{ animationDelay: '100ms' }}>
+          <div className="lg:col-span-2 space-y-8">
+            <div className="card-glass p-10 space-y-8 border-white/10">
+              {/* Project Name */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+                    <Rocket className="w-4 h-4" />
+                  </div>
+                  <label htmlFor="name" className="text-sm font-black text-white uppercase tracking-widest">
+                    Project Identifier
+                  </label>
+                </div>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="input-field py-4"
+                  placeholder="e.g., Stellar Marketing API"
+                  required
+                />
+              </div>
+              
+              {/* GitHub Settings */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-400 border border-white/5">
+                      <Github className="w-4 h-4" />
+                    </div>
+                    <label htmlFor="github_url" className="text-sm font-black text-white uppercase tracking-widest">
+                      Repository URL
+                    </label>
+                  </div>
+                  <input
+                    id="github_url"
+                    name="github_url"
+                    type="url"
+                    value={formData.github_url}
+                    onChange={handleChange}
+                    className="input-field"
+                    placeholder="https://github.com/org/repo"
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-400 border border-white/5">
+                      <Settings className="w-4 h-4" />
+                    </div>
+                    <label htmlFor="branch" className="text-sm font-black text-white uppercase tracking-widest">
+                      Production Branch
+                    </label>
+                  </div>
+                  <input
+                    id="branch"
+                    name="branch"
+                    type="text"
+                    value={formData.branch}
+                    onChange={handleChange}
+                    className="input-field"
+                    placeholder="main"
+                  />
+                </div>
+              </div>
+              
+              {/* Database Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <label htmlFor="database_name" className="text-sm font-black text-white uppercase tracking-widest">
+                    PostgreSQL / MySQL Instance
+                  </label>
+                </div>
+                <input
+                  id="database_name"
+                  name="database_name"
+                  type="text"
+                  value={formData.database_name}
+                  onChange={handleChange}
+                  className="input-field"
+                  placeholder="database_name"
+                  pattern="[a-z0-9_]+"
+                  required
+                />
+              </div>
+
+              {/* Queue Worker */}
+              <div className={`p-6 rounded-2xl border transition-all duration-300 ${formData.queue_enabled ? 'bg-indigo-500/5 border-indigo-500/30' : 'bg-white/5 border-white/5 opacity-60 hover:opacity-100'}`}>
+                <div className="flex items-start gap-4">
+                  <div className="flex items-center h-6 mt-1">
+                    <input 
+                      id="queue_enabled"
+                      name="queue_enabled"
+                      type="checkbox"
+                      checked={formData.queue_enabled}
+                      onChange={handleChange}
+                      className="w-5 h-5 rounded-lg border-white/20 bg-black/40 text-indigo-500 focus:ring-0 cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="queue_enabled" className="block text-sm font-black text-white uppercase tracking-widest cursor-pointer">Provision Queue Worker</label>
+                    <p className="text-slate-500 text-xs mt-1 font-medium italic">Enables background job processing with isolated resource pools.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="btn btn-primary w-full py-6 text-xl"
+            >
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-3">
+                  <RefreshCw className="w-6 h-6 animate-spin" />
+                  Provisioning Fleet...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-3">
+                  <Rocket className="w-6 h-6" />
+                  Execute Deployment
+                  <ArrowRight className="w-6 h-6" />
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <div className="card-glass p-8 border-white/10 space-y-8 bg-gradient-to-br from-white/[0.03] to-transparent">
+              <div className="flex items-center gap-3 pb-6 border-b border-white/5">
+                <ShieldCheck className="w-6 h-6 text-indigo-400" />
+                <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Deployment Pipeline</h3>
+              </div>
+              
+              <ul className="space-y-6">
+                <PipelineStep 
+                  icon={Github} 
+                  title="Source Sync" 
+                  desc="Dynamic cloning of the selected branch from your repository." 
+                />
+                <PipelineStep 
+                  icon={Activity} 
+                  title="Environment Auto-Detect" 
+                  desc="PHP and Laravel versions are analyzed for optimal runtime." 
+                />
+                <PipelineStep 
+                  icon={Database} 
+                  title="Persistence Layer" 
+                  desc="Isolated containerized database instance provisioning." 
+                />
+                <PipelineStep 
+                  icon={Zap} 
+                  title="Edge Networking" 
+                  desc="Load balancing and SSL encryption at the entry point." 
+                />
+                <PipelineStep 
+                  icon={Cpu} 
+                  title="Compute Isolation" 
+                  desc="Isolated memory and CPU allocations per workload." 
+                />
+              </ul>
+
+              <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-start gap-3">
+                <Info className="w-4 h-4 text-slate-500 mt-0.5" />
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-relaxed">
+                  Your application will be reachable at your subdomain via secure HTTPS protocol.
+                </p>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
+  )
+}
+
+function PipelineStep({ icon: Icon, title, desc }) {
+  return (
+    <li className="flex gap-4 group">
+      <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition-colors shrink-0">
+        <Icon className="w-5 h-5" />
+      </div>
+      <div>
+        <h4 className="text-xs font-black text-white uppercase tracking-widest mb-1">{title}</h4>
+        <p className="text-[11px] text-slate-500 font-medium leading-normal">{desc}</p>
+      </div>
+    </li>
   )
 }
 

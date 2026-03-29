@@ -1,13 +1,29 @@
 // ===========================================
 // Database Manager Component
 // ===========================================
-// User-friendly UI for students to manage their database
-// ===========================================
 
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Database, Key, Trash, RefreshCw, PackageOpen, MousePointer2, Play, Download, Inbox, Copy, X } from 'lucide-react'
+import { 
+  ArrowLeft, 
+  Database as DbIcon, 
+  Key, 
+  Trash2, 
+  RefreshCw, 
+  PackageOpen, 
+  MousePointer2, 
+  Play, 
+  Download, 
+  Upload, 
+  Copy, 
+  X,
+  Terminal,
+  Layers,
+  Search,
+  Check,
+  AlertCircle
+} from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
 import ConfirmationModal from '../../components/ConfirmationModal'
 
@@ -20,7 +36,6 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
   const [tables, setTables] = useState([])
   const [selectedTable, setSelectedTable] = useState(null)
   const [tableData, setTableData] = useState(null)
-  const [tableStructure, setTableStructure] = useState(null)
   const [loading, setLoading] = useState(true)
   const [credentials, setCredentials] = useState(null)
   
@@ -33,9 +48,8 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
   const [importSQL, setImportSQL] = useState('')
   const [importing, setImporting] = useState(false)
   
-  // Modals
+  // Modal state
   const [showCredentials, setShowCredentials] = useState(false)
-  
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -56,8 +70,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       const res = await projectsAPI.get(id)
       setProject(res.data)
     } catch (err) {
-      toast.error('Failed to load project')
-      if (err.response?.status === 404) navigate('/projects')
+      if (!embedded) {
+        toast.error('Failed to load project context')
+        navigate('/databases')
+      }
     }
   }
 
@@ -76,7 +92,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       const res = await databaseAPI.listTables(id)
       setTables(res.data.tables || [])
     } catch (err) {
-      toast.error('Failed to fetch tables')
+      toast.error('Failed to fetch system tables')
     } finally {
       setLoading(false)
     }
@@ -87,14 +103,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
     setLoading(true)
     setTableData(null)
     try {
-      const [structureRes, dataRes] = await Promise.all([
-        databaseAPI.getStructure(id, tableName),
-        databaseAPI.getData(id, tableName, 1, 50)
-      ])
-      setTableStructure(structureRes.data.columns || [])
-      setTableData(dataRes.data)
+      const res = await databaseAPI.getData(id, tableName, 1, 50)
+      setTableData(res.data)
     } catch (err) {
-      toast.error('Failed to load table data')
+      toast.error('Failed to stream table data')
     } finally {
       setLoading(false)
     }
@@ -103,13 +115,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
   const executeQuery = async () => {
     if (!query.trim()) return
     setQueryLoading(true)
-    setQueryResult(null)
     try {
       const res = await databaseAPI.query(id, query)
       setQueryResult(res.data)
-      toast.success(`Query executed in ${res.data.duration}`)
+      toast.success('Query Executed Successfully')
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Query failed')
+      toast.error(err.response?.data?.error || 'Database operation failed')
     } finally {
       setQueryLoading(false)
     }
@@ -122,32 +133,24 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${project?.database_name}_backup.sql`
+      a.download = `${project?.database_name || 'database'}_dump.sql`
       a.click()
-      window.URL.revokeObjectURL(url)
-      toast.success('Database exported successfully!')
+      toast.success('System Dump Generated')
     } catch (err) {
-      toast.error('Export failed')
+      toast.error('Export Failed')
     }
   }
 
   const handleImport = async () => {
-    if (!importSQL.trim()) {
-      toast.error('Please paste SQL content')
-      return
-    }
+    if (!importSQL.trim()) return
     setImporting(true)
     try {
-      const res = await databaseAPI.import(id, importSQL)
-      if (res.data.success) {
-        toast.success(`Imported ${res.data.statements} statements`)
-        setImportSQL('')
-        fetchTables()
-      } else {
-        toast.error(`Import completed with errors: ${res.data.errors?.length || 0} errors`)
-      }
+      await databaseAPI.import(id, importSQL)
+      toast.success('Data Import Successful')
+      setImportSQL('')
+      fetchTables()
     } catch (err) {
-      toast.error('Import failed')
+      toast.error('Import Failed')
     } finally {
       setImporting(false)
     }
@@ -156,338 +159,335 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
   const confirmReset = () => {
     setConfirmModal({
       isOpen: true,
-      title: 'Reset Database?',
-      message: 'This will PERMANENTLY DELETE all tables and data in this database. This action cannot be undone.',
+      title: 'Initialize Reset?',
+      message: 'This will purge all data clusters and destroy every table in this database instance.',
       type: 'danger',
-      confirmText: 'Yes, Reset Database',
-      onConfirm: handleReset
+      confirmText: 'Execute Wipe',
+      onConfirm: async () => {
+        try {
+          await databaseAPI.reset(id)
+          toast.success('Database Purged')
+          setSelectedTable(null)
+          fetchTables()
+        } catch (err) {
+          toast.error('Purge Failed')
+        }
+      }
     })
-  }
-
-  const handleReset = async () => {
-    try {
-      const res = await databaseAPI.reset(id)
-      toast.success(`Database reset! Dropped ${res.data.dropped} tables`)
-      setSelectedTable(null)
-      setTableData(null)
-      fetchTables()
-    } catch (err) {
-      toast.error('Reset failed')
-    }
   }
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
-    toast.success('Copied')
+    toast.success('Credentials Copied', {
+      style: { background: '#111114', color: '#fff' }
+    })
   }
 
+  const tabs = [
+    { id: 'tables', label: 'Schema', icon: Layers },
+    { id: 'query', label: 'Console', icon: Terminal },
+    { id: 'import', label: 'Sync', icon: RefreshCw },
+  ]
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-20">
+    <div className="space-y-8 animate-pop-in h-full flex flex-col">
       <ConfirmationModal 
         isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
 
-      {/* Header - Only show if not embedded */}
+      {/* Embedded Header Control */}
       {!embedded && (
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5">
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Link to={`/projects/${id}`} className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm">
-                <ArrowLeft className="w-4 h-4" /> Back to Project
-              </Link>
-            </div>
-            <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-              <Database className="w-8 h-8 text-primary-500" />
-              Database Manager
+            <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-4 group">
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Return to Cluster</span>
+            </button>
+            <h1 className="text-4xl font-black text-white tracking-tighter flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <DbIcon className="w-6 h-6" />
+              </div>
+              Data Terminal
             </h1>
-            <p className="text-slate-400 mt-1 font-mono text-sm">
-              {project?.database_name}
+            <p className="text-slate-500 mt-2 font-mono text-xs uppercase tracking-widest">
+              Context: <span className="text-indigo-400">{project?.database_name}</span>
             </p>
           </div>
           <div className="flex gap-3">
-            <button 
-              onClick={() => setShowCredentials(true)}
-              className="btn btn-secondary flex items-center gap-2"
-            >
+            <button onClick={() => setShowCredentials(true)} className="btn btn-secondary py-2.5 px-5 text-sm">
               <Key className="w-4 h-4" /> Credentials
             </button>
-            <button 
-              onClick={confirmReset}
-              className="btn btn-danger flex items-center gap-2"
-            >
-              <Trash className="w-4 h-4" /> Reset DB
+            <button onClick={confirmReset} className="btn bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 px-5 text-sm">
+              <Trash2 className="w-4 h-4" /> Purge DB
             </button>
           </div>
         </div>
       )}
 
-      {/* Tabs */}
-      <div>
-         <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit mb-6">
-           {[
-             { id: 'tables', label: 'Tables' },
-             { id: 'query', label: 'SQL Query' },
-             { id: 'import', label: 'Import / Export' },
-           ].map(tab => (
-             <button
-               key={tab.id}
-               onClick={() => setActiveTab(tab.id)}
-               className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${
-                 activeTab === tab.id 
-                 ? 'bg-slate-700 text-white shadow-sm' 
-                 : 'text-slate-400 hover:text-slate-200'
-               }`}
-             >
-               {tab.label}
-             </button>
-           ))}
+      {/* Tabs System */}
+      <div className={`${embedded ? 'h-full flex flex-col' : ''}`}>
+        <div className="flex gap-2 bg-white/[0.03] border border-white/5 p-1.5 rounded-2xl w-fit mb-8 ml-2">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                activeTab === tab.id 
+                ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' 
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Tables Tab */}
-        {activeTab === 'tables' && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[700px]">
-            {/* Table List Sidebar */}
-            <div className="lg:col-span-1 flex flex-col h-full card p-0 overflow-hidden bg-slate-900 border-slate-800">
-              <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex justify-between items-center">
-                <h3 className="font-semibold text-white">Tables</h3>
-                <button onClick={fetchTables} className="text-slate-400 hover:text-white" title="Refresh">
-                  <RefreshCw className="w-4 h-4" />
-                </button>
+        {/* Content Area */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'tables' && (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 h-[600px]">
+              {/* Table Sidebar */}
+              <div className="lg:col-span-1 flex flex-col h-full card-glass p-0 overflow-hidden border-white/10">
+                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                  <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Data Entities</h3>
+                  <button onClick={fetchTables} className="text-slate-500 hover:text-indigo-400 transition-colors">
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                  {loading && tables.length === 0 ? (
+                    <div className="py-10 flex justify-center"><RefreshCw className="w-6 h-6 animate-spin text-slate-700" /></div>
+                  ) : tables.length === 0 ? (
+                    <div className="text-center py-20 text-slate-600 font-bold uppercase tracking-widest text-[10px]">Registry Empty</div>
+                  ) : (
+                    tables.map(table => (
+                      <button
+                        key={table.name}
+                        onClick={() => selectTable(table.name)}
+                        className={`w-full text-left p-4 rounded-xl transition-all duration-300 border flex justify-between items-center group uppercase ${
+                          selectedTable === table.name 
+                            ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' 
+                            : 'border-transparent text-slate-400 hover:bg-white/[0.03] hover:border-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-black tracking-tight truncate">{table.name}</span>
+                        <span className="text-[10px] opacity-40 font-mono italic group-hover:opacity-100">{table.rows}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {tables.length === 0 && !loading ? (
-                   <div className="text-center py-10 text-slate-500 text-sm">No tables found</div>
+
+              {/* Data Viewer */}
+              <div className="lg:col-span-3 flex flex-col h-full card-glass p-0 overflow-hidden border-white/10 bg-white/[0.01]">
+                {selectedTable ? (
+                  <>
+                    <div className="p-6 border-b border-white/5 bg-white/[0.03] flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/5 border border-white/5 flex items-center justify-center text-indigo-400">
+                          <Layers className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black text-white tracking-tight uppercase">{selectedTable}</h3>
+                          <p className="text-[10px] font-black text-indigo-400/50 uppercase tracking-widest">Entity Rows: {tableData?.total || 0}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-auto table-container">
+                      {loading ? (
+                        <div className="flex items-center justify-center h-full"><RefreshCw className="w-8 h-8 animate-spin text-slate-800" /></div>
+                      ) : tableData && tableData.rows?.length > 0 ? (
+                        <table className="premium-table">
+                          <thead>
+                            <tr>
+                              {tableData.columns?.map(col => (
+                                <th key={col}>{col}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tableData.rows.map((row, i) => (
+                              <tr key={i}>
+                                {tableData.columns?.map(col => (
+                                  <td key={col}>
+                                    {row[col] === null ? <span className="text-slate-700 italic">NULL</span> : String(row[col])}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full gap-6 opacity-30">
+                          <PackageOpen className="w-16 h-16" />
+                          <p className="text-xs font-black uppercase tracking-[0.2em]">Entity is void</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 ) : (
-                  tables.map(table => (
-                    <button
-                      key={table.name}
-                      onClick={() => selectTable(table.name)}
-                      className={`w-full text-left px-3 py-2.5 rounded-md transition-all flex justify-between items-baseline group ${
-                        selectedTable === table.name 
-                          ? 'bg-primary-600 text-white shadow-md' 
-                          : 'text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      <span className="font-medium truncate">{table.name}</span>
-                      <span className={`text-xs ${selectedTable === table.name ? 'text-primary-200' : 'text-slate-500 group-hover:text-slate-400'}`}>
-                        {table.rows}
-                      </span>
-                    </button>
-                  ))
+                  <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-6 opacity-40 animate-pulse">
+                    <MousePointer2 className="w-12 h-12" />
+                    <p className="text-xs font-black uppercase tracking-[0.3em]">Select entity to stream data</p>
+                  </div>
                 )}
               </div>
             </div>
+          )}
 
-            {/* Table Data View */}
-            <div className="lg:col-span-3 flex flex-col h-full card p-0 overflow-hidden border-slate-800">
-              {selectedTable ? (
-                <>
-                  <div className="p-4 border-b border-slate-800 bg-slate-800/30 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-bold text-white text-lg">{selectedTable}</h3>
-                      {tableData && (
-                        <span className="text-xs px-2 py-0.5 bg-slate-700 rounded text-slate-300">
-                          {tableData.total} rows
-                        </span>
-                      )}
-                    </div>
-                    {/* Could add structure toggle here if needed */}
-                  </div>
-                  
-                  <div className="flex-1 overflow-auto bg-slate-900/50">
-                    {loading ? (
-                      <div className="flex items-center justify-center h-full text-slate-500">Loading data...</div>
-                    ) : tableData && tableData.rows?.length > 0 ? (
-                      <table className="w-full text-left text-sm border-collapse">
-                        <thead className="bg-slate-800 sticky top-0 z-10 text-slate-300">
-                          <tr>
-                            {tableData.columns?.map(col => (
-                              <th key={col} className="px-4 py-3 font-mono text-xs uppercase tracking-wider border-b border-slate-700 whitespace-nowrap">
-                                {col}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800 text-slate-300">
-                          {tableData.rows.map((row, i) => (
-                            <tr key={i} className="hover:bg-slate-800/50 transition-colors">
-                              {tableData.columns?.map(col => (
-                                <td key={col} className="px-4 py-2 max-w-xs truncate border-r border-slate-800/50 last:border-0 font-mono text-xs">
-                                  {row[col] === null ? (
-                                    <span className="text-slate-600 italic">NULL</span>
-                                  ) : (
-                                    String(row[col])
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
-                        <PackageOpen className="w-12 h-12 opacity-20" />
-                        <div>Table is empty</div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-                  <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center opacity-50"><MousePointer2 className="w-8 h-8" /></div>
-                  <p>Select a table from the sidebar to view data</p>
+          {activeTab === 'query' && (
+            <div className="h-[600px] flex flex-col gap-8 animate-pop-in">
+              <div className="flex-1 card p-0 overflow-hidden flex flex-col border-white/10 bg-black shadow-inner">
+                <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex justify-between items-center">
+                   <div className="flex items-center gap-3">
+                     <Terminal className="w-4 h-4 text-emerald-500" />
+                     <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Power Console</h3>
+                   </div>
+                   <div className="flex gap-3">
+                      <button onClick={() => setQuery('')} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors">Clear</button>
+                      <button 
+                        onClick={executeQuery}
+                        disabled={queryLoading || !query.trim()}
+                        className="btn btn-primary py-2 px-4 shadow-emerald-500/10 disabled:opacity-50"
+                      >
+                        {queryLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                        Execute
+                      </button>
+                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Query Tab */}
-        {activeTab === 'query' && (
-          <div className="h-[700px] flex flex-col gap-6">
-            <div className="card p-0 overflow-hidden flex flex-col h-1/2 border-slate-800">
-              <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
-                 <h3 className="font-semibold text-white text-sm">SQL Editor</h3>
-                 <div className="flex gap-2">
-                    <button onClick={() => setQuery('')} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700">Clear</button>
-                    <button 
-                      onClick={executeQuery}
-                      disabled={queryLoading || !query.trim()}
-                      className="bg-primary-600 hover:bg-primary-500 text-white text-xs px-3 py-1 rounded font-medium disabled:opacity-50 transition-colors flex items-center gap-1"
-                    >
-                      {queryLoading ? 'Executing...' : <><Play className="w-3 h-3" /> Run Query</>}
-                    </button>
-                 </div>
+                <textarea
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="-- ENTER SQL COMMANDS HERE..."
+                  className="flex-1 bg-transparent text-emerald-400 font-mono text-sm p-8 focus:outline-none resize-none placeholder:text-slate-800"
+                  spellCheck="false"
+                />
               </div>
-              <textarea
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="SELECT * FROM users;"
-                className="flex-1 bg-black text-emerald-300 font-mono text-sm p-4 focus:outline-none resize-none"
-                spellCheck="false"
-              />
-            </div>
 
-            <div className="card p-0 overflow-hidden flex flex-col h-1/2 border-slate-800">
-               <div className="p-3 bg-slate-800 border-b border-slate-700">
-                 <h3 className="font-semibold text-white text-sm">Results</h3>
-               </div>
-               <div className="flex-1 overflow-auto bg-slate-900/50 p-4">
-                  {queryResult ? (
-                    <div>
-                      <div className="mb-4 flex items-center gap-2 text-xs">
-                        {queryResult.rows ? (
-                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/20">
-                            {queryResult.rows.length} rows retrieved
-                          </span>
-                        ) : (
-                           <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">
-                            {queryResult.rows_affected} rows affected
-                          </span>
-                        )}
-                        <span className="text-slate-500">in {queryResult.duration}</span>
-                      </div>
-
-                      {queryResult.rows && queryResult.rows.length > 0 && (
-                        <div className="overflow-x-auto rounded border border-slate-700">
-                           <table className="w-full text-left text-sm border-collapse">
-                            <thead className="bg-slate-800 text-slate-300">
+              <div className="flex-1 card-glass p-0 overflow-hidden flex flex-col border-white/10">
+                 <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
+                   <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Execution Stream</h3>
+                   {queryResult && (
+                     <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operation time: {queryResult.duration}</span>
+                   )}
+                 </div>
+                 <div className="flex-1 overflow-auto bg-black/40">
+                    {queryResult ? (
+                      <div className="p-0">
+                        {queryResult.rows && queryResult.rows.length > 0 ? (
+                           <table className="premium-table">
+                            <thead>
                               <tr>
-                                {queryResult.columns?.map(col => (
-                                  <th key={col} className="px-4 py-2 font-mono text-xs border-b border-slate-600 whitespace-nowrap">
-                                    {col}
-                                  </th>
-                                ))}
+                                {queryResult.columns?.map(col => (<th key={col}>{col}</th>))}
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700 text-slate-300 bg-slate-900">
+                            <tbody>
                               {queryResult.rows.map((row, i) => (
-                                <tr key={i} className="hover:bg-slate-800/50">
+                                <tr key={i}>
                                   {queryResult.columns?.map(col => (
-                                    <td key={col} className="px-4 py-2 max-w-xs truncate font-mono text-xs border-r border-slate-800 last:border-0">
-                                      {row[col] !== null ? String(row[col]) : <span className="text-slate-600">NULL</span>}
-                                    </td>
+                                    <td key={col}>{row[col] !== null ? String(row[col]) : <span className="text-slate-800">NULL</span>}</td>
                                   ))}
                                 </tr>
                               ))}
                             </tbody>
                            </table>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-slate-600 text-sm italic">
-                      Execute a query to see results
-                    </div>
-                  )}
-               </div>
+                        ) : (
+                          <div className="p-10 flex flex-col items-center justify-center gap-4">
+                            <Check className="w-12 h-12 text-emerald-500" />
+                            <p className="text-xs font-black text-emerald-500 uppercase tracking-widest">
+                              Command Successful: {queryResult.rows_affected} rows transformed
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-700 italic text-xs font-black uppercase tracking-[0.3em] opacity-40">
+                        Awaiting Command Execution
+                      </div>
+                    )}
+                 </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Import/Export Tab */}
-        {activeTab === 'import' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="card border-slate-800 p-6">
-               <h3 className="font-bold text-white text-lg mb-2 flex items-center gap-2"><Download className="w-5 h-5 text-primary-400" /> Export Database</h3>
-               <p className="text-slate-400 text-sm mb-6">
-                 Download a complete SQL dump of your database structure and data.
-               </p>
-               <button onClick={handleExport} className="btn btn-secondary w-full justify-center py-3 flex items-center">
-                 <Download className="w-4 h-4 mr-2" /> Download SQL Backup
-               </button>
-            </div>
+          {activeTab === 'import' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-pop-in">
+              <div className="card-glass border-white/10 p-10 space-y-6">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
+                  <Download className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-black text-white tracking-tight uppercase">System Export</h3>
+                <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                  Generate a complete encrypted SQL snapshot of the entire data cluster across all entities.
+                </p>
+                <button onClick={handleExport} className="btn btn-secondary w-full py-5 text-base font-black uppercase tracking-[0.2em]">
+                  Generate Backup
+                </button>
+              </div>
 
-            <div className="card border-slate-800 p-6">
-              <h3 className="font-bold text-white text-lg mb-2 flex items-center gap-2"><Inbox className="w-5 h-5 text-primary-400" /> Import SQL</h3>
-              <p className="text-slate-400 text-sm mb-4">
-                Execute SQL commands to restore a backup or initialize table structures.
-              </p>
-              <textarea
-                 value={importSQL}
-                 onChange={(e) => setImportSQL(e.target.value)}
-                 placeholder="Paste your SQL commands here..."
-                 className="w-full h-40 bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-300 font-mono text-xs focus:outline-none focus:border-primary-500 mb-4 resize-none"
-               />
-               <button 
-                 onClick={handleImport}
-                 disabled={importing || !importSQL.trim()}
-                 className="btn btn-primary w-full justify-center py-2"
-               >
-                 {importing ? 'Importing...' : 'Run Import'}
-               </button>
+              <div className="card-glass border-white/10 p-10 space-y-6">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
+                  <Upload className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Data Ingestion</h3>
+                <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                  Execute direct protocol streams into the cluster to restore or synchronize datasets.
+                </p>
+                <textarea
+                  value={importSQL}
+                  onChange={(e) => setImportSQL(e.target.value)}
+                  placeholder="-- PASTE SQL DUMP CONTENT..."
+                  className="w-full h-40 bg-black/40 border border-white/10 rounded-2xl p-6 text-emerald-400 font-mono text-xs focus:outline-none focus:border-indigo-500 mb-2 resize-none"
+                />
+                <button 
+                  onClick={handleImport}
+                  disabled={importing || !importSQL.trim()}
+                  className="btn btn-primary w-full py-5 text-base font-black uppercase tracking-[0.2em] disabled:opacity-50"
+                >
+                  {importing ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Run Sync Operation'}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Credentials Modal */}
       {showCredentials && credentials && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-          <div className="card w-full max-w-md bg-slate-900 border-slate-700 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-white text-lg flex items-center gap-2"><Key className="w-5 h-5 text-primary-400" /> Database Credentials</h3>
-              <button onClick={() => setShowCredentials(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowCredentials(false)} />
+          <div className="relative w-full max-w-md card-glass border-white/10 p-10 animate-pop-in">
+            <div className="flex justify-between items-center mb-10">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <Key className="w-6 h-6" />
+                </div>
+                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Cluster Key</h3>
+              </div>
+              <button onClick={() => setShowCredentials(false)} className="text-slate-500 hover:text-white transition-all"><X className="w-6 h-6" /></button>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-6">
               {[
-                { label: 'Host', value: credentials.host },
-                { label: 'Port', value: credentials.port },
-                { label: 'Database', value: credentials.database },
-                { label: 'Username', value: credentials.username },
-                { label: 'Password', value: credentials.password },
+                { label: 'Host Access', value: credentials.host },
+                { label: 'Ingress Port', value: credentials.port },
+                { label: 'Target DB', value: credentials.database },
+                { label: 'Root Sync User', value: credentials.username },
+                { label: 'Access Token', value: credentials.password, secret: true },
               ].map(item => (
-                <div key={item.label} className="group flex justify-between items-center bg-slate-800 rounded-lg p-3 border border-slate-700">
-                  <span className="text-slate-400 text-sm font-medium">{item.label}</span>
-                  <div className="flex items-center gap-2">
-                    <code className="text-primary-400 font-mono text-sm">{item.value}</code>
+                <div key={item.label} className="group space-y-2">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{item.label}</span>
+                  <div className="flex items-center justify-between bg-white/[0.03] rounded-2xl p-4 border border-white/5 group-hover:border-indigo-500/30 transition-all">
+                    <code className="text-indigo-400 font-mono text-xs truncate max-w-[200px]">
+                      {item.value}
+                    </code>
                     <button 
                       onClick={() => copyToClipboard(item.value)}
-                      className="text-slate-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Copy"
+                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 text-slate-600 hover:text-white transition-all"
                     >
                       <Copy className="w-4 h-4" />
                     </button>
@@ -498,9 +498,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
             
             <button 
               onClick={() => setShowCredentials(false)}
-              className="btn btn-secondary w-full mt-6"
+              className="btn btn-secondary w-full py-5 text-sm font-black uppercase tracking-[0.2em] mt-10"
             >
-              Close
+              Close Secure View
             </button>
           </div>
         </div>
@@ -508,3 +508,4 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
     </div>
   )
 }
+

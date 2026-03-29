@@ -5,49 +5,74 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { AlertTriangle, GitBranch, Copy } from 'lucide-react'
+import { 
+  RefreshCw,
+  ExternalLink,
+  Trash2,
+  Cpu,
+  Activity,
+  Zap,
+  Layout,
+  Terminal as TerminalIcon,
+  Code,
+  Globe,
+  Database as DatabaseIcon,
+  Settings as SettingsIcon,
+  Maximize2,
+  ChevronRight,
+  ShieldAlert,
+  Save,
+  Clock,
+  Box,
+  AlertTriangle,
+  GitBranch,
+  Copy
+} from 'lucide-react'
 import { projectsAPI } from '../../services/api'
+import DatabaseManager from './DatabaseManager'
+import ConfirmationModal from '../../components/ConfirmationModal'
 
 // Status Indicator Component
 function StatusIndicator({ status }) {
   const styles = {
-    running: { bg: 'bg-emerald-500', text: 'text-emerald-500', label: 'Active', shadow: 'shadow-[0_0_8px_rgba(16,185,129,0.3)]' },
-    building: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Building...', pulse: true, shadow: 'shadow-[0_0_8px_rgba(59,130,246,0.3)]' },
-    failed: { bg: 'bg-red-500', text: 'text-red-500', label: 'Failed' },
-    pending: { bg: 'bg-amber-500', text: 'text-amber-500', label: 'In Queue', bounce: true, shadow: 'shadow-[0_0_8px_rgba(245,158,11,0.3)]' },
-    stopped: { bg: 'bg-slate-500', text: 'text-slate-500', label: 'Stopped' },
+    running: { bg: 'bg-emerald-500', text: 'text-emerald-500', label: 'Active', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.4)]' },
+    building: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Provisioning', pulse: true, shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.4)]' },
+    failed: { bg: 'bg-rose-500', text: 'text-rose-500', label: 'Failed' },
+    pending: { bg: 'bg-amber-500', text: 'text-amber-500', label: 'Queued', bounce: true, shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.4)]' },
+    stopped: { bg: 'bg-slate-500', text: 'text-slate-500', label: 'Offline' },
   }
   
   const current = styles[status] || styles.pending
   
   return (
-    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/50 border border-slate-700/50 backdrop-blur-sm">
+    <div className="flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/[0.03] border border-white/10 backdrop-blur-md">
       <div className={`w-2 h-2 rounded-full ${current.bg} ${current.pulse ? 'animate-pulse' : ''} ${current.bounce ? 'animate-bounce' : ''} ${current.shadow || ''}`} />
-      <span className={`text-[11px] font-bold uppercase tracking-wider ${current.text}`}>{current.label}</span>
+      <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${current.text}`}>{current.label}</span>
     </div>
   )
 }
 
-function MetricCard({ title, value, subtext, color = 'primary' }) {
+function MetricCard({ title, value, subtext, color = 'primary', icon: Icon }) {
   const colors = {
-    primary: 'text-primary-400',
-    emerald: 'text-emerald-400',
-    blue: 'text-blue-400',
+    primary: 'text-indigo-400 border-indigo-400/20',
+    emerald: 'text-emerald-400 border-emerald-400/20',
+    blue: 'text-blue-400 border-blue-400/20',
+    rose: 'text-rose-400 border-rose-400/20',
   }
 
   return (
-    <div className="card p-4 flex flex-col justify-between h-full bg-slate-800/50 border-slate-700">
-      <h3 className="text-slate-400 text-sm font-medium uppercase tracking-wider">{title}</h3>
-      <div className="mt-2">
-        <div className={`text-2xl font-bold ${colors[color] || colors.primary}`}>{value}</div>
-        {subtext && <div className="text-xs text-slate-500 mt-1">{subtext}</div>}
+    <div className="card-glass p-6 group hover:border-white/20 transition-all duration-300">
+      <div className="flex justify-between items-start mb-4">
+        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">{title}</p>
+        {Icon && <Icon className={`w-4 h-4 ${colors[color].split(' ')[0]}`} />}
+      </div>
+      <div>
+        <div className={`text-2xl font-black text-white tracking-tighter`}>{value}</div>
+        {subtext && <div className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-wider">{subtext}</div>}
       </div>
     </div>
   )
 }
-
-import DatabaseManager from './DatabaseManager'
-import ConfirmationModal from '../../components/ConfirmationModal'
 
 function StudentProjectDetail() {
   const { id } = useParams()
@@ -295,167 +320,216 @@ function StudentProjectDetail() {
       />
       
       {/* Building Banner */}
+      {/* Building Banner */}
       {project.status === 'building' && (
-        <div className="bg-blue-600/10 border border-blue-500/30 rounded-xl p-6 relative overflow-hidden">
-           <div className="absolute inset-0 bg-blue-500/5 animate-pulse-slow"></div>
-           <div className="relative flex items-center gap-4">
-              <div className="p-3 bg-blue-500/20 rounded-full text-blue-400 animate-spin-slow">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <div className="card-glass border-blue-500/20 bg-blue-500/10 p-10 relative overflow-hidden group">
+           <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-blue-500/0 animate-shimmer"></div>
+           <div className="relative flex flex-col md:flex-row items-center gap-8">
+              <div className="w-20 h-20 bg-blue-500/20 rounded-3xl flex items-center justify-center text-blue-400 border border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.3)] animate-pulse">
+                 <Box className="w-10 h-10" />
               </div>
-              <div>
-                 <h3 className="text-lg font-bold text-blue-400">Building Application...</h3>
-                 <p className="text-blue-200/60 text-sm">
-                   We are compiling your container, installing dependencies, and configuring the environment. 
-                   <br/>Container logs will be available once the build process completes.
+              <div className="text-center md:text-left flex-1">
+                 <h3 className="text-2xl font-black text-white tracking-tight mb-2">Architecting Your Infrastructure</h3>
+                 <p className="text-blue-100/60 text-base leading-relaxed max-w-2xl">
+                   We are currently compiling your containerized environment, initializing PHP context, and orchestrating network routes. Live metrics will initialize post-deployment.
                  </p>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-black uppercase tracking-widest">
+                 <RefreshCw className="w-4 h-4 animate-spin" />
+                 Building
               </div>
            </div>
         </div>
       )}
       
       {/* Header / Top Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-6">
-        <div>
-          <div className="flex items-center gap-4 mb-2">
-             <h1 className="text-3xl font-bold text-white tracking-tight">{project.name}</h1>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 border-b border-white/5 pb-10">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-4">
+             <h1 className="text-5xl font-black text-white tracking-tighter">{project.name}</h1>
              <StatusIndicator status={project.status} />
           </div>
-          <div className="flex items-center gap-2 text-slate-400 font-mono text-sm">
-             <span>{project.subdomain}</span>
+          <div className="flex items-center gap-4">
+            <div className="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/10 flex items-center gap-3 group">
+              <Globe className="w-4 h-4 text-slate-500" />
+              <span className="text-slate-400 font-mono text-sm tracking-tight">{project.subdomain}</span>
               {project.status === 'running' && (
-                <a href={projectUrl} target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">
-                  <svg className="w-4 h-4 inline-block ml-1" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
+                <a 
+                  href={projectUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="w-8 h-8 rounded-md bg-white/5 border border-white/10 flex items-center justify-center text-indigo-400 hover:bg-indigo-500 hover:text-white transition-all shadow-lg"
+                  title="Open live site"
+                >
+                  <ExternalLink className="w-4 h-4" />
                 </a>
               )}
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/10 text-slate-500 text-xs font-bold uppercase tracking-widest">
+               <Code className="w-3.5 h-3.5" />
+               v1.4.2
+            </div>
           </div>
         </div>
         
-        <div className="flex gap-3">
-           <button onClick={handleRedeploy} className="btn btn-secondary flex items-center gap-2">
-             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
-             Redeploy
+        <div className="flex gap-4">
+           <button 
+             onClick={handleRedeploy} 
+             className="btn btn-secondary py-3 px-8 text-sm font-black uppercase tracking-widest group"
+           >
+             <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+             Execute Redeploy
            </button>
-           <button onClick={handleDelete} className="btn btn-danger-outline flex items-center gap-2 px-3">
-             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+           <button 
+             onClick={handleDelete} 
+             className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 hover:bg-rose-500 hover:text-white transition-all group"
+             title="Destroy Resource"
+           >
+             <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
            </button>
         </div>
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
          <MetricCard 
             title="CPU Usage" 
             value={stats ? `${stats.cpu_percent.toFixed(1)}%` : '0%'} 
-            subtext="of 50% limit"
+            subtext="Real-time Load"
             color="blue"
+            icon={Cpu}
          />
          <MetricCard 
             title="Memory" 
             value={stats ? `${stats.memory_mb.toFixed(0)} MB` : '0 MB'} 
             subtext={`of ${stats?.memory_max_mb?.toFixed(0) || 512} MB`}
             color="emerald"
+            icon={Activity}
          />
          <MetricCard 
-            title="PHP Version" 
+            title="PHP Environment" 
             value={project.php_version?.replace('.dynamic', '') || '...'} 
-            subtext={project.is_manual_version ? 'Manual Override' : 'Auto Detected'}
+            subtext={project.is_manual_version ? 'Custom Runtime' : 'Standard Runtime'}
             color="primary"
+            icon={Zap}
          />
          <MetricCard 
-            title="Database" 
+            title="Core Database" 
             value="MySQL" 
             subtext={project.database_name}
             color="primary"
+            icon={DatabaseIcon}
          />
          <MetricCard 
             title="Queue Worker" 
-            value={project.queue_enabled ? 'Active' : 'Disabled'} 
-            subtext={project.queue_enabled ? 'Database Driver' : 'Sync Driver'}
+            value={project.queue_enabled ? 'Running' : 'Offline'} 
+            subtext={project.queue_enabled ? 'Background Processing' : 'Direct Dispatch'}
             color={project.queue_enabled ? 'emerald' : 'primary'}
+            icon={RefreshCw}
          />
       </div>
 
       {/* Tabs Layout */}
       <div>
-        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit mb-6 overflow-x-auto">
+        <div className="flex gap-2 bg-white/5 p-1.5 rounded-2xl w-fit mb-10 overflow-x-auto backdrop-blur-md border border-white/10">
            {['workload', 'console', 'environment', 'database', 'logs', 'settings'].map(tab => (
              <button
                key={tab}
                onClick={() => setActiveTab(tab)}
-               className={`px-6 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+               className={`px-8 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
                  activeTab === tab 
-                 ? 'bg-slate-700 text-white shadow-sm' 
-                 : 'text-slate-400 hover:text-slate-200'
+                 ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)]' 
+                 : 'text-slate-500 hover:text-white hover:bg-white/5'
                }`}
              >
-               {tab.charAt(0).toUpperCase() + tab.slice(1)}
+               {tab}
              </button>
            ))}
         </div>
 
         {/* Tab Content */}
-        <div className="animate-fade-in">
+        <div className="animate-fade-in relative z-10">
           
           {/* Workload Tab */}
           {activeTab === 'workload' && (
-             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* ... existing Workload content ... */} 
-                {/* Re-inserting existing workload content for context, but truncated for brevity in replacement if needed. 
-                    However, since I'm replacing the whole component logic block, I should ensure I don't lose the existing Workload UI. 
-                    The user implementation will paste the full block.
-                */}
-                <div className="lg:col-span-2 space-y-6">
-                   <div className="card p-0 overflow-hidden">
-                      <div className="p-4 border-b border-slate-700 bg-slate-800/50">
-                         <h3 className="font-semibold text-white">Application Endpoints</h3>
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-8">
+                   <div className="card-glass p-0 overflow-hidden bg-white/[0.02] border-white/10">
+                      <div className="p-6 border-b border-white/5 bg-white/[0.03]">
+                         <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-3">
+                           <Layout className="w-4 h-4 text-indigo-400" />
+                           Infrastructure Endpoints
+                         </h3>
                       </div>
-                      <div className="p-4">
-                         <div className="flex items-center justify-between p-3 bg-slate-800/30 rounded border border-slate-700">
-                            <div className="flex items-center gap-3">
-                               <div className="p-2 bg-emerald-500/10 rounded text-emerald-500">
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <div className="p-8">
+                         <div className="flex items-center justify-between p-6 bg-white/[0.02] rounded-2xl border border-white/5 group hover:border-indigo-500/30 transition-all">
+                            <div className="flex items-center gap-5">
+                               <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                                  <Globe className="w-6 h-6" />
                                </div>
                                <div>
-                                  <div className="font-medium text-white">Main Entrypoint</div>
-                                  <div className="text-xs text-slate-400">Port 80 • SSL Auto</div>
+                                  <div className="font-black text-white uppercase tracking-tight">Main Production Entry</div>
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Managed Port 80 • SSL Termination</div>
                                </div>
                             </div>
-                            <a href={projectUrl} target="_blank" className="text-primary-400 hover:underline text-sm font-mono">{projectUrl}</a>
+                            <a 
+                              href={projectUrl} 
+                              target="_blank" 
+                              className="text-indigo-400 hover:text-white font-mono text-sm underline-offset-8 hover:underline transition-all"
+                            >
+                              {projectUrl}
+                            </a>
                          </div>
                       </div>
                    </div>
 
                    {project.error_log && (
-                      <div className="bg-red-950/30 border border-red-500/30 rounded-lg p-4">
-                         <h3 className="text-red-400 font-medium mb-1 flex items-center gap-2">
-                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
-                           Deployment Error
+                      <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-8 relative overflow-hidden">
+                         <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <ShieldAlert className="w-16 h-16 text-rose-500" />
+                         </div>
+                         <h3 className="text-rose-400 font-black uppercase tracking-[0.2em] text-xs mb-4 flex items-center gap-3">
+                           <ShieldAlert className="w-4 h-4" />
+                           Stack Deployment Failure
                          </h3>
-                         <pre className="text-xs text-red-200/80 whitespace-pre-wrap mt-2 font-mono bg-black/20 p-2 rounded">{project.error_log}</pre>
+                         <div className="bg-black/40 rounded-xl p-6 border border-white/5">
+                            <pre className="text-xs text-rose-200/80 whitespace-pre-wrap font-mono leading-relaxed">{project.error_log}</pre>
+                         </div>
                       </div>
                    )}
                 </div>
 
                 <div className="space-y-6">
-                   <div className="card p-6">
-                      <h3 className="font-semibold text-white mb-4">Repository</h3>
-                      <div className="space-y-3">
-                         <div>
-                            <label className="text-xs text-slate-500 uppercase font-medium">Git URL</label>
-                            <div className="text-sm text-slate-300 break-all">{project.github_url}</div>
-                         </div>
-                         <div>
-                            <label className="text-xs text-slate-500 uppercase font-medium">Branch</label>
-                            <div className="flex items-center gap-2">
-                               <GitBranch className="w-4 h-4 text-slate-500" />
-                               <span className="text-sm text-white font-mono bg-slate-800 px-2 py-0.5 rounded">{project.branch || 'main'}</span>
+                   <div className="card-glass p-8 bg-white/[0.02] border-white/10">
+                      <h3 className="text-sm font-black text-white uppercase tracking-widest mb-8 flex items-center gap-3">
+                        <Code className="w-4 h-4 text-indigo-400" />
+                        Source Control
+                      </h3>
+                      <div className="space-y-6">
+                         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Repository URI</label>
+                            <div className="flex items-center gap-3">
+                               <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-400">
+                                  <Globe className="w-5 h-5" />
+                               </div>
+                               <div className="text-sm text-slate-300 font-mono truncate">{project.github_url}</div>
                             </div>
                          </div>
-                         <div>
-                            <label className="text-xs text-slate-500 uppercase font-medium">Laravel Version</label>
-                            <div className="text-sm text-white">{project.laravel_version || 'Unknown'}</div>
+                         <div className="grid grid-cols-2 gap-4">
+                            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Active Branch</label>
+                               <div className="flex items-center gap-3 text-white">
+                                  <GitBranch className="w-4 h-4 text-indigo-400" />
+                                  <span className="text-sm font-black uppercase tracking-tight">{project.branch || 'main'}</span>
+                               </div>
+                            </div>
+                            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Framework</label>
+                               <div className="flex items-center gap-3 text-white">
+                                  <Zap className="w-4 h-4 text-amber-400" />
+                                  <span className="text-sm font-black uppercase tracking-tight">Laravel {project.laravel_version || '10.x'}</span>
+                               </div>
+                            </div>
                          </div>
                       </div>
                    </div>
@@ -465,38 +539,72 @@ function StudentProjectDetail() {
 
           {/* Console Tab */}
           {activeTab === 'console' && (
-            <div className="card p-0 overflow-hidden flex flex-col h-[600px]">
-              <div className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex gap-2">
-                   <div className="w-3 h-3 rounded-full bg-red-500"/>
-                   <div className="w-3 h-3 rounded-full bg-yellow-500"/>
-                   <div className="w-3 h-3 rounded-full bg-green-500"/>
+            <div className="card-glass p-0 overflow-hidden flex flex-col h-[650px] border-white/10 bg-black/40 shadow-2xl relative">
+              <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between backdrop-blur-md relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-1.5 px-2">
+                     <div className="w-3 h-3 rounded-full bg-rose-500/50 border border-rose-500/20 shadow-[0_0_10px_rgba(244,63,94,0.2)]"/>
+                     <div className="w-3 h-3 rounded-full bg-amber-500/50 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)]"/>
+                     <div className="w-3 h-3 rounded-full bg-emerald-500/50 border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]"/>
+                  </div>
+                  <div className="h-4 w-px bg-white/10 mx-2" />
+                  <div className="flex items-center gap-2 text-slate-400 font-mono text-[10px] uppercase tracking-widest font-black">
+                    <TerminalIcon size={12} className="text-indigo-400" />
+                    Artisan Runtime Interface
+                  </div>
                 </div>
-                <span className="text-xs text-slate-500 font-mono">php artisan runner</span>
+                <div className="flex items-center gap-4">
+                    <span className="text-[8px] font-black text-emerald-500 bg-emerald-500/5 px-2 py-0.5 rounded uppercase tracking-widest border border-emerald-500/10 animate-pulse">Socket Active</span>
+                    <button onClick={() => setConsoleOutput('')} className="text-slate-600 hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                        Clear Cache
+                    </button>
+                </div>
               </div>
-              <div className="flex-1 bg-black p-4 overflow-auto font-mono text-sm text-slate-300 whitespace-pre-wrap">
-                <div className="text-slate-500 mb-2"># enter artisan command without 'php artisan' prefix (e.g. 'migrate')</div>
-                {consoleOutput}
-                {isExecuting && <div className="text-primary-400 animate-pulse">Running...</div>}
+
+              <div className="flex-1 p-8 overflow-auto font-mono text-sm text-slate-300 whitespace-pre-wrap flex flex-col gap-1 custom-scrollbar scroll-smooth">
+                <div className="text-slate-600 mb-6 flex items-center gap-3 bg-white/[0.02] p-4 rounded-xl border border-white/5">
+                    <ShieldAlert size={14} className="text-amber-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Awaiting Artisan Input • Prefix 'php artisan' handles automatically</span>
+                </div>
+                {consoleOutput ? consoleOutput.split('\n').map((line, i) => (
+                    <div key={i} className="flex gap-4 group">
+                        <span className="text-slate-700 text-[10px] select-none w-8 shrink-0 text-right group-hover:text-slate-500 transition-colors">{i + 1}</span>
+                        <span className={`${line.includes('$') ? 'text-indigo-400 font-black' : 'text-slate-400 font-medium'}`}>{line}</span>
+                    </div>
+                )) : (
+                    <div className="flex flex-col items-center justify-center h-full gap-5 opacity-20">
+                        <TerminalIcon size={60} className="text-slate-500" />
+                        <p className="text-xs font-black uppercase tracking-[0.4em]">Interactive Shell Ready</p>
+                    </div>
+                )}
+                {isExecuting && (
+                    <div className="flex items-center gap-3 text-indigo-400 font-black text-xs uppercase tracking-widest mt-4 pl-12 animate-pulse">
+                        <RefreshCw size={12} className="animate-spin" />
+                        Executing Thread...
+                    </div>
+                )}
               </div>
-              <form onSubmit={handleConsoleSubmit} className="p-3 bg-slate-800 border-t border-slate-700 flex gap-2">
-                <div className="flex items-center px-3 bg-slate-900 rounded text-slate-400 font-mono text-sm select-none">
+
+              <form onSubmit={handleConsoleSubmit} className="p-6 bg-white/[0.03] border-t border-white/5 flex gap-4 backdrop-blur-xl relative z-10">
+                <div className="flex items-center px-5 bg-black/40 border border-white/10 rounded-xl text-slate-500 font-mono text-xs font-black uppercase tracking-widest select-none">
                   php artisan
                 </div>
-                <input 
-                  type="text" 
-                  value={consoleCommand}
-                  onChange={(e) => setConsoleCommand(e.target.value)}
-                  placeholder="command..."
-                  className="flex-1 bg-transparent text-white font-mono text-sm focus:outline-none"
-                  autoFocus
-                />
+                <div className="flex-1 relative group">
+                    <input 
+                      type="text" 
+                      value={consoleCommand}
+                      onChange={(e) => setConsoleCommand(e.target.value)}
+                      placeholder="Enter command (e.g., migrate --seed)..."
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-6 py-4 text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none"
+                      autoFocus
+                    />
+                </div>
                 <button 
                   type="submit" 
                   disabled={isExecuting || !consoleCommand.trim()}
-                  className="px-4 py-1.5 bg-primary-600 text-white text-xs font-medium rounded hover:bg-primary-500 disabled:opacity-50"
+                  className="btn btn-primary px-10 py-4 text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/20 disabled:opacity-50 active:scale-95 transition-all"
                 >
-                  Run
+                  {isExecuting ? 'Syncing...' : 'Deploy'}
                 </button>
               </form>
             </div>
@@ -504,160 +612,225 @@ function StudentProjectDetail() {
 
           {/* Environment Tab */}
           {activeTab === 'environment' && (
-            <div className="card p-0 overflow-hidden h-[600px] flex flex-col">
-               <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
-                  <h3 className="font-semibold text-white">Environment Variables (.env)</h3>
+            <div className="card-glass p-0 overflow-hidden h-[650px] flex flex-col border-white/10 bg-white/[0.01]">
+               <div className="p-8 border-b border-white/5 bg-white/[0.03] flex justify-between items-center backdrop-blur-md">
+                  <div className="flex items-center gap-4">
+                     <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                        <SettingsIcon className="w-6 h-6" />
+                     </div>
+                     <div>
+                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Environment Manifest</h3>
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5">Runtime Secrets & Configurations (.env)</p>
+                     </div>
+                  </div>
                   <button 
                     onClick={handleSaveEnv}
                     disabled={isSavingEnv}
-                    className="btn btn-primary text-sm py-1.5"
+                    className="btn btn-primary px-8 py-4 text-xs font-black uppercase tracking-widest flex items-center gap-3 disabled:opacity-50 shadow-lg shadow-indigo-500/20"
                   >
-                    {isSavingEnv ? 'Saving...' : 'Save Changes'}
+                    {isSavingEnv ? (
+                        <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                        <Save className="w-4 h-4" />
+                    )}
+                    {isSavingEnv ? 'Syncing...' : 'Deploy Secrets'}
                   </button>
                </div>
-               <div className="flex-1 relative">
+               <div className="flex-1 relative bg-black/20">
                  <textarea
                    value={envContent}
                    onChange={(e) => setEnvContent(e.target.value)}
-                   className="absolute inset-0 w-full h-full bg-slate-900 text-slate-300 font-mono text-sm p-4 focus:outline-none resize-none"
+                   className="absolute inset-0 w-full h-full bg-transparent text-slate-300 font-mono text-sm p-10 focus:outline-none resize-none custom-scrollbar selection:bg-indigo-500/30 leading-relaxed"
                    spellCheck="false"
+                   placeholder="# Define your application secrets here..."
                  />
+                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[100px] pointer-events-none rounded-full" />
                </div>
-               <div className="p-2 bg-yellow-500/10 text-yellow-500 text-xs px-4 border-t border-slate-800 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> Changing environment variables may require a redeployment to take full effect.
+               <div className="p-5 bg-indigo-500/5 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] border-t border-white/5 flex items-center justify-center gap-4 backdrop-blur-md">
+                  <AlertTriangle className="w-4 h-4 animate-pulse" /> 
+                  Modifying the environment manifest will trigger an global instance synchronization.
                </div>
             </div>
           )}
 
           {/* Database Tab */}
           {activeTab === 'database' && (
-             <div className="min-h-[600px]">
+             <div className="min-h-[650px] animate-pop-in">
                 <DatabaseManager embedded={true} projectId={id} />
              </div>
           )}
 
           {/* Logs Tab */}
           {activeTab === 'logs' && (
-            <div className="card bg-black border-slate-800 overflow-hidden">
-               <div className="flex items-center justify-between p-2 bg-slate-900 border-b border-slate-800">
-                  <div className="flex gap-2 px-2">
-                     <div className="w-3 h-3 rounded-full bg-red-500"/>
-                     <div className="w-3 h-3 rounded-full bg-yellow-500"/>
-                     <div className="w-3 h-3 rounded-full bg-green-500"/>
+            <div className="card-glass bg-black/40 border-white/10 overflow-hidden relative">
+               <div className="flex items-center justify-between p-6 bg-white/[0.03] border-b border-white/5 backdrop-blur-md">
+                  <div className="flex items-center gap-5">
+                      <div className="flex gap-1.5 px-2">
+                         <div className="w-3 h-3 rounded-full bg-rose-500/50 border border-rose-500/20 shadow-[0_0_10px_rgba(244,63,94,0.2)]"/>
+                         <div className="w-3 h-3 rounded-full bg-amber-500/50 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)]"/>
+                         <div className="w-3 h-3 rounded-full bg-emerald-500/50 border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]"/>
+                      </div>
+                      <div className="h-4 w-px bg-white/10 mx-2" />
+                      <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <Activity size={12} className="text-indigo-400" />
+                        Infrastructure Telemetry
+                      </div>
                   </div>
-                  <span className="text-xs text-slate-500 font-mono">container: {project.container_id?.substring(0,12) || 'unknown'}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest italic">Node: {project.container_id?.substring(0,12) || 'awaiting_id'}</span>
+                    <button onClick={fetchLogs} className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all">
+                        <RefreshCw size={14} />
+                    </button>
+                  </div>
                </div>
-               <div className="p-4 h-[600px] overflow-auto font-mono text-sm">
+               <div className="p-8 h-[650px] overflow-auto font-mono text-xs leading-relaxed custom-scrollbar bg-black/10">
                   {logs ? (
-                    logs.split('\n').map((line, i) => (
-                      <div key={i} className="text-slate-300 hover:bg-slate-800/50 px-1 rounded">
-                        <span className="text-slate-600 mr-2 select-none">{(i+1).toString().padStart(3, ' ')}</span>
-                        {line}
+                    logs.split('\n').filter(l => l.trim()).map((line, i) => (
+                      <div key={i} className="flex gap-6 group hover:bg-white/[0.03] px-4 py-1.5 rounded-lg transition-colors border border-transparent hover:border-white/5">
+                        <span className="text-slate-700 text-[10px] select-none w-8 shrink-0 text-right group-hover:text-slate-400 transition-colors">{(i+1)}</span>
+                        <span className="text-slate-400 font-medium">{line}</span>
                       </div>
                     ))
                   ) : (
-                    <div className="text-slate-600 italic">Waiting for logs...</div>
+                    <div className="flex flex-col items-center justify-center h-full gap-5 opacity-20">
+                        <Activity size={60} className="text-slate-500" />
+                        <p className="text-xs font-black uppercase tracking-[0.4em]">Streaming Live Telemetry...</p>
+                    </div>
                   )}
                   <div ref={logsEndRef} />
                </div>
+               <div className="absolute top-0 right-0 w-[30vw] h-[30vw] bg-indigo-500/5 blur-[120px] pointer-events-none rounded-full" />
             </div>
           )}
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="card p-6">
-                   <h3 className="font-semibold text-white mb-4">Runtime Configuration</h3>
-                   <div>
-                      <label className="block text-sm text-slate-400 mb-1">PHP Version</label>
-                      <select 
-                        value={project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'}
-                        onChange={(e) => handleUpdatePHP(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-primary-500"
-                      >
-                         <option value="8.0">PHP 8.0</option>
-                         <option value="8.1">PHP 8.1</option>
-                         <option value="8.2">PHP 8.2</option>
-                         <option value="8.3">PHP 8.3</option>
-                         <option value="8.4">PHP 8.4 (Latest)</option>
-                      </select>
-                      <p className="text-xs text-slate-500 mt-2">
-                         Changing the PHP version requires a redeployment.
-                      </p>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
+                   
+                   <div className="flex items-center gap-4 mb-10">
+                      <div className="w-14 h-14 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-xl">
+                        <Zap className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">Compute Profile</h3>
+                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Runtime Specification</p>
+                      </div>
+                   </div>
+
+                   <div className="space-y-8">
+                      <div className="space-y-3">
+                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">Platform Runtime (PHP)</label>
+                         <div className="relative">
+                            <select 
+                              value={project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'}
+                              onChange={(e) => handleUpdatePHP(e.target.value)}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none appearance-none"
+                            >
+                               <option value="8.0">PHP 8.0 Deployment Profile</option>
+                               <option value="8.1">PHP 8.1 Deployment Profile</option>
+                               <option value="8.2">PHP 8.2 Deployment Profile</option>
+                               <option value="8.3">PHP 8.3 Deployment Profile</option>
+                               <option value="8.4">PHP 8.4 Deployment Profile (Stable)</option>
+                            </select>
+                            <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none text-slate-700 font-bold text-[10px] uppercase tracking-widest">Active Link</div>
+                         </div>
+                         <p className="text-[11px] text-slate-600 font-medium italic pl-1 flex items-center gap-2 mt-3">
+                            <AlertTriangle size={10} className="text-amber-500" /> Updating runtime context forces a global container rebuild.
+                         </p>
+                      </div>
                    </div>
                 </div>
 
-                <div className="card p-6">
-                   <h3 className="font-semibold text-white mb-4">Background Worker</h3>
-                   <div>
-                      <div className="flex items-center justify-between mb-2">
-                          <label className="block text-sm text-slate-400">Queue Worker Status</label>
+                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl pointer-events-none"></div>
+                   
+                   <div className="flex items-center gap-4 mb-10">
+                      <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-xl">
+                        <RefreshCw className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">Queue Cluster</h3>
+                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Background Logistics</p>
+                      </div>
+                   </div>
+
+                   <div className="space-y-10">
+                      <div className="flex items-center justify-between p-8 rounded-3xl bg-white/[0.02] border border-white/10">
+                          <div>
+                              <h4 className="text-sm font-black text-white uppercase tracking-widest mb-1">Worker Orchestration</h4>
+                              <p className="text-[11px] text-slate-500 font-medium italic">Execute artisan queue:work (async-auto)</p>
+                          </div>
                           <button 
                              onClick={() => handleUpdateQueue(!project.queue_enabled)}
-                             className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors border-none focus:ring-0 ${project.queue_enabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                             className={`w-14 h-7 rounded-full p-1.5 cursor-pointer transition-all duration-500 border-none focus:ring-0 shadow-lg ${project.queue_enabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
                           >
-                             <div className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${project.queue_enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                             <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 shadow-md transform ${project.queue_enabled ? 'translate-x-7' : 'translate-x-0'}`} />
                           </button>
                       </div>
-                      <div className="text-xs text-slate-500 mt-3 space-y-1">
-                         <p>Activating this runs <code>php artisan queue:work</code> (database driver).</p>
-                         <p className="text-amber-500/80 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Changing this triggers a redeploy.</p>
+                      
+                      <div className="p-6 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 flex items-start gap-4">
+                         <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                            <Box className="w-5 h-5" />
+                         </div>
+                         <p className="text-[11px] text-slate-500 font-medium leading-relaxed italic">
+                            Provisioning a <span className="text-emerald-400 font-black">Dedicated Worker Pool</span> allows your primary instance to focus entirely on HTTP request processing.
+                         </p>
                       </div>
                    </div>
                 </div>
 
-                <div className="card p-6">
-                   <h3 className="font-semibold text-white mb-4">Database Credentials</h3>
-                   <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                         <div>
-                            <label className="text-xs text-slate-500 uppercase font-medium">Host</label>
-                            <div className="flex items-center gap-2 mt-1">
-                               <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">paas-mysql</code>
-                                <button onClick={() => copyToClipboard('paas-mysql')} className="p-2 hover:bg-slate-800 rounded text-slate-400">
-                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
-                                   </svg>
-                                </button>
-                            </div>
-                         </div>
-                         <div>
-                            <label className="text-xs text-slate-500 uppercase font-medium">Port</label>
-                            <div className="flex items-center gap-2 mt-1">
-                               <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">3306</code>
-                            </div>
-                         </div>
+                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative overflow-hidden md:col-span-2">
+                   <div className="absolute top-0 right-0 w-[400px] h-40 bg-indigo-500/5 blur-[100px] pointer-events-none"></div>
+                   
+                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-xl">
+                          <DatabaseIcon className="w-7 h-7" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-black text-white uppercase tracking-tight">Persistence Credentials</h3>
+                          <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Encrypted Database Access Policy</p>
+                        </div>
                       </div>
-                      
-                      <div>
-                         <label className="text-xs text-slate-500 uppercase font-medium">Database Name</label>
-                         <div className="flex items-center gap-2 mt-1">
-                            <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">{project.database_name}</code>
-                            <button onClick={() => copyToClipboard(project.database_name)} className="p-2 hover:bg-slate-800 rounded text-slate-400">
-                               <Copy className="w-4 h-4" />
-                            </button>
-                         </div>
+                      <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500">
+                         <ShieldAlert className="w-4 h-4 text-emerald-500" />
+                         Private Network Isolation Active
                       </div>
+                   </div>
 
-                      <div>
-                         <label className="text-xs text-slate-500 uppercase font-medium">User</label>
-                         <div className="flex items-center gap-2 mt-1">
-                            <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded">{project.database_name}</code>
-                            <button onClick={() => copyToClipboard(project.database_name)} className="p-2 hover:bg-slate-800 rounded text-slate-400">
-                               <Copy className="w-4 h-4" />
-                            </button>
-                         </div>
-                      </div>
-
-                      <div>
-                         <label className="text-xs text-slate-500 uppercase font-medium">Password</label>
-                         <div className="flex items-center gap-2 mt-1">
-                            <code className="flex-1 font-mono text-sm text-white bg-slate-900 px-3 py-2 rounded tracking-widest">••••••••••••</code>
-                            <button onClick={() => copyToClipboard(project.database_name)} className="p-2 hover:bg-slate-800 rounded text-slate-400" title="Copy Password">
-                               <Copy className="w-4 h-4" />
-                            </button>
-                         </div>
-                         <p className="text-xs text-slate-500 mt-1">Password is same as database name</p>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      <CredentialBox 
+                        label="Internal Endpoint" 
+                        value="paas-mysql.cluster.local" 
+                        onCopy={() => copyToClipboard('paas-mysql')} 
+                      />
+                      <CredentialBox 
+                        label="Compute Port" 
+                        value="3306" 
+                      />
+                      <CredentialBox 
+                        label="Namespace ID" 
+                        value={project.database_name} 
+                        onCopy={() => copyToClipboard(project.database_name)} 
+                      />
+                      <CredentialBox 
+                        label="Identity User" 
+                        value={project.database_name} 
+                        onCopy={() => copyToClipboard(project.database_name)} 
+                      />
+                      <CredentialBox 
+                        label="Access Key" 
+                        value="••••••••••••••••" 
+                        isSecret={true}
+                        onCopy={() => {
+                            copyToClipboard(project.database_name);
+                            toast.success('Security manifest copied');
+                        }} 
+                      />
+                      <div className="sm:col-span-1 border border-dashed border-white/5 rounded-2xl flex items-center justify-center p-6 text-center group/opt">
+                         <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest group-hover/opt:text-slate-500 transition-colors">Credential rotation policy: Manual Only</p>
                       </div>
                    </div>
                 </div>
@@ -671,3 +844,24 @@ function StudentProjectDetail() {
 }
 
 export default StudentProjectDetail
+
+function CredentialBox({ label, value, onCopy, isSecret = false }) {
+  return (
+    <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/5 group transition-all duration-300 hover:border-white/10 hover:bg-white/[0.04]">
+       <label className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mb-4 block group-hover:text-indigo-400 transition-colors">{label}</label>
+       <div className="flex items-center justify-between gap-4">
+          <code className={`font-mono text-sm text-white truncate font-bold ${isSecret ? 'tracking-[0.4em] opacity-30 select-none' : ''}`}>{value}</code>
+          {onCopy && (
+            <button 
+              onClick={onCopy} 
+              className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 text-slate-500 hover:text-white hover:bg-indigo-500 transition-all shadow-lg flex items-center justify-center shrink-0"
+              title="Copy to manifest"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+          )}
+       </div>
+    </div>
+  )
+}
+

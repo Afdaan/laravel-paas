@@ -1,73 +1,66 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment } from 'react'
+import { AlertTriangle, Info, AlertOctagon } from 'lucide-react'
 
 export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel' }) {
   if (!isOpen) return null
 
-  const colors = {
+  const configs = {
     danger: {
-      iconBg: 'bg-red-500/10',
-      iconText: 'text-red-500', 
-      button: 'btn-danger',
+      bg: 'bg-rose-500/10',
+      border: 'border-rose-500/20',
+      text: 'text-rose-400',
+      btn: 'bg-rose-600 hover:bg-rose-700 text-white',
+      icon: AlertOctagon
     },
     warning: {
-      iconBg: 'bg-amber-500/10',
-      iconText: 'text-amber-500',
-      button: 'btn-primary', 
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500/20',
+      text: 'text-amber-400',
+      btn: 'btn-primary',
+      icon: AlertTriangle
     },
     info: {
-      iconBg: 'bg-blue-500/10',
-      iconText: 'text-blue-500',
-      button: 'btn-primary',
+      bg: 'bg-indigo-500/10',
+      border: 'border-indigo-500/20',
+      text: 'text-indigo-400',
+      btn: 'btn-primary',
+      icon: Info
     }
   }
 
-  const style = colors[type] || colors.danger
+  const config = configs[type] || configs.danger
+  const Icon = config.icon
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:pt-[15vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity" 
+        className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300" 
         onClick={onClose}
       />
 
       {/* Modal Panel */}
-      <div className="relative transform overflow-hidden rounded-xl bg-slate-900 border border-slate-800 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg animate-scale-in">
-        <div className="px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-          <div className="sm:flex sm:items-start">
-            <div className={`mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full ${style.iconBg} sm:mx-0 sm:h-10 sm:w-10`}>
-              {type === 'danger' && (
-                <svg className={`h-6 w-6 ${style.iconText}`} fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                </svg>
-              )}
-              {type === 'warning' && (
-                <svg className={`h-6 w-6 ${style.iconText}`} fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                </svg>
-              )}
-              {type === 'info' && (
-                <svg className={`h-6 w-6 ${style.iconText}`} fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                </svg>
-              )}
+      <div className="relative w-full max-w-md card-glass border-white/10 overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-pop-in">
+        <div className="p-8">
+          <div className="flex flex-col items-center text-center">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 ${config.bg} border ${config.border} ${config.text}`}>
+              <Icon className="w-8 h-8" />
             </div>
-            <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
-              <h3 className="text-lg font-semibold leading-6 text-white text-shadow-glow">
-                {title}
-              </h3>
-              <div className="mt-2">
-                <p className="text-sm text-slate-400">
-                  {message}
-                </p>
-              </div>
-            </div>
+            
+            <h3 className="text-2xl font-black text-white tracking-tight mb-2">
+              {title}
+            </h3>
+            
+            <p className="text-slate-400 text-sm font-medium leading-relaxed">
+              {message}
+            </p>
           </div>
         </div>
-        <div className="bg-slate-900/50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 border-t border-slate-800">
+        
+        <div className="p-6 bg-white/[0.02] border-t border-white/[0.03] flex flex-col gap-3">
           <button
             type="button"
-            className={`btn ${style.button} w-full sm:w-auto sm:ml-3 shadow-lg`}
+            className={`btn w-full py-4 text-base font-black uppercase tracking-widest ${config.btn}`}
             onClick={() => {
               onConfirm()
               onClose()
@@ -77,7 +70,7 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
           </button>
           <button
             type="button"
-            className="mt-3 sm:mt-0 btn btn-secondary w-full sm:w-auto"
+            className="btn btn-secondary w-full py-4 text-base font-black uppercase tracking-widest"
             onClick={onClose}
           >
             {cancelText}
@@ -87,3 +80,4 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
     </div>
   )
 }
+

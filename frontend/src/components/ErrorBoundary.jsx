@@ -1,4 +1,5 @@
 import React from 'react'
+import { ShieldAlert, RefreshCw, Home } from 'lucide-react'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -17,34 +18,35 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0c] text-slate-200 p-8">
-          <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mb-6">
-            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+        <div className="flex flex-col items-center justify-center min-h-screen bg-[#030305] text-slate-200 p-8">
+          <div className="w-20 h-20 bg-rose-500/10 border border-rose-500/20 rounded-3xl flex items-center justify-center mb-10 shadow-[0_0_50px_rgba(244,63,94,0.1)]">
+            <ShieldAlert className="w-10 h-10 text-rose-500" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Something went wrong</h1>
-          <p className="text-slate-500 text-center max-w-md mb-8">
-            The application encountered an unexpected error. This might be due to a connection issue or a temporary glitch.
+          <h1 className="text-4xl font-black text-white tracking-tighter mb-4 italic">System <span className="text-rose-500">Anomaly</span></h1>
+          <p className="text-slate-500 text-center max-w-md mb-12 font-medium leading-relaxed">
+            Universal protocol breach detected. The application encountered an unhandled exception state.
           </p>
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-5">
             <button 
               onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-all"
+              className="px-10 py-5 bg-white text-black font-black uppercase tracking-widest rounded-2xl transition-all hover:scale-105 flex items-center gap-3"
             >
-              Reload Page
+              <RefreshCw className="w-5 h-5" /> Reload Fleet
             </button>
             <button 
               onClick={() => window.location.href = '/'}
-              className="px-6 py-2 bg-[#1a1a1e] hover:bg-[#252529] border border-white/5 text-slate-300 rounded-lg font-medium transition-all"
+              className="px-10 py-5 bg-white/5 border border-white/5 text-slate-400 font-black uppercase tracking-widest rounded-2xl transition-all hover:bg-white/10 hover:text-white flex items-center gap-3"
             >
-              Back to Home
+              <Home className="w-5 h-5" /> Abort to Deck
             </button>
           </div>
           {process.env.NODE_ENV === 'development' && (
-            <pre className="mt-12 p-4 bg-black/50 border border-white/5 rounded-lg text-xs font-mono text-red-400 overflow-auto max-w-full">
-              {this.state.error?.toString()}
-            </pre>
+            <div className="mt-16 w-full max-w-2xl overflow-hidden card-glass border-rose-500/20 bg-rose-500/5">
+              <div className="px-6 py-3 border-b border-rose-500/10 bg-rose-500/5 text-rose-400 text-[10px] font-black uppercase tracking-widest">Debug Stream</div>
+              <pre className="p-8 font-mono text-xs text-rose-400/80 overflow-auto whitespace-pre-wrap">
+                {this.state.error?.toString()}
+              </pre>
+            </div>
           )}
         </div>
       )

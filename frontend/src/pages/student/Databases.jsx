@@ -1,13 +1,19 @@
 // ===========================================
 // Global Database Manager
 // ===========================================
-// Manage databases for all projects in one place
-// ===========================================
 
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
-import { PackageOpen } from 'lucide-react'
+import { 
+  PackageOpen, 
+  Database as DbIcon, 
+  Search, 
+  ArrowRight,
+  Layout,
+  Terminal,
+  Activity
+} from 'lucide-react'
 import DatabaseManager from './DatabaseManager'
 
 export default function Databases() {
@@ -25,7 +31,6 @@ export default function Databases() {
       const response = await projectsAPI.listOwn()
       const data = response.data.data || []
       setProjects(data)
-      // Auto-select first project if available
       if (data.length > 0) {
         setSelectedProjectId(data[0].id)
       }
@@ -43,106 +48,101 @@ export default function Databases() {
 
   const selectedProject = projects.find(p => p.id === Number(selectedProjectId))
 
-  // Render Loading State
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+        <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] animate-pulse">Accessing Data Cluster...</p>
       </div>
     )
   }
 
-  // Render Empty State
   if (projects.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)] gap-4">
-        <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center opacity-50"><PackageOpen className="w-10 h-10 text-slate-400" /></div>
-        <div className="text-center">
-          <h3 className="text-xl font-bold text-white">No Projects Found</h3>
-          <p className="text-slate-400 mt-2">Create a project first to manage its database.</p>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 animate-pop-in">
+        <div className="w-20 h-20 rounded-[2.5rem] bg-white/5 border border-white/5 flex items-center justify-center">
+          <PackageOpen className="w-10 h-10 text-slate-700" />
+        </div>
+        <div className="text-center max-w-sm">
+          <h3 className="text-2xl font-black text-white tracking-tight">No Clusters Found</h3>
+          <p className="text-slate-500 mt-2 font-medium">Provision a project workload first to initialize its corresponding database instance.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="h-[calc(100vh-100px)] flex flex-col md:flex-row gap-6 pb-6">
+    <div className="h-[calc(100vh-140px)] flex flex-col md:flex-row gap-8 animate-pop-in">
       
       {/* Sidebar - Project List */}
-      <div className="w-full md:w-80 flex-shrink-0 flex flex-col gap-4">
-         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
-            <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-              <svg className="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75M3.75 10.125v3.75m16.5 0v3.75M3.75 13.875v3.75" />
-              </svg>
-              Databases
-            </h2>
-            <p className="text-slate-400 text-xs mb-4">Select a project to manage</p>
+      <div className="w-full md:w-80 flex-shrink-0 flex flex-col gap-6">
+         <div className="card-glass p-6 border-white/10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <DbIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-white tracking-tight uppercase">Clusters</h2>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Global Fleet</p>
+              </div>
+            </div>
             
-            <div className="relative">
+            <div className="relative group">
               <input 
                 type="text" 
-                placeholder="Search projects..." 
+                placeholder="Search workloads..." 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary-500"
+                className="input-field py-3 pl-10 text-xs font-bold uppercase tracking-widest"
               />
-              <span className="absolute left-3 top-2.5 text-slate-500">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                </svg>
-              </span>
+              <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
             </div>
          </div>
 
-         <div className="flex-1 overflow-y-auto bg-slate-800 rounded-xl border border-slate-700 shadow-sm p-2 space-y-1">
+         <div className="flex-1 overflow-y-auto card-glass p-2 space-y-2 border-white/5">
             {filteredProjects.length > 0 ? (
               filteredProjects.map(p => (
                 <button
                   key={p.id}
                   onClick={() => setSelectedProjectId(p.id)}
-                  className={`w-full text-left p-3 rounded-lg transition-all border ${
+                  className={`w-full text-left p-4 rounded-2xl transition-all duration-300 border group ${
                     selectedProjectId === p.id 
-                    ? 'bg-primary-600/10 border-primary-600/50' 
-                    : 'border-transparent hover:bg-slate-700/50'
+                    ? 'bg-indigo-500/10 border-indigo-500/30' 
+                    : 'border-transparent hover:bg-white/[0.03] hover:border-white/10'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`font-semibold text-sm ${selectedProjectId === p.id ? 'text-primary-400' : 'text-slate-200'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`font-black text-xs uppercase tracking-tight ${selectedProjectId === p.id ? 'text-indigo-400' : 'text-slate-300'}`}>
                       {p.name}
                     </span>
-                    <span className={`w-2 h-2 rounded-full ${p.status === 'running' ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+                    <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-slate-500 font-mono truncate">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75M3.75 10.125v3.75m16.5 0v3.75M3.75 13.875v3.75" />
-                    </svg>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono italic truncate">
+                    <Terminal className="w-3 h-3 group-hover:text-indigo-400 transition-colors" />
                     {p.database_name}
                   </div>
                 </button>
               ))
             ) : (
-              <div className="text-center py-10 text-slate-500 text-sm">
-                No matching projects
+              <div className="text-center py-12 text-slate-600 font-bold uppercase tracking-widest text-[10px]">
+                No clusters matching filter
               </div>
             )}
          </div>
       </div>
 
       {/* Main Content - Database Manager */}
-      <div className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden flex flex-col">
+      <div className="flex-1 card-glass border-white/10 overflow-hidden flex flex-col bg-white/[0.01]">
         {selectedProject ? (
-          <div className="flex-1 overflow-auto p-1">
+          <div className="flex-1 overflow-auto">
              <DatabaseManager embedded={true} projectId={selectedProjectId} />
           </div>
         ) : (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4 opacity-75">
-             <div className="w-16 h-16 rounded-full bg-slate-700/50 flex items-center justify-center text-slate-400">
-               <svg className="w-8 h-8 rotate-180" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-               </svg>
+          <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-6 opacity-50 animate-pulse">
+             <div className="w-20 h-20 rounded-[2.5rem] bg-white/[0.02] border border-white/5 flex items-center justify-center">
+               <ArrowRight className="w-8 h-8 -rotate-90 md:rotate-0" />
              </div>
-             <p>Select a project from the sidebar</p>
+             <p className="text-xs font-black uppercase tracking-[0.3em]">Awaiting Selection</p>
           </div>
         )}
       </div>
@@ -150,3 +150,4 @@ export default function Databases() {
     </div>
   )
 }
+

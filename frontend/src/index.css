@@ -6,149 +6,126 @@
 /* Custom Styles for Laravel PaaS Dashboard     */
 /* ============================================= */
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================= */
+/* Modern Design System - Laravel PaaS           */
+/* ============================================= */
+
 :root {
-  --bg-dark: #0a0a0c;
-  --bg-card: #111114;
-  --text-primary: #f8fafc;
-  --text-secondary: #64748b;
-  --accent: #8b5cf6; /* Purple accent */
+  --app-bg: #030305;
+  --card-bg: #0a0a0c;
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --accent-primary: #6366f1; /* Indigo */
+  --accent-secondary: #a855f7; /* Purple */
+  --text-dim: #94a3b8;
 }
 
-body {
-  @apply bg-[#0a0a0c] text-slate-200 antialiased;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+@layer base {
+  body {
+    @apply bg-[#030305] text-slate-300 antialiased selection:bg-indigo-500/30;
+    font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  }
 }
 
-/* Form elements */
-input, select, textarea {
-  @apply bg-slate-800 border-slate-700 text-slate-100 rounded-lg 
-         focus:ring-2 focus:ring-primary-500 focus:border-transparent
-         transition-all duration-200;
+@layer components {
+  /* Premium Cards */
+  .card {
+    @apply bg-[#0a0a0c] border border-white/[0.05] rounded-[2rem] shadow-2xl transition-all duration-300;
+  }
+  
+  .card-glass {
+    @apply bg-white/[0.02] backdrop-blur-xl border border-white/[0.08] rounded-[2rem] shadow-2xl transition-all duration-300;
+  }
+
+  .card-hover:hover {
+    @apply border-white/10 -translate-y-1 shadow-indigo-500/10;
+  }
+
+  /* Sleek Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all duration-300 active:scale-[0.98] outline-none;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 hover:brightness-110;
+  }
+
+  .btn-secondary {
+    @apply bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white hover:border-white/20;
+  }
+
+  .btn-ghost {
+    @apply text-slate-400 hover:text-white hover:bg-white/5;
+  }
+
+  /* Form Elements */
+  .input-field {
+    @apply w-full bg-white/[0.03] border border-white/10 rounded-2xl px-5 py-3.5 text-white placeholder-slate-600 outline-none transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50;
+  }
+
+  /* Badges */
+  .status-badge {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border;
+  }
+
+  /* Tables */
+  .table-container {
+    @apply w-full overflow-hidden;
+  }
+
+  .premium-table {
+    @apply w-full text-left;
+  }
+
+  .premium-table th {
+    @apply py-4 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/[0.03];
+  }
+
+  .premium-table td {
+    @apply py-5 px-6 text-sm text-slate-300 border-b border-white/[0.03];
+  }
+
+  .premium-table tr:last-child td {
+    @apply border-none;
+  }
+
+  .premium-table tr:hover td {
+    @apply bg-white/[0.01];
+  }
 }
 
-/* Buttons */
-.btn {
-  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200
-         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900;
-}
-
-.btn-primary {
-  @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
-}
-
-.btn-secondary {
-  @apply bg-slate-700 text-slate-200 hover:bg-slate-600 focus:ring-slate-500;
-}
-
-.btn-danger {
-  @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
-}
-
-.btn-success {
-  @apply bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500;
-}
-
-/* Cards */
-.card {
-  @apply bg-[#111114] rounded-2xl border border-white/[0.03] shadow-2xl p-6 transition-all duration-300;
-}
-
-.card:hover {
-  @apply border-white/[0.08] shadow-indigo-500/5;
-}
-
-/* Input fields */
-.input {
-  @apply bg-[#1a1a1e] border border-white/[0.05] text-slate-100 rounded-xl px-4 py-2.5
-         focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50
-         transition-all duration-200 placeholder-slate-600;
-}
-
-/* Table styling */
-.table {
-  @apply w-full;
-}
-
-/* Status badges */
-.badge {
-  @apply px-2.5 py-0.5 rounded-full text-xs font-medium;
-}
-
-.badge-pending {
-  @apply bg-yellow-500/20 text-yellow-400;
-}
-
-.badge-building {
-  @apply bg-blue-500/20 text-blue-400;
-}
-
-.badge-running {
-  @apply bg-emerald-500/20 text-emerald-400;
-}
-
-.badge-failed {
-  @apply bg-red-500/20 text-red-400;
-}
-
-.badge-stopped {
-  @apply bg-slate-500/20 text-slate-400;
-}
-
-/* Tables */
-table {
-  @apply w-full;
-}
-
-th {
-  @apply text-left text-xs font-medium text-slate-400 uppercase tracking-wider py-3 px-4;
-}
-
-td {
-  @apply py-4 px-4 text-slate-300 border-b border-slate-700;
-}
-
-tr:hover td {
-  @apply bg-slate-700/50;
-}
-
-/* Scrollbar */
+/* Scrollbar Styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-800;
+  @apply bg-transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-600 rounded-full;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-500;
+  @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
 }
 
 /* Animations */
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
 @keyframes pop-in {
-  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
 .animate-pop-in {
-  animation: pop-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: pop-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Glassmorphism effect */
-.glass {
-  @apply bg-slate-800/50 backdrop-blur-lg border border-slate-700/50;
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

@@ -1,13 +1,31 @@
 // ===========================================
-// Admin Dashboard (PaaS Style)
+// Admin Dashboard (PaaS Infrastructure)
 // ===========================================
 
 import { useState, useEffect, memo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { systemAPI, projectsAPI } from '../../services/api'
+import { systemAPI } from '../../services/api'
 import toast from 'react-hot-toast'
 import ConfirmationModal from '../../components/ConfirmationModal'
-import { RefreshCw } from 'lucide-react'
+import { 
+  RefreshCw, 
+  Trash2, 
+  Cpu, 
+  HardDrive, 
+  Box, 
+  Image as ImageIcon, 
+  Network, 
+  Layers,
+  Activity,
+  Server,
+  Database,
+  ShieldAlert,
+  Monitor,
+  ChevronRight,
+  Database as DbIcon,
+  Search,
+  Zap
+} from 'lucide-react'
 
 function AdminDashboard() {
   const [data, setData] = useState({
@@ -35,7 +53,7 @@ function AdminDashboard() {
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 10000) // Auto refresh every 10s
+    const interval = setInterval(fetchData, 15000)
     return () => clearInterval(interval)
   }, [fetchData])
 
@@ -47,16 +65,15 @@ function AdminDashboard() {
     setIsPruning(true)
     try {
       await systemAPI.prune()
-      toast.success('System pruned successfully')
+      toast.success('System purged of unused assets')
       fetchData()
     } catch (error) {
-      toast.error('Failed to prune system')
+      toast.error('Clean operation failed')
     } finally {
       setIsPruning(false)
     }
   }
 
-  // Format bytes to human readable
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B'
     const k = 1024
@@ -67,16 +84,9 @@ function AdminDashboard() {
 
   if (isLoading && !data.system) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] bg-transparent">
-        <div className="relative mb-6">
-          <div className="absolute -inset-2 bg-purple-500/20 rounded-2xl blur-xl animate-pulse"></div>
-          <div className="relative w-16 h-16 bg-[#111114] border border-white/5 rounded-2xl flex items-center justify-center shadow-2xl">
-            <span className="text-xl font-black tracking-tighter bg-gradient-to-br from-white to-slate-500 bg-clip-text text-transparent">LP</span>
-          </div>
-        </div>
-        <p className="text-slate-500 text-[10px] font-bold tracking-[0.3em] uppercase animate-pulse">
-          Loading Registry
-        </p>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
+        <div className="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin"></div>
+        <p className="text-slate-500 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Initializing Control Plane</p>
       </div>
     )
   }
@@ -84,402 +94,293 @@ function AdminDashboard() {
   const { system, containers, images, networks, volumes } = data
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-slate-200 p-4 lg:p-8 font-sans">
-      <div className="animate-pop-in">
-        <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
-      </div>
-      <SystemOverview system={system} containers={containers} images={images} networks={networks} volumes={volumes} formatBytes={formatBytes} />
+    <div className="space-y-12 animate-pop-in relative h-full">
+      {/* Background Glows */}
+      <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-indigo-600/5 blur-[120px] rounded-full pointer-events-none z-0"></div>
+      <div className="absolute bottom-0 left-0 w-[30vw] h-[30vw] bg-purple-600/5 blur-[120px] rounded-full pointer-events-none z-0"></div>
       
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-pop-in" style={{ animationDelay: '400ms' }}>
-        <ResourceTable 
-          title="Containers" 
-          subtitle="Recent active containers"
-          icon={<ContainerIcon />}
-          data={containers}
-          type="containers"
-          viewAllPath="/admin/containers"
+      <div className="relative z-10 space-y-12">
+        <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
+        
+        <SystemOverview 
+          system={system} 
+          containers={containers} 
+          images={images} 
+          networks={networks} 
+          volumes={volumes} 
+          formatBytes={formatBytes} 
         />
+        
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          <ResourceTable 
+            title="Instances" 
+            subtitle="Live workload containers"
+            icon={Box}
+            data={containers}
+            type="containers"
+            viewAllPath="/admin/containers"
+          />
 
-        <ResourceTable 
-          title="Images" 
-          subtitle="Largest local images"
-          icon={<ImageIcon />}
-          data={images}
-          type="images"
-          viewAllPath="/admin/images"
-        />
+          <ResourceTable 
+            title="Registry" 
+            subtitle="Local image snapshots"
+            icon={ImageIcon}
+            data={images}
+            type="images"
+            viewAllPath="/admin/images"
+          />
+        </div>
       </div>
 
       <ConfirmationModal 
         isOpen={isPruneModalOpen}
         onClose={() => setIsPruneModalOpen(false)}
         onConfirm={confirmPrune}
-        title="Prune System Assets"
-        message="Are you sure you want to prune the system? This will permanently remove all unused images and volumes to free up disk space."
-        confirmText="Yes, Prune Now"
+        title="Execute System Purge?"
+        message="This will permanently delete all inactive images and orphaned volumes. This operation will free up local storage but cannot be rolled back."
+        confirmText="Initialize Cleanup"
         type="danger"
       />
     </div>
   )
 }
 
-// ===========================================
-// Helper Components
-// ===========================================
-
-const Header = memo(({ onRefresh, onPrune, isPruning }) => {
-  return (
-    <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-      <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
-        <p className="text-slate-500 mt-1">Overview of your Container Environment</p>
-      </div>
-      
-      <div className="flex items-center gap-3">
-        <button 
-          onClick={() => {
-            onRefresh()
-            toast.success('System statistics updated', {
-              icon: <RefreshCw className="w-4 h-4 text-white" />,
-              style: {
-                borderRadius: '12px',
-                background: '#111114',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.08)',
-                padding: '12px 16px',
-                fontSize: '13px',
-                fontWeight: '600',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-              },
-            })
-          }}
-          className="px-4 py-2 bg-[#1a1a1e] hover:bg-[#252529] border border-white/5 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
-        >
-          <RefreshIcon />
-          Refresh
-        </button>
-        <button 
-          onClick={onPrune}
-          disabled={isPruning}
-          className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
-        >
-          <PruneIcon />
-          {isPruning ? 'Pruning...' : 'Prune System'}
-        </button>
-      </div>
+const Header = memo(({ onRefresh, onPrune, isPruning }) => (
+  <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-12">
+    <div>
+      <h1 className="text-5xl font-black text-white tracking-tighter mb-4">
+        Control <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400">Environment</span>
+      </h1>
+      <p className="text-slate-400 text-lg font-medium max-w-2xl leading-relaxed">
+        Monitoring global infrastructure state and resource orchestration across the student cluster.
+      </p>
     </div>
-  )
-})
+    
+    <div className="flex items-center gap-4">
+      <button 
+        onClick={onRefresh}
+        className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest"
+      >
+        <RefreshCw className="w-4 h-4" />
+        Sync Logic
+      </button>
+      <button 
+        onClick={onPrune}
+        disabled={isPruning}
+        className="btn bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 py-3 px-6 text-sm font-black uppercase tracking-widest disabled:opacity-50"
+      >
+        <ShieldAlert className="w-4 h-4" />
+        {isPruning ? 'Cleaning...' : 'Purge DB'}
+      </button>
+    </div>
+  </div>
+))
 
 const SystemOverview = memo(({ system, containers, images, networks, volumes, formatBytes }) => {
-  const memUsagePath = (system?.memory_used / system?.memory_total) * 100 || 0
-  const diskUsagePath = (system?.disk_used / system?.disk_total) * 100 || 0
-
+  const memUsage = (system?.memory_used / system?.memory_total) * 100 || 0
+  
   return (
-    <div className="mb-10">
-      <h2 className="text-lg font-semibold text-white mb-4">System Overview</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        <StatCard 
-          title="CPU Usage" 
-          subtitle="Processor utilization"
-          value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
-          capacity={`${system?.cpu_cores || 1} CPUs`}
-          percent={Math.min(system?.cpu_usage || 0, 100)}
-          color="purple"
-          icon={<CPUIcon />}
-          meta={`Usage: ${(system?.cpu_usage || 0).toFixed(1)}%`}
-          metaAlt="Load: Low"
-          index={0}
-        />
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+      <StatCard 
+        title="Processor Load" 
+        value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
+        detail={`${system?.cpu_cores || 1} Infrastructure Cores`}
+        progress={Math.min(system?.cpu_usage || 0, 100)}
+        icon={Cpu}
+        color="indigo"
+      />
 
-        <StatCard 
-          title="Memory Usage" 
-          subtitle="RAM utilization"
-          value={formatBytes(system?.memory_used || 0)}
-          capacity={formatBytes(system?.memory_total || 0)}
-          percent={memUsagePath}
-          color="blue"
-          icon={<MemoryIcon />}
-          meta={`Usage: ${memUsagePath.toFixed(1)}%`}
-          metaAlt={`Free: ${formatBytes((system?.memory_total - system?.memory_used) || 0)}`}
-          index={1}
-        />
+      <StatCard 
+        title="Compute RAM" 
+        value={formatBytes(system?.memory_used || 0)}
+        detail={`of ${formatBytes(system?.memory_total || 0)} total available`}
+        progress={memUsage}
+        icon={Activity}
+        color="purple"
+      />
 
-        <StatCard 
-          title="Containers" 
-          subtitle="Active & Inactive"
-          value={containers?.length || 0}
-          capacity="All Containers"
-          percent={Math.min((containers?.filter(c => c.state === 'running').length / containers?.length) * 100 || 0, 100)}
-          color="orange"
-          icon={<ContainerIcon />}
-          meta={`${containers?.filter(c => c.state === 'running').length || 0} Running`}
-          metaAlt={`${containers?.length || 0} Total`}
-          index={2}
-        />
-
-        <StatCard 
-          title="Images" 
-          subtitle="Storage locally"
-          value={images?.length || 0}
-          capacity="Local registry"
-          percent={100}
-          color="purple"
-          icon={<ImageIcon />}
-          meta={`${images?.filter(img => img.status === 'In Use').length || 0} In Use`}
-          metaAlt={`${images?.length || 0} Total`}
-          index={3}
-        />
-
-        <StatCard 
-          title="Networks" 
-          subtitle="Docker networks"
-          value={networks?.length || 0}
-          capacity="Virtual stacks"
-          percent={100}
-          color="blue"
-          icon={<NetworkIcon />}
-          meta={`${networks?.length || 0} Total`}
-          metaAlt="Active Scope"
-          index={4}
-        />
-
-        <StatCard 
-          title="Volumes" 
-          subtitle="Persistent storage"
-          value={volumes?.length || 0}
-          capacity="Docker storage"
-          percent={100}
-          color="orange"
-          icon={<VolumeIcon />}
-          meta={`${volumes?.length || 0} Total`}
-          metaAlt="Storage Active"
-          index={5}
-        />
+      <StatCard 
+        title="Local Fleet" 
+        value={images?.length + containers?.length || 0}
+        detail={`${containers?.length || 0} Instances / ${images?.length || 0} Registry Snaps`}
+        progress={100}
+        icon={Layers}
+        color="fuchsia"
+      />
+      
+      <div className="md:col-span-2 xl:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <SmallStat icon={Network} label="Node Networks" value={networks?.length || 0} color="indigo" />
+        <SmallStat icon={HardDrive} label="Data Volumes" value={volumes?.length || 0} color="purple" />
+        <SmallStat icon={Monitor} label="Kernel Status" value={system?.os_platform || 'Linux'} color="fuchsia" />
       </div>
     </div>
   )
 })
 
-const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt, index }) => {
-    const gradients = {
-        purple: "from-purple-500 to-indigo-500",
-        blue: "from-blue-500 to-cyan-500",
-        orange: "from-orange-500 to-amber-500"
-    }
-    const iconBgs = {
-        purple: "bg-purple-500/10 text-purple-400",
-        blue: "bg-blue-500/10 text-blue-400",
-        orange: "bg-orange-500/10 text-orange-400"
-    }
+const StatCard = ({ title, value, detail, progress, icon: Icon, color }) => {
+  const colors = {
+    indigo: "from-indigo-500 to-blue-500 text-indigo-400",
+    purple: "from-purple-500 to-indigo-500 text-purple-400",
+    fuchsia: "from-fuchsia-500 to-purple-500 text-fuchsia-400"
+  }
 
-    return (
-        <div 
-            className="bg-[#111114] border border-white/[0.03] rounded-2xl p-6 shadow-2xl relative overflow-hidden group animate-pop-in"
-            style={{ animationDelay: `${index * 80}ms` }}
-        >
-            <div className="flex items-center gap-4 mb-6">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBgs[color]}`}>
-                    {icon}
-                </div>
-                <div>
-                    <h3 className="text-sm font-medium text-slate-400">{title}</h3>
-                    <p className="text-xs text-slate-500 uppercase tracking-wider">{subtitle}</p>
-                </div>
-            </div>
-            
-            <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                    <span className="text-2xl font-bold text-white">{value}</span>
-                    <span className="text-xs text-slate-500">Capacity <span className="text-slate-300 ml-1">{capacity}</span></span>
-                </div>
-                <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                    <div 
-                        className={`h-full bg-gradient-to-r ${gradients[color]} rounded-full transition-all duration-1000 will-change-transform`}
-                        style={{ width: `${percent}%` }}
-                    ></div>
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-500 font-medium">
-                    <span>{meta}</span>
-                    <span>{metaAlt}</span>
-                </div>
-            </div>
+  return (
+    <div className="card-glass p-10 group hover:scale-[1.02] transition-all duration-500 border-white/10 relative overflow-hidden bg-white/[0.02]">
+      <div className="flex justify-between items-start mb-8">
+        <div>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-2">{title}</p>
+          <h3 className="text-4xl font-black text-white tracking-tighter">{value}</h3>
         </div>
-    )
-})
-
-const ResourceTable = memo(({ title, subtitle, icon, data, type, viewAllPath }) => {
-    return (
-        <div className="bg-[#111114] border border-white/[0.03] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-6 border-b border-white/[0.03] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-                        {icon}
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-white leading-tight">{title}</h2>
-                        <p className="text-xs text-slate-500">{subtitle}</p>
-                    </div>
-                </div>
-                <Link to={viewAllPath} className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest">View All</Link>
-            </div>
-            
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    {type === 'containers' ? (
-                        <ContainerTableBody data={data} />
-                    ) : (
-                        <ImageTableBody data={data} />
-                    )}
-                </table>
-            </div>
-            {data.length === 0 && (
-                <div className="p-12 text-center text-slate-600">No {type} found.</div>
-            )}
+        <div className={`w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center ${colors[color].split(' ')[2]}`}>
+          <Icon className="w-7 h-7" />
         </div>
-    )
-})
+      </div>
+      
+      <div className="space-y-3">
+        <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em]">
+          <span className="text-slate-600">Utilization</span>
+          <span className="text-slate-400">{detail}</span>
+        </div>
+        <div className="h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+          <div 
+            className={`h-full bg-gradient-to-r ${colors[color].split(' ').slice(0,2).join(' ')} transition-all duration-1000 shadow-[0_0_15px_rgba(99,102,241,0.3)]`} 
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
 
-const ContainerTableBody = memo(({ data }) => {
-    return (
-        <>
-            <thead className="text-[10px] uppercase tracking-[0.15em] text-slate-600 font-bold border-b border-white/[0.03]">
-                <tr>
-                    <th className="px-6 py-4">Name</th>
-                    <th className="px-6 py-4">Image</th>
-                    <th className="px-6 py-4 text-center">State</th>
-                    <th className="px-6 py-4 text-right">Status</th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.03]">
-                {data.slice(0, 10).map((c) => (
-                    <tr key={c.id} className="group hover:bg-white/[0.01] transition-colors">
-                        <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500 font-mono text-[10px]">
-                                    {c.names[0]?.substring(0, 2).toUpperCase() || '??'}
-                                </div>
-                                <span className="text-xs font-medium text-slate-300 truncate max-w-[150px]">{c.names[0] || c.id.substring(0, 12)}</span>
-                            </div>
-                        </td>
-                        <td className="px-6 py-4">
-                            <span className="text-xs text-slate-500 font-mono italic">{c.image}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                            <div className="flex justify-center">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                    c.state === 'running' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'
-                                }`}>
-                                    {c.state}
-                                </span>
-                            </div>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                            <span className="text-xs text-slate-400">{c.status}</span>
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </>
-    )
-})
+const SmallStat = ({ icon: Icon, label, value, color }) => {
+  const colors = {
+    indigo: "text-indigo-400 border-indigo-400/20 bg-indigo-400/5",
+    purple: "text-purple-400 border-purple-400/20 bg-purple-400/5",
+    fuchsia: "text-fuchsia-400 border-fuchsia-400/20 bg-fuchsia-400/5"
+  }
+  
+  return (
+    <div className="card-glass p-8 flex items-center justify-between border-white/10 group hover:bg-white/[0.03] transition-all duration-300 bg-white/[0.01]">
+      <div className="flex items-center gap-6">
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${colors[color] || colors.indigo}`}>
+          <Icon className="w-6 h-6" />
+        </div>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">{label}</p>
+          <p className="text-xl font-black text-white uppercase tracking-tight">{value}</p>
+        </div>
+      </div>
+      <Zap className="w-5 h-5 text-slate-800 group-hover:text-indigo-400/20 transition-colors" />
+    </div>
+  )
+}
 
-const ImageTableBody = memo(({ data }) => {
-    return (
-        <>
-            <thead className="text-[10px] uppercase tracking-[0.15em] text-slate-600 font-bold border-b border-white/[0.03]">
-                <tr>
-                    <th className="px-6 py-4">Repository</th>
-                    <th className="px-6 py-4 text-center">Status</th>
-                    <th className="px-6 py-4 text-center">Tag</th>
-                    <th className="px-6 py-4 text-right">Size</th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.03]">
-                {data.slice(0, 10).map((img, i) => (
-                    <tr key={i} className="group hover:bg-white/[0.01] transition-colors">
-                        <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                                <span className="text-xs font-medium text-slate-300">{img.repository}</span>
-                                <span className="text-[10px] text-slate-600 font-mono mt-0.5">{img.id?.substring(7, 19)}</span>
-                            </div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                img.status === 'In Use' ? 'bg-teal-500/10 text-teal-500' : 'bg-slate-500/10 text-slate-500'
-                            }`}>
-                                {img.status}
-                            </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                            <span className="text-xs text-slate-500">{img.tag}</span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                            <span className="text-xs font-mono text-slate-400 tracking-tighter">{img.size_human}</span>
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </>
-    )
-})
+const ResourceTable = memo(({ title, subtitle, icon: Icon, data, type, viewAllPath }) => (
+  <div className="card-glass overflow-hidden border-white/10 relative z-10 bg-white/[0.02]">
+    <div className="p-10 border-b border-white/5 flex items-center justify-between bg-white/[0.03]">
+      <div className="flex items-center gap-5">
+        <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-indigo-400">
+          <Icon className="w-6 h-6" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-white tracking-tight uppercase">{title}</h2>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">{subtitle}</p>
+        </div>
+      </div>
+      <Link to={viewAllPath} className="group flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all">
+        Full Registry <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+      </Link>
+    </div>
+    
+    <div className="table-container">
+      <table className="premium-table">
+        {type === 'containers' ? (
+          <ContainerTableBody data={data} />
+        ) : (
+          <ImageTableBody data={data} />
+        )}
+      </table>
+    </div>
+    {data.length === 0 && (
+      <div className="p-24 text-center flex flex-col items-center">
+        <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mb-8 border border-white/5">
+          <Icon className="w-10 h-10 text-slate-800" />
+        </div>
+        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">No {type} isolated in registry</p>
+      </div>
+    )}
+  </div>
+))
 
-// ===========================================
-// Icons
-// ===========================================
+const ContainerTableBody = memo(({ data }) => (
+  <>
+    <thead>
+      <tr>
+        <th>Identity</th>
+        <th>Image Protocol</th>
+        <th className="text-center">Active Logic</th>
+        <th className="text-right">Up-Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {data.slice(0, 8).map((c) => (
+        <tr key={c.id} className="group">
+          <td>
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-[10px]">
+                {c.names[0]?.substring(0, 2).toUpperCase() || '??'}
+              </div>
+              <span className="font-black text-sm text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tight truncate max-w-[120px]">
+                {c.names[0] || c.id.substring(0, 8)}
+              </span>
+            </div>
+          </td>
+          <td><span className="font-mono text-[10px] text-slate-500 italic uppercase">{c.image}</span></td>
+          <td className="text-center">
+            <span className={`px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest inline-flex items-center gap-2 ${c.state === 'running' ? 'text-emerald-400 border-emerald-400/20 bg-emerald-400/5' : 'text-rose-400 border-rose-400/20 bg-rose-400/5'}`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${c.state === 'running' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+              {c.state}
+            </span>
+          </td>
+          <td className="text-right font-mono text-[11px] text-slate-500 font-bold">{c.status}</td>
+        </tr>
+      ))}
+    </tbody>
+  </>
+))
 
-const ContainerIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-    </svg>
-)
-
-const ImageIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-)
-
-const RefreshIcon = () => (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-    </svg>
-)
-
-const PruneIcon = () => (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-)
-
-const CPUIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-    </svg>
-)
-
-const MemoryIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.022.547l-2.387 2.387a2 2 0 002.828 2.828l2.387-2.387a2 2 0 011.414-.586l2.387.477a6 6 0 003.86-.517l.318-.158a6 6 0 013.86-.517l2.387.477a2 2 0 002.828-2.828l-2.387-2.387z" />
-    </svg>
-)
-
-const DiskIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-    </svg>
-)
-
-const NetworkIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-    </svg>
-)
-
-const VolumeIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-    </svg>
-)
+const ImageTableBody = memo(({ data }) => (
+  <>
+    <thead>
+      <tr>
+        <th>Architecture</th>
+        <th className="text-center">Lifecycle</th>
+        <th className="text-center">Revision</th>
+        <th className="text-right">Weight</th>
+      </tr>
+    </thead>
+    <tbody>
+      {data.slice(0, 8).map((img, i) => (
+        <tr key={i} className="group">
+          <td>
+            <div className="flex flex-col">
+              <span className="font-black text-sm text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors">{img.repository}</span>
+              <span className="text-[9px] text-slate-700 font-mono font-bold tracking-widest">{img.id?.substring(7, 19)}</span>
+            </div>
+          </td>
+          <td className="text-center">
+            <span className={`px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest ${img.status === 'In Use' ? 'text-indigo-400 border-indigo-400/20 bg-indigo-400/5' : 'text-slate-500 border-slate-500/20 bg-slate-500/5'}`}>
+              {img.status}
+            </span>
+          </td>
+          <td className="text-center font-mono text-[11px] text-slate-500 font-bold uppercase">{img.tag}</td>
+          <td className="text-right font-mono text-[11px] text-slate-400 font-black">{img.size_human}</td>
+        </tr>
+      ))}
+    </tbody>
+  </>
+))
 
 export default AdminDashboard
+
+

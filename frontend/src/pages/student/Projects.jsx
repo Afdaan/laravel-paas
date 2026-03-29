@@ -1,51 +1,56 @@
 // ===========================================
-// Student Projects List Page
+// Student Projects Listing (Fleet View)
 // ===========================================
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
+import { 
+  Plus, 
+  Rocket, 
+  ExternalLink, 
+  RefreshCw, 
+  Trash2, 
+  Clock, 
+  CheckCircle2, 
+  Activity, 
+  AlertCircle, 
+  PauseCircle,
+  Server,
+  Database,
+  Globe,
+  Terminal,
+  Cpu,
+  Layers,
+  ArrowRight
+} from 'lucide-react'
+import ConfirmationModal from '../../components/ConfirmationModal'
 
-function StatusDot({ status }) {
-  const styles = {
-    running: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]',
-    building: 'bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]',
-    failed: 'bg-red-500',
-    stopped: 'bg-slate-500',
-    pending: 'bg-amber-500 animate-bounce',
+const StatusBadge = ({ status }) => {
+  const configs = {
+    pending: { color: 'text-amber-400 border-amber-400/20 bg-amber-400/5', icon: Clock, label: 'Queued' },
+    building: { color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', icon: Activity, label: 'Orchestrating', pulse: true },
+    running: { color: 'text-emerald-400 border-emerald-400/20 bg-emerald-400/5', icon: CheckCircle2, label: 'Active' },
+    failed: { color: 'text-rose-400 border-rose-400/20 bg-rose-400/5', icon: AlertCircle, label: 'Breach' },
+    stopped: { color: 'text-slate-500 border-white/10 bg-white/5', icon: PauseCircle, label: 'Hibernating' },
   }
 
-  const labelMap = {
-    pending: 'In Queue',
-    building: 'Building...',
-    running: 'Active',
-    failed: 'Build Failed',
-    stopped: 'Paused',
-  }
+  const config = configs[status] || configs.pending
+  const Icon = config.icon
 
   return (
-    <div className="flex items-center gap-2">
-      <div className={`w-2 h-2 rounded-full ${styles[status] || styles.pending}`} />
-      <span className={`text-[10px] font-bold uppercase tracking-wider ${
-        status === 'running' ? 'text-emerald-400' : 
-        status === 'building' ? 'text-blue-400' :
-        status === 'pending' ? 'text-amber-400' :
-        'text-slate-500'
-      }`}>
-        {labelMap[status] || status}
-      </span>
+    <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${config.color} backdrop-blur-md`}>
+      <Icon className={`w-3 h-3 ${config.pulse ? 'animate-spin' : ''}`} />
+      {config.label}
     </div>
   )
 }
 
-import ConfirmationModal from '../../components/ConfirmationModal'
-
-function StudentProjects() {
+const StudentProjects = () => {
   const [projects, setProjects] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   
-  // Modal State
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -55,40 +60,39 @@ function StudentProjects() {
     confirmText: 'Confirm'
   })
 
-  const openConfirm = (opts) => {
-    setConfirmModal({ ...opts, isOpen: true })
-  }
-  
-  useEffect(() => {
-    fetchProjects()
-  }, [])
-  
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
+    setIsLoading(true)
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error('Failed to fetch projects')
+      toast.error('Failed to sync workload manifest')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+  
+  useEffect(() => {
+    fetchProjects()
+  }, [fetchProjects])
   
   const handleRedeploy = async (id, e) => {
     e.preventDefault()
+    e.stopPropagation()
     
-    openConfirm({
-      title: 'Redeploy Project?',
-      message: 'This will rebuild your container and apply any configuration changes. The site will be temporarily offline.',
+    setConfirmModal({
+      isOpen: true,
+      title: 'Initialize Redeploy?',
+      message: 'This operation will rebuild the container architecture. The application interface will be momentarily unreachable.',
       type: 'warning',
-      confirmText: 'Redeploy Now',
+      confirmText: 'Execute Redeploy',
       onConfirm: () => {
         toast.promise(
           projectsAPI.redeploy(id),
           {
-            loading: 'Starting redeploy...',
-            success: 'Redeploy started',
-            error: 'Failed to redeploy'
+            loading: 'Re-orchestrating fleet...',
+            success: 'Provisioning initiated',
+            error: 'Failed to start deployment'
           }
         ).then(fetchProjects)
       }
@@ -97,120 +101,139 @@ function StudentProjects() {
   
   const handleDelete = async (id, e) => {
     e.preventDefault()
+    e.stopPropagation()
     
-    openConfirm({
-      title: 'Delete Project?',
-      message: 'This action cannot be undone. All files and database data will be lost forever.',
+    setConfirmModal({
+      isOpen: true,
+      title: 'Decommission Project?',
+      message: 'This will permanently destroy all associated data volumes and cloud configurations. This action is irreversible.',
       type: 'danger',
-      confirmText: 'Delete Project',
+      confirmText: 'Terminate Permanently',
       onConfirm: async () => {
         try {
           await projectsAPI.delete(id)
-          toast.success('Project deleted')
+          toast.success('Resource Decommissioned')
           fetchProjects()
         } catch (error) {
-          toast.error('Delete failed')
+          toast.error('Termination Failed')
         }
       }
     })
   }
   
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-16 animate-pop-in relative">
       <ConfirmationModal 
         isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-6">
+
+      {/* Background Glow */}
+      <div className="absolute top-0 right-0 w-[40vw] h-[40vw] bg-indigo-600/5 blur-[120px] rounded-full pointer-events-none z-0"></div>
+
+      {/* Header Container */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 relative z-10">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">My Workloads</h1>
-          <p className="text-slate-400 mt-1">Manage your deployed applications</p>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Service <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Inventory</span></h1>
+          <p className="text-slate-400 text-lg font-medium leading-relaxed max-w-2xl">
+            Orchestrate and monitor your cloud workloads with our <span className="text-white">next-generation</span> container interface.
+          </p>
         </div>
-        <Link to="/projects/new" className="btn btn-primary shadow-lg shadow-primary-500/20 flex items-center gap-2 whitespace-nowrap min-w-fit">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
-          Deploy New
+        <Link to="/projects/new" className="btn btn-primary px-10 py-5 text-sm font-black uppercase tracking-[0.25em] shadow-[0_15px_30px_rgba(99,102,241,0.3)] flex items-center gap-4 group">
+          <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
+          Provision Workload
         </Link>
       </div>
       
-      {/* Projects Grid */}
+      {/* Grid Architecture */}
       {isLoading ? (
-        <div className="flex justify-center p-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+        <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30">
+          <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em]">Syncing Fleet...</p>
         </div>
       ) : projects.length === 0 ? (
-        <div className="card p-12 text-center border-dashed border-2 border-slate-700 bg-transparent">
-          <div className="text-6xl mb-4 grayscale opacity-50">📦</div>
-          <h2 className="text-xl font-semibold text-white mb-2">No active workloads</h2>
-          <p className="text-slate-400 mb-6">Deploy a Laravel application to get started.</p>
-          <Link to="/projects/new" className="btn btn-primary">
-            Create Project
+        <div className="card-glass border-dashed p-32 text-center flex flex-col items-center max-w-xl mx-auto border-white/5 bg-white/[0.01]">
+          <div className="w-24 h-24 bg-white/5 border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-10 text-slate-700">
+            <Rocket className="w-12 h-12" />
+          </div>
+          <h2 className="text-3xl font-black text-white tracking-tight mb-4 lowercase italic">The void is <span className="text-indigo-400">empty.</span></h2>
+          <p className="text-slate-500 mb-12 font-medium leading-relaxed">The fleet registry contains no active workloads. Initialize your first architecture to begin monitoring.</p>
+          <Link to="/projects/new" className="btn btn-primary w-full py-6 text-sm font-black uppercase tracking-widest shadow-xl">
+            Launch Primary Deployment
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 relative z-10 pb-20">
           {projects.map((project) => (
             <Link 
               key={project.id} 
               to={`/projects/${project.id}`}
-              className="card p-0 group hover:border-primary-500/50 transition-all duration-300 overflow-hidden"
+              className="card-glass group p-0 overflow-hidden flex flex-col h-full hover:bg-white/[0.02] hover:border-white/20 transition-all duration-500 hover:-translate-y-2"
             >
-              <div className="p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                     <StatusDot status={project.status} />
-                     <div>
-                       <h3 className="font-bold text-white text-lg group-hover:text-primary-400 transition-colors">{project.name}</h3>
-                       <div className="text-xs text-slate-500 font-mono">{project.subdomain}</div>
-                     </div>
+              <div className="p-10 flex flex-col h-full bg-gradient-to-br from-white/[0.02] to-transparent">
+                <div className="flex items-start justify-between mb-10">
+                  <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-xl">
+                     <span className="text-2xl font-black italic">{project.name.charAt(0).toUpperCase()}</span>
                   </div>
-                  {project.status === 'running' && (
-                    <a 
-                      href={project.url}
-                      target="_blank"
-                      rel="noopener noreferrer" 
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-slate-400 hover:text-primary-400 p-1"
-                    >
-                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
-                    </a>
-                  )}
+                  <StatusBadge status={project.status} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-slate-800/50">
-                   <div>
-                      <div className="text-xs text-slate-500 uppercase font-semibold">PHP Version</div>
-                      <div className="text-sm text-slate-300 flex items-center gap-1">
-                        {project.php_version || 'Detecting'}
-                        {project.is_manual_version && <span className="text-amber-500" title="Manual">•</span>}
+                <div className="mb-10 min-h-[80px]">
+                  <h3 className="font-black text-white text-2xl tracking-tighter group-hover:text-indigo-400 transition-colors uppercase truncate mb-2">
+                    {project.name}
+                  </h3>
+                  <div className="flex items-center gap-3 text-slate-500 font-mono text-[10px] tracking-widest bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-white/5 group-hover:border-indigo-500/20 transition-all">
+                    <Globe className="w-3.5 h-3.5 text-indigo-400" />
+                    {project.subdomain}.paas.local
+                  </div>
+                </div>
+
+                <div className="space-y-6 py-8 border-y border-white/5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-slate-500">
+                      <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                        <Cpu className="w-3.5 h-3.5" />
                       </div>
-                   </div>
-                   <div>
-                      <div className="text-xs text-slate-500 uppercase font-semibold">Database</div>
-                      <div className="text-sm text-slate-300 truncate">{project.database_name}</div>
-                   </div>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em]">Environment</span>
+                    </div>
+                    <span className="text-[10px] font-black text-white bg-white/10 px-3 py-1 rounded-md border border-white/10 group-hover:bg-indigo-500/20 group-hover:border-indigo-500/30 transition-all">PHP {project.php_version || '8.2'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-slate-500">
+                      <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                        <Database className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em]">Cluster Data</span>
+                    </div>
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{project.database_name ? 'Active Instance' : 'Void'}</span>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between mt-4 pt-1">
-                   <div className="text-xs text-slate-500">
-                      {new Date(project.created_at).toLocaleDateString()}
+                <div className="mt-10 flex items-center justify-between">
+                   <div className="flex flex-col">
+                      <span className="text-[8px] text-slate-600 font-black uppercase tracking-[0.2em] mb-1">Provision Date</span>
+                      <span className="text-[11px] font-black text-slate-500 uppercase">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
-                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                   
+                   <div className="flex gap-3">
                       <button 
                         onClick={(e) => handleRedeploy(project.id, e)}
-                        className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white"
-                        title="Redeploy"
+                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-500 hover:text-white hover:bg-indigo-500/40 hover:border-indigo-500/50 transition-all shadow-lg active:scale-95"
+                        title="Init Redeploy"
                       >
-                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M21 21v-5h-5"/></svg>
+                         <RefreshCw className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={(e) => handleDelete(project.id, e)}
-                        className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-red-400"
-                        title="Delete"
+                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/30 transition-all shadow-lg active:scale-95"
+                        title="Decommission"
                       >
-                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                         <Trash2 className="w-4 h-4" />
                       </button>
+                      <div className="w-11 h-11 flex items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all shadow-xl group-hover:shadow-indigo-500/40">
+                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                      </div>
                    </div>
                 </div>
               </div>
@@ -223,3 +246,4 @@ function StudentProjects() {
 }
 
 export default StudentProjects
+
