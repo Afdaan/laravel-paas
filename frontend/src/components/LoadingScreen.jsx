@@ -3,14 +3,7 @@ import React from 'react';
 export default function LoadingScreen() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#09090b] text-[#f8fafc] font-sans antialiased">
-      <div className="relative z-10 flex flex-col items-center max-w-[280px] w-full">
-        {/* Minimalist Brand Identity */}
-        <div className="mb-12">
-          <div className="w-12 h-12 bg-white text-black rounded-lg flex items-center justify-center text-xl font-black tracking-tighter shadow-2xl">
-            LP
-          </div>
-        </div>
-
+      <div className="relative z-10 flex flex-col items-center max-w-[280px] w-full pt-20">
         {/* Progress System */}
         <div className="w-full space-y-6">
           <div className="flex items-center justify-between px-1">
