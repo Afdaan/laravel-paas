@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Zap,
   Clock,
-  Layout
+  Layout,
+  Terminal
 } from 'lucide-react'
 
 const StudentFeedback = () => {
