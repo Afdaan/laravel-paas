@@ -4,7 +4,7 @@
 // Sidebar navigation and main content area
 // ===========================================
 
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 
 // Icons (inline SVG for simplicity)
@@ -76,6 +76,7 @@ const Icons = {
 function DashboardLayout({ isAdmin = false }) {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
   
   const handleLogout = async () => {
     await logout()
@@ -107,7 +108,7 @@ function DashboardLayout({ isAdmin = false }) {
       }
   
   return (
-    <div className="flex min-h-screen bg-[#0a0a0c]">
+    <div className="flex h-screen bg-[#0a0a0c] overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 bg-[#0f0f12] border-r border-white/5 flex flex-col shadow-2xl z-50">
         {/* Logo */}
@@ -260,7 +261,9 @@ function DashboardLayout({ isAdmin = false }) {
         </header>
 
         <main className="flex-1 p-8 overflow-auto">
-          <Outlet />
+          <div key={location.pathname} className="animate-pop-in">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

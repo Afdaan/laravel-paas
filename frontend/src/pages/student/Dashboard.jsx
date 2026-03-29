@@ -10,16 +10,26 @@ import useAuthStore from '../../stores/authStore'
 // Status badge component
 function StatusBadge({ status }) {
   const statusClasses = {
-    pending: 'badge-pending',
-    building: 'badge-building',
+    pending: 'badge-pending animate-bounce',
+    building: 'badge-building animate-pulse',
     running: 'badge-running',
     failed: 'badge-failed',
     stopped: 'badge-stopped',
   }
+
+  const labelMap = {
+    pending: 'In Queue',
+    building: 'Building',
+    running: 'Running',
+    failed: 'Failed',
+    stopped: 'Stopped',
+  }
   
   return (
-    <span className={`badge ${statusClasses[status] || 'badge-pending'}`}>
-      {status}
+    <span className={`badge ${statusClasses[status] || 'badge-pending'} flex items-center gap-1.5 w-fit`}>
+      {status === 'building' && <div className="w-1 h-1 rounded-full bg-blue-400 animate-ping" />}
+      {status === 'pending' && <div className="w-1 h-1 rounded-full bg-yellow-400 animate-ping" />}
+      {labelMap[status] || status}
     </span>
   )
 }

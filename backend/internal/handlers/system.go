@@ -16,33 +16,75 @@ func NewSystemHandler(dockerService *services.DockerService) *SystemHandler {
 
 // GetStats returns system and docker stats
 func (h *SystemHandler) GetStats(c *fiber.Ctx) error {
-	stats, err := h.dockerService.GetSystemStats()
-	if err != nil {
-		return err
+	type result struct {
+		data interface{}
+		err  error
 	}
 
-	containers, err := h.dockerService.ListAllContainers()
-	if err != nil {
-		containers = []models.DockerContainer{}
+	systemChan := make(chan result, 1)
+	containersChan := make(chan result, 1)
+	imagesChan := make(chan result, 1)
+	networksChan := make(chan result, 1)
+	volumesChan := make(chan result, 1)
+
+	go func() {
+		stats, err := h.dockerService.GetSystemStats()
+		systemChan <- result{stats, err}
+	}()
+
+	go func() {
+		containers, err := h.dockerService.ListAllContainers()
+		containersChan <- result{containers, err}
+	}()
+
+	go func() {
+		images, err := h.dockerService.ListAllImages()
+		imagesChan <- result{images, err}
+	}()
+
+	go func() {
+		networks, err := h.dockerService.ListAllNetworks()
+		networksChan <- result{networks, err}
+	}()
+
+	go func() {
+		volumes, err := h.dockerService.ListAllVolumes()
+		volumesChan <- result{volumes, err}
+	}()
+
+	rSystem := <-systemChan
+	rContainers := <-containersChan
+	rImages := <-imagesChan
+	rNetworks := <-networksChan
+	rVolumes := <-volumesChan
+
+	if rSystem.err != nil {
+		return rSystem.err
 	}
 
-	images, err := h.dockerService.ListAllImages()
-	if err != nil {
-		images = []models.DockerImage{}
+	// For non-critical errors, we return empty slices
+	containers := []models.DockerContainer{}
+	if rContainers.err == nil {
+		containers = rContainers.data.([]models.DockerContainer)
 	}
 
-	networks, err := h.dockerService.ListAllNetworks()
-	if err != nil {
-		networks = []models.DockerNetwork{}
+	images := []models.DockerImage{}
+	if rImages.err == nil {
+		images = rImages.data.([]models.DockerImage)
 	}
 
-	volumes, err := h.dockerService.ListAllVolumes()
-	if err != nil {
-		volumes = []models.DockerVolume{}
+	networks := []models.DockerNetwork{}
+	if rNetworks.err == nil {
+		networks = rNetworks.data.([]models.DockerNetwork)
+	}
+
+	volumes := []models.DockerVolume{}
+	if rVolumes.err == nil {
+		volumes = rVolumes.data.([]models.DockerVolume)
 	}
 
 	return c.JSON(fiber.Map{
-		"system":     stats,
+		"system":     rSystem.data,
 		"containers": containers,
 		"images":     images,
 		"networks":   networks,

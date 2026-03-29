@@ -9,13 +9,34 @@ import { projectsAPI } from '../../services/api'
 
 function StatusDot({ status }) {
   const styles = {
-    running: 'bg-emerald-500',
-    building: 'bg-blue-500 animate-pulse',
+    running: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]',
+    building: 'bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]',
     failed: 'bg-red-500',
     stopped: 'bg-slate-500',
-    pending: 'bg-slate-500',
+    pending: 'bg-amber-500 animate-bounce',
   }
-  return <div className={`w-2.5 h-2.5 rounded-full ${styles[status] || styles.pending}`} />
+
+  const labelMap = {
+    pending: 'In Queue',
+    building: 'Building...',
+    running: 'Active',
+    failed: 'Build Failed',
+    stopped: 'Paused',
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full ${styles[status] || styles.pending}`} />
+      <span className={`text-[10px] font-bold uppercase tracking-wider ${
+        status === 'running' ? 'text-emerald-400' : 
+        status === 'building' ? 'text-blue-400' :
+        status === 'pending' ? 'text-amber-400' :
+        'text-slate-500'
+      }`}>
+        {labelMap[status] || status}
+      </span>
+    </div>
+  )
 }
 
 import ConfirmationModal from '../../components/ConfirmationModal'

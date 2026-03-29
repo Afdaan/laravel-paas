@@ -201,13 +201,22 @@ func (s *DockerService) DropDatabase(dbName string) error {
 func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
-	// Copy appropriate Dockerfile
-	dockerfile := fmt.Sprintf("Dockerfile.php%s", strings.ReplaceAll(phpVersion, ".", ""))
+	// Copy appropriate Dockerfile (try .dynamic version first for better support)
+	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
+	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
 	srcDockerfile := filepath.Join(s.cfg.TemplatesPath, dockerfile)
+	
+	// If .dynamic doesn't exist, fallback to regular version
+	if _, err := os.Stat(srcDockerfile); os.IsNotExist(err) {
+		dockerfile = fmt.Sprintf("Dockerfile.php%s", phpSlug)
+		srcDockerfile = filepath.Join(s.cfg.TemplatesPath, dockerfile)
+	}
+
 	dstDockerfile := filepath.Join(projectPath, "Dockerfile")
+	fmt.Printf("Using Dockerfile template: %s for project %s\n", srcDockerfile, project.Subdomain)
 
 	if err := copyFile(srcDockerfile, dstDockerfile); err != nil {
-		return "", fmt.Errorf("failed to copy Dockerfile: %w", err)
+		return "", fmt.Errorf("failed to copy Dockerfile (%s): %w", dockerfile, err)
 	}
 
 	// Copy nginx and supervisor configs
@@ -639,13 +648,28 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 
 // ListAllContainers returns all containers on the host with stats
 func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
-	// 1. Get stats for info merging
+	// 1. Get stats for info merging in parallel (or just call it once as it's already one call)
 	statsMap, _ := s.GetAllContainerStats()
 
-	// 2. Get container list with detailed info
+	// 2. Get all container IDs first
+	cmdIDs := exec.Command("docker", "ps", "-a", "-q")
+	idsOut, err := cmdIDs.Output()
+	if err != nil {
+		return nil, err
+	}
+	ids := strings.Fields(string(idsOut))
+	if len(ids) == 0 {
+		return []models.DockerContainer{}, nil
+	}
+
+	// 3. Batch inspect all containers
 	// Format: ID|Names|Image|State|Status|CreatedAt|IPAddress|Ports
-	cmd := exec.Command("docker", "ps", "-a", "--format", "{{.ID}}|{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Networks}}|{{.Ports}}")
-	output, err := cmd.Output()
+	// Note: We use .State.Status for State, and formatted Status string for Status
+	// We'll get IP and Ports in a single call
+	format := "{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.State.Status}}|{{.State.Status}}|{{.Created}}|{{range .NetworkSettings.Networks}}{{.IPAddress}},{{end}}|{{range $p, $conf := .NetworkSettings.Ports}}{{range $conf}}{{.HostIp}}:{{.HostPort}}->{{$p}},{{end}}{{end}}"
+	args := append([]string{"inspect", "--format", format}, ids...)
+	cmdInspect := exec.Command("docker", args...)
+	output, err := cmdInspect.Output()
 	if err != nil {
 		return nil, err
 	}
@@ -661,40 +685,37 @@ func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
 			continue
 		}
 
-		created, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", parts[5])
-
 		id := parts[0]
+		// docker inspect names start with /
+		name := strings.TrimPrefix(parts[1], "/")
 		
-		// Get IP Address via inspect if not available in format (Format doesn't easily give IP)
-		ipAddr := ""
-		inspectCmd := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", id)
-		if ipOut, err := inspectCmd.Output(); err == nil {
-			ipAddr = strings.TrimSpace(string(ipOut))
-		}
+		// Parse creation time (Docker uses ISO8601 for inspect)
+		created, _ := time.Parse(time.RFC3339Nano, parts[5])
 
 		container := models.DockerContainer{
-			ID:        id,
-			Names:     strings.Split(parts[1], ","),
+			ID:        id[:12], // Shorten ID for consistency with ps
+			Names:     []string{name},
 			Image:     parts[2],
 			State:     parts[3],
 			Status:    parts[4],
 			CreatedAt: created,
-			IPAddress: ipAddr,
-			Ports:     parsePorts(parts[7]),
+			IPAddress: strings.TrimSuffix(parts[6], ","),
+			Ports:     parsePorts(strings.TrimSuffix(parts[7], ",")),
 		}
 
 		// Merge stats if available
-		if stats, ok := statsMap[id]; ok {
+		shortID := id[:12]
+		if stats, ok := statsMap[shortID]; ok {
+			container.CPUPercent = stats.CPUPercent
+			container.MemoryUsage = stats.MemoryMB
+		} else if stats, ok := statsMap[id]; ok {
 			container.CPUPercent = stats.CPUPercent
 			container.MemoryUsage = stats.MemoryMB
 		} else {
-			// Try by name since ID might be truncated in stats
-			for _, name := range container.Names {
-				if stats, ok := statsMap[name]; ok {
-					container.CPUPercent = stats.CPUPercent
-					container.MemoryUsage = stats.MemoryMB
-					break
-				}
+			// Try by name
+			if stats, ok := statsMap[name]; ok {
+				container.CPUPercent = stats.CPUPercent
+				container.MemoryUsage = stats.MemoryMB
 			}
 		}
 

@@ -17,7 +17,7 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignor
 COPY . .
 
 # Generate optimized autoloader
-RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scripts
 
 # Stage 2: Production (Laravel Runtime)
 FROM paas-runtime-php:8.0-alpine
@@ -48,3 +48,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+
+
+
+

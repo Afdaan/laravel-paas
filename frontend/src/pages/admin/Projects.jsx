@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
+import { ExternalLink, Globe } from 'lucide-react'
 
 function StatusBadge({ status }) {
   const statusClasses = {
@@ -148,9 +149,27 @@ function AdminProjects() {
                   return (
                     <tr key={project.id} className="hover:bg-slate-800/50">
                       <td className="p-4">
-                        <div>
-                          <p className="font-medium text-white">{project.name}</p>
-                          <p className="text-xs text-slate-500 font-mono">{project.subdomain}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                            <Globe size={18} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-white leading-tight">{project.name}</p>
+                              {project.status === 'running' && project.url && (
+                                <a 
+                                  href={project.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-slate-500 hover:text-indigo-400 transition-colors"
+                                  title="Open live website"
+                                >
+                                  <ExternalLink size={14} />
+                                </a>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-500 font-mono mt-0.5 tracking-tighter">{project.subdomain}</p>
+                          </div>
                         </div>
                       </td>
                       <td className="p-4">

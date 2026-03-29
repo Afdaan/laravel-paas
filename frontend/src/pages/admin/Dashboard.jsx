@@ -6,6 +6,8 @@ import { useState, useEffect, memo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { systemAPI, projectsAPI } from '../../services/api'
 import toast from 'react-hot-toast'
+import ConfirmationModal from '../../components/ConfirmationModal'
+import { RefreshCw } from 'lucide-react'
 
 function AdminDashboard() {
   const [data, setData] = useState({
@@ -18,6 +20,7 @@ function AdminDashboard() {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [isPruning, setIsPruning] = useState(false)
+  const [isPruneModalOpen, setIsPruneModalOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -36,9 +39,11 @@ function AdminDashboard() {
     return () => clearInterval(interval)
   }, [fetchData])
 
-  const handlePrune = async () => {
-    if (!window.confirm('Are you sure you want to prune the system? This will remove unused images and volumes.')) return
-    
+  const handlePrune = () => {
+    setIsPruneModalOpen(true)
+  }
+
+  const confirmPrune = async () => {
     setIsPruning(true)
     try {
       await systemAPI.prune()
@@ -80,10 +85,12 @@ function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-slate-200 p-4 lg:p-8 font-sans">
-      <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
+      <div className="animate-pop-in">
+        <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
+      </div>
       <SystemOverview system={system} containers={containers} images={images} networks={networks} volumes={volumes} formatBytes={formatBytes} />
       
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-pop-in" style={{ animationDelay: '400ms' }}>
         <ResourceTable 
           title="Containers" 
           subtitle="Recent active containers"
@@ -102,6 +109,16 @@ function AdminDashboard() {
           viewAllPath="/admin/images"
         />
       </div>
+
+      <ConfirmationModal 
+        isOpen={isPruneModalOpen}
+        onClose={() => setIsPruneModalOpen(false)}
+        onConfirm={confirmPrune}
+        title="Prune System Assets"
+        message="Are you sure you want to prune the system? This will permanently remove all unused images and volumes to free up disk space."
+        confirmText="Yes, Prune Now"
+        type="danger"
+      />
     </div>
   )
 }
@@ -120,7 +137,22 @@ const Header = memo(({ onRefresh, onPrune, isPruning }) => {
       
       <div className="flex items-center gap-3">
         <button 
-          onClick={onRefresh}
+          onClick={() => {
+            onRefresh()
+            toast.success('System statistics updated', {
+              icon: <RefreshCw className="w-4 h-4 text-white" />,
+              style: {
+                borderRadius: '12px',
+                background: '#111114',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.08)',
+                padding: '12px 16px',
+                fontSize: '13px',
+                fontWeight: '600',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              },
+            })
+          }}
           className="px-4 py-2 bg-[#1a1a1e] hover:bg-[#252529] border border-white/5 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
         >
           <RefreshIcon />
@@ -157,6 +189,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<CPUIcon />}
           meta={`Usage: ${(system?.cpu_usage || 0).toFixed(1)}%`}
           metaAlt="Load: Low"
+          index={0}
         />
 
         <StatCard 
@@ -169,6 +202,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<MemoryIcon />}
           meta={`Usage: ${memUsagePath.toFixed(1)}%`}
           metaAlt={`Free: ${formatBytes((system?.memory_total - system?.memory_used) || 0)}`}
+          index={1}
         />
 
         <StatCard 
@@ -181,6 +215,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<ContainerIcon />}
           meta={`${containers?.filter(c => c.state === 'running').length || 0} Running`}
           metaAlt={`${containers?.length || 0} Total`}
+          index={2}
         />
 
         <StatCard 
@@ -193,6 +228,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<ImageIcon />}
           meta={`${images?.filter(img => img.status === 'In Use').length || 0} In Use`}
           metaAlt={`${images?.length || 0} Total`}
+          index={3}
         />
 
         <StatCard 
@@ -205,6 +241,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<NetworkIcon />}
           meta={`${networks?.length || 0} Total`}
           metaAlt="Active Scope"
+          index={4}
         />
 
         <StatCard 
@@ -217,13 +254,14 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
           icon={<VolumeIcon />}
           meta={`${volumes?.length || 0} Total`}
           metaAlt="Storage Active"
+          index={5}
         />
       </div>
     </div>
   )
 })
 
-const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt }) => {
+const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon, meta, metaAlt, index }) => {
     const gradients = {
         purple: "from-purple-500 to-indigo-500",
         blue: "from-blue-500 to-cyan-500",
@@ -236,7 +274,10 @@ const StatCard = memo(({ title, subtitle, value, capacity, percent, color, icon,
     }
 
     return (
-        <div className="bg-[#111114] border border-white/[0.03] rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+        <div 
+            className="bg-[#111114] border border-white/[0.03] rounded-2xl p-6 shadow-2xl relative overflow-hidden group animate-pop-in"
+            style={{ animationDelay: `${index * 80}ms` }}
+        >
             <div className="flex items-center gap-4 mb-6">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBgs[color]}`}>
                     {icon}

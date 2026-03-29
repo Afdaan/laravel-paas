@@ -1,5 +1,5 @@
 # ===========================================================
-# Laravel Dockerfile Template - PHP 8.3 (Dynamic Extensions)
+# Laravel Dockerfile Template - PHP 8.1 (Dynamic Extensions)
 # ===========================================================
 # This version allows dynamic PHP extension installation based on composer.json
 
@@ -56,7 +56,7 @@ $extensions = array_unique($extensions);
 echo implode(' ', $extensions);
 EOF
 
-# Install dependencies
+# Install dependencies (skip scripts to avoid extension issues during build)
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
     composer install --no-dev --prefer-dist --ignore-platform-reqs
 
@@ -100,17 +100,16 @@ RUN if [ -f package.json ] && [ -d resources ]; then \
 RUN mkdir -p /app/public/build
 
 # Stage 3: Production (Optimized Runtime)
-FROM paas-runtime-php:8.3-alpine
+FROM paas-runtime-php:8.1-alpine
 
 LABEL maintainer="Laravel PaaS"
-LABEL description="Laravel 11.x with PHP 8.3 (Dynamic & Fast)"
+LABEL description="Laravel with PHP 8.1 (Dynamic & Fast)"
 
 # Copy extension requirements
 COPY --from=composer /tmp/required_extensions.txt /tmp/
 
 # Install ONLY missing extensions (most are already in paas-runtime)
 RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
-    # Filter out extensions already installed in base (pdo_mysql, gd, redis, etc.)
     MISSING_EXTS="" && \
     for ext in $REQUIRED_EXTS; do \
         if ! php -m | grep -qi "^$ext$"; then \
@@ -147,7 +146,6 @@ RUN { \
 
 WORKDIR /var/www/html
 
-# Copy application files
 # Copy all application files
 COPY . .
 

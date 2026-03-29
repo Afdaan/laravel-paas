@@ -5,21 +5,38 @@
 # Stage 1: Composer Dependencies
 FROM composer:2 AS composer
 WORKDIR /app
+RUN mkdir -p public/build
 COPY composer.json composer.lock* ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
     composer install --no-dev --prefer-dist --ignore-platform-reqs
 COPY . .
-RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
+# Generate optimized autoloader
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scripts --no-scripts
 
-# Stage 2: Production (Laravel Runtime)
+# Stage 2: Frontend Assets
+FROM node:20-alpine AS frontend
+WORKDIR /app
+RUN mkdir -p public/build
+COPY package*.json ./
+RUN npm install
+COPY resources/ resources/
+COPY public/ public/
+COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
+RUN npm run build || true
+
+# Stage 3: Production (Laravel Runtime)
 FROM paas-runtime-php:8.3-alpine
 WORKDIR /var/www/html
 COPY . .
 COPY --from=composer /app/vendor ./vendor
+COPY --from=frontend /app/public/build* ./public/build/
 
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
+
+# Run package discovery
+RUN php artisan package:discover --ansi
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -28,3 +45,7 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+
+
+
+

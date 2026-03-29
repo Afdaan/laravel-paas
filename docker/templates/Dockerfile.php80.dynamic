@@ -1,5 +1,5 @@
 # ===========================================================
-# Laravel Dockerfile Template - PHP 8.3 (Dynamic Extensions)
+# Laravel Dockerfile Template - PHP 8.0 (Dynamic Extensions)
 # ===========================================================
 # This version allows dynamic PHP extension installation based on composer.json
 
@@ -56,7 +56,7 @@ $extensions = array_unique($extensions);
 echo implode(' ', $extensions);
 EOF
 
-# Install dependencies
+# Install dependencies (skip scripts to avoid extension issues during build)
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
     composer install --no-dev --prefer-dist --ignore-platform-reqs
 
@@ -79,7 +79,7 @@ WORKDIR /app
 RUN mkdir -p public/build
 
 COPY package*.json ./
-# Install ALL dependencies including devDependencies (Vite, Tailwind, etc. are devDeps)
+# Install ALL dependencies (including devDependencies) so build tools like Vite/webpack are available
 RUN if [ -f package.json ]; then \
         npm ci 2>/dev/null || \
         npm install 2>/dev/null || \
@@ -96,21 +96,20 @@ RUN if [ -f package.json ] && [ -d resources ]; then \
         true; \
     fi
 
-# Ensure public/build always exists (even if no frontend assets were built)
+# Ensure public/build directory exists even if no frontend assets were built
 RUN mkdir -p /app/public/build
 
 # Stage 3: Production (Optimized Runtime)
-FROM paas-runtime-php:8.3-alpine
+FROM paas-runtime-php:8.0-alpine
 
 LABEL maintainer="Laravel PaaS"
-LABEL description="Laravel 11.x with PHP 8.3 (Dynamic & Fast)"
+LABEL description="Laravel with PHP 8.0 (Dynamic & Fast)"
 
 # Copy extension requirements
 COPY --from=composer /tmp/required_extensions.txt /tmp/
 
 # Install ONLY missing extensions (most are already in paas-runtime)
 RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
-    # Filter out extensions already installed in base (pdo_mysql, gd, redis, etc.)
     MISSING_EXTS="" && \
     for ext in $REQUIRED_EXTS; do \
         if ! php -m | grep -qi "^$ext$"; then \
@@ -147,7 +146,6 @@ RUN { \
 
 WORKDIR /var/www/html
 
-# Copy application files
 # Copy all application files
 COPY . .
 

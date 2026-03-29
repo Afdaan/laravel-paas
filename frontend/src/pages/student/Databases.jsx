@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
+import { PackageOpen } from 'lucide-react'
 import DatabaseManager from './DatabaseManager'
 
 export default function Databases() {
@@ -55,7 +56,7 @@ export default function Databases() {
   if (projects.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)] gap-4">
-        <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center text-4xl opacity-50">📭</div>
+        <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center opacity-50"><PackageOpen className="w-10 h-10 text-slate-400" /></div>
         <div className="text-center">
           <h3 className="text-xl font-bold text-white">No Projects Found</h3>
           <p className="text-slate-400 mt-2">Create a project first to manage its database.</p>
