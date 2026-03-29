@@ -18,9 +18,10 @@ import {
   Bug,
   MoreHorizontal,
   ChevronRight,
-  AlertTriangle,
+  AlertTriangle, 
   Lightbulb,
-  Search
+  Search,
+  ChevronDown
 } from 'lucide-react'
 
 const AdminFeedback = () => {
@@ -28,6 +29,8 @@ const AdminFeedback = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [isStatusOpen, setIsStatusOpen] = useState(false)
+  const [isTypeOpen, setIsTypeOpen] = useState(false)
 
   const fetchFeedback = useCallback(async () => {
     setIsLoading(true)
@@ -116,27 +119,66 @@ const AdminFeedback = () => {
                 </div>
             </div>
 
-            <div className="flex items-center gap-4">
-                <select 
-                    className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-                    value={filterStatus}
-                    onChange={e => setFilterStatus(e.target.value)}
-                >
-                    <option value="">Status: All States</option>
-                    <option value="pending">Queued</option>
-                    <option value="in_review">In Review</option>
-                    <option value="resolved">Patched</option>
-                </select>
-                <select 
-                    className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-                    value={filterType}
-                    onChange={e => setFilterType(e.target.value)}
-                >
-                    <option value="">Category: All Intel</option>
-                    <option value="suggestion">💡 Suggestion</option>
-                    <option value="bug">🐛 Bug Report</option>
-                    <option value="trouble">⚠️ Infrastructure</option>
-                </select>
+             <div className="flex items-center gap-4">
+                {/* Status Filter */}
+                <div className="relative">
+                    <button
+                        onClick={() => setIsStatusOpen(!isStatusOpen)}
+                        className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-3 hover:border-indigo-500/40 transition-all"
+                    >
+                        <span>Status: {filterStatus ? filterStatus.replace('_', ' ') : 'All States'}</span>
+                        <ChevronDown className={`w-3 h-3 transition-transform ${isStatusOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isStatusOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsStatusOpen(false)}></div>
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-[#0d0d12] border border-white/10 rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                {['', 'pending', 'in_review', 'resolved'].map(status => (
+                                    <button
+                                        key={status}
+                                        onClick={() => { setFilterStatus(status); setIsStatusOpen(false); }}
+                                        className={`w-full text-left px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterStatus === status ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+                                    >
+                                        {status ? status.replace('_', ' ') : 'All States'}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Type Filter */}
+                <div className="relative">
+                    <button
+                        onClick={() => setIsTypeOpen(!isTypeOpen)}
+                        className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-3 hover:border-indigo-500/40 transition-all"
+                    >
+                        <span>Category: {filterType ? filterType : 'All Intel'}</span>
+                        <ChevronDown className={`w-3 h-3 transition-transform ${isTypeOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isTypeOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsTypeOpen(false)}></div>
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-[#0d0d12] border border-white/10 rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                {[
+                                    { value: '', label: 'All Intel', icon: Sparkles },
+                                    { value: 'suggestion', label: 'Suggestion', icon: Lightbulb },
+                                    { value: 'bug', label: 'Bug Report', icon: Bug },
+                                    { value: 'trouble', label: 'Infrastructure', icon: AlertTriangle }
+                                ].map(type => (
+                                    <button
+                                        key={type.value}
+                                        onClick={() => { setFilterType(type.value); setIsTypeOpen(false); }}
+                                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-[10px] font-black uppercase tracking-widest transition-all ${filterType === type.value ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+                                    >
+                                        <type.icon size={12} />
+                                        {type.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
 

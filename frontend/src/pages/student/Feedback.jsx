@@ -18,19 +18,31 @@ import {
   Zap,
   Clock,
   Layout,
-  Terminal
+  Terminal,
+  Bug,
+  Wrench,
+  ChevronDown
 } from 'lucide-react'
 
 const StudentFeedback = () => {
   const [feedback, setFeedback] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   
   const [formData, setFormData] = useState({
     title: '',
     content: '',
     type: 'suggestion'
   })
+
+  const typeOptions = [
+    { value: 'suggestion', label: 'Evolution Suggestion', icon: Lightbulb, color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
+    { value: 'bug', label: 'Anomaly Report', icon: Bug, color: 'text-rose-400', bg: 'bg-rose-500/10' },
+    { value: 'trouble', label: 'Critical Failure', icon: AlertTriangle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+  ]
+
+  const activeType = typeOptions.find(opt => opt.value === formData.type) || typeOptions[0]
 
   const fetchFeedback = useCallback(async () => {
     setIsLoading(true)
@@ -122,16 +134,53 @@ const StudentFeedback = () => {
                          Logic Classification
                       </label>
                       <div className="relative">
-                        <select 
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500/40 transition-all outline-none appearance-none"
-                          value={formData.type}
-                          onChange={e => setFormData({...formData, type: e.target.value})}
+                        <button
+                          type="button"
+                          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500/40 transition-all outline-none flex items-center justify-between group"
                         >
-                          <option value="suggestion">💡 Evolution Suggestion</option>
-                          <option value="bug">🐛 Anomaly Report</option>
-                          <option value="trouble">⚠️ Critical Failure</option>
-                        </select>
-                        <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none text-slate-500 italic text-[10px] font-black uppercase tracking-widest">Select Mode</div>
+                          <div className="flex items-center gap-3">
+                            <activeType.icon className={`w-5 h-5 ${activeType.color}`} />
+                            <span>{activeType.label}</span>
+                          </div>
+                          <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={() => setIsDropdownOpen(false)}
+                            ></div>
+                            <div className="absolute top-full left-0 w-full mt-3 bg-[#0d0d12] border border-white/10 rounded-2xl p-2 z-50 shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-top-2 duration-200">
+                              {typeOptions.map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData({ ...formData, type: option.value })
+                                    setIsDropdownOpen(false)
+                                  }}
+                                  className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl transition-all ${
+                                    formData.type === option.value 
+                                      ? 'bg-white/5 text-white' 
+                                      : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                                  }`}
+                                >
+                                  <div className={`w-10 h-10 rounded-lg ${option.bg} flex items-center justify-center`}>
+                                    <option.icon className={`w-5 h-5 ${option.color}`} />
+                                  </div>
+                                  <div className="text-left">
+                                    <p className="text-sm font-bold tracking-tight">{option.label}</p>
+                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest mt-0.5">
+                                      {option.value === 'suggestion' ? 'Evolutionary Intel' : option.value === 'bug' ? 'Anomaly Detect' : 'Core Threat'}
+                                    </p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -210,7 +259,9 @@ const StudentFeedback = () => {
                         item.type === 'bug' ? 'text-rose-400 border-rose-400/20 bg-rose-400/5' : 
                         item.type === 'trouble' ? 'text-amber-400 border-amber-400/20 bg-amber-400/5' : 'text-indigo-400 border-indigo-400/20 bg-indigo-400/5'
                       }`}>
-                        {getTypeIcon(item.type)}
+                        {item.type === 'bug' ? <Bug className="w-3.5 h-3.5" /> : 
+                         item.type === 'trouble' ? <AlertTriangle className="w-3.5 h-3.5" /> : 
+                         <Lightbulb className="w-3.5 h-3.5" />}
                         {item.type}
                       </div>
                       <div className={`px-2.5 py-1 rounded-full border text-[8px] font-black uppercase tracking-[0.1em] ${getStatusColor(item.status)}`}>
