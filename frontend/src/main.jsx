@@ -19,13 +19,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           style: {
             background: '#09090b',
             color: '#f8fafc',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '1rem',
-            padding: '12px 16px',
-            fontSize: '13px',
-            fontWeight: '600',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '0.75rem',
+            padding: '10px 14px',
+            fontSize: '12px',
+            fontWeight: '700',
             letterSpacing: '-0.01em',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.5)',
           },
           success: {
             iconTheme: { primary: '#10b981', secondary: '#09090b' }

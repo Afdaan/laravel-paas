@@ -40,32 +40,32 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
       />
 
       {/* Control Panel */}
-      <div className="relative w-full max-w-sm bg-[#09090b] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl shadow-black animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+      <div className="relative w-full max-w-[320px] bg-[#09090b] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-black animate-in zoom-in-95 slide-in-from-bottom-6 duration-300">
         <button 
           onClick={onClose}
-          className="absolute top-6 right-6 p-2 rounded-xl text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+          className="absolute top-5 right-5 p-1.5 rounded-lg text-slate-600 hover:text-white hover:bg-white/5 transition-colors"
         >
-          <X size={16} />
+          <X size={14} />
         </button>
 
-        <div className="p-10 text-center flex flex-col items-center">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-8 ${config.bg} border ${config.border} ${config.text} shadow-xl`}>
-            <Icon size={24} strokeWidth={2.5} />
+        <div className="p-8 text-center flex flex-col items-center">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 ${config.bg} border ${config.border} ${config.text} shadow-lg shadow-black/40`}>
+            <Icon size={20} strokeWidth={2.5} />
           </div>
           
-          <h3 className="text-2xl font-black text-white tracking-tighter mb-4 leading-none lowercase">
+          <h3 className="text-xl font-black text-white tracking-tighter mb-3 leading-none lowercase">
             {title}
           </h3>
           
-          <p className="text-slate-500 text-xs font-medium leading-relaxed uppercase tracking-widest max-w-[240px]">
+          <p className="text-slate-500 text-[10px] font-bold leading-relaxed uppercase tracking-[0.2em] max-w-[200px]">
             {message}
           </p>
         </div>
         
-        <div className="p-10 pt-0 flex flex-col gap-3">
+        <div className="p-8 pt-2 flex flex-col gap-2.5">
           <button
             type="button"
-            className={`w-full py-4 text-[10px] font-black uppercase tracking-[0.3em] rounded-xl transition-all active:scale-[0.98] shadow-2xl shadow-white/5 ${config.btn}`}
+            className={`w-full py-4 text-[9px] font-black uppercase tracking-[0.35em] rounded-xl transition-all active:scale-[0.97] ${config.btn}`}
             onClick={() => {
               onConfirm()
               onClose()
@@ -75,7 +75,7 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
           </button>
           <button
             type="button"
-            className="w-full py-4 text-[10px] font-black uppercase tracking-[0.3em] rounded-xl bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
+            className="w-full py-4 text-[9px] font-black uppercase tracking-[0.35em] rounded-xl bg-white/[0.03] text-slate-500 hover:text-white hover:bg-white/[0.06] transition-all border border-white/5"
             onClick={onClose}
           >
             {cancelText}
