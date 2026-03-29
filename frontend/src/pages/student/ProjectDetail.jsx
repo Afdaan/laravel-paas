@@ -707,7 +707,7 @@ function StudentProjectDetail() {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative">
+                <div className={`card-glass p-10 bg-white/[0.01] border-white/10 group transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 relative ${isPhpDropdownOpen ? 'z-50' : 'z-10'}`}>
                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
                    
                    <div className="flex items-center gap-4 mb-10">
@@ -744,7 +744,7 @@ function StudentProjectDetail() {
                             {isPhpDropdownOpen && (
                               <>
                                 <div className="fixed inset-0 z-[60]" onClick={() => setIsPhpDropdownOpen(false)}></div>
-                                <div className="absolute top-full left-0 w-full mt-3 bg-[#09090b] border border-white/10 rounded-3xl p-3 z-[70] shadow-[0_30px_60px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="absolute top-full left-0 w-full mt-3 bg-[#09090b] border border-white/10 rounded-3xl p-3 z-[100] shadow-[0_30px_60px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
                                    {[8.0, 8.1, 8.2, 8.3, 8.4].map((v) => (
                                      <button
                                        key={v}
