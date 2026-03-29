@@ -52,7 +52,7 @@ function StudentNewProject() {
     
     try {
       const response = await projectsAPI.create(formData)
-      toast.success('Deployment Request Received', {
+      toast.success('Project Created', {
         duration: 5000,
         style: {
           borderRadius: '16px',
@@ -63,7 +63,7 @@ function StudentNewProject() {
       })
       navigate(`/projects/${response.data.project.id}`)
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to initialize deployment')
+      toast.error(error.response?.data?.error || 'Failed to create project')
     } finally {
       setIsLoading(false)
     }
@@ -80,12 +80,12 @@ function StudentNewProject() {
           className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-6 group bg-white/5 px-4 py-2 rounded-xl border border-white/5"
         >
           <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-          <span className="text-xs font-black uppercase tracking-widest">Back to fleet</span>
+          <span className="text-xs font-black uppercase tracking-widest">Back to projects</span>
         </button>
 
         <div className="mb-10 animate-pop-in">
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Initialize <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Deployment</span></h1>
-          <p className="text-slate-400 font-medium text-lg">Scale your Laravel application in seconds with automated infrastructure provisioning.</p>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">New <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Project</span></h1>
+          <p className="text-slate-400 font-medium text-lg">Scale your Laravel application in seconds with automated cloud deployment.</p>
         </div>
         
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-pop-in" style={{ animationDelay: '100ms' }}>
@@ -98,7 +98,7 @@ function StudentNewProject() {
                     <Rocket className="w-4 h-4" />
                   </div>
                   <label htmlFor="name" className="text-sm font-black text-white uppercase tracking-widest">
-                    Project Identifier
+                    Project Name
                   </label>
                 </div>
                 <input
@@ -142,7 +142,7 @@ function StudentNewProject() {
                       <Settings className="w-4 h-4" />
                     </div>
                     <label htmlFor="branch" className="text-sm font-black text-white uppercase tracking-widest">
-                      Production Branch
+                      Git Branch
                     </label>
                   </div>
                   <input
@@ -164,7 +164,7 @@ function StudentNewProject() {
                     <Database className="w-4 h-4" />
                   </div>
                   <label htmlFor="database_name" className="text-sm font-black text-white uppercase tracking-widest">
-                    PostgreSQL / MySQL Instance
+                    Database Name
                   </label>
                 </div>
                 <input
@@ -194,8 +194,8 @@ function StudentNewProject() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="queue_enabled" className="block text-sm font-black text-white uppercase tracking-widest cursor-pointer">Provision Queue Worker</label>
-                    <p className="text-slate-500 text-xs mt-1 font-medium italic">Enables background job processing with isolated resource pools.</p>
+                    <label htmlFor="queue_enabled" className="block text-sm font-black text-white uppercase tracking-widest cursor-pointer">Enable Queue Worker</label>
+                    <p className="text-slate-500 text-xs mt-1 font-medium italic">Enables background processes for your application.</p>
                   </div>
                 </div>
               </div>
@@ -209,12 +209,12 @@ function StudentNewProject() {
               {isLoading ? (
                 <span className="flex items-center justify-center gap-3">
                   <RefreshCw className="w-6 h-6 animate-spin" />
-                  Provisioning Fleet...
+                  Deploying...
                 </span>
               ) : (
                 <span className="flex items-center justify-center gap-3">
                   <Rocket className="w-6 h-6" />
-                  Execute Deployment
+                  Create Project
                   <ArrowRight className="w-6 h-6" />
                 </span>
               )}
@@ -223,36 +223,36 @@ function StudentNewProject() {
 
           <div className="space-y-6">
             <div className="card-glass p-8 border-white/10 space-y-8 bg-gradient-to-br from-white/[0.03] to-transparent">
-              <div className="flex items-center gap-3 pb-6 border-b border-white/5">
+               <div className="flex items-center gap-3 pb-6 border-b border-white/5">
                 <ShieldCheck className="w-6 h-6 text-indigo-400" />
-                <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Deployment Pipeline</h3>
+                <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Project Setup</h3>
               </div>
               
               <ul className="space-y-6">
                 <PipelineStep 
                   icon={Github} 
-                  title="Source Sync" 
-                  desc="Dynamic cloning of the selected branch from your repository." 
+                  title="Git Clone" 
+                  desc="Cloning your repository branch." 
                 />
                 <PipelineStep 
                   icon={Activity} 
-                  title="Environment Auto-Detect" 
-                  desc="PHP and Laravel versions are analyzed for optimal runtime." 
+                  title="PHP Version" 
+                  desc="Detecting PHP and Laravel versions." 
                 />
                 <PipelineStep 
                   icon={Database} 
-                  title="Persistence Layer" 
-                  desc="Isolated containerized database instance provisioning." 
+                  title="Database" 
+                  desc="Creating your database instance." 
                 />
                 <PipelineStep 
                   icon={Zap} 
-                  title="Edge Networking" 
-                  desc="Load balancing and SSL encryption at the entry point." 
+                  title="Networking" 
+                  desc="Setting up secure URL and SSL." 
                 />
                 <PipelineStep 
                   icon={Cpu} 
-                  title="Compute Isolation" 
-                  desc="Isolated memory and CPU allocations per workload." 
+                  title="Resources" 
+                  desc="Allocating CPU and Memory." 
                 />
               </ul>
 

@@ -142,8 +142,8 @@ const AdminProjects = () => {
           {/* Header */}
           <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
             <div>
-              <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Service <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Inventory</span></h1>
-              <p className="text-slate-400 text-lg font-medium">Global management of all provisioned Laravel workloads and cluster nodes.</p>
+              <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Projects</h1>
+              <p className="text-slate-400 text-lg font-medium">Manage all projects and system resources across the platform.</p>
             </div>
 
             <div className="flex items-center gap-4 bg-white/[0.02] border border-white/10 p-2 rounded-2xl backdrop-blur-md">
@@ -167,7 +167,7 @@ const AdminProjects = () => {
                     </div>
                     <input 
                         type="text"
-                        placeholder="Search service manifests, subdomains, identities..."
+                        placeholder="Search projects, domains, owners..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full bg-black/40 border border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-600 outline-none"
@@ -190,7 +190,7 @@ const AdminProjects = () => {
                 </select>
 
                 <button onClick={fetchProjects} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.02] border border-white/10 text-white hover:bg-white/[0.05] transition-all active:scale-95">
-                   <RotateCw className="w-4 h-4" />
+                   <RefreshCw className="w-4 h-4" />
                 </button>
             </div>
           </div>
@@ -201,11 +201,11 @@ const AdminProjects = () => {
                 <table className="premium-table">
                   <thead>
                     <tr>
-                      <th>Service Identity</th>
-                      <th>Owner / Profile</th>
-                      <th>State</th>
-                      <th>Load Balancing Telemetry</th>
-                      <th>Stack</th>
+                      <th>Project</th>
+                      <th>Owner</th>
+                      <th>Status</th>
+                      <th>Resource Usage</th>
+                      <th>Version</th>
                       <th className="text-right">Action</th>
                     </tr>
                   </thead>
@@ -283,7 +283,7 @@ const AdminProjects = () => {
                               to={`/projects/${project.id}`}
                               className="px-6 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-white hover:bg-white/[0.05] hover:border-white/10 transition-all active:scale-95 inline-block"
                             >
-                              Sync Detail Index →
+                              View Details →
                             </Link>
                           </td>
                         </tr>
@@ -298,7 +298,7 @@ const AdminProjects = () => {
                      <div className="w-24 h-24 bg-white/[0.02] border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl">
                         <Box className="w-10 h-10 text-slate-800" />
                     </div>
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600">No project manifests indexed in cluster inventory</h3>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600">No projects found in the system</h3>
                 </div>
             )}
             

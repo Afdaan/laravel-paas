@@ -107,15 +107,15 @@ const AdminImages = () => {
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Registry <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Images</span></h1>
-                        <p className="text-slate-400 text-lg font-medium">Local image repository maintenance and layer orchestration.</p>
+                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Images</h1>
+                        <p className="text-slate-400 text-lg font-medium">Manage and optimize project image snapshots.</p>
                     </div>
 
                     <div className="flex items-center gap-6">
                         <div className="flex items-center gap-4 bg-white/[0.02] border border-white/10 p-2 rounded-2xl backdrop-blur-md">
                             <div className="flex items-center gap-3 px-6 py-2 border-r border-white/5">
                                 <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] animate-pulse"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.total} Manifests</span>
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.total} Images</span>
                             </div>
                             <div className="flex items-center gap-3 px-6 py-2">
                                 <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
@@ -126,7 +126,7 @@ const AdminImages = () => {
                         <div className="flex items-center gap-4">
                             <button className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest active:scale-95 transition-all">
                                <Download className="w-4 h-4" />
-                               Pull Manifest
+                               Pull Image
                             </button>
                             <button onClick={handlePrune} disabled={isPruning} className="btn bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20 text-rose-500 py-3 px-6 text-sm font-black uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all">
                                <Trash2 className="w-4 h-4" />

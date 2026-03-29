@@ -74,29 +74,29 @@ function StudentDashboard() {
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 relative z-10">
         <div>
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4">
-            Command <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 animate-gradient-x">Center</span>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 animate-gradient-x">
+            Dashboard
           </h1>
           <p className="text-slate-400 text-lg font-medium max-w-xl leading-relaxed">
-            Welcome back, <span className="text-white font-bold">{user?.name?.split(' ')[0]}</span>. Your infrastructure fleet is currently operating across <span className="text-indigo-400 font-bold">{runningProjects} isolated services</span>.
+            Welcome back, <span className="text-white font-bold">{user?.name?.split(' ')[0]}</span>. You currently have <span className="text-indigo-400 font-bold">{runningProjects} active projects</span>.
           </p>
         </div>
         <Link to="/projects/new" className="btn btn-primary shadow-[0_0_30px_rgba(99,102,241,0.2)]">
           <Plus className="w-5 h-5" />
-          Deploy New Architecture
+          New Project
         </Link>
       </div>
       
       {/* Core Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
         <StatCard 
-          label="active deployments" 
+          label="Total Projects" 
           value={totalProjects} 
           icon={Package} 
           color="indigo" 
         />
         <StatCard 
-          label="operational services" 
+          label="Running Projects" 
           value={runningProjects} 
           icon={Activity} 
           color="emerald" 
@@ -107,11 +107,11 @@ function StudentDashboard() {
            <div className="relative z-10 h-full flex flex-col justify-between">
               <div>
                 <Zap className="w-8 h-8 text-indigo-400 mb-4" />
-                <h3 className="text-xl font-black text-white uppercase tracking-tight">Need Support?</h3>
-                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Our engineers are standing by</p>
+                <h3 className="text-xl font-black text-white uppercase tracking-tight">Need Help?</h3>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Get Technical support</p>
               </div>
               <Link to="/feedback" className="flex items-center gap-2 text-white font-black text-xs uppercase tracking-[0.2em] group-hover:gap-4 transition-all mt-6">
-                 Open Ticket <ArrowRight className="w-4 h-4 text-indigo-400" />
+                 Support Ticket <ArrowRight className="w-4 h-4 text-indigo-400" />
               </Link>
            </div>
         </div>
@@ -125,8 +125,8 @@ function StudentDashboard() {
                 <Layout className="w-5 h-5 text-slate-400" />
              </div>
              <div>
-                <h2 className="text-xl font-black text-white tracking-tight uppercase">Recent Workloads</h2>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">Latest fleet activity</p>
+                <h2 className="text-xl font-black text-white tracking-tight uppercase">Recent Projects</h2>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">Latest activity</p>
              </div>
           </div>
           <Link to="/projects" className="group flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all">
@@ -137,17 +137,17 @@ function StudentDashboard() {
         {isLoading ? (
           <div className="p-32 flex flex-col items-center justify-center gap-6">
             <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest animate-pulse">Syncing Cluster State...</p>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest animate-pulse">Loading Projects...</p>
           </div>
         ) : projects.length === 0 ? (
           <div className="p-32 text-center flex flex-col items-center max-w-sm mx-auto">
             <div className="w-24 h-24 bg-white/5 border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-8">
               <Rocket className="w-12 h-12 text-slate-700" />
             </div>
-            <h4 className="text-2xl font-black text-white tracking-tight mb-3">Void Detected</h4>
-            <p className="text-slate-500 font-medium mb-10 text-sm">Your infrastructure fleet is empty. Deploy your first workload to initialize monitoring.</p>
+            <h4 className="text-2xl font-black text-white tracking-tight mb-3">No Projects</h4>
+            <p className="text-slate-500 font-medium mb-10 text-sm">You have no active projects yet. Create your first project to get started.</p>
             <Link to="/projects/new" className="btn btn-primary w-full py-5">
-              Execute First Launch
+              Create Your First Project
             </Link>
           </div>
         ) : (
@@ -155,10 +155,10 @@ function StudentDashboard() {
             <table className="premium-table">
               <thead>
                 <tr>
-                  <th>Architecture</th>
-                  <th>Ingress Point</th>
-                  <th>Logic State</th>
-                  <th>Timestamp</th>
+                  <th>Project Name</th>
+                  <th>URL</th>
+                  <th>Status</th>
+                  <th>Date</th>
                   <th className="text-right">Action</th>
                 </tr>
               </thead>
@@ -206,7 +206,7 @@ function StudentDashboard() {
                         to={`/projects/${project.id}`}
                         className="btn bg-white/5 border border-white/5 hover:border-indigo-500/20 hover:bg-indigo-500/10 text-slate-500 hover:text-indigo-400 py-2 px-4 text-[10px] uppercase font-black tracking-widest"
                       >
-                        Interface
+                        Details
                       </Link>
                     </td>
                   </tr>

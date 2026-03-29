@@ -106,7 +106,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       const res = await databaseAPI.getData(id, tableName, 1, 50)
       setTableData(res.data)
     } catch (err) {
-      toast.error('Failed to stream table data')
+      toast.error('Failed to load table data')
     } finally {
       setLoading(false)
     }
@@ -159,10 +159,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
   const confirmReset = () => {
     setConfirmModal({
       isOpen: true,
-      title: 'Initialize Reset?',
-      message: 'This will purge all data clusters and destroy every table in this database instance.',
+      title: 'Reset Database?',
+      message: 'This will delete all tables and data in this database. This action cannot be undone.',
       type: 'danger',
-      confirmText: 'Execute Wipe',
+      confirmText: 'Reset Now',
       onConfirm: async () => {
         try {
           await databaseAPI.reset(id)
@@ -184,9 +184,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
   }
 
   const tabs = [
-    { id: 'tables', label: 'Schema', icon: Layers },
+    { id: 'tables', label: 'Tables', icon: Layers },
     { id: 'query', label: 'Console', icon: Terminal },
-    { id: 'import', label: 'Sync', icon: RefreshCw },
+    { id: 'import', label: 'Import', icon: RefreshCw },
   ]
 
   return (
@@ -203,16 +203,16 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
           <div>
             <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-4 group">
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Return to Cluster</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">Back</span>
             </button>
-            <h1 className="text-4xl font-black text-white tracking-tighter flex items-center gap-3">
+            <h1 className="text-4xl font-black text-white tracking-tighter flex items-center gap-3 italic">
               <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                 <DbIcon className="w-6 h-6" />
               </div>
-              Data Terminal
+              Database Manager
             </h1>
             <p className="text-slate-500 mt-2 font-mono text-xs uppercase tracking-widest">
-              Context: <span className="text-indigo-400">{project?.database_name}</span>
+              Database: <span className="text-indigo-400">{project?.database_name}</span>
             </p>
           </div>
           <div className="flex gap-3">
@@ -252,7 +252,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
               {/* Table Sidebar */}
               <div className="lg:col-span-1 flex flex-col h-full card-glass p-0 overflow-hidden border-white/10">
                 <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                  <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Data Entities</h3>
+                  <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Tables</h3>
                   <button onClick={fetchTables} className="text-slate-500 hover:text-indigo-400 transition-colors">
                     <RefreshCw className="w-4 h-4" />
                   </button>
@@ -261,7 +261,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                   {loading && tables.length === 0 ? (
                     <div className="py-10 flex justify-center"><RefreshCw className="w-6 h-6 animate-spin text-slate-700" /></div>
                   ) : tables.length === 0 ? (
-                    <div className="text-center py-20 text-slate-600 font-bold uppercase tracking-widest text-[10px]">Registry Empty</div>
+                    <div className="text-center py-20 text-slate-600 font-bold uppercase tracking-widest text-[10px]">No Tables Found</div>
                   ) : (
                     tables.map(table => (
                       <button
@@ -292,7 +292,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                         </div>
                         <div>
                           <h3 className="text-lg font-black text-white tracking-tight uppercase">{selectedTable}</h3>
-                          <p className="text-[10px] font-black text-indigo-400/50 uppercase tracking-widest">Entity Rows: {tableData?.total || 0}</p>
+                          <p className="text-[10px] font-black text-indigo-400/50 uppercase tracking-widest">Total Rows: {tableData?.total || 0}</p>
                         </div>
                       </div>
                     </div>
@@ -324,7 +324,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                       ) : (
                         <div className="flex flex-col items-center justify-center h-full gap-6 opacity-30">
                           <PackageOpen className="w-16 h-16" />
-                          <p className="text-xs font-black uppercase tracking-[0.2em]">Entity is void</p>
+                          <p className="text-xs font-black uppercase tracking-[0.2em]">Table is empty</p>
                         </div>
                       )}
                     </div>
@@ -332,7 +332,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-6 opacity-40 animate-pulse">
                     <MousePointer2 className="w-12 h-12" />
-                    <p className="text-xs font-black uppercase tracking-[0.3em]">Select entity to stream data</p>
+                    <p className="text-xs font-black uppercase tracking-[0.3em]">Select a table to view data</p>
                   </div>
                 )}
               </div>
@@ -345,7 +345,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex justify-between items-center">
                    <div className="flex items-center gap-3">
                      <Terminal className="w-4 h-4 text-emerald-500" />
-                     <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Power Console</h3>
+                     <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">SQL Console</h3>
                    </div>
                    <div className="flex gap-3">
                       <button onClick={() => setQuery('')} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors">Clear</button>
@@ -370,7 +370,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
               <div className="flex-1 card-glass p-0 overflow-hidden flex flex-col border-white/10">
                  <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
-                   <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Execution Stream</h3>
+                   <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Query Result</h3>
                    {queryResult && (
                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operation time: {queryResult.duration}</span>
                    )}
@@ -406,7 +406,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                       </div>
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-700 italic text-xs font-black uppercase tracking-[0.3em] opacity-40">
-                        Awaiting Command Execution
+                        Awaiting Command
                       </div>
                     )}
                  </div>
@@ -420,12 +420,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
                   <Download className="w-8 h-8" />
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight uppercase">System Export</h3>
+                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Backup</h3>
                 <p className="text-slate-500 text-sm font-medium leading-relaxed">
-                  Generate a complete encrypted SQL snapshot of the entire data cluster across all entities.
+                  Generate a complete SQL dump of your database and all its tables.
                 </p>
                 <button onClick={handleExport} className="btn btn-secondary w-full py-5 text-base font-black uppercase tracking-[0.2em]">
-                  Generate Backup
+                  Download Backup
                 </button>
               </div>
 
@@ -433,9 +433,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
                   <Upload className="w-8 h-8" />
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Data Ingestion</h3>
+                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Import Database</h3>
                 <p className="text-slate-500 text-sm font-medium leading-relaxed">
-                  Execute direct protocol streams into the cluster to restore or synchronize datasets.
+                  Run SQL commands to restore your database or synchronize data.
                 </p>
                 <textarea
                   value={importSQL}
@@ -448,7 +448,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                   disabled={importing || !importSQL.trim()}
                   className="btn btn-primary w-full py-5 text-base font-black uppercase tracking-[0.2em] disabled:opacity-50"
                 >
-                  {importing ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Run Sync Operation'}
+                  {importing ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'Run Import'}
                 </button>
               </div>
             </div>
@@ -463,21 +463,21 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
           <div className="relative w-full max-w-md card-glass border-white/10 p-10 animate-pop-in">
             <div className="flex justify-between items-center mb-10">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                 <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                   <Key className="w-6 h-6" />
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Cluster Key</h3>
+                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Database Credentials</h3>
               </div>
               <button onClick={() => setShowCredentials(false)} className="text-slate-500 hover:text-white transition-all"><X className="w-6 h-6" /></button>
             </div>
             
             <div className="space-y-6">
               {[
-                { label: 'Host Access', value: credentials.host },
-                { label: 'Ingress Port', value: credentials.port },
-                { label: 'Target DB', value: credentials.database },
-                { label: 'Root Sync User', value: credentials.username },
-                { label: 'Access Token', value: credentials.password, secret: true },
+                { label: 'Host', value: credentials.host },
+                { label: 'Port', value: credentials.port },
+                { label: 'Database', value: credentials.database },
+                { label: 'Username', value: credentials.username },
+                { label: 'Password', value: credentials.password, secret: true },
               ].map(item => (
                 <div key={item.label} className="group space-y-2">
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{item.label}</span>
@@ -500,7 +500,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
               onClick={() => setShowCredentials(false)}
               className="btn btn-secondary w-full py-5 text-sm font-black uppercase tracking-[0.2em] mt-10"
             >
-              Close Secure View
+              Close
             </button>
           </div>
         </div>

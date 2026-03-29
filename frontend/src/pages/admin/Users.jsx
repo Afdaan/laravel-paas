@@ -130,8 +130,8 @@ const AdminUsers = () => {
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Identity <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Directory</span></h1>
-                        <p className="text-slate-400 text-lg font-medium">Provision and audit system-wide user credentials and permissions.</p>
+                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Users</h1>
+                        <p className="text-slate-400 text-lg font-medium">Manage all student and admin accounts across the platform.</p>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -147,7 +147,7 @@ const AdminUsers = () => {
                             className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest active:scale-95 transition-all"
                         >
                             <FileDown className="w-4 h-4" />
-                            Import Cluster
+                            Import List
                         </button>
                         <button 
                             onClick={() => {
@@ -158,7 +158,7 @@ const AdminUsers = () => {
                             className="btn btn-primary py-3 px-6 text-sm font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_10px_20px_rgba(99,102,241,0.2)]"
                         >
                             <UserPlus className="w-4 h-4" />
-                            New Identity
+                            New User
                         </button>
                     </div>
                 </div>
@@ -270,9 +270,9 @@ const AdminUsers = () => {
                         <table className="premium-table">
                             <thead>
                                 <tr>
-                                    <th>Identity Cluster</th>
+                                    <th>User Account</th>
                                     <th>Role / Access</th>
-                                    <th>Registry Date</th>
+                                    <th>Created Date</th>
                                     <th className="text-right">Action</th>
                                 </tr>
                             </thead>
@@ -397,9 +397,9 @@ const AdminUsers = () => {
                                     </div>
                                     <div>
                                         <h2 className="text-3xl font-black text-white tracking-tighter uppercase">
-                                            {editingUser ? 'Sync Identity' : 'Provision Access'}
+                                            {editingUser ? 'Edit User' : 'Create User'}
                                         </h2>
-                                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Global User Registry Manifest</p>
+                                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">User Account Settings</p>
                                     </div>
                                 </div>
                                 <button onClick={() => setShowModal(false)} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.02] border border-white/10 text-slate-500 hover:text-white transition-all active:scale-95">
@@ -500,7 +500,7 @@ const AdminUsers = () => {
                                         type="submit" 
                                         className="btn btn-primary flex-1 py-4 text-sm font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_15px_30px_rgba(99,102,241,0.3)]"
                                     >
-                                        {editingUser ? 'Commit Audit' : 'Deploy Identity'}
+                                        {editingUser ? 'Save Changes' : 'Create User'}
                                     </button>
                                 </div>
                             </form>

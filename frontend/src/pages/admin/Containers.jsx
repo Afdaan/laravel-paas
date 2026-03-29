@@ -84,30 +84,30 @@ const AdminContainers = () => {
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Instance <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Orchestrator</span></h1>
-                        <p className="text-slate-400 text-lg font-medium">Real-time container lifecycle and resource allocation management.</p>
+                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Containers</h1>
+                        <p className="text-slate-400 text-lg font-medium">Manage and monitor all running project instances.</p>
                     </div>
 
                     <div className="flex items-center gap-6">
                         <div className="flex items-center gap-4 bg-white/[0.02] border border-white/10 p-2 rounded-2xl backdrop-blur-md">
                             <div className="flex items-center gap-3 px-6 py-2 border-r border-white/5">
                                 <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.total} Scaled</span>
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.total} Total</span>
                             </div>
                             <div className="flex items-center gap-3 px-6 py-2 border-r border-white/5">
                                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-pulse"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.running} Awake</span>
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.running} Active</span>
                             </div>
                             <div className="flex items-center gap-3 px-6 py-2">
                                 <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.5)]"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.stopped} Halted</span>
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{stats.stopped} Offline</span>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-4">
                             <button className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest active:scale-95 transition-all">
                                <Plus className="w-4 h-4" />
-                               Spawn Instance
+                               New Container
                             </button>
                             <button onClick={fetchData} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.02] border border-white/10 text-white hover:bg-white/[0.05] transition-all active:rotate-180 duration-500 transition-transform">
                                <RotateCw className="w-4 h-4" />

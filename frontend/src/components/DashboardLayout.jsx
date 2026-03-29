@@ -51,23 +51,23 @@ function DashboardLayout({ isAdmin = false }) {
   const navItems = isAdmin
     ? {
         management: [
-          { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Control Plane' },
-          { to: '/admin/users', icon: Icons.Users, label: 'Access Control' },
-          { to: '/admin/projects', icon: Icons.Projects, label: 'Workload Fleet' },
-          { to: '/admin/settings', icon: Icons.Settings, label: 'Global Config' },
+          { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
+          { to: '/admin/users', icon: Icons.Users, label: 'Users' },
+          { to: '/admin/projects', icon: Icons.Projects, label: 'Projects' },
+          { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
         ],
         resources: [
-          { to: '/admin/containers', icon: Icons.Containers, label: 'Compute Nodes' },
-          { to: '/admin/images', icon: Icons.Images, label: 'Registry snaps' },
-          { to: '/admin/networks', icon: Icons.Networks, label: 'Mesh Routing' },
-          { to: '/admin/volumes', icon: Icons.Volumes, label: 'Data Volumes' },
+          { to: '/admin/containers', icon: Icons.Containers, label: 'Containers' },
+          { to: '/admin/images', icon: Icons.Images, label: 'Images' },
+          { to: '/admin/networks', icon: Icons.Networks, label: 'Networks' },
+          { to: '/admin/volumes', icon: Icons.Volumes, label: 'Volumes' },
         ]
       }
     : {
         management: [
-          { to: '/dashboard', icon: Icons.Dashboard, label: 'Command Home' },
-          { to: '/projects', icon: Icons.Projects, label: 'My Fleet' },
-          { to: '/databases', icon: Icons.Database, label: 'Data Clusters' },
+          { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
+          { to: '/projects', icon: Icons.Projects, label: 'Projects' },
+          { to: '/databases', icon: Icons.Database, label: 'Databases' },
         ]
       }
   
@@ -108,9 +108,9 @@ function DashboardLayout({ isAdmin = false }) {
         
         {/* Navigation Registry */}
         <nav className="flex-1 px-6 py-6 space-y-10 overflow-y-auto premium-scrollbar">
-          {/* Main Intelligence Group */}
+          {/* Main Group */}
           <div className="space-y-1.5">
-            <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-4 ml-4">Orchestration</p>
+            <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-4 ml-4">Main</p>
             {navItems.management.map((item) => (
               <NavLink
                 key={item.to}
@@ -135,7 +135,7 @@ function DashboardLayout({ isAdmin = false }) {
           {/* Infrastructure Group (Admin Only) */}
           {isAdmin && navItems.resources && (
             <div className="space-y-1.5 pt-4">
-                <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-4 ml-4">Hardware Stack</p>
+                <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-4 ml-4">Infrastructure</p>
                 {navItems.resources.map((item) => (
                 <NavLink
                     key={item.to}
@@ -165,7 +165,7 @@ function DashboardLayout({ isAdmin = false }) {
               className="flex items-center justify-center gap-3 px-6 py-4 rounded-2xl bg-indigo-500 text-white font-black text-[11px] uppercase tracking-widest shadow-[0_10px_20px_rgba(99,102,241,0.2)] hover:bg-indigo-400 hover:scale-[1.02] transform transition-all active:scale-95 mt-10"
             >
               <Plus className="w-5 h-5" />
-              Initialize New Workload
+              New Project
             </NavLink>
           )}
         </nav>
@@ -189,7 +189,7 @@ function DashboardLayout({ isAdmin = false }) {
                 className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
               >
                 <ArrowRightLeft className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-                Elevate to Panel
+                Admin Panel
               </NavLink>
             )}
             
@@ -199,7 +199,7 @@ function DashboardLayout({ isAdmin = false }) {
                 className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
               >
                 <ArrowRightLeft className="w-4 h-4 group-hover:-rotate-180 transition-transform duration-500" />
-                Return to Deck
+                Student View
               </NavLink>
             )}
             
@@ -208,7 +208,7 @@ function DashboardLayout({ isAdmin = false }) {
               className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 hover:text-rose-500 hover:bg-rose-500/5 transition-all w-full text-[10px] font-black uppercase tracking-widest group"
             >
               <LogOut className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              Terminate Session
+              Logout
             </button>
           </div>
         </div>

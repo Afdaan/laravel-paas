@@ -66,7 +66,7 @@ const StudentProjects = () => {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error('Failed to sync workload manifest')
+      toast.error('Failed to load projects')
     } finally {
       setIsLoading(false)
     }
@@ -82,17 +82,17 @@ const StudentProjects = () => {
     
     setConfirmModal({
       isOpen: true,
-      title: 'Initialize Redeploy?',
-      message: 'This operation will rebuild the container architecture. The application interface will be momentarily unreachable.',
+      title: 'Redeploy Project?',
+      message: 'This will rebuild your project. It may be temporarily unavailable during the process.',
       type: 'warning',
-      confirmText: 'Execute Redeploy',
+      confirmText: 'Redeploy',
       onConfirm: () => {
         toast.promise(
           projectsAPI.redeploy(id),
           {
-            loading: 'Re-orchestrating fleet...',
-            success: 'Provisioning initiated',
-            error: 'Failed to start deployment'
+            loading: 'Redeploying project...',
+            success: 'Redeploy started',
+            error: 'Failed to redeploy'
           }
         ).then(fetchProjects)
       }
@@ -105,17 +105,17 @@ const StudentProjects = () => {
     
     setConfirmModal({
       isOpen: true,
-      title: 'Decommission Project?',
-      message: 'This will permanently destroy all associated data volumes and cloud configurations. This action is irreversible.',
+      title: 'Delete Project?',
+      message: 'This will permanently delete this project and all its data. This action cannot be undone.',
       type: 'danger',
-      confirmText: 'Terminate Permanently',
+      confirmText: 'Delete Project',
       onConfirm: async () => {
         try {
           await projectsAPI.delete(id)
-          toast.success('Resource Decommissioned')
+          toast.success('Project Deleted')
           fetchProjects()
         } catch (error) {
-          toast.error('Termination Failed')
+          toast.error('Delete Failed')
         }
       }
     })
@@ -135,14 +135,14 @@ const StudentProjects = () => {
       {/* Header Container */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 relative z-10">
         <div>
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Service <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Inventory</span></h1>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Projects</h1>
           <p className="text-slate-400 text-lg font-medium leading-relaxed max-w-2xl">
-            Orchestrate and monitor your cloud workloads with our <span className="text-white">next-generation</span> container interface.
+            Manage and monitor all your projects in our <span className="text-white">modern</span> dashboard interface.
           </p>
         </div>
         <Link to="/projects/new" className="btn btn-primary px-10 py-5 text-sm font-black uppercase tracking-[0.25em] shadow-[0_15px_30px_rgba(99,102,241,0.3)] flex items-center gap-4 group">
           <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
-          Provision Workload
+          New Project
         </Link>
       </div>
       
@@ -150,17 +150,17 @@ const StudentProjects = () => {
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30">
           <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em]">Syncing Fleet...</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em]">Loading Projects...</p>
         </div>
       ) : projects.length === 0 ? (
         <div className="card-glass border-dashed p-32 text-center flex flex-col items-center max-w-xl mx-auto border-white/5 bg-white/[0.01]">
           <div className="w-24 h-24 bg-white/5 border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-10 text-slate-700">
             <Rocket className="w-12 h-12" />
           </div>
-          <h2 className="text-3xl font-black text-white tracking-tight mb-4 lowercase italic">The void is <span className="text-indigo-400">empty.</span></h2>
-          <p className="text-slate-500 mb-12 font-medium leading-relaxed">The fleet registry contains no active workloads. Initialize your first architecture to begin monitoring.</p>
+          <h2 className="text-3xl font-black text-white tracking-tight mb-4 lowercase italic">The list is <span className="text-indigo-400">empty.</span></h2>
+          <p className="text-slate-500 mb-12 font-medium leading-relaxed">You have no active projects. Create your first project to begin monitoring.</p>
           <Link to="/projects/new" className="btn btn-primary w-full py-6 text-sm font-black uppercase tracking-widest shadow-xl">
-            Launch Primary Deployment
+            Create Project
           </Link>
         </div>
       ) : (
@@ -204,15 +204,15 @@ const StudentProjects = () => {
                       <div className="p-2 bg-white/5 rounded-lg border border-white/5">
                         <Database className="w-3.5 h-3.5" />
                       </div>
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em]">Cluster Data</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em]">Database</span>
                     </div>
-                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{project.database_name ? 'Active Instance' : 'Void'}</span>
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{project.database_name ? 'Active' : 'No Database'}</span>
                   </div>
                 </div>
 
                 <div className="mt-10 flex items-center justify-between">
                    <div className="flex flex-col">
-                      <span className="text-[8px] text-slate-600 font-black uppercase tracking-[0.2em] mb-1">Provision Date</span>
+                      <span className="text-[8px] text-slate-600 font-black uppercase tracking-[0.2em] mb-1">Created Date</span>
                       <span className="text-[11px] font-black text-slate-500 uppercase">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    

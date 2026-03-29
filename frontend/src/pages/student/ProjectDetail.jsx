@@ -81,7 +81,7 @@ function StudentProjectDetail() {
   const [logs, setLogs] = useState('')
   const [stats, setStats] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('workload')
+  const [activeTab, setActiveTab] = useState('project')
   const logsEndRef = useRef(null)
   
   // New features state
@@ -331,7 +331,7 @@ function StudentProjectDetail() {
               <div className="text-center md:text-left flex-1">
                  <h3 className="text-2xl font-black text-white tracking-tight mb-2">Architecting Your Infrastructure</h3>
                  <p className="text-blue-100/60 text-base leading-relaxed max-w-2xl">
-                   We are currently compiling your containerized environment, initializing PHP context, and orchestrating network routes. Live metrics will initialize post-deployment.
+                   We are currently building your project environment, setting up the PHP runtime, and creating network access. Live metrics will initialize once the build is complete.
                  </p>
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-black uppercase tracking-widest">
@@ -378,7 +378,7 @@ function StudentProjectDetail() {
              className="btn btn-secondary py-3 px-8 text-sm font-black uppercase tracking-widest group"
            >
              <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-             Execute Redeploy
+             Redeploy Project
            </button>
            <button 
              onClick={handleDelete} 
@@ -432,7 +432,7 @@ function StudentProjectDetail() {
       {/* Tabs Layout */}
       <div>
         <div className="flex gap-2 bg-white/5 p-1.5 rounded-2xl w-fit mb-10 overflow-x-auto backdrop-blur-md border border-white/10">
-           {['workload', 'console', 'environment', 'database', 'logs', 'settings'].map(tab => (
+           {['project', 'console', 'environment', 'database', 'logs', 'settings'].map(tab => (
              <button
                key={tab}
                onClick={() => setActiveTab(tab)}
@@ -450,15 +450,15 @@ function StudentProjectDetail() {
         {/* Tab Content */}
         <div className="animate-fade-in relative z-10">
           
-          {/* Workload Tab */}
-          {activeTab === 'workload' && (
+          {/* Project Tab */}
+          {activeTab === 'project' && (
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-8">
                    <div className="card-glass p-0 overflow-hidden bg-white/[0.02] border-white/10">
                       <div className="p-6 border-b border-white/5 bg-white/[0.03]">
                          <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-3">
                            <Layout className="w-4 h-4 text-indigo-400" />
-                           Infrastructure Endpoints
+                           Connection Info
                          </h3>
                       </div>
                       <div className="p-8">
@@ -468,8 +468,8 @@ function StudentProjectDetail() {
                                   <Globe className="w-6 h-6" />
                                </div>
                                <div>
-                                  <div className="font-black text-white uppercase tracking-tight">Main Production Entry</div>
-                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Managed Port 80 • SSL Termination</div>
+                                  <div className="font-black text-white uppercase tracking-tight">Production URL</div>
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Web Access • SSL Enabled</div>
                                </div>
                             </div>
                             <a 
@@ -490,7 +490,7 @@ function StudentProjectDetail() {
                          </div>
                          <h3 className="text-rose-400 font-black uppercase tracking-[0.2em] text-xs mb-4 flex items-center gap-3">
                            <ShieldAlert className="w-4 h-4" />
-                           Stack Deployment Failure
+                           Deployment Error
                          </h3>
                          <div className="bg-black/40 rounded-xl p-6 border border-white/5">
                             <pre className="text-xs text-rose-200/80 whitespace-pre-wrap font-mono leading-relaxed">{project.error_log}</pre>
@@ -503,7 +503,7 @@ function StudentProjectDetail() {
                    <div className="card-glass p-8 bg-white/[0.02] border-white/10">
                       <h3 className="text-sm font-black text-white uppercase tracking-widest mb-8 flex items-center gap-3">
                         <Code className="w-4 h-4 text-indigo-400" />
-                        Source Control
+                        Git Repository
                       </h3>
                       <div className="space-y-6">
                          <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
@@ -550,7 +550,7 @@ function StudentProjectDetail() {
                   <div className="h-4 w-px bg-white/10 mx-2" />
                   <div className="flex items-center gap-2 text-slate-400 font-mono text-[10px] uppercase tracking-widest font-black">
                     <TerminalIcon size={12} className="text-indigo-400" />
-                    Artisan Runtime Interface
+                    Artisan Terminal
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -564,7 +564,7 @@ function StudentProjectDetail() {
               <div className="flex-1 p-8 overflow-auto font-mono text-sm text-slate-300 whitespace-pre-wrap flex flex-col gap-1 custom-scrollbar scroll-smooth">
                 <div className="text-slate-600 mb-6 flex items-center gap-3 bg-white/[0.02] p-4 rounded-xl border border-white/5">
                     <ShieldAlert size={14} className="text-amber-500" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Awaiting Artisan Input • Prefix 'php artisan' handles automatically</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Type Artisan commands below. 'php artisan' prefix is added.</span>
                 </div>
                 {consoleOutput ? consoleOutput.split('\n').map((line, i) => (
                     <div key={i} className="flex gap-4 group">
@@ -619,8 +619,8 @@ function StudentProjectDetail() {
                         <SettingsIcon className="w-6 h-6" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Environment Manifest</h3>
-                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5">Runtime Secrets & Configurations (.env)</p>
+                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Environment (.env)</h3>
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5">Application Secrets & Variables</p>
                      </div>
                   </div>
                   <button 
@@ -633,7 +633,7 @@ function StudentProjectDetail() {
                     ) : (
                         <Save className="w-4 h-4" />
                     )}
-                    {isSavingEnv ? 'Syncing...' : 'Deploy Secrets'}
+                    {isSavingEnv ? 'Saving...' : 'Save Secrets'}
                   </button>
                </div>
                <div className="flex-1 relative bg-black/20">
@@ -648,7 +648,7 @@ function StudentProjectDetail() {
                </div>
                <div className="p-5 bg-indigo-500/5 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] border-t border-white/5 flex items-center justify-center gap-4 backdrop-blur-md">
                   <AlertTriangle className="w-4 h-4 animate-pulse" /> 
-                  Modifying the environment manifest will trigger an global instance synchronization.
+                  Saving changes will redeploy your project immediately.
                </div>
             </div>
           )}
@@ -673,7 +673,7 @@ function StudentProjectDetail() {
                       <div className="h-4 w-px bg-white/10 mx-2" />
                       <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
                         <Activity size={12} className="text-indigo-400" />
-                        Infrastructure Telemetry
+                        Console Logs
                       </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -694,7 +694,7 @@ function StudentProjectDetail() {
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full gap-5 opacity-20">
                         <Activity size={60} className="text-slate-500" />
-                        <p className="text-xs font-black uppercase tracking-[0.4em]">Streaming Live Telemetry...</p>
+                        <p className="text-xs font-black uppercase tracking-[0.4em]">Streaming Logs...</p>
                     </div>
                   )}
                   <div ref={logsEndRef} />
@@ -714,8 +714,8 @@ function StudentProjectDetail() {
                         <Zap className="w-7 h-7" />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">Compute Profile</h3>
-                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Runtime Specification</p>
+                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">PHP Settings</h3>
+                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Runtime Version Specification</p>
                       </div>
                    </div>
 
@@ -737,7 +737,7 @@ function StudentProjectDetail() {
                             <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none text-slate-700 font-bold text-[10px] uppercase tracking-widest">Active Link</div>
                          </div>
                          <p className="text-[11px] text-slate-600 font-medium italic pl-1 flex items-center gap-2 mt-3">
-                            <AlertTriangle size={10} className="text-amber-500" /> Updating runtime context forces a global container rebuild.
+                            <AlertTriangle size={10} className="text-amber-500" /> Changing PHP version will redeploy your project.
                          </p>
                       </div>
                    </div>
@@ -751,16 +751,16 @@ function StudentProjectDetail() {
                         <RefreshCw className="w-7 h-7" />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">Queue Cluster</h3>
-                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Background Logistics</p>
+                        <h3 className="text-2xl font-black text-white uppercase tracking-tight">Queue Settings</h3>
+                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Background Processing</p>
                       </div>
                    </div>
 
                    <div className="space-y-10">
                       <div className="flex items-center justify-between p-8 rounded-3xl bg-white/[0.02] border border-white/10">
                           <div>
-                              <h4 className="text-sm font-black text-white uppercase tracking-widest mb-1">Worker Orchestration</h4>
-                              <p className="text-[11px] text-slate-500 font-medium italic">Execute artisan queue:work (async-auto)</p>
+                              <h4 className="text-sm font-black text-white uppercase tracking-widest mb-1">Queue Worker</h4>
+                              <p className="text-[11px] text-slate-500 font-medium italic">Run background jobs (queue:work)</p>
                           </div>
                           <button 
                              onClick={() => handleUpdateQueue(!project.queue_enabled)}
@@ -775,7 +775,7 @@ function StudentProjectDetail() {
                             <Box className="w-5 h-5" />
                          </div>
                          <p className="text-[11px] text-slate-500 font-medium leading-relaxed italic">
-                            Provisioning a <span className="text-emerald-400 font-black">Dedicated Worker Pool</span> allows your primary instance to focus entirely on HTTP request processing.
+                            Enabling the <span className="text-emerald-400 font-black">Queue Worker</span> allows tasks to run in the background.
                          </p>
                       </div>
                    </div>
@@ -790,8 +790,8 @@ function StudentProjectDetail() {
                           <DatabaseIcon className="w-7 h-7" />
                         </div>
                         <div>
-                          <h3 className="text-2xl font-black text-white uppercase tracking-tight">Persistence Credentials</h3>
-                          <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Encrypted Database Access Policy</p>
+                          <h3 className="text-2xl font-black text-white uppercase tracking-tight">Database Credentials</h3>
+                          <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Database Access Info</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500">

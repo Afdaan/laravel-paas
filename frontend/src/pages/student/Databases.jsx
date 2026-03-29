@@ -52,7 +52,7 @@ export default function Databases() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center">
         <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
-        <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] animate-pulse">Accessing Data Cluster...</p>
+        <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] animate-pulse">Loading Databases...</p>
       </div>
     )
   }
@@ -64,8 +64,8 @@ export default function Databases() {
           <PackageOpen className="w-10 h-10 text-slate-700" />
         </div>
         <div className="text-center max-w-sm">
-          <h3 className="text-2xl font-black text-white tracking-tight">No Clusters Found</h3>
-          <p className="text-slate-500 mt-2 font-medium">Provision a project workload first to initialize its corresponding database instance.</p>
+          <h3 className="text-2xl font-black text-white tracking-tight">No Databases Found</h3>
+          <p className="text-slate-500 mt-2 font-medium">Create a project first to set up its corresponding database.</p>
         </div>
       </div>
     )
@@ -82,15 +82,15 @@ export default function Databases() {
                 <DbIcon className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-black text-white tracking-tight uppercase">Clusters</h2>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Global Fleet</p>
+                <h2 className="text-lg font-black text-white tracking-tight uppercase">Databases</h2>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Project List</p>
               </div>
             </div>
             
             <div className="relative group">
               <input 
                 type="text" 
-                placeholder="Search workloads..." 
+                placeholder="Search projects..." 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="input-field py-3 pl-10 text-xs font-bold uppercase tracking-widest"
@@ -125,7 +125,7 @@ export default function Databases() {
               ))
             ) : (
               <div className="text-center py-12 text-slate-600 font-bold uppercase tracking-widest text-[10px]">
-                No clusters matching filter
+                No projects matching filter
               </div>
             )}
          </div>

@@ -64,8 +64,8 @@ const AdminVolumes = () => {
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Storage <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Volumes</span></h1>
-                        <p className="text-slate-400 text-lg font-medium">Persistent data allocation and volume lifecycle management.</p>
+                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Volumes</h1>
+                        <p className="text-slate-400 text-lg font-medium">Manage persistent storage volumes for projects.</p>
                     </div>
 
                     <div className="flex items-center gap-6">
@@ -83,7 +83,7 @@ const AdminVolumes = () => {
                         <div className="flex items-center gap-4">
                             <button className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest shadow-xl shadow-indigo-500/10 active:scale-95 transition-all">
                                <Plus className="w-4 h-4" />
-                               Allocate Volume
+                               New Volume
                             </button>
                             <button onClick={fetchData} className="w-12 h-12 flex items-center justify-center bg-white/[0.02] hover:bg-white/[0.05] border border-white/10 rounded-2xl text-white transition-all shadow-lg active:rotate-180 transition-transform duration-500">
                                <RotateCw className="w-4 h-4" />

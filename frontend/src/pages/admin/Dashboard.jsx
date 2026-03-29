@@ -86,7 +86,7 @@ function AdminDashboard() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
         <div className="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin"></div>
-        <p className="text-slate-500 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Initializing Control Plane</p>
+        <p className="text-slate-500 font-black uppercase tracking-[0.3em] text-[10px] animate-pulse">Loading Dashboard</p>
       </div>
     )
   }
@@ -113,7 +113,7 @@ function AdminDashboard() {
         
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           <ResourceTable 
-            title="Instances" 
+            title="Containers" 
             subtitle="Live workload containers"
             icon={Box}
             data={containers}
@@ -122,7 +122,7 @@ function AdminDashboard() {
           />
 
           <ResourceTable 
-            title="Registry" 
+            title="Images" 
             subtitle="Local image snapshots"
             icon={ImageIcon}
             data={images}
@@ -148,9 +148,7 @@ function AdminDashboard() {
 const Header = memo(({ onRefresh, onPrune, isPruning }) => (
   <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-12">
     <div>
-      <h1 className="text-5xl font-black text-white tracking-tighter mb-4">
-        Control <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400">Environment</span>
-      </h1>
+      <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Dashboard</h1>
       <p className="text-slate-400 text-lg font-medium max-w-2xl leading-relaxed">
         Monitoring global infrastructure state and resource orchestration across the student cluster.
       </p>
@@ -162,7 +160,7 @@ const Header = memo(({ onRefresh, onPrune, isPruning }) => (
         className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest"
       >
         <RefreshCw className="w-4 h-4" />
-        Sync Logic
+        Refresh
       </button>
       <button 
         onClick={onPrune}
@@ -182,9 +180,9 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
       <StatCard 
-        title="Processor Load" 
+        title="CPU Load" 
         value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
-        detail={`${system?.cpu_cores || 1} Infrastructure Cores`}
+        detail={`${system?.cpu_cores || 1} CPU Cores`}
         progress={Math.min(system?.cpu_usage || 0, 100)}
         icon={Cpu}
         color="indigo"
@@ -200,18 +198,18 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
       />
 
       <StatCard 
-        title="Local Fleet" 
+        title="System Resources" 
         value={images?.length + containers?.length || 0}
-        detail={`${containers?.length || 0} Instances / ${images?.length || 0} Registry Snaps`}
+        detail={`${containers?.length || 0} Containers / ${images?.length || 0} Images`}
         progress={100}
         icon={Layers}
         color="fuchsia"
       />
       
       <div className="md:col-span-2 xl:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-8">
-        <SmallStat icon={Network} label="Node Networks" value={networks?.length || 0} color="indigo" />
-        <SmallStat icon={HardDrive} label="Data Volumes" value={volumes?.length || 0} color="purple" />
-        <SmallStat icon={Monitor} label="Kernel Status" value={system?.os_platform || 'Linux'} color="fuchsia" />
+        <SmallStat icon={Network} label="Networks" value={networks?.length || 0} color="indigo" />
+        <SmallStat icon={HardDrive} label="Volumes" value={volumes?.length || 0} color="purple" />
+        <SmallStat icon={Monitor} label="Status" value={system?.os_platform || 'Linux'} color="fuchsia" />
       </div>
     </div>
   )
