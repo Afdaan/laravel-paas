@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { AlertTriangle, Info, AlertOctagon } from 'lucide-react'
+import { AlertTriangle, Info, AlertOctagon, X } from 'lucide-react'
 
 export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel' }) {
   if (!isOpen) return null
@@ -9,21 +9,21 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
       bg: 'bg-rose-500/10',
       border: 'border-rose-500/20',
       text: 'text-rose-400',
-      btn: 'bg-rose-600 hover:bg-rose-700 text-white',
+      btn: 'bg-rose-600 hover:bg-rose-500 text-white',
       icon: AlertOctagon
     },
     warning: {
       bg: 'bg-amber-500/10',
       border: 'border-amber-500/20',
       text: 'text-amber-400',
-      btn: 'btn-primary',
+      btn: 'bg-white text-black hover:bg-slate-200',
       icon: AlertTriangle
     },
     info: {
       bg: 'bg-indigo-500/10',
       border: 'border-indigo-500/20',
       text: 'text-indigo-400',
-      btn: 'btn-primary',
+      btn: 'bg-white text-black hover:bg-slate-200',
       icon: Info
     }
   }
@@ -32,35 +32,40 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
   const Icon = config.icon
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
+      {/* Precision Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300" 
+        className="fixed inset-0 bg-black/60 transition-opacity duration-300" 
         onClick={onClose}
       />
 
-      {/* Modal Panel */}
-      <div className="relative w-full max-w-md card-glass border-white/10 overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-pop-in">
-        <div className="p-8">
-          <div className="flex flex-col items-center text-center">
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 ${config.bg} border ${config.border} ${config.text}`}>
-              <Icon className="w-8 h-8" />
-            </div>
-            
-            <h3 className="text-2xl font-black text-white tracking-tight mb-2">
-              {title}
-            </h3>
-            
-            <p className="text-slate-400 text-sm font-medium leading-relaxed">
-              {message}
-            </p>
+      {/* Control Panel */}
+      <div className="relative w-full max-w-sm bg-[#09090b] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl shadow-black animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+        <button 
+          onClick={onClose}
+          className="absolute top-6 right-6 p-2 rounded-xl text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="p-10 text-center flex flex-col items-center">
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-8 ${config.bg} border ${config.border} ${config.text} shadow-xl`}>
+            <Icon size={24} strokeWidth={2.5} />
           </div>
+          
+          <h3 className="text-2xl font-black text-white tracking-tighter mb-4 leading-none lowercase">
+            {title}
+          </h3>
+          
+          <p className="text-slate-500 text-xs font-medium leading-relaxed uppercase tracking-widest max-w-[240px]">
+            {message}
+          </p>
         </div>
         
-        <div className="p-6 bg-white/[0.02] border-t border-white/[0.03] flex flex-col gap-3">
+        <div className="p-10 pt-0 flex flex-col gap-3">
           <button
             type="button"
-            className={`btn w-full py-4 text-base font-black uppercase tracking-widest ${config.btn}`}
+            className={`w-full py-4 text-[10px] font-black uppercase tracking-[0.3em] rounded-xl transition-all active:scale-[0.98] shadow-2xl shadow-white/5 ${config.btn}`}
             onClick={() => {
               onConfirm()
               onClose()
@@ -70,7 +75,7 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
           </button>
           <button
             type="button"
-            className="btn btn-secondary w-full py-4 text-base font-black uppercase tracking-widest"
+            className="w-full py-4 text-[10px] font-black uppercase tracking-[0.3em] rounded-xl bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all border border-white/5"
             onClick={onClose}
           >
             {cancelText}

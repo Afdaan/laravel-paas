@@ -206,7 +206,7 @@ const AdminProjects = () => {
                       <th>Owner</th>
                       <th>Status</th>
                       <th>Resource Usage</th>
-                      <th>Version</th>
+                      <th>Laravel Version</th>
                       <th className="text-right">Action</th>
                     </tr>
                   </thead>

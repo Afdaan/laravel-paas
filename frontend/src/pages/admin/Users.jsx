@@ -383,7 +383,7 @@ const AdminUsers = () => {
 
             {/* Modal - Overhaul to Luxury Glassmorphic */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50 p-6 animate-fade-in">
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6 animate-fade-in transition-opacity duration-300">
                     <div className="absolute inset-0 z-0 bg-indigo-500/5 blur-[120px] pointer-events-none" />
                     
                     <div className="card-glass w-full max-w-xl bg-black/80 border-white/10 shadow-[0_50px_100px_rgba(0,0,0,0.8)] overflow-hidden relative z-10 animate-scale-up">
