@@ -178,9 +178,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
-    toast.success('Credentials Copied', {
-      style: { background: '#111114', color: '#fff' }
-    })
+    toast.success('System credential copied')
   }
 
   const tabs = [
@@ -459,8 +457,8 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       {/* Credentials Modal */}
       {showCredentials && credentials && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowCredentials(false)} />
-          <div className="relative w-full max-w-md card-glass border-white/10 p-10 animate-pop-in">
+          <div className="fixed inset-0 bg-black/60" onClick={() => setShowCredentials(false)} />
+          <div className="relative w-full max-w-md bg-[#09090b] border border-white/10 rounded-[2.5rem] p-10 shadow-2xl animate-pop-in">
             <div className="flex justify-between items-center mb-10">
               <div className="flex items-center gap-4">
                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">

@@ -90,6 +90,7 @@ function StudentProjectDetail() {
   const [consoleCommand, setConsoleCommand] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
+  const [isPhpDropdownOpen, setIsPhpDropdownOpen] = useState(false)
   
   // Modal State
   const [confirmModal, setConfirmModal] = useState({
@@ -312,7 +313,7 @@ function StudentProjectDetail() {
   const projectUrl = project.url
   
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-20">
+    <div className="space-y-6 max-w-7xl mx-auto pb-40">
       <ConfirmationModal 
         isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
@@ -723,18 +724,64 @@ function StudentProjectDetail() {
                       <div className="space-y-3">
                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">Platform Runtime (PHP)</label>
                          <div className="relative">
-                            <select 
-                              value={project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'}
-                              onChange={(e) => handleUpdatePHP(e.target.value)}
-                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none appearance-none"
+                            <button
+                              type="button"
+                              onClick={() => setIsPhpDropdownOpen(!isPhpDropdownOpen)}
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none flex items-center justify-between group"
                             >
-                               <option value="8.0">PHP 8.0 Deployment Profile</option>
-                               <option value="8.1">PHP 8.1 Deployment Profile</option>
-                               <option value="8.2">PHP 8.2 Deployment Profile</option>
-                               <option value="8.3">PHP 8.3 Deployment Profile</option>
-                               <option value="8.4">PHP 8.4 Deployment Profile (Stable)</option>
-                            </select>
-                            <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none text-slate-700 font-bold text-[10px] uppercase tracking-widest">Active Link</div>
+                               <div className="flex items-center gap-4">
+                                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black text-[10px]">
+                                     {project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'}
+                                  </div>
+                                  <span className="text-sm font-black tracking-tight uppercase">PHP {project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'} Deployment Profile</span>
+                               </div>
+                               <div className="text-slate-700 font-bold text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                  {isPhpDropdownOpen ? 'Close' : 'Active Link'}
+                                  <ChevronRight className={`w-3 h-3 transition-transform duration-300 ${isPhpDropdownOpen ? 'rotate-90' : ''}`} />
+                               </div>
+                            </button>
+
+                            {isPhpDropdownOpen && (
+                              <>
+                                <div className="fixed inset-0 z-[60]" onClick={() => setIsPhpDropdownOpen(false)}></div>
+                                <div className="absolute top-full left-0 w-full mt-3 bg-[#09090b] border border-white/10 rounded-3xl p-3 z-[70] shadow-[0_30px_60px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
+                                   {[8.0, 8.1, 8.2, 8.3, 8.4].map((v) => (
+                                     <button
+                                       key={v}
+                                       type="button"
+                                       onClick={() => {
+                                         handleUpdatePHP(v.toFixed(1))
+                                         setIsPhpDropdownOpen(false)
+                                       }}
+                                       className={`w-full flex items-center justify-between px-5 py-4 rounded-xl transition-all group/opt ${
+                                         (project.php_version?.includes(v.toFixed(1)) || (!project.php_version && v === 8.2))
+                                           ? 'bg-white/5 text-white' 
+                                           : 'text-slate-500 hover:bg-white/[0.03] hover:text-white'
+                                       }`}
+                                     >
+                                       <div className="flex items-center gap-4">
+                                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-[11px] transition-all ${
+                                            (project.php_version?.includes(v.toFixed(1)) || (!project.php_version && v === 8.2))
+                                              ? 'bg-indigo-500 text-white'
+                                              : 'bg-white/5 text-slate-500 group-hover/opt:bg-white/10 group-hover/opt:text-white'
+                                          }`}>
+                                             {v.toFixed(1)}
+                                          </div>
+                                          <div className="text-left">
+                                             <p className="text-xs font-black uppercase tracking-tight">PHP {v.toFixed(1)} Profile</p>
+                                             <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-0.5">{v === 8.4 ? 'Stable Evolution' : 'Legacy Support'}</p>
+                                          </div>
+                                       </div>
+                                       {v.toFixed(1) === '8.4' && (
+                                         <div className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[8px] font-black uppercase tracking-widest">
+                                            Recommended
+                                         </div>
+                                       )}
+                                     </button>
+                                   ))}
+                                </div>
+                              </>
+                            )}
                          </div>
                          <p className="text-[11px] text-slate-600 font-medium italic pl-1 flex items-center gap-2 mt-3">
                             <AlertTriangle size={10} className="text-amber-500" /> Changing PHP version will redeploy your project.
@@ -826,7 +873,7 @@ function StudentProjectDetail() {
                         isSecret={true}
                         onCopy={() => {
                             copyToClipboard(project.database_name);
-                            toast.success('Security manifest copied');
+                            toast.success('access key manifest copied');
                         }} 
                       />
                       <div className="sm:col-span-1 border border-dashed border-white/5 rounded-2xl flex items-center justify-center p-6 text-center group/opt">
@@ -847,17 +894,17 @@ export default StudentProjectDetail
 
 function CredentialBox({ label, value, onCopy, isSecret = false }) {
   return (
-    <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/5 group transition-all duration-300 hover:border-white/10 hover:bg-white/[0.04]">
-       <label className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mb-4 block group-hover:text-indigo-400 transition-colors">{label}</label>
-       <div className="flex items-center justify-between gap-4">
-          <code className={`font-mono text-sm text-white truncate font-bold ${isSecret ? 'tracking-[0.4em] opacity-30 select-none' : ''}`}>{value}</code>
+    <div className="p-8 rounded-[2.5rem] bg-white/[0.01] border border-white/5 group transition-all duration-500 hover:border-indigo-500/20 hover:bg-white/[0.03]">
+       <label className="text-[9px] font-black text-slate-700 uppercase tracking-[0.3em] mb-6 block group-hover:text-indigo-400 transition-colors">{label}</label>
+       <div className="flex items-center justify-between gap-6">
+          <code className={`font-mono text-xs text-slate-200 truncate font-black tracking-tight ${isSecret ? 'tracking-[0.6em] opacity-20 select-none' : ''}`}>{value}</code>
           {onCopy && (
             <button 
               onClick={onCopy} 
-              className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 text-slate-500 hover:text-white hover:bg-indigo-500 transition-all shadow-lg flex items-center justify-center shrink-0"
+              className="w-12 h-12 rounded-2xl bg-white/[0.02] border border-white/10 text-slate-600 hover:text-white hover:bg-indigo-500 hover:border-indigo-400 transition-all shadow-xl flex items-center justify-center shrink-0 active:scale-90"
               title="Copy to manifest"
             >
-              <Copy className="w-4 h-4" />
+              <Copy className="w-5 h-5 transition-transform group-hover/btn:scale-110" />
             </button>
           )}
        </div>
