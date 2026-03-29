@@ -76,13 +76,8 @@ export default function Landing() {
   const { token, user } = useAuthStore()
   const navigate = useNavigate()
 
-  // If already logged in, redirect to dashboard
-  useEffect(() => {
-    if (token) {
-      const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
-      navigate(isAdmin ? '/admin/dashboard' : '/dashboard', { replace: true })
-    }
-  }, [token, user, navigate])
+  const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
+  const dashboardPath = isAdmin ? '/admin/dashboard' : '/dashboard'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
@@ -103,10 +98,10 @@ export default function Landing() {
           <span className="text-xl font-bold tracking-tight">Laravel PaaS</span>
         </div>
         <Link
-          to="/login"
+          to={token ? dashboardPath : "/login"}
           className="btn btn-primary px-5 py-2 text-sm font-semibold rounded-xl"
         >
-          Sign In
+          {token ? 'Dashboard' : 'Sign In'}
         </Link>
       </header>
 
@@ -130,10 +125,10 @@ export default function Landing() {
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
-            to="/login"
+            to={token ? dashboardPath : "/login"}
             className="btn btn-primary px-8 py-3.5 text-base font-semibold rounded-xl w-full sm:w-auto"
           >
-            Get Started →
+            {token ? 'Go to Dashboard' : 'Get Started →'}
           </Link>
           <a
             href="#how-it-works"
@@ -191,10 +186,10 @@ export default function Landing() {
             Sign in with your student account and launch your first Laravel project today.
           </p>
           <Link
-            to="/login"
+            to={token ? dashboardPath : "/login"}
             className="btn btn-primary px-8 py-3.5 text-base font-semibold rounded-xl inline-block"
           >
-            Sign In to Get Started
+            {token ? 'Back to Dashboard' : 'Sign In to Get Started'}
           </Link>
         </div>
       </section>
