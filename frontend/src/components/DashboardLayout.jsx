@@ -196,11 +196,10 @@ function DashboardLayout({ isAdmin = false }) {
           )}
         </nav>
         
-        {/* Identity & Protocol */}
         <div className="p-8 border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20 backdrop-blur-3xl">
           <div className="flex items-center gap-4 mb-8 p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors shadow-sm">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-900 rounded-xl flex items-center justify-center text-white shadow-md border border-indigo-400 dark:border-white/10">
-              <User className="w-5 h-5 opacity-90" strokeWidth={2.5} />
+            <div className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400">
+              <User className="w-4 h-4" strokeWidth={2.5} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-black text-slate-900 dark:text-white truncate uppercase tracking-tighter leading-tight">{user?.name}</p>
