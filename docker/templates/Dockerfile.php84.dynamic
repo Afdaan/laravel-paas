@@ -1,0 +1,173 @@
+# ===========================================================
+# Laravel Dockerfile Template - PHP 8.4 (Dynamic Extensions)
+# ===========================================================
+# This version allows dynamic PHP extension installation based on composer.json
+
+# Stage 1: Extension Detection and Composer Dependencies
+FROM composer:2 AS composer
+WORKDIR /app
+RUN mkdir -p public/build
+
+# Copy composer files first
+COPY composer.json composer.lock* ./
+
+# Create extension detection script
+RUN cat > detect_extensions.php << 'EOF'
+<?php
+$composer = json_decode(file_get_contents('composer.json'), true);
+$extensions = [];
+
+// Map package names to PHP extensions
+$package_extensions = [
+    'intervention/image' => ['gd', 'imagick'],
+    'league/flysystem-aws-s3-v3' => ['curl'],
+    'pusher/pusher-php-server' => ['curl'],
+    'guzzlehttp/guzzle' => ['curl'],
+    'predis/predis' => [],
+    'phpredis/phpredis' => ['redis'],
+    'ext-redis' => ['redis'],
+    'ext-memcached' => ['memcached'],
+    'ext-imagick' => ['imagick'],
+    'ext-gmp' => ['gmp'],
+    'ext-intl' => ['intl'],
+    'ext-ldap' => ['ldap'],
+    'ext-soap' => ['soap'],
+    'ext-sockets' => ['sockets'],
+    'ext-xmlrpc' => ['xmlrpc'],
+];
+
+// Check required packages
+foreach (['require', 'require-dev'] as $section) {
+    if (isset($composer[$section])) {
+        foreach ($composer[$section] as $package => $version) {
+            if (isset($package_extensions[$package])) {
+                $extensions = array_merge($extensions, $package_extensions[$package]);
+            }
+        }
+    }
+}
+
+// Add default Laravel extensions
+$default_extensions = ['pdo_mysql', 'mbstring', 'exif', 'pcntl', 'bcmath', 'gd', 'zip', 'opcache'];
+$extensions = array_merge($extensions, $default_extensions);
+
+// Remove duplicates and output
+$extensions = array_unique($extensions);
+echo implode(' ', $extensions);
+EOF
+
+# Install dependencies
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
+    composer install --no-dev --prefer-dist --ignore-platform-reqs
+
+# Copy source files for autoload
+COPY app/ app/
+COPY bootstrap/ bootstrap/
+COPY config/ config/
+COPY database/ database/
+COPY routes/ routes/
+COPY public/index.php public/index.php
+COPY artisan artisan
+
+# Generate optimized autoloader and detect extensions
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scripts && \
+    php detect_extensions.php > /tmp/required_extensions.txt
+
+# Stage 2: Frontend Assets
+FROM node:20-alpine AS frontend
+WORKDIR /app
+RUN mkdir -p public/build
+
+COPY package*.json ./
+# Install ALL dependencies including devDependencies (Vite, Tailwind, etc. are devDeps)
+RUN if [ -f package.json ]; then \
+        npm ci 2>/dev/null || \
+        npm install 2>/dev/null || \
+        true; \
+    fi
+
+COPY resources/ resources/
+COPY public/ public/
+COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
+
+RUN if [ -f package.json ] && [ -d resources ]; then \
+        npm run build 2>/dev/null || \
+        npm run production 2>/dev/null || \
+        true; \
+    fi
+
+# Ensure public/build always exists (even if no frontend assets were built)
+RUN mkdir -p /app/public/build
+
+# Stage 3: Production (Optimized Runtime)
+FROM paas-runtime-php:8.4-alpine
+
+LABEL maintainer="Laravel PaaS"
+LABEL description="Laravel 11.x with PHP 8.4 (Dynamic & Fast)"
+
+# Copy extension requirements
+COPY --from=composer /tmp/required_extensions.txt /tmp/
+
+# Install ONLY missing extensions (most are already in paas-runtime)
+RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
+    # Filter out extensions already installed in base (pdo_mysql, gd, redis, etc.)
+    MISSING_EXTS="" && \
+    for ext in $REQUIRED_EXTS; do \
+        if ! php -m | grep -qi "^$ext$"; then \
+            MISSING_EXTS="$MISSING_EXTS $ext" && \
+            echo "Extension $ext is missing, adding to install list..."; \
+        fi \
+    done && \
+    \
+    if [ -n "$MISSING_EXTS" ]; then \
+        echo "Installing missing extensions: $MISSING_EXTS" && \
+        apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+        && docker-php-ext-install $MISSING_EXTS \
+        && apk del .build-deps; \
+    fi && \
+    rm -rf /var/cache/apk/* /tmp/required_extensions.txt
+
+# Optimized PHP configuration
+RUN { \
+    echo 'opcache.memory_consumption=128'; \
+    echo 'opcache.interned_strings_buffer=8'; \
+    echo 'opcache.max_accelerated_files=4000'; \
+    echo 'opcache.revalidate_freq=0'; \
+    echo 'opcache.validate_timestamps=0'; \
+    echo 'opcache.fast_shutdown=1'; \
+    echo 'opcache.enable_cli=1'; \
+    echo 'opcache.jit_buffer_size=100M'; \
+    echo 'opcache.jit=1255'; \
+    echo 'memory_limit=256M'; \
+    echo 'upload_max_filesize=32M'; \
+    echo 'post_max_size=32M'; \
+    echo 'max_execution_time=60'; \
+    echo 'max_input_vars=3000'; \
+} > /usr/local/etc/php/conf.d/optimization.ini
+
+WORKDIR /var/www/html
+
+# Copy application files
+COPY . .
+
+COPY --from=composer /app/vendor ./vendor
+COPY --from=frontend /app/public/build/ ./public/build/
+
+# Set up directories and permissions
+RUN mkdir -p storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 storage bootstrap/cache
+
+# Run package discovery now that extensions are installed
+RUN php artisan package:discover --ansi
+
+# Copy configuration
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
