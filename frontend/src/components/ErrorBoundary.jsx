@@ -22,22 +22,22 @@ class ErrorBoundary extends React.Component {
           <div className="w-20 h-20 bg-rose-500/10 border border-rose-500/20 rounded-3xl flex items-center justify-center mb-10 shadow-[0_0_50px_rgba(244,63,94,0.1)]">
             <ShieldAlert className="w-10 h-10 text-rose-500" />
           </div>
-          <h1 className="text-4xl font-black text-white tracking-tighter mb-4 italic">System <span className="text-rose-500">Anomaly</span></h1>
+          <h1 className="text-4xl font-black text-white tracking-tighter mb-4 italic">System <span className="text-rose-500">Error</span></h1>
           <p className="text-slate-500 text-center max-w-md mb-12 font-medium leading-relaxed">
-            Universal protocol breach detected. The application encountered an unhandled exception state.
+            The application encountered an unexpected error. Please try refreshing the page or returning to the dashboard.
           </p>
           <div className="flex flex-col sm:flex-row gap-5">
             <button 
               onClick={() => window.location.reload()}
               className="px-10 py-5 bg-white text-black font-black uppercase tracking-widest rounded-2xl transition-all hover:scale-105 flex items-center gap-3"
             >
-              <RefreshCw className="w-5 h-5" /> Reload Fleet
+              <RefreshCw className="w-5 h-5" /> Try Again
             </button>
             <button 
-              onClick={() => window.location.href = '/'}
+              onClick={() => window.location.href = '/dashboard'}
               className="px-10 py-5 bg-white/5 border border-white/5 text-slate-400 font-black uppercase tracking-widest rounded-2xl transition-all hover:bg-white/10 hover:text-white flex items-center gap-3"
             >
-              <Home className="w-5 h-5" /> Abort to Deck
+              <Home className="w-5 h-5" /> Back to Dashboard
             </button>
           </div>
           {process.env.NODE_ENV === 'development' && (

@@ -62,7 +62,7 @@ const features = [
 const steps = [
   { title: 'Connect repository', url: 'github.com/your-username/repo' },
   { title: 'Select PHP Version', url: '8.4 (Latest)' },
-  { title: 'Establish Uplink', url: 'system.paas.io/live' },
+  { title: 'Connect to Server', url: 'system.paas.io/live' },
 ]
 
 export default function Landing() {
@@ -144,7 +144,7 @@ export default function Landing() {
              </Link>
              <button className="w-full sm:w-auto px-8 py-4 bg-white/5 text-white border border-white/10 font-bold rounded-xl hover:bg-white/10 transition-all flex items-center justify-center gap-3">
                 <Github className="w-4 h-4" />
-                Open Source Protocol
+                View Source Code
              </button>
           </div>
         </div>
@@ -252,7 +252,7 @@ export default function Landing() {
                </div>
                
                <div className="lg:col-span-5">
-                  <h2 className="text-[10px] font-black tracking-[0.4em] text-indigo-400 uppercase mb-4">Architecture Layer</h2>
+                  <h2 className="text-[10px] font-black tracking-[0.4em] text-indigo-400 uppercase mb-4">System Architecture</h2>
                   <h3 className="text-4xl font-bold text-white mb-6 tracking-tight">Enterprise grade <br />infrastructure.</h3>
                   <p className="text-slate-400 leading-relaxed mb-10">We operate our own private cloud cluster, optimized specifically for the PHP and Laravel runtime lifecycle.</p>
                   

@@ -92,7 +92,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       const res = await databaseAPI.listTables(id)
       setTables(res.data.tables || [])
     } catch (err) {
-      toast.error('Failed to fetch system tables')
+      toast.error('Failed to fetch tables')
     } finally {
       setLoading(false)
     }
@@ -135,7 +135,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       a.href = url
       a.download = `${project?.database_name || 'database'}_dump.sql`
       a.click()
-      toast.success('System Dump Generated')
+      toast.success('Backup file created')
     } catch (err) {
       toast.error('Export Failed')
     }
@@ -166,11 +166,11 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       onConfirm: async () => {
         try {
           await databaseAPI.reset(id)
-          toast.success('Database Purged')
+          toast.success('Database Reset')
           setSelectedTable(null)
           fetchTables()
         } catch (err) {
-          toast.error('Purge Failed')
+          toast.error('Reset Failed')
         }
       }
     })
@@ -178,7 +178,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
-    toast.success('System credential copied')
+    toast.success('Credential copied')
   }
 
   const tabs = [
@@ -218,7 +218,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
               <Key className="w-4 h-4" /> Credentials
             </button>
             <button onClick={confirmReset} className="btn bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 px-5 text-sm">
-              <Trash2 className="w-4 h-4" /> Purge DB
+              <Trash2 className="w-4 h-4" /> Reset DB
             </button>
           </div>
         </div>
@@ -343,7 +343,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex justify-between items-center">
                    <div className="flex items-center gap-3">
                      <Terminal className="w-4 h-4 text-emerald-500" />
-                     <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">SQL Console</h3>
+                     <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">SQL Query Area</h3>
                    </div>
                    <div className="flex gap-3">
                       <button onClick={() => setQuery('')} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors">Clear</button>
@@ -404,7 +404,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                       </div>
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-700 italic text-xs font-black uppercase tracking-[0.3em] opacity-40">
-                        Awaiting Command
+                        Ready for query
                       </div>
                     )}
                  </div>

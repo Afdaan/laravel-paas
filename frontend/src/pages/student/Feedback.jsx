@@ -37,9 +37,9 @@ const StudentFeedback = () => {
   })
 
   const typeOptions = [
-    { value: 'suggestion', label: 'Evolution Suggestion', icon: Lightbulb, color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
-    { value: 'bug', label: 'Anomaly Report', icon: Bug, color: 'text-rose-400', bg: 'bg-rose-500/10' },
-    { value: 'trouble', label: 'Critical Failure', icon: AlertTriangle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+    { value: 'suggestion', label: 'Feature Suggestion', icon: Lightbulb, color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
+    { value: 'bug', label: 'Bug Report', icon: Bug, color: 'text-rose-400', bg: 'bg-rose-500/10' },
+    { value: 'trouble', label: 'System Issue', icon: AlertTriangle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
   ]
 
   const activeType = typeOptions.find(opt => opt.value === formData.type) || typeOptions[0]
@@ -50,7 +50,7 @@ const StudentFeedback = () => {
       const res = await feedbackAPI.listOwn()
       setFeedback(res.data || [])
     } catch (error) {
-      console.error('Failed to sync response manifest:', error)
+      console.error('Failed to load feedback:', error)
     } finally {
       setIsLoading(false)
     }
@@ -63,17 +63,19 @@ const StudentFeedback = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!formData.title || !formData.content) {
-      return toast.error('Please complete the manifest fields')
+      return toast.error('Please fill in all fields')
     }
 
     setIsSubmitting(true)
     try {
       await feedbackAPI.submit(formData)
-      toast.success('Feedback uplink established')
+      toast.success('Support ticket created')
       setFormData({ title: '', content: '', type: 'suggestion' })
       fetchFeedback()
     } catch (error) {
-      toast.error('Transmission failed')
+      console.error('Feedback creation error:', error)
+      const errorMsg = error.response?.data?.error || error.message || 'Failed to create feedback'
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Failed to create feedback')
     } finally {
       setIsSubmitting(false)
     }
@@ -102,8 +104,8 @@ const StudentFeedback = () => {
 
       <div className="relative z-10">
         <div className="mb-16">
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Platform <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Intelligence</span></h1>
-          <p className="text-slate-400 text-lg font-medium">Contribute to the cluster evolution or report anomalies to our engineering fleet.</p>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Support <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Hub</span></h1>
+          <p className="text-slate-400 text-lg font-medium">Send us your feedback or report bugs to our team.</p>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-12">
@@ -116,12 +118,12 @@ const StudentFeedback = () => {
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                        <MessageSquare size={12} className="text-indigo-400" />
-                       Manifest Subject
+                       Support Subject
                     </label>
                     <input 
                       type="text" 
                       className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none"
-                      placeholder="e.g., Performance spike in container provisioning"
+                      placeholder="e.g., Issue with project setup"
                       value={formData.title}
                       onChange={e => setFormData({...formData, title: e.target.value})}
                     />
@@ -131,7 +133,7 @@ const StudentFeedback = () => {
                     <div className="space-y-3">
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                          <Layout size={12} className="text-purple-400" />
-                         Logic Classification
+                         Category
                       </label>
                       <div className="relative">
                         <button
@@ -173,7 +175,7 @@ const StudentFeedback = () => {
                                   <div className="text-left">
                                     <p className="text-sm font-bold tracking-tight">{option.label}</p>
                                     <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest mt-0.5">
-                                      {option.value === 'suggestion' ? 'Evolutionary Intel' : option.value === 'bug' ? 'Anomaly Detect' : 'Core Threat'}
+                                      {option.value === 'suggestion' ? 'New Feature' : option.value === 'bug' ? 'Bug Report' : 'Technical Issue'}
                                     </p>
                                   </div>
                                 </button>
@@ -187,7 +189,7 @@ const StudentFeedback = () => {
                     <div className="flex items-center">
                         <div className="p-6 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 flex items-center gap-4 w-full">
                             <Zap className="w-5 h-5 text-indigo-400" />
-                            <p className="text-[11px] text-slate-500 font-medium leading-relaxed italic">Your contribution helps us maintain a <span className="text-indigo-400 font-black">99.9% uptime</span> across the student cluster architecture.</p>
+                            <p className="text-[11px] text-slate-500 font-medium leading-relaxed italic">Your contribution helps us maintain high uptime across the <span className="text-indigo-400 font-black">platform</span>.</p>
                         </div>
                     </div>
                   </div>
@@ -195,12 +197,12 @@ const StudentFeedback = () => {
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                        <Terminal size={12} className="text-rose-400" />
-                       Detailed Manifest
+                       Details
                     </label>
                     <textarea 
                       rows="6"
                       className="w-full bg-black/40 border border-white/10 rounded-3xl px-6 py-6 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none resize-none"
-                      placeholder="Describe the technical details of your encounter..."
+                      placeholder="Describe the issue or suggestion..."
                       value={formData.content}
                       onChange={e => setFormData({...formData, content: e.target.value})}
                     ></textarea>
@@ -216,7 +218,7 @@ const StudentFeedback = () => {
                     ) : (
                       <Send className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                     )}
-                    {isSubmitting ? 'ESTABLISHING UPLINK...' : 'TRANSMIT MANIFEST'}
+                    {isSubmitting ? 'Sending...' : 'Submit Feedback'}
                   </button>
                 </form>
             </div>
@@ -236,14 +238,14 @@ const StudentFeedback = () => {
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center p-20 gap-4 opacity-30">
                   <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-                  <p className="text-[10px] font-black uppercase tracking-widest">Syncing History</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest">Loading History</p>
                 </div>
               ) : feedback.length === 0 ? (
                 <div className="p-16 text-center bg-white/[0.01] border border-dashed border-white/5 rounded-3xl flex flex-col items-center gap-5">
                   <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
                     <MessageSquare className="w-8 h-8 text-slate-800" />
                   </div>
-                  <p className="text-slate-600 text-xs font-bold uppercase tracking-widest">Manifest Void Detected</p>
+                  <p className="text-slate-600 text-xs font-bold uppercase tracking-widest">No Feedback Found</p>
                 </div>
               ) : (
                 feedback.map(item => (

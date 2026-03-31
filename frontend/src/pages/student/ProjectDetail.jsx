@@ -36,7 +36,7 @@ import ConfirmationModal from '../../components/ConfirmationModal'
 function StatusIndicator({ status }) {
   const styles = {
     running: { bg: 'bg-emerald-500', text: 'text-emerald-500', label: 'Active', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.4)]' },
-    building: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Provisioning', pulse: true, shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.4)]' },
+    building: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Building', pulse: true, shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.4)]' },
     failed: { bg: 'bg-rose-500', text: 'text-rose-500', label: 'Failed' },
     pending: { bg: 'bg-amber-500', text: 'text-amber-500', label: 'Queued', bounce: true, shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.4)]' },
     stopped: { bg: 'bg-slate-500', text: 'text-slate-500', label: 'Offline' },
@@ -218,7 +218,7 @@ function StudentProjectDetail() {
         toast.promise(
           projectsAPI.redeploy(id),
           {
-            loading: 'Initiating deployment...',
+            loading: 'Starting deployment...',
             success: () => {
               fetchProject()
               return 'Deployment started in background'
@@ -321,7 +321,6 @@ function StudentProjectDetail() {
       />
       
       {/* Building Banner */}
-      {/* Building Banner */}
       {project.status === 'building' && (
         <div className="card-glass border-blue-500/20 bg-blue-500/10 p-10 relative overflow-hidden group">
            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-blue-500/0 animate-shimmer"></div>
@@ -330,9 +329,9 @@ function StudentProjectDetail() {
                  <Box className="w-10 h-10" />
               </div>
               <div className="text-center md:text-left flex-1">
-                 <h3 className="text-2xl font-black text-white tracking-tight mb-2">Architecting Your Infrastructure</h3>
+                 <h3 className="text-2xl font-black text-white tracking-tight mb-2">Setting Up Your Project</h3>
                  <p className="text-blue-100/60 text-base leading-relaxed max-w-2xl">
-                   We are currently building your project environment, setting up the PHP runtime, and creating network access. Live metrics will initialize once the build is complete.
+                   We are currently building your project environment, setting up the PHP version, and creating the internet connection. Live metrics will initialize once the build is complete.
                  </p>
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-black uppercase tracking-widest">
@@ -575,13 +574,13 @@ function StudentProjectDetail() {
                 )) : (
                     <div className="flex flex-col items-center justify-center h-full gap-5 opacity-20">
                         <TerminalIcon size={60} className="text-slate-500" />
-                        <p className="text-xs font-black uppercase tracking-[0.4em]">Interactive Shell Ready</p>
+                        <p className="text-xs font-black uppercase tracking-[0.4em]">Ready</p>
                     </div>
                 )}
                 {isExecuting && (
                     <div className="flex items-center gap-3 text-indigo-400 font-black text-xs uppercase tracking-widest mt-4 pl-12 animate-pulse">
                         <RefreshCw size={12} className="animate-spin" />
-                        Executing Thread...
+                        Running...
                     </div>
                 )}
               </div>
@@ -605,7 +604,7 @@ function StudentProjectDetail() {
                   disabled={isExecuting || !consoleCommand.trim()}
                   className="btn btn-primary px-10 py-4 text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/20 disabled:opacity-50 active:scale-95 transition-all"
                 >
-                  {isExecuting ? 'Syncing...' : 'Deploy'}
+                  {isExecuting ? 'Running...' : 'Run Command'}
                 </button>
               </form>
             </div>
@@ -716,7 +715,7 @@ function StudentProjectDetail() {
                       </div>
                       <div>
                         <h3 className="text-2xl font-black text-white uppercase tracking-tight">PHP Settings</h3>
-                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">Runtime Version Specification</p>
+                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">PHP Version Settings</p>
                       </div>
                    </div>
 
@@ -733,10 +732,10 @@ function StudentProjectDetail() {
                                   <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black text-[10px]">
                                      {project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'}
                                   </div>
-                                  <span className="text-sm font-black tracking-tight uppercase">PHP {project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'} Deployment Profile</span>
+                                  <span className="text-sm font-black tracking-tight uppercase">PHP {project.php_version?.replace('dynamic', '').replace('.fpm', '') || '8.2'}</span>
                                </div>
                                <div className="text-slate-700 font-bold text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                  {isPhpDropdownOpen ? 'Close' : 'Active Link'}
+                                  {isPhpDropdownOpen ? 'Close' : 'Select Version'}
                                   <ChevronRight className={`w-3 h-3 transition-transform duration-300 ${isPhpDropdownOpen ? 'rotate-90' : ''}`} />
                                </div>
                             </button>
@@ -768,8 +767,8 @@ function StudentProjectDetail() {
                                              {v.toFixed(1)}
                                           </div>
                                           <div className="text-left">
-                                             <p className="text-xs font-black uppercase tracking-tight">PHP {v.toFixed(1)} Profile</p>
-                                             <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-0.5">{v === 8.4 ? 'Stable Evolution' : 'Legacy Support'}</p>
+                                             <p className="text-xs font-black uppercase tracking-tight">PHP {v.toFixed(1)}</p>
+                                             <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-0.5">{v === 8.4 ? 'Latest Stable' : 'Older Version'}</p>
                                           </div>
                                        </div>
                                        {v.toFixed(1) === '8.4' && (
@@ -848,32 +847,32 @@ function StudentProjectDetail() {
                    </div>
 
                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                      <CredentialBox 
-                        label="Internal Endpoint" 
+                       <CredentialBox 
+                        label="Database Host" 
                         value="paas-mysql.cluster.local" 
                         onCopy={() => copyToClipboard('paas-mysql')} 
                       />
                       <CredentialBox 
-                        label="Compute Port" 
+                        label="Database Port" 
                         value="3306" 
                       />
                       <CredentialBox 
-                        label="Namespace ID" 
+                        label="Database Name" 
                         value={project.database_name} 
                         onCopy={() => copyToClipboard(project.database_name)} 
                       />
                       <CredentialBox 
-                        label="Identity User" 
+                        label="Database User" 
                         value={project.database_name} 
                         onCopy={() => copyToClipboard(project.database_name)} 
                       />
                       <CredentialBox 
-                        label="Access Key" 
+                        label="Database Password" 
                         value="••••••••••••••••" 
                         isSecret={true}
                         onCopy={() => {
                             copyToClipboard(project.database_name);
-                            toast.success('access key manifest copied');
+                            toast.success('Password copied');
                         }} 
                       />
                       <div className="sm:col-span-1 border border-dashed border-white/5 rounded-2xl flex items-center justify-center p-6 text-center group/opt">
@@ -902,7 +901,7 @@ function CredentialBox({ label, value, onCopy, isSecret = false }) {
             <button 
               onClick={onCopy} 
               className="w-12 h-12 rounded-2xl bg-white/[0.02] border border-white/10 text-slate-600 hover:text-white hover:bg-indigo-500 hover:border-indigo-400 transition-all shadow-xl flex items-center justify-center shrink-0 active:scale-90"
-              title="Copy to manifest"
+              title="Copy to clipboard"
             >
               <Copy className="w-5 h-5 transition-transform group-hover/btn:scale-110" />
             </button>

@@ -54,7 +54,7 @@ function Login() {
       <div className="relative z-10 w-full max-w-[400px]">
         <Link to="/" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-colors mb-12 group">
           <ArrowLeft className="w-3 h-3 group-hover:-translate-x-1 transition-transform" />
-          Gateway Exit
+          Back to Home
         </Link>
         
         {/* Identity Head */}
@@ -64,8 +64,8 @@ function Login() {
                 LP
              </div>
              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Uplink Gateway</h1>
-                <p className="text-xs text-slate-500 font-medium mt-2">Initialize your student workstation session.</p>
+                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Sign In</h1>
+                <p className="text-xs text-slate-500 font-medium mt-2">Enter your credentials to access your account.</p>
              </div>
           </div>
         </div>
@@ -79,7 +79,7 @@ function Login() {
           <div className="space-y-6 relative z-10">
             <div className="space-y-2">
               <label htmlFor="email" className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                Uplink Identifier
+                Email Address
               </label>
               <input
                 id="email"
@@ -87,7 +87,7 @@ function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-5 py-4 bg-black/40 border border-white/10 text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium"
-                placeholder="identity@university.edu"
+                placeholder="name@example.com"
                 required
                 autoFocus
               />
@@ -95,7 +95,7 @@ function Login() {
             
             <div className="space-y-2">
               <label htmlFor="password" className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
-                Access Protocol
+                Password
               </label>
               <input
                 id="password"
@@ -120,11 +120,11 @@ function Login() {
                        <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                        <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                        <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce"></div>
-                       <span>Verifying</span>
+                       <span>Logging In</span>
                      </div>
                    ) : (
                      <>
-                       Establish Session
+                       Sign In
                        <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
                      </>
                    )}
@@ -136,13 +136,12 @@ function Login() {
         
         {/* Provisions Footer */}
         <div className="mt-12 flex items-center justify-between px-2">
-           <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">Deployment Protocol v2.8</p>
-           <Link to="/" className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-[0.2em]">Support Desk</Link>
+           <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">Platform Version 2.8</p>
+           <Link to="/" className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-[0.2em]">Support</Link>
         </div>
       </div>
     </div>
   )
 }
 
-export default Login
 
