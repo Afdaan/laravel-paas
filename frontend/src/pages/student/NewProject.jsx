@@ -17,12 +17,14 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
-  Cpu
+  Cpu,
+  RefreshCw
 } from 'lucide-react'
 
 function StudentNewProject() {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const [formData, setFormData] = useState({
     name: '',
     github_url: '',
@@ -49,6 +51,7 @@ function StudentNewProject() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsLoading(true)
+    setSubmitError(null)
     
     try {
       const response = await projectsAPI.create(formData)
@@ -63,7 +66,28 @@ function StudentNewProject() {
       })
       navigate(`/projects/${response.data.project.id}`)
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to create project')
+      let errorMsg = error.response?.data?.error || 'Failed to create project'
+      
+      // Intercept technical backend error and provide actionable human-readable feedback
+      if (errorMsg === 'Project limit reached' || error.response?.status === 403) {
+        errorMsg = 'Project limit reached. Please delete an existing project from your dashboard before creating a new one.'
+      }
+      
+      setSubmitError(errorMsg)
+      
+      toast.error(errorMsg, {
+        duration: 6000,
+        style: {
+          borderRadius: '16px',
+          background: '#4c0519', // rose-950
+          color: '#fecdd3',      // rose-200
+          border: '1px solid rgba(225,29,72,0.2)', // rose-600
+        },
+        iconTheme: {
+          primary: '#fda4af', // rose-300
+          secondary: '#4c0519', // rose-950
+        },
+      })
     } finally {
       setIsLoading(false)
     }
@@ -87,6 +111,16 @@ function StudentNewProject() {
           <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">New <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Project</span></h1>
           <p className="text-slate-400 font-medium text-lg">Scale your Laravel application in seconds with automated cloud deployment.</p>
         </div>
+        
+        {submitError && (
+          <div className="mb-8 p-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col items-center justify-center text-center animate-pop-in">
+             <div className="w-12 h-12 bg-rose-500/20 rounded-full flex items-center justify-center mb-4 text-rose-400">
+                <Info className="w-6 h-6" />
+             </div>
+             <h3 className="text-lg font-black text-white tracking-tight uppercase mb-2">Notice</h3>
+             <p className="text-rose-200/80 font-medium leading-relaxed max-w-lg">{submitError}</p>
+          </div>
+        )}
         
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-pop-in" style={{ animationDelay: '100ms' }}>
           <div className="lg:col-span-2 space-y-8">
