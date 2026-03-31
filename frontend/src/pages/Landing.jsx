@@ -80,7 +80,7 @@ export default function Landing() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-[#f8fafc] selection:bg-indigo-500/30 font-sans antialiased">
+    <div className="min-h-screen bg-white dark:bg-slate-950 text-[#f8fafc] selection:bg-indigo-500/30 font-sans antialiased">
       {/* Subtle Grid Background */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -88,7 +88,7 @@ export default function Landing() {
       </div>
 
       {/* Navigation */}
-      <nav className="relative z-50 border-b border-slate-200 dark:border-slate-200 dark:border-white/5 bg-[#09090b]/80 backdrop-blur-xl sticky top-0">
+      <nav className="relative z-50 border-b border-slate-200 dark:border-slate-200 dark:border-white/5 bg-white dark:bg-slate-950/80 backdrop-blur-xl sticky top-0">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-2.5 group">

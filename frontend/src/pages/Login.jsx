@@ -59,7 +59,7 @@ function Login() {
   }
   
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#09090b] text-[#f8fafc] font-sans antialiased selection:bg-indigo-500/30">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-white dark:bg-slate-950 text-[#f8fafc] font-sans antialiased selection:bg-indigo-500/30">
       {/* Background Layer */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
 

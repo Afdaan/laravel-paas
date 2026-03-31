@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function LoadingScreen() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#09090b] text-[#f8fafc] font-sans antialiased">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-white dark:bg-slate-950 text-[#f8fafc] font-sans antialiased">
       <div className="relative z-10 flex flex-col items-center max-w-[280px] w-full pt-20">
         {/* Progress System */}
         <div className="w-full space-y-6">

@@ -795,7 +795,7 @@ function StudentProjectDetail() {
                             {isPhpDropdownOpen && (
                               <>
                                 <div className="fixed inset-0 z-[60]" onClick={() => setIsPhpDropdownOpen(false)}></div>
-                                <div className="absolute top-full left-0 w-full mt-3 bg-[#09090b] border border-slate-300 dark:border-white/10 rounded-3xl p-3 z-[100] shadow-[0_30px_60px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="absolute top-full left-0 w-full mt-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-white/10 rounded-3xl p-3 z-[100] shadow-[0_30px_60px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
                                    {[8.0, 8.1, 8.2, 8.3, 8.4].map((v) => (
                                      <button
                                        key={v}
