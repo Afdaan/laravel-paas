@@ -8,22 +8,22 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
     danger: {
       bg: 'bg-rose-500/10',
       border: 'border-rose-500/20',
-      text: 'text-rose-400',
-      btn: 'bg-rose-600 hover:bg-rose-500 text-slate-900 dark:text-white',
+      text: 'text-rose-600 dark:text-rose-400',
+      btn: 'bg-rose-500 hover:bg-rose-600 text-white',
       icon: AlertOctagon
     },
     warning: {
       bg: 'bg-amber-500/10',
       border: 'border-amber-500/20',
-      text: 'text-amber-400',
-      btn: 'bg-white text-black hover:bg-slate-200',
+      text: 'text-amber-600 dark:text-amber-400',
+      btn: 'bg-indigo-600 dark:bg-slate-100 hover:bg-indigo-700 dark:hover:bg-white text-white dark:text-slate-900',
       icon: AlertTriangle
     },
     info: {
       bg: 'bg-indigo-500/10',
       border: 'border-indigo-500/20',
-      text: 'text-indigo-400',
-      btn: 'bg-white text-black hover:bg-slate-200',
+      text: 'text-indigo-600 dark:text-indigo-400',
+      btn: 'bg-indigo-600 dark:bg-slate-100 hover:bg-indigo-700 dark:hover:bg-white text-white dark:text-slate-900',
       icon: Info
     }
   }
@@ -40,45 +40,45 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
       />
 
       {/* Control Panel */}
-      <div className="relative w-full max-w-[320px] bg-[#09090b] border border-slate-300 dark:border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-black animate-in zoom-in-95 slide-in-from-bottom-6 duration-300">
+      <div className="relative w-full max-w-[400px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-6 duration-300">
         <button 
           onClick={onClose}
-          className="absolute top-5 right-5 p-1.5 rounded-lg text-slate-600 hover:text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-white/5 transition-colors"
+          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
-          <X size={14} />
+          <X size={18} />
         </button>
 
-        <div className="p-8 text-center flex flex-col items-center">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 ${config.bg} border ${config.border} ${config.text} shadow-lg shadow-black/40`}>
-            <Icon size={20} strokeWidth={2.5} />
+        <div className="p-8 pb-6 flex flex-col items-center text-center">
+          <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-5 ${config.bg} border ${config.border} ${config.text}`}>
+            <Icon size={24} strokeWidth={2} />
           </div>
           
-          <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter mb-3 leading-none lowercase">
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
             {title}
           </h3>
           
-          <p className="text-slate-600 dark:text-slate-400 text-[10px] font-bold leading-relaxed uppercase tracking-[0.2em] max-w-[200px]">
+          <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed max-w-sm">
             {message}
           </p>
         </div>
         
-        <div className="p-8 pt-2 flex flex-col gap-2.5">
+        <div className="p-8 pt-0 flex gap-3 w-full">
           <button
             type="button"
-            className={`w-full py-4 text-[9px] font-black uppercase tracking-[0.35em] rounded-xl transition-all active:scale-[0.97] ${config.btn}`}
+            className="flex-1 py-3 px-4 text-sm font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            onClick={onClose}
+          >
+            {cancelText}
+          </button>
+          <button
+            type="button"
+            className={`flex-1 py-3 px-4 text-sm font-semibold rounded-xl transition-all active:scale-[0.98] ${config.btn}`}
             onClick={() => {
               onConfirm()
               onClose()
             }}
           >
             {confirmText}
-          </button>
-          <button
-            type="button"
-            className="w-full py-4 text-[9px] font-black uppercase tracking-[0.35em] rounded-xl bg-slate-100 dark:bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/[0.06] transition-all border border-slate-200 dark:border-white/5"
-            onClick={onClose}
-          >
-            {cancelText}
           </button>
         </div>
       </div>
