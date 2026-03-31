@@ -59,14 +59,9 @@ function Login() {
         
         {/* Identity Head */}
         <div className="mb-12">
-          <div className="flex items-center gap-4 mb-8">
-             <div className="w-12 h-12 bg-white text-black rounded-xl flex items-center justify-center text-xl font-black tracking-tighter">
-                LP
-             </div>
-             <div>
-                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Sign In</h1>
-                <p className="text-xs text-slate-500 font-medium mt-2">Enter your credentials to access your account.</p>
-             </div>
+          <div className="mb-8 items-start justify-center flex flex-col">
+             <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Sign In</h1>
+             <p className="text-xs text-slate-500 font-medium mt-2">Enter your credentials to access your account.</p>
           </div>
         </div>
         
