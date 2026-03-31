@@ -78,7 +78,7 @@ function Login() {
         </div>
         
         {/* Authentication Interface */}
-        <form onSubmit={handleSubmit} noValidate className="space-y-8 bg-[#0d0d12] border border-slate-200 dark:border-white/5 p-10 rounded-[2rem] shadow-2xl relative overflow-hidden group/form">
+        <form onSubmit={handleSubmit} noValidate className="space-y-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 p-10 rounded-[2rem] shadow-2xl relative overflow-hidden group/form">
           <div className="absolute top-0 right-0 p-4 opacity-10">
              <Terminal size={120} className="text-indigo-500 -mr-16 -mt-16 rotate-12" />
           </div>
@@ -96,7 +96,7 @@ function Login() {
                   setEmail(e.target.value)
                   if(validationErrors.email) setValidationErrors(prev => ({...prev, email: null}))
                 }}
-                className={`w-full px-5 py-4 bg-black/40 border border-slate-300 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium ${validationErrors.email ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
+                className={`w-full px-5 py-4 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-400 dark:placeholder-slate-700 outline-none text-sm font-medium ${validationErrors.email ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
                 placeholder="name@example.com"
                 autoFocus
               />
@@ -117,7 +117,7 @@ function Login() {
                   setPassword(e.target.value)
                   if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
                 }}
-                className={`w-full px-5 py-4 bg-black/40 border border-slate-300 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium ${validationErrors.password ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
+                className={`w-full px-5 py-4 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-400 dark:placeholder-slate-700 outline-none text-sm font-medium ${validationErrors.password ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
                 placeholder="••••••••"
               />
               {validationErrors.password && (
@@ -129,14 +129,14 @@ function Login() {
                <button
                  type="submit"
                  disabled={isLoading}
-                 className="w-full relative px-8 py-5 bg-white text-black font-black text-xs uppercase tracking-[0.3em] rounded-xl hover:bg-slate-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed group/btn active:scale-95 shadow-xl shadow-white/5"
+                 className="w-full relative px-8 py-5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-black text-xs uppercase tracking-[0.3em] rounded-xl hover:bg-slate-800 dark:hover:bg-slate-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed group/btn active:scale-95 shadow-xl shadow-slate-900/10 dark:shadow-white/5"
                >
                  <div className="flex items-center justify-center gap-3">
                    {isLoading ? (
                      <div className="flex items-center gap-2">
-                       <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                       <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                       <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce"></div>
+                       <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                       <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                       <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce"></div>
                        <span>Logging In</span>
                      </div>
                    ) : (
