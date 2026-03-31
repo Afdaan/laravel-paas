@@ -196,14 +196,14 @@ function DashboardLayout({ isAdmin = false }) {
         </nav>
         
         {/* Identity & Protocol */}
-        <div className="p-8 border-t border-slate-200 dark:border-white/5 bg-black/20 backdrop-blur-3xl">
-          <div className="flex items-center gap-4 mb-8 p-3 rounded-2xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:border-white/10 transition-colors">
-            <div className="w-12 h-12 bg-gradient-to-br from-slate-700 to-indigo-900 rounded-xl flex items-center justify-center text-white font-black italic shadow-xl border border-slate-300 dark:border-white/10">
+        <div className="p-8 border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20 backdrop-blur-3xl">
+          <div className="flex items-center gap-4 mb-8 p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors shadow-sm">
+            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-900 rounded-xl flex items-center justify-center text-white font-black italic shadow-md border border-indigo-400 dark:border-white/10">
               {user?.name?.charAt(0)?.toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-black text-slate-900 dark:text-white truncate uppercase tracking-tighter leading-tight">{user?.name}</p>
-              <p className="text-[9px] text-slate-600 dark:text-slate-400 truncate font-mono mt-0.5">{user?.email}</p>
+              <p className="text-[9px] text-slate-500 dark:text-slate-400 truncate font-mono mt-0.5">{user?.email}</p>
             </div>
           </div>
           
@@ -211,7 +211,7 @@ function DashboardLayout({ isAdmin = false }) {
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
               <NavLink
                 to="/admin"
-                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
+                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all text-[10px] font-black uppercase tracking-widest group"
               >
                 <ArrowRightLeft className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
                 Admin Panel
@@ -221,7 +221,7 @@ function DashboardLayout({ isAdmin = false }) {
             {isAdmin && (
               <NavLink
                 to="/dashboard"
-                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
+                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all text-[10px] font-black uppercase tracking-widest group"
               >
                 <ArrowRightLeft className="w-4 h-4 group-hover:-rotate-180 transition-transform duration-500" />
                 Student View
@@ -230,7 +230,7 @@ function DashboardLayout({ isAdmin = false }) {
             
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 hover:text-rose-500 hover:bg-rose-500/5 transition-all w-full text-[10px] font-black uppercase tracking-widest group"
+              className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all w-full text-[10px] font-black uppercase tracking-widest group"
             >
               <LogOut className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               Logout
