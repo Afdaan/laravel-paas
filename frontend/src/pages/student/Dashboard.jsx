@@ -74,7 +74,7 @@ function StudentDashboard() {
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 relative z-10">
         <div>
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 animate-gradient-x">
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 animate-gradient-x">
             Dashboard
           </h1>
           <p className="text-slate-400 text-lg font-medium max-w-xl leading-relaxed">

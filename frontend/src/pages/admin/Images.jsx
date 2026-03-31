@@ -107,7 +107,7 @@ const AdminImages = () => {
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Images</h1>
+                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-blue-400 to-indigo-400">Images</h1>
                         <p className="text-slate-400 text-lg font-medium">Manage and optimize project image snapshots.</p>
                     </div>
 

@@ -82,7 +82,7 @@ const AdminFeedback = () => {
       <div className="relative z-10">
         <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
             <div>
-              <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Client <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Intelligence</span></h1>
+              <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Client <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Intelligence</span></h1>
               <p className="text-slate-400 text-lg font-medium">Reviewing bug reports, architecture suggestions, and student sentiment analysis.</p>
             </div>
 
@@ -264,7 +264,7 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }) => {
             <div className={`w-8 h-8 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-center ${config.color} shadow-lg`}>
                 <Icon size={14} />
             </div>
-            <h3 className="text-xl font-black text-white tracking-tighter leading-tight bg-clip-text truncate max-w-[80%]">{item.title}</h3>
+            <h3 className="text-xl font-black text-white tracking-tighter leading-tight bg-clip-text pr-2 pb-1 truncate max-w-[80%]">{item.title}</h3>
           </div>
           <div className="relative group/msg">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-2xl blur opacity-0 group-hover/msg:opacity-100 transition duration-500" />

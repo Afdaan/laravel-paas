@@ -111,7 +111,7 @@ const StudentFeedback = () => {
 
       <div className="relative z-10">
         <div className="mb-16">
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Support <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Hub</span></h1>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Support <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Hub</span></h1>
           <p className="text-slate-400 text-lg font-medium">Send us your feedback or report bugs to our team.</p>
         </div>
 

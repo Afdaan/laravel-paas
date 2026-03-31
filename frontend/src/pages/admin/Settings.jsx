@@ -79,7 +79,7 @@ const AdminSettings = () => {
             <div className="relative z-10">
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-16 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Core <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Parameters</span></h1>
+                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">Core <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Parameters</span></h1>
                         <p className="text-slate-400 text-lg font-medium">Configure global orchestration limits, resource pooling, and network topology.</p>
                     </div>
 

@@ -113,7 +113,7 @@ function StudentNewProject() {
         </button>
 
         <div className="mb-10 animate-pop-in">
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">New <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Project</span></h1>
+          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic">New <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Project</span></h1>
           <p className="text-slate-400 font-medium text-lg">Scale your Laravel application in seconds with automated cloud deployment.</p>
         </div>
         
