@@ -655,7 +655,59 @@ function StudentProjectDetail() {
 
           {/* Database Tab */}
           {activeTab === 'database' && (
-             <div className="min-h-[650px] animate-pop-in">
+             <div className="min-h-[650px] animate-pop-in space-y-8">
+                <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 group transition-all duration-500 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 relative">
+                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-xl">
+                          <DatabaseIcon className="w-7 h-7" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Database Credentials</h3>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 font-bold tracking-widest uppercase mt-1">Database Access Info</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+                         <ShieldAlert className="w-4 h-4 text-emerald-500" />
+                         Private Network Isolation Active
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                       <CredentialBox 
+                        label="Database Host" 
+                        value="paas-mysql.cluster.local" 
+                        onCopy={() => copyToClipboard('paas-mysql')} 
+                      />
+                      <CredentialBox 
+                        label="Database Port" 
+                        value="3306" 
+                      />
+                      <CredentialBox 
+                        label="Database Name" 
+                        value={project.database_name} 
+                        onCopy={() => copyToClipboard(project.database_name)} 
+                      />
+                      <CredentialBox 
+                        label="Database User" 
+                        value={project.database_name} 
+                        onCopy={() => copyToClipboard(project.database_name)} 
+                      />
+                      <CredentialBox 
+                        label="Database Password" 
+                        value="••••••••••••••••" 
+                        isSecret={true}
+                        onCopy={() => {
+                            copyToClipboard(project.database_name);
+                            toast.success('Password copied');
+                        }} 
+                      />
+                      <div className="sm:col-span-1 border border-dashed border-slate-200 dark:border-white/5 rounded-2xl flex items-center justify-center p-6 text-center group/opt">
+                         <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest group-hover/opt:text-slate-600 dark:text-slate-400 transition-colors">Credential rotation policy: Manual Only</p>
+                      </div>
+                   </div>
+                </div>
+
                 <DatabaseManager embedded={true} projectId={id} />
              </div>
           )}
@@ -827,60 +879,7 @@ function StudentProjectDetail() {
                    </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 group transition-all duration-500 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 relative md:col-span-2">
-                   
-                   
-                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-xl">
-                          <DatabaseIcon className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Database Credentials</h3>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 font-bold tracking-widest uppercase mt-1">Database Access Info</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                         <ShieldAlert className="w-4 h-4 text-emerald-500" />
-                         Private Network Isolation Active
-                      </div>
-                   </div>
-
-                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                       <CredentialBox 
-                        label="Database Host" 
-                        value="paas-mysql.cluster.local" 
-                        onCopy={() => copyToClipboard('paas-mysql')} 
-                      />
-                      <CredentialBox 
-                        label="Database Port" 
-                        value="3306" 
-                      />
-                      <CredentialBox 
-                        label="Database Name" 
-                        value={project.database_name} 
-                        onCopy={() => copyToClipboard(project.database_name)} 
-                      />
-                      <CredentialBox 
-                        label="Database User" 
-                        value={project.database_name} 
-                        onCopy={() => copyToClipboard(project.database_name)} 
-                      />
-                      <CredentialBox 
-                        label="Database Password" 
-                        value="••••••••••••••••" 
-                        isSecret={true}
-                        onCopy={() => {
-                            copyToClipboard(project.database_name);
-                            toast.success('Password copied');
-                        }} 
-                      />
-                      <div className="sm:col-span-1 border border-dashed border-slate-200 dark:border-white/5 rounded-2xl flex items-center justify-center p-6 text-center group/opt">
-                         <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest group-hover/opt:text-slate-600 dark:text-slate-400 transition-colors">Credential rotation policy: Manual Only</p>
-                      </div>
-                   </div>
-                </div>
-             </div>
+              </div>
           )}
 
         </div>
