@@ -7,6 +7,7 @@ package services
 
 import (
 	"log"
+	"os/exec"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/config"
@@ -37,21 +38,49 @@ func NewDeploymentWorker(db *gorm.DB, cfg *config.Config, redisService *RedisSer
 // Start begins processing jobs from the queue
 func (w *DeploymentWorker) Start() {
 	if w.running {
-		log.Println("⚠️  Worker already running")
+		log.Println("[WARN] Worker already running")
 		return
 	}
 
 	w.running = true
-	log.Println("🚀 Deployment worker started")
-	log.Println("📋 Waiting for deployment jobs...")
+	log.Println("[INFO] Deployment worker started")
+	log.Println("[INFO] Waiting for deployment jobs...")
+
+	// Start the daily 3 AM Docker cache cleanup
+	w.StartPruneScheduler()
 
 	go w.processJobs()
+}
+
+// StartPruneScheduler starts a daily cron job to prune Docker images at 3 AM
+func (w *DeploymentWorker) StartPruneScheduler() {
+	go func() {
+		for {
+			now := time.Now()
+			// Calculate time until 3 AM (local time)
+			next3AM := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, now.Location())
+			if now.After(next3AM) {
+				next3AM = next3AM.Add(24 * time.Hour)
+			}
+			
+			durationToWait := next3AM.Sub(now)
+			log.Printf("[INFO] Scheduled next Docker cache prune at: %v", next3AM.Format("15:04:05"))
+			
+			time.Sleep(durationToWait)
+			
+			log.Println("[INFO] Executing 3 AM scheduled Docker cache prune...")
+			w.dockerService.PruneImages()
+			
+			// Optional: Aggressive BuildKit cache cleanup for absolute zero-cache state
+			exec.Command("docker", "builder", "prune", "-a", "-f").Run()
+		}
+	}()
 }
 
 // Stop stops the worker
 func (w *DeploymentWorker) Stop() {
 	w.running = false
-	log.Println("🛑 Deployment worker stopped")
+	log.Println("[INFO] Deployment worker stopped")
 }
 
 // processJobs continuously processes jobs from the queue
@@ -60,7 +89,7 @@ func (w *DeploymentWorker) processJobs() {
 		// Wait for next job with 5 second timeout
 		job, err := w.redisService.DequeueDeployment(5 * time.Second)
 		if err != nil {
-			log.Printf("❌ Error dequeuing job: %v", err)
+			log.Printf("[ERROR] Error dequeuing job: %v", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -77,7 +106,7 @@ func (w *DeploymentWorker) processJobs() {
 
 // processDeployment handles a single deployment job
 func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
-	log.Printf("⚙️  Processing %s for project #%d (queued: %v ago)",
+	log.Printf("[INFO] Processing %s for project #%d (queued: %v ago)",
 		job.Type,
 		job.ProjectID,
 		time.Since(job.EnqueuedAt).Round(time.Second))
@@ -85,13 +114,13 @@ func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
 	// Try to acquire lock for this project
 	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 30*time.Minute)
 	if err != nil {
-		log.Printf("❌ Failed to acquire lock for project #%d: %v", job.ProjectID, err)
+		log.Printf("[ERROR] Failed to acquire lock for project #%d: %v", job.ProjectID, err)
 		w.redisService.IncrementDeploymentCounter("failed_lock")
 		return
 	}
 
 	if !locked {
-		log.Printf("⚠️  Project #%d is already being deployed, skipping", job.ProjectID)
+		log.Printf("[WARN] Project #%d is already being deployed, skipping", job.ProjectID)
 		w.redisService.IncrementDeploymentCounter("skipped_locked")
 		return
 	}
@@ -99,14 +128,14 @@ func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
 	// Ensure lock is released after deployment
 	defer func() {
 		if err := w.redisService.ReleaseDeploymentLock(job.ProjectID); err != nil {
-			log.Printf("⚠️  Failed to release lock for project #%d: %v", job.ProjectID, err)
+			log.Printf("[WARN] Failed to release lock for project #%d: %v", job.ProjectID, err)
 		}
 	}()
 
 	// Fetch project from database
 	var project models.Project
 	if err := w.db.First(&project, job.ProjectID).Error; err != nil {
-		log.Printf("❌ Failed to find project #%d: %v", job.ProjectID, err)
+		log.Printf("[ERROR] Failed to find project #%d: %v", job.ProjectID, err)
 		w.redisService.IncrementDeploymentCounter("failed_not_found")
 		return
 	}
@@ -116,7 +145,7 @@ func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
 	w.deployProject(&project)
 	duration := time.Since(startTime)
 
-	log.Printf("✅ Completed %s for project #%d '%s' in %v",
+	log.Printf("[INFO] Completed %s for project #%d '%s' in %v",
 		job.Type,
 		project.ID,
 		project.Name,
@@ -172,11 +201,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	}
 
 	// Step 4: Build and run container
+	// Start building new container
 	projectDomain := w.getProjectDomain()
 	containerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
-
-	// Always prune images after a build attempt to clean up <none> images
-	go w.dockerService.PruneImages()
 
 	if err != nil {
 		w.updateProjectError(project, "Failed to deploy container: "+err.Error())
