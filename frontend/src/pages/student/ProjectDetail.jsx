@@ -425,7 +425,7 @@ function StudentProjectDetail() {
          />
          <MetricCard 
             title="Queue Worker" 
-            value={project.queue_enabled ? 'Running' : 'Offline'} 
+            value={project.queue_enabled ? 'Enabled' : 'Disabled'} 
             subtext={project.queue_enabled ? 'Background Processing' : 'Direct Dispatch'}
             color={project.queue_enabled ? 'emerald' : 'primary'}
             icon={RefreshCw}
