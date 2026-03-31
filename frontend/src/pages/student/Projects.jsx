@@ -3,7 +3,7 @@
 // ===========================================
 
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
 import { 
@@ -48,6 +48,7 @@ const StatusBadge = ({ status }) => {
 }
 
 const StudentProjects = () => {
+  const navigate = useNavigate()
   const [projects, setProjects] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   
@@ -166,10 +167,10 @@ const StudentProjects = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 relative z-10 pb-20">
           {projects.map((project) => (
-            <Link 
+            <div 
               key={project.id} 
-              to={`/projects/${project.id}`}
-              className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm group p-0 overflow-hidden flex flex-col h-full hover:bg-slate-50 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 transition-all duration-500 hover:-translate-y-2"
+              onClick={() => navigate(`/projects/${project.id}`)}
+              className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm group p-0 overflow-hidden flex flex-col h-full hover:bg-slate-50 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 transition-all duration-500 hover:-translate-y-2 cursor-pointer"
             >
               <div className="p-10 flex flex-col h-full bg-gradient-to-br from-white/[0.02] to-transparent">
                 <div className="flex items-start justify-between mb-10">
@@ -183,10 +184,17 @@ const StudentProjects = () => {
                   <h3 className="font-black text-slate-900 dark:text-white text-2xl tracking-tighter group-hover:text-indigo-400 transition-colors uppercase truncate mb-2">
                     {project.name}
                   </h3>
-                  <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400 font-mono text-[10px] tracking-widest bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-slate-200 dark:border-white/5 group-hover:border-indigo-500/20 transition-all">
-                    <Globe className="w-3.5 h-3.5 text-indigo-400" />
+                  <a 
+                    href={`http://${project.subdomain}.paas.local`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-3 text-slate-600 dark:text-slate-400 font-mono text-[10px] tracking-widest bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-slate-200 dark:border-white/5 hover:border-indigo-500/40 hover:text-indigo-400 transition-all group/link"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-indigo-400 group-hover/link:animate-pulse" />
                     {project.subdomain}.paas.local
-                  </div>
+                    <ExternalLink className="w-3 h-3 opacity-50 group-hover/link:opacity-100 transition-opacity" />
+                  </a>
                 </div>
 
                 <div className="space-y-6 py-8 border-y border-slate-200 dark:border-white/5">
@@ -216,7 +224,7 @@ const StudentProjects = () => {
                       <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    
-                   <div className="flex gap-3">
+                    <div className="flex gap-3">
                       <button 
                         onClick={(e) => handleRedeploy(project.id, e)}
                         className="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-indigo-500/40 hover:border-indigo-500/50 transition-all shadow-lg active:scale-95"
@@ -231,13 +239,13 @@ const StudentProjects = () => {
                       >
                          <Trash2 className="w-4 h-4" />
                       </button>
-                      <div className="w-11 h-11 flex items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all shadow-xl group-hover:shadow-indigo-500/40">
-                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                      <div className="w-11 h-11 flex items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all shadow-xl group-hover:scale-110">
+                         <ArrowRight className="w-5 h-5 transition-transform" />
                       </div>
                    </div>
                 </div>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}
