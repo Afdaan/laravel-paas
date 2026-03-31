@@ -185,14 +185,14 @@ const StudentProjects = () => {
                     {project.name}
                   </h3>
                   <a 
-                    href={`http://${project.subdomain}.paas.local`}
+                    href={project.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     className="flex items-center gap-3 text-slate-600 dark:text-slate-400 font-mono text-[10px] tracking-widest bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-slate-200 dark:border-white/5 hover:border-indigo-500/40 hover:text-indigo-400 transition-all group/link"
                   >
                     <Globe className="w-3.5 h-3.5 text-indigo-400 group-hover/link:animate-pulse" />
-                    {project.subdomain}.paas.local
+                    {project.url ? project.url.replace(/^https?:\/\//, '') : project.subdomain}
                     <ExternalLink className="w-3 h-3 opacity-50 group-hover/link:opacity-100 transition-opacity" />
                   </a>
                 </div>
