@@ -75,19 +75,6 @@ function StudentNewProject() {
       
       setSubmitError(errorMsg)
       
-      toast.error(errorMsg, {
-        duration: 6000,
-        style: {
-          borderRadius: '16px',
-          background: '#4c0519', // rose-950
-          color: '#fecdd3',      // rose-200
-          border: '1px solid rgba(225,29,72,0.2)', // rose-600
-        },
-        iconTheme: {
-          primary: '#fda4af', // rose-300
-          secondary: '#4c0519', // rose-950
-        },
-      })
     } finally {
       setIsLoading(false)
     }
