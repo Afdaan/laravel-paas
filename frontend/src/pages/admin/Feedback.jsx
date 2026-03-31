@@ -77,44 +77,44 @@ const AdminFeedback = () => {
   return (
     <div className="space-y-12 animate-pop-in relative h-full">
       {/* Background Glows */}
-      <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-indigo-600/5 blur-[140px] rounded-full pointer-events-none z-0"></div>
+      
 
       <div className="relative z-10">
         <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
             <div>
-              <h1 className="text-5xl font-black text-white tracking-tighter mb-4">Client <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Intelligence</span></h1>
-              <p className="text-slate-400 text-lg font-medium">Reviewing bug reports, architecture suggestions, and student sentiment analysis.</p>
+              <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4">Client <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Intelligence</span></h1>
+              <p className="text-slate-600 dark:text-slate-400 text-lg font-medium">Reviewing bug reports, architecture suggestions, and student sentiment analysis.</p>
             </div>
 
             <div className="flex items-center gap-4">
-                <div className="flex items-center gap-3 bg-white/[0.02] border border-white/10 p-2 rounded-2xl backdrop-blur-md">
-                    <div className="flex items-center gap-3 px-6 py-2 border-r border-white/5">
+                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 p-2 rounded-2xl backdrop-blur-md">
+                    <div className="flex items-center gap-3 px-6 py-2 border-r border-slate-200 dark:border-white/5">
                         <MessageSquare className="w-4 h-4 text-indigo-500" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{feedback.length} Submissions</span>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{feedback.length} Submissions</span>
                     </div>
                     <div className="flex items-center gap-3 px-6 py-2">
                         <ShieldAlert className="w-4 h-4 text-rose-500" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{feedback.filter(f => f.type === 'bug').length} Critical</span>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{feedback.filter(f => f.type === 'bug').length} Critical</span>
                     </div>
                 </div>
 
-                <button onClick={fetchFeedback} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.02] border border-white/10 text-white hover:bg-white/[0.05] transition-all active:rotate-180 duration-500 transition-transform shadow-xl backdrop-blur-md">
+                <button onClick={fetchFeedback} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 transition-all active:rotate-180 duration-500 transition-transform shadow-xl backdrop-blur-md">
                    <RotateCw className="w-4 h-4" />
                 </button>
             </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6 bg-white/[0.02] border border-white/10 p-4 rounded-3xl backdrop-blur-md shadow-2xl">
+        <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 p-4 rounded-3xl backdrop-blur-md shadow-2xl">
             <div className="flex items-center gap-4 flex-1 w-full max-w-2xl">
                 <div className="relative flex-1 group">
                     <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-                        <Search className="w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                        <Search className="w-4 h-4 text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-400 transition-colors" />
                     </div>
                     <input 
                         type="text"
                         placeholder="Filter intel by keyword or student identity..."
-                        className="w-full bg-black/40 border border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-600 outline-none"
+                        className="w-full bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-600 outline-none"
                     />
                 </div>
             </div>
@@ -124,7 +124,7 @@ const AdminFeedback = () => {
                 <div className="relative">
                     <button
                         onClick={() => setIsStatusOpen(!isStatusOpen)}
-                        className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-3 hover:border-indigo-500/40 transition-all"
+                        className="bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-3 hover:border-indigo-500/40 transition-all"
                     >
                         <span>Status: {filterStatus ? filterStatus.replace('_', ' ') : 'All States'}</span>
                         <ChevronDown className={`w-3 h-3 transition-transform ${isStatusOpen ? 'rotate-180' : ''}`} />
@@ -132,12 +132,12 @@ const AdminFeedback = () => {
                     {isStatusOpen && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setIsStatusOpen(false)}></div>
-                            <div className="absolute top-full right-0 mt-2 w-48 bg-[#0d0d12] border border-white/10 rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-[#0d0d12] border border-slate-300 dark:border-white/10 rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
                                 {['', 'pending', 'in_review', 'resolved'].map(status => (
                                     <button
                                         key={status}
                                         onClick={() => { setFilterStatus(status); setIsStatusOpen(false); }}
-                                        className={`w-full text-left px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterStatus === status ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+                                        className={`w-full text-left px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterStatus === status ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:bg-white/5 hover:text-slate-700 dark:text-slate-300'}`}
                                     >
                                         {status ? status.replace('_', ' ') : 'All States'}
                                     </button>
@@ -151,7 +151,7 @@ const AdminFeedback = () => {
                 <div className="relative">
                     <button
                         onClick={() => setIsTypeOpen(!isTypeOpen)}
-                        className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-3 hover:border-indigo-500/40 transition-all"
+                        className="bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-3 hover:border-indigo-500/40 transition-all"
                     >
                         <span>Category: {filterType ? filterType : 'All Intel'}</span>
                         <ChevronDown className={`w-3 h-3 transition-transform ${isTypeOpen ? 'rotate-180' : ''}`} />
@@ -159,7 +159,7 @@ const AdminFeedback = () => {
                     {isTypeOpen && (
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setIsTypeOpen(false)}></div>
-                            <div className="absolute top-full right-0 mt-2 w-48 bg-[#0d0d12] border border-white/10 rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-[#0d0d12] border border-slate-300 dark:border-white/10 rounded-2xl p-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
                                 {[
                                     { value: '', label: 'All Intel', icon: Sparkles },
                                     { value: 'suggestion', label: 'Suggestion', icon: Lightbulb },
@@ -169,7 +169,7 @@ const AdminFeedback = () => {
                                     <button
                                         key={type.value}
                                         onClick={() => { setFilterType(type.value); setIsTypeOpen(false); }}
-                                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-[10px] font-black uppercase tracking-widest transition-all ${filterType === type.value ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}
+                                        className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-[10px] font-black uppercase tracking-widest transition-all ${filterType === type.value ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:bg-white/5 hover:text-slate-700 dark:text-slate-300'}`}
                                     >
                                         <type.icon size={12} />
                                         {type.label}
@@ -185,14 +185,14 @@ const AdminFeedback = () => {
         {isLoading ? (
             <div className="flex flex-col items-center justify-center h-80 gap-6">
                  <div className="relative">
-                    <div className="absolute -inset-8 bg-indigo-500/10 rounded-full blur-2xl animate-pulse"></div>
+                    
                     <div className="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin relative z-10"></div>
                 </div>
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Syncing Global Intel Registry</p>
+                <p className="text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Syncing Global Intel Registry</p>
             </div>
         ) : feedback.length === 0 ? (
-            <div className="py-32 flex flex-col items-center justify-center text-center card-glass bg-white/[0.01] border-white/10">
-                 <div className="w-24 h-24 bg-white/[0.02] border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl">
+            <div className="py-32 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10">
+                 <div className="w-24 h-24 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl">
                     <Sparkles className="w-10 h-10 text-slate-800" />
                 </div>
                 <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600">No telemetry records found for current manifest</h3>
@@ -226,21 +226,21 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }) => {
   const Icon = config.icon
 
   return (
-    <div className="card-glass bg-white/[0.01] border-white/10 group relative overflow-hidden transition-all duration-500 hover:bg-white/[0.03] hover:border-white/20 p-8">
+    <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 group relative overflow-hidden transition-all duration-500 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 p-8">
       {/* Background Accent */}
       <div className={`absolute top-0 right-0 w-48 h-48 blur-[100px] pointer-events-none transition-opacity duration-700 opacity-10 group-hover:opacity-20 ${config.glow}`} />
 
       <div className="relative flex flex-col h-full z-10">
         <div className="flex items-start justify-between mb-8">
           <div className="flex items-center gap-4">
-             <div className="w-12 h-12 bg-white/[0.03] border border-white/10 rounded-2xl flex items-center justify-center text-white text-lg font-black group-hover:border-indigo-500/40 group-hover:bg-indigo-500/5 transition-all duration-500 shadow-xl">
+             <div className="w-12 h-12 bg-slate-100 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl flex items-center justify-center text-slate-900 dark:text-white text-lg font-black group-hover:border-indigo-500/40 group-hover:bg-indigo-500/5 transition-all duration-500 shadow-xl">
               {item.user?.name?.charAt(0).toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-black text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors">{item.user?.name}</p>
+              <p className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors">{item.user?.name}</p>
               <div className="flex items-center gap-2 mt-1">
                  <User className="w-3 h-3 text-slate-600" />
-                 <p className="text-[10px] text-slate-500 font-medium tracking-tight whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]">{item.user?.email}</p>
+                 <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium tracking-tight whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]">{item.user?.email}</p>
               </div>
             </div>
           </div>
@@ -248,7 +248,7 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }) => {
           <div className="flex flex-col items-end gap-2">
             <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full border ${
               item.status === 'resolved' ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/20' : 
-              item.status === 'in_review' ? 'bg-indigo-500/5 text-indigo-400 border-indigo-500/20' : 'bg-slate-500/5 text-slate-500 border-white/5'
+              item.status === 'in_review' ? 'bg-indigo-500/5 text-indigo-400 border-indigo-500/20' : 'bg-slate-500/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/5'
             }`}>
               {item.status.replace('_', ' ')}
             </span>
@@ -261,20 +261,20 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }) => {
 
         <div className="space-y-6 mb-10">
           <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-center ${config.color} shadow-lg`}>
+            <div className={`w-8 h-8 rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 flex items-center justify-center ${config.color} shadow-lg`}>
                 <Icon size={14} />
             </div>
-            <h3 className="text-xl font-black text-white tracking-tighter leading-tight bg-clip-text pr-2 pb-1 truncate max-w-[80%]">{item.title}</h3>
+            <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight bg-clip-text pr-2 pb-1 truncate max-w-[80%]">{item.title}</h3>
           </div>
           <div className="relative group/msg">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-2xl blur opacity-0 group-hover/msg:opacity-100 transition duration-500" />
-              <p className="relative text-sm text-slate-400 leading-relaxed bg-black/40 p-6 rounded-2xl border border-white/5 font-medium italic min-h-[100px]">
+              <p className="relative text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-black/40 p-6 rounded-2xl border border-slate-200 dark:border-white/5 font-medium italic min-h-[100px]">
                 "{item.content}"
               </p>
           </div>
         </div>
 
-        <div className="mt-auto pt-8 border-t border-white/5 flex items-center justify-between">
+        <div className="mt-auto pt-8 border-t border-slate-200 dark:border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => onUpdate(item.id, 'in_review')}
@@ -293,7 +293,7 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }) => {
           <div className="flex items-center gap-4">
             <button 
                 onClick={() => onDelete(item.id)}
-                className="w-10 h-10 flex items-center justify-center bg-rose-500/5 hover:bg-rose-500/10 text-rose-500/40 hover:text-rose-500 rounded-xl transition-all border border-white/5 active:scale-90"
+                className="w-10 h-10 flex items-center justify-center bg-rose-500/5 hover:bg-rose-500/10 text-rose-500/40 hover:text-rose-500 rounded-xl transition-all border border-slate-200 dark:border-white/5 active:scale-90"
                 title="Purge Intel"
             >
                 <Trash2 size={16} />

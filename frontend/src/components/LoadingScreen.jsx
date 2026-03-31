@@ -7,11 +7,11 @@ export default function LoadingScreen() {
         {/* Progress System */}
         <div className="w-full space-y-6">
           <div className="flex items-center justify-between px-1">
-             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Establishing Uplink</span>
+             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">Establishing Uplink</span>
              <span className="text-[10px] font-mono text-indigo-400">82%</span>
           </div>
           
-          <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden">
+          <div className="h-[2px] w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
              <div className="h-full bg-indigo-500 w-[82%] animate-[loading_2s_ease-in-out_infinite]"></div>
           </div>
           

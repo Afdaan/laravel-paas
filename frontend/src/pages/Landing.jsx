@@ -88,27 +88,27 @@ export default function Landing() {
       </div>
 
       {/* Navigation */}
-      <nav className="relative z-50 border-b border-white/[0.05] bg-[#09090b]/80 backdrop-blur-xl sticky top-0">
+      <nav className="relative z-50 border-b border-slate-200 dark:border-slate-200 dark:border-white/5 bg-[#09090b]/80 backdrop-blur-xl sticky top-0">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-2.5 group">
               <div className="w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center font-black tracking-tighter">
                 LP
               </div>
-              <span className="font-bold tracking-tight text-white group-hover:text-indigo-400 transition-colors">Laravel PaaS</span>
+              <span className="font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-indigo-400 transition-colors">Laravel PaaS</span>
             </Link>
             
             <div className="hidden md:flex items-center gap-6">
-               <a href="#features" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">Features</a>
-               <a href="#workflow" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">Workflow</a>
-               <a href="#infrastructure" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">Infrastructure</a>
+               <a href="#features" className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Features</a>
+               <a href="#workflow" className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Workflow</a>
+               <a href="#infrastructure" className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Infrastructure</a>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
             <Link
               to={token ? dashboardPath : "/login"}
-              className="text-sm font-bold text-white bg-white/5 border border-white/10 px-5 py-2 rounded-xl hover:bg-white/10 transition-all flex items-center gap-2"
+              className="text-sm font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 px-5 py-2 rounded-xl hover:bg-slate-200 dark:bg-white/10 transition-all flex items-center gap-2"
             >
               {token ? 'Dashboard' : 'Sign In'}
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -125,12 +125,12 @@ export default function Landing() {
              Next Gen Hosting for Students
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-8 leading-[1.05]">
+          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-slate-900 dark:text-white mb-8 leading-[1.05]">
             Laravel deployment, <br />
-            <span className="text-slate-500 italic font-serif group">reimagined</span> for students.
+            <span className="text-slate-600 dark:text-slate-400 italic font-serif group">reimagined</span> for students.
           </h1>
           
-          <p className="text-lg md:text-xl text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-lg md:text-xl text-slate-600 dark:text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed">
             A minimalist cloud platform that automates your repository orchestration, database provisioning, and SSL routing. Focus on code, not infrastructure.
           </p>
 
@@ -142,7 +142,7 @@ export default function Landing() {
                 {token ? 'Go to Dashboard' : 'Deploy your first project'}
                 <ArrowRight className="w-4 h-4" />
              </Link>
-             <button className="w-full sm:w-auto px-8 py-4 bg-white/5 text-white border border-white/10 font-bold rounded-xl hover:bg-white/10 transition-all flex items-center justify-center gap-3">
+             <button className="w-full sm:w-auto px-8 py-4 bg-slate-100 dark:bg-white/5 text-slate-900 dark:text-white border border-slate-300 dark:border-white/10 font-bold rounded-xl hover:bg-slate-200 dark:bg-white/10 transition-all flex items-center justify-center gap-3">
                 <Github className="w-4 h-4" />
                 View Source Code
              </button>
@@ -151,17 +151,17 @@ export default function Landing() {
 
         {/* Dynamic Interface Preview */}
         <div className="max-w-6xl mx-auto mt-32 relative">
-           <div className="absolute inset-x-0 -top-40 -bottom-40 bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none"></div>
            
-           <div className="bg-[#0f0f13] border border-white/5 rounded-2xl overflow-hidden shadow-2xl shadow-black">
+           
+           <div className="bg-[#0f0f13] border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden shadow-2xl shadow-black">
               {/* Terminal Ribbon */}
-              <div className="h-11 bg-[#16161c] border-b border-white/5 flex items-center px-5 justify-between">
+              <div className="h-11 bg-[#16161c] border-b border-slate-200 dark:border-white/5 flex items-center px-5 justify-between">
                  <div className="flex gap-2">
-                    <div className="w-3 h-3 rounded-full bg-white/10"></div>
-                    <div className="w-3 h-3 rounded-full bg-white/10"></div>
-                    <div className="w-3 h-3 rounded-full bg-white/10"></div>
+                    <div className="w-3 h-3 rounded-full bg-slate-200 dark:bg-white/10"></div>
+                    <div className="w-3 h-3 rounded-full bg-slate-200 dark:bg-white/10"></div>
+                    <div className="w-3 h-3 rounded-full bg-slate-200 dark:bg-white/10"></div>
                  </div>
-                 <div className="text-[10px] font-mono text-slate-500 flex items-center gap-2">
+                 <div className="text-[10px] font-mono text-slate-600 dark:text-slate-400 flex items-center gap-2">
                     <Terminal className="w-3 h-3" />
                     bash — project-uplink.sh — 80×24
                  </div>
@@ -173,15 +173,15 @@ export default function Landing() {
                     {steps.map((step, i) => (
                        <div key={i} className={`transition-all duration-700 ${activeStep === i ? 'opacity-100 translate-x-4' : 'opacity-30'}`}>
                           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400 mb-2">Step 0{i+1}</p>
-                          <h4 className="text-xl font-bold text-white mb-2">{step.title}</h4>
-                          <div className="bg-black/40 border border-white/5 rounded-lg py-2 px-4 font-mono text-xs text-slate-400">
+                          <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{step.title}</h4>
+                          <div className="bg-black/40 border border-slate-200 dark:border-white/5 rounded-lg py-2 px-4 font-mono text-xs text-slate-600 dark:text-slate-400">
                              {step.url}
                           </div>
                        </div>
                     ))}
                  </div>
                  
-                 <div className="relative aspect-video rounded-xl bg-black/60 border border-white/5 overflow-hidden p-6 font-mono text-[11px] leading-relaxed text-slate-500">
+                 <div className="relative aspect-video rounded-xl bg-black/60 border border-slate-200 dark:border-white/5 overflow-hidden p-6 font-mono text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
                     <div className="flex items-center gap-2 mb-6">
                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                        <span className="text-emerald-500 text-[10px] font-black uppercase">Live System Feed</span>
@@ -189,7 +189,7 @@ export default function Landing() {
                     <p className="mb-2"><span className="text-indigo-400">INFO</span> [2024-10-12 14:02] Initializing architecture...</p>
                     <p className="mb-2"><span className="text-indigo-400">INFO</span> [2024-10-12 14:02] Pulling source from origin/main...</p>
                     <p className="mb-2"><span className="text-indigo-400">INFO</span> [2024-10-12 14:03] Injecting PHP 8.3 container...</p>
-                    <p className="mb-2 text-white font-bold">&gt; composer install --no-dev</p>
+                    <p className="mb-2 text-slate-900 dark:text-white font-bold">&gt; composer install --no-dev</p>
                     <p className="mb-2 text-slate-600">Installing dependencies (92%)...</p>
                     <p className="mb-2"><span className="text-amber-400">WARN</span> SQLite fallback enabled</p>
                     <p className="mb-2"><span className="text-indigo-400">INFO</span> Mapping subdomain: your-app.paas.io</p>
@@ -201,21 +201,21 @@ export default function Landing() {
       </section>
 
       {/* Features Grid */}
-      <section id="features" className="py-40 px-6 border-t border-white/5 bg-[#070709]">
+      <section id="features" className="py-40 px-6 border-t border-slate-200 dark:border-white/5 bg-[#070709]">
         <div className="max-w-7xl mx-auto">
           <div className="mb-24">
-            <h2 className="text-4xl font-bold text-white tracking-tight mb-6">Built for precision.</h2>
-            <p className="text-slate-400 max-w-xl">Every technical hurdle between your repository and a live URL has been automated by our engineering core.</p>
+            <h2 className="text-4xl font-bold text-slate-900 dark:text-white tracking-tight mb-6">Built for precision.</h2>
+            <p className="text-slate-600 dark:text-slate-400 max-w-xl">Every technical hurdle between your repository and a live URL has been automated by our engineering core.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-16 gap-x-12">
             {features.map((feature, i) => (
               <div key={i} className="group cursor-default">
-                <div className="w-12 h-12 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center mb-6 group-hover:bg-white group-hover:text-black transition-all">
+                <div className="w-12 h-12 bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl flex items-center justify-center mb-6 group-hover:bg-white group-hover:text-black transition-all">
                   <feature.icon className="w-5 h-5 transition-transform group-hover:scale-110" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-3 tracking-tight">{feature.title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{feature.desc}</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-3 tracking-tight">{feature.title}</h3>
+                <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">{feature.desc}</p>
               </div>
             ))}
           </div>
@@ -228,33 +228,33 @@ export default function Landing() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-20 items-center">
                <div className="lg:col-span-7">
                   <div className="grid grid-cols-2 gap-4">
-                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 space-y-4">
+                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-slate-200 dark:border-white/5 space-y-4">
                         <Cpu className="w-8 h-8 text-indigo-400" />
-                        <h4 className="font-bold text-white">Dedicated CPU</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">Guaranteed cycles for your PHP-FPM processes without noisy neighbors.</p>
+                        <h4 className="font-bold text-slate-900 dark:text-white">Dedicated CPU</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Guaranteed cycles for your PHP-FPM processes without noisy neighbors.</p>
                      </div>
-                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 space-y-4 translate-y-8">
+                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-slate-200 dark:border-white/5 space-y-4 translate-y-8">
                         <RefreshCw className="w-8 h-8 text-emerald-400" />
-                        <h4 className="font-bold text-white">Auto-Healing</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">System monitoring automatically restarts crashed project containers.</p>
+                        <h4 className="font-bold text-slate-900 dark:text-white">Auto-Healing</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">System monitoring automatically restarts crashed project containers.</p>
                      </div>
-                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 space-y-4">
+                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-slate-200 dark:border-white/5 space-y-4">
                         <Database className="w-8 h-8 text-rose-400" />
-                        <h4 className="font-bold text-white">MariaDB Stack</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">Native MySQL-compatible storage with automatic backup scheduling.</p>
+                        <h4 className="font-bold text-slate-900 dark:text-white">MariaDB Stack</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Native MySQL-compatible storage with automatic backup scheduling.</p>
                      </div>
-                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 space-y-4 translate-y-8">
+                     <div className="p-8 rounded-2xl bg-[#0f0f13] border border-slate-200 dark:border-white/5 space-y-4 translate-y-8">
                         <Ship className="w-8 h-8 text-amber-400" />
-                        <h4 className="font-bold text-white">Docker Core</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">Lightweight containerization for efficient resource management.</p>
+                        <h4 className="font-bold text-slate-900 dark:text-white">Docker Core</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Lightweight containerization for efficient resource management.</p>
                      </div>
                   </div>
                </div>
                
                <div className="lg:col-span-5">
                   <h2 className="text-[10px] font-black tracking-[0.4em] text-indigo-400 uppercase mb-4">System Architecture</h2>
-                  <h3 className="text-4xl font-bold text-white mb-6 tracking-tight">Enterprise grade <br />infrastructure.</h3>
-                  <p className="text-slate-400 leading-relaxed mb-10">We operate our own private cloud cluster, optimized specifically for the PHP and Laravel runtime lifecycle.</p>
+                  <h3 className="text-4xl font-bold text-slate-900 dark:text-white mb-6 tracking-tight">Enterprise grade <br />infrastructure.</h3>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-10">We operate our own private cloud cluster, optimized specifically for the PHP and Laravel runtime lifecycle.</p>
                   
                   <ul className="space-y-4">
                      {[
@@ -263,7 +263,7 @@ export default function Landing() {
                         'NVMe SSD Storage Backend',
                         'Automated SSL Termination'
                      ].map((item, i) => (
-                        <li key={i} className="flex items-center gap-3 text-sm text-slate-300">
+                        <li key={i} className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
                            <CheckCircle2 className="w-4 h-4 text-indigo-500" />
                            {item}
                         </li>
@@ -275,10 +275,10 @@ export default function Landing() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-40 px-6 border-t border-white/5">
+      <section className="py-40 px-6 border-t border-slate-200 dark:border-white/5">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl md:text-5xl font-bold text-white mb-8 tracking-tight">Stop configuring. Start building.</h2>
-          <p className="text-slate-400 text-lg mb-12 max-w-xl mx-auto">Join hundreds of students currently shipping their Laravel projects on the fastest platform in the cluster.</p>
+          <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-8 tracking-tight">Stop configuring. Start building.</h2>
+          <p className="text-slate-600 dark:text-slate-400 text-lg mb-12 max-w-xl mx-auto">Join hundreds of students currently shipping their Laravel projects on the fastest platform in the cluster.</p>
           
           <Link
             to={token ? dashboardPath : "/login"}
@@ -291,11 +291,11 @@ export default function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="py-20 px-6 border-t border-white/5 bg-[#070709]">
+      <footer className="py-20 px-6 border-t border-slate-200 dark:border-white/5 bg-[#070709]">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-4">
-             <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold text-white">LP</div>
-             <span className="text-sm font-bold text-slate-500">Laravel PaaS Core</span>
+             <div className="w-6 h-6 bg-slate-200 dark:bg-white/10 rounded flex items-center justify-center text-[10px] font-bold text-slate-900 dark:text-white">LP</div>
+             <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Laravel PaaS Core</span>
           </div>
           
           <p className="text-xs text-slate-600 font-medium">
@@ -303,7 +303,7 @@ export default function Landing() {
           </p>
 
           <div className="flex items-center gap-6">
-             <a href="#" className="text-slate-600 hover:text-white transition-colors"><Github size={18} /></a>
+             <a href="#" className="text-slate-600 hover:text-slate-900 dark:text-white transition-colors"><Github size={18} /></a>
           </div>
         </div>
       </footer>

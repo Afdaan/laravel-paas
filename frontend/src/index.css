@@ -6,26 +6,18 @@
 /* Custom Styles for Laravel PaaS Dashboard     */
 /* ============================================= */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* ============================================= */
 /* Modern Design System - Laravel PaaS           */
 /* ============================================= */
 
 :root {
-  --app-bg: #030305;
-  --card-bg: #0a0a0c;
-  --border-subtle: rgba(255, 255, 255, 0.05);
   --accent-primary: #6366f1; /* Indigo */
   --accent-secondary: #a855f7; /* Purple */
-  --text-dim: #94a3b8;
 }
 
 @layer base {
   body {
-    @apply bg-[#030305] text-slate-300 antialiased selection:bg-indigo-500/30;
+    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-300 antialiased selection:bg-indigo-500/30;
     font-family: 'Outfit', 'Inter', system-ui, sans-serif;
   }
 }
@@ -33,15 +25,15 @@
 @layer components {
   /* Premium Cards */
   .card {
-    @apply bg-[#0a0a0c] border border-white/[0.05] rounded-[2rem] shadow-2xl transition-all duration-300;
+    @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-[2rem] shadow-sm dark:shadow-2xl transition-all duration-300;
   }
   
   .card-glass {
-    @apply bg-white/[0.02] backdrop-blur-xl border border-white/[0.08] rounded-[2rem] shadow-2xl transition-all duration-300;
+    @apply bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-[2rem] shadow-sm transition-all duration-300;
   }
 
   .card-hover:hover {
-    @apply border-white/10 -translate-y-1 shadow-indigo-500/10;
+    @apply border-indigo-500/30 -translate-y-1 shadow-indigo-500/10;
   }
 
   /* Sleek Buttons */
@@ -54,16 +46,16 @@
   }
 
   .btn-secondary {
-    @apply bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white hover:border-white/20;
+    @apply bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white dark:hover:border-white/20;
   }
 
   .btn-ghost {
-    @apply text-slate-400 hover:text-white hover:bg-white/5;
+    @apply text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-white/5;
   }
 
   /* Form Elements */
   .input-field {
-    @apply w-full bg-white/[0.03] border border-white/10 rounded-2xl px-5 py-3.5 text-white placeholder-slate-600 outline-none transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50;
+    @apply w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl px-5 py-3.5 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50;
   }
 
   /* Badges */
@@ -81,11 +73,11 @@
   }
 
   .premium-table th {
-    @apply py-4 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/[0.03];
+    @apply py-4 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 dark:border-white/5;
   }
 
   .premium-table td {
-    @apply py-5 px-6 text-sm text-slate-300 border-b border-white/[0.03];
+    @apply py-5 px-6 text-sm text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-white/5;
   }
 
   .premium-table tr:last-child td {
@@ -93,7 +85,7 @@
   }
 
   .premium-table tr:hover td {
-    @apply bg-white/[0.01];
+    @apply bg-slate-50/50 dark:bg-white/[0.02];
   }
 }
 
@@ -108,7 +100,7 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+  @apply bg-slate-300 dark:bg-white/10 rounded-full hover:bg-slate-400 dark:hover:bg-white/20 transition-colors;
 }
 
 /* Animations */

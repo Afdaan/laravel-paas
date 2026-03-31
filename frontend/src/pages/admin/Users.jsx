@@ -124,14 +124,14 @@ const AdminUsers = () => {
     return (
         <div className="space-y-12 animate-pop-in relative h-full">
             {/* Background Glows */}
-            <div className="absolute top-0 right-0 w-[55vw] h-[55vw] bg-indigo-600/5 blur-[150px] rounded-full pointer-events-none z-0"></div>
+            
 
             <div className="relative z-10">
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
                     <div>
-                        <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Users</h1>
-                        <p className="text-slate-400 text-lg font-medium">Manage all student and admin accounts across the platform.</p>
+                        <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Users</h1>
+                        <p className="text-slate-600 dark:text-slate-400 text-lg font-medium">Manage all student and admin accounts across the platform.</p>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -165,7 +165,7 @@ const AdminUsers = () => {
 
                 {/* Import Results Area */}
                 {importResults && (
-                    <div className="mb-10 card-glass p-8 bg-emerald-500/5 border-emerald-500/20 overflow-hidden relative group">
+                    <div className="mb-10 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-8 bg-emerald-500/5 border-emerald-500/20 overflow-hidden relative group">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[80px] pointer-events-none" />
                         
                         <div className="relative flex justify-between items-start mb-8">
@@ -174,11 +174,11 @@ const AdminUsers = () => {
                                     <CheckCircle2 className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Sync Complete</h3>
+                                    <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Sync Complete</h3>
                                     <p className="text-emerald-400/80 font-bold text-sm tracking-wide">{importResults.total} Identities successfully provisioned</p>
                                 </div>
                             </div>
-                            <button onClick={() => setImportResults(null)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/5 text-slate-500 hover:text-white transition-all">
+                            <button onClick={() => setImportResults(null)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-all">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -196,23 +196,23 @@ const AdminUsers = () => {
                         )}
 
                         {importResults.created?.length > 0 && (
-                            <div className="rounded-2xl border border-white/5 bg-black/20 overflow-hidden">
+                            <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-black/20 overflow-hidden">
                                 <div className="max-h-64 overflow-auto scrollbar-thin scrollbar-thumb-white/10">
                                     <table className="w-full text-left">
                                         <thead>
-                                            <tr className="border-b border-white/5">
-                                                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-500">Identity</th>
-                                                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-500">Status</th>
-                                                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-500">Credential</th>
+                                            <tr className="border-b border-slate-200 dark:border-white/5">
+                                                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Identity</th>
+                                                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Status</th>
+                                                <th className="px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Credential</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/[0.03]">
                                             {importResults.created.map((u, i) => (
-                                                <tr key={i} className="hover:bg-white/[0.02] transition-all">
+                                                <tr key={i} className="hover:bg-slate-50 dark:bg-slate-100 dark:bg-white/5 transition-all">
                                                     <td className="px-6 py-4">
                                                         <div className="flex flex-col">
-                                                            <span className="text-xs font-black text-white">{u.name}</span>
-                                                            <span className="text-[10px] text-slate-500 font-medium tracking-tight overflow-hidden text-ellipsis max-w-[150px]">{u.email}</span>
+                                                            <span className="text-xs font-black text-slate-900 dark:text-white">{u.name}</span>
+                                                            <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium tracking-tight overflow-hidden text-ellipsis max-w-[150px]">{u.email}</span>
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
@@ -234,18 +234,18 @@ const AdminUsers = () => {
                 )}
 
                 {/* Toolbar */}
-                <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-6 bg-white/[0.02] border border-white/10 p-4 rounded-3xl backdrop-blur-md shadow-2xl">
+                <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-6 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 p-4 rounded-3xl backdrop-blur-md shadow-2xl">
                     <div className="flex items-center gap-4 flex-1 w-full max-w-2xl">
                         <div className="relative flex-1 group">
                             <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-                                <Search className="w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                                <Search className="w-4 h-4 text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-400 transition-colors" />
                             </div>
                             <input 
                                 type="text"
                                 placeholder="Search by name, email, or access token..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
-                                className="w-full bg-black/40 border border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-600 outline-none"
+                                className="w-full bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-600 outline-none"
                             />
                         </div>
                     </div>
@@ -254,7 +254,7 @@ const AdminUsers = () => {
                         <select
                             value={roleFilter}
                             onChange={(e) => setRoleFilter(e.target.value)}
-                            className="bg-black/40 border border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                            className="bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 outline-none focus:border-indigo-500 transition-all cursor-pointer"
                         >
                             <option value="">Role: All Access</option>
                             <option value="student">Level 1: Students</option>
@@ -265,7 +265,7 @@ const AdminUsers = () => {
                 </div>
 
                 {/* Users Table Area */}
-                <div className="card-glass overflow-hidden border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.4)] bg-white/[0.01]">
+                <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden border-slate-300 dark:border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.4)] bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
                     <div className="overflow-x-auto">
                         <table className="premium-table">
                             <thead>
@@ -287,7 +287,7 @@ const AdminUsers = () => {
                                         </td>
                                     </tr>
                                 ) : users.map((user) => (
-                                    <tr key={user.id} className="group hover:bg-white/[0.03]">
+                                    <tr key={user.id} className="group hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5">
                                         <td>
                                             <div className="flex items-center gap-5">
                                                 <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all duration-500 relative ${
@@ -298,10 +298,10 @@ const AdminUsers = () => {
                                                     <Users className="w-6 h-6" />
                                                 </div>
                                                 <div className="flex flex-col">
-                                                    <span className="text-sm font-black text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{user.name}</span>
+                                                    <span className="text-sm font-black text-slate-900 dark:text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{user.name}</span>
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <Mail className="w-3 h-3 text-slate-600" />
-                                                        <p className="text-[10px] text-slate-500 font-medium tracking-tight overflow-hidden text-ellipsis max-w-[200px]">{user.email}</p>
+                                                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium tracking-tight overflow-hidden text-ellipsis max-w-[200px]">{user.email}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -317,7 +317,7 @@ const AdminUsers = () => {
                                             </span>
                                         </td>
                                         <td>
-                                            <div className="flex items-center gap-3 text-slate-500 group-hover:text-slate-300 transition-colors">
+                                            <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400 group-hover:text-slate-700 dark:text-slate-300 transition-colors">
                                                 <Calendar className="w-3.5 h-3.5 opacity-50" />
                                                 <span className="text-[11px] font-black uppercase tracking-widest">
                                                     {new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -328,7 +328,7 @@ const AdminUsers = () => {
                                             <div className="flex items-center justify-end gap-2">
                                                 <button 
                                                     onClick={() => handleEdit(user)}
-                                                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/[0.02] border border-white/5 text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all active:scale-90"
+                                                    className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 transition-all active:scale-90"
                                                     title="Modify Index"
                                                 >
                                                     <Edit3 size={16} />
@@ -352,16 +352,16 @@ const AdminUsers = () => {
 
                     {/* Pagination */}
                     {totalPages > 1 && (
-                        <div className="p-10 border-t border-white/5 bg-white/[0.01] flex flex-col md:flex-row justify-between items-center gap-8">
+                        <div className="p-10 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 flex flex-col md:flex-row justify-between items-center gap-8">
                             <div className="flex items-center gap-3">
                                 <Users className="w-4 h-4 text-indigo-500" />
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Displaying {(page - 1) * 10 + 1} to {Math.min(page * 10, total)} of {total} global identities.</span>
+                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Displaying {(page - 1) * 10 + 1} to {Math.min(page * 10, total)} of {total} global identities.</span>
                             </div>
-                            <div className="flex items-center gap-3 bg-black/40 border border-white/5 p-1.5 rounded-2xl">
+                            <div className="flex items-center gap-3 bg-black/40 border border-slate-200 dark:border-white/5 p-1.5 rounded-2xl">
                                 <button
                                     onClick={() => setPage(p => Math.max(1, p - 1))}
                                     disabled={page === 1}
-                                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-white/[0.02] border border-white/5 text-white hover:bg-white/[0.05] disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
                                 >
                                     <ChevronLeft size={20} />
                                 </button>
@@ -371,7 +371,7 @@ const AdminUsers = () => {
                                 <button
                                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                     disabled={page === totalPages}
-                                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-white/[0.02] border border-white/5 text-white hover:bg-white/[0.05] disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
                                 >
                                     <ChevronRight size={20} />
                                 </button>
@@ -386,7 +386,7 @@ const AdminUsers = () => {
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6 animate-fade-in transition-opacity duration-300">
                     <div className="absolute inset-0 z-0 bg-indigo-500/5 blur-[120px] pointer-events-none" />
                     
-                    <div className="card-glass w-full max-w-xl bg-black/80 border-white/10 shadow-[0_50px_100px_rgba(0,0,0,0.8)] overflow-hidden relative z-10 animate-scale-up">
+                    <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm w-full max-w-xl bg-black/80 border-slate-300 dark:border-white/10 shadow-[0_50px_100px_rgba(0,0,0,0.8)] overflow-hidden relative z-10 animate-scale-up">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 blur-[80px] pointer-events-none" />
                         
                         <div className="p-10">
@@ -396,13 +396,13 @@ const AdminUsers = () => {
                                         <UserPlus className="w-7 h-7" />
                                     </div>
                                     <div>
-                                        <h2 className="text-3xl font-black text-white tracking-tighter uppercase">
+                                        <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">
                                             {editingUser ? 'Edit User' : 'Create User'}
                                         </h2>
-                                        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase mt-1">User Account Settings</p>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 font-bold tracking-widest uppercase mt-1">User Account Settings</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowModal(false)} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/[0.02] border border-white/10 text-slate-500 hover:text-white transition-all active:scale-95">
+                                <button onClick={() => setShowModal(false)} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-all active:scale-95">
                                     <X size={24} />
                                 </button>
                             </div>
@@ -410,23 +410,23 @@ const AdminUsers = () => {
                             <form onSubmit={handleSubmit} className="space-y-8">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Full Identity Name</label>
+                                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-[0.2em] ml-1">Full Identity Name</label>
                                         <input
                                             type="text"
                                             value={formData.name}
                                             onChange={(e) => setFormData(f => ({ ...f, name: e.target.value }))}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all"
+                                            className="w-full bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl px-5 py-4 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all"
                                             placeholder="eg. John Matrix"
                                             required
                                         />
                                     </div>
                                     <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">System Email Address</label>
+                                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-[0.2em] ml-1">System Email Address</label>
                                         <input
                                             type="email"
                                             value={formData.email}
                                             onChange={(e) => setFormData(f => ({ ...f, email: e.target.value }))}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all"
+                                            className="w-full bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl px-5 py-4 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all"
                                             placeholder="operator@afdaan.io"
                                             required
                                         />
@@ -434,7 +434,7 @@ const AdminUsers = () => {
                                 </div>
 
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Access Level Privilege</label>
+                                    <label className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-[0.2em] ml-1">Access Level Privilege</label>
                                     <div className="grid grid-cols-2 gap-4">
                                         <button 
                                             type="button"
@@ -442,14 +442,14 @@ const AdminUsers = () => {
                                             className={`p-4 rounded-2xl border text-left transition-all ${
                                                 formData.role === 'student' 
                                                 ? 'bg-emerald-500/10 border-emerald-500/40' 
-                                                : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.05]'
+                                                : 'bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5'
                                             }`}
                                         >
                                             <div className="flex items-center justify-between mb-2">
                                                 <Users className={`w-5 h-5 ${formData.role === 'student' ? 'text-emerald-400' : 'text-slate-600'}`} />
                                                 {formData.role === 'student' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                                             </div>
-                                            <p className={`text-xs font-black uppercase tracking-tight ${formData.role === 'student' ? 'text-white' : 'text-slate-500'}`}>Level 1: Student</p>
+                                            <p className={`text-xs font-black uppercase tracking-tight ${formData.role === 'student' ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>Level 1: Student</p>
                                         </button>
                                         <button 
                                             type="button"
@@ -457,20 +457,20 @@ const AdminUsers = () => {
                                             className={`p-4 rounded-2xl border text-left transition-all ${
                                                 formData.role === 'admin' 
                                                 ? 'bg-indigo-500/10 border-indigo-500/40' 
-                                                : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.05]'
+                                                : 'bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5'
                                             }`}
                                         >
                                             <div className="flex items-center justify-between mb-2">
                                                 <Shield className={`w-5 h-5 ${formData.role === 'admin' ? 'text-indigo-400' : 'text-slate-600'}`} />
                                                 {formData.role === 'admin' && <CheckCircle2 className="w-4 h-4 text-indigo-400" />}
                                             </div>
-                                            <p className={`text-xs font-black uppercase tracking-tight ${formData.role === 'admin' ? 'text-white' : 'text-slate-500'}`}>Level 2: Admin</p>
+                                            <p className={`text-xs font-black uppercase tracking-tight ${formData.role === 'admin' ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>Level 2: Admin</p>
                                         </button>
                                     </div>
                                 </div>
 
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">
+                                    <label className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-[0.2em] ml-1">
                                         Security Credentials {editingUser && '(Optional Override)'}
                                     </label>
                                     <div className="relative group">
@@ -481,7 +481,7 @@ const AdminUsers = () => {
                                             type="password"
                                             value={formData.password}
                                             onChange={(e) => setFormData(f => ({ ...f, password: e.target.value }))}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-12 pr-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none"
+                                            className="w-full bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-5 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none"
                                             placeholder={editingUser ? 'Unchanged (System Encrypted)' : 'Strong Cluster Key'}
                                             required={!editingUser}
                                         />

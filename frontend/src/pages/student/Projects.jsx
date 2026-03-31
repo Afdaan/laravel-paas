@@ -33,7 +33,7 @@ const StatusBadge = ({ status }) => {
     building: { color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', icon: Activity, label: 'Orchestrating', pulse: true },
     running: { color: 'text-emerald-400 border-emerald-400/20 bg-emerald-400/5', icon: CheckCircle2, label: 'Active' },
     failed: { color: 'text-rose-400 border-rose-400/20 bg-rose-400/5', icon: AlertCircle, label: 'Breach' },
-    stopped: { color: 'text-slate-500 border-white/10 bg-white/5', icon: PauseCircle, label: 'Hibernating' },
+    stopped: { color: 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/5', icon: PauseCircle, label: 'Hibernating' },
   }
 
   const config = configs[status] || configs.pending
@@ -130,14 +130,14 @@ const StudentProjects = () => {
       />
 
       {/* Background Glow */}
-      <div className="absolute top-0 right-0 w-[40vw] h-[40vw] bg-indigo-600/5 blur-[120px] rounded-full pointer-events-none z-0"></div>
+      
 
       {/* Header Container */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 relative z-10">
         <div>
-          <h1 className="text-5xl font-black text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Projects</h1>
-          <p className="text-slate-400 text-lg font-medium leading-relaxed max-w-2xl">
-            Manage and monitor all your projects in our <span className="text-white">modern</span> dashboard interface.
+          <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Projects</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-lg font-medium leading-relaxed max-w-2xl">
+            Manage and monitor all your projects in our <span className="text-slate-900 dark:text-white">modern</span> dashboard interface.
           </p>
         </div>
         <Link to="/projects/new" className="btn btn-primary px-10 py-5 text-sm font-black uppercase tracking-[0.25em] shadow-[0_15px_30px_rgba(99,102,241,0.3)] flex items-center gap-4 group">
@@ -153,12 +153,12 @@ const StudentProjects = () => {
           <p className="text-[10px] font-black uppercase tracking-[0.4em]">Loading Projects...</p>
         </div>
       ) : projects.length === 0 ? (
-        <div className="card-glass border-dashed p-32 text-center flex flex-col items-center max-w-xl mx-auto border-white/5 bg-white/[0.01]">
-          <div className="w-24 h-24 bg-white/5 border border-white/5 rounded-[2.5rem] flex items-center justify-center mb-10 text-slate-700">
+        <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm border-dashed p-32 text-center flex flex-col items-center max-w-xl mx-auto border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
+          <div className="w-24 h-24 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-[2.5rem] flex items-center justify-center mb-10 text-slate-700">
             <Rocket className="w-12 h-12" />
           </div>
-          <h2 className="text-3xl font-black text-white tracking-tight mb-4 lowercase italic">The list is <span className="text-indigo-400">empty.</span></h2>
-          <p className="text-slate-500 mb-12 font-medium leading-relaxed">You have no active projects. Create your first project to begin monitoring.</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-4 lowercase italic">The list is <span className="text-indigo-400">empty.</span></h2>
+          <p className="text-slate-600 dark:text-slate-400 mb-12 font-medium leading-relaxed">You have no active projects. Create your first project to begin monitoring.</p>
           <Link to="/projects/new" className="btn btn-primary w-full py-6 text-sm font-black uppercase tracking-widest shadow-xl">
             Create Project
           </Link>
@@ -169,7 +169,7 @@ const StudentProjects = () => {
             <Link 
               key={project.id} 
               to={`/projects/${project.id}`}
-              className="card-glass group p-0 overflow-hidden flex flex-col h-full hover:bg-white/[0.02] hover:border-white/20 transition-all duration-500 hover:-translate-y-2"
+              className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm group p-0 overflow-hidden flex flex-col h-full hover:bg-slate-50 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 transition-all duration-500 hover:-translate-y-2"
             >
               <div className="p-10 flex flex-col h-full bg-gradient-to-br from-white/[0.02] to-transparent">
                 <div className="flex items-start justify-between mb-10">
@@ -180,28 +180,28 @@ const StudentProjects = () => {
                 </div>
 
                 <div className="mb-10 min-h-[80px]">
-                  <h3 className="font-black text-white text-2xl tracking-tighter group-hover:text-indigo-400 transition-colors uppercase truncate mb-2">
+                  <h3 className="font-black text-slate-900 dark:text-white text-2xl tracking-tighter group-hover:text-indigo-400 transition-colors uppercase truncate mb-2">
                     {project.name}
                   </h3>
-                  <div className="flex items-center gap-3 text-slate-500 font-mono text-[10px] tracking-widest bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-white/5 group-hover:border-indigo-500/20 transition-all">
+                  <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400 font-mono text-[10px] tracking-widest bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-slate-200 dark:border-white/5 group-hover:border-indigo-500/20 transition-all">
                     <Globe className="w-3.5 h-3.5 text-indigo-400" />
                     {project.subdomain}.paas.local
                   </div>
                 </div>
 
-                <div className="space-y-6 py-8 border-y border-white/5">
+                <div className="space-y-6 py-8 border-y border-slate-200 dark:border-white/5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-slate-500">
-                      <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                    <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
+                      <div className="p-2 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5">
                         <Cpu className="w-3.5 h-3.5" />
                       </div>
                       <span className="text-[10px] font-black uppercase tracking-[0.2em]">Environment</span>
                     </div>
-                    <span className="text-[10px] font-black text-white bg-white/10 px-3 py-1 rounded-md border border-white/10 group-hover:bg-indigo-500/20 group-hover:border-indigo-500/30 transition-all">PHP {project.php_version || '8.2'}</span>
+                    <span className="text-[10px] font-black text-slate-900 dark:text-white bg-slate-200 dark:bg-white/10 px-3 py-1 rounded-md border border-slate-300 dark:border-white/10 group-hover:bg-indigo-500/20 group-hover:border-indigo-500/30 transition-all">PHP {project.php_version || '8.2'}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-slate-500">
-                      <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                    <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
+                      <div className="p-2 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5">
                         <Database className="w-3.5 h-3.5" />
                       </div>
                       <span className="text-[10px] font-black uppercase tracking-[0.2em]">Database</span>
@@ -213,20 +213,20 @@ const StudentProjects = () => {
                 <div className="mt-10 flex items-center justify-between">
                    <div className="flex flex-col">
                       <span className="text-[8px] text-slate-600 font-black uppercase tracking-[0.2em] mb-1">Created Date</span>
-                      <span className="text-[11px] font-black text-slate-500 uppercase">{new Date(project.created_at).toLocaleDateString()}</span>
+                      <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    
                    <div className="flex gap-3">
                       <button 
                         onClick={(e) => handleRedeploy(project.id, e)}
-                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-500 hover:text-white hover:bg-indigo-500/40 hover:border-indigo-500/50 transition-all shadow-lg active:scale-95"
+                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-indigo-500/40 hover:border-indigo-500/50 transition-all shadow-lg active:scale-95"
                         title="Init Redeploy"
                       >
                          <RefreshCw className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={(e) => handleDelete(project.id, e)}
-                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 border border-white/5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/30 transition-all shadow-lg active:scale-95"
+                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/30 transition-all shadow-lg active:scale-95"
                         title="Decommission"
                       >
                          <Trash2 className="w-4 h-4" />

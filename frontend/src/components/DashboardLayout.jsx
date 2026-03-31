@@ -3,6 +3,7 @@
 // ===========================================
 
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import useAuthStore from '../stores/authStore'
 import {
   LayoutDashboard,
@@ -20,7 +21,9 @@ import {
   ArrowRightLeft,
   ChevronRight,
   ShieldCheck,
-  Zap
+  Zap,
+  Sun,
+  Moon
 } from 'lucide-react'
 
 const Icons = {
@@ -42,6 +45,28 @@ function DashboardLayout({ isAdmin = false }) {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
+  
+  const [isDark, setIsDark] = useState(() => {
+    // Default to dark mode for standard Laravel PaaS appearance
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme')
+      if (savedTheme) {
+        return savedTheme === 'dark'
+      }
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+    }
+    return true
+  })
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+    }
+  }, [isDark])
   
   const handleLogout = async () => {
     await logout()
@@ -72,15 +97,15 @@ function DashboardLayout({ isAdmin = false }) {
       }
   
   return (
-    <div className="flex h-screen bg-[#030305] overflow-hidden relative">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
       {/* Background Ambient Glows */}
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-indigo-900/10 blur-[120px] mix-blend-screen opacity-40"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[30vw] h-[30vw] rounded-full bg-purple-900/10 blur-[120px] mix-blend-screen opacity-40"></div>
+        
+        
       </div>
 
       {/* Sidebar Interface */}
-      <aside className="w-72 bg-[#050507]/40 backdrop-blur-2xl border-r border-white/5 flex flex-col relative z-50">
+      <aside className="w-72 bg-white dark:bg-slate-800 backdrop-blur-2xl border-r border-slate-200 dark:border-white/5 flex flex-col relative z-50">
         {/* Logo Branding */}
         <div className="p-10 pb-6">
           <div className="flex items-center gap-4 mb-2">
@@ -88,8 +113,8 @@ function DashboardLayout({ isAdmin = false }) {
                <span className="font-black text-white tracking-tighter">LP</span>
             </div>
             <div>
-              <h1 className="text-xl font-black text-white tracking-tighter uppercase italic">PaaS <span className="text-indigo-400">Core</span></h1>
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] -mt-1">Framework v2.0</p>
+              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tighter uppercase italic">PaaS <span className="text-indigo-400">Core</span></h1>
+              <p className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-[0.3em] -mt-1">Framework v2.0</p>
             </div>
           </div>
           
@@ -119,7 +144,7 @@ function DashboardLayout({ isAdmin = false }) {
                   `flex items-center justify-between px-5 py-3.5 rounded-2xl transition-all duration-300 group ${
                     isActive
                       ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 shadow-[0_0_20px_rgba(99,102,241,0.1)]'
-                      : 'text-slate-500 hover:text-white hover:bg-white/[0.03] hover:border-white/10 border border-transparent'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/10 border border-transparent'
                   }`
                 }
               >
@@ -144,7 +169,7 @@ function DashboardLayout({ isAdmin = false }) {
                       `flex items-center justify-between px-5 py-3.5 rounded-2xl transition-all duration-300 group ${
                         isActive
                           ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.1)]'
-                          : 'text-slate-500 hover:text-white hover:bg-white/[0.03] hover:border-white/10 border border-transparent'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/10 border border-transparent'
                       }`
                     }
                 >
@@ -171,14 +196,14 @@ function DashboardLayout({ isAdmin = false }) {
         </nav>
         
         {/* Identity & Protocol */}
-        <div className="p-8 border-t border-white/5 bg-black/20 backdrop-blur-3xl">
-          <div className="flex items-center gap-4 mb-8 p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-colors">
-            <div className="w-12 h-12 bg-gradient-to-br from-slate-700 to-indigo-900 rounded-xl flex items-center justify-center text-white font-black italic shadow-xl border border-white/10">
+        <div className="p-8 border-t border-slate-200 dark:border-white/5 bg-black/20 backdrop-blur-3xl">
+          <div className="flex items-center gap-4 mb-8 p-3 rounded-2xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:border-white/10 transition-colors">
+            <div className="w-12 h-12 bg-gradient-to-br from-slate-700 to-indigo-900 rounded-xl flex items-center justify-center text-white font-black italic shadow-xl border border-slate-300 dark:border-white/10">
               {user?.name?.charAt(0)?.toUpperCase() || 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-black text-white truncate uppercase tracking-tighter leading-tight">{user?.name}</p>
-              <p className="text-[9px] text-slate-500 truncate font-mono mt-0.5">{user?.email}</p>
+              <p className="text-[11px] font-black text-slate-900 dark:text-white truncate uppercase tracking-tighter leading-tight">{user?.name}</p>
+              <p className="text-[9px] text-slate-600 dark:text-slate-400 truncate font-mono mt-0.5">{user?.email}</p>
             </div>
           </div>
           
@@ -186,7 +211,7 @@ function DashboardLayout({ isAdmin = false }) {
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
               <NavLink
                 to="/admin"
-                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
+                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
               >
                 <ArrowRightLeft className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
                 Admin Panel
@@ -196,7 +221,7 @@ function DashboardLayout({ isAdmin = false }) {
             {isAdmin && (
               <NavLink
                 to="/dashboard"
-                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
+                className="flex items-center gap-3 px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all text-[10px] font-black uppercase tracking-widest group"
               >
                 <ArrowRightLeft className="w-4 h-4 group-hover:-rotate-180 transition-transform duration-500" />
                 Student View
@@ -223,13 +248,20 @@ function DashboardLayout({ isAdmin = false }) {
            </div>
            
            <div className="flex items-center gap-6">
+             <button
+                onClick={() => setIsDark(!isDark)}
+                className="relative p-3.5 rounded-2xl transition-all duration-300 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-white/10 shadow-sm"
+                title="Toggle Theme"
+             >
+                {isDark ? <Sun className="w-5 h-5 transition-transform" /> : <Moon className="w-5 h-5 transition-transform" />}
+             </button>
              <NavLink 
               to={isAdmin ? "/admin/feedback" : "/feedback"}
               className={({ isActive }) => 
                 `relative p-3.5 rounded-2xl transition-all duration-500 group ${
                   isActive 
-                  ? 'bg-indigo-500 text-white shadow-[0_10px_25px_rgba(99,102,241,0.4)]' 
-                  : 'bg-white/5 border border-white/5 text-slate-500 hover:text-white hover:bg-white/10'
+                  ? 'bg-indigo-500 text-slate-900 dark:text-white shadow-[0_10px_25px_rgba(99,102,241,0.4)]' 
+                  : 'bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-white/10'
                 }`
               }
               title={isAdmin ? "Feedback Console" : "Contact Engineers"}
@@ -248,7 +280,7 @@ function DashboardLayout({ isAdmin = false }) {
           </div>
           
           {/* Subtle noise texture overlay */}
-          <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+          
         </main>
       </div>
 
@@ -260,10 +292,16 @@ function DashboardLayout({ isAdmin = false }) {
           background: transparent;
         }
         .premium-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.05);
+          background: rgba(100, 116, 139, 0.2);
           border-radius: 10px;
         }
+        .dark .premium-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.05);
+        }
         .premium-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(100, 116, 139, 0.3);
+        }
+        .dark .premium-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(255, 255, 255, 0.1);
         }
       `}</style>

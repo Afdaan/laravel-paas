@@ -197,19 +197,19 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
       {/* Embedded Header Control */}
       {!embedded && (
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-white/5">
           <div>
-            <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-4 group">
+            <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors mb-4 group">
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
               <span className="text-[10px] font-black uppercase tracking-widest">Back</span>
             </button>
-            <h1 className="text-4xl font-black text-white tracking-tighter flex items-center gap-3 italic">
+            <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter flex items-center gap-3 italic">
               <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                 <DbIcon className="w-6 h-6" />
               </div>
               Database Manager
             </h1>
-            <p className="text-slate-500 mt-2 font-mono text-xs uppercase tracking-widest">
+            <p className="text-slate-600 dark:text-slate-400 mt-2 font-mono text-xs uppercase tracking-widest">
               Database: <span className="text-indigo-400">{project?.database_name}</span>
             </p>
           </div>
@@ -226,15 +226,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
       {/* Tabs System */}
       <div className={`${embedded ? 'h-full flex flex-col' : ''}`}>
-        <div className="flex gap-2 bg-white/[0.03] border border-white/5 p-1.5 rounded-2xl w-fit mb-8 ml-2">
+        <div className="flex gap-2 bg-slate-100 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 p-1.5 rounded-2xl w-fit mb-8 ml-2">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2.5 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${
                 activeTab === tab.id 
-                ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' 
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                ? 'bg-indigo-500 text-slate-900 dark:text-white shadow-lg shadow-indigo-500/20' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-white/5'
               }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -248,10 +248,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
           {activeTab === 'tables' && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 h-[600px]">
               {/* Table Sidebar */}
-              <div className="lg:col-span-1 flex flex-col h-full card-glass p-0 overflow-hidden border-white/10">
-                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                  <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Tables</h3>
-                  <button onClick={fetchTables} className="text-slate-500 hover:text-indigo-400 transition-colors">
+              <div className="lg:col-span-1 flex flex-col h-full bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-0 overflow-hidden border-slate-300 dark:border-white/10">
+                <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
+                  <h3 className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">Tables</h3>
+                  <button onClick={fetchTables} className="text-slate-600 dark:text-slate-400 hover:text-indigo-400 transition-colors">
                     <RefreshCw className="w-4 h-4" />
                   </button>
                 </div>
@@ -268,7 +268,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                         className={`w-full text-left p-4 rounded-xl transition-all duration-300 border flex justify-between items-center group uppercase ${
                           selectedTable === table.name 
                             ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' 
-                            : 'border-transparent text-slate-400 hover:bg-white/[0.03] hover:border-white/5'
+                            : 'border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-200 dark:border-white/5'
                         }`}
                       >
                         <span className="text-xs font-black tracking-tight truncate">{table.name}</span>
@@ -280,16 +280,16 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
               </div>
 
               {/* Data Viewer */}
-              <div className="lg:col-span-3 flex flex-col h-full card-glass p-0 overflow-hidden border-white/10 bg-white/[0.01]">
+              <div className="lg:col-span-3 flex flex-col h-full bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-0 overflow-hidden border-slate-300 dark:border-white/10 bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
                 {selectedTable ? (
                   <>
-                    <div className="p-6 border-b border-white/5 bg-white/[0.03] flex justify-between items-center">
+                    <div className="p-6 border-b border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-slate-100 dark:bg-white/5 flex justify-between items-center">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-500/5 border border-white/5 flex items-center justify-center text-indigo-400">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/5 border border-slate-200 dark:border-white/5 flex items-center justify-center text-indigo-400">
                           <Layers className="w-5 h-5" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-black text-white tracking-tight uppercase">{selectedTable}</h3>
+                          <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight uppercase">{selectedTable}</h3>
                           <p className="text-[10px] font-black text-indigo-400/50 uppercase tracking-widest">Total Rows: {tableData?.total || 0}</p>
                         </div>
                       </div>
@@ -339,14 +339,14 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
           {activeTab === 'query' && (
             <div className="h-[600px] flex flex-col gap-8 animate-pop-in">
-              <div className="flex-1 card p-0 overflow-hidden flex flex-col border-white/10 bg-black shadow-inner">
-                <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex justify-between items-center">
+              <div className="flex-1 card p-0 overflow-hidden flex flex-col border-slate-300 dark:border-white/10 bg-black shadow-inner">
+                <div className="px-6 py-4 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/5 flex justify-between items-center">
                    <div className="flex items-center gap-3">
                      <Terminal className="w-4 h-4 text-emerald-500" />
-                     <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">SQL Query Area</h3>
+                     <h3 className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">SQL Query Area</h3>
                    </div>
                    <div className="flex gap-3">
-                      <button onClick={() => setQuery('')} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-colors">Clear</button>
+                      <button onClick={() => setQuery('')} className="text-[10px] font-black text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white uppercase tracking-widest transition-colors">Clear</button>
                       <button 
                         onClick={executeQuery}
                         disabled={queryLoading || !query.trim()}
@@ -366,9 +366,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 />
               </div>
 
-              <div className="flex-1 card-glass p-0 overflow-hidden flex flex-col border-white/10">
-                 <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
-                   <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Query Result</h3>
+              <div className="flex-1 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-0 overflow-hidden flex flex-col border-slate-300 dark:border-white/10">
+                 <div className="px-6 py-4 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+                   <h3 className="text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">Query Result</h3>
                    {queryResult && (
                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Operation time: {queryResult.duration}</span>
                    )}
@@ -414,12 +414,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
 
           {activeTab === 'import' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-pop-in">
-              <div className="card-glass border-white/10 p-10 space-y-6">
+              <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm border-slate-300 dark:border-white/10 p-10 space-y-6">
                 <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
                   <Download className="w-8 h-8" />
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Backup</h3>
-                <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Backup</h3>
+                <p className="text-slate-600 dark:text-slate-400 text-sm font-medium leading-relaxed">
                   Generate a complete SQL dump of your database and all its tables.
                 </p>
                 <button onClick={handleExport} className="btn btn-secondary w-full py-5 text-base font-black uppercase tracking-[0.2em]">
@@ -427,19 +427,19 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 </button>
               </div>
 
-              <div className="card-glass border-white/10 p-10 space-y-6">
+              <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm border-slate-300 dark:border-white/10 p-10 space-y-6">
                 <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-2">
                   <Upload className="w-8 h-8" />
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Import Database</h3>
-                <p className="text-slate-500 text-sm font-medium leading-relaxed">
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Import Database</h3>
+                <p className="text-slate-600 dark:text-slate-400 text-sm font-medium leading-relaxed">
                   Run SQL commands to restore your database or synchronize data.
                 </p>
                 <textarea
                   value={importSQL}
                   onChange={(e) => setImportSQL(e.target.value)}
                   placeholder="-- PASTE SQL DUMP CONTENT..."
-                  className="w-full h-40 bg-black/40 border border-white/10 rounded-2xl p-6 text-emerald-400 font-mono text-xs focus:outline-none focus:border-indigo-500 mb-2 resize-none"
+                  className="w-full h-40 bg-black/40 border border-slate-300 dark:border-white/10 rounded-2xl p-6 text-emerald-400 font-mono text-xs focus:outline-none focus:border-indigo-500 mb-2 resize-none"
                 />
                 <button 
                   onClick={handleImport}
@@ -458,15 +458,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
       {showCredentials && credentials && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/60" onClick={() => setShowCredentials(false)} />
-          <div className="relative w-full max-w-md bg-[#09090b] border border-white/10 rounded-[2.5rem] p-10 shadow-2xl animate-pop-in">
+          <div className="relative w-full max-w-md bg-[#09090b] border border-slate-300 dark:border-white/10 rounded-[2.5rem] p-10 shadow-2xl animate-pop-in">
             <div className="flex justify-between items-center mb-10">
               <div className="flex items-center gap-4">
                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                   <Key className="w-6 h-6" />
                 </div>
-                <h3 className="text-2xl font-black text-white tracking-tight uppercase">Database Credentials</h3>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Database Credentials</h3>
               </div>
-              <button onClick={() => setShowCredentials(false)} className="text-slate-500 hover:text-white transition-all"><X className="w-6 h-6" /></button>
+              <button onClick={() => setShowCredentials(false)} className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-all"><X className="w-6 h-6" /></button>
             </div>
             
             <div className="space-y-6">
@@ -478,14 +478,14 @@ export default function DatabaseManager({ embedded = false, projectId = null }) 
                 { label: 'Password', value: credentials.password, secret: true },
               ].map(item => (
                 <div key={item.label} className="group space-y-2">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{item.label}</span>
-                  <div className="flex items-center justify-between bg-white/[0.03] rounded-2xl p-4 border border-white/5 group-hover:border-indigo-500/30 transition-all">
+                  <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest ml-1">{item.label}</span>
+                  <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-100 dark:bg-white/5 rounded-2xl p-4 border border-slate-200 dark:border-white/5 group-hover:border-indigo-500/30 transition-all">
                     <code className="text-indigo-400 font-mono text-xs truncate max-w-[200px]">
                       {item.value}
                     </code>
                     <button 
                       onClick={() => copyToClipboard(item.value)}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 text-slate-600 hover:text-white transition-all"
+                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 hover:text-slate-900 dark:text-white transition-all"
                     >
                       <Copy className="w-4 h-4" />
                     </button>
