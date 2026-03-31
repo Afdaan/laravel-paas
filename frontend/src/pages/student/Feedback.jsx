@@ -35,6 +35,7 @@ const StudentFeedback = () => {
     content: '',
     type: 'suggestion'
   })
+  const [validationErrors, setValidationErrors] = useState({})
 
   const typeOptions = [
     { value: 'suggestion', label: 'Feature Suggestion', icon: Lightbulb, color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
@@ -62,8 +63,14 @@ const StudentFeedback = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!formData.title || !formData.content) {
-      return toast.error('Please fill in all fields')
+    
+    const errors = {}
+    if (!formData.title.trim()) errors.title = 'Subject is required'
+    if (!formData.content.trim()) errors.content = 'Details are required'
+    
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors)
+      return
     }
 
     setIsSubmitting(true)
@@ -114,7 +121,7 @@ const StudentFeedback = () => {
             <div className="card-glass p-10 bg-white/[0.01] border-white/10 group overflow-hidden relative transition-all duration-500 hover:bg-white/[0.02]">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl pointer-events-none"></div>
                 
-                <form onSubmit={handleSubmit} className="space-y-10">
+                <form onSubmit={handleSubmit} noValidate className="space-y-10">
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1 flex items-center gap-2">
                        <MessageSquare size={12} className="text-indigo-400" />
@@ -122,11 +129,17 @@ const StudentFeedback = () => {
                     </label>
                     <input 
                       type="text" 
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none"
+                      className={`w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-5 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none ${validationErrors.title ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
                       placeholder="e.g., Issue with project setup"
                       value={formData.title}
-                      onChange={e => setFormData({...formData, title: e.target.value})}
+                      onChange={e => {
+                        setFormData({...formData, title: e.target.value})
+                        if(validationErrors.title) setValidationErrors(prev => ({...prev, title: null}))
+                      }}
                     />
+                    {validationErrors.title && (
+                       <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.title}</p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -201,11 +214,17 @@ const StudentFeedback = () => {
                     </label>
                     <textarea 
                       rows="6"
-                      className="w-full bg-black/40 border border-white/10 rounded-3xl px-6 py-6 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none resize-none"
+                      className={`w-full bg-black/40 border border-white/10 rounded-3xl px-6 py-6 text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all outline-none resize-none ${validationErrors.content ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
                       placeholder="Describe the issue or suggestion..."
                       value={formData.content}
-                      onChange={e => setFormData({...formData, content: e.target.value})}
+                      onChange={e => {
+                        setFormData({...formData, content: e.target.value})
+                        if(validationErrors.content) setValidationErrors(prev => ({...prev, content: null}))
+                      }}
                     ></textarea>
+                    {validationErrors.content && (
+                       <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.content}</p>
+                    )}
                   </div>
 
                   <button 

@@ -12,6 +12,7 @@ function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [validationErrors, setValidationErrors] = useState({})
   
   const login = useAuthStore((state) => state.login)
   const token = useAuthStore((state) => state.token)
@@ -27,6 +28,17 @@ function Login() {
   
   const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    // Minimalistic Modern Validation
+    const errors = {}
+    if (!email.trim()) errors.email = 'Email address is required'
+    if (!password) errors.password = 'Password is required'
+    
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors)
+      return
+    }
+
     setIsLoading(true)
     
     try {
@@ -66,7 +78,7 @@ function Login() {
         </div>
         
         {/* Authentication Interface */}
-        <form onSubmit={handleSubmit} className="space-y-8 bg-[#0d0d12] border border-white/5 p-10 rounded-[2rem] shadow-2xl relative overflow-hidden group/form">
+        <form onSubmit={handleSubmit} noValidate className="space-y-8 bg-[#0d0d12] border border-white/5 p-10 rounded-[2rem] shadow-2xl relative overflow-hidden group/form">
           <div className="absolute top-0 right-0 p-4 opacity-10">
              <Terminal size={120} className="text-indigo-500 -mr-16 -mt-16 rotate-12" />
           </div>
@@ -80,12 +92,17 @@ function Login() {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-5 py-4 bg-black/40 border border-white/10 text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium"
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if(validationErrors.email) setValidationErrors(prev => ({...prev, email: null}))
+                }}
+                className={`w-full px-5 py-4 bg-black/40 border border-white/10 text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium ${validationErrors.email ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
                 placeholder="name@example.com"
-                required
                 autoFocus
               />
+              {validationErrors.email && (
+                 <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.email}</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -96,11 +113,16 @@ function Login() {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-5 py-4 bg-black/40 border border-white/10 text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium"
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
+                }}
+                className={`w-full px-5 py-4 bg-black/40 border border-white/10 text-white rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all duration-300 placeholder-slate-700 outline-none text-sm font-medium ${validationErrors.password ? '!border-rose-500/50 focus:!ring-rose-500/20 focus:!border-rose-500' : ''}`}
                 placeholder="••••••••"
-                required
               />
+              {validationErrors.password && (
+                 <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.password}</p>
+              )}
             </div>
             
             <div className="pt-4">

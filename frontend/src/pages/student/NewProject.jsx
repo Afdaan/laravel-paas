@@ -32,6 +32,7 @@ function StudentNewProject() {
     database_name: '',
     queue_enabled: false,
   })
+  const [validationErrors, setValidationErrors] = useState({})
   
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -46,10 +47,27 @@ function StudentNewProject() {
         .replace(/^_|_$/g, '')
       setFormData(prev => ({ ...prev, database_name: dbName }))
     }
+
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({ ...prev, [name]: null }))
+    }
+  }
+  
+  const validateForm = () => {
+    const errors = {}
+    if (!formData.name.trim()) errors.name = 'Project name is required'
+    if (!formData.github_url.trim()) errors.github_url = 'Repository URL is required'
+    if (!formData.database_name.trim()) errors.database_name = 'Database name is required'
+    
+    setValidationErrors(errors)
+    return Object.keys(errors).length === 0
   }
   
   const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    if (!validateForm()) return
+    
     setIsLoading(true)
     setSubmitError(null)
     
@@ -109,7 +127,7 @@ function StudentNewProject() {
           </div>
         )}
         
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-pop-in" style={{ animationDelay: '100ms' }}>
+        <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-pop-in" style={{ animationDelay: '100ms' }}>
           <div className="lg:col-span-2 space-y-8">
             <div className="card-glass p-10 space-y-8 border-white/10">
               {/* Project Name */}
@@ -128,10 +146,12 @@ function StudentNewProject() {
                   type="text"
                   value={formData.name}
                   onChange={handleChange}
-                  className="input-field py-4"
+                  className={`input-field py-4 ${validationErrors.name ? '!border-rose-500/50 focus:!border-rose-500 focus:!ring-rose-500/20' : ''}`}
                   placeholder="e.g., Stellar Marketing API"
-                  required
                 />
+                {validationErrors.name && (
+                   <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.name}</p>
+                )}
               </div>
               
               {/* GitHub Settings */}
@@ -151,10 +171,12 @@ function StudentNewProject() {
                     type="url"
                     value={formData.github_url}
                     onChange={handleChange}
-                    className="input-field"
+                    className={`input-field ${validationErrors.github_url ? '!border-rose-500/50 focus:!border-rose-500 focus:!ring-rose-500/20' : ''}`}
                     placeholder="https://github.com/org/repo"
-                    required
                   />
+                  {validationErrors.github_url && (
+                     <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.github_url}</p>
+                  )}
                 </div>
                 
                 <div className="space-y-4">
@@ -194,11 +216,13 @@ function StudentNewProject() {
                   type="text"
                   value={formData.database_name}
                   onChange={handleChange}
-                  className="input-field"
+                  className={`input-field ${validationErrors.database_name ? '!border-rose-500/50 focus:!border-rose-500 focus:!ring-rose-500/20' : ''}`}
                   placeholder="database_name"
                   pattern="[a-z0-9_]+"
-                  required
                 />
+                {validationErrors.database_name && (
+                   <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.database_name}</p>
+                )}
               </div>
 
               {/* Queue Worker */}
