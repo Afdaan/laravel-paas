@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertTriangle, Info, AlertOctagon, X } from 'lucide-react'
 
 export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel' }) {
@@ -31,8 +32,8 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
   const config = configs[type] || configs.danger
   const Icon = config.icon
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 animate-in fade-in duration-300">
       {/* Precision Backdrop */}
       <div 
         className="fixed inset-0 bg-black/60 transition-opacity duration-300" 
@@ -82,7 +83,8 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
