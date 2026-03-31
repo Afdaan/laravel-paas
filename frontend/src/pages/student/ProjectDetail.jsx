@@ -26,7 +26,9 @@ import {
   Box,
   AlertTriangle,
   GitBranch,
-  Copy
+  Copy,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 import { projectsAPI } from '../../services/api'
 import DatabaseManager from './DatabaseManager'
@@ -91,6 +93,7 @@ function StudentProjectDetail() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isPhpDropdownOpen, setIsPhpDropdownOpen] = useState(false)
+  const [isEnvHidden, setIsEnvHidden] = useState(true)
   
   // Modal State
   const [confirmModal, setConfirmModal] = useState({
@@ -623,27 +626,48 @@ function StudentProjectDetail() {
                         <p className="text-[10px] text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest mt-0.5">Application Secrets & Variables</p>
                      </div>
                   </div>
-                  <button 
-                    onClick={handleSaveEnv}
-                    disabled={isSavingEnv}
-                    className="btn btn-primary px-8 py-4 text-xs font-black uppercase tracking-widest flex items-center gap-3 disabled:opacity-50 shadow-lg shadow-indigo-500/20"
-                  >
-                    {isSavingEnv ? (
-                        <div className="w-4 h-4 border-2 border-slate-300 dark:border-white/20 border-t-white rounded-full animate-spin" />
-                    ) : (
-                        <Save className="w-4 h-4" />
-                    )}
-                    {isSavingEnv ? 'Saving...' : 'Save Secrets'}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setIsEnvHidden(!isEnvHidden)}
+                      className="w-12 h-12 rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-indigo-500 hover:border-indigo-500/30 transition-all flex items-center justify-center shadow-sm"
+                      title={isEnvHidden ? "Reveal Secrets" : "Hide Secrets"}
+                    >
+                      {isEnvHidden ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                    </button>
+                    <button 
+                      onClick={handleSaveEnv}
+                      disabled={isSavingEnv || isEnvHidden}
+                      className="btn btn-primary px-8 py-4 text-xs font-black uppercase tracking-widest flex items-center gap-3 disabled:opacity-50 shadow-lg shadow-indigo-500/20"
+                    >
+                      {isSavingEnv ? (
+                          <div className="w-4 h-4 border-2 border-slate-300 dark:border-white/20 border-t-white rounded-full animate-spin" />
+                      ) : (
+                          <Save className="w-4 h-4" />
+                      )}
+                      {isSavingEnv ? 'Saving...' : 'Save Secrets'}
+                    </button>
+                  </div>
                </div>
                <div className="flex-1 relative bg-black/20">
                  <textarea
                    value={envContent}
                    onChange={(e) => setEnvContent(e.target.value)}
-                   className="absolute inset-0 w-full h-full bg-transparent text-slate-700 dark:text-slate-300 font-mono text-sm p-10 focus:outline-none resize-none custom-scrollbar selection:bg-indigo-500/30 leading-relaxed"
+                   readOnly={isEnvHidden}
+                   className={`absolute inset-0 w-full h-full bg-transparent text-slate-700 dark:text-slate-300 font-mono text-sm p-10 focus:outline-none resize-none custom-scrollbar selection:bg-indigo-500/30 leading-relaxed transition-all duration-500 ${
+                     isEnvHidden ? 'blur-md opacity-30 select-none' : ''
+                   }`}
                    spellCheck="false"
                    placeholder="# Define your application secrets here..."
                  />
+                 {isEnvHidden && (
+                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 animate-in fade-in zoom-in-95 duration-500">
+                     <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-5 border border-indigo-500/20 backdrop-blur-sm shadow-xl">
+                       <EyeOff className="w-8 h-8 text-indigo-400" />
+                     </div>
+                     <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest bg-white/80 dark:bg-black/40 px-4 py-2 rounded-lg backdrop-blur-md border border-slate-200 dark:border-white/10 shadow-sm">Secure View Active</p>
+                     <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mt-4">Click the eye icon to reveal and edit</p>
+                   </div>
+                 )}
                  <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[100px] pointer-events-none rounded-full" />
                </div>
                <div className="p-5 bg-indigo-500/5 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] border-t border-slate-200 dark:border-white/5 flex items-center justify-center gap-4 backdrop-blur-md">
