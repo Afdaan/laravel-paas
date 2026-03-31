@@ -66,7 +66,7 @@ export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, m
         <div className="p-8 pt-0 flex gap-3 w-full">
           <button
             type="button"
-            className="flex-1 py-3 px-4 text-sm font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="flex-1 py-3 px-4 text-sm font-semibold rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors"
             onClick={onClose}
           >
             {cancelText}

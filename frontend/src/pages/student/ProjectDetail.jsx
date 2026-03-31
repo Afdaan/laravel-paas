@@ -668,7 +668,6 @@ function StudentProjectDetail() {
                      <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mt-4">Click the eye icon to reveal and edit</p>
                    </div>
                  )}
-                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[100px] pointer-events-none rounded-full" />
                </div>
                <div className="p-5 bg-indigo-500/5 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] border-t border-slate-200 dark:border-white/5 flex items-center justify-center gap-4 backdrop-blur-md">
                   <AlertTriangle className="w-4 h-4 animate-pulse" /> 
