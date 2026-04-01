@@ -19,6 +19,8 @@ jobs:
 
       - name: Run Semgrep
         uses: semgrep/semgrep-action@v1
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
         with:
           config: >-
             p/default
