@@ -11,7 +11,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-export default function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel' }) {
+interface ConfirmationModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: React.ReactNode;
+  type?: 'danger' | 'warning' | 'info';
+  confirmText?: string;
+  cancelText?: string;
+}
+
+export default function ConfirmationModal({ 
+  isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel' 
+}: ConfirmationModalProps) {
   const configs = {
     danger: {
       text: 'text-destructive',

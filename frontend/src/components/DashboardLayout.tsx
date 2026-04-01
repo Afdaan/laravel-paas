@@ -173,11 +173,9 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           {/* Action Trigger (Student Only) */}
           {!isAdmin && (
             <div className="pt-4">
-              <Button asChild className="w-full justify-start" size="sm">
-                <NavLink to="/projects/new">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Project
-                </NavLink>
+              <Button render={<NavLink to="/projects/new" />} className="w-full justify-start" size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                New Project
               </Button>
             </div>
           )}
@@ -196,20 +194,16 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           
           <div className="space-y-1">
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
-              <Button variant="ghost" className="w-full justify-start text-xs h-8" asChild>
-                <NavLink to="/admin">
-                  <ArrowRightLeft className="w-3 h-3 mr-2" />
-                  Admin Panel
-                </NavLink>
+              <Button variant="ghost" className="w-full justify-start text-xs h-8" render={<NavLink to="/admin" />}>
+                <ArrowRightLeft className="w-3 h-3 mr-2" />
+                Admin Panel
               </Button>
             )}
             
             {isAdmin && (
-              <Button variant="ghost" className="w-full justify-start text-xs h-8" asChild>
-                <NavLink to="/dashboard">
-                  <ArrowRightLeft className="w-3 h-3 mr-2" />
-                  Student View
-                </NavLink>
+              <Button variant="ghost" className="w-full justify-start text-xs h-8" render={<NavLink to="/dashboard" />}>
+                <ArrowRightLeft className="w-3 h-3 mr-2" />
+                Student View
               </Button>
             )}
             
@@ -243,12 +237,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              <Button
                 variant={location.pathname.includes('feedback') ? "default" : "outline"}
                 size="icon"
-                asChild
+                render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title="Feedback" />}
                 className="relative"
              >
-               <NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title="Feedback">
-                  <MessageSquare className="w-4 h-4" />
-               </NavLink>
+                <MessageSquare className="w-4 h-4" />
              </Button>
            </div>
         </header>

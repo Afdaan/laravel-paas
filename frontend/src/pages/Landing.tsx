@@ -82,11 +82,9 @@ export default function Landing() {
             <Button variant="ghost" size="icon" onClick={() => setIsDark(!isDark)}>
               {isDark ? <Sun className="w-4 h-4 transition-transform" /> : <Moon className="w-4 h-4 transition-transform" />}
             </Button>
-            <Button asChild>
-              <Link to={token ? dashboardPath : "/login"}>
+            <Button render={<Link to={token ? dashboardPath : "/login"} />}>
                 {token ? 'Dashboard' : 'Sign In'}
                 <ArrowUpRight className="ml-2 w-4 h-4" />
-              </Link>
             </Button>
           </div>
         </div>
@@ -110,17 +108,13 @@ export default function Landing() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button size="lg" asChild>
-              <Link to={token ? dashboardPath : "/login"}>
+            <Button size="lg" render={<Link to={token ? dashboardPath : "/login"} />}>
                 {token ? 'Go to Dashboard' : 'Deploy your first project'}
                 <ArrowRight className="ml-2 w-4 h-4" />
-              </Link>
             </Button>
-            <Button size="lg" variant="outline" asChild>
-              <a href="https://github.com/laravell-paas/repo" target="_blank" rel="noreferrer">
+            <Button size="lg" variant="outline" render={<a href="https://github.com/laravell-paas/repo" target="_blank" rel="noreferrer" />}>
                 <Rocket className="mr-2 w-4 h-4" />
                 View Source Code
-              </a>
             </Button>
           </div>
         </div>
@@ -255,11 +249,9 @@ export default function Landing() {
           <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-6">Stop configuring. Start building.</h2>
           <p className="text-muted-foreground text-lg mb-10 max-w-xl mx-auto">Join hundreds of students currently shipping their Laravel projects on the fastest platform in the cluster.</p>
 
-          <Button size="lg" asChild>
-            <Link to={token ? dashboardPath : "/login"}>
+          <Button size="lg" render={<Link to={token ? dashboardPath : "/login"} />}>
               {token ? 'Return to Dashboard' : 'Ready to deploy?'}
               <ArrowRight className="ml-2 w-4 h-4" />
-            </Link>
           </Button>
         </div>
       </section>
