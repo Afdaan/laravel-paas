@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "**" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "**" ]
 
 jobs:
   # ==========================================================
@@ -19,35 +19,37 @@ jobs:
         run: |
           TARGET_DIR="/opt/laravel-paas"
           if [ ! -d "$TARGET_DIR" ]; then
-            echo "❌ Directory $TARGET_DIR does not exist!"
+            echo "[ERROR] Directory $TARGET_DIR does not exist!"
             exit 1
           fi
           
           cd "$TARGET_DIR"
-          echo "📂 Working directory: $(pwd)"
+          echo "[INFO] Working directory: $(pwd)"
           
           # Ensure git trusts this directory
           git config --global --add safe.directory "$TARGET_DIR"
           
-          echo "📥 Pulling latest changes..."
-          git pull origin main
+          echo "[INFO] Pulling latest changes for branch ${{ github.ref_name }}..."
+          git fetch origin
+          git checkout ${{ github.ref_name }}
+          git pull origin ${{ github.ref_name }}
 
       # 2. Deployment / Restart
       # Builds logic is handled inside Docker build (via start.sh)
       - name: Restart Infrastructure
         run: |
           cd /opt/laravel-paas
-          echo "🔄 Restarting Services..."
+          echo "[INFO] Restarting Services..."
           
           if [ -f "./scripts/start.sh" ]; then
             chmod +x ./scripts/start.sh
             ./scripts/start.sh
           else
-            echo "❌ scripts/start.sh not found!"
+            echo "[ERROR] scripts/start.sh not found!"
             exit 1
           fi
           
-          echo "✅ Deployment Successful!"
+          echo "[SUCCESS] Deployment Successful!"
 
       # 6. Notifications
       - name: Notify Success
@@ -66,11 +68,11 @@ jobs:
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
           LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
 
-          MSG="✅ <b>Laravel PaaS Deploy SUKSES!</b>%0A%0A"
-          MSG="${MSG}📦 <b>Branch:</b> <code>main</code>%0A"
-          MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
-          MSG="${MSG}📝 <b>Log:</b> $LAST_COMMIT_MSG%0A%0A"
-          MSG="${MSG}🚀 Services restarted & live."
+          MSG="[SUCCESS] <b>Laravel PaaS Deploy SUKSES!</b>%0A%0A"
+          MSG="${MSG}<b>Branch:</b> <code>${{ github.ref_name }}</code>%0A"
+          MSG="${MSG}<b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
+          MSG="${MSG}<b>Log:</b> $LAST_COMMIT_MSG%0A%0A"
+          MSG="${MSG}Services restarted & live."
 
           set +x
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -91,10 +93,11 @@ jobs:
           cd /opt/laravel-paas
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-          MSG="❌ <b>Laravel PaaS Deploy GAGAL!</b>%0A%0A"
-          MSG="${MSG}⚠️ Pipeline stopped at error.%0A"
-          MSG="${MSG}🔗 <b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
-          MSG="${MSG}🔍 Check GitHub Actions logs."
+          MSG="[FAILED] <b>Laravel PaaS Deploy GAGAL!</b>%0A%0A"
+          MSG="${MSG}Pipeline stopped at error.%0A"
+          MSG="${MSG}<b>Branch:</b> <code>${{ github.ref_name }}</code>%0A"
+          MSG="${MSG}<b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
+          MSG="${MSG}Check GitHub Actions logs."
 
           set +x
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
