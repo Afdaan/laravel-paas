@@ -4,7 +4,7 @@
 // Centralized API calls with axios
 // ===========================================
 
-import axios from 'axios'
+import axios, { InternalAxiosRequestConfig } from 'axios'
 
 // Create axios instance
 const api = axios.create({
@@ -15,9 +15,9 @@ const api = axios.create({
 })
 
 // Request interceptor - add auth token
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('token')
-  if (token) {
+  if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -41,7 +41,7 @@ api.interceptors.response.use(
 // ===========================================
 
 export const authAPI = {
-  login: (email, password) => 
+  login: (email: string, password: string) => 
     api.post('/auth/login', { email, password }),
   
   logout: () => 
@@ -56,22 +56,22 @@ export const authAPI = {
 // ===========================================
 
 export const usersAPI = {
-  list: (params = {}) => 
+  list: (params: Record<string, any> = {}) => 
     api.get('/admin/users', { params }),
   
-  get: (id) => 
+  get: (id: number | string) => 
     api.get(`/admin/users/${id}`),
   
-  create: (data) => 
+  create: (data: any) => 
     api.post('/admin/users', data),
   
-  update: (id, data) => 
+  update: (id: number | string, data: any) => 
     api.put(`/admin/users/${id}`, data),
   
-  delete: (id) => 
+  delete: (id: number | string) => 
     api.delete(`/admin/users/${id}`),
   
-  importExcel: (file) => {
+  importExcel: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
     return api.post('/admin/users/import', formData, {
@@ -88,7 +88,7 @@ export const settingsAPI = {
   list: () => 
     api.get('/admin/settings'),
   
-  update: (settings) => 
+  update: (settings: any) => 
     api.put('/admin/settings', { settings }),
 }
 
@@ -101,38 +101,38 @@ export const projectsAPI = {
   listOwn: () => 
     api.get('/projects'),
   
-  create: (data) => 
+  create: (data: any) => 
     api.post('/projects', data),
   
-  get: (id) => 
+  get: (id: number | string) => 
     api.get(`/projects/${id}`),
   
-  redeploy: (id) => 
+  redeploy: (id: number | string) => 
     api.post(`/projects/${id}/redeploy`),
   
-  update: (id, data) =>
+  update: (id: number | string, data: any) =>
     api.put(`/projects/${id}`, data),
   
-  delete: (id) => 
+  delete: (id: number | string) => 
     api.delete(`/projects/${id}`),
   
-  logs: (id, lines = 100) => 
+  logs: (id: number | string, lines: number = 100) => 
     api.get(`/projects/${id}/logs`, { params: { lines } }),
   
-  stats: (id) => 
+  stats: (id: number | string) => 
     api.get(`/projects/${id}/stats`),
 
-  runArtisan: (id, command) =>
+  runArtisan: (id: number | string, command: string) =>
     api.post(`/projects/${id}/artisan`, { command }),
 
-  getEnv: (id) =>
+  getEnv: (id: number | string) =>
     api.get(`/projects/${id}/env`),
 
-  updateEnv: (id, content) =>
+  updateEnv: (id: number | string, content: string) =>
     api.put(`/projects/${id}/env`, { content }),
   
   // Admin endpoints
-  listAll: (params = {}) => 
+  listAll: (params: Record<string, any> = {}) => 
     api.get('/admin/projects', { params }),
 
   listStats: () => 
@@ -148,37 +148,37 @@ export const projectsAPI = {
 
 export const databaseAPI = {
   // Get database credentials
-  getCredentials: (projectId) => 
+  getCredentials: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/credentials`),
   
   // List all tables
-  listTables: (projectId) => 
+  listTables: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/tables`),
   
   // Get table structure (columns)
-  getStructure: (projectId, tableName) => 
+  getStructure: (projectId: number | string, tableName: string) => 
     api.get(`/projects/${projectId}/database/tables/${tableName}`),
   
   // Get table data with pagination
-  getData: (projectId, tableName, page = 1, limit = 50) => 
+  getData: (projectId: number | string, tableName: string, page: number = 1, limit: number = 50) => 
     api.get(`/projects/${projectId}/database/tables/${tableName}/data`, { 
       params: { page, limit } 
     }),
   
   // Execute SQL query
-  query: (projectId, sql) => 
+  query: (projectId: number | string, sql: string) => 
     api.post(`/projects/${projectId}/database/query`, { query: sql }),
   
   // Export database as SQL file
-  export: (projectId) => 
+  export: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/export`, { responseType: 'blob' }),
   
   // Import SQL
-  import: (projectId, sql) => 
+  import: (projectId: number | string, sql: string) => 
     api.post(`/projects/${projectId}/database/import`, { sql }),
   
   // Reset database (drop all tables)
-  reset: (projectId) => 
+  reset: (projectId: number | string) => 
     api.post(`/projects/${projectId}/database/reset`),
 }
 
@@ -187,20 +187,20 @@ export const databaseAPI = {
 // ===========================================
 
 export const feedbackAPI = {
-  submit: (data) => 
+  submit: (data: any) => 
     api.post('/feedback', data),
   
   listOwn: () => 
     api.get('/feedback'),
   
   // Admin endpoints
-  listAll: (params = {}) => 
+  listAll: (params: Record<string, any> = {}) => 
     api.get('/admin/feedback', { params }),
   
-  updateStatus: (id, status) => 
+  updateStatus: (id: number | string, status: string) => 
     api.put(`/admin/feedback/${id}/status`, { status }),
   
-  delete: (id) => 
+  delete: (id: number | string) => 
     api.delete(`/admin/feedback/${id}`),
 }
 

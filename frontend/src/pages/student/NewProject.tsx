@@ -6,12 +6,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { projectsAPI } from '../../services/api'
-import { 
-  Rocket, 
-  Github, 
-  Database, 
-  Settings, 
-  Activity, 
+import {
+  Rocket,
+  Database,
+  Settings,
+  Activity,
   Info,
   ChevronLeft,
   ArrowRight,
@@ -33,14 +32,14 @@ function StudentNewProject() {
     queue_enabled: false,
   })
   const [validationErrors, setValidationErrors] = useState({})
-  
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
-    setFormData(prev => ({ 
-        ...prev, 
-        [name]: type === 'checkbox' ? checked : value 
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
     }))
-    
+
     if (name === 'name') {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
@@ -52,25 +51,25 @@ function StudentNewProject() {
       setValidationErrors(prev => ({ ...prev, [name]: null }))
     }
   }
-  
+
   const validateForm = () => {
     const errors = {}
     if (!formData.name.trim()) errors.name = 'Project name is required'
     if (!formData.github_url.trim()) errors.github_url = 'Repository URL is required'
     if (!formData.database_name.trim()) errors.database_name = 'Database name is required'
-    
+
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
   }
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!validateForm()) return
-    
+
     setIsLoading(true)
     setSubmitError(null)
-    
+
     try {
       const response = await projectsAPI.create(formData)
       toast.success('Project Created', {
@@ -85,26 +84,26 @@ function StudentNewProject() {
       navigate(`/projects/${response.data.project.id}`)
     } catch (error) {
       let errorMsg = error.response?.data?.error || 'Failed to create project'
-      
+
       // Intercept technical backend error and provide actionable human-readable feedback
       if (errorMsg === 'Project limit reached' || error.response?.status === 403) {
         errorMsg = 'Project limit reached. Please delete an existing project from your dashboard before creating a new one.'
       }
-      
+
       setSubmitError(errorMsg)
-      
+
     } finally {
       setIsLoading(false)
     }
   }
-  
+
   return (
     <div className="max-w-4xl mx-auto space-y-10 relative">
       {/* Background Orbs */}
-      
+
 
       <div className="relative z-10">
-        <button 
+        <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors mb-6 group bg-slate-100 dark:bg-white/5 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/5"
         >
@@ -116,17 +115,17 @@ function StudentNewProject() {
           <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4 italic">New <span className="text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Project</span></h1>
           <p className="text-slate-600 dark:text-slate-400 font-medium text-lg">Scale your Laravel application in seconds with automated cloud deployment.</p>
         </div>
-        
+
         {submitError && (
           <div className="mb-8 p-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col items-center justify-center text-center animate-pop-in">
-             <div className="w-12 h-12 bg-rose-500/20 rounded-full flex items-center justify-center mb-4 text-rose-400">
-                <Info className="w-6 h-6" />
-             </div>
-             <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Notice</h3>
-             <p className="text-rose-200/80 font-medium leading-relaxed max-w-lg">{submitError}</p>
+            <div className="w-12 h-12 bg-rose-500/20 rounded-full flex items-center justify-center mb-4 text-rose-400">
+              <Info className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Notice</h3>
+            <p className="text-rose-200/80 font-medium leading-relaxed max-w-lg">{submitError}</p>
           </div>
         )}
-        
+
         <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-pop-in" style={{ animationDelay: '100ms' }}>
           <div className="lg:col-span-2 space-y-8">
             <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 space-y-8 border-slate-300 dark:border-white/10">
@@ -150,16 +149,16 @@ function StudentNewProject() {
                   placeholder="e.g., Stellar Marketing API"
                 />
                 {validationErrors.name && (
-                   <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.name}</p>
+                  <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.name}</p>
                 )}
               </div>
-              
+
               {/* GitHub Settings */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5">
-                      <Github className="w-4 h-4" />
+                      <Rocket className="w-4 h-4" />
                     </div>
                     <label htmlFor="github_url" className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
                       Repository URL
@@ -175,10 +174,10 @@ function StudentNewProject() {
                     placeholder="https://github.com/org/repo"
                   />
                   {validationErrors.github_url && (
-                     <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.github_url}</p>
+                    <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.github_url}</p>
                   )}
                 </div>
-                
+
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5">
@@ -199,7 +198,7 @@ function StudentNewProject() {
                   />
                 </div>
               </div>
-              
+
               {/* Database Settings */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3 mb-2">
@@ -221,7 +220,7 @@ function StudentNewProject() {
                   pattern="[a-z0-9_]+"
                 />
                 {validationErrors.database_name && (
-                   <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.database_name}</p>
+                  <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest pl-1 mt-1 animate-pop-in">{validationErrors.database_name}</p>
                 )}
               </div>
 
@@ -229,7 +228,7 @@ function StudentNewProject() {
               <div className={`p-6 rounded-2xl border transition-all duration-300 ${formData.queue_enabled ? 'bg-indigo-500/5 border-indigo-500/30' : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5 opacity-60 hover:opacity-100'}`}>
                 <div className="flex items-start gap-4">
                   <div className="flex items-center h-6 mt-1">
-                    <input 
+                    <input
                       id="queue_enabled"
                       name="queue_enabled"
                       type="checkbox"
@@ -245,7 +244,7 @@ function StudentNewProject() {
                 </div>
               </div>
             </div>
-            
+
             <button
               type="submit"
               disabled={isLoading}
@@ -268,36 +267,36 @@ function StudentNewProject() {
 
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-8 border-slate-300 dark:border-white/10 space-y-8 bg-gradient-to-br from-white/[0.03] to-transparent">
-               <div className="flex items-center gap-3 pb-6 border-b border-slate-200 dark:border-white/5">
+              <div className="flex items-center gap-3 pb-6 border-b border-slate-200 dark:border-white/5">
                 <ShieldCheck className="w-6 h-6 text-indigo-400" />
                 <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">Project Setup</h3>
               </div>
-              
+
               <ul className="space-y-6">
-                <PipelineStep 
-                  icon={Github} 
-                  title="Git Clone" 
-                  desc="Cloning your repository branch." 
+                <PipelineStep
+                  icon={Rocket}
+                  title="Git Clone"
+                  desc="Cloning your repository branch."
                 />
-                <PipelineStep 
-                  icon={Activity} 
-                  title="PHP Version" 
-                  desc="Detecting PHP and Laravel versions." 
+                <PipelineStep
+                  icon={Activity}
+                  title="PHP Version"
+                  desc="Detecting PHP and Laravel versions."
                 />
-                <PipelineStep 
-                  icon={Database} 
-                  title="Database" 
-                  desc="Creating your database instance." 
+                <PipelineStep
+                  icon={Database}
+                  title="Database"
+                  desc="Creating your database instance."
                 />
-                <PipelineStep 
-                  icon={Zap} 
-                  title="Networking" 
-                  desc="Setting up secure URL and SSL." 
+                <PipelineStep
+                  icon={Zap}
+                  title="Networking"
+                  desc="Setting up secure URL and SSL."
                 />
-                <PipelineStep 
-                  icon={Cpu} 
-                  title="Resources" 
-                  desc="Allocating CPU and Memory." 
+                <PipelineStep
+                  icon={Cpu}
+                  title="Resources"
+                  desc="Allocating CPU and Memory."
                 />
               </ul>
 
