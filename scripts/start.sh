@@ -17,7 +17,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${GREEN}🚀 Starting Laravel PaaS...${NC}"
+echo -e "${GREEN}[INFO] Starting Laravel PaaS...${NC}"
 echo -e "Project root: ${PROJECT_ROOT}"
 
 cd "$PROJECT_ROOT"
@@ -29,7 +29,7 @@ if [ -z "$MYSQL_ROOT_PASSWORD" ] && [ -f "$PROJECT_ROOT/.env" ]; then
     set -a
     source "$PROJECT_ROOT/.env"
     set +a
-    echo -e "${GREEN}✓ .env file loaded successfully${NC}"
+    echo -e "${GREEN}[SUCCESS] .env file loaded successfully${NC}"
 fi
 
 # Set defaults
@@ -40,6 +40,8 @@ BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
 ACME_EMAIL=${ACME_EMAIL:-"admin@localhost"}
 JWT_SECRET=${JWT_SECRET:-"change-me-please-12345"}
 MYSQL_PASSWORD=${MYSQL_PASSWORD:-"$MYSQL_ROOT_PASSWORD"}
+HTTP_PORT=${HTTP_PORT:-80}
+HTTPS_PORT=${HTTPS_PORT:-443}
 
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
@@ -58,23 +60,23 @@ SECONDS_SINCE=$((CURRENT_TS - LAST_TS))
 if [ "$SKIP_BACKUP" != "true" ] && ([ "$FORCE_BACKUP" = "true" ] || [ $SECONDS_SINCE -ge 86400 ]); then
     if docker ps --format '{{.Names}}' | grep -q "^paas-mysql$"; then
         BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-dump-$(date +%Y%m%d-%H%M%S).sql"
-        echo -e "${YELLOW}💾 Running logical backup (mysqldump) for $MYSQL_DATABASE...${NC}"
+        echo -e "${YELLOW}[BACKUP] Running logical backup (mysqldump) for $MYSQL_DATABASE...${NC}"
         docker exec paas-mysql mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" > "$BACKUP_FILE" 2>/dev/null
         if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Backup complete: $(basename "$BACKUP_FILE")${NC}"
+            echo -e "${GREEN}[SUCCESS] Backup complete: $(basename "$BACKUP_FILE")${NC}"
             echo $CURRENT_TS > "$LAST_BACKUP_TS"
         else
             echo -e "${RED}Warning: mysqldump failed, skipping...${NC}"
         fi
     elif [ -d "$DB_DATA_DIR" ] && [ "$(ls -A "$DB_DATA_DIR")" ]; then
         BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-static-$(date +%Y%m%d-%H%M%S).tar"
-        echo -e "${YELLOW}📦 Container offline. Using targeted folder backup...${NC}"
+        echo -e "${YELLOW}[BACKUP] Container offline. Using targeted folder backup...${NC}"
         sudo tar cf "$BACKUP_FILE" -C "$DB_DATA_DIR" "./$MYSQL_DATABASE" 2>/dev/null || true
         sudo chown $(id -u):$(id -g) "$BACKUP_FILE"
         echo $CURRENT_TS > "$LAST_BACKUP_TS"
     fi
 else
-    echo -e "${GREEN}⏩ Skipping redundant backup (Last run: $(((CURRENT_TS-LAST_TS)/60)) mins ago)${NC}"
+    echo -e "${GREEN}[SKIP] Skipping redundant backup (Last run: $(((CURRENT_TS-LAST_TS)/60)) mins ago)${NC}"
 fi
 
 # 5. Infrastructure: MariaDB
@@ -136,8 +138,8 @@ docker run -d \
     --name paas-traefik \
     --network paas-network \
     --restart unless-stopped \
-    -p 80:80 \
-    -p 443:443 \
+    -p ${HTTP_PORT}:80 \
+    -p ${HTTPS_PORT}:443 \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "${TRAEFIK_CONF}:/traefik.yml:ro" \
     -v "${DYNAMIC_CONF}:/etc/traefik/dynamic/dynamic.yml:ro" \
@@ -195,5 +197,9 @@ docker run -d \
     --label "traefik.http.services.frontend.loadbalancer.server.port=80" \
     paas-frontend
 
-echo -e "${GREEN}✅ Laravel PaaS is running!${NC}"
-echo -e "${GREEN}Dashboard: http://$BASE_DOMAIN${NC}"
+echo -e "${GREEN}[SUCCESS] Laravel PaaS is running!${NC}"
+if [ "$HTTP_PORT" != "80" ]; then
+    echo -e "${GREEN}Dashboard: http://$BASE_DOMAIN:$HTTP_PORT${NC}"
+else
+    echo -e "${GREEN}Dashboard: http://$BASE_DOMAIN${NC}"
+fi
