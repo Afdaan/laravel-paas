@@ -1,4 +1,4 @@
-# 🚀 Laravel PaaS
+# Laravel PaaS
 
 A Platform as a Service for hosting Laravel applications with Docker. Designed for schools and universities.
 
@@ -7,35 +7,35 @@ A Platform as a Service for hosting Laravel applications with Docker. Designed f
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react)
 ![Docker](https://img.shields.io/badge/Docker-24+-2496ED?style=flat-square&logo=docker)
 
-## ✨ Features
+## Features
 
-### 👨‍🎓 Student Dashboard
-- 🔗 Deploy projects from GitHub URL
-- 📊 Monitor CPU & Memory usage
-- 📋 View container logs
-- 🗄️ Database Manager (browse tables, run queries, export/import SQL)
-- 🔄 Redeploy & delete projects
+### Student Dashboard
+- Deploy projects from GitHub URL
+- Monitor CPU & Memory usage
+- View container logs
+- Database Manager (browse tables, run queries, export/import SQL)
+- Redeploy & delete projects
 
-### 👨‍💼 Admin Dashboard
-- 👥 User management (CRUD)
-- 📥 Import students from Excel
-- ⚙️ Global settings (limits, expiry, domain)
-- 📈 Overview of all projects
+### Admin Dashboard
+- User management (CRUD)
+- Import students from Excel
+- Global settings (limits, expiry, domain)
+- Overview of all projects
 
-### 🔧 Technical Features
+### Technical Features
 - **Auto Laravel Detection** - Detects Laravel version from `composer.json`
 - **Multi PHP Support** - PHP 8.0, 8.1, 8.2, 8.3
 - **Auto SSL** - Via Traefik + Let's Encrypt
 - **Database Per Project** - Isolated MySQL database
 - **Resource Limits** - CPU & memory limits per container
 
-## 📋 Requirements
+## Requirements
 
 - Docker Engine 24+
 - Docker Compose (optional)
 - Domain with wildcard DNS (for production)
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Clone repository
@@ -55,7 +55,7 @@ chmod +x scripts/start.sh
 
 **Default Login:** `admin@localhost` / `admin123`
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 laravel-paas/
@@ -94,7 +94,9 @@ laravel-paas/
 └── storage/projects/      # Cloned student repositories
 ```
 
-## ⚙️ Configuration
+## Configuration
+
+- Built-in UI code editor to see / manage project environment variables
 
 ### Environment Variables
 
@@ -110,7 +112,7 @@ laravel-paas/
 | `DEFAULT_CPU_LIMIT` | CPU limit per container | `0.5` |
 | `DEFAULT_MEMORY_LIMIT` | Memory limit | `512m` |
 
-## 🏗️ Architecture
+## Architecture
 
 ```
                                     ┌─────────────────┐
@@ -133,7 +135,7 @@ laravel-paas/
                 └───────────────────┘  └───────────┘  └───────────────────┘
 ```
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Authentication
 | Method | Endpoint | Description |
@@ -171,7 +173,7 @@ laravel-paas/
 | GET | `/api/admin/settings` | Get settings |
 | PUT | `/api/admin/settings` | Update settings |
 
-## 🛠️ Development
+## Development
 
 ### Backend
 ```bash
@@ -187,14 +189,14 @@ npm install
 npm run dev
 ```
 
-## 📝 License
+## License
 
 MIT License - Feel free to use for educational purposes.
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! Please open an issue first to discuss changes.
 
 ---
 
-Made with ❤️ for education
+Made with passion for education

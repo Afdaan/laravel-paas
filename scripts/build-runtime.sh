@@ -35,8 +35,8 @@ for VERSION in "${VERSIONS[@]}"; do
         -t "${TAG}" \
         "${PROJECT_ROOT}/docker/runtime"
 
-    echo -e "${GREEN}✅ PHP ${VERSION} runtime built successfully.${NC}"
+    echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime built successfully.${NC}"
 done
 
-echo -e "${BLUE}🚀 All runtime images are ready! Now project builds will be instant.${NC}"
+echo -e "${BLUE}[INFO] All runtime images are ready! Now project builds will be instant.${NC}"
 echo -e "${BLUE}Project Dockerfiles can now use: FROM paas-runtime-php:8.x-alpine${NC}"
