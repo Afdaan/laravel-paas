@@ -48,44 +48,41 @@ fi
 
 echo "[INFO] Both databases are running. Commencing data transfer..."
 
-# 3. Prepare URIs for pgloader (Using environment variable expansion inside pgloader)
-# These will be read by pgloader inside the container from the environment
-SOURCE_URI="mysql://\${M_USER}:\${M_PASS}@paas-mysql:3306/\${M_DB}"
-TARGET_URI="postgresql://\${P_USER}:\${P_PASS}@paas-postgres:5432/\${P_DB}"
+# 3. URL-encode passwords to safely embed in pgloader URIs
+urlencode() {
+    python3 -c "import urllib.parse; print(urllib.parse.quote('$1', safe=''))"
+}
 
-# 4. Generate dynamic pgloader command file
+ENCODED_MYSQL_PASS=$(urlencode "$MYSQL_PASSWORD")
+ENCODED_PG_PASS=$(urlencode "$PG_PASSWORD")
+
+# 4. Generate pgloader command file with credentials baked in
 LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
 
 echo "[INFO] Generating temporary load configuration..."
-cat <<EOF > "$LOAD_FILE"
+cat > "$LOAD_FILE" <<PGLOAD
 LOAD DATABASE
-     FROM $SOURCE_URI
-     INTO $TARGET_URI
+     FROM mysql://${MYSQL_USER}:${ENCODED_MYSQL_PASS}@paas-mysql:3306/${MYSQL_DATABASE}
+     INTO postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}
 
- ALTER SCHEMA '$MYSQL_DATABASE' RENAME TO 'public'
+ ALTER SCHEMA '${MYSQL_DATABASE}' RENAME TO 'public'
 
  CAST type tinyint to boolean drop typemod;
-EOF
+PGLOAD
 
 # 5. Execute pgloader
 echo "[INFO] Running pgloader ETL process..."
-echo "[INFO] Source (MySQL): $MYSQL_USER@paas-mysql:$MYSQL_DATABASE"
-echo "[INFO] Target (PostgreSQL): $PG_USER@paas-postgres:$PG_DATABASE"
+echo "[INFO] Source (MySQL): ${MYSQL_USER}@paas-mysql:${MYSQL_DATABASE}"
+echo "[INFO] Target (PostgreSQL): ${PG_USER}@paas-postgres:${PG_DATABASE}"
 
 docker run --rm -i \
     --network paas-network \
-    -e M_USER="$MYSQL_USER" \
-    -e M_PASS="$MYSQL_PASSWORD" \
-    -e M_DB="$MYSQL_DATABASE" \
-    -e P_USER="$PG_USER" \
-    -e P_PASS="$PG_PASSWORD" \
-    -e P_DB="$PG_DATABASE" \
     -v "${LOAD_FILE}:/tmp/migration.load:ro" \
     dimitri/pgloader:latest pgloader /tmp/migration.load
 
 EXIT_CODE=$?
 
-# Cleanup
+# Cleanup temporary load file
 rm -f "$LOAD_FILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
