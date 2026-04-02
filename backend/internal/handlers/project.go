@@ -83,7 +83,7 @@ func (h *ProjectHandler) ListAll(c *fiber.Ctx) error {
 	}
 
 	if search != "" {
-		query = query.Where("name LIKE ? OR subdomain LIKE ?", "%"+search+"%", "%"+search+"%")
+		query = query.Where("name ILIKE ? OR subdomain ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
 	query.Count(&total)
