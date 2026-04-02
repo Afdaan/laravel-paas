@@ -9,14 +9,18 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-# Install git for go mod
-RUN apk add --no-cache git
+# Enable Go Proxy for better connectivity in restricted networks
+ENV GOPROXY=https://proxy.golang.org,direct
 
-# Copy go mod files
+# Copy only dependency files first to leverage Docker cache
 COPY go.mod go.sum ./
-COPY . .
-RUN go mod tidy
 RUN go mod download
+
+# Copy the rest of the source code
+COPY . .
+
+# Run tidy to ensure everything is clean
+RUN go mod tidy
 
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
