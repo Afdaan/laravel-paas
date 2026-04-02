@@ -75,7 +75,9 @@ LOAD DATABASE
 
  ALTER SCHEMA '$MYSQL_DATABASE' RENAME TO 'public'
 
- CAST type tinyint to boolean drop typemod;
+ CAST type bigint to bigint drop typemod,
+      type int to integer drop typemod,
+      type tinyint to boolean drop typemod;
 EOF
 
 # 5. Execute pgloader
