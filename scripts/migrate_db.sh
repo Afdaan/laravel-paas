@@ -38,10 +38,16 @@ PG_DATABASE=${PG_DATABASE:-"paas"}
 
 # 2. Preparation
 TEMP_DUMP="${PROJECT_ROOT}/scripts/mysql_dump.sql"
+M_DUMP_PATH_IN_CONTAINER="/tmp/scripts/mysql_dump.sql"
 
 echo "[INFO] Commencing Hybrid Migration (Dump & Load)..."
 
-# 3. Extracting data via docker exec (Bypassing network auth like create_admin.sh)
+# 3. URL-encode passwords to safely embed in pgloader URIs
+urlencode() {
+    echo -n "$1" | python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read(), safe=''))"
+}
+
+# 4. Extracting data via docker exec (Bypassing network auth like create_admin.sh)
 echo "[INFO] Step 1: Exporting data from MySQL via 'docker exec'..."
 if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
     M_USER="root"
@@ -51,24 +57,24 @@ else
     M_PASS="$MYSQL_PASSWORD"
 fi
 
-# We use mysqldump inside the container and capture it locally
 docker exec -e MYSQL_PWD="$M_PASS" paas-mysql mysqldump -u"$M_USER" --compact --no-create-db "$MYSQL_DATABASE" > "$TEMP_DUMP"
 
 if [ ! -s "$TEMP_DUMP" ]; then
-    echo "[ERROR] MySQL dump failed or resulted in empty file. Check your MYSQL_ROOT_PASSWORD."
+    echo "[ERROR] MySQL dump failed or resulted in empty file. Check your password."
     rm -f "$TEMP_DUMP"
     exit 1
 fi
 
-# 4. Generate dynamic pgloader command file to process the SQL dump
+# 5. Generate dynamic pgloader command file to process the SQL dump
 LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
-PG_URI="postgresql://\${P_USER}:\${P_PASS}@paas-postgres:5432/\${P_DB}"
+ENCODED_PG_PASS=$(urlencode "$PG_PASSWORD")
 
 echo "[INFO] Step 2: Preparing PostgreSQL translation script..."
 cat <<EOF > "$LOAD_FILE"
-LOAD ARCHIVE
-     FROM $TEMP_DUMP
-     INTO $PG_URI
+LOAD DATABASE
+     FROM '$M_DUMP_PATH_IN_CONTAINER'
+     TYPE mysql
+     INTO postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}
 
  WITH truncate, include drop, create tables, create indexes, reset sequences
 
@@ -77,13 +83,10 @@ LOAD ARCHIVE
  CAST type tinyint to boolean drop typemod;
 EOF
 
-# 5. Execute pgloader with the dump file
+# 6. Execute pgloader
 echo "[INFO] Step 3: Loading data into PostgreSQL..."
 docker run --rm -i \
     --network paas-network \
-    -e P_USER="$PG_USER" \
-    -e P_PASS="$PG_PASSWORD" \
-    -e P_DB="$PG_DATABASE" \
     -v "${PROJECT_ROOT}/scripts:/tmp/scripts:ro" \
     dimitri/pgloader:latest pgloader /tmp/scripts/migration.load
 
