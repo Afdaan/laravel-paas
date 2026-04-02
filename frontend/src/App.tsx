@@ -33,7 +33,12 @@ const StudentFeedback = lazy(() => import('./pages/student/Feedback'))
 const AdminFeedback = lazy(() => import('./pages/admin/Feedback'))
 
 // Protected Route Component
-function ProtectedRoute({ children, requireAdmin = false }) {
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  requireAdmin?: boolean;
+}
+
+function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
   const { token, user, isLoading } = useAuthStore()
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
   
@@ -54,7 +59,6 @@ function ProtectedRoute({ children, requireAdmin = false }) {
 
 function App() {
   const { fetchUser, token, user } = useAuthStore()
-  const logout = useAuthStore((state) => state.logout)
 
   useEffect(() => {
     if (token && !user) {

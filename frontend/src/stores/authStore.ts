@@ -6,8 +6,21 @@
 
 import { create } from 'zustand'
 import { authAPI } from '../services/api'
+import { User } from '../types'
 
-const useAuthStore = create((set, get) => ({
+interface AuthState {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  isAuthenticated: () => boolean;
+  isAdmin: () => boolean;
+  isSuperAdmin: () => boolean;
+  login: (email: string, password: string) => Promise<User>;
+  logout: () => Promise<void>;
+  fetchUser: () => Promise<void>;
+}
+
+const useAuthStore = create<AuthState>((set, get) => ({
   // State
   user: null,
   token: localStorage.getItem('token'),
@@ -36,6 +49,7 @@ const useAuthStore = create((set, get) => ({
     try {
       await authAPI.logout()
     } catch (error) {
+      // Ignored
     }
     
     localStorage.removeItem('token')
@@ -53,7 +67,7 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await authAPI.me()
       set({ user: response.data, isLoading: false })
-    } catch (error) {
+    } catch (error: any) {
       const status = error?.response?.status
       if (status === 401 || status === 403) {
         localStorage.removeItem('token')
