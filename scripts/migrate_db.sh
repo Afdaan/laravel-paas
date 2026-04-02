@@ -48,13 +48,10 @@ fi
 
 echo "[INFO] Both databases are running. Commencing data transfer..."
 
-# 3. Handle Special Characters in Passwords for URI Scheme
-# We use simple string replacement to URL encode standard symbols safely for pgloader parsing
-ENCODED_MYSQL_PASS=$(echo "$MYSQL_PASSWORD" | sed -e 's/#/%23/g' -e 's/@/%40/g' -e 's/:/%3A/g')
-ENCODED_PG_PASS=$(echo "$PG_PASSWORD" | sed -e 's/#/%23/g' -e 's/@/%40/g' -e 's/:/%3A/g')
-
-MYSQL_URI="mysql://${MYSQL_USER}:${ENCODED_MYSQL_PASS}@paas-mysql:3306/${MYSQL_DATABASE}"
-PG_URI="postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}"
+# 3. Prepare URIs using getenv for pgloader (Safe for special characters)
+# These will be read by pgloader inside the container from the environment
+SOURCE_URI="mysql://getenv(\"M_USER\"):getenv(\"M_PASS\")@paas-mysql:3306/getenv(\"M_DB\")"
+TARGET_URI="postgresql://getenv(\"P_USER\"):getenv(\"P_PASS\")@paas-postgres:5432/getenv(\"P_DB\")"
 
 # 4. Generate dynamic pgloader command file
 LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
@@ -62,8 +59,8 @@ LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
 echo "[INFO] Generating temporary load configuration..."
 cat <<EOF > "$LOAD_FILE"
 LOAD DATABASE
-     FROM $MYSQL_URI
-     INTO $PG_URI
+     FROM $SOURCE_URI
+     INTO $TARGET_URI
 
  ALTER SCHEMA '$MYSQL_DATABASE' RENAME TO 'public'
 
@@ -73,10 +70,16 @@ EOF
 # 5. Execute pgloader
 echo "[INFO] Running pgloader ETL process..."
 echo "[INFO] Source (MySQL): $MYSQL_USER@paas-mysql:$MYSQL_DATABASE"
-echo "[INFO] Target (PostgreSQL): $PG_USER@paas-postgres:$PG_DATABASE (public schema)"
+echo "[INFO] Target (PostgreSQL): $PG_USER@paas-postgres:$PG_DATABASE"
 
 docker run --rm -i \
     --network paas-network \
+    -e M_USER="$MYSQL_USER" \
+    -e M_PASS="$MYSQL_PASSWORD" \
+    -e M_DB="$MYSQL_DATABASE" \
+    -e P_USER="$PG_USER" \
+    -e P_PASS="$PG_PASSWORD" \
+    -e P_DB="$PG_DATABASE" \
     -v "${LOAD_FILE}:/tmp/migration.load:ro" \
     dimitri/pgloader:latest pgloader /tmp/migration.load
 
