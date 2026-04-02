@@ -16,12 +16,20 @@ type Config struct {
 	AppEnv   string
 	AppDebug bool
 
-	// Database
-	DBHost     string
-	DBPort     string
-	DBName     string
-	DBUser     string
-	DBPassword string
+	// Infra Database (PostgreSQL)
+	PGHost     string
+	PGPort     string
+	PGDatabase string
+	PGUser     string
+	PGPassword string
+
+	// Student Database (MySQL)
+	MYSQLHost     string
+	MYSQLPort     string
+	MYSQLDatabase string
+	MYSQLUser     string
+	MYSQLPassword string
+
 
 	// JWT
 	JWTSecret      string
@@ -51,12 +59,19 @@ func Load() *Config {
 		AppEnv:   getEnv("APP_ENV", "production"),
 		AppDebug: getEnvBool("APP_DEBUG", false),
 
-		// Database
-		DBHost:     getEnv("MYSQL_HOST", "mysql"),
-		DBPort:     getEnv("MYSQL_PORT", "3306"),
-		DBName:     getEnv("MYSQL_DATABASE", "paas"),
-		DBUser:     getEnv("MYSQL_USER", "paas"),
-		DBPassword: getEnv("MYSQL_PASSWORD", ""),
+		// Infra Database (PostgreSQL)
+		PGHost:     getEnv("PG_HOST", "paas-postgres"),
+		PGPort:     getEnv("PG_PORT", "5432"),
+		PGDatabase: getEnv("PG_DATABASE", "paas"),
+		PGUser:     getEnv("PG_USER", "paas"),
+		PGPassword: getEnv("PG_PASSWORD", ""),
+
+		// Student Database (MySQL)
+		MYSQLHost:     getEnv("MYSQL_HOST", "paas-mysql"),
+		MYSQLPort:     getEnv("MYSQL_PORT", "3306"),
+		MYSQLDatabase: getEnv("MYSQL_DATABASE", "paas"),
+		MYSQLUser:     getEnv("MYSQL_USER", "paas"),
+		MYSQLPassword: getEnv("MYSQL_PASSWORD", ""),
 
 		// JWT
 		JWTSecret:      getEnv("JWT_SECRET", "change-this-secret"),

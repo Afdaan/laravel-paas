@@ -46,7 +46,7 @@ func main() {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 	defer redisService.Close()
-	log.Println("✅ Redis connected successfully")
+	log.Println("[SUCCESS] Redis connected successfully")
 
 	// Initialize and start deployment worker
 	worker := services.NewDeploymentWorker(db, cfg, redisService)
@@ -61,7 +61,7 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("🚀 Server starting on port %s", port)
+	log.Printf("[INFO] Server starting on port %s", port)
 	if err := app.Listen(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

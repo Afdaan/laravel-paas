@@ -11,19 +11,19 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 // Connect establishes database connection
 func Connect(cfg *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBHost,
-		cfg.DBPort,
-		cfg.DBName,
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Jakarta",
+		cfg.PGHost,
+		cfg.PGUser,
+		cfg.PGPassword,
+		cfg.PGDatabase,
+		cfg.PGPort,
 	)
 
 	// Configure GORM logger based on environment
@@ -32,14 +32,14 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		logMode = logger.Info
 	}
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logMode),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Println("✅ Database connected successfully")
+	log.Println("[SUCCESS] Database connected successfully")
 	return db, nil
 }
 
@@ -58,7 +58,7 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("migration failed: %w", err)
 	}
 
-	log.Println("✅ Migrations completed")
+	log.Println("[SUCCESS] Migrations completed")
 	return nil
 }
 
@@ -85,6 +85,6 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 		}
 	}
 
-	log.Println("✅ Database seeding completed")
+	log.Println("[SUCCESS] Database seeding completed")
 	return nil
 }
