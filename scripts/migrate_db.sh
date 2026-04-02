@@ -20,13 +20,15 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     set +a
 fi
 
-# Use root for source (MySQL) migration if available for full schema access
+# Use root for source (MySQL) migration for full schema access
+MYSQL_USER="root"
 if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
-    MYSQL_USER="root"
+    echo "[INFO] Using password from .env for MySQL root access."
     MYSQL_PASSWORD="$MYSQL_ROOT_PASSWORD"
 else
-    MYSQL_USER=${MYSQL_USER:-"paas"}
-    MYSQL_PASSWORD=${MYSQL_PASSWORD:-""}
+    echo -n "Enter MySQL root password for host 'paas-mysql': "
+    read -rs MYSQL_PASSWORD
+    echo "" # Add newline
 fi
 
 MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
