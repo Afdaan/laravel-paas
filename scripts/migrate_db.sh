@@ -20,8 +20,15 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     set +a
 fi
 
-MYSQL_USER=${MYSQL_USER:-"paas"}
-MYSQL_PASSWORD=${MYSQL_PASSWORD:-""}
+# Use root for source (MySQL) migration if available for full schema access
+if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+    MYSQL_USER="root"
+    MYSQL_PASSWORD="$MYSQL_ROOT_PASSWORD"
+else
+    MYSQL_USER=${MYSQL_USER:-"paas"}
+    MYSQL_PASSWORD=${MYSQL_PASSWORD:-""}
+fi
+
 MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 
 PG_USER=${PG_USER:-"paas"}
@@ -50,11 +57,13 @@ MYSQL_URI="mysql://${MYSQL_USER}:${ENCODED_MYSQL_PASS}@paas-mysql:3306/${MYSQL_D
 PG_URI="postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}"
 
 # 4. Execute pgloader
-# - We use 'dimitri/pgloader' via Docker to avoid host dependencies
-# - We cast tinyint to boolean explicitly, as GORM in MySQL often uses tinyint(1) for bool
 echo "[INFO] Running pgloader ETL process..."
+echo "[INFO] Source (MySQL): $MYSQL_USER@paas-mysql:$MYSQL_DATABASE"
+echo "[INFO] Target (PostgreSQL): $PG_USER@paas-postgres:$PG_DATABASE (public schema)"
+
 docker run --rm -i --network paas-network dimitri/pgloader:latest pgloader \
    --cast "type tinyint to boolean drop typemod" \
+   --alter-schema "target: public" \
    "$MYSQL_URI" \
    "$PG_URI"
 
