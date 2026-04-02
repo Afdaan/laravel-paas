@@ -36,68 +36,64 @@ PG_USER=${PG_USER:-"paas"}
 PG_PASSWORD=${PG_PASSWORD:-""}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 
-# 2. Preparation
-TEMP_DUMP="${PROJECT_ROOT}/scripts/mysql_dump.sql"
-M_DUMP_PATH_IN_CONTAINER="/tmp/scripts/mysql_dump.sql"
+# 2. Setup Temporary Migrator User (The most robust way)
+M_MIGRATOR_USER="paas_migrator"
+M_MIGRATOR_PASS="paas_migrator_123"
 
-echo "[INFO] Commencing Hybrid Migration (Dump & Load)..."
+echo "[INFO] Setting up temporary MySQL user for migration..."
+# We use docker exec to create the user with native password plugin for pgloader compatibility
+# This bypasses all network/host/password mismatch issues from .env
+if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+    M_ROOT_PASS="$MYSQL_ROOT_PASSWORD"
+else
+    echo -n "Please enter your MySQL root password: "
+    read -rs M_ROOT_PASS
+    echo ""
+fi
 
-# 3. URL-encode passwords to safely embed in pgloader URIs
+docker exec -e MYSQL_PWD="$M_ROOT_PASS" paas-mysql mysql -u"root" -e "
+CREATE USER IF NOT EXISTS '$M_MIGRATOR_USER'@'%' IDENTIFIED BY '$M_MIGRATOR_PASS';
+ALTER USER '$M_MIGRATOR_USER'@'%' IDENTIFIED VIA mysql_native_password USING PASSWORD('$M_MIGRATOR_PASS');
+GRANT ALL PRIVILEGES ON $MYSQL_DATABASE.* TO '$M_MIGRATOR_USER'@'%';
+FLUSH PRIVILEGES;
+" 2>/dev/null || { echo "[ERROR] Failed to setup migrator user. Check root password."; exit 1; }
+
+# 3. URL-encode PostgreSQL password
 urlencode() {
     echo -n "$1" | python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read(), safe=''))"
 }
-
-# 4. Extracting data via docker exec (Bypassing network auth like create_admin.sh)
-echo "[INFO] Step 1: Exporting data from MySQL via 'docker exec'..."
-if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
-    M_USER="root"
-    M_PASS="$MYSQL_ROOT_PASSWORD"
-else
-    M_USER="$MYSQL_USER"
-    M_PASS="$MYSQL_PASSWORD"
-fi
-
-docker exec -e MYSQL_PWD="$M_PASS" paas-mysql mysqldump -u"$M_USER" --compact --no-create-db "$MYSQL_DATABASE" > "$TEMP_DUMP"
-
-if [ ! -s "$TEMP_DUMP" ]; then
-    echo "[ERROR] MySQL dump failed or resulted in empty file. Check your password."
-    rm -f "$TEMP_DUMP"
-    exit 1
-fi
-
-# 5. Generate dynamic pgloader command file to process the SQL dump
-LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
 ENCODED_PG_PASS=$(urlencode "$PG_PASSWORD")
 
-echo "[INFO] Step 2: Preparing PostgreSQL translation script..."
+# 4. Generate pgloader command file
+LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
+
+echo "[INFO] Generating load configuration..."
 cat <<EOF > "$LOAD_FILE"
 LOAD DATABASE
-     FROM '$M_DUMP_PATH_IN_CONTAINER'
-     TYPE mysql
+     FROM mysql://$M_MIGRATOR_USER:$M_MIGRATOR_PASS@paas-mysql:3306/$MYSQL_DATABASE
      INTO postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}
-
- WITH truncate, include drop, create tables, create indexes, reset sequences
 
  ALTER SCHEMA '$MYSQL_DATABASE' RENAME TO 'public'
 
  CAST type tinyint to boolean drop typemod;
 EOF
 
-# 6. Execute pgloader
-echo "[INFO] Step 3: Loading data into PostgreSQL..."
+# 5. Execute pgloader
+echo "[INFO] Running pgloader ETL process..."
 docker run --rm -i \
     --network paas-network \
-    -v "${PROJECT_ROOT}/scripts:/tmp/scripts:ro" \
-    dimitri/pgloader:latest pgloader /tmp/scripts/migration.load
+    -v "${LOAD_FILE}:/tmp/migration.load:ro" \
+    dimitri/pgloader:latest pgloader /tmp/migration.load
 
 EXIT_CODE=$?
 
-# Cleanup
-rm -f "$TEMP_DUMP"
+# 6. Cleanup
+echo "[INFO] Cleaning up temporary migrator user..."
+docker exec -e MYSQL_PWD="$M_ROOT_PASS" paas-mysql mysql -u"root" -e "DROP USER '$M_MIGRATOR_USER'@'%';" 2>/dev/null
 rm -f "$LOAD_FILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "[SUCCESS] Hybrid migration completed successfully."
+    echo "[SUCCESS] Data migration completed successfully."
 else
-    echo "[ERROR] Loading to PostgreSQL failed (Exit Code: $EXIT_CODE)."
+    echo "[ERROR] Migration failed (Exit Code: $EXIT_CODE)."
 fi
