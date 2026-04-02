@@ -50,7 +50,7 @@ echo "[INFO] Both databases are running. Commencing data transfer..."
 
 # 3. URL-encode passwords to safely embed in pgloader URIs
 urlencode() {
-    python3 -c "import urllib.parse; print(urllib.parse.quote('$1', safe=''))"
+    echo -n "$1" | python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read(), safe=''))"
 }
 
 ENCODED_MYSQL_PASS=$(urlencode "$MYSQL_PASSWORD")
