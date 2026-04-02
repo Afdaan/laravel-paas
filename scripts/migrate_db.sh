@@ -48,10 +48,10 @@ fi
 
 echo "[INFO] Both databases are running. Commencing data transfer..."
 
-# 3. Prepare URIs using getenv for pgloader (Safe for special characters)
+# 3. Prepare URIs for pgloader (Using environment variable expansion inside pgloader)
 # These will be read by pgloader inside the container from the environment
-SOURCE_URI="mysql://getenv(\"M_USER\"):getenv(\"M_PASS\")@paas-mysql:3306/getenv(\"M_DB\")"
-TARGET_URI="postgresql://getenv(\"P_USER\"):getenv(\"P_PASS\")@paas-postgres:5432/getenv(\"P_DB\")"
+SOURCE_URI="mysql://\${M_USER}:\${M_PASS}@paas-mysql:3306/\${M_DB}"
+TARGET_URI="postgresql://\${P_USER}:\${P_PASS}@paas-postgres:5432/\${P_DB}"
 
 # 4. Generate dynamic pgloader command file
 LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"

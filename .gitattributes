@@ -1,0 +1,8 @@
+# Force LF for shell scripts (Required for Docker/Linux)
+*.sh text eol=lf
+
+# Force LF for Dockerfiles
+Dockerfile* text eol=lf
+
+# Handle other files normally based on OS
+* text=auto
