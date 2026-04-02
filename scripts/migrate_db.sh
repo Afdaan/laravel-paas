@@ -56,18 +56,34 @@ ENCODED_PG_PASS=$(echo "$PG_PASSWORD" | sed -e 's/#/%23/g' -e 's/@/%40/g' -e 's/
 MYSQL_URI="mysql://${MYSQL_USER}:${ENCODED_MYSQL_PASS}@paas-mysql:3306/${MYSQL_DATABASE}"
 PG_URI="postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}"
 
-# 4. Execute pgloader
+# 4. Generate dynamic pgloader command file
+LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
+
+echo "[INFO] Generating temporary load configuration..."
+cat <<EOF > "$LOAD_FILE"
+LOAD DATABASE
+     FROM $MYSQL_URI
+     INTO $PG_URI
+
+ ALTER SCHEMA '$MYSQL_DATABASE' RENAME TO 'public'
+
+ CAST type tinyint to boolean drop typemod;
+EOF
+
+# 5. Execute pgloader
 echo "[INFO] Running pgloader ETL process..."
 echo "[INFO] Source (MySQL): $MYSQL_USER@paas-mysql:$MYSQL_DATABASE"
 echo "[INFO] Target (PostgreSQL): $PG_USER@paas-postgres:$PG_DATABASE (public schema)"
 
-docker run --rm -i --network paas-network dimitri/pgloader:latest pgloader \
-   --cast "type tinyint to boolean drop typemod" \
-   --alter-schema "target: public" \
-   "$MYSQL_URI" \
-   "$PG_URI"
+docker run --rm -i \
+    --network paas-network \
+    -v "${LOAD_FILE}:/tmp/migration.load:ro" \
+    dimitri/pgloader:latest pgloader /tmp/migration.load
 
 EXIT_CODE=$?
+
+# Cleanup
+rm -f "$LOAD_FILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo "[SUCCESS] Data migration completed successfully."
