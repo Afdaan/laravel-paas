@@ -1,10 +1,6 @@
-// ===========================================
-// Student Projects Listing (Fleet View)
-// ===========================================
-
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
 import { 
   Plus, 
@@ -17,46 +13,61 @@ import {
   Activity, 
   AlertCircle, 
   PauseCircle,
-  Server,
   Database,
   Globe,
-  Terminal,
   Cpu,
-  Layers,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from 'lucide-react'
 import ConfirmationModal from '../../components/ConfirmationModal'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
-const StatusBadge = ({ status }) => {
-  const configs = {
-    pending: { color: 'text-amber-400 border-amber-400/20 bg-amber-400/5', icon: Clock, label: 'Queued' },
-    building: { color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', icon: Activity, label: 'Orchestrating', pulse: true },
-    running: { color: 'text-emerald-400 border-emerald-400/20 bg-emerald-400/5', icon: CheckCircle2, label: 'Active' },
-    failed: { color: 'text-rose-400 border-rose-400/20 bg-rose-400/5', icon: AlertCircle, label: 'Breach' },
-    stopped: { color: 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/5', icon: PauseCircle, label: 'Hibernating' },
+interface ProjectData {
+  id: number;
+  name: string;
+  status: string;
+  subdomain: string;
+  url: string;
+  created_at: string;
+  php_version: string;
+  laravel_version: string;
+  database_name: string;
+  branch: string;
+}
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const configs: Record<string, any> = {
+    pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: 'Queued' },
+    building: { color: 'text-blue-600 border-blue-500/20 bg-blue-500/10', icon: Loader2, label: 'Building', pulse: true },
+    running: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: 'Running' },
+    failed: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: 'Failed' },
+    stopped: { color: 'text-slate-600 border-slate-500/20 bg-slate-500/10 dark:text-slate-400', icon: PauseCircle, label: 'Offline' },
   }
 
   const config = configs[status] || configs.pending
   const Icon = config.icon
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${config.color} backdrop-blur-md`}>
+    <Badge variant="outline" className={`gap-1.5 flex w-fit ${config.color}`}>
       <Icon className={`w-3 h-3 ${config.pulse ? 'animate-spin' : ''}`} />
       {config.label}
-    </div>
+    </Badge>
   )
 }
 
 const StudentProjects = () => {
   const navigate = useNavigate()
-  const [projects, setProjects] = useState([])
+  const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
     message: '',
-    type: 'danger',
+    type: 'danger' as 'danger' | 'warning' | 'info',
     onConfirm: () => {},
     confirmText: 'Confirm'
   })
@@ -77,7 +88,7 @@ const StudentProjects = () => {
     fetchProjects()
   }, [fetchProjects])
   
-  const handleRedeploy = async (id, e) => {
+  const handleRedeploy = async (id: number, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -95,12 +106,13 @@ const StudentProjects = () => {
             success: 'Redeploy started',
             error: 'Failed to redeploy'
           }
-        ).then(fetchProjects)
+        )
+        fetchProjects()
       }
     })
   }
   
-  const handleDelete = async (id, e) => {
+  const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -123,65 +135,61 @@ const StudentProjects = () => {
   }
   
   return (
-    <div className="space-y-16 animate-pop-in relative">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <ConfirmationModal 
-        isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
 
-      {/* Background Glow */}
-      
-
       {/* Header Container */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 relative z-10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Projects</h1>
-          <p className="text-slate-600 dark:text-slate-400 text-lg font-medium leading-relaxed max-w-2xl">
-            Manage and monitor all your projects in our <span className="text-slate-900 dark:text-white">modern</span> dashboard interface.
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Projects</h1>
+          <p className="text-muted-foreground max-w-2xl">
+            Manage and monitor all your projects in our modern dashboard interface.
           </p>
         </div>
-        <Link to="/projects/new" className="btn btn-primary px-10 py-5 text-sm font-black uppercase tracking-[0.25em] shadow-[0_15px_30px_rgba(99,102,241,0.3)] flex items-center gap-4 group">
-          <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
+        <Link to="/projects/new" className={cn(buttonVariants({ variant: "default", size: "lg" }), "w-full md:w-auto font-semibold")}>
+          <Plus className="w-5 h-5 mr-2" />
           New Project
         </Link>
       </div>
       
       {/* Grid Architecture */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30">
-          <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em]">Loading Projects...</p>
+        <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-80">
+          <Loader2 className="w-12 h-12 text-primary animate-spin" />
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground animate-pulse">Loading Projects...</p>
         </div>
       ) : projects.length === 0 ? (
-        <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm border-dashed p-32 text-center flex flex-col items-center max-w-xl mx-auto border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
-          <div className="w-24 h-24 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-[2.5rem] flex items-center justify-center mb-10 text-slate-700">
-            <Rocket className="w-12 h-12" />
+        <Card className="p-24 text-center flex flex-col items-center max-w-xl mx-auto border-dashed">
+          <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-6">
+            <Rocket className="w-10 h-10 text-muted-foreground opacity-50" />
           </div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-4 lowercase italic">The list is <span className="text-indigo-400">empty.</span></h2>
-          <p className="text-slate-600 dark:text-slate-400 mb-12 font-medium leading-relaxed">You have no active projects. Create your first project to begin monitoring.</p>
-          <Link to="/projects/new" className="btn btn-primary w-full py-6 text-sm font-black uppercase tracking-widest shadow-xl">
+          <h2 className="text-2xl font-bold tracking-tight mb-2">The list is empty.</h2>
+          <p className="text-muted-foreground mb-8 max-w-sm">You have no active projects. Create your first project to begin monitoring.</p>
+          <Link to="/projects/new" className={cn(buttonVariants({ variant: "default", size: "lg" }), "w-full sm:w-auto")}>
             Create Project
           </Link>
-        </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 relative z-10 pb-20">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 pb-12">
           {projects.map((project) => (
-            <div 
+            <Card 
               key={project.id} 
               onClick={() => navigate(`/projects/${project.id}`)}
-              className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm group p-0 overflow-hidden flex flex-col h-full hover:bg-slate-50 dark:bg-slate-100 dark:bg-white/5 hover:border-slate-300 dark:border-white/20 transition-all duration-500 hover:-translate-y-2 cursor-pointer"
+              className="group flex flex-col h-full hover:border-primary/30 transition-all cursor-pointer overflow-hidden border-border/50"
             >
-              <div className="p-10 flex flex-col h-full bg-gradient-to-br from-white/[0.02] to-transparent">
-                <div className="flex items-start justify-between mb-10">
-                  <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform shadow-xl">
-                     <span className="text-2xl font-black italic">{project.name.charAt(0).toUpperCase()}</span>
+              <CardContent className="p-6 flex flex-col h-full">
+                <div className="flex items-start justify-between mb-8">
+                  <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
+                     <span className="text-xl font-bold uppercase">{project.name.charAt(0)}</span>
                   </div>
                   <StatusBadge status={project.status} />
                 </div>
 
-                <div className="mb-10 min-h-[80px]">
-                  <h3 className="font-black text-slate-900 dark:text-white text-2xl tracking-tighter group-hover:text-indigo-400 transition-colors uppercase truncate mb-2">
+                <div className="mb-6 flex-1">
+                  <h3 className="font-bold text-xl tracking-tight mb-3 truncate" title={project.name}>
                     {project.name}
                   </h3>
                   <a 
@@ -189,63 +197,67 @@ const StudentProjects = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-3 text-slate-600 dark:text-slate-400 font-mono text-[10px] tracking-widest bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg w-fit border border-slate-200 dark:border-white/5 hover:border-indigo-500/40 hover:text-indigo-400 transition-all group/link"
+                    className="flex items-center gap-2 text-muted-foreground font-mono text-xs hover:text-primary transition-colors bg-muted/50 px-2 py-1.5 rounded-md hover:bg-muted w-fit max-w-full"
                   >
-                    <Globe className="w-3.5 h-3.5 text-indigo-400 group-hover/link:animate-pulse" />
-                    {project.url ? project.url.replace(/^https?:\/\//, '') : project.subdomain}
-                    <ExternalLink className="w-3 h-3 opacity-50 group-hover/link:opacity-100 transition-opacity" />
+                    <Globe className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{project.url ? project.url.replace(/^https?:\/\//, '') : project.subdomain}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
                   </a>
                 </div>
 
-                <div className="space-y-6 py-8 border-y border-slate-200 dark:border-white/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
-                      <div className="p-2 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5">
-                        <Cpu className="w-3.5 h-3.5" />
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em]">Environment</span>
+                <div className="space-y-4 py-6 border-y border-border/50 bg-muted/10 -mx-6 px-6">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Cpu className="w-4 h-4" />
+                      <span>Environment</span>
                     </div>
-                    <span className="text-[10px] font-black text-slate-900 dark:text-white bg-slate-200 dark:bg-white/10 px-3 py-1 rounded-md border border-slate-300 dark:border-white/10 group-hover:bg-indigo-500/20 group-hover:border-indigo-500/30 transition-all">PHP {project.php_version || '8.2'}</span>
+                    <Badge variant="secondary" className="font-mono text-[10px]">
+                      PHP {project.php_version || '8.2'}
+                    </Badge>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
-                      <div className="p-2 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5">
-                        <Database className="w-3.5 h-3.5" />
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em]">Database</span>
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Database className="w-4 h-4" />
+                      <span>Database</span>
                     </div>
-                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{project.database_name ? 'Active' : 'No Database'}</span>
+                    <span className="text-xs font-semibold text-primary">
+                      {project.database_name ? 'Active' : 'No DB'}
+                    </span>
                   </div>
                 </div>
 
-                <div className="mt-10 flex items-center justify-between">
-                   <div className="flex flex-col">
-                      <span className="text-[8px] text-slate-600 font-black uppercase tracking-[0.2em] mb-1">Created Date</span>
-                      <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase">{new Date(project.created_at).toLocaleDateString()}</span>
+                <div className="mt-6 flex items-center justify-between">
+                   <div className="flex flex-col gap-1">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Created</span>
+                      <span className="text-xs font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    
-                    <div className="flex gap-3">
-                      <button 
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
                         onClick={(e) => handleRedeploy(project.id, e)}
-                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-indigo-500/40 hover:border-indigo-500/50 transition-all shadow-lg active:scale-95"
+                        className="h-9 w-9 text-muted-foreground hover:text-foreground"
                         title="Init Redeploy"
                       >
                          <RefreshCw className="w-4 h-4" />
-                      </button>
-                      <button 
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
                         onClick={(e) => handleDelete(project.id, e)}
-                        className="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/30 transition-all shadow-lg active:scale-95"
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30"
                         title="Decommission"
                       >
                          <Trash2 className="w-4 h-4" />
-                      </button>
-                      <div className="w-11 h-11 flex items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all shadow-xl group-hover:scale-110">
-                         <ArrowRight className="w-5 h-5 transition-transform" />
-                      </div>
+                      </Button>
+                      <Button size="icon" className="h-9 w-9">
+                         <ArrowRight className="w-4 h-4" />
+                      </Button>
                    </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}

@@ -15,13 +15,21 @@ export interface Project {
   php_version: string;
   port: number;
   db_name: string;
-  status: 'pending' | 'building' | 'deploying' | 'running' | 'failed' | 'stopped';
-  container_id?: string;
-  created_at: string;
-  url?: string;
+  status: 'running' | 'stopped' | 'error' | 'deploying';
   subdomain?: string;
+  url?: string;
   user?: User;
   laravel_version?: string;
+  github_url?: string;
+  error_log?: string;
+  queue_enabled?: boolean;
+  is_manual_version?: boolean;
+}
+
+export interface ProjectStats {
+  cpu_percent: number;
+  memory_mb: number;
+  memory_max_mb: number;
 }
 
 export interface AuthResponse {

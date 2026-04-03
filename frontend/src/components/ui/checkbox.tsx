@@ -1,4 +1,4 @@
-import { Checkbox as CheckboxPrimitive } from "@/components/ui/checkbox"
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 
 import { cn } from "@/lib/utils"
 import { CheckIcon } from "lucide-react"
