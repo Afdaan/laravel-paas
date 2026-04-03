@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../../services/api'
 import useAuthStore from '../../stores/authStore'
-import { 
-  Rocket, 
-  Activity, 
-  CheckCircle2, 
-  Package, 
-  ExternalLink, 
+import {
+  Rocket,
+  Activity,
+  CheckCircle2,
+  Package,
+  ExternalLink,
   ArrowRight,
   Plus,
   Clock,
@@ -19,7 +19,7 @@ import {
   ChevronRight,
   Loader2
 } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -45,7 +45,7 @@ function StatusBadge({ status }: { status: string }) {
 
   const config = configs[status] || configs.pending
   const Icon = config.icon
-  
+
   return (
     <Badge variant="outline" className={`gap-1.5 flex w-fit ${config.color}`}>
       <Icon className={`w-3 h-3 ${config.pulse ? 'animate-spin' : ''}`} />
@@ -58,11 +58,11 @@ function StudentDashboard() {
   const { user } = useAuthStore()
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  
+
   useEffect(() => {
     fetchProjects()
   }, [])
-  
+
   const fetchProjects = async () => {
     try {
       const response = await projectsAPI.listOwn()
@@ -73,10 +73,10 @@ function StudentDashboard() {
       setIsLoading(false)
     }
   }
-  
+
   const runningProjects = projects.filter(p => p.status === 'running').length
   const totalProjects = projects.length
-  
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       {/* Welcome Header */}
@@ -92,54 +92,54 @@ function StudentDashboard() {
           New Project
         </Link>
       </div>
-      
+
       {/* Core Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard 
-          label="Total Projects" 
-          value={totalProjects} 
-          icon={Package} 
+        <StatCard
+          label="Total Projects"
+          value={totalProjects}
+          icon={Package}
         />
-        <StatCard 
-          label="Running Projects" 
-          value={runningProjects} 
-          icon={Activity} 
+        <StatCard
+          label="Running Projects"
+          value={runningProjects}
+          icon={Activity}
           suffix={`/ ${totalProjects}`}
         />
         <Card className="bg-primary/5 hover:bg-primary/10 transition-colors border-primary/20 group relative overflow-hidden">
-           <CardContent className="p-6 flex flex-col justify-between h-full relative z-10">
-              <div>
-                <Zap className="w-8 h-8 text-primary mb-4" />
-                <h3 className="text-lg font-bold tracking-tight mb-1">Need Help?</h3>
-                <p className="text-muted-foreground text-sm">Get Technical support</p>
-              </div>
-              <Link to="/feedback" className="flex items-center gap-2 text-foreground font-semibold text-sm hover:text-primary transition-colors mt-6 group-hover:gap-3">
-                 Support Ticket <ArrowRight className="w-4 h-4" />
-              </Link>
-           </CardContent>
-           <div className="absolute right-0 bottom-0 pointer-events-none opacity-10 transform translate-x-1/4 translate-y-1/4 transition-transform group-hover:scale-110">
-             <Zap className="w-48 h-48" />
-           </div>
+          <CardContent className="p-6 flex flex-col justify-between h-full relative z-10">
+            <div>
+              <Zap className="w-8 h-8 text-primary mb-4" />
+              <h3 className="text-lg font-bold tracking-tight mb-1">Need Help?</h3>
+              <p className="text-muted-foreground text-sm">Get Technical support</p>
+            </div>
+            <Link to="/feedback" className="flex items-center gap-2 text-foreground font-semibold text-sm hover:text-primary transition-colors mt-6 group-hover:gap-3">
+              Support Ticket <ArrowRight className="w-4 h-4" />
+            </Link>
+          </CardContent>
+          <div className="absolute right-0 bottom-0 pointer-events-none opacity-10 transform translate-x-1/4 translate-y-1/4 transition-transform group-hover:scale-110">
+            <Zap className="w-48 h-48" />
+          </div>
         </Card>
       </div>
-      
+
       {/* Recent Activity Table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-6">
           <div className="flex items-center gap-4">
-             <div className="w-10 h-10 rounded-lg bg-muted border flex items-center justify-center">
-                <Layout className="w-5 h-5 text-muted-foreground" />
-             </div>
-             <div>
-                <CardTitle className="text-xl">Recent Projects</CardTitle>
-                <CardDescription>Latest activity</CardDescription>
-             </div>
+            <div className="w-10 h-10 rounded-lg bg-muted border flex items-center justify-center">
+              <Layout className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <div>
+              <CardTitle className="text-xl">Recent Projects</CardTitle>
+              <CardDescription>Latest activity</CardDescription>
+            </div>
           </div>
           <Link to="/projects" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:flex gap-1")}>
             Browse All <ChevronRight className="w-4 h-4" />
           </Link>
         </CardHeader>
-        
+
         {isLoading ? (
           <div className="p-24 flex flex-col items-center justify-center gap-6">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -172,22 +172,22 @@ function StudentDashboard() {
                 {projects.slice(0, 5).map((project) => (
                   <TableRow key={project.id}>
                     <TableCell>
-                       <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center font-bold text-foreground">
-                             {project.name.charAt(0).toUpperCase()}
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center font-bold text-foreground">
+                          {project.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-sm max-w-[200px] truncate block">{project.name}</span>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
+                            <Terminal className="w-3 h-3" />
+                            <span className="text-xs font-mono">laravel</span>
                           </div>
-                          <div>
-                            <span className="font-semibold text-sm max-w-[200px] truncate block">{project.name}</span>
-                            <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
-                               <Terminal className="w-3 h-3" />
-                               <span className="text-xs font-mono">laravel</span>
-                            </div>
-                          </div>
-                       </div>
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       {project.status === 'running' ? (
-                        <a 
+                        <a
                           href={`https://${project.subdomain}.${window.location.hostname}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -202,10 +202,10 @@ function StudentDashboard() {
                     </TableCell>
                     <TableCell><StatusBadge status={project.status} /></TableCell>
                     <TableCell>
-                        <div className="flex flex-col">
-                           <span className="text-sm font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
-                           <span className="text-xs text-muted-foreground">{new Date(project.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(project.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <Link to={`/projects/${project.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
@@ -226,20 +226,20 @@ function StudentDashboard() {
 function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: number, icon: any, suffix?: string }) {
   return (
     <Card className="hover:border-primary/30 transition-colors group">
-       <CardContent className="p-6">
-         <div className="flex justify-between items-start">
-            <div>
-               <p className="text-sm font-medium text-muted-foreground mb-1 mt-1">{label}</p>
-               <div className="flex items-baseline gap-2">
-                  <h3 className="text-4xl font-bold tracking-tight">{value}</h3>
-                  {suffix && <span className="text-xl text-muted-foreground font-semibold">{suffix}</span>}
-               </div>
+      <CardContent className="p-6">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-1 mt-1">{label}</p>
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-4xl font-bold tracking-tight">{value}</h3>
+              {suffix && <span className="text-xl text-muted-foreground font-semibold">{suffix}</span>}
             </div>
-            <div className="w-12 h-12 rounded-xl bg-muted border flex items-center justify-center group-hover:scale-110 transition-transform text-muted-foreground">
-               <Icon className="w-6 h-6" />
-            </div>
-         </div>
-       </CardContent>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-muted border flex items-center justify-center group-hover:scale-110 transition-transform text-muted-foreground">
+            <Icon className="w-6 h-6" />
+          </div>
+        </div>
+      </CardContent>
     </Card>
   )
 }

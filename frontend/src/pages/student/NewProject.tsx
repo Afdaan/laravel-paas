@@ -52,7 +52,7 @@ function StudentNewProject() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
     const newValue = type === 'checkbox' ? checked : value
-    
+
     setFormData(prev => ({
       ...prev,
       [name]: newValue
@@ -113,9 +113,9 @@ function StudentNewProject() {
   return (
     <div className="max-w-5xl mx-auto space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4">
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => navigate(-1)}
           className="w-fit gap-2"
         >
@@ -245,7 +245,7 @@ function StudentNewProject() {
                   <Label htmlFor="queue_enabled" className="text-sm font-bold uppercase tracking-widest cursor-pointer">Enable Queue Worker</Label>
                   <p className="text-muted-foreground text-xs font-medium italic">Enables background 'php artisan queue:work' process.</p>
                 </div>
-                <Switch 
+                <Switch
                   id="queue_enabled"
                   checked={formData.queue_enabled}
                   onCheckedChange={handleSwitchChange}
@@ -254,9 +254,9 @@ function StudentNewProject() {
             </div>
           </Card>
 
-          <Button 
-            type="submit" 
-            disabled={isLoading} 
+          <Button
+            type="submit"
+            disabled={isLoading}
             className="w-full h-16 text-lg font-bold gap-3"
           >
             {isLoading ? (
