@@ -41,15 +41,15 @@ interface ProtectedRouteProps {
 function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
   const { token, user, isLoading } = useAuthStore()
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
-  
+
   if (isLoading) {
     return <LoadingScreen />
   }
-  
+
   if (!token) {
     return <Navigate to="/login" replace />
   }
-  
+
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/dashboard" replace />
   }
@@ -73,14 +73,14 @@ function App() {
     window.addEventListener('auth:expired', handleExpired)
     return () => window.removeEventListener('auth:expired', handleExpired)
   }, [])
-  
+
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        
+
         {/* Student Routes */}
         <Route element={
           <ProtectedRoute>
@@ -95,7 +95,7 @@ function App() {
           <Route path="/projects/:id/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<StudentFeedback />} />
         </Route>
-        
+
         {/* Admin Routes */}
         <Route path="/admin" element={
           <ProtectedRoute requireAdmin>
@@ -113,7 +113,7 @@ function App() {
           <Route path="settings" element={<AdminSettings />} />
           <Route path="feedback" element={<AdminFeedback />} />
         </Route>
-        
+
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

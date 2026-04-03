@@ -1,201 +1,226 @@
-// ===========================================
-// Admin Networks Page (Infrastructure)
-// ===========================================
-
-import { useState, useEffect, memo, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
 import { 
   Plus, 
   RotateCw, 
-  ChevronUp, 
   Share2, 
   MoreHorizontal,
-  Selector,
   Activity,
-  Zap,
-  ShieldCheck,
-  Globe
+  Globe,
+  Loader2
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+
+interface NetworkData {
+  id: string;
+  name: string;
+  status: string;
+  driver: string;
+  scope: string;
+}
 
 const AdminNetworks = () => {
-    const [data, setData] = useState({
-        networks: []
-    })
-    const [isLoading, setIsLoading] = useState(true)
+  const [data, setData] = useState<{ networks: NetworkData[] }>({
+    networks: []
+  })
+  const [isLoading, setIsLoading] = useState(true)
 
-    const fetchData = useCallback(async () => {
-        try {
-            const res = await systemAPI.getStats()
-            setData(res.data)
-        } catch (error) {
-            console.error('Failed to fetch networks:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }, [])
-
-    useEffect(() => {
-        fetchData()
-        const interval = setInterval(fetchData, 15000)
-        return () => clearInterval(interval)
-    }, [fetchData])
-
-    const stats = useMemo(() => {
-        const total = data.networks.length
-        const unused = data.networks.filter(n => n.status === 'Unused').length
-        return { total, unused }
-    }, [data.networks])
-
-    const getDriverColor = (driver) => {
-        switch(driver.toLowerCase()) {
-            case 'bridge': return 'bg-blue-500/5 text-blue-400 border-blue-500/20'
-            case 'host': return 'bg-orange-500/5 text-orange-400 border-orange-500/20'
-            case 'overlay': return 'bg-purple-500/5 text-purple-400 border-purple-500/20'
-            default: return 'bg-slate-500/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/5'
-        }
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await systemAPI.getStats()
+      setData(res.data)
+    } catch (error) {
+      console.error('Failed to fetch networks:', error)
+    } finally {
+      setIsLoading(false)
     }
+  }, [])
 
-    if (isLoading && data.networks.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
-                <div className="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin"></div>
-                <p className="text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Mapping Virtual Networks</p>
-            </div>
-        )
+  useEffect(() => {
+    fetchData()
+    const interval = setInterval(fetchData, 15000)
+    return () => clearInterval(interval)
+  }, [fetchData])
+
+  const stats = useMemo(() => {
+    const total = data.networks.length
+    const unused = data.networks.filter(n => n.status === 'Unused').length
+    return { total, unused }
+  }, [data.networks])
+
+  const getDriverColor = (driver: string) => {
+    switch(driver.toLowerCase()) {
+      case 'bridge': return 'border-blue-500/20 bg-blue-500/10 text-blue-600'
+      case 'host': return 'border-orange-500/20 bg-orange-500/10 text-orange-600'
+      case 'overlay': return 'border-purple-500/20 bg-purple-500/10 text-purple-600'
+      default: return 'border-slate-200 bg-slate-100 text-slate-600'
     }
+  }
 
+  if (isLoading && data.networks.length === 0) {
     return (
-        <div className="space-y-12 animate-pop-in relative h-full">
-            {/* Background Glows */}
-            
-
-            <div className="relative z-10">
-                {/* Header Area */}
-                <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
-                    <div>
-                        <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-emerald-400 to-teal-400">Networks</h1>
-                        <p className="text-slate-600 dark:text-slate-400 text-lg font-medium">Manage isolated networks for student projects.</p>
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 p-2 rounded-2xl backdrop-blur-md">
-                            <div className="flex items-center gap-3 px-6 py-2 border-r border-slate-200 dark:border-white/5">
-                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-pulse"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{stats.total} Active Pipes</span>
-                            </div>
-                            <div className="flex items-center gap-3 px-6 py-2">
-                                <div className="w-2.5 h-2.5 rounded-full bg-slate-500 shadow-[0_0_15px_rgba(100,116,139,0.5)]"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{stats.unused} Standby</span>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                            <button className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest shadow-xl shadow-indigo-500/10 active:scale-95 transition-all">
-                               <Plus className="w-4 h-4" />
-                               New Network
-                            </button>
-                            <button onClick={fetchData} className="w-12 h-12 flex items-center justify-center bg-slate-50 dark:bg-slate-100 dark:bg-white/5 hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl text-slate-900 dark:text-white transition-all shadow-lg active:rotate-180 transition-transform duration-500">
-                               <RotateCw className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Table Area */}
-                <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden border-slate-300 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.3)] bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
-                    <div className="overflow-x-auto">
-                        <table className="premium-table">
-                            <thead>
-                                <tr>
-                                    <th className="w-12 text-center">
-                                        <div className="flex items-center justify-center">
-                                            <input type="checkbox" className="w-4 h-4 rounded-md border-slate-300 dark:border-white/10 bg-black/40 text-indigo-500 focus:ring-0 focus:ring-offset-0" />
-                                        </div>
-                                    </th>
-                                    <th>Interface Identity</th>
-                                    <th className="text-center">Connection State</th>
-                                    <th className="text-center">Protocol / Driver</th>
-                                    <th className="text-center">Exposure Scope</th>
-                                    <th className="text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.networks.map((n) => (
-                                    <tr key={n.id} className="group hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5">
-                                        <td className="text-center">
-                                            <div className="flex items-center justify-center">
-                                                <input type="checkbox" className="w-4 h-4 rounded-md border-slate-300 dark:border-white/10 bg-black/40 text-indigo-500 focus:ring-0 focus:ring-offset-0" />
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:border-emerald-500/40 group-hover:text-emerald-400 group-hover:bg-emerald-500/5 transition-all duration-500">
-                                                    <Share2 className="w-6 h-6" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-black text-slate-900 dark:text-white group-hover:text-emerald-400 transition-colors uppercase tracking-tight">{n.name}</span>
-                                                    <span className="text-[10px] text-slate-600 font-mono tracking-widest">{n.id.substring(0, 12)}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="text-center">
-                                            <span className={`px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest inline-flex items-center gap-2 ${
-                                                n.status === 'In Use' 
-                                                ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/20' 
-                                                : 'bg-indigo-500/5 text-indigo-400 border-indigo-500/20'
-                                            }`}>
-                                                <div className={`w-1 h-1 rounded-full ${n.status === 'In Use' ? 'bg-emerald-400 animate-pulse' : 'bg-indigo-400'}`} />
-                                                {n.status === 'In Use' ? 'Routed' : 'Isolated'}
-                                            </span>
-                                        </td>
-                                        <td className="text-center">
-                                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${getDriverColor(n.driver)}`}>
-                                                {n.driver}
-                                            </span>
-                                        </td>
-                                        <td className="text-center">
-                                            <span className="px-3 py-1 rounded-lg bg-emerald-500/5 text-emerald-500 border border-emerald-500/20 text-[9px] font-black uppercase tracking-widest inline-flex items-center gap-2">
-                                                <Globe className="w-3 h-3" />
-                                                {n.scope}
-                                            </span>
-                                        </td>
-                                        <td className="text-right">
-                                            <button className="p-2.5 hover:bg-slate-200 dark:bg-white/10 rounded-xl text-slate-600 hover:text-slate-900 dark:text-white transition-all active:scale-90">
-                                                <MoreHorizontal className="w-5 h-5" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* Pagination */}
-                <div className="mt-8 flex flex-col md:flex-row items-center justify-between gap-6 px-10 py-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5">
-                    <div className="flex items-center gap-3">
-                        <Activity className="w-4 h-4 text-emerald-500" />
-                        <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Showing {data.networks.length} virtual interfaces of cluster state.</span>
-                    </div>
-                    <div className="flex items-center gap-10">
-                        <div className="flex items-center gap-4">
-                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Rows per page</span>
-                            <select className="bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl px-4 py-2 text-[10px] font-black text-slate-600 dark:text-slate-400 outline-none focus:border-indigo-500 transition-all">
-                                <option>20</option>
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-6">
-                            <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Index 1 of 1</span>
-                            <div className="flex items-center gap-2">
-                                 <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-800 cursor-not-allowed">&lsaquo;</button>
-                                 <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-800 cursor-not-allowed">&rsaquo;</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
+        <Loader2 className="w-12 h-12 text-primary animate-spin" />
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Mapping Virtual Networks</p>
+      </div>
     )
+  }
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Networks</h1>
+          <p className="text-muted-foreground">Manage isolated networks for student projects.</p>
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            <div className="flex items-center gap-2 px-3 border-r">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
+              {stats.total} Active Pipes
+            </div>
+            <div className="flex items-center gap-2 px-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-400 shadow-sm" />
+              {stats.unused} Standby
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm">
+              <Plus className="w-4 h-4 mr-2" /> New Network
+            </Button>
+            <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9">
+              <RotateCw className="w-4 h-4 text-muted-foreground" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto min-h-[400px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 text-center">
+                  <Checkbox />
+                </TableHead>
+                <TableHead>Interface Identity</TableHead>
+                <TableHead className="text-center">Connection State</TableHead>
+                <TableHead className="text-center">Protocol / Driver</TableHead>
+                <TableHead className="text-center">Exposure Scope</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.networks.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-64 text-center">
+                    <div className="flex flex-col items-center justify-center text-muted-foreground">
+                      <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
+                        <Share2 className="w-8 h-8 opacity-50" />
+                      </div>
+                      <span className="font-semibold text-sm">No networks mapped in cluster</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : data.networks.map((n) => (
+                <TableRow key={n.id}>
+                  <TableCell className="text-center">
+                    <Checkbox />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
+                        <Share2 className="w-5 h-5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold truncate max-w-[200px] uppercase">
+                          {n.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
+                          {n.id.substring(0, 12)}
+                        </span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {n.status === 'In Use' ? (
+                      <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> Routed
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-indigo-600 border-indigo-500/40 bg-indigo-500/10">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5" /> Isolated
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant="outline" className={`font-mono text-[10px] ${getDriverColor(n.driver)}`}>
+                      {n.driver}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20 font-mono text-[10px] gap-1">
+                      <Globe className="w-3 h-3" />
+                      {n.scope}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8">
+                        <span className="sr-only">Open menu</span>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem>Inspect Configuration</DropdownMenuItem>
+                        <DropdownMenuItem>Connect Container</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive">Disconnect Network</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+            <Activity className="w-4 h-4 text-emerald-500" />
+            Showing {data.networks.length} virtual interfaces found in cluster.
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows per page</span>
+              <Select defaultValue="20">
+                <SelectTrigger className="w-[80px] h-8">
+                  <SelectValue placeholder="20" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Button variant="outline" size="sm" disabled>Previous</Button>
+              <Button variant="outline" size="sm" disabled>Next</Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
 }
 
 export default memo(AdminNetworks)

@@ -1,281 +1,277 @@
-// ===========================================
-// Admin Containers Page (Infrastructure)
-// ===========================================
-
-import { useState, useEffect, memo, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
-import toast from 'react-hot-toast'
-import { Link } from 'react-router-dom'
+import { toast } from 'sonner'
 import { 
-  Plus, 
-  CloudUpload, 
-  RotateCw, 
   Search, 
-  Filter, 
   LayoutGrid, 
   Box, 
-  Check, 
   MoreHorizontal, 
   Activity, 
   Cpu, 
   HardDrive,
-  Zap,
   Terminal,
-  ShieldAlert
+  Loader2,
+  ListFilter,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Progress } from '@/components/ui/progress'
+
+interface ContainerData {
+  id: string;
+  names: string[];
+  image: string;
+  state: string;
+  cpu_percent: number;
+  memory_usage: number;
+  ip_address: string;
+  ports: string[];
+}
 
 const AdminContainers = () => {
-    const [data, setData] = useState({
-        containers: [],
-        system: null
-    })
-    const [isLoading, setIsLoading] = useState(true)
-    const [searchQuery, setSearchQuery] = useState('')
+  const [data, setData] = useState<{ containers: ContainerData[], system: any }>({
+    containers: [],
+    system: null
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
 
-    const fetchData = useCallback(async () => {
-        try {
-            const res = await systemAPI.getStats()
-            setData(res.data)
-        } catch (error) {
-            console.error('Failed to fetch containers:', error)
-        } finally {
-            setIsLoading(false)
-        }
-    }, [])
-
-    useEffect(() => {
-        fetchData()
-        const interval = setInterval(fetchData, 8000)
-        return () => clearInterval(interval)
-    }, [fetchData])
-
-    const filteredContainers = useMemo(() => {
-        return data.containers.filter(c => 
-            (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            c.image.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-    }, [data.containers, searchQuery])
-
-    const stats = useMemo(() => {
-        const total = data.containers.length
-        const running = data.containers.filter(c => c.state === 'running').length
-        const stopped = total - running
-        return { total, running, stopped }
-    }, [data.containers])
-
-    if (isLoading && data.containers.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
-                <div className="relative">
-                    
-                    <div className="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin relative z-10"></div>
-                </div>
-                <p className="text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Orchestrating Container State</p>
-            </div>
-        )
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await systemAPI.getStats()
+      setData(res.data)
+    } catch (error) {
+      console.error('Failed to fetch containers:', error)
+    } finally {
+      setIsLoading(false)
     }
+  }, [])
 
-    return (
-        <div className="space-y-12 animate-pop-in relative h-full">
-            {/* Background Glows */}
-            
+  useEffect(() => {
+    fetchData()
+    const interval = setInterval(fetchData, 8000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
-            <div className="relative z-10">
-                {/* Header Area */}
-                <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-12 gap-8">
-                    <div>
-                        <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter mb-4 italic text-transparent bg-clip-text pr-2 pb-1 bg-gradient-to-r from-indigo-400 to-purple-400">Containers</h1>
-                        <p className="text-slate-600 dark:text-slate-400 text-lg font-medium">Manage and monitor all running project instances.</p>
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 p-2 rounded-2xl backdrop-blur-md">
-                            <div className="flex items-center gap-3 px-6 py-2 border-r border-slate-200 dark:border-white/5">
-                                <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{stats.total} Total</span>
-                            </div>
-                            <div className="flex items-center gap-3 px-6 py-2 border-r border-slate-200 dark:border-white/5">
-                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-pulse"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{stats.running} Active</span>
-                            </div>
-                            <div className="flex items-center gap-3 px-6 py-2">
-                                <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.5)]"></div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400">{stats.stopped} Offline</span>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                            <button className="btn btn-secondary py-3 px-6 text-sm font-black uppercase tracking-widest active:scale-95 transition-all">
-                               <Plus className="w-4 h-4" />
-                               New Container
-                            </button>
-                            <button onClick={fetchData} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-900 dark:text-white hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5 transition-all active:rotate-180 duration-500 transition-transform">
-                               <RotateCw className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-6 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 p-4 rounded-3xl backdrop-blur-md shadow-2xl">
-                    <div className="flex items-center gap-4 flex-1 w-full max-w-2xl">
-                        <div className="relative flex-1 group">
-                            <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-                                <Search className="w-4 h-4 text-slate-600 dark:text-slate-400 group-focus-within:text-indigo-400 transition-colors" />
-                            </div>
-                            <input 
-                                type="text"
-                                placeholder="Filter active instances by name or manifest..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full bg-black/40 border border-slate-200 dark:border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-slate-600 outline-none"
-                            />
-                        </div>
-                        <button className="hidden xl:flex items-center gap-3 px-5 py-3.5 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-all">
-                            <Filter className="w-3.5 h-3.5" />
-                            Policy
-                        </button>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <button className="flex items-center gap-3 px-5 py-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:bg-indigo-500/20 transition-all">
-                            <LayoutGrid className="w-4 h-4" />
-                            Matrix View
-                        </button>
-                    </div>
-                </div>
-
-                {/* Table Area */}
-                <div className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden border-slate-300 dark:border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.4)] bg-slate-50 dark:bg-slate-100 dark:bg-white/5">
-                    <div className="overflow-x-auto">
-                        <table className="premium-table">
-                            <thead>
-                                <tr>
-                                    <th className="w-12 text-center">
-                                        <div className="flex items-center justify-center">
-                                            <input type="checkbox" className="w-4 h-4 rounded-md border-slate-300 dark:border-white/10 bg-black/40 text-indigo-500 focus:ring-0 focus:ring-offset-0" />
-                                        </div>
-                                    </th>
-                                    <th>Instance Detail</th>
-                                    <th>State</th>
-                                    <th className="text-center">Maintenance</th>
-                                    <th>Res. Load</th>
-                                    <th>Gateway Index</th>
-                                    <th className="text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredContainers.map((c) => (
-                                    <tr key={c.id} className="group hover:bg-slate-100 dark:bg-slate-100 dark:bg-white/5">
-                                        <td className="text-center">
-                                            <div className="flex items-center justify-center">
-                                                <input type="checkbox" className="w-4 h-4 rounded-md border-slate-300 dark:border-white/10 bg-black/40 text-indigo-500 focus:ring-0 focus:ring-offset-0" />
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:border-indigo-500/40 group-hover:text-indigo-400 group-hover:bg-indigo-500/5 transition-all duration-500">
-                                                    <Box className="w-6 h-6" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-black text-slate-900 dark:text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tight truncate max-w-[180px]">{c.names[0]?.replace('/', '') || c.id.substring(0, 12)}</span>
-                                                    <span className="text-[10px] text-slate-600 font-mono tracking-widest truncate max-w-[180px]">{c.image}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <span className={`px-4 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest inline-flex items-center gap-2 ${
-                                                c.state === 'running' 
-                                                ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/20' 
-                                                : 'bg-rose-500/5 text-rose-400 border-rose-500/20'
-                                            }`}>
-                                                <div className={`w-1 h-1 rounded-full ${c.state === 'running' ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-400'}`} />
-                                                {c.state === 'running' ? 'Active' : 'Offline'}
-                                            </span>
-                                        </td>
-                                        <td className="text-center">
-                                            <div className="flex justify-center">
-                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div className="flex flex-col gap-3 w-40">
-                                                <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                                                     <div className="flex items-center gap-1.5"><Cpu className="w-3 h-3" /> CPU</div>
-                                                     <span className="text-slate-600 dark:text-slate-400">{(c.cpu_percent || 0).toFixed(1)}%</span>
-                                                </div>
-                                                <div className="h-1 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                                                     <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-700 shadow-[0_0_8px_rgba(99,102,241,0.3)]" style={{ width: `${Math.min(c.cpu_percent || 0, 100)}%` }}></div>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                                                     <div className="flex items-center gap-1.5"><HardDrive className="w-3 h-3" /> MEM</div>
-                                                     <span className="text-slate-600 dark:text-slate-400">{(c.memory_usage || 0).toFixed(1)}MB</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div className="flex flex-col gap-1.5">
-                                                <span className="text-[10px] font-mono font-black text-slate-600 dark:text-slate-400 tracking-tighter">{c.ip_address || 'Unassigned'}</span>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {c.ports?.slice(0, 2).map((p, i) => (
-                                                        <span key={i} className="px-2 py-0.5 rounded bg-indigo-500/5 border border-indigo-500/10 text-[8px] font-black text-indigo-400 tracking-tighter">
-                                                            {p}
-                                                        </span>
-                                                    ))}
-                                                    {c.ports?.length > 2 && <span className="text-[8px] text-slate-600 font-black">+{c.ports.length - 2}</span>}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="text-right">
-                                            <button className="p-3 hover:bg-slate-200 dark:bg-white/10 rounded-2xl text-slate-600 hover:text-slate-900 dark:text-white transition-all active:scale-90">
-                                                <MoreHorizontal className="w-5 h-5" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {filteredContainers.length === 0 && (
-                        <div className="py-32 flex flex-col items-center justify-center text-center">
-                             <div className="w-24 h-24 bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl">
-                                <Terminal className="w-10 h-10 text-slate-800" />
-                            </div>
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600">No active instances in cluster</h3>
-                        </div>
-                    )}
-                </div>
-
-                {/* Pagination */}
-                <div className="mt-8 flex flex-col md:flex-row items-center justify-between gap-6 px-10 py-8 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/5">
-                    <div className="flex items-center gap-3">
-                        <Activity className="w-4 h-4 text-indigo-500" />
-                        <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Showing {filteredContainers.length} of global cluster state.</span>
-                    </div>
-                    <div className="flex items-center gap-10">
-                        <div className="flex items-center gap-4">
-                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Rows per index</span>
-                            <select className="bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl px-4 py-2 text-[10px] font-black text-slate-600 dark:text-slate-400 outline-none focus:border-indigo-500 transition-all cursor-pointer">
-                                <option>All</option>
-                                <option>10</option>
-                                <option>20</option>
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-6">
-                            <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Page 1 of 1</span>
-                            <div className="flex items-center gap-2">
-                                 <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-800 cursor-not-allowed transition-all">&lsaquo;</button>
-                                 <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-slate-800 cursor-not-allowed transition-all">&rsaquo;</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  const filteredContainers = useMemo(() => {
+    return data.containers.filter(c => 
+      (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.image.toLowerCase().includes(searchQuery.toLowerCase())
     )
+  }, [data.containers, searchQuery])
+
+  const stats = useMemo(() => {
+    const total = data.containers.length
+    const running = data.containers.filter(c => c.state === 'running').length
+    const stopped = total - running
+    return { total, running, stopped }
+  }, [data.containers])
+
+  if (isLoading && data.containers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
+        <Loader2 className="w-12 h-12 text-primary animate-spin" />
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Orchestrating Container State</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Containers</h1>
+          <p className="text-muted-foreground">Manage and monitor all running project instances.</p>
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            <div className="flex items-center gap-2 px-3 border-r">
+              <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm" />
+              {stats.total} Total
+            </div>
+            <div className="flex items-center gap-2 px-3 border-r">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
+              {stats.running} Active
+            </div>
+            <div className="flex items-center gap-2 px-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm" />
+              {stats.stopped} Offline
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Card>
+        <div className="p-4 border-b flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative flex-1 w-full max-w-xl">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input 
+              placeholder="Filter active instances by name or manifest..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 w-full"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" className="hidden md:flex">
+              <ListFilter className="w-4 h-4 mr-2" /> Policy
+            </Button>
+            <Button variant="outline" size="sm" className="text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100">
+              <LayoutGrid className="w-4 h-4 mr-2" /> Matrix View
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto min-h-[400px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 text-center">
+                  <Checkbox />
+                </TableHead>
+                <TableHead>Instance Detail</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Health Requirements</TableHead>
+                <TableHead>Resource Load</TableHead>
+                <TableHead>Gateway Ports</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredContainers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-64 text-center">
+                    <div className="flex flex-col items-center justify-center text-muted-foreground">
+                      <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
+                        <Terminal className="w-8 h-8 opacity-50" />
+                      </div>
+                      <span className="font-semibold text-sm">No active instances in cluster</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredContainers.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="text-center">
+                    <Checkbox />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
+                        <Box className="w-5 h-5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold truncate max-w-[200px]">
+                          {c.names[0]?.replace('/', '') || c.id.substring(0, 12)}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">{c.image}</span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {c.state === 'running' ? (
+                      <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> Active</Badge>
+                    ) : (
+                      <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 border-rose-500/20 hover:bg-rose-500/20"><div className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" /> Offline</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />} 
+                        Liveness Check
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />} 
+                        Readiness Probe
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-2 w-32">
+                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        <div className="flex items-center gap-1"><Cpu className="w-3 h-3" /> CPU</div>
+                        <span>{(c.cpu_percent || 0).toFixed(1)}%</span>
+                      </div>
+                      <Progress value={Math.min(c.cpu_percent || 0, 100)} className="h-1.5" />
+                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground pt-1">
+                        <div className="flex items-center gap-1"><HardDrive className="w-3 h-3" /> MEM</div>
+                        <span>{(c.memory_usage || 0).toFixed(1)}MB</span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs font-mono font-bold text-muted-foreground">{c.ip_address || 'Unassigned'}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {c.ports?.slice(0, 2).map((p, i) => (
+                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
+                            {p}
+                          </Badge>
+                        ))}
+                        {c.ports?.length > 2 && <span className="text-[10px] text-muted-foreground font-bold">+{c.ports.length - 2}</span>}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8">
+                        <span className="sr-only">Open menu</span>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem>View Logs</DropdownMenuItem>
+                        <DropdownMenuItem>Execute Shell</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className={c.state === 'running' ? "text-destructive" : ""}>
+                          {c.state === 'running' ? 'Force Stop' : 'Start Instance'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+            <Activity className="w-4 h-4 text-primary" />
+            Showing {filteredContainers.length} global cluster nodes.
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows per page</span>
+              <Select defaultValue="all">
+                <SelectTrigger className="w-[80px] h-8">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Button variant="outline" size="sm" disabled>Previous</Button>
+              <Button variant="outline" size="sm" disabled>Next</Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
 }
 
 export default memo(AdminContainers)

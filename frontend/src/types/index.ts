@@ -15,10 +15,13 @@ export interface Project {
   php_version: string;
   port: number;
   db_name: string;
-  status: 'deploying' | 'running' | 'failed' | 'stopped';
+  status: 'pending' | 'building' | 'deploying' | 'running' | 'failed' | 'stopped';
   container_id?: string;
   created_at: string;
   url?: string;
+  subdomain?: string;
+  user?: User;
+  laravel_version?: string;
 }
 
 export interface AuthResponse {
