@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 vendor/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
 
 # Environment
 .env
@@ -24,6 +27,7 @@ logs/
 
 # Storage (student projects)
 storage/projects/*/
+storage/*
 
 # Docker volumes
 mysql_data/
