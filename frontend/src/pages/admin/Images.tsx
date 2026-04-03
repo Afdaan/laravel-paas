@@ -1,12 +1,12 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
 import { toast } from 'sonner'
-import { 
-  Download, 
-  Trash2, 
-  Search, 
-  BarChart2, 
-  RefreshCw, 
+import {
+  Download,
+  Trash2,
+  Search,
+  BarChart2,
+  RefreshCw,
   Box,
   User,
   MoreHorizontal,
@@ -21,7 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 interface ImageData {
   id: string;
@@ -72,7 +72,7 @@ const AdminImages = () => {
   }, [fetchData])
 
   const filteredImages = useMemo(() => {
-    return data.images.filter(img => 
+    return data.images.filter(img =>
       img.repository.toLowerCase().includes(searchQuery.toLowerCase()) ||
       img.tag.toLowerCase().includes(searchQuery.toLowerCase())
     )
@@ -140,7 +140,7 @@ const AdminImages = () => {
         <div className="p-4 border-b flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input 
+            <Input
               placeholder="Search registry manifests..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -250,7 +250,7 @@ const AdminImages = () => {
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
                         <DropdownMenuItem>Inspect</DropdownMenuItem>
                         <DropdownMenuItem>Re-tag</DropdownMenuItem>
                         <DropdownMenuSeparator />

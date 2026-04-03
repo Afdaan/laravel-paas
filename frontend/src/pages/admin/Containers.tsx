@@ -1,12 +1,12 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
-import { 
-  Search, 
-  LayoutGrid, 
-  Box, 
-  MoreHorizontal, 
-  Activity, 
-  Cpu, 
+import {
+  Search,
+  LayoutGrid,
+  Box,
+  MoreHorizontal,
+  Activity,
+  Cpu,
   HardDrive,
   Terminal,
   Loader2,
@@ -21,7 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Progress } from '@/components/ui/progress'
 
 interface ContainerData {
@@ -61,7 +61,7 @@ const AdminContainers = () => {
   }, [fetchData])
 
   const filteredContainers = useMemo(() => {
-    return data.containers.filter(c => 
+    return data.containers.filter(c =>
       (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.image.toLowerCase().includes(searchQuery.toLowerCase())
     )
@@ -113,7 +113,7 @@ const AdminContainers = () => {
         <div className="p-4 border-b flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input 
+            <Input
               placeholder="Filter active instances by name or manifest..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -185,11 +185,11 @@ const AdminContainers = () => {
                   <TableCell>
                     <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5">
-                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />} 
+                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
                         Liveness Check
                       </div>
                       <div className="flex items-center gap-1.5">
-                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />} 
+                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
                         Readiness Probe
                       </div>
                     </div>
@@ -227,7 +227,7 @@ const AdminContainers = () => {
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
                         <DropdownMenuItem>View Logs</DropdownMenuItem>
                         <DropdownMenuItem>Execute Shell</DropdownMenuItem>
                         <DropdownMenuSeparator />

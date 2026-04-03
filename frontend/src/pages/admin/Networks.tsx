@@ -1,9 +1,9 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
-import { 
-  Plus, 
-  RotateCw, 
-  Share2, 
+import {
+  Plus,
+  RotateCw,
+  Share2,
   MoreHorizontal,
   Activity,
   Globe,
@@ -55,7 +55,7 @@ const AdminNetworks = () => {
   }, [data.networks])
 
   const getDriverColor = (driver: string) => {
-    switch(driver.toLowerCase()) {
+    switch (driver.toLowerCase()) {
       case 'bridge': return 'border-blue-500/20 bg-blue-500/10 text-blue-600'
       case 'host': return 'border-orange-500/20 bg-orange-500/10 text-orange-600'
       case 'overlay': return 'border-purple-500/20 bg-purple-500/10 text-purple-600'
@@ -179,7 +179,7 @@ const AdminNetworks = () => {
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
                         <DropdownMenuItem>Inspect Configuration</DropdownMenuItem>
                         <DropdownMenuItem>Connect Container</DropdownMenuItem>
                         <DropdownMenuSeparator />

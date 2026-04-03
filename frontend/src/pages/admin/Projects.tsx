@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
 import { Project } from '../../types'
-import { 
-  ExternalLink, 
-  Globe, 
-  User, 
-  Search, 
-  ChevronLeft, 
+import {
+  ExternalLink,
+  Globe,
+  User,
+  Search,
+  ChevronLeft,
   ChevronRight,
   Activity,
   Cpu,
@@ -51,7 +51,7 @@ const StatusBadge = ({ status }: { status: Project['status'] }) => {
 
 const ResourceBar = ({ label, value, max, icon: Icon, suffix = '' }: { label: string, value: number, max?: number, icon: any, suffix?: string }) => {
   const percentage = max ? Math.min((value / max) * 100, 100) : Math.min(value, 100)
-  
+
   let colorClass = 'bg-emerald-500'
   if (percentage > 85) colorClass = 'bg-destructive'
   else if (percentage > 60) colorClass = 'bg-amber-500'
@@ -60,8 +60,8 @@ const ResourceBar = ({ label, value, max, icon: Icon, suffix = '' }: { label: st
     <div className="flex flex-col gap-1.5 w-full min-w-[120px] max-w-[150px]">
       <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
         <div className="flex items-center gap-1">
-           <Icon className="w-3.5 h-3.5" />
-           {label}
+          <Icon className="w-3.5 h-3.5" />
+          {label}
         </div>
         <span className="font-mono text-[10px]">
           {Number.isFinite(value) && !Number.isInteger(value) ? value.toFixed(1) : value}{suffix}
@@ -80,7 +80,7 @@ const AdminProjects = () => {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
-  
+
   const fetchProjects = useCallback(async () => {
     setIsLoading(true)
     try {
@@ -114,9 +114,9 @@ const AdminProjects = () => {
     const interval = setInterval(fetchStats, 8000)
     return () => clearInterval(interval)
   }, [])
-  
+
   const totalPages = Math.ceil(total / 12)
-  
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
@@ -136,12 +136,12 @@ const AdminProjects = () => {
           </div>
         </div>
       </div>
-      
+
       <Card>
         <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative flex-1 w-full max-w-2xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input 
+            <Input
               placeholder="Search projects, domains, owners..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -152,7 +152,7 @@ const AdminProjects = () => {
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="w-full md:w-48">
               <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val || 'all')}>
-                <SelectTrigger>
+                <SelectTrigger className={'w-full'}>
                   <SelectValue placeholder="Status: All Lifecycle" />
                 </SelectTrigger>
                 <SelectContent>
@@ -170,7 +170,7 @@ const AdminProjects = () => {
             </Button>
           </div>
         </div>
-        
+
         <div className="overflow-x-auto min-h-[400px]">
           <Table>
             <TableHeader>
@@ -207,18 +207,17 @@ const AdminProjects = () => {
                   <TableRow key={project.id}>
                     <TableCell>
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          project.status === 'running' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted/50 text-muted-foreground'
-                        }`}>
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${project.status === 'running' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted/50 text-muted-foreground'
+                          }`}>
                           <Globe className="w-5 h-5" />
                         </div>
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold truncate max-w-[180px]">{project.name}</span>
                             {project.status === 'running' && project.url && (
-                              <a 
-                                href={project.url} 
-                                target="_blank" 
+                              <a
+                                href={project.url}
+                                target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-muted-foreground hover:text-emerald-500 transition-colors"
                               >
@@ -267,12 +266,12 @@ const AdminProjects = () => {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Link 
+                      <Link
                         to={`/projects/${project.id}`}
                       >
-                         <Button variant="outline" size="sm">
-                           View Details
-                         </Button>
+                        <Button variant="outline" size="sm">
+                          View Details
+                        </Button>
                       </Link>
                     </TableCell>
                   </TableRow>

@@ -2,17 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { usersAPI } from '../../services/api'
 import { User as UserType } from '../../types'
-import { 
-  Users, 
-  UserPlus, 
-  FileDown, 
-  Search, 
-  Shield, 
-  Mail, 
-  Calendar, 
-  Edit3, 
-  Trash2, 
-  X, 
+import {
+  Users,
+  UserPlus,
+  FileDown,
+  Search,
+  Shield,
+  Mail,
+  Calendar,
+  Edit3,
+  Trash2,
+  X,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
@@ -45,7 +45,7 @@ const AdminUsers = () => {
   const [editingUser, setEditingUser] = useState<UserType | null>(null)
   const [importResults, setImportResults] = useState<ImportResults | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -115,7 +115,7 @@ const AdminUsers = () => {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    
+
     try {
       const response = await usersAPI.importExcel(file)
       setImportResults(response.data)
@@ -124,7 +124,7 @@ const AdminUsers = () => {
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Manifest import failure')
     }
-    
+
     e.target.value = ''
   }
 
@@ -150,7 +150,7 @@ const AdminUsers = () => {
             <FileDown className="w-4 h-4 mr-2" />
             Import CSV/Excel
           </Button>
-          <Button 
+          <Button
             onClick={() => {
               setEditingUser(null)
               setFormData({ name: '', email: '', role: 'student', password: '' })
@@ -229,7 +229,7 @@ const AdminUsers = () => {
         <div className="p-6 border-b flex flex-col md:flex-row items-center gap-4">
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input 
+            <Input
               placeholder="Search by name, email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -238,7 +238,7 @@ const AdminUsers = () => {
           </div>
           <div className="w-full md:w-48">
             <Select value={roleFilter} onValueChange={(val) => setRoleFilter(val || 'all')}>
-              <SelectTrigger>
+              <SelectTrigger className={'w-full'}>
                 <SelectValue placeholder="Role: All Access" />
               </SelectTrigger>
               <SelectContent>
@@ -278,11 +278,10 @@ const AdminUsers = () => {
                 <TableRow key={user.id}>
                   <TableCell>
                     <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                          user.role === 'superadmin' ? 'bg-purple-500/10 text-purple-600' :
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user.role === 'superadmin' ? 'bg-purple-500/10 text-purple-600' :
                           user.role === 'admin' ? 'bg-indigo-500/10 text-indigo-600' :
-                          'bg-emerald-500/10 text-emerald-600'
-                      }`}>
+                            'bg-emerald-500/10 text-emerald-600'
+                        }`}>
                         <Users className="w-5 h-5" />
                       </div>
                       <div className="flex flex-col">
@@ -295,11 +294,10 @@ const AdminUsers = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`capitalize ${
-                        user.role === 'superadmin' ? 'text-purple-600 border-purple-500/40 bg-purple-500/10' :
+                    <Badge variant="outline" className={`capitalize ${user.role === 'superadmin' ? 'text-purple-600 border-purple-500/40 bg-purple-500/10' :
                         user.role === 'admin' ? 'text-indigo-600 border-indigo-500/40 bg-indigo-500/10' :
-                        'text-emerald-600 border-emerald-500/40 bg-emerald-500/10'
-                    }`}>
+                          'text-emerald-600 border-emerald-500/40 bg-emerald-500/10'
+                      }`}>
                       <Shield className="w-3 h-3 mr-1.5" />
                       {user.role}
                     </Badge>
@@ -383,7 +381,7 @@ const AdminUsers = () => {
             <div className="space-y-2">
               <Label>Access Privilege</Label>
               <div className="grid grid-cols-2 gap-4">
-                <div 
+                <div
                   className={`p-4 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors ${formData.role === 'student' ? 'border-primary ring-1 ring-primary' : ''}`}
                   onClick={() => setFormData(f => ({ ...f, role: 'student' }))}
                 >
@@ -393,7 +391,7 @@ const AdminUsers = () => {
                   </div>
                   <p className="font-semibold text-sm">Level 1: Student</p>
                 </div>
-                <div 
+                <div
                   className={`p-4 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors ${formData.role === 'admin' ? 'border-primary ring-1 ring-primary' : ''}`}
                   onClick={() => setFormData(f => ({ ...f, role: 'admin' }))}
                 >
