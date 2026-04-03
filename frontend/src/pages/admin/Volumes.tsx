@@ -1,29 +1,29 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
-import { 
-  Plus, 
-  RotateCw, 
-  HardDrive, 
-  MoreHorizontal,
-  Zap,
-  Loader2,
-  Trash2,
-  Info
+import {
+    Plus,
+    RotateCw,
+    HardDrive,
+    MoreHorizontal,
+    Zap,
+    Loader2,
+    Trash2,
+    Info
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 
 interface VolumeData {
-  name: string;
-  driver: string;
-  mount_point: string;
-  status: string;
-  size?: string;
+    name: string;
+    driver: string;
+    mount_point: string;
+    status: string;
+    size?: string;
 }
 
 const AdminVolumes = () => {
@@ -98,23 +98,23 @@ const AdminVolumes = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <Button size="sm">
-                           <Plus className="w-4 h-4 mr-2" /> New Volume
+                        <Button>
+                            <Plus className="w-4 h-4 mr-2" /> New Volume
                         </Button>
                         <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9">
-                           <RotateCw className="w-4 h-4 text-muted-foreground" />
+                            <RotateCw className="w-4 h-4 text-muted-foreground" />
                         </Button>
                     </div>
                 </div>
             </div>
 
             {/* Table Area */}
-            <Card>
-                <div className="overflow-x-auto min-h-[400px]">
+            <div className="overflow-hidden rounded-md border">
+                <div className="overflow-x-auto">
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-12 text-center">
+                                <TableHead>
                                     <Checkbox />
                                 </TableHead>
                                 <TableHead>Identity & Namespace</TableHead>
@@ -153,12 +153,11 @@ const AdminVolumes = () => {
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-center">
-                                            <Badge variant="outline" className={`gap-1.5 ${
-                                                v.status === 'In Use' 
-                                                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/40' 
+                                        <TableCell>
+                                            <Badge variant="outline" className={`gap-1.5 ${v.status === 'In Use'
+                                                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/40'
                                                 : 'bg-indigo-500/10 text-indigo-600 border-indigo-500/40'
-                                            }`}>
+                                                }`}>
                                                 <div className={`w-1.5 h-1.5 rounded-full ${v.status === 'In Use' ? 'bg-emerald-500 animate-pulse' : 'bg-indigo-500'}`} />
                                                 {v.status || 'Active'}
                                             </Badge>
@@ -175,13 +174,12 @@ const AdminVolumes = () => {
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
+                                                <DropdownMenuTrigger>
                                                     <Button variant="ghost" size="icon" className="h-8 w-8">
                                                         <MoreHorizontal className="w-4 h-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Volume Control</DropdownMenuLabel>
+                                                <DropdownMenuContent align="end" className="w-fit">
                                                     <DropdownMenuItem className="gap-2 focus:bg-accent cursor-pointer">
                                                         <Info className="w-4 h-4 text-muted-foreground" /> Inspect Config
                                                     </DropdownMenuItem>
@@ -205,11 +203,11 @@ const AdminVolumes = () => {
                         Showing {data.volumes.length} persistent storage clusters.
                     </div>
                     <div className="flex items-center gap-2">
-                       <Button variant="outline" size="sm" disabled>Previous</Button>
-                       <Button variant="outline" size="sm" disabled>Next</Button>
+                        <Button variant="outline" size="sm" disabled>Previous</Button>
+                        <Button variant="outline" size="sm" disabled>Next</Button>
                     </div>
                 </div>
-            </Card>
+            </div>
         </div>
     )
 }
