@@ -128,3 +128,14 @@
     @apply font-sans;
     }
 }
+
+@layer components {
+  button:hover svg {
+    @apply translate-y-[-1px] transition-transform duration-300 ease-out;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1));
+  }
+  
+  button:active svg {
+    @apply translate-y-0 scale-95;
+  }
+}
