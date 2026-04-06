@@ -17,7 +17,6 @@ import {
   Layers,
   Activity,
   ShieldAlert,
-  Monitor,
   ChevronRight,
   Zap,
 } from 'lucide-react'
@@ -219,7 +218,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
       <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-6">
         <SmallStat icon={Network} label="Networks" value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label="Volumes" value={volumes?.length || 0} />
-        <SmallStat icon={Monitor} label="Status" value={system?.os_platform || 'Linux'} />
+        <SmallStat icon={Box} label="Docker Engine" value={system?.docker_version || 'N/A'} />
       </div>
     </div>
   )
