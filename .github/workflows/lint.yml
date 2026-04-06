@@ -1,0 +1,32 @@
+name: lint-pull-request
+
+on:
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  lint-backend:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint backend
+        run: |
+          cd backend
+          docker run --rm \
+            -v $(pwd):/app \
+            -w /app \
+            golangci/golangci-lint:v1.55.2-alpine \
+            golangci-lint run ./...
+
+  lint-frontend:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint frontend
+        run: |
+          cd frontend
+          docker run --rm \
+            -v $(pwd):/app \
+            -w /app \
+            node:20-alpine \
+            sh -c "npm install && npm run lint"

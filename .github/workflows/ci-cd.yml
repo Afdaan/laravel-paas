@@ -3,64 +3,70 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ "**" ]
-  pull_request:
-    branches: [ "**" ]
 
 jobs:
-  # ==========================================================
-  # CI/CD PIPELINE
-  # Runs directly on /opt/laravel-paas without checking out new dirs
-  # ==========================================================
-  pipeline:
+  lint-backend:
     runs-on: self-hosted
     steps:
-      # 1. Update Codebase (In Place)
-      - name: Update Codebase
+      - uses: actions/checkout@v4
+      - name: Lint backend
+        run: |
+          cd backend
+          docker run --rm \
+            -v $(pwd):/app \
+            -w /app \
+            golangci/golangci-lint:v1.55.2-alpine \
+            golangci-lint run ./...
+
+  lint-frontend:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint frontend
+        run: |
+          cd frontend
+          docker run --rm \
+            -v $(pwd):/app \
+            -w /app \
+            node:20-alpine \
+            sh -c "npm install && npm run lint"
+
+  deploy:
+    runs-on: self-hosted
+    needs: [lint-backend, lint-frontend]
+    steps:
+      - name: Sync codebase
         run: |
           TARGET_DIR="/opt/laravel-paas"
           if [ ! -d "$TARGET_DIR" ]; then
-            echo "[ERROR] Directory $TARGET_DIR does not exist!"
             exit 1
           fi
           
           cd "$TARGET_DIR"
-          echo "[INFO] Working directory: $(pwd)"
-          
-          # Ensure git trusts this directory
           git config --global --add safe.directory "$TARGET_DIR"
-          
-          echo "[INFO] Pulling latest changes for branch ${{ github.ref_name }}..."
           git fetch origin
           git checkout ${{ github.ref_name }}
           git pull origin ${{ github.ref_name }}
 
-      # 2. Deployment / Restart
-      # Builds logic is handled inside Docker build (via start.sh)
-      - name: Restart Infrastructure
+      - name: Restart infrastructure
         run: |
           cd /opt/laravel-paas
-          echo "[INFO] Restarting Services..."
-          
           if [ -f "./scripts/start.sh" ]; then
             chmod +x ./scripts/start.sh
             ./scripts/start.sh
           else
-            echo "[ERROR] scripts/start.sh not found!"
             exit 1
           fi
-          
-          echo "[SUCCESS] Deployment Successful!"
 
-      # 6. Notifications
-      - name: Notify Success
+      - name: Notification on success
         if: success()
         run: |
+          set +x
           if [ -f /opt/laravel-paas/.env ]; then
             set -a; source /opt/laravel-paas/.env; set +a
           fi
 
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "Telegram credentials missing, skipping."
             exit 0
           fi
 
@@ -68,22 +74,21 @@ jobs:
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
           LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
 
-          MSG="[SUCCESS] <b>Laravel PaaS Deploy SUKSES!</b>%0A%0A"
-          MSG="${MSG}<b>Branch:</b> <code>${{ github.ref_name }}</code>%0A"
-          MSG="${MSG}<b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
-          MSG="${MSG}<b>Log:</b> $LAST_COMMIT_MSG%0A%0A"
-          MSG="${MSG}Services restarted & live."
+          MSG="DEPLOY SUCCESS%0A"
+          MSG="${MSG}Branch: ${{ github.ref_name }}%0A"
+          MSG="${MSG}Commit: $COMMIT_HASH%0A"
+          MSG="${MSG}Log: $LAST_COMMIT_MSG"
 
-          set +x
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
           IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
           for CHAT_ID in "${CHAT_IDS[@]}"; do
             curl -s -X POST "$TELEGRAM_API" -d chat_id="$CHAT_ID" -d text="$MSG" -d parse_mode="HTML" > /dev/null 2>&1
           done
 
-      - name: Notify Failure
+      - name: Notification on failure
         if: failure()
         run: |
+          set +x
           if [ -f /opt/laravel-paas/.env ]; then
              set -a; source /opt/laravel-paas/.env; set +a
           fi
@@ -93,13 +98,10 @@ jobs:
           cd /opt/laravel-paas
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-          MSG="[FAILED] <b>Laravel PaaS Deploy GAGAL!</b>%0A%0A"
-          MSG="${MSG}Pipeline stopped at error.%0A"
-          MSG="${MSG}<b>Branch:</b> <code>${{ github.ref_name }}</code>%0A"
-          MSG="${MSG}<b>Commit:</b> <code>$COMMIT_HASH</code>%0A"
-          MSG="${MSG}Check GitHub Actions logs."
+          MSG="DEPLOY FAILED%0A"
+          MSG="${MSG}Branch: ${{ github.ref_name }}%0A"
+          MSG="${MSG}Commit: $COMMIT_HASH"
 
-          set +x
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
           IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
           for CHAT_ID in "${CHAT_IDS[@]}"; do
