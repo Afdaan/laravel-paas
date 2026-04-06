@@ -408,7 +408,7 @@ function StudentProjectDetail() {
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="project" className="pt-6 space-y-6">
+        <TabsContent value="project" className="pt-0">
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-2">
                  <CardHeader className="pb-4">
@@ -480,7 +480,7 @@ function StudentProjectDetail() {
            )}
         </TabsContent>
 
-        <TabsContent value="console" className="pt-6">
+        <TabsContent value="console" className="pt-0">
           <Card className="bg-black text-white border-zinc-800 overflow-hidden flex flex-col h-[600px]">
             <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="flex items-center gap-3">
@@ -496,7 +496,7 @@ function StudentProjectDetail() {
               <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-500 hover:text-white">Clear</Button>
             </CardHeader>
 
-            <div className="flex-1 p-6 overflow-auto font-mono text-xs text-zinc-300 custom-scrollbar bg-zinc-950/50">
+            <div className="flex-1 p-4 overflow-auto font-mono text-xs text-zinc-300 custom-scrollbar bg-zinc-950/50">
               <div className="text-amber-400/80 mb-4 flex items-center gap-2 border-b border-white/10 pb-2">
                 <AlertTriangle size={12} />
                 <span>Commands are prefixed with 'php artisan' automatically.</span>
@@ -530,7 +530,7 @@ function StudentProjectDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="environment" className="pt-6">
+        <TabsContent value="environment" className="pt-0">
           <Card className="flex flex-col h-[600px] overflow-hidden">
             <CardHeader className="pb-4 flex flex-row items-center justify-between">
               <div>
@@ -572,7 +572,7 @@ function StudentProjectDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="database" className="pt-6">
+        <TabsContent value="database" className="pt-0">
            <div className="space-y-6">
               <Card>
                  <CardHeader>
@@ -604,7 +604,7 @@ function StudentProjectDetail() {
            </div>
         </TabsContent>
 
-        <TabsContent value="logs" className="pt-6">
+        <TabsContent value="logs" className="pt-0">
           <Card className="bg-black text-zinc-300 border-zinc-800 overflow-hidden flex flex-col h-[600px]">
             <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
@@ -612,7 +612,7 @@ function StudentProjectDetail() {
               </div>
               <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6"><RefreshCw size={12}/></Button>
             </CardHeader>
-            <div className="flex-1 p-6 overflow-auto font-mono text-xs leading-relaxed custom-scrollbar bg-black/40">
+            <div className="flex-1 p-4 overflow-auto font-mono text-xs leading-relaxed custom-scrollbar bg-black/40">
               {logs ? logs.split('\n').map((line, i) => (
                 <div key={i} className="flex gap-4 hover:bg-white/5 py-0.5 px-2 rounded -mx-2">
                   <span className="shrink-0 text-zinc-700 select-none w-8 text-right">{i + 1}</span>
@@ -629,7 +629,7 @@ function StudentProjectDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="settings" className="pt-6">
+        <TabsContent value="settings" className="pt-0">
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card>
                  <CardHeader>
