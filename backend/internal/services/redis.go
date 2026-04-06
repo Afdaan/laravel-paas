@@ -47,6 +47,11 @@ func (r *RedisService) Close() error {
 	return r.client.Close()
 }
 
+// Ping tests the Redis connection
+func (r *RedisService) Ping(ctx context.Context) error {
+	return r.client.Ping(ctx).Err()
+}
+
 // DeploymentJob represents a deployment job in the queue
 type DeploymentJob struct {
 	ProjectID   uint      `json:"project_id"`

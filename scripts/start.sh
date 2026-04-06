@@ -23,6 +23,98 @@ echo -e "Project root: ${PROJECT_ROOT}"
 
 cd "$PROJECT_ROOT"
 
+# Helper to get next numeric tag for a service
+get_next_service_tag() {
+    local service=$1
+    local last_tag=$(docker images "paas-$service" --format "{{.Tag}}" | grep -E '^[0-9]+$' | sort -V | tail -n 1)
+    if [ -z "$last_tag" ]; then
+        echo "1"
+    else
+        echo $((last_tag + 1))
+    fi
+}
+
+# Function to deploy with zero downtime
+deploy_with_anti_downtime() {
+    local service_name=$1
+    local context_dir=$2
+    local image_tag=$3
+    shift 3
+    # The remaining arguments are docker run flags
+    
+    local image_name="paas-$service_name:$image_tag"
+    local container_name="paas-$service_name"
+    local temp_container_name="${container_name}-new"
+    local old_container_name="${container_name}-old"
+
+    echo -e "${YELLOW}[DEPLOY] Working on $service_name (Tag: $image_tag)...${NC}"
+
+    # 1. Build new image
+    echo -e "${YELLOW}[BUILD] Building $image_name...${NC}"
+    if ! docker build -t "$image_name" "$context_dir"; then
+        echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
+
+    # 2. Start new container as 'new'
+    docker rm -f "$temp_container_name" 2>/dev/null || true
+    echo -e "${YELLOW}[RUN] Starting new container $temp_container_name...${NC}"
+    
+    if ! docker run -d --name "$temp_container_name" "$@" "$image_name"; then
+        echo -e "${RED}[ERROR] Failed to start new container for $service_name. Keeping current version.${NC}"
+        return 1
+    fi
+
+    # 3. Wait for health check (max 60s)
+    echo -e "${YELLOW}[HEALTH] Waiting for $service_name to be healthy...${NC}"
+    local healthy=false
+    for i in {1..12}; do
+        local status=$(docker inspect --format='{{json .State.Health.Status}}' "$temp_container_name" 2>/dev/null | tr -d '"')
+        if [ "$status" == "healthy" ]; then
+            healthy=true
+            break
+        elif [ "$status" == "unhealthy" ]; then
+            break
+        fi
+        # Fallback for containers without healthcheck or still starting
+        if [ "$status" == "" ] || [ "$status" == "null" ]; then
+             if [ "$(docker inspect -f '{{.State.Running}}' "$temp_container_name" 2>/dev/null)" == "true" ]; then
+                # If no health check defined, just wait a bit and assume OK if it didn't crash
+                if [ $i -ge 4 ]; then healthy=true; break; fi
+             fi
+        fi
+        sleep 5
+    done
+
+    if [ "$healthy" == "true" ]; then
+        echo -e "${GREEN}[SUCCESS] $service_name is healthy! Swapping containers...${NC}"
+        
+        # Stop and rename old
+        if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            docker stop "$container_name" 2>/dev/null || true
+            docker rename "$container_name" "$old_container_name" 2>/dev/null || true
+        fi
+        
+        # Rename new to standard name
+        docker rename "$temp_container_name" "$container_name"
+        
+        # Cleanup old container
+        docker rm -f "$old_container_name" 2>/dev/null || true
+        
+        # Cleanup old images for this service
+        echo -e "${YELLOW}[CLEANUP] Removing old images for $service_name...${NC}"
+        docker images "paas-$service_name" --format "{{.Tag}}" | grep -v "$image_tag" | xargs -I {} docker rmi "paas-$service_name:{}" 2>/dev/null || true
+        
+        return 0
+    else
+        echo -e "${RED}[ERROR] $service_name health check failed. Rolling back...${NC}"
+        docker stop "$temp_container_name" 2>/dev/null || true
+        docker rm -f "$temp_container_name" 2>/dev/null || true
+        return 1
+    fi
+}
+
 # 2. Variable Initialization
 # Load .env if not already set (CI/CD friendly)
 if [ -z "$MYSQL_ROOT_PASSWORD" ] && [ -f "$PROJECT_ROOT/.env" ]; then
@@ -166,16 +258,14 @@ docker run -d \
     traefik:v3.6
 
 # 8. Platform: Backend
-echo -e "${YELLOW}Building and starting backend...${NC}"
+echo -e "${YELLOW}Deploying backend with auto-increment tag...${NC}"
 if [ ! -d "${PROJECT_ROOT}/backend" ]; then
     echo -e "${RED}Error: backend directory not found${NC}"
     exit 1
 fi
+BACKEND_TAG=$(get_next_service_tag "backend")
 
-docker rm -f paas-backend 2>/dev/null || true
-docker build -t paas-backend "${PROJECT_ROOT}/backend"
-docker run -d \
-    --name paas-backend \
+deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
     --network paas-network \
     --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -200,26 +290,22 @@ docker run -d \
     -e DOCKER_NETWORK=paas-network \
     --label "traefik.enable=true" \
     --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
-    --label "traefik.http.services.backend.loadbalancer.server.port=8080" \
-    paas-backend
+    --label "traefik.http.services.backend.loadbalancer.server.port=8080" || true
 
 # 9. Platform: Frontend
-echo -e "${YELLOW}Building and starting frontend...${NC}"
+echo -e "${YELLOW}Deploying frontend with auto-increment tag...${NC}"
 if [ ! -d "${PROJECT_ROOT}/frontend" ]; then
     echo -e "${RED}Error: frontend directory not found${NC}"
     exit 1
 fi
+FRONTEND_TAG=$(get_next_service_tag "frontend")
 
-docker rm -f paas-frontend 2>/dev/null || true
-docker build -t paas-frontend "${PROJECT_ROOT}/frontend"
-docker run -d \
-    --name paas-frontend \
+deploy_with_anti_downtime "frontend" "${PROJECT_ROOT}/frontend" "$FRONTEND_TAG" \
     --network paas-network \
     --restart unless-stopped \
     --label "traefik.enable=true" \
     --label "traefik.http.routers.frontend.rule=Host(\`$BASE_DOMAIN\`)" \
-    --label "traefik.http.services.frontend.loadbalancer.server.port=80" \
-    paas-frontend
+    --label "traefik.http.services.frontend.loadbalancer.server.port=80" || true
 
 echo -e "${GREEN}[SUCCESS] Laravel PaaS is running!${NC}"
 if [ "$HTTP_PORT" != "80" ]; then

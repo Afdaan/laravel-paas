@@ -35,7 +35,8 @@ LABEL description="Backend API Service"
 RUN apk --no-cache add \
     ca-certificates \
     git \
-    docker-cli
+    docker-cli \
+    curl
 
 WORKDIR /app
 
@@ -44,6 +45,10 @@ COPY --from=builder /app/main .
 
 # Create directories for runtime mounts
 RUN mkdir -p /app/storage/projects /app/docker/templates
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 EXPOSE 8080
 
