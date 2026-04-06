@@ -14,6 +14,7 @@ jobs:
           cd backend
           docker run --rm \
             --user $(id -u):$(id -g) \
+            -e GOLANGCI_LINT_CACHE=/tmp/golangci-lint-cache \
             -v $(pwd):/app \
             -w /app \
             golangci/golangci-lint:v1.59.1-alpine \
@@ -28,7 +29,8 @@ jobs:
           cd frontend
           docker run --rm \
             --user $(id -u):$(id -g) \
+            -e HOME=/tmp \
             -v $(pwd):/app \
             -w /app \
             node:20-alpine \
-            sh -c "npm install && npm run lint"
+            sh -c "npm install && npm run lint && rm -rf node_modules"
