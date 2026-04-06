@@ -26,12 +26,12 @@ DB_USER="paas"
 DB_PASS=""
 DB_NAME="paas"
 
-if [ -f "backend/.env" ]; then
-    echo -e "${BLUE}Loading credentials from backend/.env...${NC}"
+if [ -f ".env" ]; then
+    echo -e "${BLUE}Loading credentials from .env...${NC}"
     # Extract values from .env (simple grep)
-    ENV_USER=$(grep "^MYSQL_USER=" backend/.env | cut -d '=' -f2)
-    ENV_PASS=$(grep "^MYSQL_PASSWORD=" backend/.env | cut -d '=' -f2)
-    ENV_NAME=$(grep "^MYSQL_DATABASE=" backend/.env | cut -d '=' -f2)
+    ENV_USER=$(grep "^PG_USER=" .env | cut -d '=' -f2)
+    ENV_PASS=$(grep "^PG_PASSWORD=" .env | cut -d '=' -f2)
+    ENV_NAME=$(grep "^PG_DATABASE=" .env | cut -d '=' -f2)
     
     if [ ! -z "$ENV_USER" ]; then DB_USER=$ENV_USER; fi
     if [ ! -z "$ENV_PASS" ]; then DB_PASS=$ENV_PASS; fi
@@ -86,9 +86,9 @@ fi
 
 echo -e "${BLUE}Inserting user into database...${NC}"
 
-# Check if MySQL container is running
-if ! docker ps | grep -q paas-mysql; then
-    echo -e "${RED}Error: paas-mysql container is not running.${NC}"
+# Check if Postgres container is running
+if ! docker ps | grep -q paas-postgres; then
+    echo -e "${RED}Error: paas-postgres container is not running.${NC}"
     echo -e "Please start the services first: ./scripts/start.sh"
     exit 1
 fi
@@ -97,14 +97,14 @@ fi
 SQL="INSERT INTO users (name, email, password, role, created_at, updated_at) VALUES ('$ADMIN_NAME', '$ADMIN_EMAIL', '$HASH', 'superadmin', NOW(), NOW());"
 
 # Execute Query
-# We use docker exec to run mysql client inside the container
-docker exec -i paas-mysql mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$SQL"
+# We use docker exec to run psql client inside the container
+docker exec -e PGPASSWORD="$DB_PASS" -i paas-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "$SQL"
 
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo ""
-    echo -e "${GREEN}✨ Admin user created successfully!${NC}"
+    echo -e "${GREEN}[SUCCESS] Admin user created successfully!${NC}"
     echo -e "Name:  $ADMIN_NAME"
     echo -e "Email: ${YELLOW}$ADMIN_EMAIL${NC}"
     echo -e "Role:  superadmin"
@@ -112,7 +112,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo -e "You can now login at the dashboard."
 else
     echo ""
-    echo -e "${RED}❌ Failed to insert user into database.${NC}"
+    echo -e "${RED}[ERROR] Failed to insert user into database.${NC}"
     echo -e "Error Code: $EXIT_CODE"
     echo -e "Check if email '$ADMIN_EMAIL' already exists."
 fi

@@ -132,6 +132,7 @@ func detectPHPVersion(laravelVersion, phpConstraint string) string {
 		"9":  "8.1",
 		"10": "8.2",
 		"11": "8.3",
+		"12": "8.4",
 	}
 
 	// Use Laravel version mapping if available
@@ -146,7 +147,7 @@ func detectPHPVersion(laravelVersion, phpConstraint string) string {
 		return matches[1]
 	}
 
-	return "8.3" // Default to PHP 8.3
+	return "8.4" // Default to PHP 8.4
 }
 
 // ===========================================

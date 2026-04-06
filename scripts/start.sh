@@ -10,6 +10,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
+PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
 
 # Colors for output
 RED='\033[0;31m'
@@ -40,6 +41,9 @@ BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
 ACME_EMAIL=${ACME_EMAIL:-"admin@localhost"}
 JWT_SECRET=${JWT_SECRET:-"change-me-please-12345"}
 MYSQL_PASSWORD=${MYSQL_PASSWORD:-"$MYSQL_ROOT_PASSWORD"}
+PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
+PG_USER=${PG_USER:-"postgres"}
+PG_DATABASE=${PG_DATABASE:-"paas"}
 HTTP_PORT=${HTTP_PORT:-80}
 HTTPS_PORT=${HTTPS_PORT:-443}
 
@@ -47,6 +51,7 @@ HTTPS_PORT=${HTTPS_PORT:-443}
 echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
 mkdir -p "$DB_DATA_DIR"
+mkdir -p "$PG_DATA_DIR"
 mkdir -p "${PROJECT_ROOT}/storage/projects"
 
 # 4. Smart Backup Logic (Logical or Physical)
@@ -99,6 +104,20 @@ docker run -d \
     -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
     -v "${DB_DATA_DIR}:/var/lib/mysql" \
     mariadb:10.11
+
+# 5.5. Infrastructure: PostgreSQL
+echo -e "${YELLOW}Starting PostgreSQL...${NC}"
+docker rm -f paas-postgres 2>/dev/null || true
+
+docker run -d \
+    --name paas-postgres \
+    --network paas-network \
+    --restart unless-stopped \
+    -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+    -e POSTGRES_DB="$PG_DATABASE" \
+    -e POSTGRES_USER="$PG_USER" \
+    -v "${PG_DATA_DIR}:/var/lib/postgresql/data" \
+    postgres:15-alpine
 
 # 6. Infrastructure: Redis
 echo -e "${YELLOW}Starting Redis...${NC}"
@@ -163,7 +182,12 @@ docker run -d \
     -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
     -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+    -e PG_HOST=paas-postgres \
+    -e PG_USER="$PG_USER" \
+    -e PG_PASSWORD="$PG_PASSWORD" \
+    -e PG_DATABASE="$PG_DATABASE" \
     -e MYSQL_HOST=paas-mysql \
+    -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
     -e MYSQL_USER="$MYSQL_USER" \
     -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
     -e MYSQL_DATABASE="$MYSQL_DATABASE" \

@@ -1,0 +1,545 @@
+import React, { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import {
+   ArrowLeft,
+   Database as DbIcon,
+   Key,
+   Trash2,
+   RefreshCw,
+   PackageOpen,
+   MousePointer2,
+   Play,
+   Download,
+   Upload,
+   Copy,
+   Terminal,
+   Layers,
+   Check,
+   Loader2
+} from 'lucide-react'
+import { databaseAPI, projectsAPI } from '../../services/api'
+import { Project } from '../../types'
+import ConfirmationModal from '../../components/ConfirmationModal'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+
+interface TableInfo {
+   name: string;
+   rows: number;
+}
+
+interface TableData {
+   columns: string[];
+   rows: any[];
+   total: number;
+}
+
+interface DatabaseCredentials {
+   host: string;
+   port: number | string;
+   database: string;
+   username: string;
+   password: string;
+}
+
+interface DatabaseManagerProps {
+   embedded?: boolean;
+   projectId?: string | number | null;
+}
+
+export default function DatabaseManager({ embedded = false, projectId = null }: DatabaseManagerProps) {
+   const params = useParams<{ id: string }>()
+   const navigate = useNavigate()
+   const id = projectId || params.id
+   const [project, setProject] = useState<Project | null>(null)
+   const [activeTab, setActiveTab] = useState('tables')
+   const [tables, setTables] = useState<TableInfo[]>([])
+   const [selectedTable, setSelectedTable] = useState<string | null>(null)
+   const [tableData, setTableData] = useState<TableData | null>(null)
+   const [loading, setLoading] = useState(true)
+   const [credentials, setCredentials] = useState<DatabaseCredentials | null>(null)
+
+   // Query state
+   const [query, setQuery] = useState('')
+   const [queryResult, setQueryResult] = useState<any>(null)
+   const [queryLoading, setQueryLoading] = useState(false)
+
+   // Import state
+   const [importSQL, setImportSQL] = useState('')
+   const [importing, setImporting] = useState(false)
+
+   // Modal state
+   const [showCredentials, setShowCredentials] = useState(false)
+   const [confirmModal, setConfirmModal] = useState({
+      isOpen: false,
+      title: '',
+      message: '' as React.ReactNode,
+      type: 'danger' as 'danger' | 'warning' | 'info',
+      onConfirm: () => { },
+      confirmText: 'Confirm'
+   })
+
+   useEffect(() => {
+      if (id) {
+         fetchProject()
+         fetchTables()
+         fetchCredentials()
+      }
+   }, [id])
+
+   const fetchProject = async () => {
+      if (!id) return
+      try {
+         const res = await projectsAPI.get(id)
+         setProject(res.data)
+      } catch (err) {
+         if (!embedded) {
+            toast.error('Failed to load project context')
+            navigate('/databases')
+         }
+      }
+   }
+
+   const fetchCredentials = async () => {
+      if (!id) return
+      try {
+         const res = await databaseAPI.getCredentials(id)
+         setCredentials(res.data)
+      } catch (err) {
+         console.error('Failed to fetch credentials')
+      }
+   }
+
+   const fetchTables = async () => {
+      if (!id) return
+      setLoading(true)
+      try {
+         const res = await databaseAPI.listTables(id)
+         setTables(res.data.tables || [])
+      } catch (err) {
+         toast.error('Failed to fetch tables')
+      } finally {
+         setLoading(false)
+      }
+   }
+
+   const selectTable = async (tableName: string) => {
+      if (!id) return
+      setSelectedTable(tableName)
+      setLoading(true)
+      setTableData(null)
+      try {
+         const res = await databaseAPI.getData(id, tableName, 1, 50)
+         setTableData(res.data)
+      } catch (err) {
+         toast.error('Failed to load table data')
+      } finally {
+         setLoading(false)
+      }
+   }
+
+   const executeQuery = async () => {
+      if (!id || !query.trim()) return
+      setQueryLoading(true)
+      try {
+         const res = await databaseAPI.query(id, query)
+         setQueryResult(res.data)
+         toast.success('Query Executed Successfully')
+      } catch (err: any) {
+         toast.error(err.response?.data?.error || 'Database operation failed')
+      } finally {
+         setQueryLoading(false)
+      }
+   }
+
+   const handleExport = async () => {
+      if (!id) return
+      try {
+         const res = await databaseAPI.export(id)
+         const blob = new Blob([res.data], { type: 'application/sql' })
+         const url = window.URL.createObjectURL(blob)
+         const a = document.createElement('a')
+         a.href = url
+         a.download = `${project?.db_name || 'database'}_dump.sql`
+         a.click()
+         toast.success('Backup file created')
+      } catch (err) {
+         toast.error('Export Failed')
+      }
+   }
+
+   const handleImport = async () => {
+      if (!id || !importSQL.trim()) return
+      setImporting(true)
+      try {
+         await databaseAPI.import(id, importSQL)
+         toast.success('Data Import Successful')
+         setImportSQL('')
+         fetchTables()
+      } catch (err) {
+         toast.error('Import Failed')
+      } finally {
+         setImporting(false)
+      }
+   }
+
+   const confirmReset = () => {
+      if (!id) return
+      setConfirmModal({
+         isOpen: true,
+         title: 'Reset Database?',
+         message: 'This will delete all tables and data in this database. This action cannot be undone.',
+         type: 'danger',
+         confirmText: 'Reset Now',
+         onConfirm: async () => {
+            try {
+               await databaseAPI.reset(id)
+               toast.success('Database Reset Successfully')
+               setSelectedTable(null)
+               fetchTables()
+            } catch (err) {
+               toast.error('Reset Failed')
+            }
+         }
+      })
+   }
+
+   const copyToClipboard = (label: string, text: string) => {
+      navigator.clipboard.writeText(text)
+      toast.success(`${label} copied`)
+   }
+
+   return (
+      <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col">
+         <ConfirmationModal
+            onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            {...confirmModal}
+         />
+
+         {/* Header Overlay for standalone view */}
+         {!embedded && (
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-6 border-b">
+               <div>
+                  <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={() => navigate(-1)}
+                     className="mb-4 gap-2 h-8 px-2"
+                  >
+                     <ArrowLeft className="w-4 h-4" />
+                     <span className="text-[10px] font-bold uppercase tracking-widest">Back</span>
+                  </Button>
+                  <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+                     <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                        <DbIcon className="w-5 h-5" />
+                     </div>
+                     Database Manager
+                  </h1>
+                  <p className="text-muted-foreground mt-2 font-mono text-xs uppercase tracking-widest">
+                     Schema: <span className="text-primary font-bold">{project?.db_name || '...'}</span>
+                  </p>
+               </div>
+               <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setShowCredentials(true)} className="gap-2">
+                     <Key className="w-4 h-4" /> Credentials
+                  </Button>
+                  <Button variant="outline" onClick={confirmReset} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 gap-2">
+                     <Trash2 className="w-4 h-4" /> Reset DB
+                  </Button>
+               </div>
+            </div>
+         )}
+
+         {/* Tabs System */}
+         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col space-y-6">
+            <TabsList className="bg-muted p-1 rounded-lg w-fit">
+               <TabsTrigger value="tables" className="gap-2 px-6">
+                  <Layers className="w-4 h-4" />
+                  Tables
+               </TabsTrigger>
+               <TabsTrigger value="query" className="gap-2 px-6">
+                  <Terminal className="w-4 h-4" />
+                  Console
+               </TabsTrigger>
+               <TabsTrigger value="import" className="gap-2 px-6">
+                  <RefreshCw className="w-4 h-4" />
+                  Transfer
+               </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="tables" className="flex-1 min-h-0">
+               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[600px]">
+                  {/* Table Sidebar */}
+                  <Card className="lg:col-span-1 flex flex-col overflow-hidden">
+                     <CardHeader className="py-4 border-b bg-muted/20">
+                        <div className="flex justify-between items-center">
+                           <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em]">Table Index</CardTitle>
+                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchTables}>
+                              <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+                           </Button>
+                        </div>
+                     </CardHeader>
+                     <CardContent className="flex-1 overflow-y-auto p-2 space-y-1 pt-2">
+                        {loading && tables.length === 0 ? (
+                           <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+                        ) : tables.length === 0 ? (
+                           <div className="text-center py-20 text-muted-foreground font-bold uppercase tracking-widest text-[10px]">No Tables Found</div>
+                        ) : (
+                           tables.map(table => (
+                              <button
+                                 key={table.name}
+                                 onClick={() => selectTable(table.name)}
+                                 className={cn(
+                                    "w-full text-left p-3 rounded-lg transition-all border text-xs font-bold flex justify-between items-center group",
+                                    selectedTable === table.name
+                                       ? 'bg-primary/10 border-primary/30 text-primary'
+                                       : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
+                                 )}
+                              >
+                                 <span className="truncate pr-2">{table.name}</span>
+                                 <span className="text-[9px] opacity-40 font-mono italic group-hover:opacity-100">{table.rows}</span>
+                              </button>
+                           ))
+                        )}
+                     </CardContent>
+                  </Card>
+
+                  {/* Data Viewer */}
+                  <Card className="lg:col-span-3 flex flex-col overflow-hidden bg-background">
+                     {selectedTable ? (
+                        <>
+                           <CardHeader className="py-4 border-b flex flex-row items-center justify-between bg-muted/20">
+                              <div className="flex items-center gap-3">
+                                 <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                                    <Layers className="w-4 h-4" />
+                                 </div>
+                                 <div>
+                                    <CardTitle className="text-sm font-bold uppercase tracking-widest">{selectedTable}</CardTitle>
+                                    <CardDescription className="text-[10px]">Rows: {tableData?.total || 0}</CardDescription>
+                                 </div>
+                              </div>
+                              <Badge variant="outline" className="text-[9px] font-bold uppercase border-primary/20 text-primary">Read-Only View</Badge>
+                           </CardHeader>
+
+                           <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
+                              {loading ? (
+                                 <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
+                              ) : tableData && tableData.rows?.length > 0 ? (
+                                 <div className="w-full">
+                                    <table className="w-full border-collapse text-left text-xs">
+                                       <thead>
+                                          <tr className="bg-muted/50 border-b">
+                                             {tableData.columns?.map((col: string) => (
+                                                <th key={col} className="p-4 font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">{col}</th>
+                                             ))}
+                                          </tr>
+                                       </thead>
+                                       <tbody className="divide-y">
+                                          {tableData.rows.map((row, i) => (
+                                             <tr key={i} className="hover:bg-muted/30 transition-colors">
+                                                {tableData.columns?.map((col: string) => (
+                                                   <td key={col} className="p-4 font-mono text-[11px] border-r last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]">
+                                                      {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
+                                                   </td>
+                                                ))}
+                                             </tr>
+                                          ))}
+                                       </tbody>
+                                    </table>
+                                 </div>
+                              ) : (
+                                 <div className="flex flex-col items-center justify-center h-full gap-4 opacity-30">
+                                    <PackageOpen className="w-12 h-12" />
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em]">Table is empty</p>
+                                 </div>
+                              )}
+                           </CardContent>
+                        </>
+                     ) : (
+                        <CardContent className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4 opacity-40">
+                           <MousePointer2 className="w-10 h-10 animate-bounce" />
+                           <p className="text-xs font-bold uppercase tracking-[0.3em]">Select a table to index data</p>
+                        </CardContent>
+                     )}
+                  </Card>
+               </div>
+            </TabsContent>
+
+            <TabsContent value="query" className="flex-1 space-y-6">
+               <div className="grid grid-cols-1 gap-6 h-[600px]">
+                  <Card className="flex flex-col overflow-hidden bg-zinc-950 border-zinc-800">
+                     <CardHeader className="py-3 px-4 border-b border-zinc-800 bg-zinc-900 flex flex-row items-center justify-between">
+                        <div className="flex items-center gap-3">
+                           <Terminal className="w-4 h-4 text-emerald-500" />
+                           <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SQL Workspace</CardTitle>
+                        </div>
+                        <div className="flex gap-2">
+                           <Button variant="ghost" size="xs" onClick={() => setQuery('')} className="text-zinc-500 hover:text-white uppercase font-bold text-[10px]">Reset</Button>
+                           <Button
+                              size="sm"
+                              onClick={executeQuery}
+                              disabled={queryLoading || !query.trim()}
+                              className="h-8 bg-emerald-600 hover:bg-emerald-500 text-white"
+                           >
+                              {queryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-3 h-3 mr-2 fill-current" />}
+                              Execute Query
+                           </Button>
+                        </div>
+                     </CardHeader>
+                     <Textarea
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="-- Write your SQL query here. e.g. SELECT * FROM users LIMIT 10;"
+                        className="flex-1 bg-transparent text-emerald-400 font-mono text-sm p-6 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-800"
+                        spellCheck={false}
+                     />
+                  </Card>
+
+                  <Card className="flex flex-col overflow-hidden">
+                     <CardHeader className="py-3 px-4 bg-muted/50 border-b flex flex-row items-center justify-between">
+                        <CardTitle className="text-[10px] font-bold uppercase tracking-widest">Output Log</CardTitle>
+                        {queryResult && (
+                           <Badge variant="secondary" className="text-[9px] uppercase tracking-tighter">Execution: {queryResult.duration || '0ms'}</Badge>
+                        )}
+                     </CardHeader>
+                     <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
+                        {queryResult ? (
+                           <div className="min-w-full">
+                              {queryResult.rows && queryResult.rows.length > 0 ? (
+                                 <table className="w-full text-xs text-left border-collapse">
+                                    <thead>
+                                       <tr className="bg-muted/50 border-b">
+                                          {queryResult.columns?.map((col: string) => (<th key={col} className="p-3 font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">{col}</th>))}
+                                       </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                       {queryResult.rows.map((row: any, i: number) => (
+                                          <tr key={i} className="hover:bg-muted/30">
+                                             {queryResult.columns?.map((col: string) => (
+                                                <td key={col} className="p-3 font-mono text-[11px] border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">
+                                                   {row[col] !== null ? String(row[col]) : <span className="opacity-20">NULL</span>}
+                                                </td>
+                                             ))}
+                                          </tr>
+                                       ))}
+                                    </tbody>
+                                 </table>
+                              ) : (
+                                 <div className="p-10 flex flex-col items-center justify-center gap-3">
+                                    <Check className="w-10 h-10 text-emerald-500" />
+                                    <p className="text-xs font-bold text-emerald-600 uppercase tracking-[0.2em]">
+                                       Transaction Complete: {queryResult.rows_affected} records updated
+                                    </p>
+                                 </div>
+                              )}
+                           </div>
+                        ) : (
+                           <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 gap-4">
+                              <Terminal className="w-12 h-12" />
+                              <p className="text-[10px] font-bold uppercase tracking-[0.4em]">Awaiting Instruction</p>
+                           </div>
+                        )}
+                     </CardContent>
+                  </Card>
+               </div>
+            </TabsContent>
+
+            <TabsContent value="import" className="space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card className="hover:border-primary/20 transition-all p-6">
+                     <CardContent className="p-0 space-y-6">
+                        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                           <Download className="w-6 h-6" />
+                        </div>
+                        <div>
+                           <CardTitle className="text-xl">Database Backup</CardTitle>
+                           <CardDescription className="mt-2 text-sm">Download a full SQL manifest of your current database state including structures and records.</CardDescription>
+                        </div>
+                        <Button onClick={handleExport} className="w-full gap-2">
+                           <Download className="w-4 h-4" />
+                           Generate SQL Dump
+                        </Button>
+                     </CardContent>
+                  </Card>
+
+                  <Card className="hover:border-primary/20 transition-all p-6">
+                     <CardContent className="p-0 space-y-6">
+                        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                           <Upload className="w-6 h-6" />
+                        </div>
+                        <div>
+                           <CardTitle className="text-xl">Import Dataset</CardTitle>
+                           <CardDescription className="mt-2 text-sm">Synchronize your database by running an external SQL script or restoration file.</CardDescription>
+                        </div>
+                        <Textarea
+                           value={importSQL}
+                           onChange={(e) => setImportSQL(e.target.value)}
+                           placeholder="-- Paste your SQL commands or dump content here..."
+                           className="h-32 bg-muted/30 font-mono text-xs p-4 focus-visible:ring-primary/20"
+                        />
+                        <Button
+                           onClick={handleImport}
+                           disabled={importing || !importSQL.trim()}
+                           className="w-full gap-2"
+                        >
+                           {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                           Run Import Script
+                        </Button>
+                     </CardContent>
+                  </Card>
+               </div>
+            </TabsContent>
+         </Tabs>
+
+         {/* Credentials Dialog */}
+         <Dialog open={showCredentials} onOpenChange={setShowCredentials}>
+            <DialogContent className="sm:max-w-md">
+               <DialogHeader>
+                  <DialogTitle className="text-2xl font-bold tracking-tight flex items-center gap-3">
+                     <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                        <Key className="w-5 h-5" />
+                     </div>
+                     Credentials
+                  </DialogTitle>
+                  <DialogDescription>
+                     External connection parameters for your database node.
+                  </DialogDescription>
+               </DialogHeader>
+
+               <div className="space-y-4 my-2">
+                  {[
+                     { label: 'Network Host', value: credentials?.host || '...' },
+                     { label: 'Port', value: credentials?.port || '3306' },
+                     { label: 'Database Name', value: credentials?.database || '...' },
+                     { label: 'Username', value: credentials?.username || '...' },
+                     { label: 'Secure Password', value: credentials?.password || '...', secret: true },
+                  ].map(item => (
+                     <div key={item.label} className="space-y-1.5 p-3 rounded-lg bg-muted/50 border group hover:border-primary/20 transition-colors">
+                        <div className="flex justify-between items-center">
+                           <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{item.label}</Label>
+                           <Button variant="ghost" size="icon" className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => copyToClipboard(item.label, String(item.value))}>
+                              <Copy className="w-3 h-3" />
+                           </Button>
+                        </div>
+                        <div className="font-mono text-xs font-bold flex items-center justify-between">
+                           {item.secret ? "••••••••••••••••" : item.value}
+                        </div>
+                     </div>
+                  ))}
+               </div>
+
+               <DialogFooter>
+                  <Button className="w-full" onClick={() => setShowCredentials(false)}>Close Access Pane</Button>
+               </DialogFooter>
+            </DialogContent>
+         </Dialog>
+      </div>
+   )
+}
