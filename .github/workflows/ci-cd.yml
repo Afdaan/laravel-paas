@@ -13,6 +13,7 @@ jobs:
         run: |
           cd backend
           docker run --rm \
+            --user $(id -u):$(id -g) \
             -v $(pwd):/app \
             -w /app \
             golangci/golangci-lint:v1.59.1-alpine \
@@ -26,6 +27,7 @@ jobs:
         run: |
           cd frontend
           docker run --rm \
+            --user $(id -u):$(id -g) \
             -v $(pwd):/app \
             -w /app \
             node:20-alpine \
