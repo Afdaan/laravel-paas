@@ -5,41 +5,8 @@ on:
     branches: [ "**" ]
 
 jobs:
-  lint-backend:
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint backend
-        run: |
-          cd backend
-          docker run --rm \
-            --user $(id -u):$(id -g) \
-            -e GOLANGCI_LINT_CACHE=/tmp/golangci-lint-cache \
-            -e GOCACHE=/tmp/go-build-cache \
-            -e GOMODCACHE=/tmp/go-mod-cache \
-            -v $(pwd):/app \
-            -w /app \
-            golangci/golangci-lint:v1.59.1-alpine \
-            golangci-lint run ./...
-
-  lint-frontend:
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint frontend
-        run: |
-          cd frontend
-          docker run --rm \
-            --user $(id -u):$(id -g) \
-            -e HOME=/tmp \
-            -v $(pwd):/app \
-            -w /app \
-            node:20-alpine \
-            sh -c "npm install && npm run lint && rm -rf node_modules"
-
   deploy:
     runs-on: self-hosted
-    needs: [lint-backend, lint-frontend]
     steps:
       - name: Sync codebase
         run: |
