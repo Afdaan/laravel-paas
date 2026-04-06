@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { systemAPI } from '../services/api'
 import useAuthStore from '../stores/authStore'
 import { ArrowRight, ArrowLeft, Terminal, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Sun, Moon } from 'lucide-react'
+import { useTheme } from '@/components/ThemeProvider'
 
 function Login() {
   const [email, setEmail] = useState('')
@@ -17,9 +20,21 @@ function Login() {
   const login = useAuthStore((state) => state.login)
   const token = useAuthStore((state) => state.token)
   const user = useAuthStore((state) => state.user)
+  const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
 
   useEffect(() => {
+    // Check if system is initialized
+    const checkInit = async () => {
+      try {
+        const { data } = await systemAPI.getInitStatus()
+        if (!data.is_initialized) {
+          navigate('/setup', { replace: true })
+        }
+      } catch (e) {}
+    }
+    checkInit()
+
     if (token && user) {
       const isAdmin = user.role === 'superadmin' || user.role === 'admin'
       navigate(isAdmin ? '/admin/dashboard' : '/dashboard', { replace: true })
@@ -56,8 +71,21 @@ function Login() {
     }
   }
   
+  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground font-sans">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground font-sans relative">
+      {/* Floating Theme Toggle */}
+      <div className="absolute top-6 right-6">
+         <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setTheme(isDark ? 'light' : 'dark')}
+            className="rounded-full shadow-sm"
+         >
+            {isDark ? <Sun className="w-4 h-4 translate-y-0" /> : <Moon className="w-4 h-4 translate-y-0" />}
+         </Button>
+      </div>
       <div className="w-full max-w-md">
         <Button variant="ghost" render={<Link to="/" className="text-muted-foreground group" />} className="mb-8">
             <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />

@@ -50,10 +50,11 @@ const AdminVolumes = () => {
     }, [fetchData])
 
     const stats = useMemo(() => {
-        const total = data.volumes.length
-        const unused = data.volumes.filter(v => v.status === 'Unused').length
+        const volumes = data?.volumes || []
+        const total = volumes.length
+        const unused = volumes.filter(v => v.status === 'Unused').length
         return { total, unused }
-    }, [data.volumes])
+    }, [data])
 
     const handleDelete = async (name: string) => {
         if (!window.confirm(`Purge volume ${name}? This will permanently delete all data stored within.`)) return
@@ -66,7 +67,7 @@ const AdminVolumes = () => {
         }
     }
 
-    if (isLoading && data.volumes.length === 0) {
+    if (isLoading && (!data?.volumes || data.volumes.length === 0)) {
         return (
             <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
                 <Loader2 className="w-12 h-12 text-primary animate-spin" />
@@ -124,7 +125,7 @@ const AdminVolumes = () => {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {data.volumes.length === 0 ? (
+                            {(!data?.volumes || data.volumes.length === 0) ? (
                                 <TableRow>
                                     <TableCell colSpan={6} className="h-64 text-center">
                                         <div className="flex flex-col items-center justify-center text-muted-foreground">
@@ -199,7 +200,7 @@ const AdminVolumes = () => {
                 <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
                         <Zap className="w-4 h-4 text-primary" />
-                        Showing {data.volumes.length} persistent storage clusters.
+                        Showing {data?.volumes?.length || 0} persistent storage clusters.
                     </div>
                     <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" disabled>Previous</Button>

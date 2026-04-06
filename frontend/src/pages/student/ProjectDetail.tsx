@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { 
   RefreshCw,
@@ -13,31 +13,29 @@ import {
   Code,
   Globe,
   Database as DatabaseIcon,
-  Settings as SettingsIcon,
   ShieldAlert,
-  Save,
   Box,
   AlertTriangle,
   GitBranch,
-  Copy,
   Eye,
   EyeOff,
   Loader2,
-  ChevronRight
+  Save,
+  Copy
 } from 'lucide-react'
 import { projectsAPI } from '../../services/api'
 import { Project, ProjectStats } from '../../types'
-import DatabaseManager from './DatabaseManager'
 import ConfirmationModal from '../../components/ConfirmationModal'
-import { Button, buttonVariants } from '@/components/ui/button'
+import DatabaseManager from './DatabaseManager'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
 // Status Indicator Component
@@ -91,8 +89,8 @@ function StudentProjectDetail() {
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleCommand, setConsoleCommand] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
-  const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
+  const [isSavingEnv, setIsSavingEnv] = useState(false)
   
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -172,19 +170,6 @@ function StudentProjectDetail() {
     }
   }
 
-  const handleSaveEnv = async () => {
-    if (!id) return
-    setIsSavingEnv(true)
-    try {
-      await projectsAPI.updateEnv(id, envContent)
-      toast.success('Environment variables updated')
-    } catch (error) {
-      toast.error('Failed to save .env file')
-    } finally {
-      setIsSavingEnv(false)
-    }
-  }
-
   const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!id || !consoleCommand.trim()) return
@@ -225,8 +210,8 @@ function StudentProjectDetail() {
     })
   }
   
-  const handleUpdatePHP = async (newVersion: string) => {
-    if (!id) return
+  const handleUpdatePHP = async (newVersion: string | null) => {
+    if (!id || !newVersion) return
     setConfirmModal({
       title: `Update PHP to ${newVersion}?`,
       message: `Changing the PHP version requires a complete rebuild of your container. Your site will be redeployed immediately.`,
@@ -246,25 +231,30 @@ function StudentProjectDetail() {
     })
   }
 
-  const handleUpdateQueue = async (enabled: boolean) => {
+  const handleSaveEnv = async () => {
     if (!id) return
-    setConfirmModal({
-      title: `${enabled ? 'Enable' : 'Disable'} Queue Worker?`,
-      message: `Changing queue worker configuration requires a complete rebuild of your container. Your site will be redeployed immediately.`,
-      type: 'warning',
-      confirmText: enabled ? 'Enable & Redeploy' : 'Disable & Redeploy',
-      isOpen: true,
-      onConfirm: async () => {
-        try {
-          await projectsAPI.update(id, { queue_enabled: enabled })
-          setProject(prev => prev ? ({ ...prev, queue_enabled: enabled }) : null)
-          toast.success(`Queue Worker ${enabled ? 'Enabled' : 'Disabled'}`)
-          projectsAPI.redeploy(id).then(() => fetchProject())
-        } catch (err) {
-          toast.error('Failed to update settings')
-        }
-      }
-    })
+    setIsSavingEnv(true)
+    try {
+      await projectsAPI.updateEnv(id, envContent)
+      toast.success('Environment updated. Redeploying...')
+      projectsAPI.redeploy(id).then(() => fetchProject())
+    } catch (error) {
+      toast.error('Failed to save environment')
+    } finally {
+      setIsSavingEnv(false)
+    }
+  }
+
+  const handleUpdateQueue = async (checked: boolean) => {
+    if (!id) return
+    try {
+      await projectsAPI.update(id, { queue_enabled: checked })
+      setProject(prev => prev ? ({ ...prev, queue_enabled: checked }) : null)
+      toast.success(checked ? 'Queue worker enabled' : 'Queue worker disabled')
+      projectsAPI.redeploy(id).then(() => fetchProject())
+    } catch (error) {
+      toast.error('Failed to update queue setting')
+    }
   }
   
   const handleDelete = () => {
@@ -335,11 +325,16 @@ function StudentProjectDetail() {
               <Globe className="w-4 h-4 text-muted-foreground" />
               <span className="text-muted-foreground font-mono text-xs">{project.subdomain}</span>
               {project.status === 'running' && (
-                <Button variant="ghost" size="icon" className="h-6 w-6 ml-1" asChild>
-                  <a href={projectUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="w-3 h-3 text-primary" />
-                  </a>
-                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 ml-1" 
+                  render={
+                    <a href={projectUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-3 h-3 text-primary" />
+                    </a>
+                  }
+                />
               )}
             </div>
             <Badge variant="outline" className="gap-1.5 bg-muted/50 border-border/50">
@@ -481,7 +476,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="console" className="pt-0">
-          <Card className="bg-black text-white border-zinc-800 overflow-hidden flex flex-col h-[600px]">
+          <Card className="bg-black text-white border-zinc-800 overflow-hidden flex flex-col h-[600px] gap-0 py-0">
             <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex gap-1.5 mr-2">
@@ -605,7 +600,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="logs" className="pt-0">
-          <Card className="bg-black text-zinc-300 border-zinc-800 overflow-hidden flex flex-col h-[600px]">
+          <Card className="bg-black text-zinc-300 border-zinc-800 overflow-hidden flex flex-col h-[600px] gap-0 py-0">
             <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
                 <Activity className="w-3.5 h-3.5 text-primary" /> Active Logs Stream
@@ -648,7 +643,7 @@ function StudentProjectDetail() {
                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">Version</Label>
                        <Select 
                           value={project.php_version?.split('.dynamic')[0] || '8.2'} 
-                          onValueChange={handleUpdatePHP}
+                          onValueChange={(value) => handleUpdatePHP(value)}
                        >
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                              <SelectValue />

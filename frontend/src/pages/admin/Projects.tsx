@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
+import { Progress, ProgressTrack, ProgressIndicator } from '@/components/ui/progress'
 
 // Add stats interface
 interface ProjectStats {
@@ -67,7 +67,11 @@ const ResourceBar = ({ label, value, max, icon: Icon, suffix = '' }: { label: st
           {Number.isFinite(value) && !Number.isInteger(value) ? value.toFixed(1) : value}{suffix}
         </span>
       </div>
-      <Progress value={percentage} indicatorColor={colorClass} className="h-1.5 bg-muted/50" />
+      <Progress value={percentage}>
+        <ProgressTrack className="h-1.5 bg-muted/50">
+          <ProgressIndicator className={colorClass} />
+        </ProgressTrack>
+      </Progress>
     </div>
   )
 }
@@ -130,9 +134,9 @@ const AdminProjects = () => {
             <Activity className="w-4 h-4 text-emerald-500" />
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{total} Monitored</span>
           </div>
-          <div className="flex items-center gap-2 px-4">
+          <div className="flex items-center gap-2 px-4 shadow-sm">
             <Monitor className="w-4 h-4 text-primary" />
-            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{projects.filter(p => p.status === 'running').length} Active Nodes</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{(projects || []).filter(p => p.status === 'running').length} Active Nodes</span>
           </div>
         </div>
       </div>
@@ -190,7 +194,7 @@ const AdminProjects = () => {
                     Syncing Cluster State...
                   </TableCell>
                 </TableRow>
-              ) : projects.length === 0 ? (
+              ) : (!projects || projects.length === 0) ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
@@ -202,7 +206,7 @@ const AdminProjects = () => {
                   </TableCell>
                 </TableRow>
               ) : projects.map((project) => {
-                const hasStats = stats[project.id]
+                const hasStats = stats?.[project.id]
                 return (
                   <TableRow key={project.id}>
                     <TableCell>

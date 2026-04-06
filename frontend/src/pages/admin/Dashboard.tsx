@@ -98,7 +98,11 @@ function AdminDashboard() {
     )
   }
 
-  const { system, containers, images, networks, volumes } = data
+  const system = data?.system || null
+  const containers = data?.containers || []
+  const images = data?.images || []
+  const networks = data?.networks || []
+  const volumes = data?.volumes || []
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -206,7 +210,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
 
       <StatCard 
         title="System Resources" 
-        value={images?.length + containers?.length || 0}
+        value={(images?.length || 0) + (containers?.length || 0)}
         detail={`${containers?.length || 0} Containers / ${images?.length || 0} Images`}
         progress={100}
         icon={Layers}
@@ -299,7 +303,7 @@ const ResourceTable = memo(({ title, subtitle, icon: Icon, data, type, viewAllPa
       </Button>
     </CardHeader>
     <CardContent className="p-0 border-t flex-1">
-      {data.length === 0 ? (
+      {(!data || data.length === 0) ? (
         <div className="p-12 text-center flex flex-col items-center justify-center h-full text-muted-foreground">
           <Icon className="w-8 h-8 mb-4 opacity-50" />
           <p className="text-sm font-medium uppercase tracking-widest">No {type} Found</p>

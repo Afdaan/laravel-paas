@@ -61,20 +61,22 @@ const AdminContainers = () => {
   }, [fetchData])
 
   const filteredContainers = useMemo(() => {
-    return data.containers.filter(c =>
+    const containers = data?.containers || []
+    return containers.filter(c =>
       (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.image.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  }, [data.containers, searchQuery])
+  }, [data, searchQuery])
 
   const stats = useMemo(() => {
-    const total = data.containers.length
-    const running = data.containers.filter(c => c.state === 'running').length
+    const containers = data?.containers || []
+    const total = containers.length
+    const running = containers.filter(c => c.state === 'running').length
     const stopped = total - running
     return { total, running, stopped }
-  }, [data.containers])
+  }, [data])
 
-  if (isLoading && data.containers.length === 0) {
+  if (isLoading && (!data?.containers || data.containers.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />

@@ -1,5 +1,4 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
 import useAuthStore from '../stores/authStore'
 import {
   LayoutDashboard,
@@ -20,6 +19,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react'
+import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -45,29 +45,11 @@ interface DashboardLayoutProps {
 
 function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { user, logout } = useAuthStore()
+  const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme')
-      if (savedTheme) {
-        return savedTheme === 'dark'
-      }
-      return window.matchMedia('(prefers-color-scheme: dark)').matches
-    }
-    return true
-  })
-
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark')
-      localStorage.setItem('theme', 'dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-      localStorage.setItem('theme', 'light')
-    }
-  }, [isDark])
+  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   
   const handleLogout = async () => {
     await logout()
@@ -229,7 +211,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              <Button
                 variant="outline"
                 size="icon"
-                onClick={() => setIsDark(!isDark)}
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
              >
                 {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
              </Button>

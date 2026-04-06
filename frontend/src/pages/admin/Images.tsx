@@ -72,16 +72,18 @@ const AdminImages = () => {
   }, [fetchData])
 
   const filteredImages = useMemo(() => {
-    return data.images.filter(img =>
+    const images = data?.images || []
+    return images.filter(img =>
       img.repository.toLowerCase().includes(searchQuery.toLowerCase()) ||
       img.tag.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  }, [data.images, searchQuery])
+  }, [data, searchQuery])
 
   const stats = useMemo(() => {
-    const total = data.images.length
+    const images = data?.images || []
+    const total = images.length
     let totalSize = 0
-    data.images.forEach(img => {
+    images.forEach(img => {
       const match = (img.size_human || '').match(/(\d+\.?\d*)\s*(GB|MB|KB|B)/i)
       if (match) {
         let val = parseFloat(match[1])
@@ -93,9 +95,9 @@ const AdminImages = () => {
       }
     })
     return { total, totalSize: (totalSize / 1024).toFixed(2) + ' GB' }
-  }, [data.images])
+  }, [data])
 
-  if (isLoading && data.images.length === 0) {
+  if (isLoading && (!data?.images || data.images.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
