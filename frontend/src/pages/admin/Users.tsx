@@ -268,7 +268,7 @@ const AdminUsers = () => {
                     Syncing Global Namespace
                   </TableCell>
                 </TableRow>
-              ) : users.length === 0 ? (
+              ) : (!users || users.length === 0) ? (
                 <TableRow>
                   <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
                     No users found matching parameters.

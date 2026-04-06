@@ -26,14 +26,14 @@ interface NewProjectForm {
   name: string;
   github_url: string;
   branch: string;
-  db_name: string;
+  database_name: string;
   queue_enabled: boolean;
 }
 
 interface ValidationErrors {
   name?: string;
   github_url?: string;
-  db_name?: string;
+  database_name?: string;
 }
 
 function StudentNewProject() {
@@ -44,7 +44,7 @@ function StudentNewProject() {
     name: '',
     github_url: '',
     branch: '',
-    db_name: '',
+    database_name: '',
     queue_enabled: false,
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
@@ -62,7 +62,7 @@ function StudentNewProject() {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
-      setFormData(prev => ({ ...prev, db_name: dbName }))
+      setFormData(prev => ({ ...prev, database_name: dbName }))
     }
 
     if (validationErrors[name as keyof ValidationErrors]) {
@@ -78,7 +78,7 @@ function StudentNewProject() {
     const errors: ValidationErrors = {}
     if (!formData.name.trim()) errors.name = 'Project name is required'
     if (!formData.github_url.trim()) errors.github_url = 'Repository URL is required'
-    if (!formData.db_name.trim()) errors.db_name = 'Database name is required'
+    if (!formData.database_name.trim()) errors.database_name = 'Database name is required'
 
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
@@ -218,21 +218,21 @@ function StudentNewProject() {
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                     <Database className="w-4 h-4" />
                   </div>
-                  <Label htmlFor="db_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     MySQL Database Name
                   </Label>
                 </div>
                 <Input
-                  id="db_name"
-                  name="db_name"
-                  value={formData.db_name}
+                  id="database_name"
+                  name="database_name"
+                  value={formData.database_name}
                   onChange={handleChange}
                   placeholder="database_name"
-                  className={cn(validationErrors.db_name && "border-destructive focus-visible:ring-destructive")}
+                  className={cn(validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
                 />
                 <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">Generated automatically from project name.</p>
-                {validationErrors.db_name && (
-                  <p className="text-xs text-destructive font-medium pl-1">{validationErrors.db_name}</p>
+                {validationErrors.database_name && (
+                  <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
                 )}
               </div>
 

@@ -10,7 +10,7 @@ import {
   Trash2, 
   Clock, 
   CheckCircle2, 
-  Activity, 
+  
   AlertCircle, 
   PauseCircle,
   Database,
@@ -161,7 +161,7 @@ const StudentProjects = () => {
           <Loader2 className="w-12 h-12 text-primary animate-spin" />
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground animate-pulse">Loading Projects...</p>
         </div>
-      ) : projects.length === 0 ? (
+      ) : (!projects || projects.length === 0) ? (
         <Card className="p-24 text-center flex flex-col items-center max-w-xl mx-auto border-dashed">
           <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-6">
             <Rocket className="w-10 h-10 text-muted-foreground opacity-50" />

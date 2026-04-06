@@ -53,7 +53,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
 	settingHandler := handlers.NewSettingHandler(db)
 	dockerService := services.NewDockerService(cfg)
-	systemHandler := handlers.NewSystemHandler(dockerService)
+	systemHandler := handlers.NewSystemHandler(db, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(db)
 
 	// ===========================================
@@ -66,6 +66,12 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// -----------------------------
 	auth := api.Group("/auth")
 	auth.Post("/login", authHandler.Login)
+
+	// -----------------------------
+	// System Init (public)
+	// -----------------------------
+	api.Get("/system/init-status", systemHandler.GetInitStatus)
+	api.Post("/system/initialize", systemHandler.InitializeSystem)
 
 	// -----------------------------
 	// Protected Routes

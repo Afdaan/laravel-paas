@@ -74,8 +74,8 @@ function StudentDashboard() {
     }
   }
 
-  const runningProjects = projects.filter(p => p.status === 'running').length
-  const totalProjects = projects.length
+  const runningProjects = (projects || []).filter(p => p.status === 'running').length
+  const totalProjects = projects?.length || 0
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
@@ -145,7 +145,7 @@ function StudentDashboard() {
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
             <p className="text-muted-foreground text-sm font-semibold uppercase tracking-widest animate-pulse">Loading Projects...</p>
           </div>
-        ) : projects.length === 0 ? (
+        ) : (!projects || projects.length === 0) ? (
           <div className="p-24 text-center flex flex-col items-center max-w-sm mx-auto">
             <div className="w-20 h-20 bg-muted border rounded-full flex items-center justify-center mb-6">
               <Rocket className="w-10 h-10 text-muted-foreground opacity-50" />
@@ -169,7 +169,7 @@ function StudentDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projects.slice(0, 5).map((project) => (
+                {(projects || []).slice(0, 5).map((project) => (
                   <TableRow key={project.id}>
                     <TableCell>
                       <div className="flex items-center gap-4">

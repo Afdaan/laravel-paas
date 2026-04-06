@@ -644,6 +644,12 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		}
 	}
 
+	// Docker Version
+	cmd = exec.Command("docker", "version", "--format", "{{.Server.Version}}")
+	if output, err := cmd.Output(); err == nil {
+		stats.DockerVersion = strings.TrimSpace(string(output))
+	}
+
 	return stats, nil
 }
 

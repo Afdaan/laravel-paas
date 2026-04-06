@@ -7,10 +7,13 @@
 import { useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './stores/authStore'
+import { useState } from 'react'
+import { systemAPI } from './services/api'
 
 // Layouts
 import DashboardLayout from './components/DashboardLayout'
 import LoadingScreen from './components/LoadingScreen'
+import Setup from './pages/Setup'
 
 // Lazy loaded pages for performance
 const Landing = lazy(() => import('./pages/Landing'))
@@ -59,12 +62,26 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
 
 function App() {
   const { fetchUser, token, user } = useAuthStore()
+  const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    // Check if system is initialized
+    systemAPI.getInitStatus()
+      .then(res => {
+        setIsInitialized(res.data.is_initialized)
+      })
+      .catch((err) => {
+        console.error('Failed to check init status', err)
+        // If it fails (maybe server still starting), try again later or assume true to avoid blocks
+        setIsInitialized(true) 
+      })
+  }, [])
 
   useEffect(() => {
     if (token && !user) {
       fetchUser()
     }
-  }, [])
+  }, [token, user])
 
   useEffect(() => {
     const handleExpired = () => {
@@ -74,12 +91,30 @@ function App() {
     return () => window.removeEventListener('auth:expired', handleExpired)
   }, [])
 
+  if (isInitialized === null) {
+    return <LoadingScreen />
+  }
+
+  if (isInitialized === false && window.location.pathname !== '/setup') {
+    return <Navigate to="/setup" replace />
+  }
+
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route 
+          path="/setup" 
+          element={
+            isInitialized ? (
+              <Navigate to="/login" replace />
+            ) : (
+              <Setup onComplete={() => setIsInitialized(true)} />
+            )
+          } 
+        />
 
         {/* Student Routes */}
         <Route element={

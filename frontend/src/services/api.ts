@@ -210,6 +210,12 @@ export const systemAPI = {
   
   prune: () => 
     api.post('/admin/system/prune'),
+  
+  getInitStatus: () => 
+    api.get('/system/init-status'),
+  
+  initialize: (data: any) => 
+    api.post('/system/initialize', data),
 }
 
 export default api

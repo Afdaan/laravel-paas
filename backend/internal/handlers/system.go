@@ -4,14 +4,20 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type SystemHandler struct {
+	db            *gorm.DB
 	dockerService *services.DockerService
 }
 
-func NewSystemHandler(dockerService *services.DockerService) *SystemHandler {
-	return &SystemHandler{dockerService: dockerService}
+func NewSystemHandler(db *gorm.DB, dockerService *services.DockerService) *SystemHandler {
+	return &SystemHandler{
+		db:            db,
+		dockerService: dockerService,
+	}
 }
 
 // GetStats returns system and docker stats
@@ -100,4 +106,76 @@ func (h *SystemHandler) PruneSystem(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "System pruned successfully"})
+}
+
+// GetInitStatus checks if the system has been initialized with at least one admin
+func (h *SystemHandler) GetInitStatus(c *fiber.Ctx) error {
+	var count int64
+	err := h.db.Model(&models.User{}).
+		Where("role IN ?", []models.Role{models.RoleSuperAdmin, models.RoleAdmin}).
+		Count(&count).Error
+
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"is_initialized": count > 0,
+	})
+}
+
+// InitializeSystem creates the first superadmin user
+func (h *SystemHandler) InitializeSystem(c *fiber.Ctx) error {
+	// Check if already initialized
+	var count int64
+	h.db.Model(&models.User{}).
+		Where("role IN ?", []models.Role{models.RoleSuperAdmin, models.RoleAdmin}).
+		Count(&count)
+
+	if count > 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": "System is already initialized",
+		})
+	}
+
+	type InitRequest struct {
+		Name     string `json:"name" validate:"required"`
+		Email    string `json:"email" validate:"required,email"`
+		Password string `json:"password" validate:"required,min=8"`
+	}
+
+	var req InitRequest
+	if err := c.BodyParser(&req); err != nil {
+		return err
+	}
+
+	// Validate input (basic check)
+	if req.Name == "" || req.Email == "" || len(req.Password) < 8 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid input. Name, email, and password (min 8 chars) are required.",
+		})
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	// Create superadmin
+	user := models.User{
+		Name:     req.Name,
+		Email:    req.Email,
+		Password: string(hashedPassword),
+		Role:     models.RoleSuperAdmin,
+	}
+
+	if err := h.db.Create(&user).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "System initialized successfully",
+		"user":    user,
+	})
 }

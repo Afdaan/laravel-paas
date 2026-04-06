@@ -4,15 +4,16 @@ import "time"
 
 // SystemStats represents the host machine's resource usage
 type SystemStats struct {
-	Hostname    string  `json:"hostname"`
-	OS          string  `json:"os"`
-	CPUUsage    float64 `json:"cpu_usage"`
-	CPUCores    int     `json:"cpu_cores"`
-	MemoryUsed  uint64  `json:"memory_used"`
-	MemoryTotal uint64  `json:"memory_total"`
-	DiskUsed    uint64  `json:"disk_used"`
-	DiskTotal   uint64  `json:"disk_total"`
-	DiskPath    string  `json:"disk_path"`
+	Hostname      string  `json:"hostname"`
+	OS            string  `json:"os"`
+	CPUUsage      float64 `json:"cpu_usage"`
+	CPUCores      int     `json:"cpu_cores"`
+	MemoryUsed    uint64  `json:"memory_used"`
+	MemoryTotal   uint64  `json:"memory_total"`
+	DiskUsed      uint64  `json:"disk_used"`
+	DiskTotal     uint64  `json:"disk_total"`
+	DiskPath      string  `json:"disk_path"`
+	DockerVersion string  `json:"docker_version"`
 }
 
 // DockerContainer represents a container running on the host

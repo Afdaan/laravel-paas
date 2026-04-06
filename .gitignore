@@ -1,20 +1,27 @@
 # Dependencies
 node_modules/
 vendor/
-frontend/node_modules/
-frontend/dist/
-frontend/build/
 
 # Environment
 .env
-.env.local
+.env.*
+!.env.example
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-.agent/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Backend
+backend/paas-backend
+backend/*.exe
+backend/storage/
 
 # Build outputs
 dist/
@@ -25,22 +32,24 @@ tmp/
 *.log
 logs/
 
-# Storage (student projects)
-storage/projects/*/
-storage/*
+# Storage
+storage/
 
 # Docker volumes
 mysql_data/
 redis_data/
+postgres_data/
 letsencrypt/
 
-# Generated config (from template)
+# Generated config
 docker/traefik/dynamic.yml
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-
-# Temp files
 *.tmp
 *.temp
+
+# Agent
+.agent/
+.agents/

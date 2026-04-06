@@ -17,7 +17,6 @@ import {
   Layers,
   Activity,
   ShieldAlert,
-  Monitor,
   ChevronRight,
   Zap,
 } from 'lucide-react'
@@ -98,7 +97,11 @@ function AdminDashboard() {
     )
   }
 
-  const { system, containers, images, networks, volumes } = data
+  const system = data?.system || null
+  const containers = data?.containers || []
+  const images = data?.images || []
+  const networks = data?.networks || []
+  const volumes = data?.volumes || []
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -206,7 +209,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
 
       <StatCard 
         title="System Resources" 
-        value={images?.length + containers?.length || 0}
+        value={(images?.length || 0) + (containers?.length || 0)}
         detail={`${containers?.length || 0} Containers / ${images?.length || 0} Images`}
         progress={100}
         icon={Layers}
@@ -215,7 +218,7 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
       <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-6">
         <SmallStat icon={Network} label="Networks" value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label="Volumes" value={volumes?.length || 0} />
-        <SmallStat icon={Monitor} label="Status" value={system?.os_platform || 'Linux'} />
+        <SmallStat icon={Box} label="Docker Engine" value={system?.docker_version || 'N/A'} />
       </div>
     </div>
   )
@@ -298,14 +301,14 @@ const ResourceTable = memo(({ title, subtitle, icon: Icon, data, type, viewAllPa
         View All <ChevronRight className="w-4 h-4 ml-1" />
       </Button>
     </CardHeader>
-    <CardContent className="p-0 border-t flex-1">
-      {data.length === 0 ? (
+    <CardContent className="p-0 border-t flex-1 overflow-hidden">
+      {(!data || data.length === 0) ? (
         <div className="p-12 text-center flex flex-col items-center justify-center h-full text-muted-foreground">
           <Icon className="w-8 h-8 mb-4 opacity-50" />
           <p className="text-sm font-medium uppercase tracking-widest">No {type} Found</p>
         </div>
       ) : (
-        <Table>
+        <Table className="table-fixed">
           {type === 'containers' ? (
             <ContainerTableBody data={data} />
           ) : (
@@ -321,29 +324,29 @@ const ContainerTableBody = memo(({ data }: { data: any[] }) => (
   <>
     <TableHeader>
       <TableRow>
-        <TableHead>Identity</TableHead>
-        <TableHead>Protocol</TableHead>
-        <TableHead className="text-center">Logic Status</TableHead>
-        <TableHead className="text-right">Uptime</TableHead>
+        <TableHead className="w-[30%]">Identity</TableHead>
+        <TableHead className="w-[35%]">Protocol</TableHead>
+        <TableHead className="w-[15%] text-center">Status</TableHead>
+        <TableHead className="w-[20%] text-right">Uptime</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
       {data.slice(0, 8).map((c) => (
         <TableRow key={c.id}>
           <TableCell>
-            <div className="font-medium truncate max-w-[150px]">
+            <div className="font-medium truncate">
               {c.names[0] || c.id.substring(0, 8)}
             </div>
           </TableCell>
           <TableCell>
-            <span className="text-xs text-muted-foreground">{c.image}</span>
+            <span className="text-xs text-muted-foreground truncate block">{c.image}</span>
           </TableCell>
           <TableCell className="text-center">
             <Badge variant={c.state === 'running' ? 'default' : 'destructive'} className="capitalize">
               {c.state}
             </Badge>
           </TableCell>
-          <TableCell className="text-right text-xs text-muted-foreground">
+          <TableCell className="text-right text-xs text-muted-foreground truncate">
             {c.status}
           </TableCell>
         </TableRow>
@@ -356,17 +359,17 @@ const ImageTableBody = memo(({ data }: { data: any[] }) => (
   <>
     <TableHeader>
       <TableRow>
-        <TableHead>Architecture</TableHead>
-        <TableHead className="text-center">Status</TableHead>
-        <TableHead className="text-center">Revision</TableHead>
-        <TableHead className="text-right">Weight</TableHead>
+        <TableHead className="w-[35%]">Repository</TableHead>
+        <TableHead className="w-[20%] text-center">Status</TableHead>
+        <TableHead className="w-[20%] text-center">Tag</TableHead>
+        <TableHead className="w-[25%] text-right">Size</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
       {data.slice(0, 8).map((img, i) => (
         <TableRow key={i}>
           <TableCell>
-            <div className="font-medium truncate max-w-[150px]">{img.repository}</div>
+            <div className="font-medium truncate">{img.repository}</div>
             <div className="text-[10px] text-muted-foreground font-mono">{img.id?.substring(7, 19)}</div>
           </TableCell>
           <TableCell className="text-center">
@@ -374,7 +377,7 @@ const ImageTableBody = memo(({ data }: { data: any[] }) => (
               {img.status}
             </Badge>
           </TableCell>
-          <TableCell className="text-center font-mono text-xs">
+          <TableCell className="text-center font-mono text-xs truncate">
             {img.tag}
           </TableCell>
           <TableCell className="text-right text-xs text-muted-foreground">

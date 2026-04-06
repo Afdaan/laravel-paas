@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useMemo } from 'react'
+import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
 import {
   Plus,
@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 interface NetworkData {
   id: string;
@@ -49,10 +49,11 @@ const AdminNetworks = () => {
   }, [fetchData])
 
   const stats = useMemo(() => {
-    const total = data.networks.length
-    const unused = data.networks.filter(n => n.status === 'Unused').length
+    const networks = data?.networks || []
+    const total = networks.length
+    const unused = networks.filter(n => n.status === 'Unused').length
     return { total, unused }
-  }, [data.networks])
+  }, [data])
 
   const getDriverColor = (driver: string) => {
     switch (driver.toLowerCase()) {
@@ -63,7 +64,7 @@ const AdminNetworks = () => {
     }
   }
 
-  if (isLoading && data.networks.length === 0) {
+  if (isLoading && (!data?.networks || data.networks.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
@@ -119,7 +120,7 @@ const AdminNetworks = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.networks.length === 0 ? (
+              {(!data?.networks || data.networks.length === 0) ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
@@ -130,7 +131,8 @@ const AdminNetworks = () => {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : data.networks.map((n) => (
+              ) : (
+                data.networks.map((n) => (
                 <TableRow key={n.id}>
                   <TableCell className="text-center">
                     <Checkbox />
@@ -179,7 +181,6 @@ const AdminNetworks = () => {
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
                         <DropdownMenuItem>Inspect Configuration</DropdownMenuItem>
                         <DropdownMenuItem>Connect Container</DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -188,7 +189,7 @@ const AdminNetworks = () => {
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))}
+              )))}
             </TableBody>
           </Table>
         </div>
@@ -196,7 +197,7 @@ const AdminNetworks = () => {
         <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
             <Activity className="w-4 h-4 text-emerald-500" />
-            Showing {data.networks.length} virtual interfaces found in cluster.
+            Showing {data?.networks?.length || 0} virtual interfaces found in cluster.
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">

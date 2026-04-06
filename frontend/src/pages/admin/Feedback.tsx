@@ -96,11 +96,11 @@ const AdminFeedback = () => {
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
             <div className="flex items-center gap-2 px-3 border-r">
               <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
-              {feedback.length} Submissions
+              {feedback?.length || 0} Submissions
             </div>
             <div className="flex items-center gap-2 px-3">
               <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
-              {feedback.filter(f => f.type === 'bug').length} Critical
+              {(feedback || []).filter(f => f.type === 'bug').length} Critical
             </div>
           </div>
 
@@ -167,7 +167,7 @@ const AdminFeedback = () => {
           <Loader2 className="w-12 h-12 text-primary animate-spin" />
           <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Syncing Global Intel Registry</p>
         </div>
-      ) : feedback.length === 0 ? (
+      ) : (!feedback || feedback.length === 0) ? (
         <Card className="py-24 flex flex-col items-center justify-center text-center">
           <div className="w-20 h-20 bg-muted/50 rounded-full flex items-center justify-center mb-6">
             <Sparkles className="w-10 h-10 text-muted-foreground opacity-50" />
