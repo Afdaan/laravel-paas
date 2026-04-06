@@ -39,6 +39,22 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// Health Check
 	// ===========================================
 	app.Get("/health", func(c *fiber.Ctx) error {
+		// Check Database
+		dbConn, err := db.DB()
+		if err != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
+		}
+		if err := dbConn.Ping(); err != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
+		}
+
+		// Check Redis
+		if redisService != nil {
+			if err := redisService.Ping(c.Context()); err != nil {
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
+			}
+		}
+
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 

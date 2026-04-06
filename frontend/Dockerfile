@@ -22,6 +22,7 @@ FROM nginx:alpine
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Frontend Dashboard"
+RUN apk add --no-cache curl
 
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
