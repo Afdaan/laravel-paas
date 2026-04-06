@@ -380,7 +380,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                            <Terminal className="w-4 h-4 text-emerald-500" />
                            <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SQL Workspace</CardTitle>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
                            <Button variant="ghost" size="xs" onClick={() => setQuery('')} className="text-zinc-500 hover:text-white uppercase font-bold text-[10px]">Reset</Button>
                            <Button
                               size="sm"

@@ -481,8 +481,8 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="console" className="pt-6">
-          <Card className="bg-black text-white border-muted/20 overflow-hidden flex flex-col h-[600px]">
-            <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/5 flex flex-row items-center justify-between">
+          <Card className="bg-black text-white border-zinc-800 overflow-hidden flex flex-col h-[600px]">
+            <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex gap-1.5 mr-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
@@ -497,7 +497,7 @@ function StudentProjectDetail() {
             </CardHeader>
 
             <div className="flex-1 p-6 overflow-auto font-mono text-xs text-zinc-300 custom-scrollbar bg-zinc-950/50">
-              <div className="text-amber-400/80 mb-4 flex items-center gap-2 border-b border-white/5 pb-2">
+              <div className="text-amber-400/80 mb-4 flex items-center gap-2 border-b border-white/10 pb-2">
                 <AlertTriangle size={12} />
                 <span>Commands are prefixed with 'php artisan' automatically.</span>
               </div>
@@ -516,7 +516,7 @@ function StudentProjectDetail() {
               <div ref={logsEndRef} />
             </div>
 
-            <form onSubmit={handleConsoleSubmit} className="p-4 bg-zinc-900 border-t border-white/5 flex gap-3">
+            <form onSubmit={handleConsoleSubmit} className="p-4 bg-zinc-900 border-t border-white/10 flex gap-3">
               <div className="flex items-center px-3 bg-zinc-800 rounded font-mono text-xs text-zinc-500">php artisan</div>
               <Input 
                 value={consoleCommand}
@@ -605,8 +605,8 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="logs" className="pt-6">
-          <Card className="bg-black text-zinc-300 border-muted/20 overflow-hidden flex flex-col h-[600px]">
-            <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/5 flex flex-row items-center justify-between">
+          <Card className="bg-black text-zinc-300 border-zinc-800 overflow-hidden flex flex-col h-[600px]">
+            <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
                 <Activity className="w-3.5 h-3.5 text-primary" /> Active Logs Stream
               </div>
