@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
 import { Project } from '../../types'
+import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -55,6 +56,7 @@ interface DatabaseManagerProps {
 }
 
 export default function DatabaseManager({ embedded = false, projectId = null }: DatabaseManagerProps) {
+   const { t } = useTranslation()
    const params = useParams<{ id: string }>()
    const navigate = useNavigate()
    const id = projectId || params.id
@@ -101,7 +103,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          setProject(res.data)
       } catch (err) {
          if (!embedded) {
-            toast.error('Failed to load project context')
+            toast.error(t('common.error'))
             navigate('/databases')
          }
       }
@@ -124,7 +126,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          const res = await databaseAPI.listTables(id)
          setTables(res.data.tables || [])
       } catch (err) {
-         toast.error('Failed to fetch tables')
+         toast.error(t('common.error'))
       } finally {
          setLoading(false)
       }
@@ -139,7 +141,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          const res = await databaseAPI.getData(id, tableName, 1, 50)
          setTableData(res.data)
       } catch (err) {
-         toast.error('Failed to load table data')
+         toast.error(t('common.error'))
       } finally {
          setLoading(false)
       }
@@ -151,9 +153,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       try {
          const res = await databaseAPI.query(id, query)
          setQueryResult(res.data)
-         toast.success('Query Executed Successfully')
+         toast.success(t('common.success') || 'Query Executed Successfully')
       } catch (err: any) {
-         toast.error(err.response?.data?.error || 'Database operation failed')
+         toast.error(err.response?.data?.error || t('common.error'))
       } finally {
          setQueryLoading(false)
       }
@@ -169,9 +171,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          a.href = url
          a.download = `${project?.db_name || 'database'}_dump.sql`
          a.click()
-         toast.success('Backup file created')
+         toast.success(t('common.success') || 'Backup file created')
       } catch (err) {
-         toast.error('Export Failed')
+         toast.error(t('common.error'))
       }
    }
 
@@ -180,11 +182,11 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       setImporting(true)
       try {
          await databaseAPI.import(id, importSQL)
-         toast.success('Data Import Successful')
+         toast.success(t('common.success') || 'Data Import Successful')
          setImportSQL('')
          fetchTables()
       } catch (err) {
-         toast.error('Import Failed')
+         toast.error(t('common.error'))
       } finally {
          setImporting(false)
       }
@@ -194,18 +196,18 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       if (!id) return
       setConfirmModal({
          isOpen: true,
-         title: 'Reset Database?',
-         message: 'This will delete all tables and data in this database. This action cannot be undone.',
+         title: t('databaseManager.resetConfirm'),
+         message: t('databaseManager.resetDesc'),
          type: 'danger',
-         confirmText: 'Reset Now',
+         confirmText: t('databaseManager.resetAction'),
          onConfirm: async () => {
             try {
                await databaseAPI.reset(id)
-               toast.success('Database Reset Successfully')
+               toast.success(t('common.success'))
                setSelectedTable(null)
                fetchTables()
             } catch (err) {
-               toast.error('Reset Failed')
+               toast.error(t('common.error'))
             }
          }
       })
@@ -213,7 +215,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
 
    const copyToClipboard = (label: string, text: string) => {
       navigator.clipboard.writeText(text)
-      toast.success(`${label} copied`)
+      toast.success(t('databaseManager.copied', { label }))
    }
 
    return (
@@ -234,24 +236,24 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      className="mb-4 gap-2 h-8 px-2"
                   >
                      <ArrowLeft className="w-4 h-4" />
-                     <span className="text-[10px] font-bold uppercase tracking-widest">Back</span>
+                     <span className="text-[10px] font-bold uppercase tracking-widest">{t('newProject.back').split(' ')[0]}</span>
                   </Button>
                   <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                         <DbIcon className="w-5 h-5" />
                      </div>
-                     Database Manager
+                     {t('databaseManager.title')}
                   </h1>
                   <p className="text-muted-foreground mt-2 font-mono text-xs uppercase tracking-widest">
-                     Schema: <span className="text-primary font-bold">{project?.db_name || '...'}</span>
+                     {t('databaseManager.schema')}: <span className="text-primary font-bold">{project?.db_name || '...'}</span>
                   </p>
                </div>
                <div className="flex gap-3">
                   <Button variant="outline" onClick={() => setShowCredentials(true)} className="gap-2">
-                     <Key className="w-4 h-4" /> Credentials
+                     <Key className="w-4 h-4" /> {t('databaseManager.credentials')}
                   </Button>
                   <Button variant="outline" onClick={confirmReset} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 gap-2">
-                     <Trash2 className="w-4 h-4" /> Reset DB
+                     <Trash2 className="w-4 h-4" /> {t('databaseManager.reset')}
                   </Button>
                </div>
             </div>
@@ -262,15 +264,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
             <TabsList className="bg-muted p-1 rounded-lg w-fit">
                <TabsTrigger value="tables" className="gap-2 px-6">
                   <Layers className="w-4 h-4" />
-                  Tables
+                  {t('databaseManager.tables')}
                </TabsTrigger>
                <TabsTrigger value="query" className="gap-2 px-6">
                   <Terminal className="w-4 h-4" />
-                  Console
+                  {t('databaseManager.console')}
                </TabsTrigger>
                <TabsTrigger value="import" className="gap-2 px-6">
                   <RefreshCw className="w-4 h-4" />
-                  Transfer
+                  {t('databaseManager.transfer')}
                </TabsTrigger>
             </TabsList>
 
@@ -280,7 +282,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                   <Card className="lg:col-span-1 flex flex-col overflow-hidden">
                      <CardHeader className="py-4 border-b bg-muted/20">
                         <div className="flex justify-between items-center">
-                           <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em]">Table Index</CardTitle>
+                           <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em]">{t('databaseManager.tableIndex')}</CardTitle>
                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchTables}>
                               <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
                            </Button>
@@ -290,7 +292,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                         {loading && tables.length === 0 ? (
                            <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
                         ) : tables.length === 0 ? (
-                           <div className="text-center py-20 text-muted-foreground font-bold uppercase tracking-widest text-[10px]">No Tables Found</div>
+                           <div className="text-center py-20 text-muted-foreground font-bold uppercase tracking-widest text-[10px]">{t('databaseManager.noTables')}</div>
                         ) : (
                            tables.map(table => (
                               <button
@@ -322,10 +324,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                  </div>
                                  <div>
                                     <CardTitle className="text-sm font-bold uppercase tracking-widest">{selectedTable}</CardTitle>
-                                    <CardDescription className="text-[10px]">Rows: {tableData?.total || 0}</CardDescription>
+                                    <CardDescription className="text-[10px]">{t('databaseManager.rows')}: {tableData?.total || 0}</CardDescription>
                                  </div>
                               </div>
-                              <Badge variant="outline" className="text-[9px] font-bold uppercase border-primary/20 text-primary">Read-Only View</Badge>
+                              <Badge variant="outline" className="text-[9px] font-bold uppercase border-primary/20 text-primary">{t('databaseManager.readOnly')}</Badge>
                            </CardHeader>
 
                            <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
@@ -342,7 +344,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                           </tr>
                                        </thead>
                                        <tbody className="divide-y">
-                                          {tableData.rows.map((row, i) => (
+                                          {tableData.rows.map((row: any, i: number) => (
                                              <tr key={i} className="hover:bg-muted/30 transition-colors">
                                                 {tableData.columns?.map((col: string) => (
                                                    <td key={col} className="p-4 font-mono text-[11px] border-r last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]">
@@ -357,7 +359,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                               ) : (
                                  <div className="flex flex-col items-center justify-center h-full gap-4 opacity-30">
                                     <PackageOpen className="w-12 h-12" />
-                                    <p className="text-xs font-bold uppercase tracking-[0.2em]">Table is empty</p>
+                                    <p className="text-xs font-bold uppercase tracking-[0.2em]">{t('databaseManager.emptyTable')}</p>
                                  </div>
                               )}
                            </CardContent>
@@ -365,7 +367,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      ) : (
                         <CardContent className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4 opacity-40">
                            <MousePointer2 className="w-10 h-10 animate-bounce" />
-                           <p className="text-xs font-bold uppercase tracking-[0.3em]">Select a table to index data</p>
+                           <p className="text-xs font-bold uppercase tracking-[0.3em]">{t('databaseManager.selectToView')}</p>
                         </CardContent>
                      )}
                   </Card>
@@ -378,10 +380,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      <CardHeader className="py-3 px-4 border-b border-zinc-800 bg-zinc-900 flex flex-row items-center justify-between">
                         <div className="flex items-center gap-3">
                            <Terminal className="w-4 h-4 text-emerald-500" />
-                           <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">SQL Workspace</CardTitle>
+                           <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{t('databaseManager.sqlWorkspace')}</CardTitle>
                         </div>
                         <div className="flex items-center gap-2">
-                           <Button variant="ghost" size="xs" onClick={() => setQuery('')} className="text-zinc-500 hover:text-white uppercase font-bold text-[10px]">Reset</Button>
+                           <Button variant="ghost" size="xs" onClick={() => setQuery('')} className="text-zinc-500 hover:text-white uppercase font-bold text-[10px]">{t('common.cancel').split(' ')[0]}</Button>
                            <Button
                               size="sm"
                               onClick={executeQuery}
@@ -389,7 +391,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                               className="h-8 bg-emerald-600 hover:bg-emerald-500 text-white"
                            >
                               {queryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-3 h-3 mr-2 fill-current" />}
-                              Execute Query
+                              {t('projectDetail.actions.execute')}
                            </Button>
                         </div>
                      </CardHeader>
@@ -404,7 +406,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
 
                   <Card className="flex flex-col overflow-hidden">
                      <CardHeader className="py-3 px-4 bg-muted/50 border-b flex flex-row items-center justify-between">
-                        <CardTitle className="text-[10px] font-bold uppercase tracking-widest">Output Log</CardTitle>
+                        <CardTitle className="text-[10px] font-bold uppercase tracking-widest">{t('databaseManager.outputLog')}</CardTitle>
                         {queryResult && (
                            <Badge variant="secondary" className="text-[9px] uppercase tracking-tighter">Execution: {queryResult.duration || '0ms'}</Badge>
                         )}
@@ -443,7 +445,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                         ) : (
                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 gap-4">
                               <Terminal className="w-12 h-12" />
-                              <p className="text-[10px] font-bold uppercase tracking-[0.4em]">Awaiting Instruction</p>
+                              <p className="text-[10px] font-bold uppercase tracking-[0.4em]">{t('databaseManager.awaiting')}</p>
                            </div>
                         )}
                      </CardContent>
@@ -459,12 +461,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                            <Download className="w-6 h-6" />
                         </div>
                         <div>
-                           <CardTitle className="text-xl">Database Backup</CardTitle>
-                           <CardDescription className="mt-2 text-sm">Download a full SQL manifest of your current database state including structures and records.</CardDescription>
+                           <CardTitle className="text-xl">{t('databaseManager.backup')}</CardTitle>
+                           <CardDescription className="mt-2 text-sm">{t('databaseManager.backupDesc')}</CardDescription>
                         </div>
                         <Button onClick={handleExport} className="w-full gap-2">
                            <Download className="w-4 h-4" />
-                           Generate SQL Dump
+                           {t('databaseManager.generateDump')}
                         </Button>
                      </CardContent>
                   </Card>
@@ -475,13 +477,13 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                            <Upload className="w-6 h-6" />
                         </div>
                         <div>
-                           <CardTitle className="text-xl">Import Dataset</CardTitle>
-                           <CardDescription className="mt-2 text-sm">Synchronize your database by running an external SQL script or restoration file.</CardDescription>
+                           <CardTitle className="text-xl">{t('databaseManager.import')}</CardTitle>
+                           <CardDescription className="mt-2 text-sm">{t('databaseManager.importDesc')}</CardDescription>
                         </div>
                         <Textarea
                            value={importSQL}
                            onChange={(e) => setImportSQL(e.target.value)}
-                           placeholder="-- Paste your SQL commands or dump content here..."
+                           placeholder={t('databaseManager.importPlaceholder') || ''}
                            className="h-32 bg-muted/30 font-mono text-xs p-4 focus-visible:ring-primary/20"
                         />
                         <Button
@@ -490,7 +492,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                            className="w-full gap-2"
                         >
                            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                           Run Import Script
+                           {t('databaseManager.runImport')}
                         </Button>
                      </CardContent>
                   </Card>
@@ -506,20 +508,20 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      <div className="p-2 bg-primary/10 rounded-lg text-primary">
                         <Key className="w-5 h-5" />
                      </div>
-                     Credentials
+                     {t('databaseManager.credsTitle')}
                   </DialogTitle>
                   <DialogDescription>
-                     External connection parameters for your database node.
+                     {t('databaseManager.credsDesc')}
                   </DialogDescription>
                </DialogHeader>
 
                <div className="space-y-4 my-2">
                   {[
-                     { label: 'Network Host', value: credentials?.host || '...' },
-                     { label: 'Port', value: credentials?.port || '3306' },
-                     { label: 'Database Name', value: credentials?.database || '...' },
-                     { label: 'Username', value: credentials?.username || '...' },
-                     { label: 'Secure Password', value: credentials?.password || '...', secret: true },
+                     { label: t('databaseManager.networkHost'), value: credentials?.host || '...' },
+                     { label: t('databaseManager.port'), value: credentials?.port || '3306' },
+                     { label: t('databaseManager.dbName'), value: credentials?.database || '...' },
+                     { label: t('databaseManager.userName'), value: credentials?.username || '...' },
+                     { label: t('databaseManager.password'), value: credentials?.password || '...', secret: true },
                   ].map(item => (
                      <div key={item.label} className="space-y-1.5 p-3 rounded-lg bg-muted/50 border group hover:border-primary/20 transition-colors">
                         <div className="flex justify-between items-center">
@@ -536,7 +538,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                </div>
 
                <DialogFooter>
-                  <Button className="w-full" onClick={() => setShowCredentials(false)}>Close Access Pane</Button>
+                  <Button className="w-full" onClick={() => setShowCredentials(false)}>{t('databaseManager.closePane')}</Button>
                </DialogFooter>
             </DialogContent>
          </Dialog>

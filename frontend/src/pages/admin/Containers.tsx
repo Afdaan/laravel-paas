@@ -1,5 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import {
   Search,
   LayoutGrid,
@@ -12,7 +13,7 @@ import {
   Loader2,
   ListFilter,
   CheckCircle2,
-  XCircle
+  XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,7 @@ interface ContainerData {
 }
 
 const AdminContainers = () => {
+  const { t } = useTranslation()
   const [data, setData] = useState<{ containers: ContainerData[], system: any }>({
     containers: [],
     system: null
@@ -80,7 +82,7 @@ const AdminContainers = () => {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
-        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Orchestrating Container State</p>
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -89,8 +91,8 @@ const AdminContainers = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Containers</h1>
-          <p className="text-muted-foreground">Manage and monitor all running project instances.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.containers.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.containers.desc')}</p>
         </div>
 
         <div className="flex items-center gap-6">
@@ -116,7 +118,7 @@ const AdminContainers = () => {
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Filter active instances by name or manifest..."
+              placeholder={t('common.search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 w-full"
@@ -140,11 +142,11 @@ const AdminContainers = () => {
                   <Checkbox />
                 </TableHead>
                 <TableHead>Instance Detail</TableHead>
-                <TableHead>State</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
                 <TableHead>Health Requirements</TableHead>
                 <TableHead>Resource Load</TableHead>
                 <TableHead>Gateway Ports</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -155,7 +157,7 @@ const AdminContainers = () => {
                       <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                         <Terminal className="w-8 h-8 opacity-50" />
                       </div>
-                      <span className="font-semibold text-sm">No active instances in cluster</span>
+                      <span className="font-semibold text-sm">{t('common.noData')}</span>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -179,9 +181,9 @@ const AdminContainers = () => {
                   </TableCell>
                   <TableCell>
                     {c.state === 'running' ? (
-                      <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> Active</Badge>
+                      <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
                     ) : (
-                      <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 border-rose-500/20 hover:bg-rose-500/20"><div className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" /> Offline</Badge>
+                      <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 border-rose-500/20 hover:bg-rose-500/20"><div className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" /> {t('status.stopped')}</Badge>
                     )}
                   </TableCell>
                   <TableCell>

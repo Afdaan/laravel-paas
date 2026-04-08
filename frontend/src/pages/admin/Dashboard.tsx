@@ -4,6 +4,7 @@
 
 import { useState, useEffect, memo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import useTranslation from '../../lib/useTranslation'
 import { systemAPI } from '../../services/api'
 import { toast } from 'sonner'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -33,7 +34,8 @@ export interface SystemStats {
   recentProjects: any[];
 }
 
-function AdminDashboard() {
+const AdminDashboard = () => {
+  const { t } = useTranslation()
   const [data, setData] = useState<SystemStats>({
     system: null,
     containers: [],
@@ -71,10 +73,10 @@ function AdminDashboard() {
     setIsPruning(true)
     try {
       await systemAPI.prune()
-      toast.success('System purged of unused assets')
+      toast.success(t('admin.purgeSuccess'))
       fetchData()
     } catch (error) {
-      toast.error('Clean operation failed')
+      toast.error(t('admin.purgeFailed'))
     } finally {
       setIsPruning(false)
     }
@@ -92,7 +94,7 @@ function AdminDashboard() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
         <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-muted-foreground font-semibold uppercase tracking-widest text-xs animate-pulse">Loading Dashboard</p>
+        <p className="text-muted-foreground font-semibold uppercase tracking-widest text-xs animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -105,9 +107,15 @@ function AdminDashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <Header onRefresh={fetchData} onPrune={handlePrune} isPruning={isPruning} />
+      <Header 
+        t={t}
+        onRefresh={fetchData} 
+        onPrune={handlePrune} 
+        isPruning={isPruning} 
+      />
       
       <SystemOverview 
+        t={t}
         system={system} 
         containers={containers} 
         images={images} 
@@ -118,8 +126,9 @@ function AdminDashboard() {
       
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <ResourceTable 
-          title="Live Workload Containers" 
-          subtitle="Active running instances"
+          t={t}
+          title={t('admin.liveWorkload')} 
+          subtitle={t('admin.activeRunning')}
           icon={Box}
           data={containers}
           type="containers"
@@ -127,8 +136,9 @@ function AdminDashboard() {
         />
 
         <ResourceTable 
-          title="Local Image Snapshots" 
-          subtitle="Cached docker images"
+          t={t}
+          title={t('admin.localImage')} 
+          subtitle={t('admin.cachedDocker')}
           icon={ImageIcon}
           data={images}
           type="images"
@@ -140,9 +150,9 @@ function AdminDashboard() {
         isOpen={isPruneModalOpen}
         onClose={() => setIsPruneModalOpen(false)}
         onConfirm={confirmPrune}
-        title="Execute System Purge?"
-        message="This will permanently delete all inactive images and orphaned volumes. This operation will free up local storage but cannot be rolled back."
-        confirmText="Initialize Cleanup"
+        title={t('admin.purgeTitle')}
+        message={t('admin.purgeMessage')}
+        confirmText={t('admin.initCleanup')}
         type="danger"
       />
     </div>
@@ -150,34 +160,36 @@ function AdminDashboard() {
 }
 
 interface HeaderProps {
+  t: any;
   onRefresh: () => void;
   onPrune: () => void;
   isPruning: boolean;
 }
 
-const Header = memo(({ onRefresh, onPrune, isPruning }: HeaderProps) => (
+const Header = memo(({ t, onRefresh, onPrune, isPruning }: HeaderProps) => (
   <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
     <div>
-      <h1 className="text-3xl font-bold tracking-tight mb-2">Platform Dashboard</h1>
+      <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.platformDashboard')}</h1>
       <p className="text-muted-foreground max-w-2xl">
-        Monitoring global infrastructure state and resource orchestration across the student cluster.
+        {t('admin.adminDesc')}
       </p>
     </div>
     
     <div className="flex items-center gap-4">
       <Button variant="outline" onClick={onRefresh}>
         <RefreshCw className="w-4 h-4 mr-2" />
-        Refresh
+        {t('admin.refresh')}
       </Button>
       <Button variant="destructive" onClick={onPrune} disabled={isPruning}>
         <ShieldAlert className="w-4 h-4 mr-2" />
-        {isPruning ? 'Cleaning...' : 'Purge Registry'}
+        {isPruning ? t('admin.cleaning') : t('admin.purgeRegistry')}
       </Button>
     </div>
   </div>
 ))
 
 interface SystemOverviewProps {
+  t: any;
   system: any;
   containers: any[];
   images: any[];
@@ -186,13 +198,13 @@ interface SystemOverviewProps {
   formatBytes: (bytes: number) => string;
 }
 
-const SystemOverview = memo(({ system, containers, images, networks, volumes, formatBytes }: SystemOverviewProps) => {
+const SystemOverview = memo(({ t, system, containers, images, networks, volumes, formatBytes }: SystemOverviewProps) => {
   const memUsage = system ? (system.memory_used / system.memory_total) * 100 : 0
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <StatCard 
-        title="CPU Load" 
+        title={t('admin.cpuLoad')} 
         value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
         detail={`${system?.cpu_cores || 1} CPU Cores`}
         progress={Math.min(system?.cpu_usage || 0, 100)}
@@ -200,15 +212,15 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
       />
 
       <StatCard 
-        title="Compute RAM" 
+        title={t('admin.computeRam')} 
         value={formatBytes(system?.memory_used || 0)}
-        detail={`of ${formatBytes(system?.memory_total || 0)} total`}
+        detail={t('admin.ofTotal', { total: formatBytes(system?.memory_total || 0) })}
         progress={memUsage}
         icon={Activity}
       />
 
       <StatCard 
-        title="System Resources" 
+        title={t('admin.systemResources')} 
         value={(images?.length || 0) + (containers?.length || 0)}
         detail={`${containers?.length || 0} Containers / ${images?.length || 0} Images`}
         progress={100}
@@ -216,8 +228,8 @@ const SystemOverview = memo(({ system, containers, images, networks, volumes, fo
       />
       
       <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <SmallStat icon={Network} label="Networks" value={networks?.length || 0} />
-        <SmallStat icon={HardDrive} label="Volumes" value={volumes?.length || 0} />
+        <SmallStat icon={Network} label={t('common.networks')} value={networks?.length || 0} />
+        <SmallStat icon={HardDrive} label={t('common.volumes')} value={volumes?.length || 0} />
         <SmallStat icon={Box} label="Docker Engine" value={system?.docker_version || 'N/A'} />
       </div>
     </div>
@@ -279,6 +291,7 @@ const SmallStat = ({ icon: Icon, label, value }: SmallStatProps) => {
 }
 
 interface ResourceTableProps {
+  t: any;
   title: string;
   subtitle: string;
   icon: any;
@@ -287,7 +300,7 @@ interface ResourceTableProps {
   viewAllPath: string;
 }
 
-const ResourceTable = memo(({ title, subtitle, icon: Icon, data, type, viewAllPath }: ResourceTableProps) => (
+const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAllPath }: ResourceTableProps) => (
   <Card className="flex flex-col">
     <CardHeader className="flex flex-row items-center justify-between">
       <div className="flex items-center flex-row gap-4">
@@ -298,7 +311,7 @@ const ResourceTable = memo(({ title, subtitle, icon: Icon, data, type, viewAllPa
         </div>
       </div>
       <Button variant="ghost" size="sm" render={<Link to={viewAllPath} />}>
-        View All <ChevronRight className="w-4 h-4 ml-1" />
+        {t('admin.viewAll')} <ChevronRight className="w-4 h-4 ml-1" />
       </Button>
     </CardHeader>
     <CardContent className="p-0 border-t flex-1 overflow-hidden">

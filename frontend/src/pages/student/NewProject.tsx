@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import {
   Rocket,
   Database,
@@ -37,6 +38,7 @@ interface ValidationErrors {
 }
 
 function StudentNewProject() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -76,9 +78,9 @@ function StudentNewProject() {
 
   const validateForm = () => {
     const errors: ValidationErrors = {}
-    if (!formData.name.trim()) errors.name = 'Project name is required'
-    if (!formData.github_url.trim()) errors.github_url = 'Repository URL is required'
-    if (!formData.database_name.trim()) errors.database_name = 'Database name is required'
+    if (!formData.name.trim()) errors.name = t('common.projectName') + ' is required'
+    if (!formData.github_url.trim()) errors.github_url = t('newProject.repoUrl') + ' is required'
+    if (!formData.database_name.trim()) errors.database_name = t('newProject.dbName') + ' is required'
 
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
@@ -94,13 +96,13 @@ function StudentNewProject() {
 
     try {
       const response = await projectsAPI.create(formData)
-      toast.success('Project Created Successfully')
+      toast.success(t('common.success') || 'Project Created Successfully')
       navigate(`/projects/${response.data.project.id}`)
     } catch (error: any) {
-      let errorMsg = error.response?.data?.error || 'Failed to create project'
+      let errorMsg = error.response?.data?.error || t('common.error') || 'Failed to create project'
 
       if (errorMsg === 'Project limit reached' || error.response?.status === 403) {
-        errorMsg = 'Project limit reached. Please delete an existing project before creating a new one.'
+        errorMsg = t('newProject.restrictedDesc') || 'Project limit reached.'
       }
 
       setSubmitError(errorMsg)
@@ -120,12 +122,12 @@ function StudentNewProject() {
           className="w-fit gap-2"
         >
           <ChevronLeft className="w-4 h-4" />
-          Back to Projects
+          {t('newProject.back')}
         </Button>
 
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">New <span className="text-primary italic">Project</span></h1>
-          <p className="text-muted-foreground text-lg">Scale your Laravel application in seconds with automated cloud deployment.</p>
+          <h1 className="text-4xl font-bold tracking-tight">{t('newProject.title').split(' ')[0]} <span className="text-primary italic">{t('newProject.title').split(' ')[1] || 'Project'}</span></h1>
+          <p className="text-muted-foreground text-lg">{t('newProject.subtitle')}</p>
         </div>
       </div>
 
@@ -135,7 +137,7 @@ function StudentNewProject() {
             <div className="w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center text-destructive">
               <Info className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold uppercase tracking-tight">Deployment Restricted</h3>
+            <h3 className="text-lg font-bold uppercase tracking-tight">{t('newProject.restricted')}</h3>
             <p className="text-sm font-medium text-destructive/80 max-w-lg">{submitError}</p>
           </div>
         </Card>
@@ -152,7 +154,7 @@ function StudentNewProject() {
                     <Rocket className="w-4 h-4" />
                   </div>
                   <Label htmlFor="name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    Project Display Name
+                    {t('newProject.displayName')}
                   </Label>
                 </div>
                 <Input
@@ -160,7 +162,7 @@ function StudentNewProject() {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  placeholder="e.g. Stellar Marketing API"
+                  placeholder={t('newProject.namePlaceholder') || ''}
                   className={cn(validationErrors.name && "border-destructive focus-visible:ring-destructive")}
                 />
                 {validationErrors.name && (
@@ -176,7 +178,7 @@ function StudentNewProject() {
                       <Rocket className="w-4 h-4" />
                     </div>
                     <Label htmlFor="github_url" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Repository URL
+                      {t('newProject.repoUrl')}
                     </Label>
                   </div>
                   <Input
@@ -185,7 +187,7 @@ function StudentNewProject() {
                     type="url"
                     value={formData.github_url}
                     onChange={handleChange}
-                    placeholder="https://github.com/org/repo"
+                    placeholder={t('newProject.repoPlaceholder') || ''}
                     className={cn(validationErrors.github_url && "border-destructive focus-visible:ring-destructive")}
                   />
                   {validationErrors.github_url && (
@@ -199,7 +201,7 @@ function StudentNewProject() {
                       <Settings className="w-4 h-4" />
                     </div>
                     <Label htmlFor="branch" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Git Branch
+                      {t('newProject.branch')}
                     </Label>
                   </div>
                   <Input
@@ -207,7 +209,7 @@ function StudentNewProject() {
                     name="branch"
                     value={formData.branch}
                     onChange={handleChange}
-                    placeholder="main"
+                    placeholder={t('newProject.branchPlaceholder') || 'main'}
                   />
                 </div>
               </div>
@@ -219,7 +221,7 @@ function StudentNewProject() {
                     <Database className="w-4 h-4" />
                   </div>
                   <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    MySQL Database Name
+                    {t('newProject.dbName')}
                   </Label>
                 </div>
                 <Input
@@ -230,7 +232,7 @@ function StudentNewProject() {
                   placeholder="database_name"
                   className={cn(validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
                 />
-                <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">Generated automatically from project name.</p>
+                <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">{t('newProject.dbAutoDesc')}</p>
                 {validationErrors.database_name && (
                   <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
                 )}
@@ -242,8 +244,8 @@ function StudentNewProject() {
                 formData.queue_enabled ? "bg-primary/5 border-primary/30" : "bg-muted/50"
               )}>
                 <div className="space-y-1">
-                  <Label htmlFor="queue_enabled" className="text-sm font-bold uppercase tracking-widest cursor-pointer">Enable Queue Worker</Label>
-                  <p className="text-muted-foreground text-xs font-medium italic">Enables background 'php artisan queue:work' process.</p>
+                  <Label htmlFor="queue_enabled" className="text-sm font-bold uppercase tracking-widest cursor-pointer">{t('newProject.queue')}</Label>
+                  <p className="text-muted-foreground text-xs font-medium italic">{t('newProject.queueDesc')}</p>
                 </div>
                 <Switch
                   id="queue_enabled"
@@ -262,12 +264,12 @@ function StudentNewProject() {
             {isLoading ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin" />
-                Initializing Environment...
+                {t('newProject.initializing')}
               </>
             ) : (
               <>
                 <Rocket className="w-6 h-6" />
-                Initialize Deployment
+                {t('newProject.initialize')}
                 <ArrowRight className="w-6 h-6" />
               </>
             )}
@@ -278,41 +280,41 @@ function StudentNewProject() {
           <Card className="p-8 space-y-8 bg-muted/20">
             <div className="flex items-center gap-3 pb-6 border-b">
               <ShieldCheck className="w-6 h-6 text-primary" />
-              <h3 className="text-sm font-bold uppercase tracking-[0.2em]">Deployment Pipeline</h3>
+              <h3 className="text-sm font-bold uppercase tracking-[0.2em]">{t('newProject.pipeline')}</h3>
             </div>
 
             <ul className="space-y-6">
               <PipelineStep
                 icon={Rocket}
-                title="Git Integration"
-                desc="Automated source code isolation and cloning."
+                title={t('newProject.steps.git.title')}
+                desc={t('newProject.steps.git.desc')}
               />
               <PipelineStep
                 icon={Activity}
-                title="Runtime Detection"
-                desc="PHP and Laravel version analysis."
+                title={t('newProject.steps.runtime.title')}
+                desc={t('newProject.steps.runtime.desc')}
               />
               <PipelineStep
                 icon={Database}
-                title="Resource Provisioning"
-                desc="Dedicated database and schema creation."
+                title={t('newProject.steps.resource.title')}
+                desc={t('newProject.steps.resource.desc')}
               />
               <PipelineStep
                 icon={Zap}
-                title="Network Mesh"
-                desc="SSL termination and subdomain routing."
+                title={t('newProject.steps.network.title')}
+                desc={t('newProject.steps.network.desc')}
               />
               <PipelineStep
                 icon={Cpu}
-                title="Compute Allocation"
-                desc="Isolated container resource mapping."
+                title={t('newProject.steps.compute.title')}
+                desc={t('newProject.steps.compute.desc')}
               />
             </ul>
 
             <div className="p-4 rounded-lg bg-background border flex items-start gap-3">
               <Info className="w-4 h-4 text-primary mt-0.5" />
               <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider leading-relaxed">
-                Your application will be served over encrypted TLS (HTTPS) on our global edge network.
+                {t('newProject.footerInfo')}
               </p>
             </div>
           </Card>

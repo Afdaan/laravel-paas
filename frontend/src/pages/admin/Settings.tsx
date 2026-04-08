@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { settingsAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import { 
   Globe, 
   Shield, 
@@ -32,6 +33,7 @@ interface PlatformSettings {
 }
 
 const AdminSettings = () => {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<PlatformSettings>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -72,7 +74,7 @@ const AdminSettings = () => {
     return (
       <div className="flex flex-col items-center justify-center h-80 gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
-        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Retrieving System Manifest</p>
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -81,8 +83,8 @@ const AdminSettings = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Core Parameters</h1>
-          <p className="text-muted-foreground">Configure global orchestration limits, resource pooling, and network topology.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.settings.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.settings.desc')}</p>
         </div>
 
         <Button
@@ -232,7 +234,7 @@ const AdminSettings = () => {
                 min={10}
                 max={100}
                 step={5}
-                onValueChange={(val: number[]) => handleChange('cpu_limit_percent', val[0])}
+                onValueChange={(val: any) => handleChange('cpu_limit_percent', Array.isArray(val) ? val[0] : val)}
                 className="py-4"
               />
               <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
@@ -254,7 +256,7 @@ const AdminSettings = () => {
                 min={128}
                 max={2048}
                 step={128}
-                onValueChange={(val: number[]) => handleChange('memory_limit_mb', val[0])}
+                onValueChange={(val: any) => handleChange('memory_limit_mb', Array.isArray(val) ? val[0] : val)}
                 className="py-4"
               />
               <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">

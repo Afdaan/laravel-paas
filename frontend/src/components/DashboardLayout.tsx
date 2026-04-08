@@ -1,5 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
+import useTranslation from '../lib/useTranslation'
+import { LanguageSwitcher } from './LanguageSwitcher'
 import {
   LayoutDashboard,
   FolderGit2,
@@ -44,6 +46,7 @@ interface DashboardLayoutProps {
 }
 
 function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
+  const { t } = useTranslation()
   const { user, logout } = useAuthStore()
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
@@ -59,23 +62,23 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const navItems = isAdmin
     ? {
         management: [
-          { to: '/admin/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
-          { to: '/admin/users', icon: Icons.Users, label: 'Users' },
-          { to: '/admin/projects', icon: Icons.Projects, label: 'Projects' },
-          { to: '/admin/settings', icon: Icons.Settings, label: 'Settings' },
+          { to: '/admin/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
+          { to: '/admin/users', icon: Icons.Users, label: t('common.users') },
+          { to: '/admin/projects', icon: Icons.Projects, label: t('common.projects') },
+          { to: '/admin/settings', icon: Icons.Settings, label: t('common.settings') },
         ],
         resources: [
-          { to: '/admin/containers', icon: Icons.Containers, label: 'Containers' },
-          { to: '/admin/images', icon: Icons.Images, label: 'Images' },
-          { to: '/admin/networks', icon: Icons.Networks, label: 'Networks' },
-          { to: '/admin/volumes', icon: Icons.Volumes, label: 'Volumes' },
+          { to: '/admin/containers', icon: Icons.Containers, label: t('common.containers') },
+          { to: '/admin/images', icon: Icons.Images, label: t('common.images') },
+          { to: '/admin/networks', icon: Icons.Networks, label: t('common.networks') },
+          { to: '/admin/volumes', icon: Icons.Volumes, label: t('common.volumes') },
         ]
       }
     : {
         management: [
-          { to: '/dashboard', icon: Icons.Dashboard, label: 'Dashboard' },
-          { to: '/projects', icon: Icons.Projects, label: 'Projects' },
-          { to: '/databases', icon: Icons.Database, label: 'Databases' },
+          { to: '/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
+          { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
+          { to: '/databases', icon: Icons.Database, label: t('common.databases') },
         ]
       }
 
@@ -98,7 +101,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           
           <Badge variant={isAdmin ? "destructive" : "secondary"} className="w-full justify-center">
             {isAdmin ? <ShieldCheck className="w-3 h-3 mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
-            {isAdmin ? 'Global Admin' : 'Authenticated Hub'}
+            {isAdmin ? t('common.globalAdmin') : t('common.authenticatedHub')}
           </Badge>
         </div>
         
@@ -106,7 +109,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         <nav className="flex-1 px-4 py-4 space-y-6 overflow-y-auto">
           {/* Main Group */}
           <div className="space-y-1">
-            <h4 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Main</h4>
+            <h4 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.main')}</h4>
             {navItems.management.map((item) => (
               <NavLink
                 key={item.to}
@@ -114,8 +117,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 className={({ isActive }) =>
                   `flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     isActive
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                       ? 'bg-secondary text-secondary-foreground'
+                       : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                   }`
                 }
               >
@@ -130,7 +133,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           {/* Infrastructure Group (Admin Only) */}
           {isAdmin && navItems.resources && (
             <div className="space-y-1 pt-4">
-                <h4 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Infrastructure</h4>
+                <h4 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.infrastructure')}</h4>
                 {navItems.resources.map((item) => (
                 <NavLink
                     key={item.to}
@@ -138,8 +141,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                     className={({ isActive }) =>
                       `flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                         isActive
-                          ? 'bg-secondary text-secondary-foreground'
-                          : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                           ? 'bg-secondary text-secondary-foreground'
+                           : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                       }`
                     }
                 >
@@ -157,7 +160,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
             <div className="pt-4">
               <Button render={<NavLink to="/projects/new" />} className="w-full justify-start" size="sm">
                 <Plus className="w-4 h-4 mr-2" />
-                New Project
+                {t('common.newProject')}
               </Button>
             </div>
           )}
@@ -178,14 +181,14 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
               <Button variant="ghost" className="w-full justify-start text-xs h-8" render={<NavLink to="/admin" />}>
                 <ArrowRightLeft className="w-3 h-3 mr-2" />
-                Admin Panel
+                {t('common.adminPanel')}
               </Button>
             )}
             
             {isAdmin && (
               <Button variant="ghost" className="w-full justify-start text-xs h-8" render={<NavLink to="/dashboard" />}>
                 <ArrowRightLeft className="w-3 h-3 mr-2" />
-                Student View
+                {t('common.studentView')}
               </Button>
             )}
             
@@ -195,7 +198,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                onClick={handleLogout}
             >
               <LogOut className="w-3 h-3 mr-2" />
-              Logout
+              {t('common.logout')}
             </Button>
           </div>
         </div>
@@ -208,10 +211,13 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
            <div></div>
            
            <div className="flex items-center gap-4">
+             <LanguageSwitcher />
+
              <Button
                 variant="outline"
                 size="icon"
                 onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                title={t('common.theme')}
              >
                 {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
              </Button>
@@ -219,7 +225,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              <Button
                 variant={location.pathname.includes('feedback') ? "default" : "outline"}
                 size="icon"
-                render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title="Feedback" />}
+                render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title={t('common.feedback')} />}
                 className="relative"
              >
                 <MessageSquare className="w-4 h-4" />

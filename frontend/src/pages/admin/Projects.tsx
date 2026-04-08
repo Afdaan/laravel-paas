@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import { Project } from '../../types'
 import {
   ExternalLink,
@@ -33,19 +34,19 @@ interface ProjectStats {
   memory_max_mb: number;
 }
 
-const StatusBadge = ({ status }: { status: Project['status'] }) => {
+const StatusBadge = ({ status, t }: { status: Project['status'], t: any }) => {
   switch (status) {
     case 'running':
-      return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> Operational</Badge>
+      return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
     case 'building':
-      return <Badge variant="outline" className="text-indigo-600 border-indigo-500/40 bg-indigo-500/10"><div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5 animate-pulse" /> Orchestrating</Badge>
+      return <Badge variant="outline" className="text-indigo-600 border-indigo-500/40 bg-indigo-500/10"><div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5 animate-pulse" /> {t('status.building')}</Badge>
     case 'pending':
-      return <Badge variant="outline" className="text-amber-600 border-amber-500/40 bg-amber-500/10"><div className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" /> Queued</Badge>
+      return <Badge variant="outline" className="text-amber-600 border-amber-500/40 bg-amber-500/10"><div className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" /> {t('status.pending')}</Badge>
     case 'failed':
-      return <Badge variant="destructive" className="bg-destructive/10 text-destructive hover:bg-destructive/20"><div className="w-1.5 h-1.5 rounded-full bg-destructive mr-1.5" /> Degraded</Badge>
+      return <Badge variant="destructive" className="bg-destructive/10 text-destructive hover:bg-destructive/20"><div className="w-1.5 h-1.5 rounded-full bg-destructive mr-1.5" /> {t('status.failed')}</Badge>
     case 'stopped':
     default:
-      return <Badge variant="secondary"><div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mr-1.5" /> Halted</Badge>
+      return <Badge variant="secondary"><div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mr-1.5" /> {t('status.stopped')}</Badge>
   }
 }
 
@@ -77,6 +78,7 @@ const ResourceBar = ({ label, value, max, icon: Icon, suffix = '' }: { label: st
 }
 
 const AdminProjects = () => {
+  const { t } = useTranslation()
   const [projects, setProjects] = useState<Project[]>([])
   const [stats, setStats] = useState<Record<string, ProjectStats>>({})
   const [total, setTotal] = useState(0)
@@ -84,9 +86,13 @@ const AdminProjects = () => {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
+  const isFirstLoad = useRef(true)
 
-  const fetchProjects = useCallback(async () => {
-    setIsLoading(true)
+  const fetchProjects = useCallback(async (forced = false) => {
+    if (isFirstLoad.current || forced) {
+      setIsLoading(true)
+    }
+    
     try {
       const statusQuery = statusFilter === 'all' ? '' : statusFilter
       const response = await projectsAPI.listAll({ page, search, status: statusQuery, limit: 12 })
@@ -96,6 +102,7 @@ const AdminProjects = () => {
       toast.error('Failed to index projects')
     } finally {
       setIsLoading(false)
+      isFirstLoad.current = false
     }
   }, [page, search, statusFilter])
 
@@ -125,8 +132,8 @@ const AdminProjects = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Projects Cluster</h1>
-          <p className="text-muted-foreground">Manage all user projects and system resources across the platform.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.projects.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.projects.desc')}</p>
         </div>
 
         <div className="flex items-center gap-4 bg-muted/30 border p-2 rounded-xl">
@@ -146,7 +153,7 @@ const AdminProjects = () => {
           <div className="relative flex-1 w-full max-w-2xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search projects, domains, owners..."
+              placeholder={t('common.search')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -157,19 +164,19 @@ const AdminProjects = () => {
             <div className="w-full md:w-48">
               <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val || 'all')}>
                 <SelectTrigger className={'w-full'}>
-                  <SelectValue placeholder="Status: All Lifecycle" />
+                  <SelectValue placeholder={`Status: ${t('status.running')}`} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Status: All Lifecycle</SelectItem>
-                  <SelectItem value="running">In Production</SelectItem>
-                  <SelectItem value="building">Provisioning</SelectItem>
-                  <SelectItem value="pending">Queued</SelectItem>
-                  <SelectItem value="failed">Degraded</SelectItem>
-                  <SelectItem value="stopped">Halted</SelectItem>
+                  <SelectItem value="running">{t('status.running')}</SelectItem>
+                  <SelectItem value="building">{t('status.building')}</SelectItem>
+                  <SelectItem value="pending">{t('status.pending')}</SelectItem>
+                  <SelectItem value="failed">{t('status.failed')}</SelectItem>
+                  <SelectItem value="stopped">{t('status.stopped')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="outline" size="icon" onClick={fetchProjects} title="Force Sync">
+            <Button variant="outline" size="icon" onClick={() => fetchProjects(true)} title="Force Sync">
               <RefreshCw className="w-4 h-4" />
             </Button>
           </div>
@@ -179,19 +186,19 @@ const AdminProjects = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Project</TableHead>
+                <TableHead>{t('common.projectName')}</TableHead>
                 <TableHead>Owner</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
                 <TableHead>Resource Usage</TableHead>
                 <TableHead>Framework</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32 text-center text-muted-foreground font-medium uppercase tracking-widest text-xs">
-                    Syncing Cluster State...
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : (!projects || projects.length === 0) ? (
@@ -201,7 +208,7 @@ const AdminProjects = () => {
                       <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                         <Box className="w-8 h-8 opacity-50" />
                       </div>
-                      <span className="font-semibold text-sm">No projects found in the system.</span>
+                      <span className="font-semibold text-sm">{t('common.noData')}</span>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -245,7 +252,7 @@ const AdminProjects = () => {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={project.status} />
+                      <StatusBadge status={project.status} t={t} />
                     </TableCell>
                     <TableCell>
                       {project.status === 'running' && hasStats ? (
@@ -274,7 +281,7 @@ const AdminProjects = () => {
                         to={`/projects/${project.id}`}
                       >
                         <Button variant="outline" size="sm">
-                          View Details
+                          {t('common.details')}
                         </Button>
                       </Link>
                     </TableCell>
