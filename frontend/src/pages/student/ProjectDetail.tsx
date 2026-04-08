@@ -104,24 +104,28 @@ function StudentProjectDetail() {
     confirmText: t('common.confirm')
   })
 
+  const [consecutiveErrors, setConsecutiveErrors] = useState(0)
+
   useEffect(() => {
     fetchProject()
     const interval = setInterval(() => {
-      fetchProject()
-      if (project?.status === 'running') {
-        fetchStats()
+      if (consecutiveErrors < 3) {
+        fetchProject()
+        if (project?.status === 'running') {
+          fetchStats()
+        }
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [id, project?.status])
+  }, [id, project?.status, consecutiveErrors])
 
   useEffect(() => {
-    if (activeTab === 'logs' && project?.container_id) {
+    if (activeTab === 'logs' && project?.container_id && consecutiveErrors < 3) {
       fetchLogs()
       const interval = setInterval(fetchLogs, 5000)
       return () => clearInterval(interval)
     }
-  }, [activeTab, project])
+  }, [activeTab, project, consecutiveErrors])
 
   useEffect(() => {
     if (activeTab === 'environment') {
@@ -134,8 +138,21 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.get(id)
       setProject(response.data)
+      setConsecutiveErrors(0) // Reset error count on success
     } catch (error: any) {
-      toast.error(t('common.error'))
+      if (error.response?.status === 401) {
+        navigate('/login')
+        return
+      }
+      
+      setConsecutiveErrors(prev => prev + 1)
+      
+      // Use a unique ID for deduplication in Sonner
+      toast.error(t('common.error'), {
+        id: 'project-load-error',
+        description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
+      })
+      
       if (error.response?.status === 404) navigate('/projects')
     } finally {
       setIsLoading(false)

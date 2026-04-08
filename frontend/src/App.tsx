@@ -8,7 +8,9 @@ import { useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './stores/authStore'
 import { useState } from 'react'
-import { systemAPI } from './services/api'
+import { systemAPI, settingsAPI } from './services/api'
+import { toast } from 'sonner'
+import useTranslation from './lib/useTranslation'
 
 // Layouts
 import DashboardLayout from './components/DashboardLayout'
@@ -61,8 +63,11 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
 }
 
 function App() {
+  const { t } = useTranslation()
   const { fetchUser, token, user } = useAuthStore()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
+
+  const [settings, setSettings] = useState<any>(null)
 
   useEffect(() => {
     // Check if system is initialized
@@ -81,15 +86,66 @@ function App() {
     if (token && !user) {
       fetchUser()
     }
+  }, [token, user, fetchUser])
+
+  useEffect(() => {
+    if (token && (user?.role === 'admin' || user?.role === 'superadmin')) {
+      settingsAPI.list().then(res => setSettings(res.data.map))
+    }
   }, [token, user])
+
+  useEffect(() => {
+    let idleTimer: NodeJS.Timeout
+    const timeoutMinutes = settings?.admin_idle_timeout || 15
+    const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
+
+    const handleIdleLogout = () => {
+      if (token) {
+        useAuthStore.setState({ token: null, user: null, isLoading: false })
+        localStorage.removeItem('token')
+        toast.error(t('common.sessionExpired'), { id: 'user-idle-timeout' })
+        window.location.href = '/login'
+      }
+    }
+
+    const resetTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT)
+    }
+
+    // Set up listeners for all authenticated users
+    if (token) {
+      const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
+      events.forEach(event => window.addEventListener(event, resetTimer))
+      resetTimer() // Initialize timer
+
+      return () => {
+        if (idleTimer) clearTimeout(idleTimer)
+        events.forEach(event => window.removeEventListener(event, resetTimer))
+      }
+    }
+  }, [token, t, settings])
 
   useEffect(() => {
     const handleExpired = () => {
       useAuthStore.setState({ token: null, user: null, isLoading: false })
+      toast.error(t('common.sessionExpired'), { id: 'auth-expired' })
+      // Use window.location as fallback to force hard reset if navigate fails
+      window.location.href = '/login'
     }
+
+    const handleOffline = () => {
+      toast.error(t('common.connectionError'), { id: 'system-offline' })
+    }
+
     window.addEventListener('auth:expired', handleExpired)
-    return () => window.removeEventListener('auth:expired', handleExpired)
-  }, [])
+    window.addEventListener('system:offline', handleOffline)
+    
+    return () => {
+      window.removeEventListener('auth:expired', handleExpired)
+      window.removeEventListener('system:offline', handleOffline)
+    }
+  }, [t])
 
   if (isInitialized === null) {
     return <LoadingScreen />
