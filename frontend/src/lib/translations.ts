@@ -225,6 +225,7 @@ export const translations = {
         buildDesc: "We are currently building your project environment. Live metrics will initialize soon.",
         queueEnabled: "Queue worker enabled. Redeploying...",
         queueDisabled: "Queue worker disabled. Redeploying...",
+        notFound: "Project not found or you don't have access to it.",
       },
       settings: {
         phpVersion: "Select PHP version",
@@ -619,6 +620,7 @@ export const translations = {
         buildDesc: "Kami sedang membangun environment proyek kamu. Metrik live akan muncul segera.",
         queueEnabled: "Queue aktif. Memulai redeploy...",
         queueDisabled: "Queue non-aktif. Memulai redeploy...",
+        notFound: "Proyek tidak ditemukan atau Anda tidak memiliki akses.",
       },
       settings: {
         phpVersion: "Pilih versi PHP",

@@ -85,6 +85,7 @@ const AdminProjects = () => {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [limit, setLimit] = useState(10)
   const [isLoading, setIsLoading] = useState(true)
   const isFirstLoad = useRef(true)
 
@@ -95,7 +96,7 @@ const AdminProjects = () => {
     
     try {
       const statusQuery = statusFilter === 'all' ? '' : statusFilter
-      const response = await projectsAPI.listAll({ page, search, status: statusQuery, limit: 12 })
+      const response = await projectsAPI.listAll({ page, search, status: statusQuery, limit })
       setProjects(response.data.data || [])
       setTotal(response.data.total || 0)
     } catch (error) {
@@ -126,7 +127,7 @@ const AdminProjects = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const totalPages = Math.ceil(total / 12)
+  const totalPages = Math.ceil(total / limit)
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
@@ -292,20 +293,40 @@ const AdminProjects = () => {
           </Table>
         </div>
 
-        {totalPages > 1 && (
+        {totalPages > 0 && (
           <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/10">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-              <Info className="w-4 h-4 text-primary" />
-              Showing {(page - 1) * 12 + 1} to {Math.min(page * 12, total)} of {total} nodes.
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                <Info className="w-4 h-4 text-primary" />
+                Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} nodes.
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows:</span>
+                <Select value={limit.toString()} onValueChange={(val) => {
+                  if (val) {
+                    setLimit(parseInt(val))
+                    setPage(1) // Reset to first page when limit changes
+                  }
+                }}>
+                  <SelectTrigger className="h-8 w-20 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, ...Array.from({ length: 18 }, (_, i) => 15 + i * 5)].map(val => (
+                      <SelectItem key={val} value={val.toString()}>{val}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <div className="text-sm font-semibold px-4 border rounded-md h-10 flex items-center justify-center min-w-[4rem] bg-background">
-                {page} / {totalPages}
+                {page} / {Math.max(1, totalPages)}
               </div>
-              <Button variant="outline" size="icon" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+              <Button variant="outline" size="icon" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || totalPages === 0}>
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
