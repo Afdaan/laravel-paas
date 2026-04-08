@@ -11,6 +11,8 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Activity,
   Cpu,
   HardDrive,
@@ -300,35 +302,70 @@ const AdminProjects = () => {
                 <Info className="w-4 h-4 text-primary" />
                 Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} nodes.
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows:</span>
-                <Select value={limit.toString()} onValueChange={(val) => {
-                  if (val) {
-                    setLimit(parseInt(val))
-                    setPage(1) // Reset to first page when limit changes
-                  }
-                }}>
-                  <SelectTrigger className="h-8 w-20 bg-background">
-                    <SelectValue />
+              <div className="flex items-center space-x-2">
+                <p className="text-sm font-medium">Rows per page</p>
+                <Select
+                  value={limit.toString()}
+                  onValueChange={(value) => {
+                    setLimit(Number(value))
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue placeholder={limit} />
                   </SelectTrigger>
-                  <SelectContent>
-                    {[10, ...Array.from({ length: 18 }, (_, i) => 15 + i * 5)].map(val => (
-                      <SelectItem key={val} value={val.toString()}>{val}</SelectItem>
+                  <SelectContent side="top" className="max-h-[200px]">
+                    {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
+                      <SelectItem key={pageSize} value={`${pageSize}`}>
+                        {pageSize}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <div className="text-sm font-semibold px-4 border rounded-md h-10 flex items-center justify-center min-w-[4rem] bg-background">
-                {page} / {Math.max(1, totalPages)}
+            <div className="flex items-center space-x-6 lg:space-x-8">
+              <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+                Page {page} of {Math.max(1, totalPages)}
               </div>
-              <Button variant="outline" size="icon" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || totalPages === 0}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  className="hidden h-8 w-8 p-0 lg:flex"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                >
+                  <span className="sr-only">Go to first page</span>
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <span className="sr-only">Go to previous page</span>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  <span className="sr-only">Go to next page</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="hidden h-8 w-8 p-0 lg:flex"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  <span className="sr-only">Go to last page</span>
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         )}
