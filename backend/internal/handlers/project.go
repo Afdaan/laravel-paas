@@ -104,13 +104,11 @@ func (h *ProjectHandler) ListAll(c *fiber.Ctx) error {
 	})
 }
 
-// Get returns a single project
-func (h *ProjectHandler) Get(c *fiber.Ctx) error {
+// getProject fetches a project and validates ownership
+func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid project ID",
-		})
+		return nil, fmt.Errorf("invalid project ID")
 	}
 
 	userID := c.Locals("user_id").(uint)
@@ -119,18 +117,28 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 	var project models.Project
 	query := h.db.Preload("User")
 
-	// Students can only see their own projects
-	if role == string(models.RoleStudent) {
+	// Only admins can see any project; others are restricted to their own
+	if role != string(models.RoleAdmin) && role != string(models.RoleSuperAdmin) {
 		query = query.Where("user_id = ?", userID)
 	}
 
 	if err := query.First(&project, id).Error; err != nil {
+		return nil, fmt.Errorf("project not found")
+	}
+
+	return &project, nil
+}
+
+// Get returns a single project
+func (h *ProjectHandler) Get(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Project not found",
+			"error": err.Error(),
 		})
 	}
 
-	h.populateURL(&project)
+	h.populateURL(project)
 
 	return c.JSON(project)
 }
@@ -143,10 +151,10 @@ type UpdateProjectRequest struct {
 
 // Update modifies project settings
 func (h *ProjectHandler) Update(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid project ID",
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
 		})
 	}
 
@@ -154,22 +162,6 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
-		})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Project not found",
 		})
 	}
 
@@ -400,31 +392,15 @@ func (h *ProjectHandler) updateProjectError(project *models.Project, errorMsg st
 
 // Redeploy rebuilds and restarts a project
 func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid project ID",
-		})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Project not found",
+			"error": err.Error(),
 		})
 	}
 
 	// Enqueue redeployment job to Redis
-	if err := h.redisService.EnqueueDeployment(project.ID, userID, "redeploy"); err != nil {
+	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to queue redeployment: " + err.Error(),
 		})
@@ -441,26 +417,10 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 
 // Delete removes a project
 func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid project ID",
-		})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Project not found",
+			"error": err.Error(),
 		})
 	}
 
@@ -495,26 +455,10 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 
 // Logs streams container logs
 func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid project ID",
-		})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Project not found",
+			"error": err.Error(),
 		})
 	}
 
@@ -539,26 +483,10 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 
 // Stats returns project resource usage
 func (h *ProjectHandler) Stats(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid project ID",
-		})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Project not found",
+			"error": err.Error(),
 		})
 	}
 
@@ -585,23 +513,9 @@ type RunArtisanRequest struct {
 
 // RunArtisan executes an artisan command
 func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid project ID"})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	if project.ContainerID == nil {
@@ -636,23 +550,9 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 
 // GetEnv returns the .env file content
 func (h *ProjectHandler) GetEnv(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid project ID"})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	content, err := h.dockerService.GetEnvFile(project.Subdomain)
@@ -672,23 +572,9 @@ type UpdateEnvRequest struct {
 
 // UpdateEnv updates the .env file content
 func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid project ID"})
-	}
-
-	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
-
-	var project models.Project
-	query := h.db
-
-	if role == string(models.RoleStudent) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	var req UpdateEnvRequest

@@ -81,8 +81,8 @@ func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, erro
 	var project models.Project
 	query := h.db
 
-	// Students can only access their own projects
-	if role == string(models.RoleStudent) {
+	// Only admins can access any project; others are restricted to their own
+	if role != string(models.RoleAdmin) && role != string(models.RoleSuperAdmin) {
 		query = query.Where("user_id = ?", userID)
 	}
 
