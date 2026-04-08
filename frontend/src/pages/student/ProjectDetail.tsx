@@ -138,22 +138,25 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.get(id)
       setProject(response.data)
-      setConsecutiveErrors(0) // Reset error count on success
+      setConsecutiveErrors(0) 
     } catch (error: any) {
       if (error.response?.status === 401) {
         navigate('/login')
         return
       }
       
+      if (error.response?.status === 404) {
+        toast.error(t('projectDetail.messages.notFound') || 'Project not found')
+        navigate('/projects')
+        return
+      }
+
       setConsecutiveErrors(prev => prev + 1)
       
-      // Use a unique ID for deduplication in Sonner
       toast.error(t('common.error'), {
         id: 'project-load-error',
         description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
       })
-      
-      if (error.response?.status === 404) navigate('/projects')
     } finally {
       setIsLoading(false)
     }
