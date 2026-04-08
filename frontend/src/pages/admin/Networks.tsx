@@ -1,5 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import {
   Plus,
   RotateCw,
@@ -26,6 +27,7 @@ interface NetworkData {
 }
 
 const AdminNetworks = () => {
+  const { t } = useTranslation()
   const [data, setData] = useState<{ networks: NetworkData[] }>({
     networks: []
   })
@@ -68,7 +70,7 @@ const AdminNetworks = () => {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
-        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Mapping Virtual Networks</p>
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -77,8 +79,8 @@ const AdminNetworks = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Networks</h1>
-          <p className="text-muted-foreground">Manage isolated networks for student projects.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.networks.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.networks.desc')}</p>
         </div>
 
         <div className="flex items-center gap-6">
@@ -95,7 +97,7 @@ const AdminNetworks = () => {
 
           <div className="flex items-center gap-2">
             <Button size="sm">
-              <Plus className="w-4 h-4 mr-2" /> New Network
+              <Plus className="w-4 h-4 mr-2" /> {t('common.create')}
             </Button>
             <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9">
               <RotateCw className="w-4 h-4 text-muted-foreground" />
@@ -116,7 +118,7 @@ const AdminNetworks = () => {
                 <TableHead className="text-center">Connection State</TableHead>
                 <TableHead className="text-center">Protocol / Driver</TableHead>
                 <TableHead className="text-center">Exposure Scope</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -127,7 +129,7 @@ const AdminNetworks = () => {
                       <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                         <Share2 className="w-8 h-8 opacity-50" />
                       </div>
-                      <span className="font-semibold text-sm">No networks mapped in cluster</span>
+                      <span className="font-semibold text-sm">{t('common.noData')}</span>
                     </div>
                   </TableCell>
                 </TableRow>

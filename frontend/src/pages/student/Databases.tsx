@@ -12,12 +12,14 @@ import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
 import { Project } from '../../types'
 import DatabaseManager from './DatabaseManager'
+import useTranslation from '../../lib/useTranslation'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export default function Databases() {
+  const { t } = useTranslation()
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<number | string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -36,7 +38,7 @@ export default function Databases() {
         setSelectedProjectId(data[0].id)
       }
     } catch (error) {
-      toast.error('Failed to load project database list')
+      toast.error(t('common.error') || 'Failed to load project database list')
     } finally {
       setIsLoading(false)
     }
@@ -53,7 +55,7 @@ export default function Databases() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
-        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] animate-pulse">Syncing Database Clusters...</p>
+        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] animate-pulse">{t('databaseManager.loading')}</p>
       </div>
     )
   }
@@ -65,11 +67,11 @@ export default function Databases() {
           <PackageOpen className="w-10 h-10 text-muted-foreground" />
         </div>
         <div className="text-center max-w-sm space-y-2">
-          <h3 className="text-2xl font-bold tracking-tight">No Databases Found</h3>
-          <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">You haven't provisioned any projects yet. Databases are automatically assigned to every new project deployment.</p>
+          <h3 className="text-2xl font-bold tracking-tight">{t('databaseManager.noProjectsFound')}</h3>
+          <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">{t('databaseManager.noProjectsDesc')}</p>
         </div>
         <Link to="/projects/new" className={cn(buttonVariants({ variant: 'outline' }), "mt-4")}>
-           Initialize First Project
+           {t('databaseManager.initFirst')}
         </Link>
       </div>
     )
@@ -87,14 +89,14 @@ export default function Databases() {
                     <DbIcon className="w-5 h-5" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold tracking-tight uppercase">Databases</h2>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Instances</p>
+                    <h2 className="text-lg font-bold tracking-tight uppercase">{t('common.databases')}</h2>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t('databaseManager.activeInstances')}</p>
                   </div>
                </div>
                <div className="relative mt-6">
                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                  <Input 
-                   placeholder="Search schema..." 
+                   placeholder={t('databaseManager.searchSchema') || 'Search schema...'} 
                    value={search}
                    onChange={(e) => setSearch(e.target.value)}
                    className="pl-9 h-10 text-xs font-bold uppercase tracking-widest"
@@ -135,7 +137,7 @@ export default function Databases() {
                  ))
                ) : (
                  <div className="text-center py-12 text-muted-foreground font-bold uppercase tracking-widest text-[10px] italic">
-                   No clusters isolated
+                   {t('databaseManager.noClusters')}
                  </div>
                )}
             </CardContent>
@@ -153,7 +155,7 @@ export default function Databases() {
              <div className="w-20 h-20 rounded-[2.5rem] bg-muted border flex items-center justify-center">
                <ArrowRight className="w-8 h-8 rotate-90 lg:rotate-0" />
              </div>
-             <p className="text-[10px] font-bold uppercase tracking-[0.4em]">Select Target Cluster</p>
+             <p className="text-[10px] font-bold uppercase tracking-[0.4em]">{t('databaseManager.selectTarget')}</p>
           </div>
         )}
       </Card>

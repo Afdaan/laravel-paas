@@ -1,16 +1,16 @@
-import React, { useState, useEffect, memo, useCallback } from 'react'
+import { useState, useEffect, memo, useCallback } from 'react'
 import { feedbackAPI } from '../../services/api'
 import { toast } from 'sonner'
-import { 
-  MessageSquare, 
-  RotateCw, 
-  Trash2, 
-  User, 
-  Clock, 
-  ShieldAlert, 
-  Sparkles, 
+import {
+  MessageSquare,
+  RotateCw,
+  Trash2,
+  User,
+  Clock,
+  ShieldAlert,
+  Sparkles,
   Bug,
-  AlertTriangle, 
+  AlertTriangle,
   Lightbulb,
   Search,
   Loader2
@@ -48,7 +48,7 @@ const AdminFeedback = () => {
       const params: any = {}
       if (filterStatus !== 'all') params.status = filterStatus
       if (filterType !== 'all') params.type = filterType
-      
+
       const res = await feedbackAPI.listAll(params)
       setFeedback(res.data || [])
     } catch (error) {
@@ -114,7 +114,7 @@ const AdminFeedback = () => {
         <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input 
+            <Input
               placeholder="Filter intel by keyword or student identity..."
               className="pl-9 w-full"
             />
@@ -178,10 +178,10 @@ const AdminFeedback = () => {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {feedback.map(item => (
-            <FeedbackCard 
-              key={item.id} 
-              item={item} 
-              onUpdate={handleUpdateStatus} 
+            <FeedbackCard
+              key={item.id}
+              item={item}
+              onUpdate={handleUpdateStatus}
               onDelete={handleDelete}
             />
           ))}
@@ -204,35 +204,35 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
   return (
     <Card className="relative overflow-hidden group hover:border-border/80 transition-colors">
       <div className={`absolute top-0 right-0 w-32 h-32 blur-[80px] pointer-events-none transition-opacity duration-700 opacity-10 group-hover:opacity-30 ${config.glow}`} />
-      
+
       <CardContent className="pt-6 relative z-10">
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-4">
-             <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center font-bold text-foreground">
+            <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center font-bold text-foreground">
               {item.user?.name?.charAt(0).toUpperCase() || 'U'}
             </div>
             <div>
               <p className="text-sm font-bold text-foreground">{item.user?.name || 'Unknown User'}</p>
               <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
-                 <User className="w-3 h-3" />
-                 <p className="text-xs">{item.user?.email || 'N/A'}</p>
+                <User className="w-3 h-3" />
+                <p className="text-xs">{item.user?.email || 'N/A'}</p>
               </div>
             </div>
           </div>
 
           <div className="flex flex-col items-end gap-2">
             <Badge variant={
-              item.status === 'resolved' ? 'outline' : 
-              item.status === 'in_review' ? 'secondary' : 'default'
+              item.status === 'resolved' ? 'outline' :
+                item.status === 'in_review' ? 'secondary' : 'default'
             } className={
-              item.status === 'resolved' ? 'text-emerald-600 border-emerald-500/40 bg-emerald-500/10' : 
-              item.status === 'in_review' ? 'text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/20' : ''
+              item.status === 'resolved' ? 'text-emerald-600 border-emerald-500/40 bg-emerald-500/10' :
+                item.status === 'in_review' ? 'text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/20' : ''
             }>
               {item.status.replace('_', ' ').toUpperCase()}
             </Badge>
             <div className="flex items-center gap-1.5 text-muted-foreground mt-1">
-                <Clock className="w-3 h-3" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">{new Date(item.created_at).toLocaleDateString()}</span>
+              <Clock className="w-3 h-3" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">{new Date(item.created_at).toLocaleDateString()}</span>
             </div>
           </div>
         </div>
@@ -240,11 +240,11 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
         <div className="space-y-4 mb-4">
           <div className="flex items-center gap-2">
             <div className={`w-6 h-6 rounded-md bg-background border flex items-center justify-center ${config.color} shadow-sm`}>
-                <Icon className="w-3.5 h-3.5" />
+              <Icon className="w-3.5 h-3.5" />
             </div>
             <h3 className="font-semibold text-foreground tracking-tight line-clamp-1">{item.title}</h3>
           </div>
-          
+
           <div className="bg-muted/50 p-4 rounded-lg border border-border/50 text-sm text-foreground/80 leading-relaxed italic">
             "{item.content}"
           </div>
@@ -254,8 +254,8 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
       <CardFooter className="border-t bg-muted/10 justify-between py-4">
         <div className="flex items-center gap-2">
           {item.status !== 'in_review' && (
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => onUpdate(item.id, 'in_review')}
               className="text-indigo-600"
@@ -264,8 +264,8 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
             </Button>
           )}
           {item.status !== 'resolved' && (
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => onUpdate(item.id, 'resolved')}
               className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
@@ -275,8 +275,8 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
           )}
         </div>
 
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           size="icon"
           onClick={() => onDelete(item.id)}
           className="text-destructive hover:bg-destructive/10"

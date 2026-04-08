@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
@@ -10,7 +10,6 @@ import {
   Trash2, 
   Clock, 
   CheckCircle2, 
-  
   AlertCircle, 
   PauseCircle,
   Database,
@@ -19,6 +18,7 @@ import {
   ArrowRight,
   Loader2
 } from 'lucide-react'
+import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -39,12 +39,13 @@ interface ProjectData {
 }
 
 const StatusBadge = ({ status }: { status: string }) => {
+  const { t } = useTranslation()
   const configs: Record<string, any> = {
-    pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: 'Queued' },
-    building: { color: 'text-blue-600 border-blue-500/20 bg-blue-500/10', icon: Loader2, label: 'Building', pulse: true },
-    running: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: 'Running' },
-    failed: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: 'Failed' },
-    stopped: { color: 'text-slate-600 border-slate-500/20 bg-slate-500/10 dark:text-slate-400', icon: PauseCircle, label: 'Offline' },
+    pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
+    building: { color: 'text-blue-600 border-blue-500/20 bg-blue-500/10', icon: Loader2, label: t('status.building'), pulse: true },
+    running: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.running') },
+    failed: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: t('status.failed') },
+    stopped: { color: 'text-slate-600 border-slate-500/20 bg-slate-500/10 dark:text-slate-400', icon: PauseCircle, label: t('status.stopped') },
   }
 
   const config = configs[status] || configs.pending
@@ -59,9 +60,11 @@ const StatusBadge = ({ status }: { status: string }) => {
 }
 
 const StudentProjects = () => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const isFirstLoad = useRef(true)
   
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -69,20 +72,24 @@ const StudentProjects = () => {
     message: '',
     type: 'danger' as 'danger' | 'warning' | 'info',
     onConfirm: () => {},
-    confirmText: 'Confirm'
+    confirmText: t('common.save')
   })
 
   const fetchProjects = useCallback(async () => {
-    setIsLoading(true)
+    if (isFirstLoad.current) {
+      setIsLoading(true)
+    }
+    
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error('Failed to load projects')
+      toast.error(t('common.error') || 'Failed to load projects')
     } finally {
       setIsLoading(false)
+      isFirstLoad.current = false
     }
-  }, [])
+  }, [t])
   
   useEffect(() => {
     fetchProjects()
@@ -94,17 +101,17 @@ const StudentProjects = () => {
     
     setConfirmModal({
       isOpen: true,
-      title: 'Redeploy Project?',
-      message: 'This will rebuild your project. It may be temporarily unavailable during the process.',
+      title: t('projectDetail.messages.redeployConfirm'),
+      message: t('projectDetail.messages.redeployDesc'),
       type: 'warning',
-      confirmText: 'Redeploy',
+      confirmText: t('projectDetail.actions.redeploy'),
       onConfirm: () => {
         toast.promise(
           projectsAPI.redeploy(id),
           {
-            loading: 'Redeploying project...',
-            success: 'Redeploy started',
-            error: 'Failed to redeploy'
+            loading: t('projectDetail.messages.buildTitle') || 'Redeploying project...',
+            success: t('common.success') || 'Redeploy started',
+            error: t('common.error') || 'Failed to redeploy'
           }
         )
         fetchProjects()
@@ -118,17 +125,17 @@ const StudentProjects = () => {
     
     setConfirmModal({
       isOpen: true,
-      title: 'Delete Project?',
-      message: 'This will permanently delete this project and all its data. This action cannot be undone.',
+      title: t('projectDetail.messages.deleteConfirm'),
+      message: t('projectDetail.messages.deleteDesc'),
       type: 'danger',
-      confirmText: 'Delete Project',
+      confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
           await projectsAPI.delete(id)
-          toast.success('Project Deleted')
+          toast.success(t('common.success') || 'Project Deleted')
           fetchProjects()
         } catch (error) {
-          toast.error('Delete Failed')
+          toast.error(t('common.error') || 'Delete Failed')
         }
       }
     })
@@ -144,14 +151,14 @@ const StudentProjects = () => {
       {/* Header Container */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Projects</h1>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('student.projects.title')}</h1>
           <p className="text-muted-foreground max-w-2xl">
-            Manage and monitor all your projects in our modern dashboard interface.
+            {t('student.projects.desc')}
           </p>
         </div>
         <Link to="/projects/new" className={cn(buttonVariants({ variant: "default", size: "lg" }), "w-full md:w-auto font-semibold")}>
           <Plus className="w-5 h-5 mr-2" />
-          New Project
+          {t('common.newProject')}
         </Link>
       </div>
       
@@ -159,17 +166,17 @@ const StudentProjects = () => {
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-80">
           <Loader2 className="w-12 h-12 text-primary animate-spin" />
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground animate-pulse">Loading Projects...</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground animate-pulse">{t('dashboard.loadingProjects')}</p>
         </div>
       ) : (!projects || projects.length === 0) ? (
         <Card className="p-24 text-center flex flex-col items-center max-w-xl mx-auto border-dashed">
           <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-6">
             <Rocket className="w-10 h-10 text-muted-foreground opacity-50" />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight mb-2">The list is empty.</h2>
-          <p className="text-muted-foreground mb-8 max-w-sm">You have no active projects. Create your first project to begin monitoring.</p>
+          <h2 className="text-2xl font-bold tracking-tight mb-2">{t('dashboard.noProjectsFound')}</h2>
+          <p className="text-muted-foreground mb-8 max-w-sm">{t('dashboard.noProjectsDesc')}</p>
           <Link to="/projects/new" className={cn(buttonVariants({ variant: "default", size: "lg" }), "w-full sm:w-auto")}>
-            Create Project
+            {t('common.newProject')}
           </Link>
         </Card>
       ) : (
@@ -209,7 +216,7 @@ const StudentProjects = () => {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Cpu className="w-4 h-4" />
-                      <span>Environment</span>
+                      <span>{t('projectDetail.metrics.php')}</span>
                     </div>
                     <Badge variant="secondary" className="font-mono text-[10px]">
                       PHP {project.php_version || '8.2'}
@@ -218,17 +225,17 @@ const StudentProjects = () => {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Database className="w-4 h-4" />
-                      <span>Database</span>
+                      <span>{t('projectDetail.metrics.db')}</span>
                     </div>
                     <span className="text-xs font-semibold text-primary">
-                      {project.database_name ? 'Active' : 'No DB'}
+                      {project.database_name ? t('projectDetail.metrics.active') : t('projectDetail.metrics.inactive')}
                     </span>
                   </div>
                 </div>
 
                 <div className="mt-6 flex items-center justify-between">
                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Created</span>
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">{t('common.date')}</span>
                       <span className="text-xs font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    
@@ -238,7 +245,7 @@ const StudentProjects = () => {
                         size="icon"
                         onClick={(e) => handleRedeploy(project.id, e)}
                         className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        title="Init Redeploy"
+                        title={t('projectDetail.actions.redeploy')}
                       >
                          <RefreshCw className="w-4 h-4" />
                       </Button>
@@ -247,7 +254,7 @@ const StudentProjects = () => {
                         size="icon"
                         onClick={(e) => handleDelete(project.id, e)}
                         className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30"
-                        title="Decommission"
+                        title={t('projectDetail.actions.delete')}
                       >
                          <Trash2 className="w-4 h-4" />
                       </Button>
@@ -266,4 +273,3 @@ const StudentProjects = () => {
 }
 
 export default StudentProjects
-

@@ -4,13 +4,10 @@ import { feedbackAPI } from '../../services/api'
 import {
   MessageSquare,
   Send,
-  History,
-  CheckCircle2,
+  History as HistoryIcon,
   AlertTriangle,
   Lightbulb,
-  ArrowRight,
   User,
-  ShieldCheck,
   Zap,
   Clock,
   Layout,
@@ -18,8 +15,9 @@ import {
   Bug,
   Loader2
 } from 'lucide-react'
+import useTranslation from '../../lib/useTranslation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +41,7 @@ interface FeedbackForm {
 }
 
 const StudentFeedback = () => {
+  const { t } = useTranslation()
   const [feedback, setFeedback] = useState<FeedbackItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -74,8 +73,8 @@ const StudentFeedback = () => {
     e.preventDefault()
 
     const errors: { title?: string; content?: string } = {}
-    if (!formData.title.trim()) errors.title = 'Subject line is required'
-    if (!formData.content.trim()) errors.content = 'Feedback details are required'
+    if (!formData.title.trim()) errors.title = t('feedback.subjectRequired') || ''
+    if (!formData.content.trim()) errors.content = t('feedback.detailsRequired') || ''
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
@@ -85,12 +84,12 @@ const StudentFeedback = () => {
     setIsSubmitting(true)
     try {
       await feedbackAPI.submit(formData)
-      toast.success('Support ticket submitted successfully')
+      toast.success(t('feedback.success'))
       setFormData({ title: '', content: '', type: 'suggestion' })
       setValidationErrors({})
       fetchFeedback()
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Submission failure')
+      toast.error(error.response?.data?.error || t('common.error'))
     } finally {
       setIsSubmitting(false)
     }
@@ -99,11 +98,11 @@ const StudentFeedback = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'resolved':
-        return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 uppercase text-[9px] tracking-widest font-bold">Resolved</Badge>
+        return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 uppercase text-[9px] tracking-widest font-bold">{t('feedback.status.resolved')}</Badge>
       case 'in_progress':
-        return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 uppercase text-[9px] tracking-widest font-bold">In Progress</Badge>
+        return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 uppercase text-[9px] tracking-widest font-bold">{t('feedback.status.inPreview')}</Badge>
       default:
-        return <Badge variant="outline" className="text-muted-foreground uppercase text-[9px] tracking-widest font-bold">Pending</Badge>
+        return <Badge variant="outline" className="text-muted-foreground uppercase text-[9px] tracking-widest font-bold">{t('feedback.status.pending')}</Badge>
     }
   }
 
@@ -118,8 +117,8 @@ const StudentFeedback = () => {
   return (
     <div className="space-y-12 animate-in fade-in duration-500 max-w-7xl mx-auto pb-20">
       <div className="space-y-2">
-        <h1 className="text-4xl font-bold tracking-tight">Support <span className="text-primary italic">Hub</span></h1>
-        <p className="text-muted-foreground text-lg font-medium">Send us your feedback or report bugs to our infrastructure team.</p>
+        <h1 className="text-4xl font-bold tracking-tight">{t('feedback.title').split(' ')[0]} <span className="text-primary italic">{t('feedback.title').split(' ')[1] || 'Hub'}</span></h1>
+        <p className="text-muted-foreground text-lg font-medium">{t('feedback.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
@@ -129,11 +128,11 @@ const StudentFeedback = () => {
               <div className="space-y-3">
                 <Label htmlFor="title" className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
                   <MessageSquare className="w-3 h-3 text-primary" />
-                  Support Subject
+                  {t('feedback.subject')}
                 </Label>
                 <Input
                   id="title"
-                  placeholder="e.g. Connectivity issue with MySQL"
+                  placeholder={t('feedback.subjectPlaceholder')}
                   value={formData.title}
                   onChange={e => setFormData({ ...formData, title: e.target.value })}
                   className={cn(validationErrors.title && "border-destructive focus-visible:ring-destructive")}
@@ -147,19 +146,23 @@ const StudentFeedback = () => {
                 <div className="space-y-3">
                   <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
                     <Layout className="w-3 h-3 text-primary" />
-                    Ticket Category
+                    {t('feedback.category')}
                   </Label>
                   <Select
                     value={formData.type}
-                    onValueChange={(val) => setFormData({ ...formData, type: val })}
+                    onValueChange={(val) => setFormData({ ...formData, type: val || 'suggestion' })}
                   >
-                    <SelectTrigger className="h-12 w-full border-muted-foreground/20 italic">
-                      <SelectValue placeholder="Select type" />
+                    <SelectTrigger className="h-12 w-full border-muted-foreground/20">
+                      <SelectValue placeholder={t('feedback.categoryPlaceholder') || ''}>
+                        {formData.type === 'suggestion' && t('feedback.suggestion')}
+                        {formData.type === 'bug' && t('feedback.bug')}
+                        {formData.type === 'trouble' && t('feedback.issue')}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="suggestion">Feature Suggestion</SelectItem>
-                      <SelectItem value="bug">Bug Report</SelectItem>
-                      <SelectItem value="trouble">Technical Issue</SelectItem>
+                      <SelectItem value="suggestion">{t('feedback.suggestion')}</SelectItem>
+                      <SelectItem value="bug">{t('feedback.bug')}</SelectItem>
+                      <SelectItem value="trouble">{t('feedback.issue')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -167,7 +170,7 @@ const StudentFeedback = () => {
                 <div className="flex items-center">
                   <div className="p-5 rounded-xl bg-primary/5 border border-primary/10 flex items-center gap-4 w-full">
                     <Zap className="w-5 h-5 text-primary" />
-                    <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic">Your reports help us maintain 99.9% uptime across the <span className="text-primary font-bold">Cloud Fabric</span>.</p>
+                    <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic" dangerouslySetInnerHTML={{ __html: t('feedback.helpText').replace('Platform', '<span class="text-primary font-bold">Platform</span>') }} />
                   </div>
                 </div>
               </div>
@@ -175,12 +178,12 @@ const StudentFeedback = () => {
               <div className="space-y-3">
                 <Label htmlFor="content" className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
                   <Terminal className="w-3 h-3 text-primary" />
-                  Incident Details
+                  {t('feedback.details')}
                 </Label>
                 <Textarea
                   id="content"
                   rows={6}
-                  placeholder="Provide a detailed description of the issue or suggestion..."
+                  placeholder={t('feedback.detailsPlaceholder')}
                   value={formData.content}
                   onChange={e => setFormData({ ...formData, content: e.target.value })}
                   className={cn("resize-none font-medium", validationErrors.content && "border-destructive focus-visible:ring-destructive")}
@@ -196,7 +199,7 @@ const StudentFeedback = () => {
                 className="w-full h-14 font-bold uppercase tracking-[0.2em] gap-3"
               >
                 {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-4 h-4" />}
-                {isSubmitting ? 'Transmitting...' : 'Dispatch Ticket'}
+                {isSubmitting ? t('feedback.submitting') : t('feedback.dispatch')}
               </Button>
             </form>
           </Card>
@@ -205,32 +208,32 @@ const StudentFeedback = () => {
         <div className="xl:col-span-5 space-y-6">
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-muted-foreground" />
-              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em]">Ticket History</h3>
+              <HistoryIcon className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em]">{t('feedback.history')}</h3>
             </div>
-            <Badge variant="secondary" className="text-[9px] font-bold uppercase tracking-widest">{feedback.length} Logged</Badge>
+            <Badge variant="secondary" className="text-[9px] font-bold uppercase tracking-widest">{t('feedback.logged', { count: feedback.length })}</Badge>
           </div>
 
           <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center p-20 gap-4 opacity-50">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                <p className="text-[10px] font-bold uppercase tracking-widest">Accessing Logs...</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest">{t('feedback.loading')}</p>
               </div>
             ) : feedback.length === 0 ? (
               <Card className="p-12 text-center border-dashed flex flex-col items-center gap-4 bg-muted/20">
                 <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
                   <MessageSquare className="w-8 h-8 text-muted-foreground" />
                 </div>
-                <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">No Active Records</p>
+                <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">{t('feedback.noRecords')}</p>
               </Card>
             ) : (
-              feedback.map(item => (
+              feedback.map((item: FeedbackItem) => (
                 <Card key={item.id} className="p-6 transition-all duration-300 hover:border-primary/30 relative overflow-hidden group">
                   <div className="flex items-center justify-between mb-4">
                     <Badge variant="outline" className="gap-1.5 py-1 px-2 uppercase text-[9px] font-bold border-primary/20 bg-primary/5">
                       {getTypeIcon(item.type)}
-                      {item.type}
+                      {t(`feedback.${item.type}` as any)}
                     </Badge>
                     {getStatusBadge(item.status)}
                   </div>

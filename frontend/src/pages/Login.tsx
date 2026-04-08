@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { systemAPI } from '../services/api'
 import useAuthStore from '../stores/authStore'
+import useTranslation from '../lib/useTranslation'
 import { ArrowRight, ArrowLeft, Terminal, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +13,7 @@ import { Sun, Moon } from 'lucide-react'
 import { useTheme } from '@/components/ThemeProvider'
 
 function Login() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -45,8 +47,8 @@ function Login() {
     e.preventDefault()
     
     const errors: Record<string, string | null> = {}
-    if (!email.trim()) errors.email = 'Email address is required'
-    if (!password) errors.password = 'Password is required'
+    if (!email.trim()) errors.email = t('login.emailRequired')
+    if (!password) errors.password = t('login.passwordRequired')
     
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
@@ -57,7 +59,7 @@ function Login() {
     
     try {
       const user = await login(email, password)
-      toast.success(`Welcome back, ${user.name}!`)
+      toast.success(t('login.welcomeBack', { name: user.name }))
       
       if (user.role === 'superadmin' || user.role === 'admin') {
         navigate('/admin/dashboard')
@@ -65,7 +67,7 @@ function Login() {
         navigate('/dashboard')
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Login failed')
+      toast.error(error.response?.data?.error || t('login.failed'))
     } finally {
       setIsLoading(false)
     }
@@ -74,7 +76,7 @@ function Login() {
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground font-sans relative">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-background text-foreground font-sans relative text-sm">
       {/* Floating Theme Toggle */}
       <div className="absolute top-6 right-6">
          <Button
@@ -82,6 +84,7 @@ function Login() {
             size="icon"
             onClick={() => setTheme(isDark ? 'light' : 'dark')}
             className="rounded-full shadow-sm"
+            title={t('common.theme')}
          >
             {isDark ? <Sun className="w-4 h-4 translate-y-0" /> : <Moon className="w-4 h-4 translate-y-0" />}
          </Button>
@@ -89,7 +92,7 @@ function Login() {
       <div className="w-full max-w-md">
         <Button variant="ghost" render={<Link to="/" className="text-muted-foreground group" />} className="mb-8">
             <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-            Back to Home
+            {t('login.backToHome')}
         </Button>
         
         <Card>
@@ -99,13 +102,13 @@ function Login() {
                     <Terminal className="w-6 h-6" />
                  </div>
              </div>
-             <CardTitle className="text-2xl text-center">Sign In</CardTitle>
-             <CardDescription className="text-center">Enter your credentials to access your account.</CardDescription>
+             <CardTitle className="text-2xl text-center">{t('login.signIn')}</CardTitle>
+             <CardDescription className="text-center">{t('login.desc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className={validationErrors.email ? "text-destructive" : ""}>Email Address</Label>
+                <Label htmlFor="email" className={validationErrors.email ? "text-destructive" : ""}>{t('login.email')}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -124,7 +127,7 @@ function Login() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="password" className={validationErrors.password ? "text-destructive" : ""}>Password</Label>
+                <Label htmlFor="password" className={validationErrors.password ? "text-destructive" : ""}>{t('login.password')}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -145,11 +148,11 @@ function Login() {
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Logging In
+                    {t('login.loggingIn')}
                   </>
                 ) : (
                   <>
-                    Sign In
+                    {t('login.signIn')}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}
@@ -158,9 +161,9 @@ function Login() {
           </CardContent>
         </Card>
         
-        <div className="mt-8 flex items-center justify-between px-2 text-xs text-muted-foreground">
-           <p>Platform Version 2.8</p>
-           <Link to="/" className="hover:text-primary transition-colors">Support</Link>
+        <div className="mt-8 flex items-center justify-between px-2 text-xs text-muted-foreground font-bold uppercase tracking-widest">
+           <p>{t('login.platformVersion')} 2.8</p>
+           <Link to="/" className="hover:text-primary transition-colors">{t('login.support')}</Link>
         </div>
       </div>
     </div>

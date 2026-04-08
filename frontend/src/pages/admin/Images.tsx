@@ -1,5 +1,6 @@
-import React, { useState, useEffect, memo, useCallback, useMemo } from 'react'
+import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import { toast } from 'sonner'
 import {
   Download,
@@ -32,6 +33,7 @@ interface ImageData {
 }
 
 const AdminImages = () => {
+  const { t } = useTranslation()
   const [data, setData] = useState<{ images: ImageData[], system: any }>({
     images: [],
     system: null
@@ -62,14 +64,14 @@ const AdminImages = () => {
     setIsPruning(true)
     try {
       await systemAPI.prune()
-      toast.success('Registry optimization complete')
+      toast.success(t('admin.optiSuccess'))
       fetchData()
     } catch (error) {
-      toast.error('Optimization failed')
+      toast.error(t('admin.optiFailed'))
     } finally {
       setIsPruning(false)
     }
-  }, [fetchData])
+  }, [fetchData, t])
 
   const filteredImages = useMemo(() => {
     const images = data?.images || []
@@ -101,7 +103,7 @@ const AdminImages = () => {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
-        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Indexing Image Registry</p>
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -110,8 +112,8 @@ const AdminImages = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Images</h1>
-          <p className="text-muted-foreground">Manage and optimize project image snapshots.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.images.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.images.desc')}</p>
         </div>
 
         <div className="flex items-center gap-6">
@@ -128,11 +130,11 @@ const AdminImages = () => {
 
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm">
-              <Download className="w-4 h-4 mr-2" /> Pull Image
+              <Download className="w-4 h-4 mr-2" /> {t('admin.pullImage')}
             </Button>
             <Button disabled={isPruning} variant="destructive" size="sm" onClick={handlePrune}>
               {isPruning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
-              {isPruning ? 'Optimizing...' : 'Prune Unused'}
+              {isPruning ? t('admin.optimizing') : t('admin.pruneUnused')}
             </Button>
           </div>
         </div>
@@ -143,7 +145,7 @@ const AdminImages = () => {
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search registry manifests..."
+              placeholder={t('common.search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 w-full"
@@ -172,7 +174,7 @@ const AdminImages = () => {
                 <TableHead>Orchestrated By</TableHead>
                 <TableHead className="text-center">Scan</TableHead>
                 <TableHead className="text-center">Size</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -183,7 +185,7 @@ const AdminImages = () => {
                       <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                         <Search className="w-8 h-8 opacity-50" />
                       </div>
-                      <span className="font-semibold text-sm">No manifests found in current context</span>
+                      <span className="font-semibold text-sm">{t('common.noData')}</span>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -215,11 +217,11 @@ const AdminImages = () => {
                   <TableCell className="text-center">
                     {img.status === 'In Use' ? (
                       <Badge variant="outline" className="text-blue-600 border-blue-500/40 bg-blue-500/10">
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 animate-pulse" /> {img.status}
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 animate-pulse" /> {t('admin.used')}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-muted-foreground">
-                        <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5" /> {img.status || 'Unused'}
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5" /> {t('admin.unused')}
                       </Badge>
                     )}
                   </TableCell>
@@ -256,7 +258,7 @@ const AdminImages = () => {
                         <DropdownMenuItem>Inspect</DropdownMenuItem>
                         <DropdownMenuItem>Re-tag</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">Delete Image</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive">{t('common.delete')} Image</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>

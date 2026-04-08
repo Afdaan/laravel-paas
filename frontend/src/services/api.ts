@@ -27,11 +27,19 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const wasAuthenticated = !!error.config?.headers?.Authorization
+    const wasAuthenticated = !!localStorage.getItem('token')
+    
+    // Global 401 Unauthorized handling
     if (error.response?.status === 401 && wasAuthenticated) {
       localStorage.removeItem('token')
       window.dispatchEvent(new Event('auth:expired'))
     }
+    
+    // Global connection error handling
+    if (!error.response) {
+      window.dispatchEvent(new Event('system:offline'))
+    }
+    
     return Promise.reject(error)
   }
 )

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { settingsAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import { 
   Globe, 
   Shield, 
@@ -21,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
+import { NumberStepper } from '@/components/ui/number-stepper'
 
 interface PlatformSettings {
   base_domain?: string;
@@ -29,9 +31,11 @@ interface PlatformSettings {
   project_expiry_days?: number;
   cpu_limit_percent?: number;
   memory_limit_mb?: number;
+  admin_idle_timeout?: number;
 }
 
 const AdminSettings = () => {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<PlatformSettings>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -42,11 +46,11 @@ const AdminSettings = () => {
       const response = await settingsAPI.list()
       setSettings(response.data.map || {})
     } catch (error) {
-      toast.error('Failed to load system state')
+      toast.error(t('admin.settings.loading'))
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchSettings()
@@ -60,9 +64,9 @@ const AdminSettings = () => {
     setIsSaving(true)
     try {
       await settingsAPI.update(settings)
-      toast.success('System configuration synchronized')
+      toast.success(t('admin.settings.success'))
     } catch (error) {
-      toast.error('Manifest update failed')
+      toast.error(t('admin.settings.failed'))
     } finally {
       setIsSaving(false)
     }
@@ -72,7 +76,7 @@ const AdminSettings = () => {
     return (
       <div className="flex flex-col items-center justify-center h-80 gap-6">
         <Loader2 className="w-12 h-12 text-primary animate-spin" />
-        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Retrieving System Manifest</p>
+        <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -81,8 +85,8 @@ const AdminSettings = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Core Parameters</h1>
-          <p className="text-muted-foreground">Configure global orchestration limits, resource pooling, and network topology.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.settings.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.settings.desc')}</p>
         </div>
 
         <Button
@@ -92,7 +96,7 @@ const AdminSettings = () => {
           className="w-full xl:w-auto"
         >
           {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-          {isSaving ? 'Syncing...' : 'Deploy Changes'}
+          {isSaving ? t('admin.settings.syncing') : t('admin.settings.deployChanges')}
         </Button>
       </div>
 
@@ -104,8 +108,8 @@ const AdminSettings = () => {
               <Globe className="w-6 h-6" />
             </div>
             <div>
-              <CardTitle className="text-xl">Domain Topology</CardTitle>
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">Network Identity Routing</p>
+              <CardTitle className="text-xl">{t('admin.settings.domainTopology')}</CardTitle>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">{t('admin.settings.networkRouting')}</p>
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
@@ -113,9 +117,9 @@ const AdminSettings = () => {
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Server size={14} className="text-indigo-500" />
-                  Platform Core FQDN
+                  {t('admin.settings.coreFqdn')}
                 </Label>
-                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 uppercase tracking-widest">Global URL</span>
+                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 uppercase tracking-widest">{t('admin.settings.globalUrl')}</span>
               </div>
               <Input
                 value={settings.base_domain || ''}
@@ -123,14 +127,14 @@ const AdminSettings = () => {
                 placeholder="paas.example.com"
               />
               <p className="text-xs text-muted-foreground flex items-center gap-2">
-                <AlertCircle size={14} /> Basic routing for the orchestrator dashboard and centralized API.
+                <AlertCircle size={14} /> {t('admin.settings.coreFqdnDesc')}
               </p>
             </div>
 
             <div className="space-y-3">
               <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                 <Network size={14} className="text-purple-500" />
-                Deployment Pool Domain
+                {t('admin.settings.deploymentPool')}
               </Label>
               <Input
                 value={settings.project_domain || ''}
@@ -138,7 +142,7 @@ const AdminSettings = () => {
                 placeholder="projects.example.com"
               />
               <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10 flex items-center gap-3">
-                <div className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest">Wildcard Resolve:</div>
+                <div className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest">{t('admin.settings.wildcardResolve')}:</div>
                 <div className="flex-1 text-sm font-mono text-muted-foreground truncate">
                   *.{settings.project_domain || 'example.com'} 
                 </div>
@@ -154,55 +158,57 @@ const AdminSettings = () => {
               <Shield className="w-6 h-6" />
             </div>
             <div>
-              <CardTitle className="text-xl">Security Limits</CardTitle>
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">Resource Quota Enforcement</p>
+              <CardTitle className="text-xl">{t('admin.settings.securityLimits')}</CardTitle>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">{t('admin.settings.resourceQuota')}</p>
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-3">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Layout size={14} className="text-emerald-500" />
-                  Identity Quota
+                  {t('admin.settings.identityQuota')}
                 </Label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={settings.max_projects_per_user || 3}
-                    onChange={(e) => handleChange('max_projects_per_user', parseInt(e.target.value) || 3)}
-                    className="pr-16"
-                  />
-                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-muted-foreground font-semibold text-xs transition-opacity opacity-50 uppercase">Projects</div>
-                </div>
+                <NumberStepper
+                  min={1}
+                  max={10}
+                  value={settings.max_projects_per_user || 3}
+                  onChange={(val) => handleChange('max_projects_per_user', val)}
+                  unit={t('admin.settings.projects')}
+                />
               </div>
               <div className="space-y-3">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Clock size={14} className="text-amber-500" />
-                  Cluster Expiry Cycle
+                  {t('admin.settings.expiryCycle')}
                 </Label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    min="0"
-                    value={settings.project_expiry_days || 30}
-                    onChange={(e) => handleChange('project_expiry_days', parseInt(e.target.value) || 0)}
-                    className="pr-16"
-                  />
-                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-muted-foreground font-semibold text-xs opacity-50 uppercase">Days</div>
-                </div>
+                <NumberStepper
+                  min={0}
+                  value={settings.project_expiry_days || 30}
+                  onChange={(val) => handleChange('project_expiry_days', val)}
+                  unit={t('admin.settings.days')}
+                />
+              </div>
+              <div className="space-y-3">
+                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  <Shield size={14} className="text-rose-500" />
+                  {t('admin.settings.inactivityTimeout')}
+                </Label>
+                <NumberStepper
+                  min={1}
+                  value={settings.admin_idle_timeout || 15}
+                  onChange={(val) => handleChange('admin_idle_timeout', val)}
+                  unit={t('admin.settings.mins')}
+                />
               </div>
             </div>
 
             <div className="p-4 rounded-lg bg-muted/50 border space-y-2">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-emerald-500" />
-                <span className="text-xs font-bold uppercase tracking-widest">Active Enforcement Policy</span>
+                <span className="text-xs font-bold uppercase tracking-widest">{t('admin.settings.enforcementPolicy')}</span>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Setting project expiry to <span className="text-emerald-500 font-bold">0</span> disables the automatic reclamation cycle. It is recommended to keep this at <span className="text-emerald-500 font-bold">30</span> for optimal resource density.
-              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: t('admin.settings.enforcementDesc') }} />
             </div>
           </CardContent>
         </Card>
@@ -214,8 +220,8 @@ const AdminSettings = () => {
               <Zap className="w-6 h-6" />
             </div>
             <div>
-              <CardTitle className="text-xl">Standard Instance Compute</CardTitle>
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">Default Provisioning Profile</p>
+              <CardTitle className="text-xl">{t('admin.settings.computeSpecs')}</CardTitle>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">{t('admin.settings.provisioningProfile')}</p>
             </div>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-10 pt-8">
@@ -223,21 +229,21 @@ const AdminSettings = () => {
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Cpu size={16} className="text-rose-500" />
-                  CPU Hard Limit
+                  {t('admin.settings.cpuLimit')}
                 </Label>
-                <span className="text-lg font-bold text-foreground">{settings.cpu_limit_percent || 50}% <span className="text-sm text-muted-foreground">Cores</span></span>
+                <span className="text-lg font-bold text-foreground">{settings.cpu_limit_percent || 50}% <span className="text-sm text-muted-foreground">{t('admin.settings.cores')}</span></span>
               </div>
               <Slider 
                 value={[settings.cpu_limit_percent || 50]}
                 min={10}
                 max={100}
                 step={5}
-                onValueChange={(val: number[]) => handleChange('cpu_limit_percent', val[0])}
+                onValueChange={(val: any) => handleChange('cpu_limit_percent', Array.isArray(val) ? val[0] : val)}
                 className="py-4"
               />
               <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                <span>Low Priority (10%)</span>
-                <span>Burst (100%)</span>
+                <span>{t('admin.settings.lowPriority')}</span>
+                <span>{t('admin.settings.burst')}</span>
               </div>
             </div>
 
@@ -245,16 +251,16 @@ const AdminSettings = () => {
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Database size={16} className="text-indigo-500" />
-                  Memory Hard Limit
+                  {t('admin.settings.memoryLimit')}
                 </Label>
-                <span className="text-lg font-bold text-foreground">{settings.memory_limit_mb || 512} <span className="text-sm text-muted-foreground">MB RAM</span></span>
+                <span className="text-lg font-bold text-foreground">{settings.memory_limit_mb || 512} <span className="text-sm text-muted-foreground">{t('admin.settings.mbRam')}</span></span>
               </div>
               <Slider 
                 value={[settings.memory_limit_mb || 512]}
                 min={128}
                 max={2048}
                 step={128}
-                onValueChange={(val: number[]) => handleChange('memory_limit_mb', val[0])}
+                onValueChange={(val: any) => handleChange('memory_limit_mb', Array.isArray(val) ? val[0] : val)}
                 className="py-4"
               />
               <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">

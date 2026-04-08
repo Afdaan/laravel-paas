@@ -1,5 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { systemAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import {
     Plus,
     RotateCw,
@@ -26,6 +27,7 @@ interface VolumeData {
 }
 
 const AdminVolumes = () => {
+    const { t } = useTranslation()
     const [data, setData] = useState<{ volumes: VolumeData[] }>({
         volumes: []
     })
@@ -71,7 +73,7 @@ const AdminVolumes = () => {
         return (
             <div className="flex flex-col items-center justify-center h-[60vh] gap-6">
                 <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Scanning Storage Cluster</p>
+                <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('common.loading')}</p>
             </div>
         )
     }
@@ -81,8 +83,8 @@ const AdminVolumes = () => {
             {/* Header Area */}
             <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight mb-2">Storage Volumes</h1>
-                    <p className="text-muted-foreground italic">Manage persistent storage nodes for student project deployments.</p>
+                    <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.volumes.title')}</h1>
+                    <p className="text-muted-foreground">{t('admin.volumes.desc')}</p>
                 </div>
 
                 <div className="flex items-center gap-6">
@@ -99,7 +101,7 @@ const AdminVolumes = () => {
 
                     <div className="flex items-center gap-2">
                         <Button>
-                            <Plus className="w-4 h-4 mr-2" /> New Volume
+                            <Plus className="w-4 h-4 mr-2" /> {t('common.create')}
                         </Button>
                         <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9">
                             <RotateCw className="w-4 h-4 text-muted-foreground" />
@@ -118,10 +120,10 @@ const AdminVolumes = () => {
                                     <Checkbox />
                                 </TableHead>
                                 <TableHead>Identity & Namespace</TableHead>
-                                <TableHead className="text-center">Lifecycle</TableHead>
+                                <TableHead className="text-center">{t('common.status')}</TableHead>
                                 <TableHead className="text-center">Capacity</TableHead>
                                 <TableHead className="text-center">Orchestrator</TableHead>
-                                <TableHead className="text-right">Action</TableHead>
+                                <TableHead className="text-right">{t('common.actions')}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -132,7 +134,7 @@ const AdminVolumes = () => {
                                             <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                                                 <HardDrive className="w-8 h-8 opacity-50" />
                                             </div>
-                                            <span className="font-semibold text-sm">No storage clusters isolated</span>
+                                            <span className="font-semibold text-sm">{t('common.noData')}</span>
                                         </div>
                                     </TableCell>
                                 </TableRow>

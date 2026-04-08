@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { usersAPI } from '../../services/api'
+import useTranslation from '../../lib/useTranslation'
 import { User as UserType } from '../../types'
 import {
   Users,
@@ -35,6 +36,7 @@ interface ImportResults {
 }
 
 const AdminUsers = () => {
+  const { t } = useTranslation()
   const [users, setUsers] = useState<UserType[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -134,8 +136,8 @@ const AdminUsers = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Users Management</h1>
-          <p className="text-muted-foreground">Manage all student and admin accounts across the platform.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.users.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.users.desc')}</p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -230,7 +232,7 @@ const AdminUsers = () => {
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by name, email..."
+              placeholder={t('common.search')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 w-full md:max-w-md"
@@ -255,23 +257,23 @@ const AdminUsers = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User Account</TableHead>
+                <TableHead>{t('common.name')}</TableHead>
                 <TableHead>Role / Access</TableHead>
-                <TableHead>Created Date</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead>{t('common.date')}</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="h-32 text-center text-muted-foreground font-medium uppercase tracking-widest text-xs">
-                    Syncing Global Namespace
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : (!users || users.length === 0) ? (
                 <TableRow>
                   <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
-                    No users found matching parameters.
+                    {t('common.noData')}
                   </TableCell>
                 </TableRow>
               ) : users.map((user) => (
@@ -310,11 +312,11 @@ const AdminUsers = () => {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(user)} title="Edit User">
+                      <Button variant="ghost" size="icon" onClick={() => handleEdit(user)} title={t('common.edit')}>
                         <Edit3 className="w-4 h-4" />
                       </Button>
                       {user.role !== 'superadmin' && (
-                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(user.id)} title="Delete User">
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(user.id)} title={t('common.delete')}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       )}
@@ -349,7 +351,7 @@ const AdminUsers = () => {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl uppercase tracking-tight">{editingUser ? 'Edit User' : 'Create User'}</DialogTitle>
+            <DialogTitle className="text-2xl uppercase tracking-tight">{editingUser ? t('common.edit') : t('common.create')} User</DialogTitle>
             <DialogDescription>
               Configure the user's identity details and system privileges here.
             </DialogDescription>
@@ -358,7 +360,7 @@ const AdminUsers = () => {
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Full Name</Label>
+                <Label>{t('common.name')}</Label>
                 <Input
                   required
                   placeholder="eg. John Matrix"
@@ -367,7 +369,7 @@ const AdminUsers = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Email Address</Label>
+                <Label>{t('login.email')}</Label>
                 <Input
                   required
                   type="email"
@@ -420,8 +422,8 @@ const AdminUsers = () => {
             </div>
 
             <DialogFooter className="pt-4 border-t">
-              <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
-              <Button type="submit">{editingUser ? 'Save Identity' : 'Create Identity'}</Button>
+              <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>{t('common.cancel')}</Button>
+              <Button type="submit">{editingUser ? t('common.save') : t('common.create')} Identity</Button>
             </DialogFooter>
           </form>
         </DialogContent>
