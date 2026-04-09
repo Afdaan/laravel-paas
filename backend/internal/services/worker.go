@@ -21,6 +21,7 @@ type DeploymentWorker struct {
 	cfg           *config.Config
 	dockerService *DockerService
 	redisService  *RedisService
+	nginxService  *NginxWebhookService
 	running       bool
 }
 
@@ -31,6 +32,7 @@ func NewDeploymentWorker(db *gorm.DB, cfg *config.Config, redisService *RedisSer
 		cfg:           cfg,
 		dockerService: NewDockerService(cfg),
 		redisService:  redisService,
+		nginxService:  NewNginxWebhookService(cfg),
 		running:       false,
 	}
 }
@@ -132,9 +134,9 @@ func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
 		}
 	}()
 
-	// Fetch project from database
+	// Fetch project from database with User preloaded
 	var project models.Project
-	if err := w.db.First(&project, job.ProjectID).Error; err != nil {
+	if err := w.db.Preload("User").First(&project, job.ProjectID).Error; err != nil {
 		log.Printf("[ERROR] Failed to find project #%d: %v", job.ProjectID, err)
 		w.redisService.IncrementDeploymentCounter("failed_not_found")
 		return
@@ -215,6 +217,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 		"status":       models.StatusRunning,
 		"container_id": containerID,
 	})
+
+	// Sync config to remote Nginx
+	w.nginxService.SyncProject(project, projectDomain)
 
 	// Cleanup old container after successful switch
 	if oldContainerID != nil {

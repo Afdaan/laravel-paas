@@ -50,6 +50,12 @@ type Config struct {
 	ProjectsPath   string
 	TemplatesPath  string
 	DockerNetwork  string
+
+	// Nginx Remote Webhook
+	NginxWebhookEnabled bool
+	NginxWebhookURL     string
+	NginxWebhookKey     string
+	InternalIP          string
 }
 
 // Load reads configuration from environment variables
@@ -92,6 +98,12 @@ func Load() *Config {
 		ProjectsPath:  getEnv("PROJECTS_PATH", "/app/storage/projects"),
 		TemplatesPath: getEnv("TEMPLATES_PATH", "/app/docker/templates"),
 		DockerNetwork: getEnv("DOCKER_NETWORK", "paas-network"),
+
+		// Nginx Remote Webhook
+		NginxWebhookEnabled: getEnvBool("NGINX_WEBHOOK_ENABLED", false),
+		NginxWebhookURL:     getEnv("NGINX_WEBHOOK_URL", ""),
+		NginxWebhookKey:     getEnv("NGINX_WEBHOOK_KEY", ""),
+		InternalIP:          getEnv("INTERNAL_IP", "127.0.0.1"),
 	}
 }
 

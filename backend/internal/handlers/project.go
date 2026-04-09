@@ -25,6 +25,7 @@ type ProjectHandler struct {
 	cfg           *config.Config
 	dockerService *services.DockerService
 	redisService  *services.RedisService
+	nginxService  *services.NginxWebhookService
 }
 
 // NewProjectHandler creates a new project handler
@@ -34,6 +35,7 @@ func NewProjectHandler(db *gorm.DB, cfg *config.Config, redisService *services.R
 		cfg:           cfg,
 		dockerService: services.NewDockerService(cfg),
 		redisService:  redisService,
+		nginxService:  services.NewNginxWebhookService(cfg),
 	}
 }
 
@@ -440,6 +442,10 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 
 	// Drop database
 	h.dockerService.DropDatabase(project.DatabaseName)
+
+	// Sync deletion to remote Nginx
+	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
+	h.nginxService.DeleteProject(project, projectDomain)
 
 	// Hard delete project record (not soft delete) to free up database_name and subdomain
 	if err := h.db.Unscoped().Delete(&project).Error; err != nil {
