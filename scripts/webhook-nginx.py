@@ -51,17 +51,42 @@ def sync_project(subdomain, domain, internal_ip, port, project_dir):
     listen 80;
     server_name {domain};
 
+    # Allow file uploads up to 64MB
+    client_max_body_size 64M;
+
     # Serve ACME challenge files locally for Certbot HTTP-01 validation
     location /.well-known/acme-challenge/ {{
         root /var/www/html;
     }}
 
     location / {{
+        # Proxy settings ke internal IP
         proxy_pass http://{internal_ip}:{port};
+        
+        # Header Standar Reverse Proxy
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # WebSocket Support (Penting untuk Notifikasi Real-time/Kasir)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Session & Cookie Persistence (Anti Logout-Logout sendiri)
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Server $host;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+
+        # Timeout napas panjang untuk upload/proses database berat
+        proxy_connect_timeout 300;
+        proxy_send_timeout 300;
+        proxy_read_timeout 300;
+        send_timeout 300;
     }}
 }}
 """
