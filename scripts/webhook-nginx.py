@@ -78,8 +78,8 @@ def sync_project(subdomain, domain, internal_ip, port, project_dir):
 
     logging.info(f"[subdomain: {subdomain}] Attempting SSL provisioning for {domain}")
     certbot_args = [
-        "certbot", "certonly", "--nginx", "--non-interactive", "--agree-tos",
-        "-m", SSL_EMAIL, "-d", domain
+        "certbot", "--nginx", "--non-interactive", "--agree-tos",
+        "-m", SSL_EMAIL, "-d", domain, "--redirect"
     ]
     
     ssl_success, _ = run_command(certbot_args)
