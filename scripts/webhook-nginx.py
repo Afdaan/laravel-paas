@@ -108,9 +108,11 @@ def webhook():
         logging.warning(f"[src_ip: {client_ip}] Unauthorized webhook access attempt; Key validation failed")
         return jsonify({"error": "Unauthorized"}), 401
     
-    data = request.json
+    # Force JSON parsing even if Content-Type header from backend is missing/distorted
+    data = request.get_json(force=True, silent=True)
     if not data:
-        logging.error(f"[src_ip: {client_ip}] Invalid payload: Request contains no JSON data")
+        raw_data = request.data.decode('utf-8')
+        logging.error(f"[src_ip: {client_ip}] Invalid payload: Raw data received: '{raw_data}'")
         return jsonify({"error": "Invalid payload"}), 400
 
     action = data.get("action")
