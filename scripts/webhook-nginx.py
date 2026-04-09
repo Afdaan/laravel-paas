@@ -34,7 +34,7 @@ def run_command(command_args):
     cmd_str = ' '.join(command_args)
     try:
         logging.info(f"Executing command: {cmd_str}")
-        result = subprocess.run(command_args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(command_args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         # Log purely debug info, keeping info logs uncluttered
         logging.info(f"Command success: {cmd_str}")
         return True, result.stdout
