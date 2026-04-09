@@ -63,17 +63,25 @@ def sync_project(subdomain, domain, internal_ip, port, project_dir):
         # Proxy settings ke internal IP
         proxy_pass http://{internal_ip}:{port};
         
-        # Header Standar Reverse Proxy
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Port $server_port;
+        # Paksa Laravel mendeteksi HTTPS
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port 443;
+
+        # Ubah redirect http dari backend menjadi https secara otomatis
+        proxy_redirect http:// $scheme://;
 
         # WebSocket Support (Penting untuk Notifikasi Real-time/Kasir)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+
+        # Header Standar Reverse Proxy
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Upgrade insecure requests (Bulletproof fix for Mixed Content CSS/JS)
+        add_header Content-Security-Policy "upgrade-insecure-requests";
 
         # Session & Cookie Persistence (Anti Logout-Logout sendiri)
         proxy_set_header X-Forwarded-Host $host;
