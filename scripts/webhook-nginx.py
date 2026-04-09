@@ -51,6 +51,11 @@ def sync_project(subdomain, domain, internal_ip, port, project_dir):
     listen 80;
     server_name {domain};
 
+    # Serve ACME challenge files locally for Certbot HTTP-01 validation
+    location /.well-known/acme-challenge/ {{
+        root /var/www/html;
+    }}
+
     location / {{
         proxy_pass http://{internal_ip}:{port};
         proxy_set_header Host $host;

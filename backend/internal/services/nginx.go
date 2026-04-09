@@ -47,12 +47,8 @@ package services
 			log.Printf("[WARN] Project %s has no port assigned, defaulting to 80 for Nginx sync", project.Subdomain)
 		}
 
-		// Use project-student as default or sanitized user name if available
-		userFolder := "project-student"
-		if project.User.Name != "" {
-			// Basic sanitization
-			userFolder = "project-" + GenerateSubdomain(project.User.Name)
-		}
+		// Use stable User ID for folder naming to prevent orphans/conflicts
+		userFolder := fmt.Sprintf("user-%d", project.UserID)
 
 		payload := WebhookPayload{
 			Action:     "sync",
@@ -72,10 +68,7 @@ package services
 			return nil
 		}
 
-		userFolder := "project-student"
-		if project.User.Name != "" {
-			userFolder = "project-" + GenerateSubdomain(project.User.Name)
-		}
+		userFolder := fmt.Sprintf("user-%d", project.UserID)
 
 		payload := WebhookPayload{
 			Action:     "delete",
