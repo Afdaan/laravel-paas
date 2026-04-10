@@ -65,7 +65,15 @@ const AdminSettings = () => {
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      await settingsAPI.update(settings)
+      // Convert all values to strings as backend expects map[string]string
+      const payload: Record<string, string> = {}
+      Object.entries(settings).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          payload[key] = String(value)
+        }
+      })
+      
+      await settingsAPI.update(payload)
       toast.success(t('admin.settings.success'))
     } catch (error) {
       toast.error(t('admin.settings.failed'))
