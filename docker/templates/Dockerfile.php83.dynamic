@@ -1,6 +1,4 @@
-# ===========================================================
-# Laravel Dockerfile Template - PHP 8.3 (Dynamic Extensions)
-# ===========================================================
+# Laravel Dockerfile - PHP 8.3 (Dynamic)
 # This version allows dynamic PHP extension installation based on composer.json
 
 # Stage 1: Extension Detection and Composer Dependencies
@@ -78,49 +76,48 @@ FROM node:20-alpine AS frontend
 WORKDIR /app
 RUN mkdir -p public/build
 
-# Copy only package files first for smart detection
+# Copy lock files for tool detection
 COPY package*.json bun.lock* yarn.lock* pnpm-lock.yaml* ./
 
-# Smart Install: Detect and install the right package manager tools only if needed
+# Install Bun only if bun.lock is present
 RUN if [ -f bun.lock ]; then \
-        echo "Bun project detected. Installing Bun..." && \
         apk add --no-cache curl bash unzip libstdc++ && \
         curl -fsSL https://bun.sh/install | bash && \
-        cp /root/.bun/bin/bun /usr/local/bin/bun && \
+        cp /root/.bun/bin/bun /usr/local/bin/bun; \
+    fi
+
+# Install dependencies based on detected lock file
+RUN if [ -f bun.lock ]; then \
         bun install; \
     elif [ -f package-lock.json ]; then \
-        echo "NPM project detected." && \
         npm ci || npm install; \
     elif [ -f yarn.lock ]; then \
-        echo "Yarn project detected." && \
         npm install -g yarn && yarn install; \
     elif [ -f pnpm-lock.yaml ]; then \
-        echo "PNPM project detected." && \
         npm install -g pnpm && pnpm install; \
     else \
-        echo "No lock file detected, falling back to basic npm install." && \
-        npm install || true; \
+        npm install; \
     fi
 
 COPY resources/ resources/
 COPY public/ public/
 COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
-# Smart Build
+# Copy vendor for Tailwind/Vite scanning (required by many Laravel packages)
+COPY --from=composer /app/vendor /app/vendor
+
+# Production asset build
 RUN if [ -f package.json ]; then \
-        if [ -f bun.lock ] && command -v bun > /dev/null; then \
-            bun run build; \
-        else \
-            npm run build || npm run production; \
-        fi \
+        if [ -f bun.lock ]; then bun run build; \
+        else npm run build || npm run production; fi \
     fi
 
-# Fix for Vite 5+ manifest location (compatibility with Laravel)
+# Sync Vite 5+ manifest location for Laravel compatibility
 RUN if [ -f public/build/.vite/manifest.json ]; then \
         cp public/build/.vite/manifest.json public/build/manifest.json; \
     fi
 
-# Ensure public/build always exists
+# Ensure build directory exists even if build was skipped
 RUN mkdir -p /app/public/build
 
 # Stage 3: Production (Optimized Runtime)
@@ -196,6 +193,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-
-
-

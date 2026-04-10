@@ -1,6 +1,4 @@
-# ===========================================================
-# Laravel Dockerfile Template - PHP 8.4
-# ===========================================================
+# Laravel Dockerfile - PHP 8.4
 
 # Stage 1: Composer Dependencies
 FROM composer:2 AS composer

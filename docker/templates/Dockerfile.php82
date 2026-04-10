@@ -1,6 +1,4 @@
-# ===========================================================
-# Laravel Dockerfile Template - PHP 8.2 (Pure Laravel - No Frontend)
-# ===========================================================
+# Laravel Dockerfile - PHP 8.2
 
 # Stage 1: Composer Dependencies
 FROM composer:2 AS composer
@@ -45,7 +43,3 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-
-
-
-
