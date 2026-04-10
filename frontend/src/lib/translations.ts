@@ -482,7 +482,7 @@ export const translations = {
       infrastructure: "Infrastruktur",
       signIn: "Masuk",
       dashboard: "Dashboard",
-      heroBadge: "Modern Cloud Hosting untuk Mahasiswa",
+      heroBadge: "Modern Cloud Hosting untuk Siswa",
       heroTitle: "Deployment Laravel jadi lebih instan.",
       heroSubtitle: "Otomatisasi repositori, database, dan SSL dalam satu platform. Fokus pada pengembangan aplikasi, bukan urusan infrastruktur.",
       goDashboard: "Buka Dashboard",
@@ -491,7 +491,7 @@ export const translations = {
       builtPrecision: "Dibuat untuk kebutuhan skalabilitas.",
       precisionDesc: "Setiap hambatan teknis dari repo hingga live URL sudah ditangani otomatis oleh sistem kami.",
       stopConfiguring: "Berhenti konfigurasi. Mulai coding.",
-      finalCTA: "Bergabung bersama mahasiswa lain yang sudah mengirim project Laravel mereka ke cloud.",
+      finalCTA: "Bergabung bersama siswa lain yang sudah mengirim project Laravel mereka ke cloud.",
       readyDeploy: "Siap buat deploy?",
       returnDashboard: "Kembali ke Dashboard",
     },
@@ -500,11 +500,11 @@ export const translations = {
       adminDesc: "Pantau status infrastruktur global dan orkestrasi resource cluster.",
       users: {
         title: "Users Management",
-        desc: "Kelola semua akun mahasiswa dan admin di seluruh platform.",
+        desc: "Kelola semua akun siswa dan admin di seluruh platform.",
       },
       projects: {
         title: "Projects Management",
-        desc: "Monitoring dan kelola semua project Laravel yang dideploy oleh mahasiswa.",
+        desc: "Monitoring dan kelola semua project Laravel yang dideploy oleh siswa.",
       },
       containers: {
         title: "Containers",
