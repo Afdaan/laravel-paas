@@ -78,24 +78,27 @@ FROM node:20-alpine AS frontend
 WORKDIR /app
 RUN mkdir -p public/build
 
-# Install Bun
-RUN apk add --no-cache curl bash && \
-    curl -fsSL https://bun.sh/install | bash && \
-    cp /root/.bun/bin/bun /usr/local/bin/bun
-
-# Copy only package files first for caching
+# Copy only package files first for smart detection
 COPY package*.json bun.lock* yarn.lock* pnpm-lock.yaml* ./
 
-# Smart Install: Detect package manager
+# Smart Install: Detect and install the right package manager tools only if needed
 RUN if [ -f bun.lock ]; then \
+        echo "Bun project detected. Installing Bun..." && \
+        apk add --no-cache curl bash unzip libstdc++ && \
+        curl -fsSL https://bun.sh/install | bash && \
+        cp /root/.bun/bin/bun /usr/local/bin/bun && \
         bun install; \
     elif [ -f package-lock.json ]; then \
+        echo "NPM project detected." && \
         npm ci || npm install; \
     elif [ -f yarn.lock ]; then \
+        echo "Yarn project detected." && \
         npm install -g yarn && yarn install; \
     elif [ -f pnpm-lock.yaml ]; then \
+        echo "PNPM project detected." && \
         npm install -g pnpm && pnpm install; \
     else \
+        echo "No lock file detected, falling back to basic npm install." && \
         npm install || true; \
     fi
 
@@ -105,10 +108,10 @@ COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
 # Smart Build
 RUN if [ -f package.json ]; then \
-        if [ -f bun.lock ]; then \
-            bun run build || true; \
+        if [ -f bun.lock ] && command -v bun > /dev/null; then \
+            bun run build; \
         else \
-            npm run build || npm run production || true; \
+            npm run build || npm run production; \
         fi \
     fi
 
@@ -117,7 +120,7 @@ RUN if [ -f public/build/.vite/manifest.json ]; then \
         cp public/build/.vite/manifest.json public/build/manifest.json; \
     fi
 
-# Ensure public/build always exists (even if no frontend assets were built)
+# Ensure public/build always exists
 RUN mkdir -p /app/public/build
 
 # Stage 3: Production (Optimized Runtime)
