@@ -288,7 +288,8 @@ export const translations = {
       },
     },
     status: {
-      pending: "Queued",
+      pending: "Pending",
+      queued: "Queued",
       building: "Building",
       running: "Running",
       failed: "Error",
@@ -683,7 +684,8 @@ export const translations = {
       },
     },
     status: {
-      pending: "Queued",
+      pending: "Menunggu",
+      queued: "Dalam Antrean",
       building: "Building",
       running: "Running",
       failed: "Error",

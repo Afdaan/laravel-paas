@@ -15,7 +15,8 @@ import {
   Clock,
   Layout,
   Zap,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +33,7 @@ interface PlatformSettings {
   cpu_limit_percent?: number;
   memory_limit_mb?: number;
   admin_idle_timeout?: number;
+  max_concurrent_builds?: number;
 }
 
 const AdminSettings = () => {
@@ -163,7 +165,7 @@ const AdminSettings = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
               <div className="space-y-3">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Layout size={14} className="text-emerald-500" />
@@ -199,6 +201,19 @@ const AdminSettings = () => {
                   value={settings.admin_idle_timeout || 15}
                   onChange={(val) => handleChange('admin_idle_timeout', val)}
                   unit={t('admin.settings.mins')}
+                />
+              </div>
+              <div className="space-y-3">
+                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  <RefreshCw size={14} className="text-blue-500" />
+                  Concurrent Builds
+                </Label>
+                <NumberStepper
+                  min={1}
+                  max={8}
+                  value={settings.max_concurrent_builds || 3}
+                  onChange={(val) => handleChange('max_concurrent_builds', val)}
+                  unit="Workers"
                 />
               </div>
             </div>

@@ -48,6 +48,7 @@ type ProjectStatus string
 
 const (
 	StatusPending  ProjectStatus = "pending"
+	StatusQueued   ProjectStatus = "queued"
 	StatusBuilding ProjectStatus = "building"
 	StatusRunning  ProjectStatus = "running"
 	StatusFailed   ProjectStatus = "failed"

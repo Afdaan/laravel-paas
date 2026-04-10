@@ -6,6 +6,7 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
 	"time"
@@ -46,6 +47,10 @@ func (w *DeploymentWorker) Start() {
 
 	w.running = true
 	log.Println("[INFO] Deployment worker started")
+
+	// Run recovery for any interrupted builds
+	w.recoverOrphanedBuilds()
+
 	log.Println("[INFO] Waiting for deployment jobs...")
 
 	// Start the daily 3 AM Docker cache cleanup
@@ -85,9 +90,68 @@ func (w *DeploymentWorker) Stop() {
 	log.Println("[INFO] Deployment worker stopped")
 }
 
+// recoverOrphanedBuilds finds projects left in "building" state due to unexpected shutdown
+// and pushes them back into the redis queue as "queued"
+func (w *DeploymentWorker) recoverOrphanedBuilds() {
+	var orphanedProjects []models.Project
+	if err := w.db.Where("status = ?", models.StatusBuilding).Find(&orphanedProjects).Error; err != nil {
+		log.Printf("[ERROR] Failed to query orphaned builds: %v", err)
+		return
+	}
+
+	if len(orphanedProjects) > 0 {
+		log.Printf("[INFO] Found %d orphaned builds from previous session. Recovering...", len(orphanedProjects))
+		
+		for _, p := range orphanedProjects {
+			// 1. Reset Status in DB to Queued
+			w.db.Model(&p).Updates(map[string]interface{}{
+				"status": models.StatusQueued,
+				"error_log": "Recovered from unexpected server shutdown.",
+			})
+
+			// 2. Clear existing lock if any
+			w.redisService.ReleaseDeploymentLock(p.ID)
+
+			// 3. Re-enqueue to Redis (Assume 'redeploy' for full clean spin-up)
+			if err := w.redisService.EnqueueDeployment(p.ID, p.UserID, "redeploy"); err != nil {
+				log.Printf("[ERROR] Failed to re-queue project #%d: %v", p.ID, err)
+			} else {
+				log.Printf("[INFO] Project #%d automatically re-queued.", p.ID)
+			}
+		}
+	}
+}
+
 // processJobs continuously processes jobs from the queue
 func (w *DeploymentWorker) processJobs() {
+	// Semaphore channel for concurrent builds
+	var currentMax int
+	var sem chan struct{}
+
+	updateSemaphore := func() {
+		// Read max_concurrent_builds dynamically from settings
+		maxStr := w.getSetting("max_concurrent_builds", "3")
+		
+		maxWorkers := 3
+		// parse it since we know how to do it in another way or use fmt.Sscanf
+		fmt.Sscanf(maxStr, "%d", &maxWorkers)
+		
+		if maxWorkers < 1 {
+			maxWorkers = 1
+		}
+		
+		if maxWorkers != currentMax {
+			currentMax = maxWorkers
+			sem = make(chan struct{}, currentMax)
+		}
+	}
+
+	updateSemaphore()
+
 	for w.running {
+		// Update semaphore config dynamically just in case it changes
+		updateSemaphore()
+
 		// Wait for next job with 5 second timeout
 		job, err := w.redisService.DequeueDeployment(5 * time.Second)
 		if err != nil {
@@ -101,8 +165,14 @@ func (w *DeploymentWorker) processJobs() {
 			continue
 		}
 
-		// Process the job
-		w.processDeployment(job)
+		// Acquire semaphore token
+		sem <- struct{}{}
+
+		// Process the job in a goroutine
+		go func(j *DeploymentJob) {
+			defer func() { <-sem }() // Release semaphore token
+			w.processDeployment(j)
+		}(job)
 	}
 }
 
@@ -240,9 +310,15 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg 
 
 // getProjectDomain gets project domain from settings
 func (w *DeploymentWorker) getProjectDomain() string {
+	return w.getSetting("project_domain", w.cfg.ProjectDomain)
+}
+
+// getSetting helper to get a setting value from db
+func (w *DeploymentWorker) getSetting(key string, defaultValue string) string {
 	var setting models.Setting
-	if err := w.db.Where("setting_key = ?", "project_domain").First(&setting).Error; err != nil {
-		return w.cfg.ProjectDomain
+	if err := w.db.Where("setting_key = ?", key).First(&setting).Error; err != nil {
+		return defaultValue
 	}
 	return setting.Value
 }
+

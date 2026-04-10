@@ -269,7 +269,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		Branch:       branch,
 		Subdomain:    subdomain,
 		DatabaseName: req.DatabaseName,
-		Status:       models.StatusPending,
+		Status:       models.StatusQueued,
 		QueueEnabled: req.QueueEnabled,
 	}
 
@@ -400,6 +400,10 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
+
+	h.db.Model(project).Updates(map[string]interface{}{
+		"status": models.StatusQueued,
+	})
 
 	// Enqueue redeployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {

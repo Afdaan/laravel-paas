@@ -45,6 +45,7 @@ function StatusIndicator({ status }: { status: string }) {
   const styles: Record<string, any> = {
     running: { color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20', label: t('status.running') },
     building: { color: 'text-blue-500 bg-blue-500/10 border-blue-500/20', label: t('status.building'), pulse: true },
+    queued: { color: 'text-purple-500 bg-purple-500/10 border-purple-500/20', label: t('status.queued') || 'Queued' },
     failed: { color: 'text-rose-500 bg-rose-500/10 border-rose-500/20', label: t('status.failed') },
     pending: { color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', label: t('status.pending') },
     stopped: { color: 'text-slate-500 bg-slate-500/10 border-slate-500/20 dark:text-slate-400', label: t('status.stopped') },
@@ -221,6 +222,7 @@ function StudentProjectDetail() {
       confirmText: t('projectDetail.actions.redeploy'),
       isOpen: true,
       onConfirm: () => {
+        setProject(prev => prev ? ({ ...prev, status: 'queued' }) : null)
         toast.promise(
           projectsAPI.redeploy(id),
           {
