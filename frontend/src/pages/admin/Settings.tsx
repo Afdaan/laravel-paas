@@ -166,7 +166,7 @@ const AdminSettings = () => {
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[140px]">
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Layout size={14} className="text-emerald-500 shrink-0 mt-0.5" />
                   <span>{t('admin.settings.identityQuota')}</span>
@@ -182,7 +182,7 @@ const AdminSettings = () => {
                 </div>
               </div>
               
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[140px]">
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Clock size={14} className="text-amber-500 shrink-0 mt-0.5" />
                   <span>{t('admin.settings.expiryCycle')}</span>
@@ -197,7 +197,7 @@ const AdminSettings = () => {
                 </div>
               </div>
 
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[140px]">
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Shield size={14} className="text-rose-500 shrink-0 mt-0.5" />
                   <span>{t('admin.settings.inactivityTimeout')}</span>
@@ -212,7 +212,7 @@ const AdminSettings = () => {
                 </div>
               </div>
 
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[140px]">
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <RefreshCw size={14} className="text-blue-500 shrink-0 mt-0.5" />
                   <span>{t('admin.settings.concurrentBuilds')}</span>
