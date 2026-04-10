@@ -15,7 +15,7 @@ export interface Project {
   php_version: string;
   port: number;
   db_name: string;
-  status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending';
+  status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued';
   subdomain?: string;
   url?: string;
   user?: User;

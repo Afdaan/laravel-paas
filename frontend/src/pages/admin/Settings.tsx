@@ -165,7 +165,7 @@ const AdminSettings = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
               <div className="space-y-3">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <Layout size={14} className="text-emerald-500" />
@@ -206,14 +206,14 @@ const AdminSettings = () => {
               <div className="space-y-3">
                 <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
                   <RefreshCw size={14} className="text-blue-500" />
-                  Concurrent Builds
+                  {t('admin.settings.concurrentBuilds')}
                 </Label>
                 <NumberStepper
                   min={1}
                   max={8}
                   value={settings.max_concurrent_builds || 3}
                   onChange={(val) => handleChange('max_concurrent_builds', val)}
-                  unit="Workers"
+                  unit={t('admin.settings.workers')}
                 />
               </div>
             </div>
