@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/models"
 	"gorm.io/gorm"
@@ -44,7 +45,7 @@ func (h *SettingHandler) List(c *fiber.Ctx) error {
 
 // UpdateSettingsRequest represents settings update payload
 type UpdateSettingsRequest struct {
-	Settings map[string]string `json:"settings"`
+	Settings map[string]interface{} `json:"settings"`
 }
 
 // Update modifies multiple settings at once
@@ -58,9 +59,12 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 
 	// Update each setting
 	for key, value := range req.Settings {
+		// Convert value to string regardless of incoming type
+		strValue := fmt.Sprintf("%v", value)
+
 		result := h.db.Model(&models.Setting{}).
 			Where("setting_key = ?", key).
-			Update("value", value)
+			Update("value", strValue)
 		
 		if result.Error != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
