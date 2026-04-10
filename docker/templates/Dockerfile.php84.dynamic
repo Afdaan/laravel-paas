@@ -78,22 +78,38 @@ FROM node:20-alpine AS frontend
 WORKDIR /app
 RUN mkdir -p public/build
 
-COPY package*.json ./
-# Install ALL dependencies including devDependencies (Vite, Tailwind, etc. are devDeps)
-RUN if [ -f package.json ]; then \
-        npm ci || \
-        npm install || \
-        true; \
+# Install Bun
+RUN apk add --no-cache curl bash && \
+    curl -fsSL https://bun.sh/install | bash && \
+    cp /root/.bun/bin/bun /usr/local/bin/bun
+
+# Copy only package files first for caching
+COPY package*.json bun.lock* yarn.lock* pnpm-lock.yaml* ./
+
+# Smart Install: Detect package manager
+RUN if [ -f bun.lock ]; then \
+        bun install; \
+    elif [ -f package-lock.json ]; then \
+        npm ci || npm install; \
+    elif [ -f yarn.lock ]; then \
+        npm install -g yarn && yarn install; \
+    elif [ -f pnpm-lock.yaml ]; then \
+        npm install -g pnpm && pnpm install; \
+    else \
+        npm install || true; \
     fi
 
 COPY resources/ resources/
 COPY public/ public/
 COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
-RUN if [ -f package.json ] && [ -d resources ]; then \
-        npm run build || \
-        npm run production || \
-        true; \
+# Smart Build
+RUN if [ -f package.json ]; then \
+        if [ -f bun.lock ]; then \
+            bun run build || true; \
+        else \
+            npm run build || npm run production || true; \
+        fi \
     fi
 
 # Fix for Vite 5+ manifest location (compatibility with Laravel)
