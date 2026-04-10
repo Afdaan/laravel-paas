@@ -102,21 +102,21 @@ func (w *DeploymentWorker) recoverOrphanedBuilds() {
 	if len(orphanedProjects) > 0 {
 		log.Printf("[INFO] Found %d orphaned builds from previous session. Recovering...", len(orphanedProjects))
 		
-		for _, p := range orphanedProjects {
+		for _, project := range orphanedProjects {
 			// 1. Reset Status in DB to Queued
-			w.db.Model(&p).Updates(map[string]interface{}{
+			w.db.Model(&project).Updates(map[string]interface{}{
 				"status": models.StatusQueued,
 				"error_log": "Recovered from unexpected server shutdown.",
 			})
 
 			// 2. Clear existing lock if any
-			w.redisService.ReleaseDeploymentLock(p.ID)
+			w.redisService.ReleaseDeploymentLock(project.ID)
 
 			// 3. Re-enqueue to Redis (Assume 'redeploy' for full clean spin-up)
-			if err := w.redisService.EnqueueDeployment(p.ID, p.UserID, "redeploy"); err != nil {
-				log.Printf("[ERROR] Failed to re-queue project #%d: %v", p.ID, err)
+			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+				log.Printf("[ERROR] Failed to re-queue project #%d: %v", project.ID, err)
 			} else {
-				log.Printf("[INFO] Project #%d automatically re-queued.", p.ID)
+				log.Printf("[INFO] Project #%d automatically re-queued.", project.ID)
 			}
 		}
 	}
@@ -133,8 +133,10 @@ func (w *DeploymentWorker) processJobs() {
 		maxStr := w.getSetting("max_concurrent_builds", "3")
 		
 		maxWorkers := 3
-		// parse it since we know how to do it in another way or use fmt.Sscanf
-		fmt.Sscanf(maxStr, "%d", &maxWorkers)
+		if _, err := fmt.Sscanf(maxStr, "%d", &maxWorkers); err != nil {
+			log.Printf("[WARN] Failed to parse max_concurrent_builds '%s', defaulting to 3: %v", maxStr, err)
+			maxWorkers = 3
+		}
 		
 		if maxWorkers < 1 {
 			maxWorkers = 1
