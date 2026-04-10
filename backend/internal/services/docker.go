@@ -55,7 +55,7 @@ func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (st
 	// Clone specific branch
 	args := []string{"clone", "--depth=1", "-b", branch, githubURL, projectPath}
 	cmd := exec.Command("git", args...)
-	
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -115,11 +115,11 @@ func (s *DockerService) DetectVersions(projectPath string) (laravelVersion, phpV
 
 // extractMajorVersion extracts major version from version constraint
 func extractMajorVersion(constraint string) string {
-	// Match patterns like ^11.0, ~11.0, 11.*, >=11.0
-	re := regexp.MustCompile(`(\d+)\.`)
+	// Match patterns like ^11.0, ~11.0, 11.*, >=11.0, or just 11
+	re := regexp.MustCompile(`(\d+)`)
 	matches := re.FindStringSubmatch(constraint)
-	if len(matches) > 1 {
-		return matches[1]
+	if len(matches) > 0 {
+		return matches[0]
 	}
 	return "11" // Default to Laravel 11
 }
@@ -133,6 +133,8 @@ func detectPHPVersion(laravelVersion, phpConstraint string) string {
 		"10": "8.2",
 		"11": "8.3",
 		"12": "8.4",
+		"13": "8.4",
+		"14": "8.5",
 	}
 
 	// Use Laravel version mapping if available
@@ -206,7 +208,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
 	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
 	srcDockerfile := filepath.Join(s.cfg.TemplatesPath, dockerfile)
-	
+
 	// If .dynamic doesn't exist, fallback to regular version
 	if _, err := os.Stat(srcDockerfile); os.IsNotExist(err) {
 		dockerfile = fmt.Sprintf("Dockerfile.php%s", phpSlug)
@@ -250,7 +252,7 @@ stdout_logfile_maxbytes=0
 			return "", fmt.Errorf("failed to open supervisor config: %w", err)
 		}
 		defer f.Close()
-		
+
 		if _, err := f.WriteString(workerConfig); err != nil {
 			return "", fmt.Errorf("failed to append supervisor config: %w", err)
 		}
@@ -266,7 +268,7 @@ stdout_logfile_maxbytes=0
 
 	var stdout, stderr bytes.Buffer
 
-	buildArgs := []string{"buildx", "build", "--load", 
+	buildArgs := []string{"buildx", "build", "--load",
 		"--label", "com.paas.project=true",
 		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
@@ -278,7 +280,7 @@ stdout_logfile_maxbytes=0
 		stdout.Reset()
 		stderr.Reset()
 
-		cmd = exec.Command("docker", "build", 
+		cmd = exec.Command("docker", "build",
 			"--label", "com.paas.project=true",
 			"-t", imageName, projectPath)
 		cmd.Stdout = &stdout
@@ -290,7 +292,7 @@ stdout_logfile_maxbytes=0
 
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
-	
+
 	// Blue-green deployment: unique router per deployment, shared service for traffic switching
 	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
 	serviceName := project.Subdomain
@@ -302,7 +304,7 @@ stdout_logfile_maxbytes=0
 		"--restart", "unless-stopped",
 		"--cpus", "0.5",
 		"--memory", "512m",
-		
+
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
 			routerName, project.Subdomain, projectDomain),
@@ -310,7 +312,7 @@ stdout_logfile_maxbytes=0
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
-		
+
 		imageName,
 	}
 
@@ -367,7 +369,7 @@ QUEUE_CONNECTION=sync
 		project.DatabaseName,
 		project.DatabaseName,
 	)
-	
+
 	// Set QUEUE_CONNECTION dynamically
 	queueConn := "sync"
 	if project.QueueEnabled {
@@ -397,7 +399,7 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 	cmd := exec.Command("docker", "inspect", "--format", "{{.State.Health.Status}}", containerID)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	
+
 	if err := cmd.Run(); err != nil {
 		// Container doesn't have health check or not running, check if it's at least running
 		cmd = exec.Command("docker", "inspect", "--format", "{{.State.Running}}", containerID)
@@ -408,7 +410,7 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 		}
 		return strings.TrimSpace(stdout.String()) == "true"
 	}
-	
+
 	status := strings.TrimSpace(stdout.String())
 	// Docker health status can be: starting, healthy, unhealthy
 	// We accept both "healthy" and "starting" (give it time)
@@ -427,10 +429,10 @@ func (s *DockerService) RemoveImage(subdomain string) error {
 func (s *DockerService) PruneImages() error {
 	// Remove dangling images (<none>)
 	exec.Command("docker", "image", "prune", "-f").Run()
-	
+
 	// Also remove unused project images (paas-*)
 	exec.Command("docker", "image", "prune", "-a", "-f", "--filter", "label=com.paas.project=true").Run()
-	
+
 	return nil
 }
 
@@ -488,12 +490,12 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	// Output might contain multiple lines if multiple containers match (unlikely here)
 	// or just one JSON object.
 	output := strings.TrimSpace(stdout.String())
-	
+
 	if output == "" {
 		fmt.Printf("Empty output from docker stats for container %s\n", containerID)
 		return nil, fmt.Errorf("container not found or not running")
 	}
-	
+
 	var rawStats DockerStatsJSON
 	if err := json.Unmarshal([]byte(output), &rawStats); err != nil {
 		fmt.Printf("Error unmarshalling docker stats: %v. Output: %s\n", err, output)
@@ -522,7 +524,7 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 		fmt.Printf("Warning: Unexpected memory format: %s\n", rawStats.MemUsage)
 	}
 
-	fmt.Printf("Stats for container %s: CPU=%.2f%%, Memory=%.2fMB/%.2fMB\n", 
+	fmt.Printf("Stats for container %s: CPU=%.2f%%, Memory=%.2fMB/%.2fMB\n",
 		containerID, stats.CPUPercent, stats.MemoryMB, stats.MemoryMax)
 
 	return stats, nil
@@ -556,9 +558,8 @@ func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error
 			continue
 		}
 
-
 		containerID := parts[0]
-		// containerName := parts[1] 
+		// containerName := parts[1]
 		cpuPerc := parts[2]
 		memUsage := parts[3]
 
@@ -695,7 +696,7 @@ func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
 		id := parts[0]
 		// docker inspect names start with /
 		name := strings.TrimPrefix(parts[1], "/")
-		
+
 		// Parse creation time (Docker uses ISO8601 for inspect)
 		created, _ := time.Parse(time.RFC3339Nano, parts[5])
 
@@ -774,7 +775,7 @@ func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 
 		repo := parts[1]
 		tag := parts[2]
-		
+
 		status := "Unused"
 		// Match against full name or ID
 		if usedImages[repo] || usedImages[repo+":"+tag] || usedImages[parts[0]] {
@@ -878,7 +879,7 @@ func parseMemoryBytes(memStr string) float64 {
 	input := strings.TrimSpace(memStr)
 	valueStr := ""
 	unit := ""
-	
+
 	// Separate number and unit
 	for i, r := range input {
 		if (r < '0' || r > '9') && r != '.' {
@@ -887,7 +888,7 @@ func parseMemoryBytes(memStr string) float64 {
 			break
 		}
 	}
-	
+
 	if valueStr == "" {
 		return 0
 	}
@@ -917,12 +918,12 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 	// This assumes the command is a space-separated list of args for artisan
 	// e.g. "migrate --force" -> ["migrate", "--force"]
 	args := strings.Fields(command)
-	
+
 	dockerArgs := []string{"exec", containerID, "php", "artisan"}
 	dockerArgs = append(dockerArgs, args...)
 
 	cmd := exec.Command("docker", dockerArgs...)
-	
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

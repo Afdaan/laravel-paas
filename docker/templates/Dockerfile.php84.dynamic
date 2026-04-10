@@ -81,8 +81,8 @@ RUN mkdir -p public/build
 COPY package*.json ./
 # Install ALL dependencies including devDependencies (Vite, Tailwind, etc. are devDeps)
 RUN if [ -f package.json ]; then \
-        npm ci 2>/dev/null || \
-        npm install 2>/dev/null || \
+        npm ci || \
+        npm install || \
         true; \
     fi
 
@@ -91,9 +91,14 @@ COPY public/ public/
 COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
 RUN if [ -f package.json ] && [ -d resources ]; then \
-        npm run build 2>/dev/null || \
-        npm run production 2>/dev/null || \
+        npm run build || \
+        npm run production || \
         true; \
+    fi
+
+# Fix for Vite 5+ manifest location (compatibility with Laravel)
+RUN if [ -f public/build/.vite/manifest.json ]; then \
+        cp public/build/.vite/manifest.json public/build/manifest.json; \
     fi
 
 # Ensure public/build always exists (even if no frontend assets were built)
