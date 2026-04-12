@@ -13,7 +13,8 @@ RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scr
 FROM paas-runtime-php:8.1-alpine
 WORKDIR /var/www/html
 COPY . .
-COPY --from=composer /app/vendor ./vendor
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /var/www/html/vendor && mv /tmp/vendor /var/www/html/vendor
 
 # Set up directories and permissions
 RUN mkdir -p storage/app/public \

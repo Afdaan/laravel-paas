@@ -103,8 +103,9 @@ COPY resources/ resources/
 COPY public/ public/
 COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
-# Copy vendor for Tailwind/Vite scanning (required by many Laravel packages)
-COPY --from=composer /app/vendor /app/vendor
+# Copy vendor for Tailwind/Vite scanning (Safe Move)
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /app/vendor && mv /tmp/vendor /app/vendor
 
 # Production asset build
 RUN if [ -f package.json ]; then \

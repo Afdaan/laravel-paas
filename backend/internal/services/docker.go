@@ -294,10 +294,13 @@ stdout_logfile_maxbytes=0
 
 	var stdout, stderr bytes.Buffer
 
-	buildArgs := []string{"buildx", "build", "--load",
+	buildArgs := []string{"build",
 		"--label", "com.paas.project=true",
 		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
+	
+	// Force BuildKit for stable multi-stage and layer exports
+	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 

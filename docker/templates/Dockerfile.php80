@@ -29,9 +29,8 @@ WORKDIR /var/www/html
 COPY . .
 
 # Copy optimized vendor from composer stage
-COPY --from=composer /app/vendor ./vendor
-
-# Set up directories and permissions
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /var/www/html/vendor && mv /tmp/vendor /var/www/html/vendor
 RUN mkdir -p storage/app/public \
              storage/framework/cache/data \
              storage/framework/sessions \
