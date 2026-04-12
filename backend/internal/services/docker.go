@@ -351,8 +351,8 @@ stdout_logfile_maxbytes=0
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 		
 		// Map hierarchical persistent storage volume
-		// Format: {DataPath}/user-{userID}/{subdomain}/storage
-		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", s.ensurePersistentPath(project)),
+		// We use HostDataPath because the Docker daemon is on the host
+		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", s.getPersistentHostPath(project)),
 
 		imageName,
 	}
@@ -988,7 +988,14 @@ func (s *DockerService) ensurePersistentPath(project *models.Project) string {
 	return path
 }
 
-// CleanupPersistentData removes the hierarchical storage for a specific project
+// getPersistentHostPath returns the path on the HOST for Docker to mount
+func (s *DockerService) getPersistentHostPath(project *models.Project) string {
+	// 1. Ensure the directory exists (using local DataPath which Go can see)
+	s.ensurePersistentPath(project)
+	
+	// 2. Return the path as seen by the Host
+	return filepath.Join(s.cfg.HostDataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
+}
 func (s *DockerService) CleanupPersistentData(project *models.Project) {
 	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain)
 	slog.Info("Cleaning up persistent data", "path", path)

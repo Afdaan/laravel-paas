@@ -11,6 +11,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
+
+# Smart Path Detection: 
+# If .env uses Docker paths (/app/storage), translate them to host paths
+if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
+    PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
+fi
+if [[ "$DATA_PATH" == "/app/storage/"* ]]; then
+    DATA_PATH="${PROJECT_ROOT}/${DATA_PATH#/app/}"
+fi
+
 PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
 DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
 
@@ -149,11 +159,13 @@ HTTPS_PORT=${HTTPS_PORT:-443}
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
-mkdir -p "$DB_DATA_DIR"
-mkdir -p "$PG_DATA_DIR"
-mkdir -p "$PROJECTS_PATH"
-mkdir -p "$DATA_PATH"
-# Ensure data path is writable by all for student containers
+sudo mkdir -p "$DB_DATA_DIR"
+sudo mkdir -p "$PG_DATA_DIR"
+sudo mkdir -p "$PROJECTS_PATH"
+sudo mkdir -p "$DATA_PATH"
+# Ensure paths are owned by the current user so the rest of the script works
+sudo chown -R $(id -u):$(id -g) "$PROJECTS_PATH" "$DATA_PATH"
+# Ensure data path is writable by student containers
 chmod 777 "$DATA_PATH" 
 
 # 4. Smart Backup Logic (Logical or Physical)
@@ -285,6 +297,8 @@ deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
     -e PROJECTS_PATH="/app/storage/projects" \
     -e DATA_PATH="/app/storage/data" \
+    -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
+    -e HOST_DATA_PATH="$DATA_PATH" \
     -e PG_HOST=paas-postgres \
     -e PG_USER="$PG_USER" \
     -e PG_PASSWORD="$PG_PASSWORD" \
