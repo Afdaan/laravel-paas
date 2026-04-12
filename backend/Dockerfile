@@ -36,6 +36,7 @@ RUN apk --no-cache add \
     ca-certificates \
     git \
     docker-cli \
+    docker-cli-buildx \
     curl
 
 WORKDIR /app

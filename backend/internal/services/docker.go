@@ -294,7 +294,7 @@ stdout_logfile_maxbytes=0
 
 	var stdout, stderr bytes.Buffer
 
-	buildArgs := []string{"build", "--no-cache", "--pull",
+	buildArgs := []string{"buildx", "build", "--load", "--no-cache", "--pull",
 		"--label", "com.paas.project=true",
 		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
