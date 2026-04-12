@@ -80,7 +80,8 @@ type Project struct {
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
 	MemoryLimit *string  `gorm:"size:20" json:"memory_limit,omitempty"`
 	
-	ExpiresAt *time.Time     `json:"expires_at,omitempty"`
+	LastAccessedAt *time.Time     `json:"last_accessed_at,omitempty"`
+	ExpiresAt      *time.Time     `json:"expires_at,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/config"
@@ -56,6 +57,9 @@ func (w *DeploymentWorker) Start() {
 	// Start the daily 3 AM Docker cache cleanup
 	w.StartPruneScheduler()
 
+	// Start hourly project expiry janitor
+	w.StartExpiryJanitor()
+
 	go w.processJobs()
 }
 
@@ -82,6 +86,73 @@ func (w *DeploymentWorker) StartPruneScheduler() {
 			exec.Command("docker", "builder", "prune", "-a", "-f").Run()
 		}
 	}()
+}
+
+// StartExpiryJanitor starts a periodic job to cleanup expired (inactive) projects
+func (w *DeploymentWorker) StartExpiryJanitor() {
+	go func() {
+		// Wait a bit before first run to let system settle
+		time.Sleep(1 * time.Minute)
+		
+		for w.running {
+			log.Println("[INFO] Running project expiry janitor...")
+			w.cleanupExpiredProjects()
+			
+			// Run every hour
+			time.Sleep(1 * time.Hour)
+		}
+	}()
+}
+
+// cleanupExpiredProjects finds and thoroughly deletes projects that have passed their inactivity limit
+func (w *DeploymentWorker) cleanupExpiredProjects() {
+	var expiredProjects []models.Project
+	now := time.Now()
+	
+	// Find projects where ExpiresAt is in the past
+	if err := w.db.Where("expires_at IS NOT NULL AND expires_at < ?", now).Find(&expiredProjects).Error; err != nil {
+		log.Printf("[ERROR] Failed to query expired projects: %v", err)
+		return
+	}
+	
+	if len(expiredProjects) == 0 {
+		return
+	}
+	
+	log.Printf("[INFO] Found %d expired projects for automated cleanup", len(expiredProjects))
+	
+	projectDomain := w.getProjectDomain()
+	
+	for _, project := range expiredProjects {
+		log.Printf("[INFO] Auto-deleting expired project: %s (Subdomain: %s, ID: %d)", project.Name, project.Subdomain, project.ID)
+		
+		// 1. Stop and remove container
+		if project.ContainerID != nil {
+			w.dockerService.RemoveContainer(*project.ContainerID)
+		}
+		
+		// 2. Remove project image
+		w.dockerService.RemoveImage(project.Subdomain)
+		
+		// 3. Remove project files
+		w.dockerService.CleanupProject(project.Subdomain)
+		
+		// 4. Drop database
+		w.dockerService.DropDatabase(project.DatabaseName)
+		
+		// 5. Sync deletion to remote Nginx
+		w.nginxService.DeleteProject(&project, projectDomain)
+		
+		// 6. Hard delete from DB to free up subdomain/database names
+		if err := w.db.Unscoped().Delete(&project).Error; err != nil {
+			log.Printf("[ERROR] Failed to delete expired project #%d from DB: %v", project.ID, err)
+		} else {
+			log.Printf("[SUCCESS] Expired project '%s' has been thoroughly purged", project.Name)
+		}
+	}
+	
+	// Global prune to cleanup any leftover layers
+	go w.dockerService.PruneImages()
 }
 
 // Stop stops the worker
@@ -277,7 +348,16 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Step 4: Build and run container
 	// Start building new container
 	projectDomain := w.getProjectDomain()
-	containerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
+
+	// Fetch resource limits from settings
+	cpuPercentStr := w.getSetting("cpu_limit_percent", "50")
+	cpuPercent, _ := strconv.ParseFloat(cpuPercentStr, 64)
+	cpuLimit := cpuPercent / 100.0
+
+	memoryMB := w.getSetting("memory_limit_mb", "512")
+	memoryLimit := memoryMB + "m"
+
+	containerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit)
 
 	if err != nil {
 		w.updateProjectError(project, "Failed to deploy container: "+err.Error())

@@ -261,6 +261,15 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		subdomain = services.GenerateSubdomain(req.Name)
 	}
 
+	// Calculate expiration date
+	expiryDays, _ := strconv.Atoi(GetSetting(h.db, "project_expiry_days", "30"))
+	var expiresAt *time.Time
+	now := time.Now()
+	if expiryDays > 0 {
+		t := now.AddDate(0, 0, expiryDays)
+		expiresAt = &t
+	}
+
 	// Create project record
 	project := models.Project{
 		UserID:       userID,
@@ -271,6 +280,8 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		DatabaseName: req.DatabaseName,
 		Status:       models.StatusQueued,
 		QueueEnabled: req.QueueEnabled,
+		LastAccessedAt: &now,
+		ExpiresAt:    expiresAt,
 	}
 
 	if err := h.db.Create(&project).Error; err != nil {
@@ -346,7 +357,16 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	}
 
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
-	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain)
+	
+	// Fetch resource limits from settings
+	cpuPercentStr := GetSetting(h.db, "cpu_limit_percent", "50")
+	cpuPercent, _ := strconv.ParseFloat(cpuPercentStr, 64)
+	cpuLimit := cpuPercent / 100.0
+
+	memoryMB := GetSetting(h.db, "memory_limit_mb", "512")
+	memoryLimit := memoryMB + "m"
+
+	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit)
 	
 	go h.dockerService.PruneImages()
 
@@ -653,6 +673,26 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Database error"})
 	}
+
+	// Update last accessed and expiration asynchronously to avoid slowing down the request
+	go func(pid uint) {
+		now := time.Now()
+		expiryDays, _ := strconv.Atoi(GetSetting(h.db, "project_expiry_days", "30"))
+		
+		updates := map[string]interface{}{
+			"last_accessed_at": &now,
+		}
+		
+		if expiryDays > 0 {
+			expire := now.AddDate(0, 0, expiryDays)
+			updates["expires_at"] = &expire
+		} else {
+			// If set to 0 (never), clear expiration
+			updates["expires_at"] = nil
+		}
+		
+		h.db.Model(&models.Project{}).Where("id = ?", pid).Updates(updates)
+	}(project.ID)
 
 	// Ensure project has a port
 	if project.Port == nil {

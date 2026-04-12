@@ -201,7 +201,7 @@ func (s *DockerService) DropDatabase(dbName string) error {
 // ===========================================
 
 // BuildAndRun builds and starts a container for a project
-func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string) (string, error) {
+func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	// Copy appropriate Dockerfile (try .dynamic version first for better support)
@@ -297,13 +297,24 @@ stdout_logfile_maxbytes=0
 	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
 	serviceName := project.Subdomain
 
+	// Use provided limits or defaults
+	finalCPUs := "0.5"
+	if cpuLimit > 0 {
+		finalCPUs = fmt.Sprintf("%.1f", cpuLimit)
+	}
+
+	finalMemory := "512m"
+	if memoryLimit != "" {
+		finalMemory = memoryLimit
+	}
+
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
 		"--network", s.cfg.DockerNetwork,
 		"--restart", "unless-stopped",
-		"--cpus", "0.5",
-		"--memory", "512m",
+		"--cpus", finalCPUs,
+		"--memory", finalMemory,
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
