@@ -318,6 +318,10 @@ stdout_logfile_maxbytes=0
 		}
 	}
 
+	// Step 2: Refresh permissions exactly before container start
+	s.ensurePersistentPath(project)
+	hostPersistentPath := s.getPersistentHostPath(project)
+
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
 
@@ -354,7 +358,7 @@ stdout_logfile_maxbytes=0
 		
 		// Map hierarchical persistent storage volume
 		// We use HostDataPath because the Docker daemon is on the host
-		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", s.getPersistentHostPath(project)),
+		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 
 		imageName,
 	}

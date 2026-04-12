@@ -45,6 +45,24 @@ PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
 PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 
+# Smart Path Detection
+if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
+    PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
+fi
+if [[ "$DATA_PATH" == "/app/storage/"* ]]; then
+    DATA_PATH="${PROJECT_ROOT}/${DATA_PATH#/app/}"
+fi
+
+PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
+DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
+HOST_DATA_PATH="${HOST_DATA_PATH:-$DATA_PATH}"
+HOST_PROJECTS_PATH="${HOST_PROJECTS_PATH:-$PROJECTS_PATH}"
+
+# Ensure directories exist and have correct permissions
+sudo mkdir -p "$PROJECTS_PATH" "$DATA_PATH"
+sudo chown -R $(id -u):$(id -g) "$PROJECTS_PATH" "$DATA_PATH"
+chmod 777 "$DATA_PATH"
+
 # Helper to get next numeric tag for a service
 get_next_service_tag() {
     local service=$1
@@ -70,7 +88,7 @@ deploy_with_anti_downtime() {
 
     echo -e "${YELLOW}[DEPLOY] Working on $service_name (Tag: $image_tag)...${NC}"
 
-    if ! docker build -t "$image_name" "$context_dir"; then
+    if ! DOCKER_BUILDKIT=1 docker build -t "$image_name" "$context_dir"; then
         echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
         return 1
     fi
@@ -143,8 +161,13 @@ deploy_backend() {
         --restart unless-stopped \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
-        -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
+        -v "$PROJECTS_PATH:/app/storage/projects" \
+        -v "$DATA_PATH:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+        -e DATA_PATH="/app/storage/data" \
+        -e PROJECTS_PATH="/app/storage/projects" \
+        -e HOST_DATA_PATH="$HOST_DATA_PATH" \
+        -e HOST_PROJECTS_PATH="$HOST_PROJECTS_PATH" \
         -e PG_HOST=paas-postgres \
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
