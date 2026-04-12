@@ -331,7 +331,7 @@ stdout_logfile_maxbytes=0
 	// Run migrations
 	go func() {
 		time.Sleep(10 * time.Second) // Wait for container to start
-		exec.Command("docker", "exec", containerName,
+		exec.Command("docker", "exec", "-u", "www-data", containerName,
 			"php", "artisan", "migrate", "--force").Run()
 	}()
 

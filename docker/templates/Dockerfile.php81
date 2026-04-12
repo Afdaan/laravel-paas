@@ -15,7 +15,18 @@ WORKDIR /var/www/html
 COPY . .
 COPY --from=composer /app/vendor ./vendor
 
-RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
+# Run package discovery and link storage
+RUN php artisan package:discover --ansi && \
+    php artisan storage:link --ansi
+
+# Set up directories and permissions
+RUN mkdir -p storage/app/public \
+             storage/framework/cache/data \
+             storage/framework/sessions \
+             storage/framework/views \
+             storage/logs \
+             bootstrap/cache \
+             /var/log/supervisor \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
 
