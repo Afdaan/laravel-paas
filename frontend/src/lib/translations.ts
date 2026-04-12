@@ -246,7 +246,7 @@ export const translations = {
         repository: "Repository",
         uri: "URI",
         branch: "Branch",
-        runtime: "Runtime",
+        runtime: "Laravel Version",
         deployError: "Deployment Error",
       },
       console: {
@@ -644,7 +644,7 @@ export const translations = {
         repository: "Repository",
         uri: "URI",
         branch: "Branch",
-        runtime: "Runtime",
+        runtime: "Laravel Version",
         deployError: "Deployment Error",
       },
       console: {

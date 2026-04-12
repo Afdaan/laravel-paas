@@ -139,13 +139,13 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.get(id)
       setProject(response.data)
-      setConsecutiveErrors(0) 
+      setConsecutiveErrors(0)
     } catch (error: any) {
       if (error.response?.status === 401) {
         navigate('/login')
         return
       }
-      
+
       if (error.response?.status === 404) {
         toast.error(t('projectDetail.messages.notFound') || 'Project not found')
         navigate('/projects')
@@ -153,7 +153,7 @@ function StudentProjectDetail() {
       }
 
       setConsecutiveErrors(prev => prev + 1)
-      
+
       toast.error(t('common.error'), {
         id: 'project-load-error',
         description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
@@ -275,11 +275,11 @@ function StudentProjectDetail() {
     try {
       await projectsAPI.update(id, { queue_enabled: checked })
       setProject(prev => prev ? ({ ...prev, queue_enabled: checked }) : null)
-      
-      const message = checked 
-        ? t('projectDetail.messages.queueEnabled') 
+
+      const message = checked
+        ? t('projectDetail.messages.queueEnabled')
         : t('projectDetail.messages.queueDisabled')
-        
+
       toast.success(message)
       projectsAPI.redeploy(id).then(() => fetchProject())
     } catch (error) {
@@ -403,14 +403,14 @@ function StudentProjectDetail() {
         />
         <MetricCard
           title={t('projectDetail.metrics.php')}
-          value={project.php_version?.replace('.dynamic', '') || '...'}
+          value={project.php_version ? `PHP ${project.php_version.replace('.dynamic', '')}` : '...'}
           subtext={project.is_manual_version ? t('projectDetail.metrics.customRuntime') : t('projectDetail.metrics.standardRuntime')}
           icon={Zap}
         />
         <MetricCard
           title={t('projectDetail.metrics.db')}
           value="MySQL"
-          subtext={project.database_name || t('projectDetail.metrics.noDb')}
+          subtext={project.database_name || t('projectDetail.metricps.noDb')}
           icon={DatabaseIcon}
         />
         <MetricCard
@@ -482,7 +482,7 @@ function StudentProjectDetail() {
                     <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.runtime')}</label>
                     <div className="flex items-center gap-1.5 font-bold text-xs uppercase">
                       <Zap className="w-3 h-3 text-amber-500" />
-                      {project.laravel_version || 'Laravel 10'}
+                      {project.laravel_version ? `v${project.laravel_version}` : 'Laravel 10'}
                     </div>
                   </div>
                 </div>
@@ -707,15 +707,15 @@ function StudentProjectDetail() {
                 <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl border">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                       <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono font-bold text-primary border border-primary/10">php artisan queue:work</code>
+                      <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono font-bold text-primary border border-primary/10">php artisan queue:work</code>
                     </div>
                     <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.settings.queueHandles')}</p>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className={cn(
                       "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border transition-colors whitespace-nowrap",
-                      project.queue_enabled 
-                        ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" 
+                      project.queue_enabled
+                        ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
                         : "text-muted-foreground bg-muted/50 border-transparent"
                     )}>
                       {project.queue_enabled ? t('common.enabled') : t('common.disabled')}
