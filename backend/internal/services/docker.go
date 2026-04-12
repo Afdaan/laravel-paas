@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -49,11 +50,13 @@ func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (st
 		envBackup = data
 	}
 
-	// Remove existing directory if present
-	os.RemoveAll(projectPath)
+	// --- Non-destructive sync logic ---
+	// If project exists, we want to preserve the 'storage' folder
+	tempPath := projectPath + "_temp"
+	os.RemoveAll(tempPath)
 
-	// Clone specific branch
-	args := []string{"clone", "--depth=1", "-b", branch, githubURL, projectPath}
+	// Clone specific branch to temp
+	args := []string{"clone", "--depth=1", "-b", branch, githubURL, tempPath}
 	cmd := exec.Command("git", args...)
 
 	var stderr bytes.Buffer
@@ -61,6 +64,29 @@ func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (st
 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("git clone failed: %s", stderr.String())
+	}
+
+	// If source exists, migrate storage before deleting
+	if _, err := os.Stat(projectPath); err == nil {
+		// Preserve storage/app
+		oldStorage := filepath.Join(projectPath, "storage", "app")
+		newStorage := filepath.Join(tempPath, "storage", "app")
+		
+		if _, err := os.Stat(oldStorage); err == nil {
+			os.RemoveAll(newStorage) // Remove fresh clone's empty storage
+			exec.Command("cp", "-a", oldStorage, filepath.Dir(newStorage)).Run()
+		}
+	}
+
+	// Swap paths
+	os.RemoveAll(projectPath)
+	if err := os.Rename(tempPath, projectPath); err != nil {
+		return "", fmt.Errorf("failed to finalize project path: %w", err)
+	}
+
+	// Verify it's a Laravel project
+	if _, err := os.Stat(filepath.Join(projectPath, "artisan")); os.IsNotExist(err) {
+		return "", fmt.Errorf("not a valid Laravel project (missing artisan file)")
 	}
 
 	// Restore .env if backup exists
@@ -323,6 +349,10 @@ stdout_logfile_maxbytes=0
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
+		
+		// Map hierarchical persistent storage volume
+		// Format: {DataPath}/user-{userID}/{subdomain}/storage
+		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", s.ensurePersistentPath(project)),
 
 		imageName,
 	}
@@ -945,6 +975,24 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 	}
 
 	return stdout.String(), nil
+}
+
+// ensurePersistentPath ensures the hierarchical data path exists on host
+func (s *DockerService) ensurePersistentPath(project *models.Project) string {
+	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
+	os.MkdirAll(path, 0775)
+	
+	// Ensure it's writable by the container's www-data user (uid 82/1000 usually)
+	os.Chmod(path, 0777) 
+	
+	return path
+}
+
+// CleanupPersistentData removes the hierarchical storage for a specific project
+func (s *DockerService) CleanupPersistentData(project *models.Project) {
+	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain)
+	slog.Info("Cleaning up persistent data", "path", path)
+	os.RemoveAll(path)
 }
 
 // GetEnvFile reads the .env file for a project

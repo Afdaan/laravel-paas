@@ -48,6 +48,7 @@ type Config struct {
 	// Docker
 	DockerSocket   string
 	ProjectsPath   string
+	DataPath       string
 	TemplatesPath  string
 	DockerNetwork  string
 
@@ -96,6 +97,7 @@ func Load() *Config {
 		// Docker
 		DockerSocket:  getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
 		ProjectsPath:  getEnv("PROJECTS_PATH", "/app/storage/projects"),
+		DataPath:      getEnv("DATA_PATH", "/app/storage/data"),
 		TemplatesPath: getEnv("TEMPLATES_PATH", "/app/docker/templates"),
 		DockerNetwork: getEnv("DOCKER_NETWORK", "paas-network"),
 

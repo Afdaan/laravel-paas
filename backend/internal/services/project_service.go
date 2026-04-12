@@ -61,8 +61,9 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	// 2. Remove Docker Image
 	s.dockerService.RemoveImage(project.Subdomain)
 
-	// 3. Cleanup Filesystem (Storage/Projects)
+	// 3. Cleanup Filesystem (Source Code & Persistent Data)
 	s.dockerService.CleanupProject(project.Subdomain)
+	s.dockerService.CleanupPersistentData(project)
 
 	// 4. Drop Student Database
 	if project.DatabaseName != "" {

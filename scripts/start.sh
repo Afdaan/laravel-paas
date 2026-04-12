@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
+PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
+DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -149,7 +151,10 @@ echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
 mkdir -p "$DB_DATA_DIR"
 mkdir -p "$PG_DATA_DIR"
-mkdir -p "${PROJECT_ROOT}/storage/projects"
+mkdir -p "$PROJECTS_PATH"
+mkdir -p "$DATA_PATH"
+# Ensure data path is writable by all for student containers
+chmod 777 "$DATA_PATH" 
 
 # 4. Smart Backup Logic (Logical or Physical)
 LAST_BACKUP_TS="${PROJECT_ROOT}/storage/.last_backup_ts"
@@ -275,8 +280,11 @@ deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
     --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
-    -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
+    -v "${PROJECTS_PATH}:/app/storage/projects" \
+    -v "${DATA_PATH}:/app/storage/data" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+    -e PROJECTS_PATH="/app/storage/projects" \
+    -e DATA_PATH="/app/storage/data" \
     -e PG_HOST=paas-postgres \
     -e PG_USER="$PG_USER" \
     -e PG_PASSWORD="$PG_PASSWORD" \
