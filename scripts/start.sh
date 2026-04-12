@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
+REDIS_DATA_DIR="${PROJECT_ROOT}/storage/redis"
 
 # Colors for output
 RED='\033[0;31m'
@@ -157,8 +158,8 @@ DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
-sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
-sudo chown -R $(id -u):$(id -g) "$PROJECTS_PATH" "$DATA_PATH"
+sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
+sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
 chmod 777 "$DATA_PATH" 
 
 # 4. Smart Backup Logic (Logical or Physical)
@@ -227,17 +228,17 @@ docker run -d \
     postgres:15-alpine
 
 # 6. Infrastructure: Redis
-echo -e "${YELLOW}Starting Redis...${NC}"
+echo -e "${YELLOW}Starting Redis with persistence...${NC}"
 docker rm -f paas-redis 2>/dev/null || true
-REDIS_CMD=""
-[ ! -z "$REDIS_PASSWORD" ] && REDIS_CMD="redis-server --requirepass $REDIS_PASSWORD"
-
-docker run -d \
-    --name paas-redis \
-    --network paas-network \
-    --restart unless-stopped \
-    -v paas-redis-data:/data \
-    redis:alpine $REDIS_CMD
+REDIS_CMD="redis-server --appendonly yes"
+[ ! -z "$REDIS_PASSWORD" ] && REDIS_CMD="$REDIS_CMD --requirepass $REDIS_PASSWORD"
+ 
+ docker run -d \
+     --name paas-redis \
+     --network paas-network \
+     --restart unless-stopped \
+     -v "${REDIS_DATA_DIR}:/data" \
+     redis:alpine sh -c "$REDIS_CMD"
 
 # 7. Infrastructure: Traefik
 echo -e "${YELLOW}Starting Traefik...${NC}"
