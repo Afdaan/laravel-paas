@@ -141,6 +141,7 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 	}
 
 	h.populateURL(project)
+	h.updateActivity(project.ID)
 
 	return c.JSON(project)
 }
@@ -168,7 +169,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 	}
 
 	updates := map[string]interface{}{}
-	
+
 	// If PHP version provided, update it and set manual flag
 	if req.PHPVersion != "" {
 		updates["php_version"] = req.PHPVersion
@@ -208,7 +209,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 			"error": "Name, GitHub URL, and database name are required",
 		})
 	}
-	
+
 	// Default branch to main if empty
 	branch := req.Branch
 	if branch == "" {
@@ -272,16 +273,16 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 
 	// Create project record
 	project := models.Project{
-		UserID:       userID,
-		Name:         req.Name,
-		GithubURL:    req.GithubURL,
-		Branch:       branch,
-		Subdomain:    subdomain,
-		DatabaseName: req.DatabaseName,
-		Status:       models.StatusQueued,
-		QueueEnabled: req.QueueEnabled,
+		UserID:         userID,
+		Name:           req.Name,
+		GithubURL:      req.GithubURL,
+		Branch:         branch,
+		Subdomain:      subdomain,
+		DatabaseName:   req.DatabaseName,
+		Status:         models.StatusQueued,
+		QueueEnabled:   req.QueueEnabled,
 		LastAccessedAt: &now,
-		ExpiresAt:    expiresAt,
+		ExpiresAt:      expiresAt,
 	}
 
 	if err := h.db.Create(&project).Error; err != nil {
@@ -309,6 +310,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		"queue_position": queueLength,
 	})
 }
+
 // deployProject handles the full deployment process
 func (h *ProjectHandler) deployProject(project *models.Project) {
 	// Update status to building and clear old error logs
@@ -331,7 +333,6 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		return
 	}
 
-	
 	// Use manual PHP version if set, otherwise use detected version
 	finalPHPVersion := phpVersion
 	if project.IsManualVersion && project.PHPVersion != "" {
@@ -349,7 +350,6 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 		return
 	}
 
-	
 	var oldContainerID *string
 	if project.ContainerID != nil {
 		oldHelp := *project.ContainerID
@@ -357,7 +357,7 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	}
 
 	projectDomain := GetSetting(h.db, "project_domain", h.cfg.ProjectDomain)
-	
+
 	// Fetch resource limits from settings
 	cpuPercentStr := GetSetting(h.db, "cpu_limit_percent", "50")
 	cpuPercent, _ := strconv.ParseFloat(cpuPercentStr, 64)
@@ -367,7 +367,7 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 	memoryLimit := memoryMB + "m"
 
 	containerID, err := h.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit)
-	
+
 	go h.dockerService.PruneImages()
 
 	if err != nil {
@@ -398,7 +398,7 @@ func (h *ProjectHandler) deployProject(project *models.Project) {
 
 	if oldContainerID != nil {
 		go func() {
-			time.Sleep(5 * time.Second) 
+			time.Sleep(5 * time.Second)
 			h.dockerService.RemoveContainer(*oldContainerID)
 		}()
 	}
@@ -424,6 +424,8 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	h.db.Model(project).Updates(map[string]interface{}{
 		"status": models.StatusQueued,
 	})
+
+	h.updateActivity(project.ID)
 
 	// Enqueue redeployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
@@ -506,6 +508,8 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 		})
 	}
 
+	h.updateActivity(project.ID)
+
 	return c.JSON(fiber.Map{
 		"logs": logs,
 	})
@@ -532,6 +536,8 @@ func (h *ProjectHandler) Stats(c *fiber.Ctx) error {
 			"error": "Failed to get stats",
 		})
 	}
+
+	h.updateActivity(project.ID)
 
 	return c.JSON(stats)
 }
@@ -573,6 +579,8 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		})
 	}
 
+	h.updateActivity(project.ID)
+
 	return c.JSON(fiber.Map{
 		"output": output,
 	})
@@ -589,6 +597,8 @@ func (h *ProjectHandler) GetEnv(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to read .env file"})
 	}
+
+	h.updateActivity(project.ID)
 
 	return c.JSON(fiber.Map{
 		"content": content,
@@ -615,6 +625,8 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	if err := h.dockerService.SaveEnvFile(project.Subdomain, req.Content); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save .env file"})
 	}
+
+	h.updateActivity(project.ID)
 
 	// Use empty string to restart container (stop & start logic handled in redeploy usually)
 	// But here we probably should restart the container to apply changes.
@@ -678,11 +690,11 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	go func(pid uint) {
 		now := time.Now()
 		expiryDays, _ := strconv.Atoi(GetSetting(h.db, "project_expiry_days", "30"))
-		
+
 		updates := map[string]interface{}{
 			"last_accessed_at": &now,
 		}
-		
+
 		if expiryDays > 0 {
 			expire := now.AddDate(0, 0, expiryDays)
 			updates["expires_at"] = &expire
@@ -690,7 +702,7 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 			// If set to 0 (never), clear expiration
 			updates["expires_at"] = nil
 		}
-		
+
 		h.db.Model(&models.Project{}).Where("id = ?", pid).Updates(updates)
 	}(project.ID)
 
@@ -772,4 +784,25 @@ func (h *ProjectHandler) populateURLs(projects []models.Project) {
 	for i := range projects {
 		projects[i].URL = "https://" + projects[i].GetFullDomain(projectDomain)
 	}
+}
+
+// updateActivity helper to track last access and update expiration
+func (h *ProjectHandler) updateActivity(projectID uint) {
+	go func() {
+		now := time.Now()
+		expiryDays, _ := strconv.Atoi(GetSetting(h.db, "project_expiry_days", "30"))
+
+		updates := map[string]interface{}{
+			"last_accessed_at": &now,
+		}
+
+		if expiryDays > 0 {
+			expire := now.AddDate(0, 0, expiryDays)
+			updates["expires_at"] = &expire
+		} else {
+			updates["expires_at"] = nil
+		}
+
+		h.db.Model(&models.Project{}).Where("id = ?", projectID).Updates(updates)
+	}()
 }
