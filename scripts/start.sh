@@ -143,9 +143,7 @@ PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 HTTP_PORT=${HTTP_PORT:-80}
 HTTPS_PORT=${HTTPS_PORT:-443}
-
-# Smart Path Detection: 
-# If .env uses Docker paths (/app/storage), translate them to host paths
+# Smart Path Detection
 if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
     PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
 fi
@@ -159,13 +157,8 @@ DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
-sudo mkdir -p "$DB_DATA_DIR"
-sudo mkdir -p "$PG_DATA_DIR"
-sudo mkdir -p "$PROJECTS_PATH"
-sudo mkdir -p "$DATA_PATH"
-# Ensure paths are owned by the current user so the rest of the script works
+sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
 sudo chown -R $(id -u):$(id -g) "$PROJECTS_PATH" "$DATA_PATH"
-# Ensure data path is writable by student containers
 chmod 777 "$DATA_PATH" 
 
 # 4. Smart Backup Logic (Logical or Physical)

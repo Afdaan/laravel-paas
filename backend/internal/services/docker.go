@@ -299,7 +299,6 @@ stdout_logfile_maxbytes=0
 		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
 	
-	// Force BuildKit for stable multi-stage and layer exports
 	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -980,16 +979,23 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 	return stdout.String(), nil
 }
 
-// ensurePersistentPath ensures the hierarchical data path exists on host
 func (s *DockerService) ensurePersistentPath(project *models.Project) string {
 	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
 	
-	// Ensure the root storage and public subfolder exists
-	publicPath := filepath.Join(path, "public")
-	os.MkdirAll(publicPath, 0777)
+	os.MkdirAll(path, 0777)
 	
-	// Hard recursive chmod to ensure www-data (uid 82) can always write
-	// We use shell chmod for recursive ease
+	publicPath := filepath.Join(path, "public")
+	if _, err := os.Stat(publicPath); os.IsNotExist(err) {
+		slog.Info("Initializing persistent storage from source", "subdomain", project.Subdomain)
+		
+		projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "storage", "app")
+		if _, err := os.Stat(projectSourceStorage); err == nil {
+			exec.Command("cp", "-a", projectSourceStorage+"/.", path).Run()
+		} else {
+			os.MkdirAll(publicPath, 0777)
+		}
+	}
+	
 	exec.Command("chmod", "-R", "777", filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))).Run()
 	
 	return path
