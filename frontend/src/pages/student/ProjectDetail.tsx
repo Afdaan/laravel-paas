@@ -482,7 +482,7 @@ function StudentProjectDetail() {
                     <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.runtime')}</label>
                     <div className="flex items-center gap-1.5 font-bold text-xs uppercase">
                       <Zap className="w-3 h-3 text-amber-500" />
-                      {project.laravel_version ? `v${project.laravel_version}` : 'Laravel 10'}
+                      {project.laravel_version ? project.laravel_version : 'Laravel 10'}
                     </div>
                   </div>
                 </div>

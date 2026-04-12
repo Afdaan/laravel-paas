@@ -7,7 +7,7 @@ package database
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
@@ -39,13 +39,13 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Println("[SUCCESS] Database connected successfully")
+	slog.Info("Database connected successfully")
 	return db, nil
 }
 
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
-	log.Println("Running database migrations...")
+	slog.Info("Running database migrations")
 
 	err := db.AutoMigrate(
 		&models.User{},
@@ -58,33 +58,35 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("migration failed: %w", err)
 	}
 
-	log.Println("[SUCCESS] Migrations completed")
+	slog.Info("Migrations completed")
 	return nil
 }
 
 // Seed creates default data if not exists
 func Seed(db *gorm.DB, cfg *config.Config) error {
-	log.Println("Seeding database...")
+	slog.Info("Seeding database")
 
 	// Create default settings if not exists
 	defaultSettings := []models.Setting{
-		{Key: "max_projects_per_user", Value: "3", Description: "Maximum projects per student", Type: "int"},
-		{Key: "project_expiry_days", Value: "30", Description: "Days until project auto-delete (0=never)", Type: "int"},
-		{Key: "cpu_limit_percent", Value: "50", Description: "CPU limit per container (%)", Type: "int"},
-		{Key: "memory_limit_mb", Value: "512", Description: "Memory limit per container (MB)", Type: "int"},
-		{Key: "base_domain", Value: cfg.BaseDomain, Description: "Base domain for subdomains", Type: "string"},
-		{Key: "project_domain", Value: cfg.ProjectDomain, Description: "Dedicated domain for student projects", Type: "string"},
+		{Key: models.SettingMaxProjects, Value: models.DefaultMaxProjects, Description: "Maximum projects per student", Type: "int"},
+		{Key: models.SettingProjectExpiry, Value: models.DefaultProjectExpiry, Description: "Days until project auto-delete (0=never)", Type: "int"},
+		{Key: models.SettingCPULimit, Value: models.DefaultCPULimit, Description: "CPU limit per container (%)", Type: "int"},
+		{Key: models.SettingMemoryLimit, Value: models.DefaultMemoryLimit, Description: "Memory limit per container (MB)", Type: "int"},
+		{Key: models.SettingBaseDomain, Value: cfg.BaseDomain, Description: "Base domain for subdomains", Type: "string"},
+		{Key: models.SettingProjectDomain, Value: cfg.ProjectDomain, Description: "Dedicated domain for student projects", Type: "string"},
+		{Key: models.SettingAdminIdleTimeout, Value: models.DefaultAdminIdleTimeout, Description: "Admin inactivity logout timeout (minutes)", Type: "int"},
+		{Key: models.SettingMaxConcurrent, Value: models.DefaultMaxConcurrent, Description: "Maximum simultaneous builds", Type: "int"},
 	}
 
 	for _, setting := range defaultSettings {
 		var existing models.Setting
 		if db.Where("setting_key = ?", setting.Key).First(&existing).Error != nil {
 			if err := db.Create(&setting).Error; err != nil {
-				log.Printf("Warning: failed to create setting %s: %v", setting.Key, err)
+				slog.Warn("Failed to create default setting", "key", setting.Key, "error", err)
 			}
 		}
 	}
 
-	log.Println("[SUCCESS] Database seeding completed")
+	slog.Info("Database seeding completed")
 	return nil
 }

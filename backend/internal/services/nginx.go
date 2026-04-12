@@ -4,7 +4,7 @@ package services
 		"bytes"
 		"encoding/json"
 		"fmt"
-		"log"
+		"log/slog"
 		"net/http"
 		"time"
 
@@ -44,7 +44,7 @@ package services
 		if project.Port != nil {
 			port = *project.Port
 		} else {
-			log.Printf("[WARN] Project %s has no port assigned, defaulting to 80 for Nginx sync", project.Subdomain)
+			slog.Warn("Project has no port assigned, defaulting to 80 for Nginx sync", "subdomain", project.Subdomain)
 		}
 
 		// Use stable User ID for folder naming to prevent orphans/conflicts
@@ -107,7 +107,7 @@ package services
 			return fmt.Errorf("webhook returned status: %d", resp.StatusCode)
 		}
 
-		log.Printf("[INFO] Successfully sent webhook for project %s (action: %s)", payload.Subdomain, payload.Action)
+		slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action)
 		return nil
 	}
 	
