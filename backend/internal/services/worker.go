@@ -13,6 +13,7 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/repositories"
 	"gorm.io/gorm"
 )
 
@@ -24,18 +25,26 @@ type DeploymentWorker struct {
 	dockerService  *DockerService
 	redisService   *RedisService
 	nginxService   *NginxWebhookService
+	projectRepo    repositories.ProjectRepository
+	settingService *SettingService
 	running        bool
 }
 
 // NewDeploymentWorker creates a new deployment worker
 func NewDeploymentWorker(db *gorm.DB, cfg *config.Config, redisService *RedisService) *DeploymentWorker {
+	projectRepo := repositories.NewProjectRepository(db)
+	settingRepo := repositories.NewSettingRepository(db)
+	settingService := NewSettingService(settingRepo)
+	
 	return &DeploymentWorker{
 		db:             db,
 		cfg:            cfg,
-		projectService: NewProjectService(db, cfg, redisService),
+		projectService: NewProjectService(cfg, projectRepo, settingService, redisService),
 		dockerService:  NewDockerService(cfg),
 		redisService:   redisService,
 		nginxService:   NewNginxWebhookService(cfg),
+		projectRepo:    projectRepo,
+		settingService: settingService,
 		running:        false,
 	}
 }
@@ -111,7 +120,8 @@ func (w *DeploymentWorker) cleanupExpiredProjects() {
 	now := time.Now()
 	
 	// Find projects where ExpiresAt is in the past
-	if err := w.db.Where("expires_at IS NOT NULL AND expires_at < ?", now).Find(&expiredProjects).Error; err != nil {
+	expiredProjects, err := w.projectRepo.ListAll() // Simplified: ListAll and filter or add specific repo method
+	if err != nil {
 		slog.Error("Failed to query expired projects", "error", err)
 		return
 	}
@@ -120,13 +130,16 @@ func (w *DeploymentWorker) cleanupExpiredProjects() {
 		return
 	}
 	
-	slog.Info("Found expired projects for automated cleanup", "count", len(expiredProjects))
+	slog.Info("Checking Expired projects for automated cleanup", "count", len(expiredProjects))
 	
-	for _, project := range expiredProjects {
-		slog.Info("Auto-deleting expired project via service", "name", project.Name, "id", project.ID)
-		
-		if err := w.projectService.DeleteProject(&project); err != nil {
-			slog.Error("Failed to auto-delete expired project", "id", project.ID, "error", err)
+	for i := range expiredProjects {
+		project := expiredProjects[i]
+		if project.ExpiresAt != nil && project.ExpiresAt.Before(now) {
+			slog.Info("Auto-deleting expired project via service", "name", project.Name, "id", project.ID)
+			
+			if err := w.projectService.DeleteProject(&project); err != nil {
+				slog.Error("Failed to auto-delete expired project", "id", project.ID, "error", err)
+			}
 		}
 	}
 	
@@ -143,8 +156,8 @@ func (w *DeploymentWorker) Stop() {
 // recoverOrphanedBuilds finds projects left in "building" state due to unexpected shutdown
 // and pushes them back into the redis queue as "queued"
 func (w *DeploymentWorker) recoverOrphanedBuilds() {
-	var orphanedProjects []models.Project
-	if err := w.db.Where("status = ?", models.StatusBuilding).Find(&orphanedProjects).Error; err != nil {
+	orphanedProjects, err := w.projectRepo.ListAll() // Filter for StatusBuilding
+	if err != nil {
 		slog.Error("Failed to query orphaned builds", "error", err)
 		return
 	}
@@ -152,21 +165,24 @@ func (w *DeploymentWorker) recoverOrphanedBuilds() {
 	if len(orphanedProjects) > 0 {
 		slog.Info("Recovering orphaned builds from previous session", "count", len(orphanedProjects))
 		
-		for _, project := range orphanedProjects {
-			// 1. Reset Status in DB to Queued
-			w.db.Model(&project).Updates(map[string]interface{}{
-				"status": models.StatusQueued,
-				"error_log": "Recovered from unexpected server shutdown.",
-			})
+		for i := range orphanedProjects {
+			project := orphanedProjects[i]
+			if project.Status == models.StatusBuilding {
+				// 1. Reset Status in DB to Queued
+				project.Status = models.StatusQueued
+				recoveryLog := "Recovered from unexpected server shutdown."
+				project.ErrorLog = &recoveryLog
+				w.projectRepo.Update(&project)
 
 			// 2. Clear existing lock if any
 			w.redisService.ReleaseDeploymentLock(project.ID)
 
-			// 3. Re-enqueue to Redis (Assume 'redeploy' for full clean spin-up)
-			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
-				slog.Error("Failed to re-queue project", "id", project.ID, "error", err)
-			} else {
-				slog.Info("Project automatically re-queued", "id", project.ID)
+				// 3. Re-enqueue to Redis (Assume 'redeploy' for full clean spin-up)
+				if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+					slog.Error("Failed to re-queue project", "id", project.ID, "error", err)
+				} else {
+					slog.Info("Project automatically re-queued", "id", project.ID)
+				}
 			}
 		}
 	}
@@ -283,10 +299,9 @@ func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Update status to building and clear old error logs
-	w.db.Model(project).Select("status", "error_log", "updated_at").Updates(map[string]interface{}{
-		"status":    models.StatusBuilding,
-		"error_log": nil,
-	})
+	project.Status = models.StatusBuilding
+	project.ErrorLog = nil
+	w.projectRepo.Update(project)
 
 	// Step 1: Clone repository
 	projectPath, err := w.dockerService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
@@ -308,10 +323,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 		finalPHPVersion = project.PHPVersion
 	}
 
-	w.db.Model(project).Updates(map[string]interface{}{
-		"laravel_version": laravelVersion,
-		"php_version":     finalPHPVersion,
-	})
+	project.LaravelVersion = laravelVersion
+	project.PHPVersion = finalPHPVersion
+	w.projectRepo.Update(project)
 
 	// Step 3: Create database
 	if err := w.dockerService.CreateDatabase(project.DatabaseName); err != nil {
@@ -347,10 +361,12 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	}
 
 	// Update project as running with new container ID
-	w.db.Model(project).Updates(map[string]interface{}{
-		"status":       models.StatusRunning,
-		"container_id": containerID,
-	})
+	project.Status = models.StatusRunning
+	project.ContainerID = &containerID
+	w.projectRepo.Update(project)
+
+	// Sync Redis Proxy Cache
+	w.projectService.CacheSubdomainMapping(project)
 
 	// Sync config to remote Nginx
 	w.nginxService.SyncProject(project, projectDomain)
@@ -365,10 +381,10 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 
 // updateProjectError sets project status to failed
 func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg string) {
-	w.db.Model(project).Updates(map[string]interface{}{
-		"status":    models.StatusFailed,
-		"error_log": errorMsg,
-	})
+	project.Status = models.StatusFailed
+	msg := errorMsg
+	project.ErrorLog = &msg
+	w.projectRepo.Update(project)
 	w.redisService.IncrementDeploymentCounter("failed_deployment")
 }
 

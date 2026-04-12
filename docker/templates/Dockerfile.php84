@@ -29,10 +29,6 @@ COPY . .
 COPY --from=composer /app/vendor ./vendor
 COPY --from=frontend /app/public/build* ./public/build/
 
-# Run package discovery and link storage
-RUN php artisan package:discover --ansi && \
-    php artisan storage:link --ansi
-
 # Set up directories and permissions
 RUN mkdir -p storage/app/public \
              storage/framework/cache/data \
@@ -41,6 +37,9 @@ RUN mkdir -p storage/app/public \
              storage/logs \
              bootstrap/cache \
              /var/log/supervisor \
+    && rm -rf public/storage \
+    && php artisan storage:link --ansi \
+    && php artisan package:discover --ansi \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
 

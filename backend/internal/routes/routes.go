@@ -64,7 +64,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	api := app.Group("/api")
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg)
+	authHandler := handlers.NewAuthHandler(db, cfg, redisService)
 	userHandler := handlers.NewUserHandler(db)
 	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
 	settingHandler := handlers.NewSettingHandler(db)
@@ -92,7 +92,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// -----------------------------
 	// Protected Routes
 	// -----------------------------
-	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret))
+	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService))
 	
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)

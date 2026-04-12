@@ -13,21 +13,28 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"gorm.io/gorm"
+	"github.com/laravel-paas/backend/internal/repositories"
 )
 
 type ProjectService struct {
-	db            *gorm.DB
 	cfg           *config.Config
+	projectRepo   repositories.ProjectRepository
+	settingService *SettingService
 	dockerService *DockerService
 	nginxService  *NginxWebhookService
 	redisService  *RedisService
 }
 
-func NewProjectService(db *gorm.DB, cfg *config.Config, redisService *RedisService) *ProjectService {
+func NewProjectService(
+	cfg *config.Config, 
+	projectRepo repositories.ProjectRepository,
+	settingService *SettingService,
+	redisService *RedisService,
+) *ProjectService {
 	return &ProjectService{
-		db:            db,
 		cfg:           cfg,
+		projectRepo:   projectRepo,
+		settingService: settingService,
 		dockerService: NewDockerService(cfg),
 		nginxService:  NewNginxWebhookService(cfg),
 		redisService:  redisService,
@@ -36,14 +43,7 @@ func NewProjectService(db *gorm.DB, cfg *config.Config, redisService *RedisServi
 
 // GetProjectByID fetches a project with preloaded associations
 func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
-	var project models.Project
-	if err := s.db.Preload("User").First(&project, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("project not found")
-		}
-		return nil, err
-	}
-	return &project, nil
+	return s.projectRepo.GetByID(id)
 }
 
 // DeleteProject performs a thorough cleanup of all project resources
@@ -73,8 +73,11 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	s.nginxService.DeleteProject(project, projectDomain)
 
+	// Invalidate Redis Proxy Cache
+	s.InvalidateSubdomainCache(project.Subdomain)
+
 	// 6. Hard Delete from Database
-	if err := s.db.Unscoped().Delete(project).Error; err != nil {
+	if err := s.projectRepo.Delete(project.ID); err != nil {
 		slog.Error("Failed to delete project record from database", "id", project.ID, "error", err)
 		return err
 	}
@@ -88,11 +91,7 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 
 // GetSetting fetches a platform setting with a fallback
 func (s *ProjectService) GetSetting(key, defaultValue string) string {
-	var setting models.Setting
-	if err := s.db.Where("setting_key = ?", key).First(&setting).Error; err != nil {
-		return defaultValue
-	}
-	return setting.Value
+	return s.settingService.Get(key, defaultValue)
 }
 
 // UpdateActivity updates the last_accessed_at and expires_at fields
@@ -101,18 +100,21 @@ func (s *ProjectService) UpdateActivity(projectID uint) {
 		now := time.Now()
 		expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
 
-		updates := map[string]interface{}{
-			"last_accessed_at": &now,
+		project, err := s.projectRepo.GetByID(projectID)
+		if err != nil {
+			slog.Error("Failed to fetch project for activity update", "id", projectID, "error", err)
+			return
 		}
 
+		project.LastAccessedAt = &now
 		if expiryDays > 0 {
 			expire := now.AddDate(0, 0, expiryDays)
-			updates["expires_at"] = &expire
+			project.ExpiresAt = &expire
 		} else {
-			updates["expires_at"] = nil
+			project.ExpiresAt = nil
 		}
 
-		if err := s.db.Model(&models.Project{}).Where("id = ?", projectID).Updates(updates).Error; err != nil {
+		if err := s.projectRepo.Update(project); err != nil {
 			slog.Error("Failed to update project activity", "id", projectID, "error", err)
 		}
 	}()
@@ -167,3 +169,18 @@ func (s *ProjectService) StopContainer(containerID string) error {
 	return s.dockerService.StopContainer(containerID)
 }
 
+// CacheSubdomainMapping syncs project lookup data to Redis
+func (s *ProjectService) CacheSubdomainMapping(project *models.Project) error {
+	if project.Port == nil {
+		return nil
+	}
+	key := fmt.Sprintf("proxy:subdomain:%s", project.Subdomain)
+	// Cache for 1 hour, auto-refresh on access
+	return s.redisService.SetCache(key, project, 1*time.Hour)
+}
+
+// InvalidateSubdomainCache removes project mapping from Redis
+func (s *ProjectService) InvalidateSubdomainCache(subdomain string) error {
+	key := fmt.Sprintf("proxy:subdomain:%s", subdomain)
+	return s.redisService.DeleteCache(key)
+}

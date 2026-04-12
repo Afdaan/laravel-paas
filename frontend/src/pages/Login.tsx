@@ -90,9 +90,9 @@ function Login() {
          </Button>
       </div>
       <div className="w-full max-w-md">
-        <Button variant="ghost" render={<Link to="/" className="text-muted-foreground group" />} className="mb-8">
-            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-            {t('login.backToHome')}
+        <Button variant="ghost" className="mb-8" render={<Link to="/" className="text-muted-foreground group" />} nativeButton={false}>
+          <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+          {t('login.backToHome')}
         </Button>
         
         <Card>

@@ -90,19 +90,24 @@ deploy_with_anti_downtime() {
     if [ "$healthy" == "true" ]; then
         echo -e "${GREEN}[SUCCESS] $service_name is healthy! Swapping containers...${NC}"
         
-        # Stop and rename old
+        # 1. Prepare for cutover by moving the current container to 'old' identity
         if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
-            docker stop "$container_name" 2>/dev/null || true
+            echo -e "${YELLOW}[SWAP] Reassigning current $container_name to $old_container_name...${NC}"
             docker rename "$container_name" "$old_container_name" 2>/dev/null || true
         fi
         
-        # Rename new to standard name
+        # 2. Immediately assign the new container to the main identity
+        echo -e "${YELLOW}[SWAP] Promoting $temp_container_name to $container_name...${NC}"
         docker rename "$temp_container_name" "$container_name"
         
-        # Cleanup old container
-        docker rm -f "$old_container_name" 2>/dev/null || true
+        # 3. NOW stop the old version (it's no longer the primary identity)
+        if docker ps -a --format '{{.Names}}' | grep -q "^${old_container_name}$"; then
+            echo -e "${YELLOW}[STOP] Stopping previous $service_name version...${NC}"
+            docker stop "$old_container_name" 2>/dev/null || true
+            docker rm -f "$old_container_name" 2>/dev/null || true
+        fi
         
-        # Cleanup old images for this service
+        # 4. Cleanup old images
         echo -e "${YELLOW}[CLEANUP] Removing old images for $service_name...${NC}"
         docker images "paas-$service_name" --format "{{.Tag}}" | grep -v "$image_tag" | xargs -I {} docker rmi "paas-$service_name:{}" 2>/dev/null || true
         

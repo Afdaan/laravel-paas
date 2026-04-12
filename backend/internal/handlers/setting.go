@@ -6,36 +6,34 @@
 package handlers
 
 import (
-	"fmt"
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/backend/internal/services"
 	"gorm.io/gorm"
 )
 
 // SettingHandler handles settings endpoints
 type SettingHandler struct {
-	db *gorm.DB
+	service *services.SettingService
 }
 
 // NewSettingHandler creates a new setting handler
 func NewSettingHandler(db *gorm.DB) *SettingHandler {
-	return &SettingHandler{db: db}
+	repo := repositories.NewSettingRepository(db)
+	return &SettingHandler{
+		service: services.NewSettingService(repo),
+	}
 }
 
 // List returns all settings
 func (h *SettingHandler) List(c *fiber.Ctx) error {
-	var settings []models.Setting
-	if err := h.db.Find(&settings).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to fetch settings",
-		})
+	settings, err := h.service.ListAllModels()
+	if err != nil {
+		return apperr.New(500, "SETTING_FETCH_FAILED", "Failed to fetch system settings")
 	}
 
-	// Convert to map for easier frontend consumption
-	settingsMap := make(map[string]string)
-	for _, s := range settings {
-		settingsMap[s.Key] = s.Value
-	}
+	settingsMap, _ := h.service.ListAll()
 
 	return c.JSON(fiber.Map{
 		"data": settings,
@@ -52,37 +50,14 @@ type UpdateSettingsRequest struct {
 func (h *SettingHandler) Update(c *fiber.Ctx) error {
 	var req UpdateSettingsRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return apperr.ErrBadRequest
 	}
 
-	// Update each setting
-	for key, value := range req.Settings {
-		// Convert value to string regardless of incoming type
-		strValue := fmt.Sprintf("%v", value)
-
-		result := h.db.Model(&models.Setting{}).
-			Where("setting_key = ?", key).
-			Update("value", strValue)
-		
-		if result.Error != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Failed to update settings",
-			})
-		}
+	if err := h.service.UpdateBulk(req.Settings); err != nil {
+		return apperr.New(500, "SETTING_UPDATE_FAILED", "Failed to save system settings")
 	}
 
 	return c.JSON(fiber.Map{
 		"message": "Settings updated successfully",
 	})
-}
-
-// GetSetting helper to get a setting value
-func GetSetting(db *gorm.DB, key string, defaultValue string) string {
-	var setting models.Setting
-	if err := db.Where("setting_key = ?", key).First(&setting).Error; err != nil {
-		return defaultValue
-	}
-	return setting.Value
 }

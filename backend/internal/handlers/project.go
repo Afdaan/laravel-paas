@@ -14,8 +14,10 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/services"
 	"gorm.io/gorm"
 )
@@ -30,10 +32,14 @@ type ProjectHandler struct {
 
 // NewProjectHandler creates a new project handler
 func NewProjectHandler(db *gorm.DB, cfg *config.Config, redisService *services.RedisService) *ProjectHandler {
+	projectRepo := repositories.NewProjectRepository(db)
+	settingRepo := repositories.NewSettingRepository(db)
+	settingService := services.NewSettingService(settingRepo)
+	
 	return &ProjectHandler{
 		db:             db,
 		cfg:            cfg,
-		projectService: services.NewProjectService(db, cfg, redisService),
+		projectService: services.NewProjectService(cfg, projectRepo, settingService, redisService),
 		redisService:   redisService,
 	}
 }
@@ -53,9 +59,7 @@ func (h *ProjectHandler) ListOwn(c *fiber.Ctx) error {
 
 	var projects []models.Project
 	if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&projects).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to fetch projects",
-		})
+		return apperr.New(500, "PROJECT_FETCH_FAILED", "Failed to fetch your projects")
 	}
 
 	h.projectService.PopulateURLs(projects)
@@ -109,9 +113,7 @@ func (h *ProjectHandler) ListAll(c *fiber.Ctx) error {
 func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return apperr.NewNotFound("Project", c.Params("id"))
 	}
 
 	h.projectService.UpdateActivity(project.ID)
@@ -124,9 +126,7 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	var req CreateProjectRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return apperr.ErrBadRequest
 	}
 
 	userID := c.Locals("user_id").(uint)
@@ -431,10 +431,24 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	subdomain := strings.Split(host, ".")[0]
 
 	var project models.Project
+	cacheKey := fmt.Sprintf("proxy:subdomain:%s", subdomain)
+
+	// 1. Try Cache First
+	err := h.redisService.GetCache(cacheKey, &project)
+	if err == nil && project.Status == models.StatusRunning && project.Port != nil {
+		// Cache hit! Forward immediately
+		targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+		h.projectService.UpdateActivity(project.ID)
+		return proxy.Forward(targetURL)(c)
+	}
+
+	// 2. Cache Miss: Fallback to Database
 	if err := h.db.Where("subdomain = ? AND status = ?", subdomain, models.StatusRunning).First(&project).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})
 	}
 
+	// 3. Populate Cache for the next request
+	h.projectService.CacheSubdomainMapping(&project)
 	h.projectService.UpdateActivity(project.ID)
 
 	if project.Port == nil {
@@ -442,11 +456,7 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
-	if err := proxy.Forward(targetURL)(c); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	return nil
+	return proxy.Forward(targetURL)(c)
 }
 
 // GetQueueStats returns deployment queue statistics
