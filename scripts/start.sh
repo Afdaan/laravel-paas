@@ -12,18 +12,6 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
 
-# Smart Path Detection: 
-# If .env uses Docker paths (/app/storage), translate them to host paths
-if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
-    PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
-fi
-if [[ "$DATA_PATH" == "/app/storage/"* ]]; then
-    DATA_PATH="${PROJECT_ROOT}/${DATA_PATH#/app/}"
-fi
-
-PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
-DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -155,6 +143,18 @@ PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 HTTP_PORT=${HTTP_PORT:-80}
 HTTPS_PORT=${HTTPS_PORT:-443}
+
+# Smart Path Detection: 
+# If .env uses Docker paths (/app/storage), translate them to host paths
+if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
+    PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
+fi
+if [[ "$DATA_PATH" == "/app/storage/"* ]]; then
+    DATA_PATH="${PROJECT_ROOT}/${DATA_PATH#/app/}"
+fi
+
+PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
+DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
 
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
