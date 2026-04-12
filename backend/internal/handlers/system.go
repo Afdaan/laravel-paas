@@ -4,18 +4,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type SystemHandler struct {
-	db            *gorm.DB
+	userService   *services.UserService
 	dockerService *services.DockerService
 }
 
-func NewSystemHandler(db *gorm.DB, dockerService *services.DockerService) *SystemHandler {
+func NewSystemHandler(userService *services.UserService, dockerService *services.DockerService) *SystemHandler {
 	return &SystemHandler{
-		db:            db,
+		userService:   userService,
 		dockerService: dockerService,
 	}
 }
@@ -110,34 +108,18 @@ func (h *SystemHandler) PruneSystem(c *fiber.Ctx) error {
 
 // GetInitStatus checks if the system has been initialized with at least one admin
 func (h *SystemHandler) GetInitStatus(c *fiber.Ctx) error {
-	var count int64
-	err := h.db.Model(&models.User{}).
-		Where("role IN ?", []models.Role{models.RoleSuperAdmin, models.RoleAdmin}).
-		Count(&count).Error
-
+	initialized, err := h.userService.IsInitialized()
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(fiber.Map{
-		"is_initialized": count > 0,
+		"is_initialized": initialized,
 	})
 }
 
 // InitializeSystem creates the first superadmin user
 func (h *SystemHandler) InitializeSystem(c *fiber.Ctx) error {
-	// Check if already initialized
-	var count int64
-	h.db.Model(&models.User{}).
-		Where("role IN ?", []models.Role{models.RoleSuperAdmin, models.RoleAdmin}).
-		Count(&count)
-
-	if count > 0 {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"message": "System is already initialized",
-		})
-	}
-
 	type InitRequest struct {
 		Name     string `json:"name" validate:"required"`
 		Email    string `json:"email" validate:"required,email"`
@@ -156,22 +138,11 @@ func (h *SystemHandler) InitializeSystem(c *fiber.Ctx) error {
 		})
 	}
 
-	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	user, err := h.userService.InitializeSuperAdmin(req.Name, req.Email, req.Password)
 	if err != nil {
-		return err
-	}
-
-	// Create superadmin
-	user := models.User{
-		Name:     req.Name,
-		Email:    req.Email,
-		Password: string(hashedPassword),
-		Role:     models.RoleSuperAdmin,
-	}
-
-	if err := h.db.Create(&user).Error; err != nil {
-		return err
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"message": err.Error(),
+		})
 	}
 
 	return c.JSON(fiber.Map{

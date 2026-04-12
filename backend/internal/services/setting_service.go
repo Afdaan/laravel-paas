@@ -7,21 +7,40 @@ package services
 
 import (
 	"fmt"
+	"time"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
 )
 
 type SettingService struct {
-	repo repositories.SettingRepository
+	repo         repositories.SettingRepository
+	redisService *RedisService
 }
 
-func NewSettingService(repo repositories.SettingRepository) *SettingService {
-	return &SettingService{repo: repo}
+func NewSettingService(repo repositories.SettingRepository, redisService *RedisService) *SettingService {
+	return &SettingService{
+		repo:         repo,
+		redisService: redisService,
+	}
 }
 
-// Get fetches a setting value with a fallback default
+// Get fetches a setting value with a fallback default (Cached)
 func (s *SettingService) Get(key, defaultValue string) string {
-	return s.repo.GetValue(key, defaultValue)
+	var value string
+	cacheKey := "setting:" + key
+
+	// Try Redis
+	if err := s.redisService.GetCache(cacheKey, &value); err == nil {
+		return value
+	}
+
+	// Fetch from DB
+	value = s.repo.GetValue(key, defaultValue)
+
+	// Save to Redis (long expiry since settings change rarely)
+	s.redisService.SetCache(cacheKey, value, 24*time.Hour)
+
+	return value
 }
 
 // ListAll returns all settings as a map for consumption
@@ -51,6 +70,8 @@ func (s *SettingService) UpdateBulk(settings map[string]interface{}) error {
 		if err := s.repo.Upsert(key, strValue); err != nil {
 			return err
 		}
+		// Invalidate Cache
+		s.redisService.DeleteCache("setting:" + key)
 	}
 	return nil
 }

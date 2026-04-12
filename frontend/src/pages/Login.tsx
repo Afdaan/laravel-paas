@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { systemAPI } from '../services/api'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
-import { ArrowRight, ArrowLeft, Terminal, Loader2 } from 'lucide-react'
+import { ArrowRight, ArrowLeft, Terminal, Loader2, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +16,7 @@ function Login() {
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string | null>>({})
   
@@ -128,17 +129,35 @@ function Login() {
               
               <div className="space-y-2">
                 <Label htmlFor="password" className={validationErrors.password ? "text-destructive" : ""}>{t('login.password')}</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value)
-                    if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
-                  }}
-                  className={validationErrors.password ? "border-destructive focus-visible:ring-destructive" : ""}
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
+                    }}
+                    className={`${validationErrors.password ? "border-destructive focus-visible:ring-destructive" : ""} pr-10`}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowPassword((prev) => !prev);
+                    }}
+                    className="absolute right-0 top-0 bottom-0 px-3 flex items-center text-muted-foreground hover:text-foreground cursor-pointer z-50 transition-colors focus:outline-none bg-transparent border-none select-none"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4 pointer-events-none" />
+                    ) : (
+                      <Eye className="w-4 h-4 pointer-events-none" />
+                    )}
+                  </button>
+                </div>
                 {validationErrors.password && (
                    <p className="text-xs text-destructive font-medium">{validationErrors.password}</p>
                 )}

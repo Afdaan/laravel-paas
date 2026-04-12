@@ -6,11 +6,15 @@ package main
 import (
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/database"
 	"github.com/laravel-paas/backend/internal/logger"
+	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
 )
@@ -56,22 +60,68 @@ func main() {
 	defer redisService.Close()
 	slog.Info("Redis connected successfully")
 
-	// Initialize and start deployment worker
-	worker := services.NewDeploymentWorker(db, cfg, redisService)
-	worker.Start()
-	defer worker.Stop()
+	// Initialize Infrastructure Services
+	storageService := services.NewStorageService(cfg)
+	dockerService := services.NewDockerService(cfg, storageService)
+	gitService := services.NewGitService(cfg)
+	versionService := services.NewVersionService()
+	mysqlService := services.NewMySQLService()
+	
+	// Initialize Repositories
+	userRepo := repositories.NewUserRepository(db)
+	projectRepo := repositories.NewProjectRepository(db)
+	settingRepo := repositories.NewSettingRepository(db)
+	feedbackRepo := repositories.NewFeedbackRepository(db)
 
-	// Initialize and start server
-	app := routes.Setup(db, cfg, redisService)
+	// Initialize Core Services
+	settingService := services.NewSettingService(settingRepo, redisService)
+	feedbackService := services.NewFeedbackService(feedbackRepo)
+	projectService := services.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService)
+	userService := services.NewUserService(userRepo, projectService)
+	authService := services.NewAuthService(userRepo, cfg, redisService)
+	databaseService := services.NewDatabaseService(db, cfg)
+
+	// Initialize and start deployment worker
+	worker := services.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
+	worker.Start()
+
+	// Initialize server
+	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
+	// Create channel for idle connections.
+	idleConnsClosed := make(chan struct{})
+
+	go func() {
+		// Listen for termination signals
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+
+		slog.Warn("Graceful shutdown initiated...")
+
+		// 1. Stop the Worker (Finish current deployment)
+		slog.Info("Shutting down worker...")
+		worker.Stop()
+
+		// 2. Stop accepting new requests (Fiber)
+		// We give it a 10s timeout to finish current requests
+		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
+			slog.Error("Fiber shutdown error", "error", err)
+		}
+
+		slog.Info("All systems stopped. Goodbye!")
+		close(idleConnsClosed)
+	}()
+
 	slog.Info("Server starting", "port", port)
 	if err := app.Listen(":" + port); err != nil {
-		slog.Error("Failed to start server", "error", err)
-		os.Exit(1)
+		slog.Info("Server stopped", "info", err)
 	}
+
+	<-idleConnsClosed
 }

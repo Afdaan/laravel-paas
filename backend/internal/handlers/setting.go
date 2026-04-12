@@ -8,9 +8,7 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/services"
-	"gorm.io/gorm"
 )
 
 // SettingHandler handles settings endpoints
@@ -19,10 +17,9 @@ type SettingHandler struct {
 }
 
 // NewSettingHandler creates a new setting handler
-func NewSettingHandler(db *gorm.DB) *SettingHandler {
-	repo := repositories.NewSettingRepository(db)
+func NewSettingHandler(service *services.SettingService) *SettingHandler {
 	return &SettingHandler{
-		service: services.NewSettingService(repo),
+		service: service,
 	}
 }
 

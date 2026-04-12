@@ -7,39 +7,31 @@ package handlers
 
 import (
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/services"
-	"gorm.io/gorm"
 )
 
 // ProjectHandler handles project endpoints
 type ProjectHandler struct {
-	db             *gorm.DB
 	cfg            *config.Config
 	projectService *services.ProjectService
+	userService    *services.UserService
 	redisService   *services.RedisService
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(db *gorm.DB, cfg *config.Config, redisService *services.RedisService) *ProjectHandler {
-	projectRepo := repositories.NewProjectRepository(db)
-	settingRepo := repositories.NewSettingRepository(db)
-	settingService := services.NewSettingService(settingRepo)
-	
+func NewProjectHandler(cfg *config.Config, redisService *services.RedisService, projectService *services.ProjectService, userService *services.UserService) *ProjectHandler {
 	return &ProjectHandler{
-		db:             db,
 		cfg:            cfg,
-		projectService: services.NewProjectService(cfg, projectRepo, settingService, redisService),
+		projectService: projectService,
+		userService:    userService,
 		redisService:   redisService,
 	}
 }
@@ -57,12 +49,10 @@ type CreateProjectRequest struct {
 func (h *ProjectHandler) ListOwn(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 
-	var projects []models.Project
-	if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&projects).Error; err != nil {
+	projects, _, err := h.projectService.ListProjects(1, 100, userID, "", "")
+	if err != nil {
 		return apperr.New(500, "PROJECT_FETCH_FAILED", "Failed to fetch your projects")
 	}
-
-	h.projectService.PopulateURLs(projects)
 
 	return c.JSON(fiber.Map{
 		"data": projects,
@@ -76,30 +66,12 @@ func (h *ProjectHandler) ListAll(c *fiber.Ctx) error {
 	status := c.Query("status", "")
 	search := c.Query("search", "")
 
-	offset := (page - 1) * limit
-
-	var projects []models.Project
-	var total int64
-
-	query := h.db.Model(&models.Project{}).Preload("User")
-
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	if search != "" {
-		query = query.Where("name ILIKE ? OR subdomain ILIKE ?", "%"+search+"%", "%"+search+"%")
-	}
-
-	query.Count(&total)
-
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&projects).Error; err != nil {
+	projects, total, err := h.projectService.ListProjects(page, limit, 0, status, search)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to fetch projects",
 		})
 	}
-
-	h.projectService.PopulateURLs(projects)
 
 	return c.JSON(fiber.Map{
 		"total": total,
@@ -131,16 +103,6 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 
 	userID := c.Locals("user_id").(uint)
 
-	// Check project limit
-	maxProjects, _ := strconv.Atoi(h.projectService.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
-	var projectCount int64
-	h.db.Model(&models.Project{}).Where("user_id = ?", userID).Count(&projectCount)
-	if int(projectCount) >= maxProjects {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "You have reached the maximum project limit",
-		})
-	}
-
 	// Basic validation
 	if req.Name == "" || req.GithubURL == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -148,35 +110,10 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	// Generate subdomain and database name
-	subdomain := h.generateSubdomain(req.Name)
-	dbName := req.DatabaseName
-	if dbName == "" {
-		dbName = strings.ReplaceAll(subdomain, "-", "_")
-	}
-
-	// Calculate expiration date
-	expiryDays, _ := strconv.Atoi(h.projectService.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
-	var expiresAt *time.Time
-	if expiryDays > 0 {
-		t := time.Now().AddDate(0, 0, expiryDays)
-		expiresAt = &t
-	}
-
-	project := models.Project{
-		UserID:       userID,
-		Name:         req.Name,
-		GithubURL:    req.GithubURL,
-		Branch:       req.Branch,
-		Subdomain:    subdomain,
-		DatabaseName: dbName,
-		Status:       models.StatusQueued,
-		ExpiresAt:    expiresAt,
-	}
-
-	if err := h.db.Create(&project).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create project",
+	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
 		})
 	}
 
@@ -191,7 +128,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	// Get queue position
 	queueLength, _ := h.redisService.GetQueueLength()
 
-	h.projectService.PopulateURL(&project)
+	h.projectService.PopulateURL(project)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"project":        project,
@@ -208,10 +145,7 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		})
 	}
 
-	h.db.Model(project).Updates(map[string]interface{}{
-		"status": models.StatusQueued,
-	})
-
+	h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued)
 	h.projectService.UpdateActivity(project.ID)
 
 	// Enqueue redeployment job to Redis
@@ -249,16 +183,8 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	updates := map[string]interface{}{}
-	if req.Name != "" {
-		updates["name"] = req.Name
-	}
-	if req.Branch != "" {
-		updates["branch"] = req.Branch
-	}
-	updates["queue_enabled"] = req.QueueEnabled
-
-	if err := h.db.Model(project).Updates(updates).Error; err != nil {
+	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.QueueEnabled)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
 	}
 
@@ -411,12 +337,11 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	})
 }
 
-// AdminStats returns overview statistics (Internal logic kept simple for now)
+// AdminStats returns overview statistics
 func (h *ProjectHandler) AdminStats(c *fiber.Ctx) error {
-	var totalProjects, runningProjects, totalStudents int64
-	h.db.Model(&models.Project{}).Count(&totalProjects)
-	h.db.Model(&models.Project{}).Where("status = ?", models.StatusRunning).Count(&runningProjects)
-	h.db.Model(&models.User{}).Where("role = ?", models.RoleStudent).Count(&totalStudents)
+	totalProjects, _ := h.projectService.GetTotalCount()
+	runningProjects, _ := h.projectService.GetRunningCount()
+	totalStudents, _ := h.userService.GetStudentCount()
 
 	return c.JSON(fiber.Map{
 		"total_projects":   totalProjects,
@@ -443,19 +368,21 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 2. Cache Miss: Fallback to Database
-	if err := h.db.Where("subdomain = ? AND status = ?", subdomain, models.StatusRunning).First(&project).Error; err != nil {
+	// We need a way to get project by subdomain from service
+	project_db, err := h.projectService.GetBySubdomain(subdomain)
+	if err != nil || project_db.Status != models.StatusRunning {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})
 	}
 
 	// 3. Populate Cache for the next request
-	h.projectService.CacheSubdomainMapping(&project)
-	h.projectService.UpdateActivity(project.ID)
+	h.projectService.CacheSubdomainMapping(project_db)
+	h.projectService.UpdateActivity(project_db.ID)
 
-	if project.Port == nil {
+	if project_db.Port == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project port not configured"})
 	}
 
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project_db.Port)
 	return proxy.Forward(targetURL)(c)
 }
 
@@ -475,8 +402,7 @@ func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	var projects []models.Project
-	h.db.Where("status = ? AND container_id IS NOT NULL", models.StatusRunning).Find(&projects)
+	projects, _ := h.projectService.GetRunningProjectsWithContainers()
 
 	projectStats := make(map[uint]services.ContainerStats)
 	for _, p := range projects {
@@ -502,37 +428,14 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 	userID := c.Locals("user_id").(uint)
 	role := models.Role(c.Locals("role").(string))
 
-	var project models.Project
-	query := h.db.Where("id = ?", id)
-	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project).Error; err != nil {
+	project, err := h.projectService.GetProjectByID(uint(id))
+	if err != nil {
 		return nil, fmt.Errorf("project not found")
 	}
 
-	return &project, nil
-}
-
-func (h *ProjectHandler) generateSubdomain(name string) string {
-	s := strings.ToLower(name)
-	s = strings.ReplaceAll(s, " ", "-")
-	reg := ""
-	for _, char := range s {
-		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
-			reg += string(char)
-		}
+	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
+		return nil, fmt.Errorf("project not found")
 	}
-	return fmt.Sprintf("%s-%s", reg, h.randomString(6))
-}
 
-func (h *ProjectHandler) randomString(n int) string {
-	rand.Seed(time.Now().UnixNano())
-	var letters = []rune("abcdefghijklmnopqrstuvwxyz0123456789")
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
+	return project, nil
 }

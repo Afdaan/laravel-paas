@@ -8,9 +8,12 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"gorm.io/gorm"
 
@@ -18,8 +21,9 @@ import (
 )
 
 type DatabaseService struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db   *gorm.DB
+	cfg  *config.Config
+	pool sync.Map // map[dbName]*sql.DB — cached connections per student database
 }
 
 func NewDatabaseService(db *gorm.DB, cfg *config.Config) *DatabaseService {
@@ -50,14 +54,36 @@ type QueryResult struct {
 	Duration     string                   `json:"duration"`
 }
 
-// ConnectToProjectDB connects to a student's project database
+// ConnectToProjectDB returns a pooled connection to a student's MySQL database.
+// Connections are cached and reused across requests to avoid connection storms.
 func (s *DatabaseService) ConnectToProjectDB(dbName string) (*sql.DB, error) {
+	// Return cached connection if available and healthy
+	if cached, ok := s.pool.Load(dbName); ok {
+		db := cached.(*sql.DB)
+		if err := db.Ping(); err == nil {
+			return db, nil
+		}
+		// Stale connection: remove and recreate
+		s.pool.Delete(dbName)
+		db.Close()
+	}
+
 	dsn := fmt.Sprintf("%s:%s@tcp(paas-mysql:3306)/%s?parseTime=true",
-		dbName,
-		dbName,
-		dbName,
+		dbName, dbName, dbName,
 	)
-	return sql.Open("mysql", dsn)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Conservative pool limits per student database
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	s.pool.Store(dbName, db)
+	return db, nil
 }
 
 // ListProjectTables returns metadata for all tables in a project database
@@ -66,7 +92,7 @@ func (s *DatabaseService) ListProjectTables(dbName string) ([]TableInfo, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+
 
 	rows, err := db.Query(`
 		SELECT 
@@ -108,7 +134,7 @@ func (s *DatabaseService) GetTableStructure(dbName, tableName string) ([]ColumnI
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+
 
 	rows, err := db.Query(`
 		SELECT 
@@ -144,14 +170,14 @@ func (s *DatabaseService) GetTableStructure(dbName, tableName string) ([]ColumnI
 // GetTableData supports paginated data retrieval from a table
 func (s *DatabaseService) GetTableData(dbName, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
 	if !s.isValidIdentifier(tableName) {
-		return nil, nil, 0, fmt.Errorf("invalid table name")
+		return nil, nil, 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters or exceeds length limit")
 	}
 
 	db, err := s.ConnectToProjectDB(dbName)
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	defer db.Close()
+
 
 	var total int64
 	db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName)).Scan(&total)
@@ -200,14 +226,15 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, query string) (*QueryResult, e
 		strings.Contains(upperQuery, "CREATE DATABASE") ||
 		strings.Contains(upperQuery, "GRANT") ||
 		strings.Contains(upperQuery, "REVOKE") {
-		return nil, fmt.Errorf("this operation is not permitted")
+		slog.Warn("Blocked forbidden SQL operation attempt", "query", upperQuery[:min(len(upperQuery), 80)])
+		return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
 	}
 
 	db, err := s.ConnectToProjectDB(dbName)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+
 
 	start := time.Now()
 
@@ -268,7 +295,7 @@ func (s *DatabaseService) GenerateProjectDump(dbName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer db.Close()
+
 
 	var sqlDump strings.Builder
 	sqlDump.WriteString(fmt.Sprintf("-- Database Export: %s\n", dbName))
@@ -331,7 +358,7 @@ func (s *DatabaseService) ResetProjectDatabase(dbName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer db.Close()
+
 
 	rows, _ := db.Query("SHOW TABLES")
 	defer rows.Close()

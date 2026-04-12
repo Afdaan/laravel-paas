@@ -18,7 +18,19 @@ import (
 )
 
 // Setup initializes the Fiber app with all routes
-func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService) *fiber.App {
+func Setup(
+	db *gorm.DB, 
+	cfg *config.Config, 
+	redisService *services.RedisService,
+	dockerService *services.DockerService,
+	storageService *services.StorageService,
+	projectService *services.ProjectService,
+	userService *services.UserService,
+	settingService *services.SettingService,
+	authService *services.AuthService,
+	databaseService *services.DatabaseService,
+	feedbackService *services.FeedbackService,
+) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
 		AppName:      "Laravel PaaS API",
@@ -58,19 +70,16 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// ===========================================
 	// API Routes
-	// ===========================================
 	api := app.Group("/api")
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg, redisService)
-	userHandler := handlers.NewUserHandler(db)
-	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
-	settingHandler := handlers.NewSettingHandler(db)
-	dockerService := services.NewDockerService(cfg)
-	systemHandler := handlers.NewSystemHandler(db, dockerService)
-	feedbackHandler := handlers.NewFeedbackHandler(db)
+	authHandler := handlers.NewAuthHandler(authService, cfg)
+	userHandler := handlers.NewUserHandler(userService)
+	projectHandler := handlers.NewProjectHandler(cfg, redisService, projectService, userService)
+	settingHandler := handlers.NewSettingHandler(settingService)
+	systemHandler := handlers.NewSystemHandler(userService, dockerService)
+	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects
@@ -155,7 +164,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	databaseHandler := handlers.NewDatabaseHandler(db, cfg)
+	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)

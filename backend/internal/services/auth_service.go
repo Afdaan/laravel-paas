@@ -12,24 +12,24 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/repositories"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type AuthService struct {
-	db           *gorm.DB
+	userRepo     repositories.UserRepository
 	cfg          *config.Config
 	redisService *RedisService
 }
 
-func NewAuthService(db *gorm.DB, cfg *config.Config, redisService *RedisService) *AuthService {
-	return &AuthService{db: db, cfg: cfg, redisService: redisService}
+func NewAuthService(userRepo repositories.UserRepository, cfg *config.Config, redisService *RedisService) *AuthService {
+	return &AuthService{userRepo: userRepo, cfg: cfg, redisService: redisService}
 }
 
 // Authenticate checks credentials and returns a user if valid
 func (s *AuthService) Authenticate(email, password string) (*models.User, error) {
-	var user models.User
-	if err := s.db.Where("email = ?", email).First(&user).Error; err != nil {
+	user, err := s.userRepo.GetByEmail(email)
+	if err != nil {
 		return nil, apperr.New(401, "AUTH_FAILED", "Invalid email or password")
 	}
 
@@ -37,7 +37,7 @@ func (s *AuthService) Authenticate(email, password string) (*models.User, error)
 		return nil, apperr.New(401, "AUTH_FAILED", "Invalid email or password")
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 // GenerateToken creates a JWT token for a user
@@ -70,9 +70,9 @@ func (s *AuthService) Logout(token string, expiry time.Duration) error {
 
 // GetUserByID fetches a user or returns AppError
 func (s *AuthService) GetUserByID(id uint) (*models.User, error) {
-	var user models.User
-	if err := s.db.First(&user, id).Error; err != nil {
+	user, err := s.userRepo.GetByID(id)
+	if err != nil {
 		return nil, apperr.NewNotFound("User", id)
 	}
-	return &user, nil
+	return user, nil
 }

@@ -9,41 +9,74 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/pkg/stringutil"
 	"github.com/laravel-paas/backend/internal/repositories"
 )
 
 type ProjectService struct {
-	cfg           *config.Config
-	projectRepo   repositories.ProjectRepository
+	cfg            *config.Config
+	projectRepo    repositories.ProjectRepository
 	settingService *SettingService
-	dockerService *DockerService
-	nginxService  *NginxWebhookService
-	redisService  *RedisService
+	dockerService  *DockerService
+	storageService *StorageService
+	mysqlService   *MySQLService
+	nginxService   *NginxWebhookService
+	redisService   *RedisService
 }
 
 func NewProjectService(
 	cfg *config.Config, 
 	projectRepo repositories.ProjectRepository,
 	settingService *SettingService,
+	dockerService *DockerService,
+	storageService *StorageService,
+	mysqlService *MySQLService,
 	redisService *RedisService,
 ) *ProjectService {
 	return &ProjectService{
-		cfg:           cfg,
-		projectRepo:   projectRepo,
+		cfg:            cfg,
+		projectRepo:    projectRepo,
 		settingService: settingService,
-		dockerService: NewDockerService(cfg),
-		nginxService:  NewNginxWebhookService(cfg),
-		redisService:  redisService,
+		dockerService:  dockerService,
+		storageService: storageService,
+		mysqlService:   mysqlService,
+		nginxService:   NewNginxWebhookService(cfg),
+		redisService:   redisService,
 	}
 }
 
 // GetProjectByID fetches a project with preloaded associations
 func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 	return s.projectRepo.GetByID(id)
+}
+
+// GetBySubdomain fetches a project by its subdomain with Redis caching
+func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, error) {
+	// 1. Try to fetch from Redis Cache first
+	var project models.Project
+	cacheKey := fmt.Sprintf("project:subdomain:%s", subdomain)
+	
+	if err := s.redisService.GetCache(cacheKey, &project); err == nil {
+		slog.Debug("Subdomain cache hit", "subdomain", subdomain)
+		return &project, nil
+	}
+
+	// 2. Cache miss: fetch from DB
+	p, err := s.projectRepo.GetBySubdomain(subdomain)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Store in Redis for next time (expires in 1 hour)
+	s.redisService.SetCache(cacheKey, p, 1*time.Hour)
+	
+	return p, nil
 }
 
 // DeleteProject performs a thorough cleanup of all project resources
@@ -53,33 +86,35 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		"name", project.Name, 
 		"subdomain", project.Subdomain)
 
-	// 1. Remove Docker Container
-	if project.ContainerID != nil {
-		s.dockerService.RemoveContainer(*project.ContainerID)
-	}
-
-	// 2. Remove Docker Image
-	s.dockerService.RemoveImage(project.Subdomain)
-
-	// 3. Cleanup Filesystem (Source Code & Persistent Data)
-	s.dockerService.CleanupProject(project.Subdomain)
-	s.dockerService.CleanupPersistentData(project)
-
-	// 4. Drop Student Database
-	if project.DatabaseName != "" {
-		s.dockerService.DropDatabase(project.DatabaseName)
-	}
-
-	// 5. Sync Deletion to Nginx Proxy
+	// 1. Sync Deletion to Nginx Proxy (Do this first to stop traffic)
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	s.nginxService.DeleteProject(project, projectDomain)
 
 	// Invalidate Redis Proxy Cache
 	s.InvalidateSubdomainCache(project.Subdomain)
 
-	// 6. Hard Delete from Database
+	// 2. Remove Docker Container & Image
+	if project.ContainerID != nil {
+		slog.Debug("Removing container", "id", *project.ContainerID)
+		s.dockerService.RemoveContainer(*project.ContainerID)
+	}
+	s.dockerService.RemoveImage(project.Subdomain)
+
+	// 3. Drop Student Database
+	if project.DatabaseName != "" {
+		slog.Debug("Dropping database", "db", project.DatabaseName)
+		if err := s.mysqlService.DropDatabase(project.DatabaseName); err != nil {
+			slog.Warn("Failed to drop database, might be already gone", "db", project.DatabaseName, "error", err)
+		}
+	}
+
+	// 4. Cleanup Filesystem (Source Code & Persistent Data)
+	s.dockerService.CleanupProject(project.Subdomain)
+	s.storageService.CleanupPersistentData(project)
+
+	// 5. Hard Delete from Database
 	if err := s.projectRepo.Delete(project.ID); err != nil {
-		slog.Error("Failed to delete project record from database", "id", project.ID, "error", err)
+		slog.Error("CRITICAL: Failed to delete project record", "id", project.ID, "error", err)
 		return err
 	}
 
@@ -120,6 +155,118 @@ func (s *ProjectService) UpdateActivity(projectID uint) {
 		}
 	}()
 }
+
+// ListProjects returns paginated projects with filtering
+func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
+	projects, total, err := s.projectRepo.List(page, limit, userID, status, search)
+	if err != nil {
+		return nil, 0, err
+	}
+	s.PopulateURLs(projects)
+	return projects, total, nil
+}
+
+// ListByUserID returns all projects for a specific user without pagination
+func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
+	return s.projectRepo.ListByUserID(userID)
+}
+
+// CreateProject handles the initial creation of a project record
+func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseName string) (*models.Project, error) {
+	// Enforce per-user project limit
+	maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
+	count, _ := s.projectRepo.CountByUserID(userID)
+
+	if int(count) >= maxProjects {
+		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
+	}
+
+	subdomain := stringutil.GenerateSubdomain(name)
+
+	dbName := databaseName
+	if dbName == "" {
+		dbName = strings.ReplaceAll(subdomain, "-", "_")
+	}
+
+	expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
+	var expiresAt *time.Time
+	if expiryDays > 0 {
+		t := time.Now().AddDate(0, 0, expiryDays)
+		expiresAt = &t
+	}
+
+	project := &models.Project{
+		UserID:       userID,
+		Name:         name,
+		GithubURL:    githubURL,
+		Branch:       branch,
+		Subdomain:    subdomain,
+		DatabaseName: dbName,
+		Status:       models.StatusQueued,
+		ExpiresAt:    expiresAt,
+	}
+
+	if err := s.projectRepo.Create(project); err != nil {
+		return nil, err
+	}
+
+	return project, nil
+}
+
+// UpdateProject updates project details
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch string, queueEnabled bool) (*models.Project, error) {
+	project, err := s.projectRepo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
+		return nil, apperr.ErrForbidden
+	}
+
+	if name != "" {
+		project.Name = name
+	}
+	if branch != "" {
+		project.Branch = branch
+	}
+	project.QueueEnabled = queueEnabled
+
+	if err := s.projectRepo.Update(project); err != nil {
+		return nil, err
+	}
+
+	// Invalidate Metadata Cache
+	s.InvalidateSubdomainCache(project.Subdomain)
+
+	return project, nil
+}
+
+// UpdateProjectStatus updates the status of a project and clears cache
+func (s *ProjectService) UpdateProjectStatus(id uint, status models.ProjectStatus) error {
+	project, err := s.projectRepo.GetByID(id)
+	if err == nil {
+		s.InvalidateSubdomainCache(project.Subdomain)
+	}
+	return s.projectRepo.UpdateStatus(id, status)
+}
+
+
+// GetTotalCount returns total number of projects
+func (s *ProjectService) GetTotalCount() (int64, error) {
+	return s.projectRepo.CountTotal()
+}
+
+// GetRunningCount returns number of running projects
+func (s *ProjectService) GetRunningCount() (int64, error) {
+	return s.projectRepo.CountRunning()
+}
+
+// GetRunningProjectsWithContainers returns projects that have containers
+func (s *ProjectService) GetRunningProjectsWithContainers() ([]models.Project, error) {
+	return s.projectRepo.GetRunningWithContainers()
+}
+
 
 // PopulateURL sets the URL field on a project model
 func (s *ProjectService) PopulateURL(project *models.Project) {

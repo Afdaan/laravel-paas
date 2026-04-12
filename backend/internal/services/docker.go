@@ -7,220 +7,40 @@ package services
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/pkg/cmdutil"
 )
 
 // DockerService handles all Docker operations
 type DockerService struct {
-	cfg *config.Config
+	cfg     *config.Config
+	storage *StorageService
 }
 
 // NewDockerService creates a new Docker service
-func NewDockerService(cfg *config.Config) *DockerService {
-	return &DockerService{cfg: cfg}
+func NewDockerService(cfg *config.Config, storage *StorageService) *DockerService {
+	return &DockerService{
+		cfg:     cfg,
+		storage: storage,
+	}
 }
 
-// ===========================================
-// Repository Operations
-// ===========================================
 
-// CloneRepository clones a GitHub repository
-func (s *DockerService) CloneRepository(githubURL, branch, subdomain string) (string, error) {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
-
-	// Check if .env exists and backup its content
-	var envBackup []byte
-	envPath := filepath.Join(projectPath, ".env")
-	if data, err := os.ReadFile(envPath); err == nil {
-		envBackup = data
-	}
-
-	// --- Non-destructive sync logic ---
-	// If project exists, we want to preserve the 'storage' folder
-	tempPath := projectPath + "_temp"
-	os.RemoveAll(tempPath)
-
-	// Clone specific branch to temp
-	args := []string{"clone", "--depth=1", "-b", branch, githubURL, tempPath}
-	cmd := exec.Command("git", args...)
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git clone failed: %s", stderr.String())
-	}
-
-	// If source exists, migrate storage before deleting
-	if _, err := os.Stat(projectPath); err == nil {
-		// Preserve storage/app
-		oldStorage := filepath.Join(projectPath, "storage", "app")
-		newStorage := filepath.Join(tempPath, "storage", "app")
-		
-		if _, err := os.Stat(oldStorage); err == nil {
-			os.RemoveAll(newStorage) // Remove fresh clone's empty storage
-			exec.Command("cp", "-a", oldStorage, filepath.Dir(newStorage)).Run()
-		}
-	}
-
-	// Swap paths
-	os.RemoveAll(projectPath)
-	if err := os.Rename(tempPath, projectPath); err != nil {
-		return "", fmt.Errorf("failed to finalize project path: %w", err)
-	}
-
-	// Verify it's a Laravel project
-	if _, err := os.Stat(filepath.Join(projectPath, "artisan")); os.IsNotExist(err) {
-		return "", fmt.Errorf("not a valid Laravel project (missing artisan file)")
-	}
-
-	// Restore .env if backup exists
-	if envBackup != nil {
-		if err := os.WriteFile(envPath, envBackup, 0644); err != nil {
-			fmt.Printf("Warning: Failed to restore .env file: %v\n", err)
-		}
-	}
-
-	// Verify it's a Laravel project
-	if _, err := os.Stat(filepath.Join(projectPath, "artisan")); os.IsNotExist(err) {
-		os.RemoveAll(projectPath)
-		return "", fmt.Errorf("not a valid Laravel project (missing artisan file)")
-	}
-
-	return projectPath, nil
-}
-
-// ===========================================
-// Version Detection
-// ===========================================
-
-// ComposerJSON represents the structure of composer.json
-type ComposerJSON struct {
-	Require map[string]string `json:"require"`
-}
-
-// DetectVersions reads composer.json to detect Laravel and PHP versions
-func (s *DockerService) DetectVersions(projectPath string) (laravelVersion, phpVersion string, err error) {
-	composerPath := filepath.Join(projectPath, "composer.json")
-
-	data, err := os.ReadFile(composerPath)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read composer.json: %w", err)
-	}
-
-	var composer ComposerJSON
-	if err := json.Unmarshal(data, &composer); err != nil {
-		return "", "", fmt.Errorf("failed to parse composer.json: %w", err)
-	}
-
-	// Detect Laravel version
-	laravelReq := composer.Require["laravel/framework"]
-	laravelVersion = extractMajorVersion(laravelReq)
-
-	// Detect PHP version
-	phpReq := composer.Require["php"]
-	phpVersion = detectPHPVersion(laravelVersion, phpReq)
-
-	return laravelVersion, phpVersion, nil
-}
-
-// extractMajorVersion extracts major version from version constraint
-func extractMajorVersion(constraint string) string {
-	// Match patterns like ^11.0, ~11.0, 11.*, >=11.0, or just 11
-	re := regexp.MustCompile(`(\d+)`)
-	matches := re.FindStringSubmatch(constraint)
-	if len(matches) > 0 {
-		return matches[0]
-	}
-	return "11" // Default to Laravel 11
-}
-
-// detectPHPVersion determines the appropriate PHP version
-func detectPHPVersion(laravelVersion, phpConstraint string) string {
-	// Map Laravel versions to minimum PHP versions
-	laravelPHPMap := map[string]string{
-		"8":  "8.0",
-		"9":  "8.1",
-		"10": "8.2",
-		"11": "8.3",
-		"12": "8.4",
-		"13": "8.4",
-		"14": "8.5",
-	}
-
-	// Use Laravel version mapping if available
-	if php, ok := laravelPHPMap[laravelVersion]; ok {
-		return php
-	}
-
-	// Try to extract from PHP constraint
-	re := regexp.MustCompile(`(\d+\.\d+)`)
-	matches := re.FindStringSubmatch(phpConstraint)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-
-	return "8.4" // Default to PHP 8.4
-}
-
-// ===========================================
-// Database Operations
-// ===========================================
-
-// CreateDatabase creates a MySQL database for a project
-func (s *DockerService) CreateDatabase(dbName string) error {
-	// Connect to MySQL container and create database
-	cmd := exec.Command("docker", "exec", "paas-mysql",
-		"mysql", "-uroot", "-p"+os.Getenv("MYSQL_ROOT_PASSWORD"),
-		"-e", fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`;", dbName))
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create database: %s", stderr.String())
-	}
-
-	// Create user and grant privileges
-	cmd = exec.Command("docker", "exec", "paas-mysql",
-		"mysql", "-uroot", "-p"+os.Getenv("MYSQL_ROOT_PASSWORD"),
-		"-e", fmt.Sprintf(
-			"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;",
-			dbName, dbName, dbName, dbName,
-		))
-
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create database user: %s", stderr.String())
-	}
-
-	return nil
-}
-
-// DropDatabase removes a MySQL database
-func (s *DockerService) DropDatabase(dbName string) error {
-	cmd := exec.Command("docker", "exec", "paas-mysql",
-		"mysql", "-uroot", "-p"+os.Getenv("MYSQL_ROOT_PASSWORD"),
-		"-e", fmt.Sprintf("DROP DATABASE IF EXISTS `%s`; DROP USER IF EXISTS '%s'@'%%';", dbName, dbName))
-
-	cmd.Run() // Ignore errors
-	return nil
-}
 
 // ===========================================
 // Container Operations
@@ -242,21 +62,21 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	}
 
 	dstDockerfile := filepath.Join(projectPath, "Dockerfile")
-	fmt.Printf("Using Dockerfile template: %s for project %s\n", srcDockerfile, project.Subdomain)
+	slog.Info("Using Dockerfile template", "template", srcDockerfile, "subdomain", project.Subdomain)
 
-	if err := copyFile(srcDockerfile, dstDockerfile); err != nil {
+	if err := s.storage.CopyFile(srcDockerfile, dstDockerfile); err != nil {
 		return "", fmt.Errorf("failed to copy Dockerfile (%s): %w", dockerfile, err)
 	}
 
 	// Copy nginx and supervisor configs
-	if err := copyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
 		filepath.Join(projectPath, "docker", "nginx.conf")); err != nil {
 		// Create docker directory if needed
 		os.MkdirAll(filepath.Join(projectPath, "docker"), 0755)
-		copyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
+		s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
 			filepath.Join(projectPath, "docker", "nginx.conf"))
 	}
-	copyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"),
+	s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"),
 		filepath.Join(projectPath, "docker", "supervisord.conf"))
 
 	// Append Config for Queue Worker if enabled
@@ -295,7 +115,7 @@ stdout_logfile_maxbytes=0
 	var stdout, stderr bytes.Buffer
 
 	buildArgs := []string{"buildx", "build", "--load",
-		"--label", "com.paas.project=true",
+		"--label", models.LabelProjectManaged,
 		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
 	
@@ -309,18 +129,18 @@ stdout_logfile_maxbytes=0
 		stderr.Reset()
 
 		cmd = exec.Command("docker", "build",
-			"--label", "com.paas.project=true",
+			"--label", models.LabelProjectManaged,
 			"-t", imageName, projectPath)
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		if err2 := cmd.Run(); err2 != nil {
-			return "", fmt.Errorf("docker build failed: %s%s", stdout.String(), stderr.String())
+			return "", apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s%s", project.Subdomain, stdout.String(), stderr.String()))
 		}
 	}
 
 	// Step 2: Refresh permissions exactly before container start
-	s.ensurePersistentPath(project)
-	hostPersistentPath := s.getPersistentHostPath(project)
+	s.storage.EnsurePersistentPath(project)
+	hostPersistentPath := s.storage.GetPersistentHostPath(project)
 
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
@@ -330,12 +150,12 @@ stdout_logfile_maxbytes=0
 	serviceName := project.Subdomain
 
 	// Use provided limits or defaults
-	finalCPUs := "0.5"
+	finalCPUs := models.DefaultDockerCPULimit
 	if cpuLimit > 0 {
 		finalCPUs = fmt.Sprintf("%.1f", cpuLimit)
 	}
 
-	finalMemory := "512m"
+	finalMemory := models.DefaultDockerMemoryLimit
 	if memoryLimit != "" {
 		finalMemory = memoryLimit
 	}
@@ -343,7 +163,7 @@ stdout_logfile_maxbytes=0
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
-		"--network", s.cfg.DockerNetwork,
+		"--network", models.NetworkName,
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
@@ -370,19 +190,37 @@ stdout_logfile_maxbytes=0
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("docker run failed: %s", stderr.String())
+		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, stderr.String()))
 	}
 
 	containerID := strings.TrimSpace(stdout.String())
 
-	// Run migrations
-	go func() {
-		time.Sleep(10 * time.Second) // Wait for container to start
-		exec.Command("docker", "exec", "-u", "www-data", containerName,
-			"php", "artisan", "migrate", "--force").Run()
-	}()
-
 	return containerID, nil
+}
+
+// RunMigrations executes artisan migrate inside the container
+func (s *DockerService) RunMigrations(containerID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Wait a few seconds for MySQL to be ready inside the new container if needed
+	// But since we use background worker, we can afford a small delay
+	time.Sleep(2 * time.Second)
+
+	cmd := exec.CommandContext(ctx, "docker", "exec", "-u", "www-data", containerID, "php", "artisan", "migrate", "--force")
+	
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("migration timed out after 2 minutes")
+		}
+		return stdout.String() + stderr.String(), fmt.Errorf("migration failed: %s", stderr.String())
+	}
+
+	return stdout.String(), nil
 }
 
 // createEnvFile generates .env for Laravel project
@@ -472,14 +310,17 @@ func (s *DockerService) RemoveImage(subdomain string) error {
 	return nil
 }
 
-// PruneImages removes dangling images (labeled <none>)
+// PruneImages removes dangling images and unused project images
 func (s *DockerService) PruneImages() error {
-	// Remove dangling images (<none>)
-	exec.Command("docker", "image", "prune", "-f").Run()
+	slog.Info("Starting Docker image pruning")
+	
+	// 1. Remove dangling images (<none>)
+	cmdutil.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
 
-	// Also remove unused project images (paas-*)
-	exec.Command("docker", "image", "prune", "-a", "-f", "--filter", "label=com.paas.project=true").Run()
-
+	// 2. Also remove unused project images (those with our label)
+	filter := fmt.Sprintf("label=%s=true", models.LabelProjectManaged)
+	cmdutil.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter)
+	
 	return nil
 }
 
@@ -495,12 +336,18 @@ func (s *DockerService) CleanupProject(subdomain string) error {
 
 // GetContainerLogs retrieves container logs
 func (s *DockerService) GetContainerLogs(containerID string, lines int) (string, error) {
-	cmd := exec.Command("docker", "logs", "--tail", strconv.Itoa(lines), containerID)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "logs", "--tail", strconv.Itoa(lines), containerID)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timed out fetching container logs")
+		}
 		return "", fmt.Errorf("failed to get logs: %s", stderr.String())
 	}
 
@@ -522,15 +369,20 @@ type DockerStatsJSON struct {
 
 // GetContainerStats retrieves container resource usage
 func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, error) {
-	// Use JSON formatting for reliable parsing
-	cmd := exec.Command("docker", "stats", "--no-stream", "--format", "{{json .}}", containerID)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format", "{{json .}}", containerID)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error running docker stats for container %s: %v. Stderr: %s\n", containerID, err, stderr.String())
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("timed out fetching container stats")
+		}
+		slog.Error("Docker stats request failed", "containerId", containerID, "error", err, "stderr", stderr.String())
 		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
 	}
 
@@ -539,13 +391,13 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	output := strings.TrimSpace(stdout.String())
 
 	if output == "" {
-		fmt.Printf("Empty output from docker stats for container %s\n", containerID)
+		slog.Warn("Docker stats returned empty output", "containerId", containerID)
 		return nil, fmt.Errorf("container not found or not running")
 	}
 
 	var rawStats DockerStatsJSON
 	if err := json.Unmarshal([]byte(output), &rawStats); err != nil {
-		fmt.Printf("Error unmarshalling docker stats: %v. Output: %s\n", err, output)
+		slog.Error("Failed to unmarshal docker stats", "containerId", containerID, "output", output, "error", err)
 		return nil, fmt.Errorf("failed to parse docker stats: %v", err)
 	}
 
@@ -555,7 +407,7 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 	cpuStr := strings.ReplaceAll(rawStats.CPUPerc, "%", "")
 	cpuVal, err := strconv.ParseFloat(strings.TrimSpace(cpuStr), 64)
 	if err != nil {
-		fmt.Printf("Warning: Failed to parse CPU percent '%s': %v\n", cpuStr, err)
+		slog.Warn("Failed to parse CPU percentage from docker stats", "cpuStr", cpuStr, "error", err)
 		stats.CPUPercent = 0
 	} else {
 		stats.CPUPercent = cpuVal
@@ -568,26 +420,30 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 		stats.MemoryMB = parseMemoryBytes(strings.TrimSpace(parts[0]))
 		stats.MemoryMax = parseMemoryBytes(strings.TrimSpace(parts[1]))
 	} else {
-		fmt.Printf("Warning: Unexpected memory format: %s\n", rawStats.MemUsage)
+		slog.Warn("Unexpected memory format in docker stats", "memUsage", rawStats.MemUsage)
 	}
 
-	fmt.Printf("Stats for container %s: CPU=%.2f%%, Memory=%.2fMB/%.2fMB\n",
-		containerID, stats.CPUPercent, stats.MemoryMB, stats.MemoryMax)
+	slog.Debug("Parsed container stats", "containerId", containerID, "cpu", stats.CPUPercent, "memoryMB", stats.MemoryMB)
 
 	return stats, nil
 }
 
 // GetAllContainerStats retrieves resource usage for all containers
 func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error) {
-	// Use custom formatting for easier parsing: ID|Name|CPU|MemUsage
-	cmd := exec.Command("docker", "stats", "--no-stream", "--format", "{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format", "{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error running docker stats: %v. Stderr: %s\n", err, stderr.String())
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("timed out fetching global container stats")
+		}
+		slog.Error("Global docker stats request failed", "error", err, "stderr", stderr.String())
 		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
 	}
 
@@ -983,58 +839,6 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 	return stdout.String(), nil
 }
 
-func (s *DockerService) ensurePersistentPath(project *models.Project) string {
-	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
-
-	if err := os.MkdirAll(path, 0777); err != nil {
-		slog.Error("Failed to create persistent storage path", "path", path, "error", err)
-	}
-
-	publicPath := filepath.Join(path, "public")
-	if _, err := os.Stat(publicPath); os.IsNotExist(err) {
-		slog.Info("Initializing storage structure", "subdomain", project.Subdomain)
-		
-		projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "storage", "app")
-		if _, err := os.Stat(projectSourceStorage); err == nil {
-			// Copy using shell but without preserving attributes to avoid permission carry-over
-			if err := exec.Command("cp", "-r", projectSourceStorage+"/.", path).Run(); err != nil {
-				slog.Warn("Failed to copy base storage structure", "error", err)
-			}
-		} else {
-			os.MkdirAll(publicPath, 0777)
-		}
-	}
-
-	// Native recursive chmod to ensure absolute 0777
-	fullUserPath := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))
-	s.chmodRecursive(fullUserPath, 0777)
-
-	return path
-}
-
-func (s *DockerService) chmodRecursive(path string, mode os.FileMode) error {
-	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
-		if err == nil {
-			return os.Chmod(name, mode)
-		}
-		return err
-	})
-}
-
-// getPersistentHostPath returns the path on the HOST for Docker to mount
-func (s *DockerService) getPersistentHostPath(project *models.Project) string {
-	// 1. Ensure the directory exists (using local DataPath which Go can see)
-	s.ensurePersistentPath(project)
-	
-	// 2. Return the path as seen by the Host
-	return filepath.Join(s.cfg.HostDataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
-}
-func (s *DockerService) CleanupPersistentData(project *models.Project) {
-	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain)
-	slog.Info("Cleaning up persistent data", "path", path)
-	os.RemoveAll(path)
-}
-
 // GetEnvFile reads the .env file for a project
 func (s *DockerService) GetEnvFile(subdomain string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
@@ -1051,57 +855,3 @@ func (s *DockerService) SaveEnvFile(subdomain, content string) error {
 	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(content), 0644)
 }
 
-// ===========================================
-// Helpers
-// ===========================================
-
-// GenerateSubdomain creates a unique subdomain from project name
-func GenerateSubdomain(name string) string {
-	// Clean the name
-	clean := strings.ToLower(name)
-	clean = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(clean, "-")
-	clean = strings.Trim(clean, "-")
-
-	// Limit length
-	if len(clean) > 25 {
-		clean = clean[:25]
-	}
-
-	// Add random suffix
-	suffix := generateRandomString(6)
-	// Subdomain will be used with ProjectDomain (e.g., project.p.horn-yastudio.com)
-	return fmt.Sprintf("%s-%s", clean, suffix)
-}
-
-// generateRandomString creates a random alphanumeric string
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[r.Intn(len(charset))]
-	}
-	return string(result)
-}
-
-// copyFile copies a file from src to dst
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	// Create directory if needed
-	os.MkdirAll(filepath.Dir(dst), 0755)
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	return err
-}

@@ -13,7 +13,6 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/services"
-	"gorm.io/gorm"
 )
 
 // AuthHandler handles authentication endpoints
@@ -23,9 +22,9 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(db *gorm.DB, cfg *config.Config, redis *services.RedisService) *AuthHandler {
+func NewAuthHandler(service *services.AuthService, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
-		service: services.NewAuthService(db, cfg, redis),
+		service: service,
 		cfg:     cfg,
 	}
 }
@@ -67,7 +66,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	
+
 	if token != "" && token != authHeader {
 		// Blacklist for the remaining duration
 		h.service.Logout(token, time.Duration(h.cfg.JWTExpiryHours)*time.Hour)
@@ -81,7 +80,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 // Me returns current user information
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
-	
+
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
 		return err

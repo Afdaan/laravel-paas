@@ -52,6 +52,7 @@ const (
 	StatusBuilding ProjectStatus = "building"
 	StatusRunning  ProjectStatus = "running"
 	StatusFailed   ProjectStatus = "failed"
+	StatusDeleting ProjectStatus = "deleting"
 	StatusStopped  ProjectStatus = "stopped"
 )
 

@@ -9,68 +9,94 @@ import (
 	"log/slog"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
-	"gorm.io/gorm"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
 type DeploymentWorker struct {
-	db             *gorm.DB
 	cfg            *config.Config
 	projectService *ProjectService
 	dockerService  *DockerService
+	gitService     *GitService
+	versionService *VersionService
+	mysqlService   *MySQLService
 	redisService   *RedisService
 	nginxService   *NginxWebhookService
 	projectRepo    repositories.ProjectRepository
 	settingService *SettingService
-	running        bool
+
+	running  bool
+	stopChan chan struct{}
+	wg       sync.WaitGroup
 }
 
 // NewDeploymentWorker creates a new deployment worker
-func NewDeploymentWorker(db *gorm.DB, cfg *config.Config, redisService *RedisService) *DeploymentWorker {
-	projectRepo := repositories.NewProjectRepository(db)
-	settingRepo := repositories.NewSettingRepository(db)
-	settingService := NewSettingService(settingRepo)
-	
+func NewDeploymentWorker(
+	cfg *config.Config,
+	projectRepo repositories.ProjectRepository,
+	settingService *SettingService,
+	redisService *RedisService,
+	dockerService *DockerService,
+	gitService *GitService,
+	versionService *VersionService,
+	mysqlService *MySQLService,
+	projectService *ProjectService,
+) *DeploymentWorker {
 	return &DeploymentWorker{
-		db:             db,
 		cfg:            cfg,
-		projectService: NewProjectService(cfg, projectRepo, settingService, redisService),
-		dockerService:  NewDockerService(cfg),
+		projectService: projectService,
+		dockerService:  dockerService,
+		gitService:     gitService,
+		versionService: versionService,
+		mysqlService:   mysqlService,
 		redisService:   redisService,
 		nginxService:   NewNginxWebhookService(cfg),
 		projectRepo:    projectRepo,
 		settingService: settingService,
 		running:        false,
+		stopChan:       make(chan struct{}),
 	}
 }
 
-// Start begins processing jobs from the queue
+// Start begins processing jobs in the background
 func (w *DeploymentWorker) Start() {
 	if w.running {
-		slog.Warn("Worker already running")
 		return
 	}
-
 	w.running = true
-	slog.Info("Deployment worker started")
+	slog.Info("Starting deployment worker system...")
 
-	// Run recovery for any interrupted builds
+	// Recover orphaned Deletions
+	w.recoverOrphanedDeletions()
+
+	// Recover orphaned jobs on startup
 	w.recoverOrphanedBuilds()
 
-	slog.Info("Waiting for deployment jobs...")
-
-	// Start the daily 3 AM Docker cache cleanup
+	// Start threads
 	w.StartPruneScheduler()
-
-	// Start hourly project expiry janitor
 	w.StartExpiryJanitor()
 
 	go w.processJobs()
+}
+
+// Stop signals the worker to shut down gracefully
+func (w *DeploymentWorker) Stop() {
+	if !w.running {
+		return
+	}
+	slog.Info("Worker stopping: waiting for active jobs to finish...")
+
+	// Signal stop and wait for all jobs in WG to finish
+	w.running = false
+	close(w.stopChan)
+	w.wg.Wait()
+
+	slog.Info("Worker stopped gracefully.")
 }
 
 // StartPruneScheduler starts a daily cron job to prune Docker images at 3 AM
@@ -83,15 +109,15 @@ func (w *DeploymentWorker) StartPruneScheduler() {
 			if now.After(next3AM) {
 				next3AM = next3AM.Add(24 * time.Hour)
 			}
-			
+
 			durationToWait := next3AM.Sub(now)
 			slog.Info("Scheduled next Docker cache prune", "time", next3AM.Format("15:04:05"))
-			
+
 			time.Sleep(durationToWait)
-			
+
 			slog.Info("Executing 3 AM scheduled Docker cache prune")
 			w.dockerService.PruneImages()
-			
+
 			// Optional: Aggressive BuildKit cache cleanup for absolute zero-cache state
 			exec.Command("docker", "builder", "prune", "-a", "-f").Run()
 		}
@@ -103,11 +129,11 @@ func (w *DeploymentWorker) StartExpiryJanitor() {
 	go func() {
 		// Wait a bit before first run to let system settle
 		time.Sleep(1 * time.Minute)
-		
+
 		for w.running {
 			slog.Info("Running project expiry janitor")
 			w.cleanupExpiredProjects()
-			
+
 			// Run every hour
 			time.Sleep(1 * time.Hour)
 		}
@@ -116,74 +142,82 @@ func (w *DeploymentWorker) StartExpiryJanitor() {
 
 // cleanupExpiredProjects finds and thoroughly deletes projects that have passed their inactivity limit
 func (w *DeploymentWorker) cleanupExpiredProjects() {
-	var expiredProjects []models.Project
-	now := time.Now()
-	
-	// Find projects where ExpiresAt is in the past
-	expiredProjects, err := w.projectRepo.ListAll() // Simplified: ListAll and filter or add specific repo method
+	expiredProjects, err := w.projectRepo.ListExpired()
 	if err != nil {
 		slog.Error("Failed to query expired projects", "error", err)
 		return
 	}
-	
+
 	if len(expiredProjects) == 0 {
 		return
 	}
-	
-	slog.Info("Checking Expired projects for automated cleanup", "count", len(expiredProjects))
-	
+
+	slog.Info("Auto-deleting expired projects", "count", len(expiredProjects))
+
 	for i := range expiredProjects {
 		project := expiredProjects[i]
-		if project.ExpiresAt != nil && project.ExpiresAt.Before(now) {
-			slog.Info("Auto-deleting expired project via service", "name", project.Name, "id", project.ID)
-			
-			if err := w.projectService.DeleteProject(&project); err != nil {
-				slog.Error("Failed to auto-delete expired project", "id", project.ID, "error", err)
-			}
+		slog.Info("Auto-deleting expired project via service", "name", project.Name, "id", project.ID)
+
+		if err := w.projectService.DeleteProject(&project); err != nil {
+			slog.Error("Failed to auto-delete expired project", "id", project.ID, "error", err)
 		}
 	}
-	
+
 	// Global prune to cleanup any leftover layers
 	go w.dockerService.PruneImages()
 }
 
-// Stop stops the worker
-func (w *DeploymentWorker) Stop() {
-	w.running = false
-	slog.Info("Deployment worker stopped")
-}
 
-// recoverOrphanedBuilds finds projects left in "building" state due to unexpected shutdown
-// and pushes them back into the redis queue as "queued"
+// recoverOrphanedBuilds finds projects left in building state due to unexpected shutdown
+// and pushes them back into the Redis queue
 func (w *DeploymentWorker) recoverOrphanedBuilds() {
-	orphanedProjects, err := w.projectRepo.ListAll() // Filter for StatusBuilding
+	orphanedProjects, err := w.projectRepo.ListByStatus(models.StatusBuilding)
 	if err != nil {
 		slog.Error("Failed to query orphaned builds", "error", err)
 		return
 	}
 
-	if len(orphanedProjects) > 0 {
-		slog.Info("Recovering orphaned builds from previous session", "count", len(orphanedProjects))
-		
-		for i := range orphanedProjects {
-			project := orphanedProjects[i]
-			if project.Status == models.StatusBuilding {
-				// 1. Reset Status in DB to Queued
-				project.Status = models.StatusQueued
-				recoveryLog := "Recovered from unexpected server shutdown."
-				project.ErrorLog = &recoveryLog
-				w.projectRepo.Update(&project)
+	if len(orphanedProjects) == 0 {
+		return
+	}
 
-			// 2. Clear existing lock if any
-			w.redisService.ReleaseDeploymentLock(project.ID)
+	slog.Info("Recovering orphaned builds from previous session", "count", len(orphanedProjects))
 
-				// 3. Re-enqueue to Redis (Assume 'redeploy' for full clean spin-up)
-				if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
-					slog.Error("Failed to re-queue project", "id", project.ID, "error", err)
-				} else {
-					slog.Info("Project automatically re-queued", "id", project.ID)
-				}
-			}
+	for i := range orphanedProjects {
+		project := orphanedProjects[i]
+
+		// Reset status to queued
+		project.Status = models.StatusQueued
+		recoveryLog := "Recovered from unexpected server shutdown."
+		project.ErrorLog = &recoveryLog
+		w.projectRepo.Update(&project)
+
+		// Clear existing lock if any
+		w.redisService.ReleaseDeploymentLock(project.ID)
+
+		// Re-enqueue for full clean spin-up
+		if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+			slog.Error("Failed to re-queue project", "id", project.ID, "error", err)
+		} else {
+			slog.Info("Project automatically re-queued", "id", project.ID)
+		}
+	}
+}
+
+// recoverOrphanedDeletions finds projects stuck in deleting state
+func (w *DeploymentWorker) recoverOrphanedDeletions() {
+	deletingProjects, err := w.projectRepo.ListByStatus(models.StatusDeleting)
+	if err != nil {
+		slog.Error("Failed to query orphaned deletions", "error", err)
+		return
+	}
+
+	if len(deletingProjects) > 0 {
+		slog.Info("Recovering orphaned deletions from previous session", "count", len(deletingProjects))
+		for i := range deletingProjects {
+			project := deletingProjects[i]
+			slog.Info("Re-triggering project deletion", "id", project.ID)
+			go w.projectService.DeleteProject(&project)
 		}
 	}
 }
@@ -197,19 +231,19 @@ func (w *DeploymentWorker) processJobs() {
 	updateSemaphore := func() {
 		// Fetch max concurrent builds from settings
 		maxStr := w.getSetting(models.SettingMaxConcurrent, models.DefaultMaxConcurrent)
-		
+
 		maxWorkers, err := strconv.Atoi(maxStr)
 		if err != nil {
-			slog.Warn("Failed to parse max_concurrent_builds, defaulting to 3", 
-				"value", maxStr, 
+			slog.Warn("Failed to parse max_concurrent_builds, defaulting to 3",
+				"value", maxStr,
 				"error", err)
 			maxWorkers = 3
 		}
-		
+
 		if maxWorkers < 1 {
 			maxWorkers = 1
 		}
-		
+
 		if maxWorkers != currentMax {
 			currentMax = maxWorkers
 			sem = make(chan struct{}, currentMax)
@@ -224,23 +258,33 @@ func (w *DeploymentWorker) processJobs() {
 
 		// Wait for next job with 5 second timeout
 		job, err := w.redisService.DequeueDeployment(5 * time.Second)
+
+		// If we're stopping, don't start new jobs
+		if !w.running {
+			// If we got a job but we're stopping, put it back in the queue
+			if job != nil {
+				w.redisService.EnqueueDeployment(job.ProjectID, job.UserID, job.Type)
+			}
+			break
+		}
+
 		if err != nil {
 			slog.Error("Error dequeuing job", "error", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		// No job available, continue waiting
 		if job == nil {
 			continue
 		}
 
-		// Acquire semaphore token
+		// Process the job
+		w.wg.Add(1)
 		sem <- struct{}{}
 
-		// Process the job in a goroutine
 		go func(j *DeploymentJob) {
-			defer func() { <-sem }() // Release semaphore token
+			defer w.wg.Done()
+			defer func() { <-sem }()
 			w.processDeployment(j)
 		}(job)
 	}
@@ -248,9 +292,9 @@ func (w *DeploymentWorker) processJobs() {
 
 // processDeployment handles a single deployment job
 func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
-	slog.Info("Processing deployment job", 
-		"type", job.Type, 
-		"projectId", job.ProjectID, 
+	slog.Info("Processing deployment job",
+		"type", job.Type,
+		"projectId", job.ProjectID,
 		"queuedDuration", time.Since(job.EnqueuedAt).Round(time.Second))
 
 	// Try to acquire lock for this project
@@ -274,23 +318,23 @@ func (w *DeploymentWorker) processDeployment(job *DeploymentJob) {
 		}
 	}()
 
-	// Fetch project from database with User preloaded
-	var project models.Project
-	if err := w.db.Preload("User").First(&project, job.ProjectID).Error; err != nil {
-		slog.Error("Failed to find project", "id", job.ProjectID, "error", err)
+	// Fetch project from database via repository
+	project, err := w.projectRepo.GetByID(job.ProjectID)
+	if err != nil {
+		slog.Error("Failed to find project for deployment", "projectId", job.ProjectID, "error", err)
 		w.redisService.IncrementDeploymentCounter("failed_not_found")
 		return
 	}
 
 	// Execute deployment
 	startTime := time.Now()
-	w.deployProject(&project)
+	w.deployProject(project)
 	duration := time.Since(startTime)
 
-	slog.Info("Completed deployment job", 
-		"type", job.Type, 
-		"projectId", project.ID, 
-		"projectName", project.Name, 
+	slog.Info("Completed deployment job",
+		"type", job.Type,
+		"projectId", project.ID,
+		"projectName", project.Name,
 		"duration", duration.Round(time.Second))
 
 	w.redisService.IncrementDeploymentCounter("completed")
@@ -304,14 +348,14 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	w.projectRepo.Update(project)
 
 	// Step 1: Clone repository
-	projectPath, err := w.dockerService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
+	projectPath, err := w.gitService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
 	if err != nil {
 		w.updateProjectError(project, "Failed to clone repository: "+err.Error())
 		return
 	}
 
 	// Step 2: Detect Laravel version
-	laravelVersion, phpVersion, err := w.dockerService.DetectVersions(projectPath)
+	laravelVersion, phpVersion, err := w.versionService.DetectVersions(projectPath)
 	if err != nil {
 		w.updateProjectError(project, "Failed to detect Laravel version: "+err.Error())
 		return
@@ -327,8 +371,8 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	project.PHPVersion = finalPHPVersion
 	w.projectRepo.Update(project)
 
-	// Step 3: Create database
-	if err := w.dockerService.CreateDatabase(project.DatabaseName); err != nil {
+	// Step 3: Create student database
+	if err := w.mysqlService.CreateDatabase(project.DatabaseName); err != nil {
 		w.updateProjectError(project, "Failed to create database: "+err.Error())
 		return
 	}
@@ -343,7 +387,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Step 4: Build and run container
 	// Project Domain (Global setting)
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
-	
+
 	// Resource Limits (Global settings)
 	cpuPercentStr := w.getSetting(models.SettingCPULimit, models.DefaultCPULimit)
 	cpuPercent, _ := strconv.ParseFloat(cpuPercentStr, 64)
@@ -360,16 +404,27 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 		return
 	}
 
-	// Update project as running with new container ID
 	project.Status = models.StatusRunning
 	project.ContainerID = &containerID
 	w.projectRepo.Update(project)
+	w.projectService.InvalidateSubdomainCache(project.Subdomain)
+
+	// Step 5: Run database migrations
+	slog.Info("Running database migrations", "subdomain", project.Subdomain)
+	if output, err := w.dockerService.RunMigrations(containerID); err != nil {
+		slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
+		w.updateProjectError(project, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+		return
+	}
 
 	// Sync Redis Proxy Cache
 	w.projectService.CacheSubdomainMapping(project)
 
 	// Sync config to remote Nginx
-	w.nginxService.SyncProject(project, projectDomain)
+	if err := w.nginxService.SyncProject(project, projectDomain); err != nil {
+		w.updateProjectError(project, "Failed to sync Nginx configuration: "+err.Error())
+		return
+	}
 
 	// Cleanup old container after successful switch
 	if oldContainerID != nil {
@@ -385,11 +440,11 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg 
 	msg := errorMsg
 	project.ErrorLog = &msg
 	w.projectRepo.Update(project)
+	w.projectService.InvalidateSubdomainCache(project.Subdomain)
 	w.redisService.IncrementDeploymentCounter("failed_deployment")
 }
 
 // getSetting helper to get a setting value from service
 func (w *DeploymentWorker) getSetting(key string, defaultValue string) string {
-	return w.projectService.GetSetting(key, defaultValue)
+	return w.settingService.Get(key, defaultValue)
 }
-

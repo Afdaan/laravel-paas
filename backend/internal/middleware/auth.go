@@ -74,7 +74,7 @@ func RequireAdmin() fiber.Handler {
 		}
 
 		role, ok := roleVal.(string)
-		if !ok || (role != "superadmin" && role != "admin") {
+		if !ok || (role != string(models.RoleSuperAdmin) && role != string(models.RoleAdmin)) {
 			return apperr.ErrForbidden
 		}
 		return c.Next()
@@ -90,7 +90,7 @@ func RequireSuperAdmin() fiber.Handler {
 		}
 
 		role, ok := roleVal.(string)
-		if !ok || role != "superadmin" {
+		if !ok || role != string(models.RoleSuperAdmin) {
 			return apperr.ErrForbidden
 		}
 		return c.Next()

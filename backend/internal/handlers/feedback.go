@@ -10,15 +10,15 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/models"
-	"gorm.io/gorm"
+	"github.com/laravel-paas/backend/internal/services"
 )
 
 type FeedbackHandler struct {
-	db *gorm.DB
+	service *services.FeedbackService
 }
 
-func NewFeedbackHandler(db *gorm.DB) *FeedbackHandler {
-	return &FeedbackHandler{db: db}
+func NewFeedbackHandler(service *services.FeedbackService) *FeedbackHandler {
+	return &FeedbackHandler{service: service}
 }
 
 type CreateFeedbackRequest struct {
@@ -41,16 +41,8 @@ func (h *FeedbackHandler) Create(c *fiber.Ctx) error {
 	}
 
 	userID := c.Locals("user_id").(uint)
-
-	feedback := models.Feedback{
-		UserID:  userID,
-		Title:   req.Title,
-		Content: req.Content,
-		Type:    req.Type,
-		Status:  models.FeedbackStatusPending,
-	}
-
-	if err := h.db.Create(&feedback).Error; err != nil {
+	feedback, err := h.service.SubmitFeedback(userID, req.Title, req.Content, req.Type)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to submit feedback",
 		})
@@ -61,19 +53,8 @@ func (h *FeedbackHandler) Create(c *fiber.Ctx) error {
 
 // ListAll returns all feedback for admin
 func (h *FeedbackHandler) ListAll(c *fiber.Ctx) error {
-	var feedback []models.Feedback
-	
-	query := h.db.Preload("User").Order("created_at DESC")
-	
-	// Filtering
-	if feedbackType := c.Query("type"); feedbackType != "" {
-		query = query.Where("type = ?", feedbackType)
-	}
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	if err := query.Find(&feedback).Error; err != nil {
+	feedback, err := h.service.GetAllFeedback(c.Query("type"), c.Query("status"))
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to fetch feedback",
 		})
@@ -85,9 +66,8 @@ func (h *FeedbackHandler) ListAll(c *fiber.Ctx) error {
 // ListOwn returns feedback submitted by the current user
 func (h *FeedbackHandler) ListOwn(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
-	var feedback []models.Feedback
-
-	if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&feedback).Error; err != nil {
+	feedback, err := h.service.GetUserFeedback(userID)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to fetch your feedback",
 		})
@@ -112,7 +92,7 @@ func (h *FeedbackHandler) UpdateStatus(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.db.Model(&models.Feedback{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	if err := h.service.UpdateStatus(uint(id), req.Status); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to update feedback status",
 		})
@@ -132,7 +112,7 @@ func (h *FeedbackHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.db.Delete(&models.Feedback{}, id).Error; err != nil {
+	if err := h.service.DeleteFeedback(uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to delete feedback",
 		})

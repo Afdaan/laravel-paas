@@ -14,47 +14,44 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
-	"gorm.io/gorm"
 )
 
 // DatabaseHandler handles database management endpoints
 type DatabaseHandler struct {
-	db              *gorm.DB
 	cfg             *config.Config
 	databaseService *services.DatabaseService
+	projectService  *services.ProjectService
 }
 
 // NewDatabaseHandler creates a new database handler
-func NewDatabaseHandler(db *gorm.DB, cfg *config.Config) *DatabaseHandler {
+func NewDatabaseHandler(cfg *config.Config, databaseService *services.DatabaseService, projectService *services.ProjectService) *DatabaseHandler {
 	return &DatabaseHandler{
-		db:              db,
 		cfg:             cfg,
-		databaseService: services.NewDatabaseService(db, cfg),
+		databaseService: databaseService,
+		projectService:  projectService,
 	}
 }
 
 // getProjectForUser fetches project and validates ownership
 func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, error) {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid project ID")
 	}
 
 	userID := c.Locals("user_id").(uint)
-	role := c.Locals("role").(string)
+	role := models.Role(c.Locals("role").(string))
 
-	var project models.Project
-	query := h.db
-
-	if role != string(models.RoleAdmin) && role != string(models.RoleSuperAdmin) {
-		query = query.Where("user_id = ?", userID)
-	}
-
-	if err := query.First(&project, id).Error; err != nil {
+	project, err := h.projectService.GetProjectByID(uint(id))
+	if err != nil {
 		return nil, fmt.Errorf("project not found")
 	}
 
-	return &project, nil
+	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
+		return nil, fmt.Errorf("project not found")
+	}
+
+	return project, nil
 }
 
 // GetCredentials returns database credentials
