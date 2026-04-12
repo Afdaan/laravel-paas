@@ -134,7 +134,7 @@ const AdminSettings = () => {
               <Input
                 value={settings.base_domain || ''}
                 onChange={(e) => handleChange('base_domain', e.target.value)}
-                placeholder="paas.example.com"
+                placeholder={t('admin.settings.coreFqdnPlaceholder')}
               />
               <p className="text-xs text-muted-foreground flex items-center gap-2">
                 <AlertCircle size={14} /> {t('admin.settings.coreFqdnDesc')}
@@ -149,7 +149,7 @@ const AdminSettings = () => {
               <Input
                 value={settings.project_domain || ''}
                 onChange={(e) => handleChange('project_domain', e.target.value)}
-                placeholder="projects.example.com"
+                placeholder={t('admin.settings.projectPoolPlaceholder')}
               />
               <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10 flex items-center gap-3">
                 <div className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest">{t('admin.settings.wildcardResolve')}:</div>

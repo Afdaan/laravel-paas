@@ -59,7 +59,7 @@ const StudentFeedback = () => {
       const res = await feedbackAPI.listOwn()
       setFeedback(res.data || [])
     } catch (error) {
-      console.error('Failed to load feedback history')
+      toast.error(t('common.error'))
     } finally {
       setIsLoading(false)
     }
@@ -73,8 +73,8 @@ const StudentFeedback = () => {
     e.preventDefault()
 
     const errors: { title?: string; content?: string } = {}
-    if (!formData.title.trim()) errors.title = t('feedback.subjectRequired') || ''
-    if (!formData.content.trim()) errors.content = t('feedback.detailsRequired') || ''
+    if (!formData.title.trim()) errors.title = t('feedback.subjectRequired')
+    if (!formData.content.trim()) errors.content = t('feedback.detailsRequired')
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
@@ -117,7 +117,7 @@ const StudentFeedback = () => {
   return (
     <div className="space-y-12 animate-in fade-in duration-500 max-w-7xl mx-auto pb-20">
       <div className="space-y-2">
-        <h1 className="text-4xl font-bold tracking-tight">{t('feedback.title').split(' ')[0]} <span className="text-primary italic">{t('feedback.title').split(' ')[1] || 'Hub'}</span></h1>
+        <h1 className="text-4xl font-bold tracking-tight">{t('feedback.title')}</h1>
         <p className="text-muted-foreground text-lg font-medium">{t('feedback.subtitle')}</p>
       </div>
 
@@ -153,7 +153,7 @@ const StudentFeedback = () => {
                     onValueChange={(val) => setFormData({ ...formData, type: val || 'suggestion' })}
                   >
                     <SelectTrigger className="h-12 w-full border-muted-foreground/20">
-                      <SelectValue placeholder={t('feedback.categoryPlaceholder') || ''}>
+                      <SelectValue placeholder={t('feedback.categoryPlaceholder')}>
                         {formData.type === 'suggestion' && t('feedback.suggestion')}
                         {formData.type === 'bug' && t('feedback.bug')}
                         {formData.type === 'trouble' && t('feedback.issue')}

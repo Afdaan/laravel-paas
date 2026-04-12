@@ -102,7 +102,7 @@ const AdminProjects = () => {
       setProjects(response.data.data || [])
       setTotal(response.data.total || 0)
     } catch (error) {
-      toast.error('Failed to index projects')
+      toast.error(t('admin.projects.loadError'))
     } finally {
       setIsLoading(false)
       isFirstLoad.current = false

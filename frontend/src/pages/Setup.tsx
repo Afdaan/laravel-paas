@@ -15,12 +15,14 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Sun, Moon } from 'lucide-react'
 import { useTheme } from '@/components/ThemeProvider'
+import useTranslation from '../lib/useTranslation'
 
 interface SetupProps {
   onComplete: () => void;
 }
 
 const Setup: React.FC<SetupProps> = ({ onComplete }) => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
   const [isLoading, setIsLoading] = useState(false)
@@ -70,11 +72,11 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
         password: formData.password,
       })
       
-      toast.success('System initialized successfully! Please login.')
+      toast.success(t('admin.setupSuccess'))
       onComplete()
       navigate('/login', { replace: true })
-    } catch (error: any) {
-      const message = error.response?.data?.message || 'Failed to initialize system'
+    } catch (err: any) {
+      const message = err.response?.data?.error || t('common.actionFailed')
       toast.error(message)
     } finally {
       setIsLoading(false)

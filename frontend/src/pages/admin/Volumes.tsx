@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
-import { systemAPI } from '../../services/api'
-import useTranslation from '../../lib/useTranslation'
+import { systemAPI } from '@/services/api'
+import useTranslation from '@/lib/useTranslation'
 import {
     Plus,
     RotateCw,
@@ -9,7 +9,9 @@ import {
     Zap,
     Loader2,
     Trash2,
-    Info
+    Info,
+    ChevronLeft,
+    ChevronRight
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -39,11 +41,11 @@ const AdminVolumes = () => {
             setData(res.data)
         } catch (error) {
             console.error('Failed to fetch volumes:', error)
-            toast.error('Failed to sync storage registry')
+            toast.error(t('admin.volumes.syncError'))
         } finally {
             setIsLoading(false)
         }
-    }, [])
+    }, [t])
 
     useEffect(() => {
         fetchData()
@@ -54,18 +56,18 @@ const AdminVolumes = () => {
     const stats = useMemo(() => {
         const volumes = data?.volumes || []
         const total = volumes.length
-        const unused = volumes.filter(v => v.status === 'Unused').length
+        const unused = volumes.filter(v => v.status === 'Unused' || v.status === 'Orphaned').length
         return { total, unused }
     }, [data])
 
     const handleDelete = async (name: string) => {
-        if (!window.confirm(`Purge volume ${name}? This will permanently delete all data stored within.`)) return
+        if (!window.confirm(t('admin.volumes.confirmPurge', { name }))) return
         try {
-            // Purge logic usually handled by backend
-            toast.success('Volume purge initiated')
+            await systemAPI.deleteVolume(name)
+            toast.success(t('admin.volumes.purgeInitiated'))
             fetchData()
         } catch (error) {
-            toast.error('Purge operation failed')
+            toast.error(t('admin.volumes.purgeError'))
         }
     }
 
@@ -91,11 +93,11 @@ const AdminVolumes = () => {
                     <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         <div className="flex items-center gap-2 px-3 border-r">
                             <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm animate-pulse"></div>
-                            {stats.total} Active
+                            {stats.total} {t('admin.volumes.active')}
                         </div>
                         <div className="flex items-center gap-2 px-3">
                             <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm"></div>
-                            {stats.unused} Orphaned
+                            {stats.unused} {t('admin.volumes.orphaned')}
                         </div>
                     </div>
 
@@ -116,14 +118,14 @@ const AdminVolumes = () => {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>
+                                <TableHead className="w-10">
                                     <Checkbox />
                                 </TableHead>
-                                <TableHead>Identity & Namespace</TableHead>
-                                <TableHead className="text-center">{t('common.status')}</TableHead>
-                                <TableHead className="text-center">Capacity</TableHead>
-                                <TableHead className="text-center">Orchestrator</TableHead>
-                                <TableHead className="text-right">{t('common.actions')}</TableHead>
+                                <TableHead>{t('admin.volumes.identity')}</TableHead>
+                                <TableHead className="text-center w-32">{t('common.status')}</TableHead>
+                                <TableHead className="text-center w-32">{t('admin.volumes.capacity')}</TableHead>
+                                <TableHead className="text-center w-40">{t('admin.volumes.orchestrator')}</TableHead>
+                                <TableHead className="text-right w-20">{t('common.actions')}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -134,13 +136,13 @@ const AdminVolumes = () => {
                                             <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
                                                 <HardDrive className="w-8 h-8 opacity-50" />
                                             </div>
-                                            <span className="font-semibold text-sm">{t('common.noData')}</span>
+                                            <span className="font-semibold text-sm">{t('admin.volumes.noVolumes')}</span>
                                         </div>
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                data.volumes.map((v, i) => (
-                                    <TableRow key={i}>
+                                data.volumes.map((v) => (
+                                    <TableRow key={v.name}>
                                         <TableCell className="text-center">
                                             <Checkbox />
                                         </TableCell>
@@ -151,7 +153,11 @@ const AdminVolumes = () => {
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className="text-sm font-semibold truncate max-w-[300px] uppercase tracking-tight">{v.name}</span>
-                                                    <span className="text-[10px] text-muted-foreground font-mono tracking-widest">{v.name.substring(0, 16)}...</span>
+                                                    {v.name && v.name.length > 0 && (
+                                                        <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
+                                                          {v.name.length > 16 ? `${v.name.substring(0, 16)}...` : v.name}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </TableCell>
@@ -161,7 +167,7 @@ const AdminVolumes = () => {
                                                 : 'bg-indigo-500/10 text-indigo-600 border-indigo-500/40'
                                                 }`}>
                                                 <div className={`w-1.5 h-1.5 rounded-full ${v.status === 'In Use' ? 'bg-emerald-500 animate-pulse' : 'bg-indigo-500'}`} />
-                                                {v.status || 'Active'}
+                                                {v.status === 'In Use' ? t('status.inUse') : (v.status || t('status.ready'))}
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-center">
@@ -176,18 +182,16 @@ const AdminVolumes = () => {
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <DropdownMenu>
-                                                <DropdownMenuTrigger>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                                        <MoreHorizontal className="w-4 h-4" />
-                                                    </Button>
+                                                <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                                                    <MoreHorizontal className="w-4 h-4" />
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-fit">
-                                                    <DropdownMenuItem className="gap-2 focus:bg-accent cursor-pointer">
-                                                        <Info className="w-4 h-4 text-muted-foreground" /> Inspect Config
+                                                    <DropdownMenuItem className="gap-2 cursor-pointer">
+                                                        <Info className="w-4 h-4 text-muted-foreground" /> {t('admin.volumes.inspectConfig')}
                                                     </DropdownMenuItem>
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem className="text-destructive gap-2 focus:bg-destructive/10 focus:text-destructive cursor-pointer" onClick={() => handleDelete(v.name)}>
-                                                        <Trash2 className="w-4 h-4" /> Purge Volume
+                                                    <DropdownMenuItem className="text-destructive gap-2 cursor-pointer" onClick={() => handleDelete(v.name)}>
+                                                        <Trash2 className="w-4 h-4" /> {t('admin.volumes.purgeVolume')}
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -202,11 +206,15 @@ const AdminVolumes = () => {
                 <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
                         <Zap className="w-4 h-4 text-primary" />
-                        Showing {data?.volumes?.length || 0} persistent storage clusters.
+                        {t('common.total')}: {data?.volumes?.length || 0} {t('admin.volumes.clusters')}
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" disabled>Previous</Button>
-                        <Button variant="outline" size="sm" disabled>Next</Button>
+                        <Button variant="outline" size="sm" disabled>
+                            <ChevronLeft className="w-4 h-4 mr-1" /> {t('common.previous')}
+                        </Button>
+                        <Button variant="outline" size="sm" disabled>
+                            {t('common.next')} <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
                     </div>
                 </div>
             </div>

@@ -99,15 +99,15 @@ const AdminContainers = () => {
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
             <div className="flex items-center gap-2 px-3 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm" />
-              {stats.total} Total
+              {stats.total} {t('common.total')}
             </div>
             <div className="flex items-center gap-2 px-3 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
-              {stats.running} Active
+              {stats.running} {t('common.active')}
             </div>
             <div className="flex items-center gap-2 px-3">
               <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm" />
-              {stats.stopped} Offline
+              {stats.stopped} {t('common.offline')}
             </div>
           </div>
         </div>
@@ -126,10 +126,10 @@ const AdminContainers = () => {
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" className="hidden md:flex">
-              <ListFilter className="w-4 h-4 mr-2" /> Policy
+              <ListFilter className="w-4 h-4 mr-2" /> {t('common.policy')}
             </Button>
             <Button variant="outline" size="sm" className="text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100">
-              <LayoutGrid className="w-4 h-4 mr-2" /> Matrix View
+              <LayoutGrid className="w-4 h-4 mr-2" /> {t('common.matrixView')}
             </Button>
           </div>
         </div>
@@ -141,11 +141,11 @@ const AdminContainers = () => {
                 <TableHead className="w-12 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead>Instance Detail</TableHead>
+                <TableHead>{t('admin.containers.instanceDetail')}</TableHead>
                 <TableHead>{t('common.status')}</TableHead>
-                <TableHead>Health Requirements</TableHead>
-                <TableHead>Resource Load</TableHead>
-                <TableHead>Gateway Ports</TableHead>
+                <TableHead>{t('admin.containers.health')}</TableHead>
+                <TableHead>{t('admin.containers.resourceLoad')}</TableHead>
+                <TableHead>{t('admin.containers.gatewayPorts')}</TableHead>
                 <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -190,11 +190,11 @@ const AdminContainers = () => {
                     <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5">
                         {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
-                        Liveness Check
+                        {t('admin.containers.livenessCheck')}
                       </div>
                       <div className="flex items-center gap-1.5">
                         {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
-                        Readiness Probe
+                        {t('admin.containers.readinessProbe')}
                       </div>
                     </div>
                   </TableCell>
@@ -213,7 +213,7 @@ const AdminContainers = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-mono font-bold text-muted-foreground">{c.ip_address || 'Unassigned'}</span>
+                      <span className="text-xs font-mono font-bold text-muted-foreground">{c.ip_address || t('common.unassigned')}</span>
                       <div className="flex flex-wrap gap-1">
                         {c.ports?.slice(0, 2).map((p, i) => (
                           <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
@@ -232,11 +232,11 @@ const AdminContainers = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
-                        <DropdownMenuItem>View Logs</DropdownMenuItem>
-                        <DropdownMenuItem>Execute Shell</DropdownMenuItem>
+                        <DropdownMenuItem>{t('common.viewLogs')}</DropdownMenuItem>
+                        <DropdownMenuItem>{t('common.executeShell')}</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className={c.state === 'running' ? "text-destructive" : ""}>
-                          {c.state === 'running' ? 'Force Stop' : 'Start Instance'}
+                          {c.state === 'running' ? t('admin.containers.forceStop') : t('admin.containers.startInstance')}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -250,25 +250,25 @@ const AdminContainers = () => {
         <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
             <Activity className="w-4 h-4 text-primary" />
-            Showing {filteredContainers.length} global cluster nodes.
+            {t('admin.containers.nodeSummary', { count: filteredContainers.length })}
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows per page</span>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('common.rowsPerPage')}</span>
               <Select defaultValue="all">
                 <SelectTrigger className="w-[80px] h-8">
-                  <SelectValue placeholder="All" />
+                  <SelectValue placeholder={t('common.all')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   <SelectItem value="10">10</SelectItem>
                   <SelectItem value="20">20</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <Button variant="outline" size="sm" disabled>Previous</Button>
-              <Button variant="outline" size="sm" disabled>Next</Button>
+              <Button variant="outline" size="sm" disabled>{t('common.previous')}</Button>
+              <Button variant="outline" size="sm" disabled>{t('common.next')}</Button>
             </div>
           </div>
         </div>

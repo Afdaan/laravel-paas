@@ -38,7 +38,7 @@ export default function Databases() {
         setSelectedProjectId(data[0].id)
       }
     } catch (error) {
-      toast.error(t('common.error') || 'Failed to load project database list')
+      toast.error(t('common.error'))
     } finally {
       setIsLoading(false)
     }
@@ -96,7 +96,7 @@ export default function Databases() {
                <div className="relative mt-6">
                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                  <Input 
-                   placeholder={t('databaseManager.searchSchema') || 'Search schema...'} 
+                   placeholder={t('databaseManager.searchSchema')} 
                    value={search}
                    onChange={(e) => setSearch(e.target.value)}
                    className="pl-9 h-10 text-xs font-bold uppercase tracking-widest"

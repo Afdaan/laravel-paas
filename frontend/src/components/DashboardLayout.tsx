@@ -82,7 +82,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         ]
       }
 
-  const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : 'US'
+  const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : t('common.initialsFallback')
   
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
@@ -94,9 +94,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center text-primary-foreground shadow-sm">
                <span className="font-bold tracking-tighter text-sm">LP</span>
             </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">PaaS <span className="text-muted-foreground font-normal">Core</span></h1>
-            </div>
+            <h1 className="text-xl font-bold tracking-tighter">PaaS</h1>
           </div>
           
           <Badge variant={isAdmin ? "destructive" : "secondary"} className="w-full justify-center">

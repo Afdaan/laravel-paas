@@ -35,8 +35,13 @@ api.interceptors.response.use(
       window.dispatchEvent(new Event('auth:expired'))
     }
     
-    // Global connection error handling
-    if (!error.response) {
+    // Global Server Updating/Swap handling (502 Bad Gateway / 503 Service Unavailable)
+    if (error.response?.status === 502 || error.response?.status === 503) {
+      window.dispatchEvent(new Event('system:updating'))
+    }
+    
+    // Global connection error handling (No response received)
+    if (!error.response && !error.request?.status) {
       window.dispatchEvent(new Event('system:offline'))
     }
     
@@ -218,6 +223,9 @@ export const systemAPI = {
   
   prune: () => 
     api.post('/admin/system/prune'),
+
+  deleteVolume: (name: string) =>
+    api.delete(`/admin/system/volumes/${name}`),
   
   getInitStatus: () => 
     api.get('/system/init-status'),

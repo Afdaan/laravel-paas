@@ -5,7 +5,7 @@ import { translations } from '../lib/translations'
 const useTranslation = () => {
   const { language } = useLanguageStore()
   
-  const t = useCallback((keyPath: string, data?: Record<string, string | number>): string => {
+  const t = useCallback((keyPath: string, data?: Record<string, string | number>): any => {
     const keys = keyPath.split('.')
     let current: any = translations[language]
     
@@ -27,7 +27,7 @@ const useTranslation = () => {
       }
     }
     
-    let result = current as string
+    let result = current
     if (data && typeof result === 'string') {
       Object.entries(data).forEach(([key, value]) => {
         result = result.replace(`{{${key}}}`, String(value))
@@ -37,7 +37,7 @@ const useTranslation = () => {
     return result
   }, [language])
 
-  return { t, language, setLanguage: useLanguageStore.getState().setLanguage }
+  return { t, language, setLanguage: (lang: string) => useLanguageStore.getState().setLanguage(lang as any) }
 }
 
 export default useTranslation

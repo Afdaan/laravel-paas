@@ -119,7 +119,7 @@ function Login() {
                     if(validationErrors.email) setValidationErrors(prev => ({...prev, email: null}))
                   }}
                   className={validationErrors.email ? "border-destructive focus-visible:ring-destructive" : ""}
-                  placeholder="name@example.com"
+                  placeholder={t('login.emailPlaceholder')}
                   autoFocus
                 />
                 {validationErrors.email && (
@@ -139,7 +139,7 @@ function Login() {
                       if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
                     }}
                     className={`${validationErrors.password ? "border-destructive focus-visible:ring-destructive" : ""} pr-10`}
-                    placeholder="••••••••"
+                    placeholder={t('login.passwordPlaceholder')}
                   />
                   <button
                     type="button"
@@ -181,7 +181,7 @@ function Login() {
         </Card>
         
         <div className="mt-8 flex items-center justify-between px-2 text-xs text-muted-foreground font-bold uppercase tracking-widest">
-           <p>{t('login.platformVersion')} 2.8</p>
+           <p>{t('login.platformVersion', { version: '2.8' })}</p>
            <Link to="/" className="hover:text-primary transition-colors">{t('login.support')}</Link>
         </div>
       </div>

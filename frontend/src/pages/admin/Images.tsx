@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
-import { systemAPI } from '../../services/api'
-import useTranslation from '../../lib/useTranslation'
+import { systemAPI } from '@/services/api'
+import useTranslation from '@/lib/useTranslation'
 import { toast } from 'sonner'
 import {
   Download,
@@ -13,7 +13,11 @@ import {
   MoreHorizontal,
   ShieldCheck,
   Zap,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  RotateCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,10 +52,11 @@ const AdminImages = () => {
       setData(res.data)
     } catch (error) {
       console.error('Failed to fetch images:', error)
+      toast.error(t('common.loadError'))
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchData()
@@ -60,7 +65,7 @@ const AdminImages = () => {
   }, [fetchData])
 
   const handlePrune = useCallback(async () => {
-    if (!window.confirm('Are you sure you want to purge unused image layers? This action is irreversible.')) return
+    if (!window.confirm(t('admin.purgeMessage'))) return
     setIsPruning(true)
     try {
       await systemAPI.prune()
@@ -76,8 +81,8 @@ const AdminImages = () => {
   const filteredImages = useMemo(() => {
     const images = data?.images || []
     return images.filter(img =>
-      img.repository.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      img.tag.toLowerCase().includes(searchQuery.toLowerCase())
+      (img.repository || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (img.tag || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
   }, [data, searchQuery])
 
@@ -120,11 +125,11 @@ const AdminImages = () => {
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
             <div className="flex items-center gap-2 px-3 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm animate-pulse" />
-              {stats.total} Images
+              {stats.total} {t('common.images')}
             </div>
             <div className="flex items-center gap-2 px-3">
               <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm" />
-              {stats.totalSize} Storage
+              {stats.totalSize} {t('common.storage')}
             </div>
           </div>
 
@@ -153,7 +158,7 @@ const AdminImages = () => {
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" className="hidden xl:flex">
-              <BarChart2 className="w-4 h-4 mr-2" /> Analytics
+              <BarChart2 className="w-4 h-4 mr-2" /> {t('common.analytics')}
             </Button>
             <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9">
               <RefreshCw className="w-4 h-4 text-muted-foreground" />
@@ -168,12 +173,12 @@ const AdminImages = () => {
                 <TableHead className="w-12 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead>Image Repository</TableHead>
-                <TableHead className="text-center">Tag</TableHead>
-                <TableHead className="text-center">Lifecycle</TableHead>
-                <TableHead>Orchestrated By</TableHead>
-                <TableHead className="text-center">Scan</TableHead>
-                <TableHead className="text-center">Size</TableHead>
+                <TableHead>{t('admin.images.repository')}</TableHead>
+                <TableHead className="text-center">{t('admin.images.tag')}</TableHead>
+                <TableHead className="text-center">{t('admin.images.lifecycle')}</TableHead>
+                <TableHead>{t('admin.images.orchestratedBy')}</TableHead>
+                <TableHead className="text-center">{t('admin.images.scan')}</TableHead>
+                <TableHead className="text-center">{t('admin.images.size')}</TableHead>
                 <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -204,7 +209,7 @@ const AdminImages = () => {
                           {img.repository}
                         </span>
                         <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-                          {img.id?.substring(7, 19) || 'untagged'}
+                          {img.id && img.id.length > 7 ? img.id.substring(7, 19) : 'untagged'}
                         </span>
                       </div>
                     </div>
@@ -249,16 +254,22 @@ const AdminImages = () => {
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8">
-                        <span className="sr-only">Open menu</span>
+                      <DropdownMenuTrigger
+                        render={<Button variant="ghost" size="icon" className="h-8 w-8" />}
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
-                        <DropdownMenuItem>Inspect</DropdownMenuItem>
-                        <DropdownMenuItem>Re-tag</DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 cursor-pointer">
+                          <Info className="w-4 h-4 text-muted-foreground" /> {t('common.inspect')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 cursor-pointer">
+                          <RotateCw className="w-4 h-4 text-muted-foreground" /> {t('admin.images.retag')}
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">{t('common.delete')} Image</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive gap-2 cursor-pointer">
+                          <Trash2 className="w-4 h-4" /> {t('admin.images.deleteImage')}
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -271,25 +282,29 @@ const AdminImages = () => {
         <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
             <Zap className="w-4 h-4 text-blue-500" />
-            Showing {filteredImages.length} results of registry state.
+            {t('admin.images.imageSummary', { count: filteredImages.length })}
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows per page</span>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('common.rowsPerPage')}</span>
               <Select defaultValue="all">
                 <SelectTrigger className="w-[80px] h-8">
-                  <SelectValue placeholder="All" />
+                  <SelectValue placeholder={t('common.all')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="20">20</SelectItem>
                   <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <Button variant="outline" size="sm" disabled>Previous</Button>
-              <Button variant="outline" size="sm" disabled>Next</Button>
+              <Button variant="outline" size="sm" disabled>
+                <ChevronLeft className="w-4 h-4 mr-1" /> {t('common.previous')}
+              </Button>
+              <Button variant="outline" size="sm" disabled>
+                {t('common.next')} <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
             </div>
           </div>
         </div>
@@ -299,4 +314,3 @@ const AdminImages = () => {
 }
 
 export default memo(AdminImages)
-

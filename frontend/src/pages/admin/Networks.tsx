@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
-import { systemAPI } from '../../services/api'
-import useTranslation from '../../lib/useTranslation'
+import { systemAPI } from '@/services/api'
+import useTranslation from '@/lib/useTranslation'
 import {
   Plus,
   RotateCw,
@@ -8,7 +8,11 @@ import {
   MoreHorizontal,
   Activity,
   Globe,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  Unplug
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -17,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { toast } from 'sonner'
 
 interface NetworkData {
   id: string;
@@ -39,10 +44,11 @@ const AdminNetworks = () => {
       setData(res.data)
     } catch (error) {
       console.error('Failed to fetch networks:', error)
+      toast.error(t('common.loadError'))
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchData()
@@ -53,12 +59,12 @@ const AdminNetworks = () => {
   const stats = useMemo(() => {
     const networks = data?.networks || []
     const total = networks.length
-    const unused = networks.filter(n => n.status === 'Unused').length
+    const unused = networks.filter(n => n.status === 'Unused' || n.status === 'Idle').length
     return { total, unused }
   }, [data])
 
   const getDriverColor = (driver: string) => {
-    switch (driver.toLowerCase()) {
+    switch (driver?.toLowerCase()) {
       case 'bridge': return 'border-blue-500/20 bg-blue-500/10 text-blue-600'
       case 'host': return 'border-orange-500/20 bg-orange-500/10 text-orange-600'
       case 'overlay': return 'border-purple-500/20 bg-purple-500/10 text-purple-600'
@@ -87,11 +93,11 @@ const AdminNetworks = () => {
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
             <div className="flex items-center gap-2 px-3 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
-              {stats.total} Active Pipes
+              {stats.total} {t('common.active')}
             </div>
             <div className="flex items-center gap-2 px-3">
               <div className="w-2.5 h-2.5 rounded-full bg-slate-400 shadow-sm" />
-              {stats.unused} Standby
+              {stats.unused} {t('common.offline')}
             </div>
           </div>
 
@@ -114,10 +120,10 @@ const AdminNetworks = () => {
                 <TableHead className="w-12 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead>Interface Identity</TableHead>
-                <TableHead className="text-center">Connection State</TableHead>
-                <TableHead className="text-center">Protocol / Driver</TableHead>
-                <TableHead className="text-center">Exposure Scope</TableHead>
+                <TableHead>{t('admin.networks.interfaceIdentity')}</TableHead>
+                <TableHead className="text-center">{t('admin.networks.connectionState')}</TableHead>
+                <TableHead className="text-center">{t('admin.networks.protocolDriver')}</TableHead>
+                <TableHead className="text-center">{t('admin.networks.exposureScope')}</TableHead>
                 <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -149,7 +155,7 @@ const AdminNetworks = () => {
                           {n.name}
                         </span>
                         <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-                          {n.id.substring(0, 12)}
+                          {n.id && n.id.length >= 12 ? n.id.substring(0, 12) : n.id}
                         </span>
                       </div>
                     </div>
@@ -157,11 +163,11 @@ const AdminNetworks = () => {
                   <TableCell className="text-center">
                     {n.status === 'In Use' ? (
                       <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> Routed
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('admin.networks.routed')}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-indigo-600 border-indigo-500/40 bg-indigo-500/10">
-                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5" /> Isolated
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5" /> {t('admin.networks.isolated')}
                       </Badge>
                     )}
                   </TableCell>
@@ -178,15 +184,22 @@ const AdminNetworks = () => {
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8">
-                        <span className="sr-only">Open menu</span>
+                      <DropdownMenuTrigger
+                        render={<Button variant="ghost" size="icon" className="h-8 w-8" />}
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Inspect Configuration</DropdownMenuItem>
-                        <DropdownMenuItem>Connect Container</DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 cursor-pointer">
+                          <Info className="w-4 h-4 text-muted-foreground" /> {t('admin.networks.inspectConfig')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 cursor-pointer">
+                          <Plus className="w-4 h-4 text-muted-foreground" /> {t('admin.networks.connectContainer')}
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">Disconnect Network</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive gap-2 cursor-pointer">
+                          <Unplug className="w-4 h-4" /> {t('admin.networks.disconnectNetwork')}
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -199,11 +212,11 @@ const AdminNetworks = () => {
         <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
           <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
             <Activity className="w-4 h-4 text-emerald-500" />
-            Showing {data?.networks?.length || 0} virtual interfaces found in cluster.
+            {t('admin.networks.networkSummary', { count: data?.networks?.length || 0 })}
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Rows per page</span>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('common.rowsPerPage')}</span>
               <Select defaultValue="20">
                 <SelectTrigger className="w-[80px] h-8">
                   <SelectValue placeholder="20" />
@@ -211,13 +224,17 @@ const AdminNetworks = () => {
                 <SelectContent>
                   <SelectItem value="20">20</SelectItem>
                   <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <Button variant="outline" size="sm" disabled>Previous</Button>
-              <Button variant="outline" size="sm" disabled>Next</Button>
+              <Button variant="outline" size="sm" disabled>
+                <ChevronLeft className="w-4 h-4 mr-1" /> {t('common.previous')}
+              </Button>
+              <Button variant="outline" size="sm" disabled>
+                {t('common.next')} <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
             </div>
           </div>
         </div>
@@ -227,4 +244,3 @@ const AdminNetworks = () => {
 }
 
 export default memo(AdminNetworks)
-

@@ -130,20 +130,40 @@ function App() {
     const handleExpired = () => {
       useAuthStore.setState({ token: null, user: null, isLoading: false })
       toast.error(t('common.sessionExpired'), { id: 'auth-expired' })
-      // Use window.location as fallback to force hard reset if navigate fails
       window.location.href = '/login'
     }
 
     const handleOffline = () => {
-      toast.error(t('common.connectionError'), { id: 'system-offline' })
+      toast.error(t('system.offline'), {
+        id: 'system-offline',
+        description: t('system.offlineDesc'),
+        action: {
+          label: t('common.retry'),
+          onClick: () => window.location.reload()
+        }
+      })
+    }
+
+    const handleUpdating = () => {
+      toast.info(t('system.updating'), {
+        id: 'system-updating',
+        description: t('system.updatingDesc'),
+        duration: 8000,
+        action: {
+          label: t('common.reload'),
+          onClick: () => window.location.reload()
+        }
+      })
     }
 
     window.addEventListener('auth:expired', handleExpired)
     window.addEventListener('system:offline', handleOffline)
+    window.addEventListener('system:updating', handleUpdating)
     
     return () => {
       window.removeEventListener('auth:expired', handleExpired)
       window.removeEventListener('system:offline', handleOffline)
+      window.removeEventListener('system:updating', handleUpdating)
     }
   }, [t])
 

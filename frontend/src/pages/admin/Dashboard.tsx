@@ -53,11 +53,12 @@ const AdminDashboard = () => {
       const res = await systemAPI.getStats()
       setData(res.data)
     } catch (error) {
+      toast.error(t('common.loadError'))
       console.error('Failed to fetch system stats:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchData()
@@ -206,7 +207,7 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
       <StatCard 
         title={t('admin.cpuLoad')} 
         value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
-        detail={`${system?.cpu_cores || 1} CPU Cores`}
+        detail={t('admin.cpuCoresDetail', { count: system?.cpu_cores || 1 })}
         progress={Math.min(system?.cpu_usage || 0, 100)}
         icon={Cpu}
       />
@@ -222,7 +223,10 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
       <StatCard 
         title={t('admin.systemResources')} 
         value={(images?.length || 0) + (containers?.length || 0)}
-        detail={`${containers?.length || 0} Containers / ${images?.length || 0} Images`}
+        detail={t('admin.resourcesDetail', { 
+          containers: containers?.length || 0, 
+          images: images?.length || 0 
+        })}
         progress={100}
         icon={Layers}
       />
@@ -230,7 +234,7 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
       <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-6">
         <SmallStat icon={Network} label={t('common.networks')} value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label={t('common.volumes')} value={volumes?.length || 0} />
-        <SmallStat icon={Box} label="Docker Engine" value={system?.docker_version || 'N/A'} />
+        <SmallStat icon={Box} label={t('admin.networks.dockerEngine')} value={system?.docker_version || 'N/A'} />
       </div>
     </div>
   )
@@ -318,14 +322,16 @@ const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAl
       {(!data || data.length === 0) ? (
         <div className="p-12 text-center flex flex-col items-center justify-center h-full text-muted-foreground">
           <Icon className="w-8 h-8 mb-4 opacity-50" />
-          <p className="text-sm font-medium uppercase tracking-widest">No {type} Found</p>
+          <p className="text-sm font-medium uppercase tracking-widest">
+            {type === 'containers' ? t('admin.networks.noContainers') : t('admin.networks.noImages')}
+          </p>
         </div>
       ) : (
         <Table className="table-fixed">
           {type === 'containers' ? (
-            <ContainerTableBody data={data} />
+            <ContainerTableBody data={data} t={t} />
           ) : (
-            <ImageTableBody data={data} />
+            <ImageTableBody data={data} t={t} />
           )}
         </Table>
       )}
@@ -333,14 +339,14 @@ const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAl
   </Card>
 ))
 
-const ContainerTableBody = memo(({ data }: { data: any[] }) => (
+const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => (
   <>
     <TableHeader>
       <TableRow>
-        <TableHead className="w-[30%]">Identity</TableHead>
-        <TableHead className="w-[35%]">Protocol</TableHead>
-        <TableHead className="w-[15%] text-center">Status</TableHead>
-        <TableHead className="w-[20%] text-right">Uptime</TableHead>
+        <TableHead className="w-[30%]">{t('admin.networks.identity')}</TableHead>
+        <TableHead className="w-[35%]">{t('admin.networks.protocol')}</TableHead>
+        <TableHead className="w-[15%] text-center">{t('common.status')}</TableHead>
+        <TableHead className="w-[20%] text-right">{t('admin.networks.uptime')}</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
@@ -356,7 +362,7 @@ const ContainerTableBody = memo(({ data }: { data: any[] }) => (
           </TableCell>
           <TableCell className="text-center">
             <Badge variant={c.state === 'running' ? 'default' : 'destructive'} className="capitalize">
-              {c.state}
+              {c.state === 'running' ? t('status.running') : (c.state === 'exited' ? t('status.stopped') : c.state)}
             </Badge>
           </TableCell>
           <TableCell className="text-right text-xs text-muted-foreground truncate">
@@ -368,14 +374,14 @@ const ContainerTableBody = memo(({ data }: { data: any[] }) => (
   </>
 ))
 
-const ImageTableBody = memo(({ data }: { data: any[] }) => (
+const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => (
   <>
     <TableHeader>
       <TableRow>
-        <TableHead className="w-[35%]">Repository</TableHead>
-        <TableHead className="w-[20%] text-center">Status</TableHead>
-        <TableHead className="w-[20%] text-center">Tag</TableHead>
-        <TableHead className="w-[25%] text-right">Size</TableHead>
+        <TableHead className="w-[35%]">{t('admin.images.repository')}</TableHead>
+        <TableHead className="w-[20%] text-center">{t('common.status')}</TableHead>
+        <TableHead className="w-[20%] text-center">{t('admin.images.tag')}</TableHead>
+        <TableHead className="w-[25%] text-right">{t('admin.images.size')}</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
@@ -387,7 +393,7 @@ const ImageTableBody = memo(({ data }: { data: any[] }) => (
           </TableCell>
           <TableCell className="text-center">
             <Badge variant={img.status === 'In Use' ? 'default' : 'secondary'}>
-              {img.status}
+              {img.status === 'In Use' ? t('status.inUse') : img.status}
             </Badge>
           </TableCell>
           <TableCell className="text-center font-mono text-xs truncate">

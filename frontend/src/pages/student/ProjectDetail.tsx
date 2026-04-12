@@ -227,7 +227,7 @@ function StudentProjectDetail() {
           projectsAPI.redeploy(id),
           {
             loading: t('common.loading'),
-            success: t('projectDetail.actions.redeploy') + ' started',
+            success: t('projectDetail.actions.redeployStarted'),
             error: t('common.error'),
           }
         )
@@ -238,7 +238,7 @@ function StudentProjectDetail() {
   const handleUpdatePHP = async (newVersion: string | null) => {
     if (!id || !newVersion) return
     setConfirmModal({
-      title: `Update PHP to ${newVersion}?`,
+      title: t('projectDetail.messages.updatePHPConfirm', { version: newVersion }),
       message: t('projectDetail.messages.redeployDesc'),
       type: 'warning',
       confirmText: t('common.confirm'),
@@ -397,7 +397,7 @@ function StudentProjectDetail() {
         <MetricCard
           title={t('projectDetail.metrics.memory')}
           value={stats ? `${stats.memory_mb.toFixed(0)} MB` : '0 MB'}
-          subtext={`of ${stats?.memory_max_mb?.toFixed(0) || 512} MB`}
+          subtext={t('projectDetail.metrics.unitOf', { total: stats?.memory_max_mb?.toFixed(0) || 512, unit: 'MB' })}
           colorClass="text-emerald-500"
           icon={Activity}
         />
@@ -410,7 +410,7 @@ function StudentProjectDetail() {
         <MetricCard
           title={t('projectDetail.metrics.db')}
           value="MySQL"
-          subtext={project.database_name || t('projectDetail.metricps.noDb')}
+          subtext={project.database_name || t('projectDetail.metrics.noDb')}
           icon={DatabaseIcon}
         />
         <MetricCard
@@ -515,7 +515,7 @@ function StudentProjectDetail() {
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
                 </div>
                 <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
-                  <TerminalIcon className="w-3.5 h-3.5" /> Artisan Shell
+                  <TerminalIcon className="w-3.5 h-3.5" /> {t('projectDetail.console.header')}
                 </div>
               </div>
               <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-500 hover:text-white">{t('projectDetail.actions.clear')}</Button>
@@ -537,7 +537,7 @@ function StudentProjectDetail() {
                   <p className="uppercase tracking-[0.3em] font-bold">{t('projectDetail.console.terminalReady')}</p>
                 </div>
               )}
-              {isExecuting && <div className="mt-4 flex items-center gap-2 text-primary animate-pulse"><RefreshCw className="w-3 h-3 animate-spin" /> {t('common.executing')}...</div>}
+              {isExecuting && <div className="mt-4 flex items-center gap-2 text-primary animate-pulse"><RefreshCw className="w-3 h-3 animate-spin" /> {t('common.executing')}</div>}
               <div ref={logsEndRef} />
             </div>
 
@@ -633,7 +633,7 @@ function StudentProjectDetail() {
           <Card className="bg-black text-zinc-300 border-zinc-800 overflow-hidden flex flex-col h-[600px] gap-0 py-0">
             <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-primary" /> Active Logs Stream
+                <Activity className="w-3.5 h-3.5 text-primary" /> {t('projectDetail.logs.header')}
               </div>
               <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6"><RefreshCw size={12} /></Button>
             </CardHeader>
@@ -736,9 +736,10 @@ function StudentProjectDetail() {
 }
 
 function CredentialRow({ label, value, isSecret = false }: { label: string, value: string, isSecret?: boolean }) {
+  const { t } = useTranslation()
   const copy = () => {
     navigator.clipboard.writeText(value)
-    toast.success(`${label} copied`)
+    toast.success(t('common.copySuccess'))
   }
 
   return (

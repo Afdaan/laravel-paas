@@ -10,25 +10,22 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-const features = [
-  { icon: Zap, title: 'Atomic Deployments', desc: 'Zero-downtime pushes from GitHub. Your application state is preserved while your new code goes live.' },
-  { icon: Database, title: 'Autoprovisioned DB', desc: 'Each project receives a dedicated MariaDB instance, pre-configured with the correct environment variables.' },
-  { icon: Globe, title: 'Edge Routing', desc: 'Automatic SSL and subdomain mapping on our high-performance Nginx edge cluster.' },
-  { icon: Layers, title: 'PHP Multiverse', desc: 'Native support for PHP 8.0 through 8.4. Switch runtimes instantly via your project control panel.' },
-  { icon: Terminal, title: 'Runtime Access', desc: 'Execute Artisan commands and monitor live system logs through a secure web-based terminal.' },
-  { icon: Shield, title: 'Secure Isolation', desc: 'Every student project runs in a dedicated Docker container, ensuring complete environment sandboxing.' },
-]
-
-const steps = [
-  { title: 'Connect repository', url: 'github.com/your-username/repo' },
-  { title: 'Select PHP Version', url: '8.4 (Latest)' },
-  { title: 'Connect to Server', url: 'system.paas.io/live' },
-]
-
 export default function Landing() {
-  const { t, language } = useTranslation()
+  const { t } = useTranslation()
   const { token, user } = useAuthStore()
   const [activeStep, setActiveStep] = useState(0)
+
+  const featureList = [
+    { icon: Zap, title: t('landing.featureList.atomic.title'), desc: t('landing.featureList.atomic.desc') },
+    { icon: Database, title: t('landing.featureList.db.title'), desc: t('landing.featureList.db.desc') },
+    { icon: Globe, title: t('landing.featureList.edge.title'), desc: t('landing.featureList.edge.desc') },
+    { icon: Layers, title: t('landing.featureList.php.title'), desc: t('landing.featureList.php.desc') },
+    { icon: Terminal, title: t('landing.featureList.access.title'), desc: t('landing.featureList.access.desc') },
+    { icon: Shield, title: t('landing.featureList.secure.title'), desc: t('landing.featureList.secure.desc') },
+  ]
+
+  const rawWorkflowSteps = t('landing.workflowSteps')
+  const workflowSteps = Array.isArray(rawWorkflowSteps) ? rawWorkflowSteps : []
 
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -56,10 +53,10 @@ export default function Landing() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % steps.length)
+      setActiveStep((prev) => (prev + 1) % workflowSteps.length)
     }, 3000)
     return () => clearInterval(interval)
-  }, [])
+  }, [workflowSteps.length])
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased text-sm">
@@ -103,9 +100,8 @@ export default function Landing() {
             {t('landing.heroBadge')}
           </Badge>
 
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-8">
-            Laravel deployment, <br />
-            <span className="text-muted-foreground">{language === 'id' ? 'dikembangkan' : 'reimagined'}</span> {language === 'id' ? 'khusus siswa' : 'for students'}.
+          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-8 whitespace-pre-line">
+            {t('landing.heroTitle')}
           </h1>
 
           <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-2xl mx-auto">
@@ -135,14 +131,14 @@ export default function Landing() {
               </div>
               <div className="text-xs font-mono text-muted-foreground flex items-center gap-2">
                 <Terminal className="w-3 h-3" />
-                bash — project-uplink.sh — 80×24
+                {t('landing.terminal.header')}
               </div>
               <div />
             </div>
 
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-12 items-center bg-card">
               <div className="space-y-6">
-                {steps.map((step, i) => (
+                {workflowSteps.map((step, i) => (
                   <div key={i} className={`transition-opacity duration-700 ${activeStep === i ? 'opacity-100' : 'opacity-30'}`}>
                     <p className="text-[10px] font-bold text-primary mb-1 uppercase tracking-widest">Step 0{i + 1}</p>
                     <h4 className="text-lg font-bold mb-2">{step.title}</h4>
@@ -158,14 +154,14 @@ export default function Landing() {
                   <span className="w-2 h-2 rounded-full bg-green-500"></span>
                   <span className="text-[10px] uppercase font-bold tracking-wider text-green-500">Live Feed</span>
                 </div>
-                <p className="mb-1 text-blue-400">[INFO] Initializing architecture...</p>
-                <p className="mb-1 text-blue-400">[INFO] Pulling source from origin/main...</p>
-                <p className="mb-1 text-blue-400">[INFO] Injecting PHP 8.3 container...</p>
-                <p className="mb-1 text-white">&gt; composer install --no-dev</p>
-                <p className="mb-1 text-gray-400">Installing dependencies (92%)...</p>
-                <p className="mb-1 text-yellow-500">[WARN] SQLite fallback enabled</p>
-                <p className="mb-1 text-blue-400">[INFO] Mapping subdomain: your-app.paas.io</p>
-                <p className="mt-6 text-green-500 font-bold animate-pulse">✓ Deployment Successful</p>
+                <p className="mb-1 text-blue-400">{t('landing.terminal.init')}</p>
+                <p className="mb-1 text-blue-400">{t('landing.terminal.pull')}</p>
+                <p className="mb-1 text-blue-400">{t('landing.terminal.inject')}</p>
+                <p className="mb-1 text-white">{t('landing.terminal.composer')}</p>
+                <p className="mb-1 text-gray-400">{t('landing.terminal.installing')}</p>
+                <p className="mb-1 text-yellow-500">{t('landing.terminal.sqlite')}</p>
+                <p className="mb-1 text-blue-400">{t('landing.terminal.mapping')}</p>
+                <p className="mt-6 text-green-500 font-bold animate-pulse">{t('landing.terminal.success')}</p>
               </div>
             </div>
           </Card>
@@ -181,7 +177,7 @@ export default function Landing() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {features.map((feature, i) => (
+            {featureList.map((feature, i) => (
               <Card key={i} className="hover:border-primary/50 transition-colors bg-card p-2 rounded-2xl group">
                 <CardContent className="p-6">
                   <div className="w-10 h-10 bg-primary/10 text-primary rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
@@ -204,39 +200,34 @@ export default function Landing() {
               <div className="grid grid-cols-2 gap-4">
                 <Card className="p-6 border bg-card hover:border-primary/30 transition-colors">
                   <Cpu className="w-6 h-6 text-primary mb-4" />
-                  <h4 className="font-bold mb-2">Dedicated CPU</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-3">Guaranteed cycles for your PHP processes.</p>
+                  <h4 className="font-bold mb-2">{t('landing.infra.cpu.title')}</h4>
+                  <p className="text-xs text-muted-foreground line-clamp-3">{t('landing.infra.cpu.desc')}</p>
                 </Card>
                 <Card className="p-6 border bg-card translate-y-6 hover:border-primary/30 transition-colors">
                   <RefreshCw className="w-6 h-6 text-primary mb-4" />
-                  <h4 className="font-bold mb-2">Auto-Healing</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-3">System automatically restarts crashed containers.</p>
+                  <h4 className="font-bold mb-2">{t('landing.infra.healing.title')}</h4>
+                  <p className="text-xs text-muted-foreground line-clamp-3">{t('landing.infra.healing.desc')}</p>
                 </Card>
                 <Card className="p-6 border bg-card hover:border-primary/30 transition-colors">
                   <Database className="w-6 h-6 text-primary mb-4" />
-                  <h4 className="font-bold mb-2">MariaDB Stack</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-3">Native MySQL-compatible storage backend.</p>
+                  <h4 className="font-bold mb-2">{t('landing.infra.maria.title')}</h4>
+                  <p className="text-xs text-muted-foreground line-clamp-3">{t('landing.infra.maria.desc')}</p>
                 </Card>
                 <Card className="p-6 border bg-card translate-y-6 hover:border-primary/30 transition-colors">
                   <Ship className="w-6 h-6 text-primary mb-4" />
-                  <h4 className="font-bold mb-2">Docker Core</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-3">Lightweight isolated containerization.</p>
+                  <h4 className="font-bold mb-2">{t('landing.infra.docker.title')}</h4>
+                  <p className="text-xs text-muted-foreground line-clamp-3">{t('landing.infra.docker.desc')}</p>
                 </Card>
               </div>
             </div>
 
             <div className="lg:col-span-6 lg:pl-8 mt-10 lg:mt-0">
               <Badge variant="outline" className="mb-4 uppercase tracking-widest text-[10px] p-1.5 font-bold">System Architecture</Badge>
-              <h3 className="text-3xl font-bold mb-4 tracking-tight">Enterprise grade <br />infrastructure.</h3>
-              <p className="text-muted-foreground mb-8 text-lg">We operate our own private cloud cluster, optimized specifically for the PHP and Laravel runtime lifecycle.</p>
+              <h3 className="text-3xl font-bold mb-4 tracking-tight">{t('landing.infra.title')}</h3>
+              <p className="text-muted-foreground mb-8 text-lg">{t('landing.infra.desc')}</p>
 
               <ul className="space-y-4">
-                {[
-                  'High Availability Edge Cluster',
-                  'Isolated MariaDB Instances',
-                  'NVMe SSD Storage Backend',
-                  'Automated SSL Termination'
-                ].map((item, i) => (
+                {(Array.isArray(t('landing.infra.list')) ? t('landing.infra.list') : []).map((item: string, i: number) => (
                   <li key={i} className="flex items-center gap-3 text-sm font-medium">
                     <CheckCircle2 className="w-4 h-4 text-primary" />
                     {item}
@@ -266,7 +257,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="w-6 h-6 bg-primary text-primary-foreground rounded flex items-center justify-center text-xs font-bold font-mono">LP</div>
-            <span className="text-sm font-semibold tracking-tight">Laravel PaaS Core</span>
+            <span className="text-sm font-semibold tracking-tight">Laravel PaaS {t('common.logoSub')}</span>
           </div>
           <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">
             &copy; {new Date().getFullYear()} Advanced Analytics Cluster.
