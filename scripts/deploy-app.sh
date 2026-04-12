@@ -59,8 +59,7 @@ HOST_DATA_PATH="${HOST_DATA_PATH:-$DATA_PATH}"
 HOST_PROJECTS_PATH="${HOST_PROJECTS_PATH:-$PROJECTS_PATH}"
 
 # Ensure directories exist and have correct permissions
-sudo mkdir -p "$PROJECTS_PATH" "$DATA_PATH"
-sudo chown -R $(id -u):$(id -g) "$PROJECTS_PATH" "$DATA_PATH"
+mkdir -p "$PROJECTS_PATH" "$DATA_PATH"
 chmod 777 "$DATA_PATH"
 
 # Helper to get next numeric tag for a service
