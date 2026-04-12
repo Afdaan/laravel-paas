@@ -294,7 +294,7 @@ stdout_logfile_maxbytes=0
 
 	var stdout, stderr bytes.Buffer
 
-	buildArgs := []string{"buildx", "build", "--load", "--no-cache", "--pull",
+	buildArgs := []string{"buildx", "build", "--load",
 		"--label", "com.paas.project=true",
 		"-t", imageName, projectPath}
 	cmd := exec.Command("docker", buildArgs...)
@@ -983,10 +983,14 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 // ensurePersistentPath ensures the hierarchical data path exists on host
 func (s *DockerService) ensurePersistentPath(project *models.Project) string {
 	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
-	os.MkdirAll(path, 0775)
 	
-	// Ensure it's writable by the container's www-data user (uid 82/1000 usually)
-	os.Chmod(path, 0777) 
+	// Ensure the root storage and public subfolder exists
+	publicPath := filepath.Join(path, "public")
+	os.MkdirAll(publicPath, 0777)
+	
+	// Hard recursive chmod to ensure www-data (uid 82) can always write
+	// We use shell chmod for recursive ease
+	exec.Command("chmod", "-R", "777", filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))).Run()
 	
 	return path
 }
