@@ -981,24 +981,40 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 
 func (s *DockerService) ensurePersistentPath(project *models.Project) string {
 	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
-	
-	os.MkdirAll(path, 0777)
-	
+
+	if err := os.MkdirAll(path, 0777); err != nil {
+		slog.Error("Failed to create persistent storage path", "path", path, "error", err)
+	}
+
 	publicPath := filepath.Join(path, "public")
 	if _, err := os.Stat(publicPath); os.IsNotExist(err) {
-		slog.Info("Initializing persistent storage from source", "subdomain", project.Subdomain)
+		slog.Info("Initializing storage structure", "subdomain", project.Subdomain)
 		
 		projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "storage", "app")
 		if _, err := os.Stat(projectSourceStorage); err == nil {
-			exec.Command("cp", "-a", projectSourceStorage+"/.", path).Run()
+			// Copy using shell but without preserving attributes to avoid permission carry-over
+			if err := exec.Command("cp", "-r", projectSourceStorage+"/.", path).Run(); err != nil {
+				slog.Warn("Failed to copy base storage structure", "error", err)
+			}
 		} else {
 			os.MkdirAll(publicPath, 0777)
 		}
 	}
-	
-	exec.Command("chmod", "-R", "777", filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))).Run()
-	
+
+	// Native recursive chmod to ensure absolute 0777
+	fullUserPath := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))
+	s.chmodRecursive(fullUserPath, 0777)
+
 	return path
+}
+
+func (s *DockerService) chmodRecursive(path string, mode os.FileMode) error {
+	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
+		if err == nil {
+			return os.Chmod(name, mode)
+		}
+		return err
+	})
 }
 
 // getPersistentHostPath returns the path on the HOST for Docker to mount
