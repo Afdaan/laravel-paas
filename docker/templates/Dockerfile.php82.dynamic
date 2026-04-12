@@ -170,7 +170,8 @@ WORKDIR /var/www/html
 # Copy all application files
 COPY . .
 
-COPY --from=composer /app/vendor ./vendor
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /var/www/html/vendor && mv /tmp/vendor /var/www/html/vendor
 COPY --from=frontend /app/public/build/ ./public/build/
 
 # Set up directories and permissions
