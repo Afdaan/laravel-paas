@@ -87,7 +87,7 @@ package infrastructure
 		}
 
 		client := &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 120 * time.Second,
 		}
 
 		req, err := http.NewRequest("POST", s.cfg.NginxWebhookURL, bytes.NewBuffer(jsonPayload))
