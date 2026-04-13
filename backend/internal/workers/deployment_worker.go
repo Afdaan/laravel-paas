@@ -431,6 +431,17 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Cleanup old container after successful switch
 	if oldContainerID != nil {
 		go func() {
+			// Wait for the new container to become healthy before removing the old one
+			// This gives Traefik time to switch traffic
+			maxWait := 30
+			for i := 0; i < maxWait; i++ {
+				if w.dockerService.IsContainerHealthy(containerID) {
+					slog.Info("New container is healthy, switching traffic and cleaning up old container", "subdomain", project.Subdomain)
+					time.Sleep(2 * time.Second) // Extra buffer for Traefik synchronization
+					break
+				}
+				time.Sleep(1 * time.Second)
+			}
 			w.dockerService.RemoveContainer(*oldContainerID)
 		}()
 	}
