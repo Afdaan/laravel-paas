@@ -3,11 +3,9 @@
 // ===========================================
 // Manages Docker containers for student projects
 // ===========================================
-package services
+package infrastructure
 
 import (
-	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -23,7 +21,7 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/cmd_util"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // DockerService handles all Docker operations
@@ -39,8 +37,6 @@ func NewDockerService(cfg *config.Config, storage *StorageService) *DockerServic
 		storage: storage,
 	}
 }
-
-
 
 // ===========================================
 // Container Operations
@@ -69,12 +65,12 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	}
 
 	// Copy nginx and supervisor configs
-	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
-		filepath.Join(projectPath, "docker", "nginx.conf")); err != nil {
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "infrastructure.conf"),
+		filepath.Join(projectPath, "docker", "infrastructure.conf")); err != nil {
 		// Create docker directory if needed
 		os.MkdirAll(filepath.Join(projectPath, "docker"), 0755)
-		s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
-			filepath.Join(projectPath, "docker", "nginx.conf"))
+		s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "infrastructure.conf"),
+			filepath.Join(projectPath, "docker", "infrastructure.conf"))
 	}
 	s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"),
 		filepath.Join(projectPath, "docker", "supervisord.conf"))
@@ -112,29 +108,19 @@ stdout_logfile_maxbytes=0
 	// Build image
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 
-	var stdout, stderr bytes.Buffer
-
-	buildArgs := []string{"buildx", "build", "--load",
+	// Step 1: Build image using utils.Run for timeout control
+	slog.Info("Building Docker image", "subdomain", project.Subdomain)
+	res, err := utils.Run(10*time.Minute, "docker", "buildx", "build", "--load",
 		"--label", models.LabelProjectManaged,
-		"-t", imageName, projectPath}
-	cmd := exec.Command("docker", buildArgs...)
-	
-	cmd.Env = append(os.Environ(), "DOCKER_BUILDKIT=1")
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		"-t", imageName, projectPath)
 
-	if err := cmd.Run(); err != nil {
-		// Fallback to classic build for environments without buildx
-		stdout.Reset()
-		stderr.Reset()
-
-		cmd = exec.Command("docker", "build",
+	if err != nil {
+		// Fallback to classic build
+		res, err = utils.Run(10*time.Minute, "docker", "build",
 			"--label", models.LabelProjectManaged,
 			"-t", imageName, projectPath)
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err2 := cmd.Run(); err2 != nil {
-			return "", apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s%s", project.Subdomain, stdout.String(), stderr.String()))
+		if err != nil {
+			return "", apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s%s", project.Subdomain, res.Stdout, res.Stderr))
 		}
 	}
 
@@ -175,52 +161,36 @@ stdout_logfile_maxbytes=0
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
-		
+
 		// Map hierarchical persistent storage volume
-		// We use HostDataPath because the Docker daemon is on the host
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 
 		imageName,
 	}
 
-	cmd = exec.Command("docker", runArgs...)
-	stdout.Reset()
-	stderr.Reset()
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, stderr.String()))
+	res, err = utils.Run(1*time.Minute, "docker", runArgs...)
+	if err != nil {
+		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, res.Stderr))
 	}
 
-	containerID := strings.TrimSpace(stdout.String())
+	containerID := strings.TrimSpace(res.Stdout)
 
 	return containerID, nil
 }
 
 // RunMigrations executes artisan migrate inside the container
 func (s *DockerService) RunMigrations(containerID string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
 	// Wait a few seconds for MySQL to be ready inside the new container if needed
 	// But since we use background worker, we can afford a small delay
 	time.Sleep(2 * time.Second)
 
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-u", "www-data", containerID, "php", "artisan", "migrate", "--force")
-	
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", "www-data", containerID, "php", "artisan", "migrate", "--force")
 
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("migration timed out after 2 minutes")
-		}
-		return stdout.String() + stderr.String(), fmt.Errorf("migration failed: %s", stderr.String())
+	if err != nil {
+		return res.Stdout + res.Stderr, fmt.Errorf("migration failed: %s", res.Stderr)
 	}
 
-	return stdout.String(), nil
+	return res.Stdout, nil
 }
 
 // createEnvFile generates .env for Laravel project
@@ -267,8 +237,7 @@ QUEUE_CONNECTION=sync
 
 // StopContainer stops a running container
 func (s *DockerService) StopContainer(containerID string) error {
-	cmd := exec.Command("docker", "stop", containerID)
-	return cmd.Run()
+	return utils.RunSilent(30*time.Second, "docker", "stop", containerID)
 }
 
 // RemoveContainer stops and removes a container
@@ -281,22 +250,18 @@ func (s *DockerService) RemoveContainer(containerID string) error {
 // IsContainerHealthy checks if a container is running and healthy
 func (s *DockerService) IsContainerHealthy(containerID string) bool {
 	// Check container status via docker inspect
-	cmd := exec.Command("docker", "inspect", "--format", "{{.State.Health.Status}}", containerID)
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
+	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Health.Status}}", containerID)
 
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		// Container doesn't have health check or not running, check if it's at least running
-		cmd = exec.Command("docker", "inspect", "--format", "{{.State.Running}}", containerID)
-		stdout.Reset()
-		cmd.Stdout = &stdout
-		if err := cmd.Run(); err != nil {
+		res, err = utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}", containerID)
+		if err != nil {
 			return false
 		}
-		return strings.TrimSpace(stdout.String()) == "true"
+		return strings.TrimSpace(res.Stdout) == "true"
 	}
 
-	status := strings.TrimSpace(stdout.String())
+	status := strings.TrimSpace(res.Stdout)
 	// Docker health status can be: starting, healthy, unhealthy
 	// We accept both "healthy" and "starting" (give it time)
 	return status == "healthy" || status == "starting"
@@ -313,14 +278,14 @@ func (s *DockerService) RemoveImage(subdomain string) error {
 // PruneImages removes dangling images and unused project images
 func (s *DockerService) PruneImages() error {
 	slog.Info("Starting Docker image pruning")
-	
+
 	// 1. Remove dangling images (<none>)
-	cmd_util.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
+	utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
 
 	// 2. Also remove unused project images (those with our label)
 	filter := fmt.Sprintf("label=%s=true", models.LabelProjectManaged)
-	cmd_util.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter)
-	
+	utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter)
+
 	return nil
 }
 
@@ -336,22 +301,12 @@ func (s *DockerService) CleanupProject(subdomain string) error {
 
 // GetContainerLogs retrieves container logs
 func (s *DockerService) GetContainerLogs(containerID string, lines int) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "docker", "logs", "--tail", strconv.Itoa(lines), containerID)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("timed out fetching container logs")
-		}
-		return "", fmt.Errorf("failed to get logs: %s", stderr.String())
+	res, err := utils.Run(15*time.Second, "docker", "logs", "--tail", strconv.Itoa(lines), containerID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get logs: %s", res.Stderr)
 	}
 
-	return stdout.String() + stderr.String(), nil
+	return res.Stdout + res.Stderr, nil
 }
 
 // ContainerStats represents resource usage
@@ -369,26 +324,16 @@ type DockerStatsJSON struct {
 
 // GetContainerStats retrieves container resource usage
 func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	res, err := utils.Run(10*time.Second, "docker", "stats", "--no-stream", "--format", "{{json .}}", containerID)
 
-	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format", "{{json .}}", containerID)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("timed out fetching container stats")
-		}
-		slog.Error("Docker stats request failed", "containerId", containerID, "error", err, "stderr", stderr.String())
-		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
+	if err != nil {
+		slog.Error("Docker stats request failed", "containerId", containerID, "error", err, "stderr", res.Stderr)
+		return nil, fmt.Errorf("docker stats failed: %s", res.Stderr)
 	}
 
 	// Output might contain multiple lines if multiple containers match (unlikely here)
 	// or just one JSON object.
-	output := strings.TrimSpace(stdout.String())
+	output := strings.TrimSpace(res.Stdout)
 
 	if output == "" {
 		slog.Warn("Docker stats returned empty output", "containerId", containerID)
@@ -430,25 +375,15 @@ func (s *DockerService) GetContainerStats(containerID string) (*ContainerStats, 
 
 // GetAllContainerStats retrieves resource usage for all containers
 func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	res, err := utils.Run(15*time.Second, "docker", "stats", "--no-stream", "--format", "{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}")
 
-	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format", "{{.ID}}|{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}")
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("timed out fetching global container stats")
-		}
-		slog.Error("Global docker stats request failed", "error", err, "stderr", stderr.String())
-		return nil, fmt.Errorf("docker stats failed: %s", stderr.String())
+	if err != nil {
+		slog.Error("Global docker stats request failed", "error", err, "stderr", res.Stderr)
+		return nil, fmt.Errorf("docker stats failed: %s", res.Stderr)
 	}
 
 	result := make(map[string]ContainerStats)
-	output := stdout.String()
+	output := res.Stdout
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
@@ -505,9 +440,8 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	}
 
 	// CPU Usage
-	cmd := exec.Command("sh", "-c", "top -bn1 | grep 'CPU:' | head -n1 | awk '{print $2}' | cut -d% -f1")
-	if output, err := cmd.Output(); err == nil {
-		cpuStr := strings.TrimSpace(string(output))
+	if res, err := utils.Run(5*time.Second, "sh", "-c", "top -bn1 | grep 'CPU:' | head -n1 | awk '{print $2}' | cut -d% -f1"); err == nil {
+		cpuStr := strings.TrimSpace(res.Stdout)
 		if val, err := strconv.ParseFloat(cpuStr, 64); err == nil {
 			stats.CPUUsage = val
 		}
@@ -519,9 +453,8 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	}
 
 	// Memory Usage
-	cmd = exec.Command("free", "-b")
-	if output, err := cmd.Output(); err == nil {
-		lines := strings.Split(string(output), "\n")
+	if res, err := utils.Run(5*time.Second, "free", "-b"); err == nil {
+		lines := strings.Split(res.Stdout, "\n")
 		if len(lines) >= 2 {
 			fields := strings.Fields(lines[1])
 			if len(fields) >= 3 {
@@ -534,9 +467,8 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	}
 
 	// Disk Usage
-	cmd = exec.Command("df", "-b", s.cfg.ProjectsPath)
-	if output, err := cmd.Output(); err == nil {
-		lines := strings.Split(string(output), "\n")
+	if res, err := utils.Run(5*time.Second, "df", "-b", s.cfg.ProjectsPath); err == nil {
+		lines := strings.Split(res.Stdout, "\n")
 		if len(lines) >= 2 {
 			fields := strings.Fields(lines[1])
 			if len(fields) >= 3 {
@@ -549,9 +481,8 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	}
 
 	// Docker Version
-	cmd = exec.Command("docker", "version", "--format", "{{.Server.Version}}")
-	if output, err := cmd.Output(); err == nil {
-		stats.DockerVersion = strings.TrimSpace(string(output))
+	if res, err := utils.Run(5*time.Second, "docker", "version", "--format", "{{.Server.Version}}"); err == nil {
+		stats.DockerVersion = strings.TrimSpace(res.Stdout)
 	}
 
 	return stats, nil
@@ -648,8 +579,7 @@ func parsePorts(portStr string) []string {
 // ListAllImages returns all images on the host
 func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 	// Format: ID|Repo|Tag|Size|CreatedAt
-	cmd := exec.Command("docker", "images", "--format", "{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedAt}}")
-	output, err := cmd.Output()
+	res, err := utils.Run(10*time.Second, "docker", "images", "--format", "{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedAt}}")
 	if err != nil {
 		return nil, err
 	}
@@ -666,7 +596,7 @@ func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 	}
 
 	var result []models.DockerImage
-	lines := strings.Split(string(output), "\n")
+	lines := strings.Split(string(res.Stdout), "\n")
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -700,8 +630,7 @@ func (s *DockerService) ListAllImages() ([]models.DockerImage, error) {
 // ListAllNetworks returns all networks on the host
 func (s *DockerService) ListAllNetworks() ([]models.DockerNetwork, error) {
 	// Format: ID|Name|Driver|Scope
-	cmd := exec.Command("docker", "network", "ls", "--format", "{{.ID}}|{{.Name}}|{{.Driver}}|{{.Scope}}")
-	output, err := cmd.Output()
+	res, err := utils.Run(10*time.Second, "docker", "network", "ls", "--format", "{{.ID}}|{{.Name}}|{{.Driver}}|{{.Scope}}")
 	if err != nil {
 		return nil, err
 	}
@@ -717,7 +646,7 @@ func (s *DockerService) ListAllNetworks() ([]models.DockerNetwork, error) {
 	}
 
 	var result []models.DockerNetwork
-	lines := strings.Split(string(output), "\n")
+	lines := strings.Split(string(res.Stdout), "\n")
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -748,14 +677,13 @@ func (s *DockerService) ListAllNetworks() ([]models.DockerNetwork, error) {
 // ListAllVolumes returns all volumes on the host
 func (s *DockerService) ListAllVolumes() ([]models.DockerVolume, error) {
 	// Format: Name|Driver|Mountpoint
-	cmd := exec.Command("docker", "volume", "ls", "--format", "{{.Name}}|{{.Driver}}|{{.Mountpoint}}")
-	output, err := cmd.Output()
+	res, err := utils.Run(10*time.Second, "docker", "volume", "ls", "--format", "{{.Name}}|{{.Driver}}|{{.Mountpoint}}")
 	if err != nil {
 		return nil, err
 	}
 
 	var result []models.DockerVolume
-	lines := strings.Split(string(output), "\n")
+	lines := strings.Split(string(res.Stdout), "\n")
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -822,21 +750,15 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 	// e.g. "migrate --force" -> ["migrate", "--force"]
 	args := strings.Fields(command)
 
-	dockerArgs := []string{"exec", containerID, "php", "artisan"}
-	dockerArgs = append(dockerArgs, args...)
+	fullArgs := append([]string{"exec", containerID, "php", "artisan"}, args...)
+	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
 
-	cmd := exec.Command("docker", dockerArgs...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		output := stdout.String() + "\n" + stderr.String()
+	if err != nil {
+		output := res.Stdout + "\n" + res.Stderr
 		return output, fmt.Errorf("command failed: %s", output)
 	}
 
-	return stdout.String(), nil
+	return res.Stdout, nil
 }
 
 // GetEnvFile reads the .env file for a project
@@ -854,4 +776,3 @@ func (s *DockerService) SaveEnvFile(subdomain, content string) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
 	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(content), 0644)
 }
-

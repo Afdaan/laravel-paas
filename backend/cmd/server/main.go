@@ -17,6 +17,8 @@ import (
 	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/workers"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 )
 
 func main() {
@@ -52,7 +54,7 @@ func main() {
 
 	// Initialize Redis service
 	slog.Info("Connecting to Redis...")
-	redisService, err := services.NewRedisService(cfg)
+	redisService, err := infrastructure.NewRedisService(cfg)
 	if err != nil {
 		slog.Error("Failed to connect to Redis", "error", err)
 		os.Exit(1)
@@ -61,11 +63,11 @@ func main() {
 	slog.Info("Redis connected successfully")
 
 	// Initialize Infrastructure Services
-	storageService := services.NewStorageService(cfg)
-	dockerService := services.NewDockerService(cfg, storageService)
-	gitService := services.NewGitService(cfg)
-	versionService := services.NewVersionService()
-	mysqlService := services.NewMySQLService()
+	storageService := infrastructure.NewStorageService(cfg)
+	dockerService := infrastructure.NewDockerService(cfg, storageService)
+	gitService := infrastructure.NewGitService(cfg)
+	versionService := infrastructure.NewVersionService()
+	mysqlService := infrastructure.NewMySQLService()
 	
 	// Initialize Repositories
 	userRepo := repositories.NewUserRepository(db)
@@ -82,7 +84,7 @@ func main() {
 	databaseService := services.NewDatabaseService(db, cfg)
 
 	// Initialize and start deployment worker
-	worker := services.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
+	worker := workers.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
 	worker.Start()
 
 	// Initialize server

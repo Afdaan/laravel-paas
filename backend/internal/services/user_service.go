@@ -10,7 +10,7 @@ import (
 
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/string_util"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"github.com/laravel-paas/backend/internal/repositories"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -44,7 +44,7 @@ func (s *UserService) CreateUser(name, email, password string, role models.Role,
 
 	plainPassword := password
 	if plainPassword == "" {
-		plainPassword = string_util.GeneratePassword(12)
+		plainPassword = utils.GeneratePassword(12)
 	}
 
 	// Hash password

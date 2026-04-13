@@ -4,7 +4,7 @@
 // Detects PHP and Laravel versions from
 // a project's composer.json
 // ===========================================
-package services
+package infrastructure
 
 import (
 	"encoding/json"

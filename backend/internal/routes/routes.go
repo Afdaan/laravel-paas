@@ -14,6 +14,7 @@ import (
 	"github.com/laravel-paas/backend/internal/handlers"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"gorm.io/gorm"
 )
 
@@ -21,9 +22,9 @@ import (
 func Setup(
 	db *gorm.DB, 
 	cfg *config.Config, 
-	redisService *services.RedisService,
-	dockerService *services.DockerService,
-	storageService *services.StorageService,
+	redisService *infrastructure.RedisService,
+	dockerService *infrastructure.DockerService,
+	storageService *infrastructure.StorageService,
 	projectService *services.ProjectService,
 	userService *services.UserService,
 	settingService *services.SettingService,

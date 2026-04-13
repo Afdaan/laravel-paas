@@ -5,7 +5,7 @@
 // ===========================================
 
 import { useEffect, lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from './stores/authStore'
 import { useState } from 'react'
 import { systemAPI, settingsAPI } from './services/api'
@@ -45,6 +45,7 @@ interface ProtectedRouteProps {
 
 function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
   const { token, user, isLoading } = useAuthStore()
+  const location = useLocation()
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
 
   if (isLoading) {
@@ -52,7 +53,8 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
   }
 
   if (!token) {
-    return <Navigate to="/login" replace />
+    // Save current path to state so we can return here after login
+    return <Navigate to="/login" replace state={{ from: location }} />
   }
 
   if (requireAdmin && !isAdmin) {
@@ -65,6 +67,7 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
 function App() {
   const { t } = useTranslation()
   const { fetchUser, token, user } = useAuthStore()
+  const navigate = useNavigate()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
 
   const [settings, setSettings] = useState<any>(null)
@@ -104,7 +107,7 @@ function App() {
         useAuthStore.setState({ token: null, user: null, isLoading: false })
         localStorage.removeItem('token')
         toast.error(t('common.sessionExpired'), { id: 'user-idle-timeout' })
-        window.location.href = '/login'
+        navigate('/login', { state: { from: window.location.pathname }, replace: true })
       }
     }
 
@@ -130,7 +133,7 @@ function App() {
     const handleExpired = () => {
       useAuthStore.setState({ token: null, user: null, isLoading: false })
       toast.error(t('common.sessionExpired'), { id: 'auth-expired' })
-      window.location.href = '/login'
+      navigate('/login', { state: { from: window.location.pathname }, replace: true })
     }
 
     const handleOffline = () => {

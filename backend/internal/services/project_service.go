@@ -15,29 +15,30 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/string_util"
 	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 type ProjectService struct {
 	cfg            *config.Config
 	projectRepo    repositories.ProjectRepository
 	settingService *SettingService
-	dockerService  *DockerService
-	storageService *StorageService
-	mysqlService   *MySQLService
-	nginxService   *NginxWebhookService
-	redisService   *RedisService
+	dockerService  *infrastructure.DockerService
+	storageService *infrastructure.StorageService
+	mysqlService   *infrastructure.MySQLService
+	nginxService   *infrastructure.NginxWebhookService
+	redisService   *infrastructure.RedisService
 }
 
 func NewProjectService(
 	cfg *config.Config, 
 	projectRepo repositories.ProjectRepository,
 	settingService *SettingService,
-	dockerService *DockerService,
-	storageService *StorageService,
-	mysqlService *MySQLService,
-	redisService *RedisService,
+	dockerService *infrastructure.DockerService,
+	storageService *infrastructure.StorageService,
+	mysqlService *infrastructure.MySQLService,
+	redisService *infrastructure.RedisService,
 ) *ProjectService {
 	return &ProjectService{
 		cfg:            cfg,
@@ -46,7 +47,7 @@ func NewProjectService(
 		dockerService:  dockerService,
 		storageService: storageService,
 		mysqlService:   mysqlService,
-		nginxService:   NewNginxWebhookService(cfg),
+		nginxService:   infrastructure.NewNginxWebhookService(cfg),
 		redisService:   redisService,
 	}
 }
@@ -181,7 +182,8 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
 	}
 
-	subdomain := string_util.GenerateSubdomain(name)
+	// 5. Generate unique subdomain using the refactored string utility
+	subdomain := utils.GenerateSubdomain(name)
 
 	dbName := databaseName
 	if dbName == "" {
@@ -288,12 +290,12 @@ func (s *ProjectService) GetLogs(containerID string, lines int) (string, error) 
 }
 
 // GetStats returns container resource usage
-func (s *ProjectService) GetStats(containerID string) (*ContainerStats, error) {
+func (s *ProjectService) GetStats(containerID string) (*infrastructure.ContainerStats, error) {
 	return s.dockerService.GetContainerStats(containerID)
 }
 
 // GetAllStats returns resource usage for all containers
-func (s *ProjectService) GetAllStats() (map[string]ContainerStats, error) {
+func (s *ProjectService) GetAllStats() (map[string]infrastructure.ContainerStats, error) {
 	return s.dockerService.GetAllContainerStats()
 }
 

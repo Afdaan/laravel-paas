@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { systemAPI } from '../services/api'
 import useAuthStore from '../stores/authStore'
@@ -25,6 +25,10 @@ function Login() {
   const user = useAuthStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
+  
+  // Get redirect path from state, default to dashboards
+  const from = location.state?.from?.pathname || null
 
   useEffect(() => {
     // Check if system is initialized
@@ -40,7 +44,8 @@ function Login() {
 
     if (token && user) {
       const isAdmin = user.role === 'superadmin' || user.role === 'admin'
-      navigate(isAdmin ? '/admin/dashboard' : '/dashboard', { replace: true })
+      const destination = from || (isAdmin ? '/admin/dashboard' : '/dashboard')
+      navigate(destination, { replace: true })
     }
   }, [token, user, navigate])
   
@@ -62,11 +67,9 @@ function Login() {
       const user = await login(email, password)
       toast.success(t('login.welcomeBack', { name: user.name }))
       
-      if (user.role === 'superadmin' || user.role === 'admin') {
-        navigate('/admin/dashboard')
-      } else {
-        navigate('/dashboard')
-      }
+      const isAdminMatched = user.role === 'superadmin' || user.role === 'admin'
+      const destination = from || (isAdminMatched ? '/admin/dashboard' : '/dashboard')
+      navigate(destination)
     } catch (error: any) {
       toast.error(error.response?.data?.error || t('login.failed'))
     } finally {

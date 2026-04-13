@@ -10,14 +10,15 @@ import (
 	"time"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 )
 
 type SettingService struct {
 	repo         repositories.SettingRepository
-	redisService *RedisService
+	redisService *infrastructure.RedisService
 }
 
-func NewSettingService(repo repositories.SettingRepository, redisService *RedisService) *SettingService {
+func NewSettingService(repo repositories.SettingRepository, redisService *infrastructure.RedisService) *SettingService {
 	return &SettingService{
 		repo:         repo,
 		redisService: redisService,

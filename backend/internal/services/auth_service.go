@@ -13,16 +13,17 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthService struct {
 	userRepo     repositories.UserRepository
 	cfg          *config.Config
-	redisService *RedisService
+	redisService *infrastructure.RedisService
 }
 
-func NewAuthService(userRepo repositories.UserRepository, cfg *config.Config, redisService *RedisService) *AuthService {
+func NewAuthService(userRepo repositories.UserRepository, cfg *config.Config, redisService *infrastructure.RedisService) *AuthService {
 	return &AuthService{userRepo: userRepo, cfg: cfg, redisService: redisService}
 }
 

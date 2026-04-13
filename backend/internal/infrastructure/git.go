@@ -4,18 +4,18 @@
 // Handles repository cloning and source code
 // management for student projects
 // ===========================================
-package services
+package infrastructure
 
 import (
-	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // GitService handles Git repository operations
@@ -46,14 +46,10 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 	tempPath := projectPath + "_temp"
 	os.RemoveAll(tempPath)
 
-	args := []string{"clone", "--depth=1", "-b", branch, githubURL, tempPath}
-	cmd := exec.Command("git", args...)
+	res, err := utils.Run(5*time.Minute, "git", "clone", "--depth=1", "-b", branch, githubURL, tempPath)
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", apperr.New(500, "GIT_CLONE_FAILED", fmt.Sprintf("Failed to clone repository from %s: %s", githubURL, stderr.String()))
+	if err != nil {
+		return "", apperr.New(500, "GIT_CLONE_FAILED", fmt.Sprintf("Failed to clone repository from %s: %s", githubURL, res.Stderr))
 	}
 
 	// Swap temp clone into final project path

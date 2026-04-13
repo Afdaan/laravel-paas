@@ -3,7 +3,7 @@
 // ===========================================
 // Handles Redis connections and operations
 // ===========================================
-package services
+package infrastructure
 
 import (
 	"context"

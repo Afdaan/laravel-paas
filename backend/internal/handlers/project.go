@@ -16,18 +16,19 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 )
 
 // ProjectHandler handles project endpoints
 type ProjectHandler struct {
 	cfg            *config.Config
+	redisService   *infrastructure.RedisService
 	projectService *services.ProjectService
 	userService    *services.UserService
-	redisService   *services.RedisService
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(cfg *config.Config, redisService *services.RedisService, projectService *services.ProjectService, userService *services.UserService) *ProjectHandler {
+func NewProjectHandler(cfg *config.Config, redisService *infrastructure.RedisService, projectService *services.ProjectService, userService *services.UserService) *ProjectHandler {
 	return &ProjectHandler{
 		cfg:            cfg,
 		projectService: projectService,
@@ -361,14 +362,19 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
 	if err == nil && project.Status == models.StatusRunning && project.Port != nil {
-		// Cache hit! Forward immediately
+		// Cache hit! Forward with path stripping
 		targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+		
+		// Map the path correctly by stripping the /proxy prefix
+		// Fiber's wildcard parameter (*) holds the rest of the path
+		path := c.Params("*")
+		target := targetURL + "/" + path
+		
 		h.projectService.UpdateActivity(project.ID)
-		return proxy.Forward(targetURL)(c)
+		return proxy.Forward(target)(c)
 	}
 
 	// 2. Cache Miss: Fallback to Database
-	// We need a way to get project by subdomain from service
 	project_db, err := h.projectService.GetBySubdomain(subdomain)
 	if err != nil || project_db.Status != models.StatusRunning {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})
@@ -382,8 +388,12 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project port not configured"})
 	}
 
+	// 4. Forward with path stripping
 	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project_db.Port)
-	return proxy.Forward(targetURL)(c)
+	path := c.Params("*")
+	target := targetURL + "/" + path
+
+	return proxy.Forward(target)(c)
 }
 
 // GetQueueStats returns deployment queue statistics
@@ -404,7 +414,7 @@ func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 
 	projects, _ := h.projectService.GetRunningProjectsWithContainers()
 
-	projectStats := make(map[uint]services.ContainerStats)
+	projectStats := make(map[uint]infrastructure.ContainerStats)
 	for _, p := range projects {
 		if p.ContainerID != nil && len(*p.ContainerID) >= 12 {
 			shortID := (*p.ContainerID)[:12]
