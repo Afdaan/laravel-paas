@@ -70,7 +70,7 @@ type Project struct {
 	Branch       string         `gorm:"size:200;not null;default:main" json:"branch"`
 	Subdomain    string         `gorm:"uniqueIndex;size:100;not null" json:"subdomain"`
 	DatabaseName     string         `gorm:"uniqueIndex;size:100;not null" json:"database_name"`
-	DatabasePassword string         `gorm:"size:255;not null" json:"-"` // Never expose in JSON
+	DatabasePassword string         `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
 	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
 	Port         *int           `json:"port,omitempty"`
