@@ -10,59 +10,66 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/backend/internal/models"
 )
 
-// JWTClaims defines the JWT payload structure
-type JWTClaims struct {
-	UserID uint   `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
-	jwt.RegisteredClaims
+// Blacklister abstraction to avoid circular dependencies with services package
+type Blacklister interface {
+	IsBlacklisted(token string) bool
 }
 
-// JWTAuth middleware validates JWT tokens
-func JWTAuth(secret string) fiber.Handler {
+// ActivityTracker abstraction
+type ActivityTracker interface {
+	UpdateActivity(userID uint, ip string, forceLoginUpdate bool)
+}
+
+// JWTAuth middleware validates JWT tokens and checks against Redis blacklist
+func JWTAuth(secret string, redis Blacklister, tracker ActivityTracker) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Get token from Authorization header
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Missing authorization header",
-			})
+			return apperr.ErrUnauthorized
 		}
 
 		// Extract Bearer token
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Invalid authorization header format",
-			})
+			return apperr.New(401, "INVALID_AUTH", "Invalid authorization format")
 		}
 
 		tokenString := parts[1]
 
+		// Check Blacklist
+		if redis != nil && redis.IsBlacklisted(tokenString) {
+			return apperr.New(401, "TOKEN_BLACKLISTED", "This session has been invalidated")
+		}
+
 		// Parse and validate token
-		token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(tokenString, &models.JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 			return []byte(secret), nil
 		})
 
 		if err != nil || !token.Valid {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Invalid or expired token",
-			})
+			return apperr.New(401, "TOKEN_INVALID", "Invalid or expired session")
 		}
 
 		// Store claims in context
-		claims, ok := token.Claims.(*JWTClaims)
+		claims, ok := token.Claims.(*models.JWTClaims)
 		if !ok {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Invalid token claims",
-			})
+			return apperr.ErrUnauthorized
 		}
 
 		c.Locals("user_id", claims.UserID)
 		c.Locals("email", claims.Email)
 		c.Locals("role", claims.Role)
+		c.Locals("token", tokenString)
+
+		// Update activity (non-blocking)
+		if tracker != nil {
+			go tracker.UpdateActivity(claims.UserID, c.IP(), false)
+		}
 
 		return c.Next()
 	}
@@ -71,11 +78,14 @@ func JWTAuth(secret string) fiber.Handler {
 // RequireAdmin middleware ensures user has admin privileges
 func RequireAdmin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		role := c.Locals("role").(string)
-		if role != "superadmin" && role != "admin" {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "Admin access required",
-			})
+		roleVal := c.Locals("role")
+		if roleVal == nil {
+			return apperr.ErrUnauthorized
+		}
+
+		role, ok := roleVal.(string)
+		if !ok || (role != string(models.RoleSuperAdmin) && role != string(models.RoleAdmin)) {
+			return apperr.ErrForbidden
 		}
 		return c.Next()
 	}
@@ -84,11 +94,14 @@ func RequireAdmin() fiber.Handler {
 // RequireSuperAdmin middleware ensures user is superadmin
 func RequireSuperAdmin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		role := c.Locals("role").(string)
-		if role != "superadmin" {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "Superadmin access required",
-			})
+		roleVal := c.Locals("role")
+		if roleVal == nil {
+			return apperr.ErrUnauthorized
+		}
+
+		role, ok := roleVal.(string)
+		if !ok || role != string(models.RoleSuperAdmin) {
+			return apperr.ErrForbidden
 		}
 		return c.Next()
 	}

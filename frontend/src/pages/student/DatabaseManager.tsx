@@ -153,7 +153,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       try {
          const res = await databaseAPI.query(id, query)
          setQueryResult(res.data)
-         toast.success(t('common.success') || 'Query Executed Successfully')
+         toast.success(t('databaseManager.querySuccess'))
       } catch (err: any) {
          toast.error(err.response?.data?.error || t('common.error'))
       } finally {
@@ -169,9 +169,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          const url = window.URL.createObjectURL(blob)
          const a = document.createElement('a')
          a.href = url
-         a.download = `${project?.db_name || 'database'}_dump.sql`
+         a.download = `${project?.database_name || 'database'}_dump.sql`
          a.click()
-         toast.success(t('common.success') || 'Backup file created')
+         toast.success(t('databaseManager.backupSuccess'))
       } catch (err) {
          toast.error(t('common.error'))
       }
@@ -182,7 +182,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       setImporting(true)
       try {
          await databaseAPI.import(id, importSQL)
-         toast.success(t('common.success') || 'Data Import Successful')
+         toast.success(t('databaseManager.importSuccess'))
          setImportSQL('')
          fetchTables()
       } catch (err) {
@@ -245,7 +245,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      {t('databaseManager.title')}
                   </h1>
                   <p className="text-muted-foreground mt-2 font-mono text-xs uppercase tracking-widest">
-                     {t('databaseManager.schema')}: <span className="text-primary font-bold">{project?.db_name || '...'}</span>
+                     {t('databaseManager.schema')}: <span className="text-primary font-bold">{project?.database_name}</span>
                   </p>
                </div>
                <div className="flex gap-3">
@@ -398,7 +398,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      <Textarea
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="-- Write your SQL query here. e.g. SELECT * FROM users LIMIT 10;"
+                        placeholder={t('databaseManager.queryPlaceholder')}
                         className="flex-1 bg-transparent text-emerald-400 font-mono text-sm p-6 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-800"
                         spellCheck={false}
                      />
@@ -408,7 +408,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      <CardHeader className="py-3 px-4 bg-muted/50 border-b flex flex-row items-center justify-between">
                         <CardTitle className="text-[10px] font-bold uppercase tracking-widest">{t('databaseManager.outputLog')}</CardTitle>
                         {queryResult && (
-                           <Badge variant="secondary" className="text-[9px] uppercase tracking-tighter">Execution: {queryResult.duration || '0ms'}</Badge>
+                           <Badge variant="secondary" className="text-[9px] uppercase tracking-tighter">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
                         )}
                      </CardHeader>
                      <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
@@ -437,7 +437,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                  <div className="p-10 flex flex-col items-center justify-center gap-3">
                                     <Check className="w-10 h-10 text-emerald-500" />
                                     <p className="text-xs font-bold text-emerald-600 uppercase tracking-[0.2em]">
-                                       Transaction Complete: {queryResult.rows_affected} records updated
+                                       {t('databaseManager.transactionComplete', { count: queryResult.rows_affected })}
                                     </p>
                                  </div>
                               )}

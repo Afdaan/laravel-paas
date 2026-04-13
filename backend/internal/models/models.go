@@ -34,6 +34,10 @@ type User struct {
 	CreatedBy *uint          `json:"created_by,omitempty"`
 	Creator   *User          `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
 	Projects  []Project      `gorm:"foreignKey:UserID" json:"projects,omitempty"`
+	LastLogin    *time.Time     `json:"last_login,omitempty"`
+	LastActivity *time.Time     `json:"last_activity,omitempty"`
+	LastIP       string         `gorm:"size:45" json:"last_ip,omitempty"`
+	LastLocation string         `gorm:"size:255" json:"last_location,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -48,9 +52,11 @@ type ProjectStatus string
 
 const (
 	StatusPending  ProjectStatus = "pending"
+	StatusQueued   ProjectStatus = "queued"
 	StatusBuilding ProjectStatus = "building"
 	StatusRunning  ProjectStatus = "running"
 	StatusFailed   ProjectStatus = "failed"
+	StatusDeleting ProjectStatus = "deleting"
 	StatusStopped  ProjectStatus = "stopped"
 )
 
@@ -63,8 +69,9 @@ type Project struct {
 	GithubURL    string         `gorm:"size:500;not null" json:"github_url"`
 	Branch       string         `gorm:"size:200;not null;default:main" json:"branch"`
 	Subdomain    string         `gorm:"uniqueIndex;size:100;not null" json:"subdomain"`
-	DatabaseName string         `gorm:"uniqueIndex;size:100;not null" json:"database_name"`
-	Status       ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
+	DatabaseName     string         `gorm:"uniqueIndex;size:100;not null" json:"database_name"`
+	DatabasePassword string         `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
+	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
 	Port         *int           `json:"port,omitempty"`
 	ErrorLog     *string        `gorm:"type:text" json:"error_log,omitempty"`
@@ -79,7 +86,8 @@ type Project struct {
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
 	MemoryLimit *string  `gorm:"size:20" json:"memory_limit,omitempty"`
 	
-	ExpiresAt *time.Time     `json:"expires_at,omitempty"`
+	LastAccessedAt *time.Time     `json:"last_accessed_at,omitempty"`
+	ExpiresAt      *time.Time     `json:"expires_at,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`

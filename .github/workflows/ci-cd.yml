@@ -21,14 +21,15 @@ jobs:
           git checkout ${{ github.ref_name }}
           git pull origin ${{ github.ref_name }}
 
-      - name: Restart infrastructure
+      - name: Building Deployment
         run: |
           cd /opt/laravel-paas
-          if [ -f "./scripts/start.sh" ]; then
+          if [ -f "./scripts/deploy-app.sh" ]; then
+            chmod +x ./scripts/deploy-app.sh
+            ./scripts/deploy-app.sh all
+          else
             chmod +x ./scripts/start.sh
             ./scripts/start.sh
-          else
-            exit 1
           fi
 
       - name: Notification on success

@@ -3,7 +3,7 @@
 // ===========================================
 // Handles Redis connections and operations
 // ===========================================
-package services
+package infrastructure
 
 import (
 	"context"
@@ -24,9 +24,11 @@ type RedisService struct {
 // NewRedisService creates a new Redis service
 func NewRedisService(cfg *config.Config) (*RedisService, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
-		DB:       0, // use default DB
+		Addr:         fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password:     cfg.RedisPassword,
+		DB:           0, // use default DB
+		PoolSize:     200, // optimize for ~200 real users concurrency
+		MinIdleConns: 50,
 	})
 
 	ctx := context.Background()

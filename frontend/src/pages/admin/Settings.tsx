@@ -15,7 +15,8 @@ import {
   Clock,
   Layout,
   Zap,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +33,7 @@ interface PlatformSettings {
   cpu_limit_percent?: number;
   memory_limit_mb?: number;
   admin_idle_timeout?: number;
+  max_concurrent_builds?: number;
 }
 
 const AdminSettings = () => {
@@ -63,7 +65,15 @@ const AdminSettings = () => {
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      await settingsAPI.update(settings)
+      // Convert all values to strings as backend expects map[string]string
+      const payload: Record<string, string> = {}
+      Object.entries(settings).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          payload[key] = String(value)
+        }
+      })
+      
+      await settingsAPI.update(payload)
       toast.success(t('admin.settings.success'))
     } catch (error) {
       toast.error(t('admin.settings.failed'))
@@ -124,7 +134,7 @@ const AdminSettings = () => {
               <Input
                 value={settings.base_domain || ''}
                 onChange={(e) => handleChange('base_domain', e.target.value)}
-                placeholder="paas.example.com"
+                placeholder={t('admin.settings.coreFqdnPlaceholder')}
               />
               <p className="text-xs text-muted-foreground flex items-center gap-2">
                 <AlertCircle size={14} /> {t('admin.settings.coreFqdnDesc')}
@@ -139,7 +149,7 @@ const AdminSettings = () => {
               <Input
                 value={settings.project_domain || ''}
                 onChange={(e) => handleChange('project_domain', e.target.value)}
-                placeholder="projects.example.com"
+                placeholder={t('admin.settings.projectPoolPlaceholder')}
               />
               <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10 flex items-center gap-3">
                 <div className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest">{t('admin.settings.wildcardResolve')}:</div>
@@ -163,43 +173,67 @@ const AdminSettings = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-3">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Layout size={14} className="text-emerald-500" />
-                  {t('admin.settings.identityQuota')}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <Layout size={14} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.identityQuota')}</span>
                 </Label>
-                <NumberStepper
-                  min={1}
-                  max={10}
-                  value={settings.max_projects_per_user || 3}
-                  onChange={(val) => handleChange('max_projects_per_user', val)}
-                  unit={t('admin.settings.projects')}
-                />
+                <div className="mt-4">
+                  <NumberStepper
+                    min={1}
+                    max={10}
+                    value={settings.max_projects_per_user || 3}
+                    onChange={(val) => handleChange('max_projects_per_user', val)}
+                    unit={t('admin.settings.projects')}
+                  />
+                </div>
               </div>
-              <div className="space-y-3">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Clock size={14} className="text-amber-500" />
-                  {t('admin.settings.expiryCycle')}
+              
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <Clock size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.expiryCycle')}</span>
                 </Label>
-                <NumberStepper
-                  min={0}
-                  value={settings.project_expiry_days || 30}
-                  onChange={(val) => handleChange('project_expiry_days', val)}
-                  unit={t('admin.settings.days')}
-                />
+                <div className="mt-4">
+                  <NumberStepper
+                    min={0}
+                    value={settings.project_expiry_days || 30}
+                    onChange={(val) => handleChange('project_expiry_days', val)}
+                    unit={t('admin.settings.days')}
+                  />
+                </div>
               </div>
-              <div className="space-y-3">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Shield size={14} className="text-rose-500" />
-                  {t('admin.settings.inactivityTimeout')}
+
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <Shield size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.inactivityTimeout')}</span>
                 </Label>
-                <NumberStepper
-                  min={1}
-                  value={settings.admin_idle_timeout || 15}
-                  onChange={(val) => handleChange('admin_idle_timeout', val)}
-                  unit={t('admin.settings.mins')}
-                />
+                <div className="mt-4">
+                  <NumberStepper
+                    min={1}
+                    value={settings.admin_idle_timeout || 15}
+                    onChange={(val) => handleChange('admin_idle_timeout', val)}
+                    unit={t('admin.settings.mins')}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <RefreshCw size={14} className="text-blue-500 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.concurrentBuilds')}</span>
+                </Label>
+                <div className="mt-4">
+                  <NumberStepper
+                    min={1}
+                    max={8}
+                    value={settings.max_concurrent_builds || 3}
+                    onChange={(val) => handleChange('max_concurrent_builds', val)}
+                    unit={t('admin.settings.workers')}
+                  />
+                </div>
               </div>
             </div>
 

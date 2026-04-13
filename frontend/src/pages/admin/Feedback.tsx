@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import useTranslation from '../../lib/useTranslation'
 
 interface FeedbackUser {
   name: string;
@@ -37,6 +38,7 @@ interface FeedbackData {
 }
 
 const AdminFeedback = () => {
+  const { t } = useTranslation()
   const [feedback, setFeedback] = useState<FeedbackData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -53,11 +55,11 @@ const AdminFeedback = () => {
       setFeedback(res.data || [])
     } catch (error) {
       console.error('Failed to fetch feedback:', error)
-      toast.error('Could not load feedback registry')
+      toast.error(t('admin.feedback.loadError'))
     } finally {
       setIsLoading(false)
     }
-  }, [filterStatus, filterType])
+  }, [filterStatus, filterType, t])
 
   useEffect(() => {
     fetchFeedback()
@@ -66,21 +68,21 @@ const AdminFeedback = () => {
   const handleUpdateStatus = async (id: number, status: string) => {
     try {
       await feedbackAPI.updateStatus(id, status)
-      toast.success('Registry state updated')
+      toast.success(t('admin.feedback.updateSuccess'))
       fetchFeedback()
     } catch (error) {
-      toast.error('State update failed')
+      toast.error(t('admin.feedback.updateError'))
     }
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Purge this feedback record? This cannot be undone.')) return
+    if (!window.confirm(t('admin.users.confirmPurge'))) return
     try {
       await feedbackAPI.delete(id)
-      toast.success('Record purged')
+      toast.success(t('admin.feedback.purgeSuccess'))
       fetchFeedback()
     } catch (error) {
-      toast.error('Purge operation failed')
+      toast.error(t('admin.feedback.purgeError'))
     }
   }
 

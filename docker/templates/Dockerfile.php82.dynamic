@@ -1,6 +1,4 @@
-# ===========================================================
-# Laravel Dockerfile Template - PHP 8.2 (Dynamic Extensions)
-# ===========================================================
+# Laravel Dockerfile - PHP 8.2 (Dynamic)
 # This version allows dynamic PHP extension installation based on composer.json
 
 # Stage 1: Extension Detection and Composer Dependencies
@@ -78,25 +76,49 @@ FROM node:20-alpine AS frontend
 WORKDIR /app
 RUN mkdir -p public/build
 
-COPY package*.json ./
-# Install ALL dependencies including devDependencies (Vite, Tailwind, etc. are devDeps)
-RUN if [ -f package.json ]; then \
-        npm ci 2>/dev/null || \
-        npm install 2>/dev/null || \
-        true; \
+# Copy lock files for tool detection
+COPY package*.json bun.lock* yarn.lock* pnpm-lock.yaml* ./
+
+# Install Bun only if bun.lock is present
+RUN if [ -f bun.lock ]; then \
+        apk add --no-cache curl bash unzip libstdc++ && \
+        curl -fsSL https://bun.sh/install | bash && \
+        cp /root/.bun/bin/bun /usr/local/bin/bun; \
+    fi
+
+# Install dependencies based on detected lock file
+RUN if [ -f bun.lock ]; then \
+        bun install; \
+    elif [ -f package-lock.json ]; then \
+        npm ci || npm install; \
+    elif [ -f yarn.lock ]; then \
+        npm install -g yarn && yarn install; \
+    elif [ -f pnpm-lock.yaml ]; then \
+        npm install -g pnpm && pnpm install; \
+    else \
+        npm install; \
     fi
 
 COPY resources/ resources/
 COPY public/ public/
 COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 
-RUN if [ -f package.json ] && [ -d resources ]; then \
-        npm run build 2>/dev/null || \
-        npm run production 2>/dev/null || \
-        true; \
+# Copy vendor for Tailwind/Vite scanning (Safe Move)
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /app/vendor && mv /tmp/vendor /app/vendor
+
+# Production asset build
+RUN if [ -f package.json ]; then \
+        if [ -f bun.lock ]; then bun run build; \
+        else npm run build || npm run production; fi \
     fi
 
-# Ensure public/build always exists (even if no frontend assets were built)
+# Sync Vite 5+ manifest location for Laravel compatibility
+RUN if [ -f public/build/.vite/manifest.json ]; then \
+        cp public/build/.vite/manifest.json public/build/manifest.json; \
+    fi
+
+# Ensure build directory exists even if build was skipped
 RUN mkdir -p /app/public/build
 
 # Stage 3: Production (Optimized Runtime)
@@ -149,16 +171,23 @@ WORKDIR /var/www/html
 # Copy all application files
 COPY . .
 
-COPY --from=composer /app/vendor ./vendor
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /var/www/html/vendor && mv /tmp/vendor /var/www/html/vendor
 COPY --from=frontend /app/public/build/ ./public/build/
 
 # Set up directories and permissions
-RUN mkdir -p storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
+RUN mkdir -p storage/app/public \
+             storage/framework/cache/data \
+             storage/framework/sessions \
+             storage/framework/views \
+             storage/logs \
+             bootstrap/cache \
+             /var/log/supervisor \
+    && rm -rf public/storage \
+    && php artisan storage:link --ansi \
+    && php artisan package:discover --ansi \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
-
-# Run package discovery now that extensions are installed
-RUN php artisan package:discover --ansi
 
 # Copy configuration
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
@@ -170,6 +199,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-
-
-

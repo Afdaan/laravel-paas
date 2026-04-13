@@ -1,6 +1,5 @@
 import { Minus, Plus } from "lucide-react"
 import { Button } from "./button"
-import { Input } from "./input"
 import { cn } from "@/lib/utils"
 
 interface NumberStepperProps {
@@ -39,55 +38,53 @@ export function NumberStepper({
   };
 
   return (
-    <div className={cn("relative group flex items-center w-full", className)}>
-      <Input
-        type="number"
-        value={numericValue}
-        onChange={(e) => {
-          const val = Number(e.target.value);
-          if (!isNaN(val)) onChange(val);
-        }}
-        className={cn(
-          "h-9 w-full pr-24 font-bold tabular-nums focus-visible:ring-1 bg-background/50 border-muted-foreground/20",
-          className
-        )}
-        disabled={disabled}
-        min={min}
-        max={max}
-      />
-
-      <div className="absolute right-1 flex items-center gap-1">
+    <div className={cn("flex h-12 w-full items-center rounded-lg border border-muted-foreground/20 bg-background/50 px-3 transition-all focus-within:ring-1 focus-within:ring-ring", className)}>
+      <div className="shrink-0">
+        <input
+          type="number"
+          value={numericValue}
+          onChange={(e) => {
+            const val = Number(e.target.value);
+            if (!isNaN(val)) onChange(val);
+          }}
+          className="block h-5 w-10 bg-transparent text-base font-bold tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          disabled={disabled}
+          min={min}
+          max={max}
+        />
         {unit && (
-          <span className="text-[10px] font-black text-muted-foreground/40 uppercase pointer-events-none mr-2">
+          <span className="block text-[8px] font-bold uppercase tracking-widest text-muted-foreground/50 select-none">
             {unit}
           </span>
         )}
-        
-        <div className="flex bg-muted/30 rounded-md p-0.5 border border-muted-foreground/10">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="h-6 w-6 rounded-sm hover:bg-background hover:text-rose-500 transition-colors"
-            onClick={handleDecrement}
-            disabled={disabled || numericValue <= min}
-          >
-            <Minus className="h-3 w-3" />
-          </Button>
-          
-          <div className="w-[1px] h-4 bg-muted-foreground/10 self-center" />
+      </div>
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="h-6 w-6 rounded-sm hover:bg-background hover:text-emerald-500 transition-colors"
-            onClick={handleIncrement}
-            disabled={disabled || numericValue >= max}
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
+      <div className="flex-1" />
+
+      <div className="flex h-7 shrink-0 items-center rounded-md border border-muted-foreground/10 bg-muted/30 p-px">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6 rounded-sm hover:bg-background hover:text-rose-500 transition-colors"
+          onClick={handleDecrement}
+          disabled={disabled || numericValue <= min}
+        >
+          <Minus className="h-3 w-3" />
+        </Button>
+
+        <div className="h-3 w-px bg-muted-foreground/15" />
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6 rounded-sm hover:bg-background hover:text-emerald-500 transition-colors"
+          onClick={handleIncrement}
+          disabled={disabled || numericValue >= max}
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
       </div>
     </div>
   );

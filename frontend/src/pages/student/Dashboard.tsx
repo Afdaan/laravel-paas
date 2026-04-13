@@ -93,7 +93,7 @@ function StudentDashboard() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">{t('common.dashboard')}</h1>
           <p className="text-muted-foreground">
-            {t('dashboard.welcomeUser', { name: user?.name?.split(' ')[0] || 'Student' })}. {t('dashboard.projectStats', { count: runningProjects })}.
+            {t('dashboard.welcomeUser', { name: user?.name?.split(' ')[0] || t('common.student') })}. {t('dashboard.projectStats', { count: runningProjects })}.
           </p>
         </div>
         <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }))}>

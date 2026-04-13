@@ -31,7 +31,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=5s --timeout=3s --start-period=2s --retries=3 \
     CMD curl -f http://localhost/ || exit 1
 
 EXPOSE 80

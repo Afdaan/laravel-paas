@@ -1,6 +1,4 @@
-# ===========================================================
-# Laravel Dockerfile Template - PHP 8.0 (Pure Laravel - No Frontend)
-# ===========================================================
+# Laravel Dockerfile - PHP 8.0
 
 # Stage 1: Composer Dependencies
 FROM composer:2 AS composer
@@ -31,10 +29,18 @@ WORKDIR /var/www/html
 COPY . .
 
 # Copy optimized vendor from composer stage
-COPY --from=composer /app/vendor ./vendor
-
-# Create directories that might not exist and set permissions
-RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache /var/log/supervisor \
+COPY --from=composer /app/vendor /tmp/vendor
+RUN rm -rf /var/www/html/vendor && mv /tmp/vendor /var/www/html/vendor
+RUN mkdir -p storage/app/public \
+             storage/framework/cache/data \
+             storage/framework/sessions \
+             storage/framework/views \
+             storage/logs \
+             bootstrap/cache \
+             /var/log/supervisor \
+    && rm -rf public/storage \
+    && php artisan storage:link --ansi \
+    && php artisan package:discover --ansi \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
 
@@ -48,7 +54,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-
-
-
-

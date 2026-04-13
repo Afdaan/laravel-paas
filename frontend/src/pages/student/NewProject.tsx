@@ -78,9 +78,9 @@ function StudentNewProject() {
 
   const validateForm = () => {
     const errors: ValidationErrors = {}
-    if (!formData.name.trim()) errors.name = t('common.projectName') + ' is required'
-    if (!formData.github_url.trim()) errors.github_url = t('newProject.repoUrl') + ' is required'
-    if (!formData.database_name.trim()) errors.database_name = t('newProject.dbName') + ' is required'
+    if (!formData.name.trim()) errors.name = t('common.validation.required', { field: t('newProject.displayName') })
+    if (!formData.github_url.trim()) errors.github_url = t('common.validation.required', { field: t('newProject.repoUrl') })
+    if (!formData.database_name.trim()) errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
 
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
@@ -96,13 +96,13 @@ function StudentNewProject() {
 
     try {
       const response = await projectsAPI.create(formData)
-      toast.success(t('common.success') || 'Project Created Successfully')
+      toast.success(t('common.success'))
       navigate(`/projects/${response.data.project.id}`)
     } catch (error: any) {
-      let errorMsg = error.response?.data?.error || t('common.error') || 'Failed to create project'
+      let errorMsg = error.response?.data?.error || t('common.actionFailed')
 
       if (errorMsg === 'Project limit reached' || error.response?.status === 403) {
-        errorMsg = t('newProject.restrictedDesc') || 'Project limit reached.'
+        errorMsg = t('newProject.restrictedDesc')
       }
 
       setSubmitError(errorMsg)
@@ -126,7 +126,7 @@ function StudentNewProject() {
         </Button>
 
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">{t('newProject.title').split(' ')[0]} <span className="text-primary italic">{t('newProject.title').split(' ')[1] || 'Project'}</span></h1>
+          <h1 className="text-4xl font-bold tracking-tight">{t('newProject.title').split(' ')[0]} <span className="text-primary italic">{t('newProject.title').split(' ')[1]}</span></h1>
           <p className="text-muted-foreground text-lg">{t('newProject.subtitle')}</p>
         </div>
       </div>
@@ -209,7 +209,7 @@ function StudentNewProject() {
                     name="branch"
                     value={formData.branch}
                     onChange={handleChange}
-                    placeholder={t('newProject.branchPlaceholder') || 'main'}
+                    placeholder={t('newProject.branchPlaceholder')}
                   />
                 </div>
               </div>
@@ -229,7 +229,7 @@ function StudentNewProject() {
                   name="database_name"
                   value={formData.database_name}
                   onChange={handleChange}
-                  placeholder="database_name"
+                  placeholder={t('newProject.dbName')}
                   className={cn(validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
                 />
                 <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">{t('newProject.dbAutoDesc')}</p>

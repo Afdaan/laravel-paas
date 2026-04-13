@@ -7,25 +7,22 @@ package handlers
 
 import (
 	"fmt"
-	"math/rand"
 	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/services"
 	"github.com/xuri/excelize/v2"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 // UserHandler handles user management endpoints
 type UserHandler struct {
-	db *gorm.DB
+	userService *services.UserService
 }
 
 // NewUserHandler creates a new user handler
-func NewUserHandler(db *gorm.DB) *UserHandler {
-	return &UserHandler{db: db}
+func NewUserHandler(userService *services.UserService) *UserHandler {
+	return &UserHandler{userService: userService}
 }
 
 // CreateUserRequest represents user creation payload
@@ -43,28 +40,8 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 	role := c.Query("role", "")
 	search := c.Query("search", "")
 
-	offset := (page - 1) * limit
-
-	var users []models.User
-	var total int64
-
-	query := h.db.Model(&models.User{})
-
-	// Filter by role if specified
-	if role != "" {
-		query = query.Where("role = ?", role)
-	}
-
-	// Search by name or email
-	if search != "" {
-		query = query.Where("name LIKE ? OR email LIKE ?", "%"+search+"%", "%"+search+"%")
-	}
-
-	// Get total count
-	query.Count(&total)
-
-	// Get paginated results
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&users).Error; err != nil {
+	users, total, err := h.userService.GetAllUsers(page, limit, role, search)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to fetch users",
 		})
@@ -87,8 +64,8 @@ func (h *UserHandler) Get(c *fiber.Ctx) error {
 		})
 	}
 
-	var user models.User
-	if err := h.db.Preload("Projects").First(&user, id).Error; err != nil {
+	user, err := h.userService.GetUserByID(uint(id))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "User not found",
 		})
@@ -106,35 +83,6 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate required fields
-	if req.Email == "" || req.Name == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Email and name are required",
-		})
-	}
-
-	// Check if email exists
-	var existing models.User
-	if h.db.Where("email = ?", req.Email).First(&existing).Error == nil {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-			"error": "Email already exists",
-		})
-	}
-
-	// Generate random password if not provided
-	password := req.Password
-	if password == "" {
-		password = generateRandomPassword(12)
-	}
-
-	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to hash password",
-		})
-	}
-
 	// Set default role
 	role := req.Role
 	if role == "" {
@@ -149,27 +97,17 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get creator ID
 	creatorID := c.Locals("user_id").(uint)
-
-	user := models.User{
-		Email:     req.Email,
-		Password:  string(hashedPassword),
-		Name:      req.Name,
-		Role:      role,
-		CreatedBy: &creatorID,
-	}
-
-	if err := h.db.Create(&user).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create user",
+	user, plainPassword, err := h.userService.CreateUser(req.Name, req.Email, req.Password, role, &creatorID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
 		})
 	}
 
-	// Return user with plain password (only on creation)
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"user":     user,
-		"password": password, // Show generated password
+		"password": plainPassword,
 	})
 }
 
@@ -182,13 +120,6 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		})
 	}
 
-	var user models.User
-	if err := h.db.First(&user, id).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "User not found",
-		})
-	}
-
 	var req CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -196,32 +127,10 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		})
 	}
 
-	// Update fields
-	if req.Name != "" {
-		user.Name = req.Name
-	}
-	if req.Email != "" && req.Email != user.Email {
-		var existing models.User
-		if h.db.Where("email = ? AND id != ?", req.Email, id).First(&existing).Error == nil {
-			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-				"error": "Email already exists",
-			})
-		}
-		user.Email = req.Email
-	}
-	if req.Password != "" {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Failed to hash password",
-			})
-		}
-		user.Password = string(hashedPassword)
-	}
-
-	if err := h.db.Save(&user).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to update user",
+	user, err := h.userService.UpdateUser(uint(id), req.Name, req.Email, req.Password)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
 		})
 	}
 
@@ -237,24 +146,9 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
-	var user models.User
-	if err := h.db.First(&user, id).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "User not found",
-		})
-	}
-
-	// Prevent deleting superadmin
-	if user.Role == models.RoleSuperAdmin {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": "Cannot delete superadmin",
-		})
-	}
-
-	// Soft delete user and their projects
-	if err := h.db.Delete(&user).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to delete user",
+	if err := h.userService.DeleteUser(uint(id)); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
 		})
 	}
 
@@ -320,32 +214,9 @@ func (h *UserHandler) ImportExcel(c *fiber.Ctx) error {
 		name := row[0]
 		email := row[1]
 
-		if name == "" || email == "" {
-			errors = append(errors, fmt.Sprintf("Row %d: name and email are required", i+2))
-			continue
-		}
-
-		// Check if email exists
-		var existing models.User
-		if h.db.Where("email = ?", email).First(&existing).Error == nil {
-			errors = append(errors, fmt.Sprintf("Row %d: email %s already exists", i+2, email))
-			continue
-		}
-
-		// Generate password
-		password := generateRandomPassword(12)
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-
-		user := models.User{
-			Email:     email,
-			Name:      name,
-			Password:  string(hashedPassword),
-			Role:      models.RoleStudent,
-			CreatedBy: &creatorID,
-		}
-
-		if err := h.db.Create(&user).Error; err != nil {
-			errors = append(errors, fmt.Sprintf("Row %d: failed to create user", i+2))
+		user, plainPassword, err := h.userService.CreateUser(name, email, "", models.RoleStudent, &creatorID)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("Row %d: %s", i+2, err.Error()))
 			continue
 		}
 
@@ -353,7 +224,7 @@ func (h *UserHandler) ImportExcel(c *fiber.Ctx) error {
 			"id":       user.ID,
 			"name":     user.Name,
 			"email":    user.Email,
-			"password": password,
+			"password": plainPassword,
 		})
 	}
 
@@ -364,14 +235,3 @@ func (h *UserHandler) ImportExcel(c *fiber.Ctx) error {
 	})
 }
 
-// generateRandomPassword creates a random password
-func generateRandomPassword(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	password := make([]byte, length)
-	for i := range password {
-		password[i] = charset[r.Intn(len(charset))]
-	}
-	return string(password)
-}

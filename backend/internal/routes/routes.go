@@ -10,18 +10,33 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"gorm.io/gorm"
+
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/handlers"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services"
-	"gorm.io/gorm"
 )
 
 // Setup initializes the Fiber app with all routes
-func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService) *fiber.App {
+func Setup(
+	db *gorm.DB, 
+	cfg *config.Config, 
+	redisService *infrastructure.RedisService,
+	dockerService *infrastructure.DockerService,
+	storageService *infrastructure.StorageService,
+	projectService *services.ProjectService,
+	userService *services.UserService,
+	settingService *services.SettingService,
+	authService *services.AuthService,
+	databaseService *services.DatabaseService,
+	feedbackService *services.FeedbackService,
+) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
 		AppName:      "Laravel PaaS API",
+		ProxyHeader:  "X-Forwarded-For", // Correctly detect client IP behind Nginx/Traefik
 	})
 
 	// ===========================================
@@ -58,19 +73,16 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// ===========================================
 	// API Routes
-	// ===========================================
 	api := app.Group("/api")
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg)
-	userHandler := handlers.NewUserHandler(db)
-	projectHandler := handlers.NewProjectHandler(db, cfg, redisService)
-	settingHandler := handlers.NewSettingHandler(db)
-	dockerService := services.NewDockerService(cfg)
-	systemHandler := handlers.NewSystemHandler(db, dockerService)
-	feedbackHandler := handlers.NewFeedbackHandler(db)
+	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
+	userHandler := handlers.NewUserHandler(userService)
+	projectHandler := handlers.NewProjectHandler(cfg, redisService, projectService, userService)
+	settingHandler := handlers.NewSettingHandler(settingService)
+	systemHandler := handlers.NewSystemHandler(userService, dockerService)
+	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects
@@ -92,7 +104,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// -----------------------------
 	// Protected Routes
 	// -----------------------------
-	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret))
+	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService))
 	
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)
@@ -155,7 +167,7 @@ func Setup(db *gorm.DB, cfg *config.Config, redisService *services.RedisService)
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	databaseHandler := handlers.NewDatabaseHandler(db, cfg)
+	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)

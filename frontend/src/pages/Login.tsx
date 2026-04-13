@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { systemAPI } from '../services/api'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
-import { ArrowRight, ArrowLeft, Terminal, Loader2 } from 'lucide-react'
+import { ArrowRight, ArrowLeft, Terminal, Loader2, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +16,7 @@ function Login() {
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string | null>>({})
   
@@ -24,6 +25,10 @@ function Login() {
   const user = useAuthStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
+  
+  // Get redirect path from state, default to dashboards
+  const from = location.state?.from?.pathname || null
 
   useEffect(() => {
     // Check if system is initialized
@@ -39,7 +44,8 @@ function Login() {
 
     if (token && user) {
       const isAdmin = user.role === 'superadmin' || user.role === 'admin'
-      navigate(isAdmin ? '/admin/dashboard' : '/dashboard', { replace: true })
+      const destination = from || (isAdmin ? '/admin/dashboard' : '/dashboard')
+      navigate(destination, { replace: true })
     }
   }, [token, user, navigate])
   
@@ -61,11 +67,9 @@ function Login() {
       const user = await login(email, password)
       toast.success(t('login.welcomeBack', { name: user.name }))
       
-      if (user.role === 'superadmin' || user.role === 'admin') {
-        navigate('/admin/dashboard')
-      } else {
-        navigate('/dashboard')
-      }
+      const isAdminMatched = user.role === 'superadmin' || user.role === 'admin'
+      const destination = from || (isAdminMatched ? '/admin/dashboard' : '/dashboard')
+      navigate(destination)
     } catch (error: any) {
       toast.error(error.response?.data?.error || t('login.failed'))
     } finally {
@@ -90,9 +94,9 @@ function Login() {
          </Button>
       </div>
       <div className="w-full max-w-md">
-        <Button variant="ghost" render={<Link to="/" className="text-muted-foreground group" />} className="mb-8">
-            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-            {t('login.backToHome')}
+        <Button variant="ghost" className="mb-8" render={<Link to="/" className="text-muted-foreground group" />} nativeButton={false}>
+          <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+          {t('login.backToHome')}
         </Button>
         
         <Card>
@@ -118,7 +122,7 @@ function Login() {
                     if(validationErrors.email) setValidationErrors(prev => ({...prev, email: null}))
                   }}
                   className={validationErrors.email ? "border-destructive focus-visible:ring-destructive" : ""}
-                  placeholder="name@example.com"
+                  placeholder={t('login.emailPlaceholder')}
                   autoFocus
                 />
                 {validationErrors.email && (
@@ -128,17 +132,35 @@ function Login() {
               
               <div className="space-y-2">
                 <Label htmlFor="password" className={validationErrors.password ? "text-destructive" : ""}>{t('login.password')}</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value)
-                    if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
-                  }}
-                  className={validationErrors.password ? "border-destructive focus-visible:ring-destructive" : ""}
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      if(validationErrors.password) setValidationErrors(prev => ({...prev, password: null}))
+                    }}
+                    className={`${validationErrors.password ? "border-destructive focus-visible:ring-destructive" : ""} pr-10`}
+                    placeholder={t('login.passwordPlaceholder')}
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowPassword((prev) => !prev);
+                    }}
+                    className="absolute right-0 top-0 bottom-0 px-3 flex items-center text-muted-foreground hover:text-foreground cursor-pointer z-50 transition-colors focus:outline-none bg-transparent border-none select-none"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4 pointer-events-none" />
+                    ) : (
+                      <Eye className="w-4 h-4 pointer-events-none" />
+                    )}
+                  </button>
+                </div>
                 {validationErrors.password && (
                    <p className="text-xs text-destructive font-medium">{validationErrors.password}</p>
                 )}
@@ -162,7 +184,7 @@ function Login() {
         </Card>
         
         <div className="mt-8 flex items-center justify-between px-2 text-xs text-muted-foreground font-bold uppercase tracking-widest">
-           <p>{t('login.platformVersion')} 2.8</p>
+           <p>{t('login.platformVersion', { version: '2.8' })}</p>
            <Link to="/" className="hover:text-primary transition-colors">{t('login.support')}</Link>
         </div>
       </div>

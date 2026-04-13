@@ -6,25 +6,29 @@
 package handlers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/models"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
+	"github.com/laravel-paas/backend/internal/services"
 )
 
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	service     *services.AuthService
+	userService *services.UserService
+	cfg         *config.Config
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{db: db, cfg: cfg}
+func NewAuthHandler(service *services.AuthService, cfg *config.Config, userService *services.UserService) *AuthHandler {
+	return &AuthHandler{
+		service:     service,
+		userService: userService,
+		cfg:         cfg,
+	}
 }
 
 // LoginRequest represents login payload
@@ -33,69 +37,46 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// LoginResponse represents successful login response
-type LoginResponse struct {
-	Token string       `json:"token"`
-	User  *models.User `json:"user"`
-}
-
 // Login authenticates user and returns JWT token
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var req LoginRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return apperr.ErrBadRequest
 	}
 
-	// Validate input
 	if req.Email == "" || req.Password == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Email and password are required",
-		})
+		return apperr.NewBadRequest("Email and password are required")
 	}
 
-	// Find user by email
-	var user models.User
-	if err := h.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid email or password",
-		})
-	}
-
-	// Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid email or password",
-		})
-	}
-
-	// Generate JWT token
-	claims := jwt.MapClaims{
-		"user_id": user.ID,
-		"email":   user.Email,
-		"role":    user.Role,
-		"exp":     time.Now().Add(time.Duration(h.cfg.JWTExpiryHours) * time.Hour).Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(h.cfg.JWTSecret))
+	user, err := h.service.Authenticate(req.Email, req.Password)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to generate token",
-		})
+		return err
 	}
 
-	return c.JSON(LoginResponse{
-		Token: tokenString,
-		User:  &user,
+	token, err := h.service.GenerateToken(user)
+	if err != nil {
+		return err
+	}
+
+	// Track login activity
+	go h.userService.UpdateActivity(user.ID, c.IP(), true)
+
+	return c.JSON(fiber.Map{
+		"token": token,
+		"user":  user,
 	})
 }
 
-// Logout invalidates user session (client should discard token)
+// Logout invalidates user session
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	// In a stateless JWT setup, logout is handled client-side
-	// For enhanced security, you could implement a token blacklist using Redis
+	authHeader := c.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	if token != "" && token != authHeader {
+		// Blacklist for the remaining duration
+		h.service.Logout(token, time.Duration(h.cfg.JWTExpiryHours)*time.Hour)
+	}
+
 	return c.JSON(fiber.Map{
 		"message": "Logged out successfully",
 	})
@@ -105,11 +86,9 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "User not found",
-		})
+	user, err := h.service.GetUserByID(userID)
+	if err != nil {
+		return err
 	}
 
 	return c.JSON(user)

@@ -102,7 +102,7 @@ const AdminProjects = () => {
       setProjects(response.data.data || [])
       setTotal(response.data.total || 0)
     } catch (error) {
-      toast.error('Failed to index projects')
+      toast.error(t('admin.projects.loadError'))
     } finally {
       setIsLoading(false)
       isFirstLoad.current = false
@@ -275,7 +275,7 @@ const AdminProjects = () => {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="font-mono bg-muted/30">
-                          {project.laravel_version ? `Laravel v${project.laravel_version}` : 'Static/Unknown'}
+                          {project.laravel_version ? `Laravel ${project.laravel_version}` : 'Static/Unknown'}
                         </Badge>
                       </div>
                     </TableCell>

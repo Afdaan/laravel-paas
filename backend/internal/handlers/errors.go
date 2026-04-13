@@ -1,27 +1,44 @@
 // ===========================================
-// Error Handler
+// Global Error Handler
 // ===========================================
-// Global error handling for Fiber app
+// Orchestrates centralized error responses
 // ===========================================
 package handlers
 
 import (
+	"log/slog"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/apperr"
 )
 
-// ErrorHandler is the global error handler
+// ErrorHandler is the global error handler for the Fiber application
 func ErrorHandler(c *fiber.Ctx, err error) error {
-	// Default to 500 Internal Server Error
-	code := fiber.StatusInternalServerError
-	message := "Internal server error"
-
-	// Check if it's a fiber error
-	if e, ok := err.(*fiber.Error); ok {
-		code = e.Code
-		message = e.Message
+	// Default values
+	status := fiber.StatusInternalServerError
+	code := "INTERNAL_ERROR"
+	message := "An unexpected error occurred"
+	// 1. Check for custom AppError
+	if ae, ok := err.(*apperr.AppError); ok {
+		status = ae.HTTPStatus
+		code = ae.Code
+		message = ae.Message
+	} else if fe, ok := err.(*fiber.Error); ok {
+		// 2. Check for Fiber's built-in errors
+		status = fe.Code
+		message = fe.Message
 	}
 
-	return c.Status(code).JSON(fiber.Map{
+	// Log the error (Only 500s are critical)
+	if status >= 500 {
+		slog.Error("Critical System Error", "error", err, "path", c.Path())
+	} else {
+		slog.Warn("Request Error", "status", status, "message", message, "path", c.Path())
+	}
+
+	// Standardize the response
+	return c.Status(status).JSON(fiber.Map{
 		"error": message,
+		"code":  code,
 	})
 }

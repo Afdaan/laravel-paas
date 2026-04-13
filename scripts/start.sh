@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
 PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
+REDIS_DATA_DIR="${PROJECT_ROOT}/storage/redis"
 
 # Colors for output
 RED='\033[0;31m'
@@ -90,19 +91,24 @@ deploy_with_anti_downtime() {
     if [ "$healthy" == "true" ]; then
         echo -e "${GREEN}[SUCCESS] $service_name is healthy! Swapping containers...${NC}"
         
-        # Stop and rename old
+        # 1. Prepare for cutover by moving the current container to 'old' identity
         if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
-            docker stop "$container_name" 2>/dev/null || true
+            echo -e "${YELLOW}[SWAP] Reassigning current $container_name to $old_container_name...${NC}"
             docker rename "$container_name" "$old_container_name" 2>/dev/null || true
         fi
         
-        # Rename new to standard name
+        # 2. Immediately assign the new container to the main identity
+        echo -e "${YELLOW}[SWAP] Promoting $temp_container_name to $container_name...${NC}"
         docker rename "$temp_container_name" "$container_name"
         
-        # Cleanup old container
-        docker rm -f "$old_container_name" 2>/dev/null || true
+        # 3. NOW stop the old version (it's no longer the primary identity)
+        if docker ps -a --format '{{.Names}}' | grep -q "^${old_container_name}$"; then
+            echo -e "${YELLOW}[STOP] Stopping previous $service_name version...${NC}"
+            docker stop "$old_container_name" 2>/dev/null || true
+            docker rm -f "$old_container_name" 2>/dev/null || true
+        fi
         
-        # Cleanup old images for this service
+        # 4. Cleanup old images
         echo -e "${YELLOW}[CLEANUP] Removing old images for $service_name...${NC}"
         docker images "paas-$service_name" --format "{{.Tag}}" | grep -v "$image_tag" | xargs -I {} docker rmi "paas-$service_name:{}" 2>/dev/null || true
         
@@ -138,13 +144,23 @@ PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 HTTP_PORT=${HTTP_PORT:-80}
 HTTPS_PORT=${HTTPS_PORT:-443}
+# Smart Path Detection
+if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
+    PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
+fi
+if [[ "$DATA_PATH" == "/app/storage/"* ]]; then
+    DATA_PATH="${PROJECT_ROOT}/${DATA_PATH#/app/}"
+fi
+
+PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
+DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
 
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
-mkdir -p "$DB_DATA_DIR"
-mkdir -p "$PG_DATA_DIR"
-mkdir -p "${PROJECT_ROOT}/storage/projects"
+sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
+sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
+chmod 777 "$DATA_PATH" 
 
 # 4. Smart Backup Logic (Logical or Physical)
 LAST_BACKUP_TS="${PROJECT_ROOT}/storage/.last_backup_ts"
@@ -212,17 +228,17 @@ docker run -d \
     postgres:15-alpine
 
 # 6. Infrastructure: Redis
-echo -e "${YELLOW}Starting Redis...${NC}"
+echo -e "${YELLOW}Starting Redis with persistence...${NC}"
 docker rm -f paas-redis 2>/dev/null || true
-REDIS_CMD=""
-[ ! -z "$REDIS_PASSWORD" ] && REDIS_CMD="redis-server --requirepass $REDIS_PASSWORD"
-
-docker run -d \
-    --name paas-redis \
-    --network paas-network \
-    --restart unless-stopped \
-    -v paas-redis-data:/data \
-    redis:alpine $REDIS_CMD
+REDIS_CMD="redis-server --appendonly yes"
+[ ! -z "$REDIS_PASSWORD" ] && REDIS_CMD="$REDIS_CMD --requirepass $REDIS_PASSWORD"
+ 
+ docker run -d \
+     --name paas-redis \
+     --network paas-network \
+     --restart unless-stopped \
+     -v "${REDIS_DATA_DIR}:/data" \
+     redis:alpine sh -c "$REDIS_CMD"
 
 # 7. Infrastructure: Traefik
 echo -e "${YELLOW}Starting Traefik...${NC}"
@@ -270,8 +286,13 @@ deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
     --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
-    -v "${PROJECT_ROOT}/storage/projects:/app/storage/projects" \
+    -v "${PROJECTS_PATH}:/app/storage/projects" \
+    -v "${DATA_PATH}:/app/storage/data" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+    -e PROJECTS_PATH="/app/storage/projects" \
+    -e DATA_PATH="/app/storage/data" \
+    -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
+    -e HOST_DATA_PATH="$DATA_PATH" \
     -e PG_HOST=paas-postgres \
     -e PG_USER="$PG_USER" \
     -e PG_PASSWORD="$PG_PASSWORD" \

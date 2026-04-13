@@ -18,7 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  Lock
+  Lock,
+  Globe,
+  Clock,
+  Activity
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +36,38 @@ interface ImportResults {
   total: number;
   created: any[];
   errors: string[];
+}
+
+// ===========================================
+// Helpers
+// ===========================================
+
+/**
+ * Formats a date string into a human-readable "time ago" format.
+ * Relies on the provided translation function for i18n support.
+ */
+const formatTimeAgo = (dateStr: string | undefined, t: (key: string, options?: any) => string) => {
+  if (!dateStr) return '-'
+  
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  
+  if (diffInSeconds < 60) return t('common.justNow')
+  
+  if (diffInSeconds < 3600) {
+    return t('admin.users.minutesAgo', { count: Math.floor(diffInSeconds / 60) })
+  }
+  
+  if (diffInSeconds < 86400) {
+    return t('admin.users.hoursAgo', { count: Math.floor(diffInSeconds / 3600) })
+  }
+  
+  if (diffInSeconds < 2592000) {
+    return t('admin.users.daysAgo', { count: Math.floor(diffInSeconds / 86400) })
+  }
+  
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const AdminUsers = () => {
@@ -63,7 +98,7 @@ const AdminUsers = () => {
       setUsers(response.data.data || [])
       setTotal(response.data.total || 0)
     } catch (error) {
-      toast.error('Failed to index users')
+      toast.error(t('common.loadError'))
     } finally {
       setIsLoading(false)
     }
@@ -78,17 +113,17 @@ const AdminUsers = () => {
     try {
       if (editingUser) {
         await usersAPI.update(editingUser.id.toString(), formData)
-        toast.success('Identity updated')
+        toast.success(t('common.updateSuccess'))
       } else {
         const response = await usersAPI.create(formData)
-        toast.success(`Access provisioned! Pass: ${response.data.password}`)
+        toast.success(t('admin.users.accessProvisioned', { password: response.data.password }))
       }
       setShowModal(false)
       setEditingUser(null)
       setFormData({ name: '', email: '', role: 'student', password: '' })
       fetchUsers()
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Authorization failed')
+      toast.error(error.response?.data?.error || t('common.actionFailed'))
     }
   }
 
@@ -104,13 +139,13 @@ const AdminUsers = () => {
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Purge this user identity? All associated projects remain but owner index is severed.')) return
+    if (!window.confirm(t('admin.users.confirmPurge'))) return
     try {
       await usersAPI.delete(id.toString())
-      toast.success('Identity purged')
+      toast.success(t('common.deleteSuccess'))
       fetchUsers()
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Purge failed')
+      toast.error(error.response?.data?.error || t('common.actionFailed'))
     }
   }
 
@@ -121,10 +156,10 @@ const AdminUsers = () => {
     try {
       const response = await usersAPI.importExcel(file)
       setImportResults(response.data)
-      toast.success(`Imported ${response.data.total} identities`)
+      toast.success(t('admin.users.importSuccess', { count: response.data.total }))
       fetchUsers()
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Manifest import failure')
+      toast.error(error.response?.data?.error || t('common.actionFailed'))
     }
 
     e.target.value = ''
@@ -150,7 +185,7 @@ const AdminUsers = () => {
           />
           <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
             <FileDown className="w-4 h-4 mr-2" />
-            Import CSV/Excel
+            {t('admin.users.importData')}
           </Button>
           <Button
             onClick={() => {
@@ -160,7 +195,7 @@ const AdminUsers = () => {
             }}
           >
             <UserPlus className="w-4 h-4 mr-2" />
-            New User
+            {t('admin.users.newUser')}
           </Button>
         </div>
       </div>
@@ -174,8 +209,8 @@ const AdminUsers = () => {
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold">Sync Complete</h3>
-                  <p className="text-sm font-medium text-emerald-600">{importResults.total} Identities successfully provisioned</p>
+                  <h3 className="text-lg font-bold">{t('admin.users.syncComplete')}</h3>
+                  <p className="text-sm font-medium text-emerald-600">{importResults.total} {t('admin.users.provisionSuccess')}</p>
                 </div>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setImportResults(null)}>
@@ -186,7 +221,7 @@ const AdminUsers = () => {
             {importResults.errors?.length > 0 && (
               <div className="mb-4 p-4 rounded-md bg-destructive/10 border border-destructive/20 relative">
                 <div className="flex items-center gap-2 mb-2 text-destructive font-semibold text-sm">
-                  <AlertCircle className="w-4 h-4" /> Sync Anomalies
+                  <AlertCircle className="w-4 h-4" /> {t('admin.users.syncAnomalies')}
                 </div>
                 <ul className="list-disc pl-5 text-sm text-destructive/80 space-y-1">
                   {importResults.errors.map((err, i) => <li key={i}>{err}</li>)}
@@ -199,9 +234,9 @@ const AdminUsers = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Identity</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Credential</TableHead>
+                      <TableHead>{t('admin.users.identity')}</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead>{t('admin.users.credentialLabel')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -212,7 +247,7 @@ const AdminUsers = () => {
                           <div className="text-xs text-muted-foreground">{u.email}</div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-emerald-500 border-emerald-500">Provisioned</Badge>
+                          <Badge variant="outline" className="text-emerald-500 border-emerald-500">{t('admin.users.provisionedBadge')}</Badge>
                         </TableCell>
                         <TableCell>
                           <code className="text-xs font-mono bg-secondary px-2 py-1 rounded">{u.password}</code>
@@ -232,7 +267,7 @@ const AdminUsers = () => {
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder={t('common.search')}
+              placeholder={t('admin.users.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 w-full md:max-w-md"
@@ -241,13 +276,13 @@ const AdminUsers = () => {
           <div className="w-full md:w-48">
             <Select value={roleFilter} onValueChange={(val) => setRoleFilter(val || 'all')}>
               <SelectTrigger className={'w-full'}>
-                <SelectValue placeholder="Role: All Access" />
+                <SelectValue placeholder={t('admin.users.allAccess')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Role: All Access</SelectItem>
-                <SelectItem value="student">Level 1: Students</SelectItem>
-                <SelectItem value="admin">Level 2: Internal Admin</SelectItem>
-                <SelectItem value="superadmin">Level 3: Root</SelectItem>
+                <SelectItem value="all">{t('admin.users.allAccess')}</SelectItem>
+                <SelectItem value="student">{t('admin.users.level1')}</SelectItem>
+                <SelectItem value="admin">{t('admin.users.level2')}</SelectItem>
+                <SelectItem value="superadmin">{t('admin.users.level3')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -258,21 +293,28 @@ const AdminUsers = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('common.name')}</TableHead>
-                <TableHead>Role / Access</TableHead>
-                <TableHead>{t('common.date')}</TableHead>
+                <TableHead>{t('admin.users.roleLabel')}</TableHead>
+                <TableHead>
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-3.5 h-3.5" />
+                    {t('admin.users.activityLabel')}
+                  </div>
+                </TableHead>
+                <TableHead>{t('admin.users.lastLoginLabel')}</TableHead>
+                <TableHead>{t('admin.users.accessFromLabel')}</TableHead>
                 <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground font-medium uppercase tracking-widest text-xs">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground font-medium uppercase tracking-widest text-xs">
                     {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : (!users || users.length === 0) ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     {t('common.noData')}
                   </TableCell>
                 </TableRow>
@@ -305,9 +347,41 @@ const AdminUsers = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {new Date(user.created_at || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <div className="flex items-center gap-2 text-xs font-semibold">
+                      <div className={`w-2 h-2 rounded-full ${
+                        user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) 
+                        ? 'bg-emerald-500 animate-pulse' 
+                        : 'bg-slate-300'
+                      }`} />
+                      <span className={user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) ? 'text-emerald-600' : 'text-slate-500'}>
+                        {formatTimeAgo(user.last_activity, t)}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-xs font-medium">
+                        <Clock className="w-3 h-3 text-muted-foreground" />
+                        {user.last_login ? new Date(user.last_login).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <Calendar className="w-3 h-3" />
+                        {t('admin.users.joined')} {new Date(user.created_at || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-xs font-mono font-medium">
+                        <Shield className="w-3 h-3 text-muted-foreground" />
+                        {user.last_ip || '-'}
+                      </div>
+                      {user.last_location && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <Globe className="w-3 h-3" />
+                          {user.last_location}
+                        </div>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
@@ -331,7 +405,7 @@ const AdminUsers = () => {
         {totalPages > 1 && (
           <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/20">
             <span className="text-xs font-medium text-muted-foreground">
-              Displaying {(page - 1) * 10 + 1} to {Math.min(page * 10, total)} of {total} identities.
+              {t('admin.users.paginationInfo', { start: (page - 1) * 10 + 1, end: Math.min(page * 10, total), total })}
             </span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
@@ -351,9 +425,9 @@ const AdminUsers = () => {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl uppercase tracking-tight">{editingUser ? t('common.edit') : t('common.create')} User</DialogTitle>
+            <DialogTitle className="text-2xl uppercase tracking-tight">{editingUser ? t('common.edit') : t('common.create')} {t('admin.users.identity')}</DialogTitle>
             <DialogDescription>
-              Configure the user's identity details and system privileges here.
+              {t('admin.users.modalDesc')}
             </DialogDescription>
           </DialogHeader>
 
@@ -363,7 +437,7 @@ const AdminUsers = () => {
                 <Label>{t('common.name')}</Label>
                 <Input
                   required
-                  placeholder="eg. John Matrix"
+                  placeholder={t('admin.users.namePlaceholder')}
                   value={formData.name}
                   onChange={(e) => setFormData(f => ({ ...f, name: e.target.value }))}
                 />
@@ -373,7 +447,7 @@ const AdminUsers = () => {
                 <Input
                   required
                   type="email"
-                  placeholder="operator@system.io"
+                  placeholder={t('admin.users.emailPlaceholder')}
                   value={formData.email}
                   onChange={(e) => setFormData(f => ({ ...f, email: e.target.value }))}
                 />
@@ -381,7 +455,7 @@ const AdminUsers = () => {
             </div>
 
             <div className="space-y-2">
-              <Label>Access Privilege</Label>
+              <Label>{t('admin.users.privilege')}</Label>
               <div className="grid grid-cols-2 gap-4">
                 <div
                   className={`p-4 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors ${formData.role === 'student' ? 'border-primary ring-1 ring-primary' : ''}`}
@@ -391,7 +465,7 @@ const AdminUsers = () => {
                     <Users className="w-5 h-5 text-muted-foreground" />
                     {formData.role === 'student' && <CheckCircle2 className="w-4 h-4 text-primary" />}
                   </div>
-                  <p className="font-semibold text-sm">Level 1: Student</p>
+                  <p className="font-semibold text-sm">{t('admin.users.level1')}</p>
                 </div>
                 <div
                   className={`p-4 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors ${formData.role === 'admin' ? 'border-primary ring-1 ring-primary' : ''}`}
@@ -401,18 +475,18 @@ const AdminUsers = () => {
                     <Shield className="w-5 h-5 text-muted-foreground" />
                     {formData.role === 'admin' && <CheckCircle2 className="w-4 h-4 text-primary" />}
                   </div>
-                  <p className="font-semibold text-sm">Level 2: Admin</p>
+                  <p className="font-semibold text-sm">{t('admin.users.level2')}</p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Security Credentials {editingUser && '(Optional Override)'}</Label>
+              <Label>{t('admin.users.security')} {editingUser && t('admin.users.passOverride')}</Label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="password"
-                  placeholder={editingUser ? 'Unchanged (Encrypted)' : 'Strong Password String'}
+                  placeholder={editingUser ? t('admin.users.unchanged') : t('admin.users.passPlaceholder')}
                   required={!editingUser}
                   value={formData.password}
                   onChange={(e) => setFormData(f => ({ ...f, password: e.target.value }))}
@@ -423,7 +497,7 @@ const AdminUsers = () => {
 
             <DialogFooter className="pt-4 border-t">
               <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>{t('common.cancel')}</Button>
-              <Button type="submit">{editingUser ? t('common.save') : t('common.create')} Identity</Button>
+              <Button type="submit">{editingUser ? t('common.save') : t('common.create')} {t('admin.users.identity')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

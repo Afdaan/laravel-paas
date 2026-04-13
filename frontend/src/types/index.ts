@@ -3,6 +3,10 @@ export interface User {
   name: string;
   email: string;
   role: 'student' | 'admin' | 'superadmin';
+  last_login?: string;
+  last_activity?: string;
+  last_ip?: string;
+  last_location?: string;
   created_at?: string;
 }
 
@@ -15,7 +19,7 @@ export interface Project {
   php_version: string;
   port: number;
   db_name: string;
-  status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending';
+  status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued';
   subdomain?: string;
   url?: string;
   user?: User;

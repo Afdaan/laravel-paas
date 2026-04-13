@@ -48,8 +48,17 @@ type Config struct {
 	// Docker
 	DockerSocket   string
 	ProjectsPath   string
+	DataPath       string
+	HostProjectsPath string
+	HostDataPath     string
 	TemplatesPath  string
 	DockerNetwork  string
+
+	// Nginx Remote Webhook
+	NginxWebhookEnabled bool
+	NginxWebhookURL     string
+	NginxWebhookKey     string
+	InternalIP          string
 }
 
 // Load reads configuration from environment variables
@@ -88,10 +97,19 @@ func Load() *Config {
 		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
 		// Docker
-		DockerSocket:  getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
-		ProjectsPath:  getEnv("PROJECTS_PATH", "/app/storage/projects"),
-		TemplatesPath: getEnv("TEMPLATES_PATH", "/app/docker/templates"),
-		DockerNetwork: getEnv("DOCKER_NETWORK", "paas-network"),
+		DockerSocket:  getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
+		ProjectsPath:      getEnv("PROJECTS_PATH", "/app/storage/projects"),
+		DataPath:          getEnv("DATA_PATH", "/app/storage/data"),
+		HostProjectsPath:  getEnv("HOST_PROJECTS_PATH", getEnv("PROJECTS_PATH", "/app/storage/projects")),
+		HostDataPath:      getEnv("HOST_DATA_PATH", getEnv("DATA_PATH", "/app/storage/data")),
+		TemplatesPath:     getEnv("TEMPLATES_PATH", "/app/docker/templates"),
+		DockerNetwork:     getEnv("DOCKER_NETWORK", "paas-network"),
+
+		// Nginx Remote Webhook
+		NginxWebhookEnabled: getEnvBool("NGINX_WEBHOOK_ENABLED", false),
+		NginxWebhookURL:     getEnv("NGINX_WEBHOOK_URL", ""),
+		NginxWebhookKey:     getEnv("NGINX_WEBHOOK_KEY", ""),
+		InternalIP:          getEnv("INTERNAL_IP", "127.0.0.1"),
 	}
 }
 

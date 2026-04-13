@@ -42,6 +42,7 @@ const StatusBadge = ({ status }: { status: string }) => {
   const { t } = useTranslation()
   const configs: Record<string, any> = {
     pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
+    queued: { color: 'text-purple-600 border-purple-500/20 bg-purple-500/10', icon: Clock, label: t('status.queued') },
     building: { color: 'text-blue-600 border-blue-500/20 bg-blue-500/10', icon: Loader2, label: t('status.building'), pulse: true },
     running: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.running') },
     failed: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: t('status.failed') },
@@ -84,7 +85,7 @@ const StudentProjects = () => {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error(t('common.error') || 'Failed to load projects')
+      toast.error(t('common.loadError'))
     } finally {
       setIsLoading(false)
       isFirstLoad.current = false
@@ -106,15 +107,17 @@ const StudentProjects = () => {
       type: 'warning',
       confirmText: t('projectDetail.actions.redeploy'),
       onConfirm: () => {
+        // Optimistic UI update
+        setProjects(prev => prev.map(p => p.id === id ? { ...p, status: 'queued' } : p))
+        
         toast.promise(
           projectsAPI.redeploy(id),
           {
-            loading: t('projectDetail.messages.buildTitle') || 'Redeploying project...',
-            success: t('common.success') || 'Redeploy started',
-            error: t('common.error') || 'Failed to redeploy'
+            loading: t('projectDetail.messages.buildTitle'),
+            success: t('common.success'),
+            error: t('common.error')
           }
         )
-        fetchProjects()
       }
     })
   }
@@ -132,10 +135,10 @@ const StudentProjects = () => {
       onConfirm: async () => {
         try {
           await projectsAPI.delete(id)
-          toast.success(t('common.success') || 'Project Deleted')
+          toast.success(t('common.success'))
           fetchProjects()
         } catch (error) {
-          toast.error(t('common.error') || 'Delete Failed')
+          toast.error(t('common.error'))
         }
       }
     })
@@ -218,9 +221,9 @@ const StudentProjects = () => {
                       <Cpu className="w-4 h-4" />
                       <span>{t('projectDetail.metrics.php')}</span>
                     </div>
-                    <Badge variant="secondary" className="font-mono text-[10px]">
-                      PHP {project.php_version || '8.2'}
-                    </Badge>
+                      <Badge variant="secondary" className="font-mono text-[10px]">
+                        {t('projectDetail.settings.version')} {project.php_version}
+                      </Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">

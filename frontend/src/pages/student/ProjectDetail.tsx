@@ -24,7 +24,7 @@ import {
   Save,
   Copy
 } from 'lucide-react'
-import { projectsAPI } from '../../services/api'
+import { projectsAPI, databaseAPI } from '../../services/api'
 import { Project, ProjectStats } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseManager from './DatabaseManager'
@@ -45,6 +45,7 @@ function StatusIndicator({ status }: { status: string }) {
   const styles: Record<string, any> = {
     running: { color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20', label: t('status.running') },
     building: { color: 'text-blue-500 bg-blue-500/10 border-blue-500/20', label: t('status.building'), pulse: true },
+    queued: { color: 'text-purple-500 bg-purple-500/10 border-purple-500/20', label: t('status.queued') || 'Queued' },
     failed: { color: 'text-rose-500 bg-rose-500/10 border-rose-500/20', label: t('status.failed') },
     pending: { color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', label: t('status.pending') },
     stopped: { color: 'text-slate-500 bg-slate-500/10 border-slate-500/20 dark:text-slate-400', label: t('status.stopped') },
@@ -94,6 +95,7 @@ function StudentProjectDetail() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
+  const [credentials, setCredentials] = useState<any>(null)
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -131,6 +133,9 @@ function StudentProjectDetail() {
     if (activeTab === 'environment') {
       fetchEnv()
     }
+    if (activeTab === 'database') {
+      fetchCredentials()
+    }
   }, [activeTab, id])
 
   const fetchProject = async () => {
@@ -138,13 +143,13 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.get(id)
       setProject(response.data)
-      setConsecutiveErrors(0) 
+      setConsecutiveErrors(0)
     } catch (error: any) {
       if (error.response?.status === 401) {
         navigate('/login')
         return
       }
-      
+
       if (error.response?.status === 404) {
         toast.error(t('projectDetail.messages.notFound') || 'Project not found')
         navigate('/projects')
@@ -152,7 +157,7 @@ function StudentProjectDetail() {
       }
 
       setConsecutiveErrors(prev => prev + 1)
-      
+
       toast.error(t('common.error'), {
         id: 'project-load-error',
         description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
@@ -193,6 +198,14 @@ function StudentProjectDetail() {
     }
   }
 
+  const fetchCredentials = async () => {
+    if (!id) return
+    try {
+       const response = await databaseAPI.getCredentials(id)
+       setCredentials(response.data)
+    } catch (error) {}
+  }
+
   const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!id || !consoleCommand.trim()) return
@@ -221,11 +234,12 @@ function StudentProjectDetail() {
       confirmText: t('projectDetail.actions.redeploy'),
       isOpen: true,
       onConfirm: () => {
+        setProject(prev => prev ? ({ ...prev, status: 'queued' }) : null)
         toast.promise(
           projectsAPI.redeploy(id),
           {
             loading: t('common.loading'),
-            success: t('projectDetail.actions.redeploy') + ' started',
+            success: t('projectDetail.actions.redeployStarted'),
             error: t('common.error'),
           }
         )
@@ -236,7 +250,7 @@ function StudentProjectDetail() {
   const handleUpdatePHP = async (newVersion: string | null) => {
     if (!id || !newVersion) return
     setConfirmModal({
-      title: `Update PHP to ${newVersion}?`,
+      title: t('projectDetail.messages.updatePHPConfirm', { version: newVersion }),
       message: t('projectDetail.messages.redeployDesc'),
       type: 'warning',
       confirmText: t('common.confirm'),
@@ -273,11 +287,11 @@ function StudentProjectDetail() {
     try {
       await projectsAPI.update(id, { queue_enabled: checked })
       setProject(prev => prev ? ({ ...prev, queue_enabled: checked }) : null)
-      
-      const message = checked 
-        ? t('projectDetail.messages.queueEnabled') 
+
+      const message = checked
+        ? t('projectDetail.messages.queueEnabled')
         : t('projectDetail.messages.queueDisabled')
-        
+
       toast.success(message)
       projectsAPI.redeploy(id).then(() => fetchProject())
     } catch (error) {
@@ -395,13 +409,13 @@ function StudentProjectDetail() {
         <MetricCard
           title={t('projectDetail.metrics.memory')}
           value={stats ? `${stats.memory_mb.toFixed(0)} MB` : '0 MB'}
-          subtext={`of ${stats?.memory_max_mb?.toFixed(0) || 512} MB`}
+          subtext={t('projectDetail.metrics.unitOf', { total: stats?.memory_max_mb?.toFixed(0) || 512, unit: 'MB' })}
           colorClass="text-emerald-500"
           icon={Activity}
         />
         <MetricCard
           title={t('projectDetail.metrics.php')}
-          value={project.php_version?.replace('.dynamic', '') || '...'}
+          value={project.php_version ? `PHP ${project.php_version.replace('.dynamic', '')}` : '...'}
           subtext={project.is_manual_version ? t('projectDetail.metrics.customRuntime') : t('projectDetail.metrics.standardRuntime')}
           icon={Zap}
         />
@@ -480,7 +494,7 @@ function StudentProjectDetail() {
                     <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.runtime')}</label>
                     <div className="flex items-center gap-1.5 font-bold text-xs uppercase">
                       <Zap className="w-3 h-3 text-amber-500" />
-                      {project.laravel_version || 'Laravel 10'}
+                      {project.laravel_version ? project.laravel_version : 'Laravel 10'}
                     </div>
                   </div>
                 </div>
@@ -513,7 +527,7 @@ function StudentProjectDetail() {
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
                 </div>
                 <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
-                  <TerminalIcon className="w-3.5 h-3.5" /> Artisan Shell
+                  <TerminalIcon className="w-3.5 h-3.5" /> {t('projectDetail.console.header')}
                 </div>
               </div>
               <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-500 hover:text-white">{t('projectDetail.actions.clear')}</Button>
@@ -535,7 +549,7 @@ function StudentProjectDetail() {
                   <p className="uppercase tracking-[0.3em] font-bold">{t('projectDetail.console.terminalReady')}</p>
                 </div>
               )}
-              {isExecuting && <div className="mt-4 flex items-center gap-2 text-primary animate-pulse"><RefreshCw className="w-3 h-3 animate-spin" /> {t('common.executing')}...</div>}
+              {isExecuting && <div className="mt-4 flex items-center gap-2 text-primary animate-pulse"><RefreshCw className="w-3 h-3 animate-spin" /> {t('common.executing')}</div>}
               <div ref={logsEndRef} />
             </div>
 
@@ -616,10 +630,10 @@ function StudentProjectDetail() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <CredentialRow label="Host" value="paas-mysql.cluster.local" />
-                  <CredentialRow label="Schema" value={project.database_name || '...'} />
-                  <CredentialRow label="Username" value={project.database_name || '...'} />
-                  <CredentialRow label="Password" value={project.database_name || '...'} isSecret />
+                  <CredentialRow label="Host" value={credentials?.host || "paas-mysql.cluster.local"} />
+                  <CredentialRow label="Schema" value={credentials?.database || project.database_name || '...'} />
+                  <CredentialRow label="Username" value={credentials?.username || project.database_name || '...'} />
+                  <CredentialRow label="Password" value={credentials?.password || project.database_name || '...'} isSecret />
                 </div>
               </CardContent>
             </Card>
@@ -631,7 +645,7 @@ function StudentProjectDetail() {
           <Card className="bg-black text-zinc-300 border-zinc-800 overflow-hidden flex flex-col h-[600px] gap-0 py-0">
             <CardHeader className="bg-zinc-900 px-4 py-3 border-b border-white/10 flex flex-row items-center justify-between">
               <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-primary" /> Active Logs Stream
+                <Activity className="w-3.5 h-3.5 text-primary" /> {t('projectDetail.logs.header')}
               </div>
               <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6"><RefreshCw size={12} /></Button>
             </CardHeader>
@@ -705,15 +719,15 @@ function StudentProjectDetail() {
                 <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl border">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                       <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono font-bold text-primary border border-primary/10">php artisan queue:work</code>
+                      <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono font-bold text-primary border border-primary/10">php artisan queue:work</code>
                     </div>
                     <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.settings.queueHandles')}</p>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className={cn(
                       "text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border transition-colors whitespace-nowrap",
-                      project.queue_enabled 
-                        ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" 
+                      project.queue_enabled
+                        ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
                         : "text-muted-foreground bg-muted/50 border-transparent"
                     )}>
                       {project.queue_enabled ? t('common.enabled') : t('common.disabled')}
@@ -734,9 +748,10 @@ function StudentProjectDetail() {
 }
 
 function CredentialRow({ label, value, isSecret = false }: { label: string, value: string, isSecret?: boolean }) {
+  const { t } = useTranslation()
   const copy = () => {
     navigator.clipboard.writeText(value)
-    toast.success(`${label} copied`)
+    toast.success(t('common.copySuccess'))
   }
 
   return (
