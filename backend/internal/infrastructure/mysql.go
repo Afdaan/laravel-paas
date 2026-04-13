@@ -24,7 +24,7 @@ func NewMySQLService() *MySQLService {
 }
 
 // CreateDatabase creates a MySQL database and matching user for a student project
-func (s *MySQLService) CreateDatabase(dbName string) error {
+func (s *MySQLService) CreateDatabase(dbName, password string) error {
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
 
 	// Step 1: Create the database
@@ -37,11 +37,12 @@ func (s *MySQLService) CreateDatabase(dbName string) error {
 	}
 
 	// Step 2: Create user with matching credentials and grant full access
+	// We use ALTER USER ... IDENTIFIED BY ... to update password if user already exists
 	res, err = utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf(
-			"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;",
-			dbName, dbName, dbName, dbName,
+			"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;",
+			dbName, password, dbName, password, dbName, dbName,
 		))
 
 	if err != nil {

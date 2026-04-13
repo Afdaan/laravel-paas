@@ -17,6 +17,7 @@ import (
 	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/services"
 	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
@@ -374,7 +375,13 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	w.projectRepo.Update(project)
 
 	// Step 3: Create student database
-	if err := w.mysqlService.CreateDatabase(project.DatabaseName); err != nil {
+	// Generate a unique crypto-random password if not already set
+	if project.DatabasePassword == "" {
+		project.DatabasePassword = utils.GeneratePassword(16)
+		w.projectRepo.Update(project)
+	}
+
+	if err := w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword); err != nil {
 		w.updateProjectError(project, "Failed to create database: "+err.Error())
 		return
 	}
@@ -399,22 +406,19 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	memoryLimit := memoryMB + "m"
 
 	// Start deployment process
-	containerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit)
+	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit)
 
 	if err != nil {
 		w.updateProjectError(project, "Failed to deploy container: "+err.Error())
 		return
 	}
 
-	project.Status = models.StatusRunning
-	project.ContainerID = &containerID
-	w.projectRepo.Update(project)
-	w.projectService.InvalidateSubdomainCache(project.Subdomain)
-
 	// Step 5: Run database migrations
 	slog.Info("Running database migrations", "subdomain", project.Subdomain)
-	if output, err := w.dockerService.RunMigrations(containerID); err != nil {
+	if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 		slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
+		// Cleanup failed new container
+		w.dockerService.RemoveContainer(newContainerID)
 		w.updateProjectError(project, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
 		return
 	}
@@ -422,20 +426,31 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Sync Redis Proxy Cache
 	w.projectService.CacheSubdomainMapping(project)
 
-	// Sync config to remote Nginx
+	// Step 6: Sync config to remote Nginx
 	if err := w.nginxService.SyncProject(project, projectDomain); err != nil {
+		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
+		// Cleanup failed new container
+		w.dockerService.RemoveContainer(newContainerID)
 		w.updateProjectError(project, "Failed to sync Nginx configuration: "+err.Error())
 		return
 	}
+
+	// Step 7: SUCCESS! Finalize and Cleanup Old version
+	project.Status = models.StatusRunning
+	project.ContainerID = &newContainerID
+	w.projectRepo.Update(project)
+	w.projectService.InvalidateSubdomainCache(project.Subdomain)
+
+	// Sync Redis Proxy Cache (again with new ID/Status)
+	w.projectService.CacheSubdomainMapping(project)
 
 	// Cleanup old container after successful switch
 	if oldContainerID != nil {
 		go func() {
 			// Wait for the new container to become healthy before removing the old one
-			// This gives Traefik time to switch traffic
 			maxWait := 30
 			for i := 0; i < maxWait; i++ {
-				if w.dockerService.IsContainerHealthy(containerID) {
+				if w.dockerService.IsContainerHealthy(newContainerID) {
 					slog.Info("New container is healthy, switching traffic and cleaning up old container", "subdomain", project.Subdomain)
 					time.Sleep(2 * time.Second) // Extra buffer for Traefik synchronization
 					break

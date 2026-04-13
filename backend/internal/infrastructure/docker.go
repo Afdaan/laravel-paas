@@ -222,7 +222,7 @@ QUEUE_CONNECTION=sync
 		project.Subdomain, projectDomain,
 		project.DatabaseName,
 		project.DatabaseName,
-		project.DatabaseName,
+		project.DatabasePassword,
 	)
 
 	// Set QUEUE_CONNECTION dynamically
