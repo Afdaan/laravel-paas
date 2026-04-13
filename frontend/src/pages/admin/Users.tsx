@@ -18,7 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  Lock
+  Lock,
+  Globe,
+  Clock,
+  Activity
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +36,38 @@ interface ImportResults {
   total: number;
   created: any[];
   errors: string[];
+}
+
+// ===========================================
+// Helpers
+// ===========================================
+
+/**
+ * Formats a date string into a human-readable "time ago" format.
+ * Relies on the provided translation function for i18n support.
+ */
+const formatTimeAgo = (dateStr: string | undefined, t: (key: string, options?: any) => string) => {
+  if (!dateStr) return '-'
+  
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  
+  if (diffInSeconds < 60) return t('common.justNow')
+  
+  if (diffInSeconds < 3600) {
+    return t('admin.users.minutesAgo', { count: Math.floor(diffInSeconds / 60) })
+  }
+  
+  if (diffInSeconds < 86400) {
+    return t('admin.users.hoursAgo', { count: Math.floor(diffInSeconds / 3600) })
+  }
+  
+  if (diffInSeconds < 2592000) {
+    return t('admin.users.daysAgo', { count: Math.floor(diffInSeconds / 86400) })
+  }
+  
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const AdminUsers = () => {
@@ -259,20 +294,27 @@ const AdminUsers = () => {
               <TableRow>
                 <TableHead>{t('common.name')}</TableHead>
                 <TableHead>{t('admin.users.roleLabel')}</TableHead>
-                <TableHead>{t('common.date')}</TableHead>
+                <TableHead>
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-3.5 h-3.5" />
+                    {t('admin.users.activityLabel')}
+                  </div>
+                </TableHead>
+                <TableHead>{t('admin.users.lastLoginLabel')}</TableHead>
+                <TableHead>{t('admin.users.accessFromLabel')}</TableHead>
                 <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground font-medium uppercase tracking-widest text-xs">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground font-medium uppercase tracking-widest text-xs">
                     {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : (!users || users.length === 0) ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                     {t('common.noData')}
                   </TableCell>
                 </TableRow>
@@ -305,9 +347,41 @@ const AdminUsers = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {new Date(user.created_at || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <div className="flex items-center gap-2 text-xs font-semibold">
+                      <div className={`w-2 h-2 rounded-full ${
+                        user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) 
+                        ? 'bg-emerald-500 animate-pulse' 
+                        : 'bg-slate-300'
+                      }`} />
+                      <span className={user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) ? 'text-emerald-600' : 'text-slate-500'}>
+                        {formatTimeAgo(user.last_activity, t)}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-xs font-medium">
+                        <Clock className="w-3 h-3 text-muted-foreground" />
+                        {user.last_login ? new Date(user.last_login).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <Calendar className="w-3 h-3" />
+                        {t('admin.users.joined')} {new Date(user.created_at || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-xs font-mono font-medium">
+                        <Shield className="w-3 h-3 text-muted-foreground" />
+                        {user.last_ip || '-'}
+                      </div>
+                      {user.last_location && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <Globe className="w-3 h-3" />
+                          {user.last_location}
+                        </div>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">

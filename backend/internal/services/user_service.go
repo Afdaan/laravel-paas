@@ -7,6 +7,9 @@ package services
 
 import (
 	"log/slog"
+	"net/http"
+	"encoding/json"
+	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/models"
@@ -168,5 +171,74 @@ func (s *UserService) InitializeSuperAdmin(name, email, password string) (*model
 	}
 
 	return user, nil
+}
+
+// UpdateActivity updates LastActivity and optionally LastIP/LastLocation
+func (s *UserService) UpdateActivity(userID uint, ip string, forceLoginUpdate bool) {
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return
+	}
+
+	now := time.Now()
+	
+	// Throttling: only update activity if at least 5 minutes have passed
+	// This reduces unnecessary database writes on every API call
+	shouldUpdateActivity := forceLoginUpdate
+	if user.LastActivity == nil || now.Sub(*user.LastActivity) > 5*time.Minute {
+		shouldUpdateActivity = true
+	}
+
+	if shouldUpdateActivity {
+		user.LastActivity = &now
+		if forceLoginUpdate {
+			user.LastLogin = &now
+			user.LastIP = ip
+			
+			// Attempt to detect location asynchronously
+			go func(uID uint, userIP string) {
+				location := s.detectLocation(userIP)
+				if location != "" {
+					u, err := s.userRepo.GetByID(uID)
+					if err == nil {
+						u.LastLocation = location
+						s.userRepo.Update(u)
+					}
+				}
+			}(user.ID, ip)
+		}
+		s.userRepo.Update(user)
+	}
+}
+
+// detectLocation fetches location data from a public IP API
+func (s *UserService) detectLocation(ip string) string {
+	if ip == "127.0.0.1" || ip == "::1" || ip == "" {
+		return "Localhost"
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	// ip-api.com returns a simple JSON for location lookup
+	resp, err := client.Get("http://ip-api.com/json/" + ip + "?fields=status,message,country,city")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Status  string `json:"status"`
+		Country string `json:"country"`
+		City    string `json:"city"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ""
+	}
+
+	if result.Status == "success" {
+		return result.City + ", " + result.Country
+	}
+
+	return ""
 }
 

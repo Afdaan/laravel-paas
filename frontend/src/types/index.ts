@@ -3,6 +3,10 @@ export interface User {
   name: string;
   email: string;
   role: 'student' | 'admin' | 'superadmin';
+  last_login?: string;
+  last_activity?: string;
+  last_ip?: string;
+  last_location?: string;
   created_at?: string;
 }
 

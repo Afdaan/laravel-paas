@@ -17,15 +17,17 @@ import (
 
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	service *services.AuthService
-	cfg     *config.Config
+	service     *services.AuthService
+	userService *services.UserService
+	cfg         *config.Config
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(service *services.AuthService, cfg *config.Config) *AuthHandler {
+func NewAuthHandler(service *services.AuthService, cfg *config.Config, userService *services.UserService) *AuthHandler {
 	return &AuthHandler{
-		service: service,
-		cfg:     cfg,
+		service:     service,
+		userService: userService,
+		cfg:         cfg,
 	}
 }
 
@@ -55,6 +57,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+
+	// Track login activity
+	go h.userService.UpdateActivity(user.ID, c.IP(), true)
 
 	return c.JSON(fiber.Map{
 		"token": token,

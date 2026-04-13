@@ -75,7 +75,7 @@ func Setup(
 	api := app.Group("/api")
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(authService, cfg)
+	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
 	userHandler := handlers.NewUserHandler(userService)
 	projectHandler := handlers.NewProjectHandler(cfg, redisService, projectService, userService)
 	settingHandler := handlers.NewSettingHandler(settingService)
@@ -102,7 +102,7 @@ func Setup(
 	// -----------------------------
 	// Protected Routes
 	// -----------------------------
-	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService))
+	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService))
 	
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)

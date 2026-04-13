@@ -19,8 +19,13 @@ type Blacklister interface {
 	IsBlacklisted(token string) bool
 }
 
+// ActivityTracker abstraction
+type ActivityTracker interface {
+	UpdateActivity(userID uint, ip string, forceLoginUpdate bool)
+}
+
 // JWTAuth middleware validates JWT tokens and checks against Redis blacklist
-func JWTAuth(secret string, redis Blacklister) fiber.Handler {
+func JWTAuth(secret string, redis Blacklister, tracker ActivityTracker) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Get token from Authorization header
 		authHeader := c.Get("Authorization")
@@ -60,6 +65,11 @@ func JWTAuth(secret string, redis Blacklister) fiber.Handler {
 		c.Locals("email", claims.Email)
 		c.Locals("role", claims.Role)
 		c.Locals("token", tokenString)
+
+		// Update activity (non-blocking)
+		if tracker != nil {
+			go tracker.UpdateActivity(claims.UserID, c.IP(), false)
+		}
 
 		return c.Next()
 	}

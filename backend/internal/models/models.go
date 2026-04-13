@@ -34,6 +34,10 @@ type User struct {
 	CreatedBy *uint          `json:"created_by,omitempty"`
 	Creator   *User          `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
 	Projects  []Project      `gorm:"foreignKey:UserID" json:"projects,omitempty"`
+	LastLogin    *time.Time     `json:"last_login,omitempty"`
+	LastActivity *time.Time     `json:"last_activity,omitempty"`
+	LastIP       string         `gorm:"size:45" json:"last_ip,omitempty"`
+	LastLocation string         `gorm:"size:255" json:"last_location,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
