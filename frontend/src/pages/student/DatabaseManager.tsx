@@ -169,7 +169,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          const url = window.URL.createObjectURL(blob)
          const a = document.createElement('a')
          a.href = url
-         a.download = `${project?.db_name || 'database'}_dump.sql`
+         a.download = `${project?.database_name || 'database'}_dump.sql`
          a.click()
          toast.success(t('databaseManager.backupSuccess'))
       } catch (err) {
@@ -245,7 +245,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      {t('databaseManager.title')}
                   </h1>
                   <p className="text-muted-foreground mt-2 font-mono text-xs uppercase tracking-widest">
-                     {t('databaseManager.schema')}: <span className="text-primary font-bold">{project?.db_name}</span>
+                     {t('databaseManager.schema')}: <span className="text-primary font-bold">{project?.database_name}</span>
                   </p>
                </div>
                <div className="flex gap-3">

@@ -46,7 +46,7 @@ export default function Databases() {
 
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.db_name?.toLowerCase().includes(search.toLowerCase())
+    p.database_name?.toLowerCase().includes(search.toLowerCase())
   )
 
   const selectedProject = projects.find(p => p.id === Number(selectedProjectId))
@@ -131,7 +131,7 @@ export default function Databases() {
                      </div>
                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-medium uppercase tracking-tight truncate">
                        <Terminal className="w-3 h-3 text-primary/50 group-hover:text-primary" />
-                       db_{p.db_name || '...'}
+                       db_{p.database_name || '...'}
                      </div>
                    </button>
                  ))

@@ -24,7 +24,7 @@ import {
   Save,
   Copy
 } from 'lucide-react'
-import { projectsAPI } from '../../services/api'
+import { projectsAPI, databaseAPI } from '../../services/api'
 import { Project, ProjectStats } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseManager from './DatabaseManager'
@@ -95,6 +95,7 @@ function StudentProjectDetail() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
+  const [credentials, setCredentials] = useState<any>(null)
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -131,6 +132,9 @@ function StudentProjectDetail() {
   useEffect(() => {
     if (activeTab === 'environment') {
       fetchEnv()
+    }
+    if (activeTab === 'database') {
+      fetchCredentials()
     }
   }, [activeTab, id])
 
@@ -192,6 +196,14 @@ function StudentProjectDetail() {
     } catch (error) {
       toast.error(t('common.error'))
     }
+  }
+
+  const fetchCredentials = async () => {
+    if (!id) return
+    try {
+       const response = await databaseAPI.getCredentials(id)
+       setCredentials(response.data)
+    } catch (error) {}
   }
 
   const handleConsoleSubmit = async (e: React.FormEvent) => {
@@ -618,10 +630,10 @@ function StudentProjectDetail() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <CredentialRow label="Host" value="paas-mysql.cluster.local" />
-                  <CredentialRow label="Schema" value={project.database_name || '...'} />
-                  <CredentialRow label="Username" value={project.database_name || '...'} />
-                  <CredentialRow label="Password" value={project.database_name || '...'} isSecret />
+                  <CredentialRow label="Host" value={credentials?.host || "paas-mysql.cluster.local"} />
+                  <CredentialRow label="Schema" value={credentials?.database || project.database_name || '...'} />
+                  <CredentialRow label="Username" value={credentials?.username || project.database_name || '...'} />
+                  <CredentialRow label="Password" value={credentials?.password || project.database_name || '...'} isSecret />
                 </div>
               </CardContent>
             </Card>

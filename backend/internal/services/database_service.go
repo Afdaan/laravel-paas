@@ -68,8 +68,8 @@ func (s *DatabaseService) ConnectToProjectDB(dbName string) (*sql.DB, error) {
 		db.Close()
 	}
 
-	dsn := fmt.Sprintf("%s:%s@tcp(paas-mysql:3306)/%s?parseTime=true",
-		dbName, dbName, dbName,
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+		dbName, dbName, s.cfg.MYSQLHost, s.cfg.MYSQLPort, dbName,
 	)
 
 	db, err := sql.Open("mysql", dsn)
