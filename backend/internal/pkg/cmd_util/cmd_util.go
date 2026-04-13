@@ -4,7 +4,7 @@
 // Provides timeout-safe wrappers for os/exec
 // to prevent goroutine leaks from hung processes
 // ===========================================
-package cmdutil
+package cmd_util
 
 import (
 	"bytes"

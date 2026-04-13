@@ -15,7 +15,7 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/stringutil"
+	"github.com/laravel-paas/backend/internal/pkg/string_util"
 	"github.com/laravel-paas/backend/internal/repositories"
 )
 
@@ -181,7 +181,7 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
 	}
 
-	subdomain := stringutil.GenerateSubdomain(name)
+	subdomain := string_util.GenerateSubdomain(name)
 
 	dbName := databaseName
 	if dbName == "" {

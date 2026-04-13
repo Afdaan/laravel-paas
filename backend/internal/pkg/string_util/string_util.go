@@ -4,7 +4,7 @@
 // Centralized helpers for string generation
 // used across multiple services
 // ===========================================
-package stringutil
+package string_util
 
 import (
 	"crypto/rand"

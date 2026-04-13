@@ -23,7 +23,7 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/cmdutil"
+	"github.com/laravel-paas/backend/internal/pkg/cmd_util"
 )
 
 // DockerService handles all Docker operations
@@ -315,11 +315,11 @@ func (s *DockerService) PruneImages() error {
 	slog.Info("Starting Docker image pruning")
 	
 	// 1. Remove dangling images (<none>)
-	cmdutil.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
+	cmd_util.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
 
 	// 2. Also remove unused project images (those with our label)
 	filter := fmt.Sprintf("label=%s=true", models.LabelProjectManaged)
-	cmdutil.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter)
+	cmd_util.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter)
 	
 	return nil
 }
