@@ -65,12 +65,12 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	}
 
 	// Copy nginx and supervisor configs
-	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "infrastructure.conf"),
-		filepath.Join(projectPath, "docker", "infrastructure.conf")); err != nil {
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
+		filepath.Join(projectPath, "docker", "nginx.conf")); err != nil {
 		// Create docker directory if needed
 		os.MkdirAll(filepath.Join(projectPath, "docker"), 0755)
-		s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "infrastructure.conf"),
-			filepath.Join(projectPath, "docker", "infrastructure.conf"))
+		s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
+			filepath.Join(projectPath, "docker", "nginx.conf"))
 	}
 	s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"),
 		filepath.Join(projectPath, "docker", "supervisord.conf"))
