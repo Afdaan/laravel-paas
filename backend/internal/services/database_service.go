@@ -1,7 +1,7 @@
 // ===========================================
 // Database Service
 // ===========================================
-// Orhcestrates project database operations
+// Orchestrates project database operations
 // ===========================================
 package services
 
@@ -182,6 +182,11 @@ func (s *DatabaseService) GetTableData(dbName, tableName string, page, limit int
 	var total int64
 	db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName)).Scan(&total)
 
+	// Enforce maximum safety limit
+	if limit > 200 {
+		limit = 200
+	}
+
 	offset := (page - 1) * limit
 	query := fmt.Sprintf("SELECT * FROM `%s` LIMIT %d OFFSET %d", tableName, limit, offset)
 	rows, err := db.Query(query)
@@ -248,8 +253,15 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, query string) (*QueryResult, e
 
 		columns, _ := rows.Columns()
 		var data []map[string]interface{}
+		rowCount := 0
+		maxRows := 2000 // Safety cap to prevent OOM on large SELECTs
 
 		for rows.Next() {
+			if rowCount >= maxRows {
+				break
+			}
+			rowCount++
+
 			values := make([]interface{}, len(columns))
 			valuePtrs := make([]interface{}, len(columns))
 			for i := range values {
