@@ -10,12 +10,13 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"gorm.io/gorm"
+
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/handlers"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services"
-	"github.com/laravel-paas/backend/internal/infrastructure"
-	"gorm.io/gorm"
 )
 
 // Setup initializes the Fiber app with all routes
@@ -35,7 +36,7 @@ func Setup(
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
 		AppName:      "Laravel PaaS API",
-		ProxyHeader:  "X-Real-IP", // Read direct Real IP from Nginx in double-proxy setups
+		ProxyHeader:  "X-Forwarded-For", // Correctly detect client IP behind Nginx/Traefik
 	})
 
 	// ===========================================
