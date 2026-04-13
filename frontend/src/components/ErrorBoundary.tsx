@@ -17,11 +17,28 @@ class ErrorBoundary extends React.Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
+    // If it's a chunk load error (happens during new deployments), trigger a reload
+    const isChunkError = error.name === 'ChunkLoadError' || 
+                        error.message?.includes('Loading chunk') ||
+                        error.message?.includes('Failed to fetch dynamically imported module');
+    
+    if (isChunkError) {
+      const hasReloaded = sessionStorage.getItem('chunk-error-reload');
+      if (!hasReloaded) {
+        sessionStorage.setItem('chunk-error-reload', 'true');
+        window.location.reload();
+        return { hasError: false, error: null };
+      }
+    }
+
     return { hasError: true, error }
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo)
+    
+    // Clear the reload flag after a successful catch or if we didn't reload
+    setTimeout(() => sessionStorage.removeItem('chunk-error-reload'), 5000);
   }
 
   render() {
@@ -29,7 +46,8 @@ class ErrorBoundary extends React.Component<Props, State> {
       // Check if it's a potential network/deployment error
       const isNetworkError = this.state.error?.message?.includes('502') || 
                              this.state.error?.message?.includes('503') ||
-                             this.state.error?.message?.includes('Network Error');
+                             this.state.error?.message?.includes('Network Error') ||
+                             this.state.error?.message?.includes('Failed to fetch');
 
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-200 p-8">
