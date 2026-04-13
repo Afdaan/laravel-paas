@@ -66,7 +66,7 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 		"port":     3306,
 		"database": project.DatabaseName,
 		"username": project.DatabaseName,
-		"password": project.DatabaseName,
+		"password": project.DatabasePassword,
 	})
 }
 
@@ -77,7 +77,7 @@ func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(project.DatabaseName)
+	tables, err := h.databaseService.ListProjectTables(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -97,7 +97,7 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Table name required"})
 	}
 
-	columns, err := h.databaseService.GetTableStructure(project.DatabaseName, tableName)
+	columns, err := h.databaseService.GetTableStructure(project.DatabaseName, project.DatabasePassword, tableName)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -116,7 +116,7 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 
-	columns, rows, total, err := h.databaseService.GetTableData(project.DatabaseName, tableName, page, limit)
+	columns, rows, total, err := h.databaseService.GetTableData(project.DatabaseName, project.DatabasePassword, tableName, page, limit)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -146,7 +146,7 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	result, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, req.Query)
+	result, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, req.Query)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -161,7 +161,7 @@ func (h *DatabaseHandler) ExportDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	dump, err := h.databaseService.GenerateProjectDump(project.DatabaseName)
+	dump, err := h.databaseService.GenerateProjectDump(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -202,7 +202,7 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		if stmt == "" {
 			continue
 		}
-		res, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, stmt)
+		res, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, stmt)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("Error in statement: %s", err.Error()))
 		} else {
@@ -226,7 +226,7 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	dropped, err := h.databaseService.ResetProjectDatabase(project.DatabaseName)
+	dropped, err := h.databaseService.ResetProjectDatabase(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

@@ -56,7 +56,7 @@ type QueryResult struct {
 
 // ConnectToProjectDB returns a pooled connection to a student's MySQL database.
 // Connections are cached and reused across requests to avoid connection storms.
-func (s *DatabaseService) ConnectToProjectDB(dbName string) (*sql.DB, error) {
+func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, error) {
 	// Return cached connection if available and healthy
 	if cached, ok := s.pool.Load(dbName); ok {
 		db := cached.(*sql.DB)
@@ -69,7 +69,7 @@ func (s *DatabaseService) ConnectToProjectDB(dbName string) (*sql.DB, error) {
 	}
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
-		dbName, dbName, s.cfg.MYSQLHost, s.cfg.MYSQLPort, dbName,
+		dbName, password, s.cfg.MYSQLHost, s.cfg.MYSQLPort, dbName,
 	)
 
 	db, err := sql.Open("mysql", dsn)
@@ -87,8 +87,8 @@ func (s *DatabaseService) ConnectToProjectDB(dbName string) (*sql.DB, error) {
 }
 
 // ListProjectTables returns metadata for all tables in a project database
-func (s *DatabaseService) ListProjectTables(dbName string) ([]TableInfo, error) {
-	db, err := s.ConnectToProjectDB(dbName)
+func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInfo, error) {
+	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +129,8 @@ func (s *DatabaseService) ListProjectTables(dbName string) ([]TableInfo, error) 
 }
 
 // GetTableStructure returns column metadata for a specific table
-func (s *DatabaseService) GetTableStructure(dbName, tableName string) ([]ColumnInfo, error) {
-	db, err := s.ConnectToProjectDB(dbName)
+func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) ([]ColumnInfo, error) {
+	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
 		return nil, err
 	}
@@ -168,12 +168,12 @@ func (s *DatabaseService) GetTableStructure(dbName, tableName string) ([]ColumnI
 }
 
 // GetTableData supports paginated data retrieval from a table
-func (s *DatabaseService) GetTableData(dbName, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
+func (s *DatabaseService) GetTableData(dbName, password, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
 	if !s.isValidIdentifier(tableName) {
 		return nil, nil, 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters or exceeds length limit")
 	}
 
-	db, err := s.ConnectToProjectDB(dbName)
+	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -223,7 +223,7 @@ func (s *DatabaseService) GetTableData(dbName, tableName string, page, limit int
 }
 
 // ExecuteRawQuery runs a manual SQL query against a project database
-func (s *DatabaseService) ExecuteRawQuery(dbName, query string) (*QueryResult, error) {
+func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*QueryResult, error) {
 	query = strings.TrimSpace(query)
 	upperQuery := strings.ToUpper(query)
 
@@ -235,7 +235,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, query string) (*QueryResult, e
 		return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
 	}
 
-	db, err := s.ConnectToProjectDB(dbName)
+	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
 		return nil, err
 	}
@@ -302,8 +302,8 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, query string) (*QueryResult, e
 }
 
 // GenerateProjectDump creates a logical SQL export for a project database
-func (s *DatabaseService) GenerateProjectDump(dbName string) (string, error) {
-	db, err := s.ConnectToProjectDB(dbName)
+func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, error) {
+	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
 		return "", err
 	}
@@ -365,8 +365,8 @@ func (s *DatabaseService) GenerateProjectDump(dbName string) (string, error) {
 }
 
 // ResetProjectDatabase drops all system tables in a project database
-func (s *DatabaseService) ResetProjectDatabase(dbName string) (int, error) {
-	db, err := s.ConnectToProjectDB(dbName)
+func (s *DatabaseService) ResetProjectDatabase(dbName, password string) (int, error) {
+	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
 		return 0, err
 	}
