@@ -35,6 +35,7 @@ func Setup(
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
 		AppName:      "Laravel PaaS API",
+		ProxyHeader:  "X-Real-IP", // Read direct Real IP from Nginx in double-proxy setups
 	})
 
 	// ===========================================
