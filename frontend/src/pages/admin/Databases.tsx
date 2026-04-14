@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -116,36 +116,39 @@ const AdminDatabases = () => {
         </div>
       </div>
 
-      <Card>
-        <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative flex-1 w-full max-w-2xl">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder={t('common.search')}
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              className="pl-9"
-            />
+      <Card className="gap-0 py-0">
+        <CardHeader className="border-b py-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="relative flex-1 w-full max-w-2xl">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder={t('common.search')}
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
+                className="pl-9"
+              />
+            </div>
+
+            <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading}>
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
+        </CardHeader>
 
-          <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading}>
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-
-        <div className="overflow-x-auto min-h-[400px]">
-          <Table>
+        <CardContent className="px-0">
+          <div className="overflow-x-auto">
+          <Table className="min-w-[1080px] table-fixed">
             <TableHeader>
-              <TableRow>
-                <TableHead>{t('admin.databases.identity')}</TableHead>
-                <TableHead>{t('common.student')}</TableHead>
-                <TableHead>{t('admin.databases.connection')}</TableHead>
-                <TableHead>{t('admin.databases.tables')}</TableHead>
-                <TableHead>{t('common.size')}</TableHead>
-                <TableHead className="text-right">{t('common.actions')}</TableHead>
+              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                <TableHead className="h-12 w-[32%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('admin.databases.identity')}</TableHead>
+                <TableHead className="h-12 w-[16%] px-4 text-xs font-semibold uppercase tracking-wider">{t('common.student')}</TableHead>
+                <TableHead className="h-12 w-[20%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.databases.connection')}</TableHead>
+                <TableHead className="h-12 w-[10%] px-4 text-center text-xs font-semibold uppercase tracking-wider whitespace-nowrap">{t('admin.databases.tables')}</TableHead>
+                <TableHead className="h-12 w-[12%] px-4 text-center text-xs font-semibold uppercase tracking-wider whitespace-nowrap">{t('common.size')}</TableHead>
+                <TableHead className="h-12 w-[10%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -167,54 +170,54 @@ const AdminDatabases = () => {
                   </TableCell>
                 </TableRow>
               ) : paginatedDatabases.map((db) => (
-                <TableRow key={db.project_id}>
-                  <TableCell>
+                <TableRow key={db.project_id} className="hover:bg-muted/20">
+                  <TableCell className="pl-6 pr-4 py-3">
                     <div className="flex items-center gap-4">
                       <div className={`w-10 h-10 rounded-lg border flex items-center justify-center ${db.status === 'running' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted/30 text-muted-foreground border-border'
                         }`}>
                         <Database className="w-5 h-5" />
                       </div>
-                      <div className="flex flex-col justify-center">
-                        <span className="text-sm font-semibold truncate max-w-[200px]">{db.database_name}</span>
+                      <div className="flex flex-col justify-center min-w-0">
+                        <span className="text-sm font-semibold truncate max-w-[220px]">{db.database_name}</span>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-0.5">
                           {t('admin.databases.mysqlInstance')}
                         </span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center text-muted-foreground">
                         <User className="w-4 h-4" />
                       </div>
-                      <div className="flex flex-col justify-center">
-                        <span className="text-xs font-bold uppercase tracking-tight">{db.student_name}</span>
+                      <div className="flex flex-col justify-center min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-tight truncate max-w-[160px]">{db.student_name}</span>
                         <span className="text-[10px] text-muted-foreground uppercase mt-0.5">{t('common.student')}</span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex flex-col items-start gap-1.5">
-                       <span className="text-sm font-medium">{db.project_name}</span>
+                       <span className="text-sm font-medium truncate max-w-[220px]">{db.project_name}</span>
                        <StatusBadge status={db.status} t={t} />
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <TableCell className="px-4 py-3 text-center whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1.5 text-sm font-medium rounded-md border border-border/70 px-2 py-1">
                        <Layers className="w-4 h-4 text-muted-foreground" />
                        {db.table_count}
-                    </div>
+                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <TableCell className="px-4 py-3 text-center whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1.5 text-sm font-medium rounded-md border border-border/70 px-2 py-1">
                        <HardDrive className="w-4 h-4 text-muted-foreground" />
                        {db.size}
-                    </div>
+                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
+                  <TableCell className="pl-4 pr-6 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
                       <Link to={`/projects/${db.project_id}/database`}>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" className="h-8">
                            {t('admin.databases.manage')}
                         </Button>
                       </Link>
@@ -230,25 +233,21 @@ const AdminDatabases = () => {
             </TableBody>
           </Table>
         </div>
+        </CardContent>
 
-        {totalPages > 1 && (
-          <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/10">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-              <Info className="w-4 h-4 text-primary" />
-              {t('admin.databases.summary', { 
-                start: (page - 1) * limit + 1,
-                end: Math.min(page * limit, total),
-                total: total 
-              })}
-            </div>
-
-            <div className="flex-1" />
-
+        {totalPages > 0 && (
+          <CardFooter className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/10">
             <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                <Info className="w-4 h-4 text-primary" />
+                {t('admin.databases.summary', { 
+                  start: (page - 1) * limit + 1,
+                  end: Math.min(page * limit, total),
+                  total: total 
+                })}
+              </div>
               <div className="flex items-center space-x-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mr-1">
-                  {t('common.rowsPerPage')}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common.rowsPerPage') || 'Rows per page'}</p>
                 <Select
                   value={limit.toString()}
                   onValueChange={(value) => {
@@ -256,12 +255,20 @@ const AdminDatabases = () => {
                     setPage(1)
                   }}
                 >
-                  <SelectTrigger className="h-8 w-[70px] bg-background">
+                  <SelectTrigger size="sm" className="h-8 w-[82px] justify-between">
                     <SelectValue placeholder={limit} />
                   </SelectTrigger>
-                  <SelectContent side="top">
-                    {[10, 20, 30, 50, 100].map((pageSize) => (
-                      <SelectItem key={pageSize} value={`${pageSize}`}>
+                  <SelectContent
+                    side="top"
+                    align="end"
+                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                  >
+                    {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
+                      <SelectItem
+                        key={pageSize}
+                        value={`${pageSize}`}
+                        className="rounded-md py-1.5 px-2 text-sm"
+                      >
                         {pageSize}
                       </SelectItem>
                     ))}
@@ -269,45 +276,50 @@ const AdminDatabases = () => {
                 </Select>
               </div>
             </div>
-
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                className="h-8 w-8 p-0"
-                onClick={() => setPage(1)}
-                disabled={page === 1}
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                className="h-8 w-8 p-0"
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="text-sm font-medium px-2">
-                {page} / {totalPages}
+            <div className="flex items-center space-x-6 lg:space-x-8">
+              <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+                Page {page} of {Math.max(1, totalPages)}
               </div>
-              <Button
-                variant="outline"
-                className="h-8 w-8 p-0"
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                className="h-8 w-8 p-0"
-                onClick={() => setPage(totalPages)}
-                disabled={page === totalPages}
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  className="hidden h-8 w-8 p-0 lg:flex"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                >
+                  <span className="sr-only">Go to first page</span>
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <span className="sr-only">Go to previous page</span>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  <span className="sr-only">Go to next page</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="hidden h-8 w-8 p-0 lg:flex"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  <span className="sr-only">Go to last page</span>
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          </div>
+          </CardFooter>
         )}
       </Card>
     </div>

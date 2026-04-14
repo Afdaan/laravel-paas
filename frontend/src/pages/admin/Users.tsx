@@ -17,11 +17,14 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CheckCircle2,
   Lock,
   Globe,
   Clock,
-  Activity
+  Activity,
+  Info
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,6 +78,7 @@ const AdminUsers = () => {
   const [users, setUsers] = useState<UserType[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(10)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [isLoading, setIsLoading] = useState(true)
@@ -94,7 +98,7 @@ const AdminUsers = () => {
     setIsLoading(true)
     try {
       const roleQuery = roleFilter === 'all' ? '' : roleFilter
-      const response = await usersAPI.list({ page, search, role: roleQuery, limit: 10 })
+      const response = await usersAPI.list({ page, search, role: roleQuery, limit })
       setUsers(response.data.data || [])
       setTotal(response.data.total || 0)
     } catch (error) {
@@ -102,7 +106,7 @@ const AdminUsers = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [page, search, roleFilter])
+  }, [page, search, roleFilter, limit, t])
 
   useEffect(() => {
     fetchUsers()
@@ -165,7 +169,7 @@ const AdminUsers = () => {
     e.target.value = ''
   }
 
-  const totalPages = Math.ceil(total / 10)
+  const totalPages = Math.ceil(total / limit)
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
@@ -289,20 +293,20 @@ const AdminUsers = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
-              <TableRow>
-                <TableHead>{t('common.name')}</TableHead>
-                <TableHead>{t('admin.users.roleLabel')}</TableHead>
-                <TableHead>
+              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                <TableHead className="h-12 w-[28%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.name')}</TableHead>
+                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.roleLabel')}</TableHead>
+                <TableHead className="h-12 w-[16%] px-4 text-xs font-semibold uppercase tracking-wider">
                   <div className="flex items-center gap-2">
                     <Activity className="w-3.5 h-3.5" />
                     {t('admin.users.activityLabel')}
                   </div>
                 </TableHead>
-                <TableHead>{t('admin.users.lastLoginLabel')}</TableHead>
-                <TableHead>{t('admin.users.accessFromLabel')}</TableHead>
-                <TableHead className="text-right">{t('common.actions')}</TableHead>
+                <TableHead className="h-12 w-[20%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.lastLoginLabel')}</TableHead>
+                <TableHead className="h-12 w-[16%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.accessFromLabel')}</TableHead>
+                <TableHead className="h-12 w-[6%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -319,8 +323,8 @@ const AdminUsers = () => {
                   </TableCell>
                 </TableRow>
               ) : users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
+                <TableRow key={user.id} className="hover:bg-muted/20">
+                  <TableCell className="pl-6 pr-4 py-3">
                     <div className="flex items-center gap-4">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${user.role === 'superadmin' ? 'bg-purple-500/10 text-purple-600' :
                           user.role === 'admin' ? 'bg-indigo-500/10 text-indigo-600' :
@@ -337,7 +341,7 @@ const AdminUsers = () => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <Badge variant="outline" className={`capitalize ${user.role === 'superadmin' ? 'text-purple-600 border-purple-500/40 bg-purple-500/10' :
                         user.role === 'admin' ? 'text-indigo-600 border-indigo-500/40 bg-indigo-500/10' :
                           'text-emerald-600 border-emerald-500/40 bg-emerald-500/10'
@@ -346,7 +350,7 @@ const AdminUsers = () => {
                       {user.role}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-2 text-xs font-semibold">
                       <div className={`w-2 h-2 rounded-full ${
                         user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) 
@@ -358,7 +362,7 @@ const AdminUsers = () => {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1.5 text-xs font-medium">
                         <Clock className="w-3 h-3 text-muted-foreground" />
@@ -370,7 +374,7 @@ const AdminUsers = () => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1.5 text-xs font-mono font-medium">
                         <Shield className="w-3 h-3 text-muted-foreground" />
@@ -384,7 +388,7 @@ const AdminUsers = () => {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="pl-4 pr-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Button variant="ghost" size="icon" onClick={() => handleEdit(user)} title={t('common.edit')}>
                         <Edit3 className="w-4 h-4" />
@@ -402,24 +406,89 @@ const AdminUsers = () => {
           </Table>
         </div>
 
-        {totalPages > 1 && (
-          <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/20">
-            <span className="text-xs font-medium text-muted-foreground">
-              {t('admin.users.paginationInfo', { start: (page - 1) * 10 + 1, end: Math.min(page * 10, total), total })}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <div className="text-sm font-semibold px-4 border rounded-md h-10 flex items-center justify-center min-w-[4rem]">
-                {page} / {totalPages}
+        {totalPages > 0 && (
+          <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/10">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                <Info className="w-4 h-4 text-primary" />
+                {t('admin.users.paginationInfo', { start: (page - 1) * limit + 1, end: Math.min(page * limit, total), total })}
               </div>
-              <Button variant="outline" size="icon" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center space-x-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common.rowsPerPage') || 'Rows per page'}</p>
+                <Select
+                  value={limit.toString()}
+                  onValueChange={(value) => {
+                    setLimit(Number(value))
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger size="sm" className="h-8 w-[82px] justify-between">
+                    <SelectValue placeholder={limit} />
+                  </SelectTrigger>
+                  <SelectContent
+                    side="top"
+                    align="end"
+                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                  >
+                    {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
+                      <SelectItem
+                        key={pageSize}
+                        value={`${pageSize}`}
+                        className="rounded-md py-1.5 px-2 text-sm"
+                      >
+                        {pageSize}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center space-x-6 lg:space-x-8">
+              <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+                Page {page} of {Math.max(1, totalPages)}
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  className="hidden h-8 w-8 p-0 lg:flex"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                >
+                  <span className="sr-only">Go to first page</span>
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <span className="sr-only">Go to previous page</span>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  <span className="sr-only">Go to next page</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="hidden h-8 w-8 p-0 lg:flex"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  <span className="sr-only">Go to last page</span>
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         )}
+
       </Card>
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
@@ -507,4 +576,3 @@ const AdminUsers = () => {
 }
 
 export default AdminUsers
-
