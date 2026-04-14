@@ -83,6 +83,7 @@ func Setup(
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
+	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects
@@ -143,6 +144,7 @@ func Setup(
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
+	admin.Get("/databases", databaseHandler.AdminListAll)
 
 	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)
@@ -167,7 +169,6 @@ func Setup(
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
