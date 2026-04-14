@@ -130,6 +130,44 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 	})
 }
 
+// DeleteTableRowRequest represents the payload for deleting a row
+type DeleteTableRowRequest struct {
+	PrimaryKey string      `json:"primary_key"`
+	Value      interface{} `json:"value"`
+}
+
+// DeleteTableRow deletes a specific row from a table
+func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
+	project, err := h.getProjectForUser(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	tableName := c.Params("table")
+	if tableName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Table name required"})
+	}
+
+	var req DeleteTableRowRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	if req.PrimaryKey == "" || req.Value == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key and value are required"})
+	}
+
+	deleted, err := h.databaseService.DeleteTableRow(project.DatabaseName, project.DatabasePassword, tableName, req.PrimaryKey, req.Value)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"deleted": deleted,
+	})
+}
+
 // ExecuteQuery runs a SQL query
 type ExecuteQueryRequest struct {
 	Query string `json:"query"`
@@ -235,4 +273,14 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 		"success": true,
 		"dropped": dropped,
 	})
+}
+
+// AdminListAll returns all student databases (Admin only)
+func (h *DatabaseHandler) AdminListAll(c *fiber.Ctx) error {
+	databases, err := h.databaseService.AdminListAllDatabases()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"databases": databases})
 }

@@ -21,8 +21,8 @@ import (
 
 // Setup initializes the Fiber app with all routes
 func Setup(
-	db *gorm.DB, 
-	cfg *config.Config, 
+	db *gorm.DB,
+	cfg *config.Config,
 	redisService *infrastructure.RedisService,
 	dockerService *infrastructure.DockerService,
 	storageService *infrastructure.StorageService,
@@ -83,6 +83,7 @@ func Setup(
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
+	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 
 	// ===========================================
 	// Subdomain Proxy for Student Projects
@@ -105,7 +106,7 @@ func Setup(
 	// Protected Routes
 	// -----------------------------
 	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService))
-	
+
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
@@ -134,15 +135,16 @@ func Setup(
 	// Admin project overview
 	admin.Get("/projects", projectHandler.ListAll)
 	admin.Get("/stats", projectHandler.AdminStats)
-	
+
 	// Feedback management (Admin)
 	admin.Get("/feedback", feedbackHandler.ListAll)
 	admin.Put("/feedback/:id/status", feedbackHandler.UpdateStatus)
 	admin.Delete("/feedback/:id", feedbackHandler.Delete)
-	
+
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
+	admin.Get("/databases", databaseHandler.AdminListAll)
 
 	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)
@@ -167,11 +169,11 @@ func Setup(
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
 	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)
+	projects.Delete("/:id/database/tables/:table/rows", databaseHandler.DeleteTableRow)
 	projects.Post("/:id/database/query", databaseHandler.ExecuteQuery)
 	projects.Get("/:id/database/export", databaseHandler.ExportDatabase)
 	projects.Post("/:id/database/import", databaseHandler.ImportDatabase)

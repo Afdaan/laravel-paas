@@ -53,3 +53,4 @@ Thumbs.db
 # Agent
 .agent/
 .agents/
+.opencode

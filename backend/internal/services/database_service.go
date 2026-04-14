@@ -54,6 +54,16 @@ type QueryResult struct {
 	Duration     string                   `json:"duration"`
 }
 
+type AdminDatabaseInfo struct {
+	ProjectID    uint   `json:"project_id"`
+	ProjectName  string `json:"project_name"`
+	StudentName  string `json:"student_name"`
+	DatabaseName string `json:"database_name"`
+	TableCount   int    `json:"table_count"`
+	Size         string `json:"size"`
+	Status       string `json:"status"`
+}
+
 // ConnectToProjectDB returns a pooled connection to a student's MySQL database.
 // Connections are cached and reused across requests to avoid connection storms.
 func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, error) {
@@ -220,6 +230,35 @@ func (s *DatabaseService) GetTableData(dbName, password, tableName string, page,
 	}
 
 	return columns, data, total, nil
+}
+
+// DeleteTableRow safely deletes a specific row from a table using a primary key
+func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn string, pkValue interface{}) (int64, error) {
+	if !s.isValidIdentifier(tableName) {
+		return 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters")
+	}
+	if !s.isValidIdentifier(pkColumn) {
+		return 0, apperr.New(400, "INVALID_COLUMN_NAME", "Column name contains invalid characters")
+	}
+
+	db, err := s.ConnectToProjectDB(dbName, password)
+	if err != nil {
+		return 0, err
+	}
+
+	query := fmt.Sprintf("DELETE FROM `%s` WHERE `%s` = ? LIMIT 1", tableName, pkColumn)
+	
+	result, err := db.Exec(query, pkValue)
+	if err != nil {
+		return 0, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return rowsAffected, nil
 }
 
 // ExecuteRawQuery runs a manual SQL query against a project database
@@ -408,4 +447,65 @@ func (s *DatabaseService) escapeSQLString(val string) string {
 	val = strings.ReplaceAll(val, "\n", "\\n")
 	val = strings.ReplaceAll(val, "\r", "\\r")
 	return val
+}
+
+// AdminListAllDatabases returns a summary of all student databases
+func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
+	var projects []struct {
+		ID               uint
+		Name             string
+		UserName         string
+		DatabaseName     string
+		DatabasePassword string
+		Status           string
+	}
+
+	err := s.db.Table("projects").
+		Select("projects.id, projects.name, users.name as user_name, projects.database_name, projects.database_password, projects.status").
+		Joins("left join users on users.id = projects.user_id").
+		Where("projects.deleted_at IS NULL").
+		Scan(&projects).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	var result []AdminDatabaseInfo
+	for _, p := range projects {
+		info := AdminDatabaseInfo{
+			ProjectID:    p.ID,
+			ProjectName:  p.Name,
+			StudentName:  p.UserName,
+			DatabaseName: p.DatabaseName,
+			Status:       p.Status,
+			TableCount:   0,
+			Size:         "0 KB",
+		}
+
+		// Try to get quick stats from information_schema
+		db, err := s.ConnectToProjectDB(p.DatabaseName, p.DatabasePassword)
+		if err == nil {
+			var tableCount int
+			var totalSize float64
+			err := db.QueryRow(`
+				SELECT 
+					COUNT(*),
+					COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024, 0)
+				FROM information_schema.TABLES 
+				WHERE TABLE_SCHEMA = ?
+			`, p.DatabaseName).Scan(&tableCount, &totalSize)
+
+			if err == nil {
+				info.TableCount = tableCount
+				info.Size = fmt.Sprintf("%.2f KB", totalSize)
+				if totalSize > 1024 {
+					info.Size = fmt.Sprintf("%.2f MB", totalSize/1024)
+				}
+			}
+		}
+
+		result = append(result, info)
+	}
+
+	return result, nil
 }

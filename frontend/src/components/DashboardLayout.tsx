@@ -65,6 +65,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/admin/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
           { to: '/admin/users', icon: Icons.Users, label: t('common.users') },
           { to: '/admin/projects', icon: Icons.Projects, label: t('common.projects') },
+          { to: '/admin/databases', icon: Icons.Database, label: t('common.databases') },
           { to: '/admin/settings', icon: Icons.Settings, label: t('common.settings') },
         ],
         resources: [

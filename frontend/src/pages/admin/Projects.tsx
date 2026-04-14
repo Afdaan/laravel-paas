@@ -185,16 +185,16 @@ const AdminProjects = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto min-h-[400px]">
-          <Table>
+        <div className="overflow-x-auto">
+          <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
-              <TableRow>
-                <TableHead>{t('common.projectName')}</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>{t('common.status')}</TableHead>
-                <TableHead>Resource Usage</TableHead>
-                <TableHead>Framework</TableHead>
-                <TableHead className="text-right">{t('common.actions')}</TableHead>
+              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                <TableHead className="h-12 w-[32%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.projectName')}</TableHead>
+                <TableHead className="h-12 w-[18%] px-4 text-xs font-semibold uppercase tracking-wider">Owner</TableHead>
+                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">Framework</TableHead>
+                <TableHead className="h-12 w-[12%] px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
+                <TableHead className="h-12 w-[16%] px-4 text-center text-xs font-semibold uppercase tracking-wider">Resource Usage</TableHead>
+                <TableHead className="h-12 w-[8%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -218,8 +218,8 @@ const AdminProjects = () => {
               ) : projects.map((project) => {
                 const hasStats = stats?.[project.id]
                 return (
-                  <TableRow key={project.id}>
-                    <TableCell>
+                  <TableRow key={project.id} className="hover:bg-muted/20">
+                    <TableCell className="pl-6 pr-4 py-3">
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${project.status === 'running' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted/50 text-muted-foreground'
                           }`}>
@@ -243,7 +243,7 @@ const AdminProjects = () => {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center text-muted-foreground">
                           <User className="w-4 h-4" />
@@ -254,17 +254,24 @@ const AdminProjects = () => {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-mono bg-muted/30">
+                          {project.laravel_version ? `Laravel ${project.laravel_version}` : 'Static/Unknown'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-center">
                       <StatusBadge status={project.status} t={t} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-4 py-3 text-center">
                       {project.status === 'running' && hasStats ? (
-                        <div className="flex items-center gap-6">
+                        <div className="inline-flex items-center gap-4 justify-center">
                           <ResourceBar label="CPU" value={hasStats.cpu_percent} icon={Cpu} suffix="%" />
                           <ResourceBar label="MEM" value={hasStats.memory_mb} max={hasStats.memory_max_mb} icon={HardDrive} suffix="MB" />
                         </div>
                       ) : project.status === 'running' ? (
-                        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                        <div className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                           <Activity className="w-3.5 h-3.5 animate-pulse text-primary/50" />
                           Awaiting Sync...
                         </div>
@@ -272,18 +279,11 @@ const AdminProjects = () => {
                         <span className="text-muted-foreground/50">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="font-mono bg-muted/30">
-                          {project.laravel_version ? `Laravel ${project.laravel_version}` : 'Static/Unknown'}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="pl-4 pr-6 py-3 text-right">
                       <Link
                         to={`/projects/${project.id}`}
                       >
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" className="h-8">
                           {t('common.details')}
                         </Button>
                       </Link>
@@ -303,7 +303,7 @@ const AdminProjects = () => {
                 Showing {(page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} nodes.
               </div>
               <div className="flex items-center space-x-2">
-                <p className="text-sm font-medium">Rows per page</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rows per page</p>
                 <Select
                   value={limit.toString()}
                   onValueChange={(value) => {
@@ -311,12 +311,20 @@ const AdminProjects = () => {
                     setPage(1)
                   }}
                 >
-                  <SelectTrigger className="h-8 w-[70px]">
+                  <SelectTrigger size="sm" className="h-8 w-[82px] justify-between">
                     <SelectValue placeholder={limit} />
                   </SelectTrigger>
-                  <SelectContent side="top" className="max-h-[200px]">
+                  <SelectContent
+                    side="top"
+                    align="end"
+                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                  >
                     {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
-                      <SelectItem key={pageSize} value={`${pageSize}`}>
+                      <SelectItem
+                        key={pageSize}
+                        value={`${pageSize}`}
+                        className="rounded-md py-1.5 px-2 text-sm"
+                      >
                         {pageSize}
                       </SelectItem>
                     ))}
