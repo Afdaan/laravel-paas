@@ -190,6 +190,12 @@ export const databaseAPI = {
       params: { page, limit } 
     }),
   
+  // Delete row securely using primary key
+  deleteRow: (projectId: number | string, tableName: string, primaryKey: string, value: any) => 
+    api.delete(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
+      data: { primary_key: primaryKey, value } 
+    }),
+  
   // Execute SQL query
   query: (projectId: number | string, sql: string) => 
     api.post(`/projects/${projectId}/database/query`, { query: sql }),

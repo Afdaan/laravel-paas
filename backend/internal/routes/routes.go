@@ -173,6 +173,7 @@ func Setup(
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
 	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)
+	projects.Delete("/:id/database/tables/:table/rows", databaseHandler.DeleteTableRow)
 	projects.Post("/:id/database/query", databaseHandler.ExecuteQuery)
 	projects.Get("/:id/database/export", databaseHandler.ExportDatabase)
 	projects.Post("/:id/database/import", databaseHandler.ImportDatabase)

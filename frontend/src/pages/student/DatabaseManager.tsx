@@ -15,7 +15,6 @@ import {
    Copy,
    Terminal,
    Layers,
-   Check,
    Loader2
 } from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
@@ -65,6 +64,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
    const [tables, setTables] = useState<TableInfo[]>([])
    const [selectedTable, setSelectedTable] = useState<string | null>(null)
    const [tableData, setTableData] = useState<TableData | null>(null)
+   const [primaryKey, setPrimaryKey] = useState<string | null>(null)
    const [loading, setLoading] = useState(true)
    const [credentials, setCredentials] = useState<DatabaseCredentials | null>(null)
 
@@ -137,9 +137,18 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       setSelectedTable(tableName)
       setLoading(true)
       setTableData(null)
+      setPrimaryKey(null)
       try {
-         const res = await databaseAPI.getData(id, tableName, 1, 50)
-         setTableData(res.data)
+         const [dataRes, structRes] = await Promise.all([
+            databaseAPI.getData(id, tableName, 1, 50),
+            databaseAPI.getStructure(id, tableName)
+         ])
+         setTableData(dataRes.data)
+
+         const pkCol = structRes.data.columns.find((c: any) => c.key === 'PRI')
+         if (pkCol) {
+            setPrimaryKey(pkCol.name)
+         }
       } catch (err) {
          toast.error(t('common.error'))
       } finally {
@@ -147,14 +156,39 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       }
    }
 
+   const requestDeleteRow = (row: any) => {
+      if (!id || !selectedTable || !primaryKey) return;
+
+      const pkValue = row[primaryKey];
+
+      setConfirmModal({
+         isOpen: true,
+         title: t('databaseManager.deleteRowConfirm'),
+         message: t('databaseManager.deleteRowDesc'),
+         type: 'danger',
+         confirmText: t('databaseManager.deleteRowAction'),
+         onConfirm: async () => {
+            try {
+               await databaseAPI.deleteRow(id, selectedTable, primaryKey, pkValue);
+               toast.success(t('common.success'));
+               setConfirmModal(prev => ({ ...prev, isOpen: false }))
+               selectTable(selectedTable);
+            } catch (err: any) {
+               toast.error(err.response?.data?.error || t('common.error'));
+            }
+         }
+      })
+   }
+
    const executeQuery = async () => {
       if (!id || !query.trim()) return
       setQueryLoading(true)
       try {
          const res = await databaseAPI.query(id, query)
-         setQueryResult(res.data)
+         setQueryResult({ ...res.data, status: 'success' })
          toast.success(t('databaseManager.querySuccess'))
       } catch (err: any) {
+         setQueryResult({ error: err.response?.data?.error || t('common.error'), status: 'error' })
          toast.error(err.response?.data?.error || t('common.error'))
       } finally {
          setQueryLoading(false)
@@ -327,7 +361,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                     <CardDescription className="text-[10px]">{t('databaseManager.rows')}: {tableData?.total || 0}</CardDescription>
                                  </div>
                               </div>
-                              <Badge variant="outline" className="text-[9px] font-bold uppercase border-primary/20 text-primary">{t('databaseManager.readOnly')}</Badge>
+                              {!primaryKey && (
+                                 <Badge variant="outline" className="text-[9px] font-bold uppercase border-primary/20 text-primary">{t('databaseManager.readOnly')}</Badge>
+                              )}
                            </CardHeader>
 
                            <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
@@ -341,6 +377,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                              {tableData.columns?.map((col: string) => (
                                                 <th key={col} className="p-4 font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">{col}</th>
                                              ))}
+                                             {primaryKey && (
+                                                <th className="p-4 font-bold uppercase tracking-widest text-muted-foreground/0 w-12">Action</th>
+                                             )}
                                           </tr>
                                        </thead>
                                        <tbody className="divide-y">
@@ -351,6 +390,18 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                                       {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
                                                    </td>
                                                 ))}
+                                                {primaryKey && (
+                                                   <td className="p-2 text-right w-12">
+                                                      <Button
+                                                         variant="ghost"
+                                                         size="icon"
+                                                         className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
+                                                         onClick={() => requestDeleteRow(row)}
+                                                      >
+                                                         <Trash2 className="w-4 h-4" />
+                                                      </Button>
+                                                   </td>
+                                                )}
                                              </tr>
                                           ))}
                                        </tbody>
@@ -414,7 +465,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
                         {queryResult ? (
                            <div className="min-w-full">
-                              {queryResult.rows && queryResult.rows.length > 0 ? (
+                              {queryResult.status === 'error' ? (
+                                 <div className="p-6 text-red-500 font-mono text-xs whitespace-pre-wrap leading-relaxed border-l-2 border-red-500 bg-red-500/5">
+                                    <div className="font-bold text-red-600 mb-2 uppercase tracking-widest">[QUERY FAILED]</div>
+                                    {queryResult.error}
+                                 </div>
+                              ) : queryResult.rows && queryResult.rows.length > 0 ? (
                                  <table className="w-full text-xs text-left border-collapse">
                                     <thead>
                                        <tr className="bg-muted/50 border-b">
@@ -434,11 +490,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                     </tbody>
                                  </table>
                               ) : (
-                                 <div className="p-10 flex flex-col items-center justify-center gap-3">
-                                    <Check className="w-10 h-10 text-emerald-500" />
-                                    <p className="text-xs font-bold text-emerald-600 uppercase tracking-[0.2em]">
-                                       {t('databaseManager.transactionComplete', { count: queryResult.rows_affected })}
-                                    </p>
+                                 <div className="p-6 text-emerald-500 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+                                    <div className="font-bold text-emerald-600 mb-2 uppercase tracking-widest">[QUERY SUCCESSFUL]</div>
+                                    {t('databaseManager.transactionComplete', { count: queryResult.rows_affected || 0 })}
+                                    <div className="text-muted-foreground mt-4 opacity-50 uppercase tracking-widest text-[9px]">
+                                       -- EXECUTION TRACE: completed in {queryResult.duration || '0ms'} --
+                                    </div>
                                  </div>
                               )}
                            </div>

@@ -232,6 +232,35 @@ func (s *DatabaseService) GetTableData(dbName, password, tableName string, page,
 	return columns, data, total, nil
 }
 
+// DeleteTableRow safely deletes a specific row from a table using a primary key
+func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn string, pkValue interface{}) (int64, error) {
+	if !s.isValidIdentifier(tableName) {
+		return 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters")
+	}
+	if !s.isValidIdentifier(pkColumn) {
+		return 0, apperr.New(400, "INVALID_COLUMN_NAME", "Column name contains invalid characters")
+	}
+
+	db, err := s.ConnectToProjectDB(dbName, password)
+	if err != nil {
+		return 0, err
+	}
+
+	query := fmt.Sprintf("DELETE FROM `%s` WHERE `%s` = ? LIMIT 1", tableName, pkColumn)
+	
+	result, err := db.Exec(query, pkValue)
+	if err != nil {
+		return 0, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return rowsAffected, nil
+}
+
 // ExecuteRawQuery runs a manual SQL query against a project database
 func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*QueryResult, error) {
 	query = strings.TrimSpace(query)
