@@ -36,6 +36,7 @@ const AdminVolumes = lazy(() => import('./pages/admin/Volumes'))
 const StudentDatabases = lazy(() => import('./pages/student/Databases'))
 const StudentFeedback = lazy(() => import('./pages/student/Feedback'))
 const AdminFeedback = lazy(() => import('./pages/admin/Feedback'))
+const AdminDatabases = lazy(() => import('./pages/admin/Databases'))
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -226,6 +227,7 @@ function App() {
           <Route path="volumes" element={<AdminVolumes />} />
           <Route path="settings" element={<AdminSettings />} />
           <Route path="feedback" element={<AdminFeedback />} />
+          <Route path="databases" element={<AdminDatabases />} />
         </Route>
 
         {/* Fallback */}

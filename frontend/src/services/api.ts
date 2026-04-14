@@ -205,6 +205,10 @@ export const databaseAPI = {
   // Reset database (drop all tables)
   reset: (projectId: number | string) => 
     api.post(`/projects/${projectId}/database/reset`),
+
+  // Admin endpoints
+  adminListAll: () => 
+    api.get('/admin/databases'),
 }
 
 // ===========================================

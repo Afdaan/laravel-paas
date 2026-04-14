@@ -236,3 +236,13 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 		"dropped": dropped,
 	})
 }
+
+// AdminListAll returns all student databases (Admin only)
+func (h *DatabaseHandler) AdminListAll(c *fiber.Ctx) error {
+	databases, err := h.databaseService.AdminListAllDatabases()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"databases": databases})
+}

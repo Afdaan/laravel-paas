@@ -74,6 +74,7 @@ export const translations = {
         required: "{{field}} is required",
       },
       student: "Student",
+      size: "Size",
       justNow: "Just now",
     },
     system: {
@@ -213,6 +214,17 @@ export const translations = {
         modalDesc: "Configure the user's identity details and system privileges here.",
         namePlaceholder: "eg. John Matrix",
         emailPlaceholder: "operator@system.io",
+      },
+      databases: {
+        title: "Databases Management",
+        desc: "Managing all student database instances across the cluster.",
+        provisioned: "provisioned",
+        tables: "Tables",
+        identity: "Database Identity",
+        connection: "Project Connection",
+        mysqlInstance: "MySQL Isolated Instance",
+        manage: "Manage",
+        summary: "Displaying {{start}} to {{end}} of {{total}} database instances.",
       },
       projects: {
         title: "Projects Management",
@@ -652,7 +664,8 @@ export const translations = {
       validation: {
         required: "{{field}} wajib diisi",
       },
-      student: "User",
+      student: "Siswa",
+      size: "Ukuran",
       justNow: "Baru saja",
     },
     system: {
@@ -757,7 +770,7 @@ export const translations = {
       adminDesc: "Pantau status infrastruktur global dan orkestrasi resource cluster.",
       users: {
         title: "User Management",
-        desc: "Kelola semua akun developer dan admin di seluruh platform.",
+        desc: "Kelola semua akun siswa dan admin di seluruh platform.",
         newUser: "New User",
         importData: "Import CSV/Excel",
         searchPlaceholder: "Cari user...",
@@ -793,14 +806,25 @@ export const translations = {
         namePlaceholder: "eg. John Matrix",
         emailPlaceholder: "operator@system.io",
       },
+      databases: {
+        title: "Database Management",
+        desc: "Kelola semua instans database siswa di seluruh cluster.",
+        provisioned: "diaktifkan",
+        tables: "Tabel",
+        identity: "Identitas Database",
+        connection: "Koneksi Project",
+        mysqlInstance: "MySQL Isolated Instance",
+        manage: "Kelola",
+        summary: "Menampilkan {{start}} sampai {{end}} dari {{total}} instans database.",
+      },
       projects: {
         title: "Project Management",
-        desc: "Monitoring dan kelola semua project Laravel yang dideploy oleh developer.",
+        desc: "Monitoring dan kelola semua project Laravel yang dideploy oleh siswa.",
         loadError: "Gagal mengindeks project",
       },
       feedback: {
         title: "Feedback Hub",
-        desc: "Kelola dan respon masukan developer serta laporan bug.",
+        desc: "Kelola dan respon masukan siswa serta laporan bug.",
         loadError: "Gagal memuat registri masukan",
         updateSuccess: "Status registri diperbarui",
         updateError: "Gagal memperbarui status",
