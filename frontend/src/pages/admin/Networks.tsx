@@ -6,12 +6,14 @@ import {
   RotateCw,
   Share2,
   MoreHorizontal,
-  Activity,
   Globe,
   Loader2,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Info,
+  Search,
   Unplug
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -21,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 
 interface NetworkData {
@@ -37,6 +40,9 @@ const AdminNetworks = () => {
     networks: []
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [limit, setLimit] = useState('all')
+  const [page, setPage] = useState(1)
 
   const fetchData = useCallback(async () => {
     try {
@@ -63,6 +69,18 @@ const AdminNetworks = () => {
     return { total, unused }
   }, [data])
 
+  const filteredNetworks = useMemo(() => {
+    const list = data?.networks || []
+    const filtered = list.filter(n =>
+      (n.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (n.id || '').toLowerCase().includes(searchQuery.toLowerCase())
+    )
+
+    if (limit === 'all') return filtered
+    const numLimit = parseInt(limit)
+    return filtered.slice((page - 1) * numLimit, page * numLimit)
+  }, [data, searchQuery, limit, page])
+
   const getDriverColor = (driver: string) => {
     switch (driver?.toLowerCase()) {
       case 'bridge': return 'border-blue-500/20 bg-blue-500/10 text-blue-600'
@@ -83,7 +101,7 @@ const AdminNetworks = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.networks.title')}</h1>
           <p className="text-muted-foreground">{t('admin.networks.desc')}</p>
@@ -91,21 +109,21 @@ const AdminNetworks = () => {
 
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            <div className="flex items-center gap-2 px-3 border-r">
+            <div className="flex items-center gap-2 px-4 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
-              {stats.total} {t('common.active')}
+              <span className="ml-1">{stats.total} {t('common.active')}</span>
             </div>
-            <div className="flex items-center gap-2 px-3">
+            <div className="flex items-center gap-2 px-4 shadow-sm">
               <div className="w-2.5 h-2.5 rounded-full bg-slate-400 shadow-sm" />
-              {stats.unused} {t('common.offline')}
+              <span className="ml-1">{stats.unused} {t('common.offline')}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button size="sm">
+            <Button size="sm" className="h-9">
               <Plus className="w-4 h-4 mr-2" /> {t('common.create')}
             </Button>
-            <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9">
+            <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9" title="Refresh">
               <RotateCw className="w-4 h-4 text-muted-foreground" />
             </Button>
           </div>
@@ -113,22 +131,39 @@ const AdminNetworks = () => {
       </div>
 
       <Card>
-        <div className="overflow-x-auto min-h-[400px]">
-          <Table>
+        <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative flex-1 w-full max-w-2xl">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder={t('common.search')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 w-full"
+            />
+          </div>
+          <div className="flex items-center gap-3 w-full md:w-auto">
+             <Button variant="outline" size="icon" onClick={fetchData} className="w-10 h-10" title="Refresh">
+              <RotateCw className="w-4 h-4 text-muted-foreground" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-12 text-center">
+              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                <TableHead className="w-12 px-4 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead>{t('admin.networks.interfaceIdentity')}</TableHead>
-                <TableHead className="text-center">{t('admin.networks.connectionState')}</TableHead>
-                <TableHead className="text-center">{t('admin.networks.protocolDriver')}</TableHead>
-                <TableHead className="text-center">{t('admin.networks.exposureScope')}</TableHead>
-                <TableHead className="text-right">{t('common.actions')}</TableHead>
+                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.networks.interfaceIdentity')}</TableHead>
+                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.networks.connectionState')}</TableHead>
+                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.networks.protocolDriver')}</TableHead>
+                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.networks.exposureScope')}</TableHead>
+                <TableHead className="h-12 pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(!data?.networks || data.networks.length === 0) ? (
+              {(!filteredNetworks || filteredNetworks.length === 0) ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
@@ -140,27 +175,27 @@ const AdminNetworks = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                data.networks.map((n) => (
-                <TableRow key={n.id}>
-                  <TableCell className="text-center">
+                filteredNetworks.map((n) => (
+                <TableRow key={n.id} className="hover:bg-muted/20">
+                  <TableCell className="px-4 py-3 text-center">
                     <Checkbox />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted/50 text-muted-foreground">
                         <Share2 className="w-5 h-5" />
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-sm font-semibold truncate max-w-[200px] uppercase">
+                        <span className="text-sm font-semibold truncate max-w-[200px] uppercase tracking-tight">
                           {n.name}
                         </span>
-                        <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
+                        <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[200px]">
                           {n.id && n.id.length >= 12 ? n.id.substring(0, 12) : n.id}
                         </span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="px-4 py-3 text-center">
                     {n.status === 'In Use' ? (
                       <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('admin.networks.routed')}
@@ -171,25 +206,25 @@ const AdminNetworks = () => {
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="outline" className={`font-mono text-[10px] ${getDriverColor(n.driver)}`}>
+                  <TableCell className="px-4 py-3 text-center">
+                    <Badge variant="outline" className={`font-mono text-[10px] bg-muted/30 ${getDriverColor(n.driver)}`}>
                       {n.driver}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20 font-mono text-[10px] gap-1">
+                  <TableCell className="px-4 py-3 text-center">
+                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20 font-mono text-[10px] gap-1 px-2">
                       <Globe className="w-3 h-3" />
                       {n.scope}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="pl-4 pr-6 py-3 text-right">
                     <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={<Button variant="ghost" size="icon" className="h-8 w-8" />}
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
+                      <DropdownMenuTrigger>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem className="gap-2 cursor-pointer">
                           <Info className="w-4 h-4 text-muted-foreground" /> {t('admin.networks.inspectConfig')}
                         </DropdownMenuItem>
@@ -209,33 +244,43 @@ const AdminNetworks = () => {
           </Table>
         </div>
 
-        <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-            <Activity className="w-4 h-4 text-emerald-500" />
-            {t('admin.networks.networkSummary', { count: data?.networks?.length || 0 })}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('common.rowsPerPage')}</span>
-              <Select defaultValue="20">
-                <SelectTrigger className="w-[80px] h-8">
-                  <SelectValue placeholder="20" />
+        <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/10">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+              <Info className="w-4 h-4 text-primary" />
+              Showing {filteredNetworks.length} nodes.
+            </div>
+            <div className="flex items-center space-x-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rows per page</p>
+              <Select value={limit} onValueChange={(val) => { if (val) { setLimit(val); setPage(1); } }}>
+                <SelectTrigger className="h-8 w-[82px] justify-between">
+                  <SelectValue placeholder={t('common.all')}>
+                    {limit === 'all' ? t('common.all') : limit}
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
+                <SelectContent side="top" align="end" className="min-w-[100px]">
                   <SelectItem value="all">{t('common.all')}</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Button variant="outline" size="sm" disabled>
-                <ChevronLeft className="w-4 h-4 mr-1" /> {t('common.previous')}
-              </Button>
-              <Button variant="outline" size="sm" disabled>
-                {t('common.next')} <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </Card>
