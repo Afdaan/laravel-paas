@@ -3,10 +3,8 @@ import { systemAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
 import {
   Search,
-  LayoutGrid,
   Box,
   MoreHorizontal,
-  Activity,
   Cpu,
   HardDrive,
   Terminal,
@@ -14,6 +12,12 @@ import {
   ListFilter,
   CheckCircle2,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Info,
+  RotateCw
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,6 +48,8 @@ const AdminContainers = () => {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [limit, setLimit] = useState('all')
+  const [page, setPage] = useState(1)
 
   const fetchData = useCallback(async () => {
     try {
@@ -64,11 +70,15 @@ const AdminContainers = () => {
 
   const filteredContainers = useMemo(() => {
     const containers = data?.containers || []
-    return containers.filter(c =>
+    const filtered = containers.filter(c =>
       (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.image.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  }, [data, searchQuery])
+    
+    if (limit === 'all') return filtered
+    const numLimit = parseInt(limit)
+    return filtered.slice((page - 1) * numLimit, page * numLimit)
+  }, [data, searchQuery, limit, page])
 
   const stats = useMemo(() => {
     const containers = data?.containers || []
@@ -89,7 +99,7 @@ const AdminContainers = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.containers.title')}</h1>
           <p className="text-muted-foreground">{t('admin.containers.desc')}</p>
@@ -97,25 +107,25 @@ const AdminContainers = () => {
 
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            <div className="flex items-center gap-2 px-3 border-r">
+            <div className="flex items-center gap-2 px-4 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm" />
-              {stats.total} {t('common.total')}
+              <span className="ml-1">{stats.total} {t('common.total')}</span>
             </div>
-            <div className="flex items-center gap-2 px-3 border-r">
+            <div className="flex items-center gap-2 px-4 border-r">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
-              {stats.running} {t('common.active')}
+              <span className="ml-1">{stats.running} {t('common.active')}</span>
             </div>
-            <div className="flex items-center gap-2 px-3">
+            <div className="flex items-center gap-2 px-4">
               <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm" />
-              {stats.stopped} {t('common.offline')}
+              <span className="ml-1">{stats.stopped} {t('common.offline')}</span>
             </div>
           </div>
         </div>
       </div>
 
       <Card>
-        <div className="p-4 border-b flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative flex-1 w-full max-w-xl">
+        <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative flex-1 w-full max-w-2xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={t('common.search')}
@@ -124,29 +134,29 @@ const AdminContainers = () => {
               className="pl-9 w-full"
             />
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="hidden md:flex">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <Button variant="outline" size="sm" className="hidden md:flex h-9">
               <ListFilter className="w-4 h-4 mr-2" /> {t('common.policy')}
             </Button>
-            <Button variant="outline" size="sm" className="text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100">
-              <LayoutGrid className="w-4 h-4 mr-2" /> {t('common.matrixView')}
+            <Button variant="outline" size="icon" onClick={fetchData} className="w-9 h-9" title="Refresh">
+              <RotateCw className="w-4 h-4 text-muted-foreground" />
             </Button>
           </div>
         </div>
 
-        <div className="overflow-x-auto min-h-[400px]">
-          <Table>
+        <div className="overflow-x-auto">
+          <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-12 text-center">
+              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                <TableHead className="w-12 px-4 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead>{t('admin.containers.instanceDetail')}</TableHead>
-                <TableHead>{t('common.status')}</TableHead>
-                <TableHead>{t('admin.containers.health')}</TableHead>
-                <TableHead>{t('admin.containers.resourceLoad')}</TableHead>
-                <TableHead>{t('admin.containers.gatewayPorts')}</TableHead>
-                <TableHead className="text-right">{t('common.actions')}</TableHead>
+                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.instanceDetail')}</TableHead>
+                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
+                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.health')}</TableHead>
+                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.resourceLoad')}</TableHead>
+                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.gatewayPorts')}</TableHead>
+                <TableHead className="h-12 pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -162,13 +172,13 @@ const AdminContainers = () => {
                   </TableCell>
                 </TableRow>
               ) : filteredContainers.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="text-center">
+                <TableRow key={c.id} className="hover:bg-muted/20">
+                  <TableCell className="px-4 py-3 text-center">
                     <Checkbox />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${c.state === 'running' ? 'bg-indigo-500/10 text-indigo-600' : 'bg-muted/50 text-muted-foreground'}`}>
                         <Box className="w-5 h-5" />
                       </div>
                       <div className="flex flex-col">
@@ -179,15 +189,15 @@ const AdminContainers = () => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     {c.state === 'running' ? (
                       <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
                     ) : (
                       <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 border-rose-500/20 hover:bg-rose-500/20"><div className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" /> {t('status.stopped')}</Badge>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                  <TableCell className="px-4 py-3">
+                    <div className="flex flex-col gap-1.5 text-xs text-muted-foreground font-medium">
                       <div className="flex items-center gap-1.5">
                         {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
                         {t('admin.containers.livenessCheck')}
@@ -198,44 +208,48 @@ const AdminContainers = () => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-2 w-32">
+                  <TableCell className="px-4 py-3">
+                    <div className="flex flex-col gap-2 w-36">
                       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                         <div className="flex items-center gap-1"><Cpu className="w-3 h-3" /> CPU</div>
-                        <span>{(c.cpu_percent || 0).toFixed(1)}%</span>
+                        <span className="font-mono">{(c.cpu_percent || 0).toFixed(1)}%</span>
                       </div>
                       <Progress value={Math.min(c.cpu_percent || 0, 100)} className="h-1.5" />
                       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground pt-1">
                         <div className="flex items-center gap-1"><HardDrive className="w-3 h-3" /> MEM</div>
-                        <span>{(c.memory_usage || 0).toFixed(1)}MB</span>
+                        <span className="font-mono">{(c.memory_usage || 0).toFixed(1)}MB</span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs font-mono font-bold text-muted-foreground">{c.ip_address || t('common.unassigned')}</span>
                       <div className="flex flex-wrap gap-1">
                         {c.ports?.slice(0, 2).map((p, i) => (
-                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
+                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0 bg-muted/50">
                             {p}
                           </Badge>
                         ))}
-                        {c.ports?.length > 2 && <span className="text-[10px] text-muted-foreground font-bold">+{c.ports.length - 2}</span>}
+                        {c.ports?.length > 2 && <span className="text-[10px] text-muted-foreground font-bold ml-1">+{c.ports.length - 2}</span>}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="pl-4 pr-6 py-3 text-right">
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8">
-                        <span className="sr-only">Open menu</span>
-                        <MoreHorizontal className="h-4 w-4" />
+                      <DropdownMenuTrigger>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {/* <DropdownMenuLabel>Actions</DropdownMenuLabel> */}
-                        <DropdownMenuItem>{t('common.viewLogs')}</DropdownMenuItem>
-                        <DropdownMenuItem>{t('common.executeShell')}</DropdownMenuItem>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem className="gap-2 cursor-pointer">
+                          <Info className="w-4 h-4 text-muted-foreground" /> {t('common.details')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 cursor-pointer">
+                          <Terminal className="w-4 h-4 text-muted-foreground" /> {t('common.executeShell')}
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className={c.state === 'running' ? "text-destructive" : ""}>
+                        <DropdownMenuItem className={c.state === 'running' ? "text-destructive gap-2 cursor-pointer" : "gap-2 cursor-pointer text-emerald-600"}>
                           {c.state === 'running' ? t('admin.containers.forceStop') : t('admin.containers.startInstance')}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -247,29 +261,43 @@ const AdminContainers = () => {
           </Table>
         </div>
 
-        <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-muted/10">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-            <Activity className="w-4 h-4 text-primary" />
-            {t('admin.containers.nodeSummary', { count: filteredContainers.length })}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('common.rowsPerPage')}</span>
-              <Select defaultValue="all">
-                <SelectTrigger className="w-[80px] h-8">
-                  <SelectValue placeholder={t('common.all')} />
+        <div className="p-4 border-t flex flex-col sm:flex-row justify-between items-center gap-4 bg-muted/10">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+              <Info className="w-4 h-4 text-primary" />
+              Showing {filteredContainers.length} of {stats.total} nodes.
+            </div>
+            <div className="flex items-center space-x-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rows per page</p>
+              <Select value={limit} onValueChange={(val) => { if (val) { setLimit(val); setPage(1); } }}>
+                <SelectTrigger className="h-8 w-[82px] justify-between">
+                  <SelectValue placeholder={t('common.all')}>
+                    {limit === 'all' ? t('common.all') : limit}
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent side="top" align="end" className="min-w-[100px]">
                   <SelectItem value="all">{t('common.all')}</SelectItem>
                   <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Button variant="outline" size="sm" disabled>{t('common.previous')}</Button>
-              <Button variant="outline" size="sm" disabled>{t('common.next')}</Button>
-            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="h-8 w-8 p-0" disabled>
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </Card>
