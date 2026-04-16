@@ -190,6 +190,9 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		dbName = strings.ReplaceAll(subdomain, "-", "_")
 	}
 
+	// Always generate a random password if not provided to ensure successful MySQL user creation
+	dbPassword := utils.GeneratePassword(16)
+
 	expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
 	var expiresAt *time.Time
 	if expiryDays > 0 {
@@ -198,14 +201,15 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 	}
 
 	project := &models.Project{
-		UserID:       userID,
-		Name:         name,
-		GithubURL:    githubURL,
-		Branch:       branch,
-		Subdomain:    subdomain,
-		DatabaseName: dbName,
-		Status:       models.StatusQueued,
-		ExpiresAt:    expiresAt,
+		UserID:           userID,
+		Name:             name,
+		GithubURL:        githubURL,
+		Branch:           branch,
+		Subdomain:        subdomain,
+		DatabaseName:     dbName,
+		DatabasePassword: dbPassword,
+		Status:           models.StatusQueued,
+		ExpiresAt:        expiresAt,
 	}
 
 	if err := s.projectRepo.Create(project); err != nil {

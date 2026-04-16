@@ -39,8 +39,21 @@ func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, erro
 		return nil, fmt.Errorf("invalid project ID")
 	}
 
-	userID := c.Locals("user_id").(uint)
-	role := models.Role(c.Locals("role").(string))
+	uidVal := c.Locals("user_id")
+	roleVal := c.Locals("role")
+
+	if uidVal == nil || roleVal == nil {
+		return nil, fmt.Errorf("unauthorized: missing user context")
+	}
+
+	userID, okUID := uidVal.(uint)
+	roleStr, okRole := roleVal.(string)
+
+	if !okUID || !okRole {
+		return nil, fmt.Errorf("internal server error: invalid user context format")
+	}
+
+	role := models.Role(roleStr)
 
 	project, err := h.projectService.GetProjectByID(uint(id))
 	if err != nil {
@@ -79,7 +92,10 @@ func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 
 	tables, err := h.databaseService.ListProjectTables(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to project database. Please ensure your project is running.",
+			"details": err.Error(),
+		})
 	}
 
 	return c.JSON(fiber.Map{"tables": tables})
