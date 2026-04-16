@@ -95,6 +95,9 @@ export const usersAPI = {
   
   delete: (id: number | string) => 
     api.delete(`/admin/users/${id}`),
+
+  loginAs: (id: number | string) =>
+    api.post(`/admin/users/${id}/login-as`),
   
   importExcel: (file: File) => {
     const formData = new FormData()

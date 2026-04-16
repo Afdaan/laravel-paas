@@ -47,7 +47,7 @@ interface DashboardLayoutProps {
 
 function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { t } = useTranslation()
-  const { user, logout } = useAuthStore()
+  const { user, logout, adminToken, returnToAdmin } = useAuthStore()
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
@@ -57,6 +57,11 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const handleLogout = async () => {
     await logout()
     navigate('/login')
+  }
+
+  const handleReturnToAdmin = async () => {
+    await returnToAdmin()
+    navigate('/admin/users')
   }
   
   const navItems = isAdmin
@@ -205,6 +210,20 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
       
       {/* Content Stream Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
+        {/* Impersonation Banner */}
+        {adminToken && (
+          <div className="bg-destructive/10 text-destructive px-8 py-2.5 border-b border-destructive/20 flex items-center justify-between text-sm w-full font-medium shadow-sm z-40">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              {t('auth.impersonating')} <span className="font-bold">{user?.name}</span>
+            </div>
+            <Button size="sm" variant="destructive" onClick={handleReturnToAdmin} className="h-8 text-xs font-semibold px-4 cursor-pointer">
+              <LogOut className="w-3.5 h-3.5 mr-2" />
+              {t('auth.returnToAdmin')}
+            </Button>
+          </div>
+        )}
+
         {/* Orbital Header */}
         <header className="h-16 flex items-center justify-between px-8 border-b">
            <div></div>

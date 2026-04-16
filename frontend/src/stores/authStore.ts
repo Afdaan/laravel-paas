@@ -11,6 +11,7 @@ import { User } from '../types'
 interface AuthState {
   user: User | null;
   token: string | null;
+  adminToken: string | null;
   isLoading: boolean;
   isAuthenticated: () => boolean;
   isAdmin: () => boolean;
@@ -18,12 +19,15 @@ interface AuthState {
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
+  loginAsClient: (newToken: string) => Promise<void>;
+  returnToAdmin: () => Promise<void>;
 }
 
 const useAuthStore = create<AuthState>((set, get) => ({
   // State
   user: null,
   token: localStorage.getItem('token'),
+  adminToken: localStorage.getItem('admin_token'),
   isLoading: !!localStorage.getItem('token'),
   
   // Computed
@@ -75,6 +79,28 @@ const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         set({ isLoading: false })
       }
+    }
+  },
+  
+  loginAsClient: async (newToken: string) => {
+    const currentToken = get().token
+    if (currentToken && !get().adminToken) {
+      localStorage.setItem('admin_token', currentToken)
+      set({ adminToken: currentToken })
+    }
+    
+    localStorage.setItem('token', newToken)
+    set({ token: newToken })
+    await get().fetchUser()
+  },
+  
+  returnToAdmin: async () => {
+    const adminToken = get().adminToken
+    if (adminToken) {
+      localStorage.setItem('token', adminToken)
+      localStorage.removeItem('admin_token')
+      set({ token: adminToken, adminToken: null })
+      await get().fetchUser()
     }
   },
 }))

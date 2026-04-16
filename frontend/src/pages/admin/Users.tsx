@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { usersAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
+import { useNavigate } from 'react-router-dom'
 import { User as UserType } from '../../types'
+import useAuthStore from '../../stores/authStore'
 import {
   Users,
   UserPlus,
@@ -24,7 +26,8 @@ import {
   Globe,
   Clock,
   Activity,
-  Info
+  Info,
+  UserCheck
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,6 +78,8 @@ const formatTimeAgo = (dateStr: string | undefined, t: (key: string, options?: a
 
 const AdminUsers = () => {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { loginAsClient } = useAuthStore()
   const [users, setUsers] = useState<UserType[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -148,6 +153,18 @@ const AdminUsers = () => {
       await usersAPI.delete(id.toString())
       toast.success(t('common.deleteSuccess'))
       fetchUsers()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || t('common.actionFailed'))
+    }
+  }
+
+  const handleLoginAs = async (id: number) => {
+    try {
+      const response = await usersAPI.loginAs(id)
+      const { token } = response.data
+      await loginAsClient(token)
+      toast.success('Successfully logged in as user')
+      navigate('/dashboard')
     } catch (error: any) {
       toast.error(error.response?.data?.error || t('common.actionFailed'))
     }
@@ -390,6 +407,12 @@ const AdminUsers = () => {
                   </TableCell>
                   <TableCell className="pl-4 pr-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      {user.role === 'student' && (
+                        <Button variant="outline" size="sm" className="h-8 text-xs font-medium" onClick={() => handleLoginAs(user.id)}>
+                          <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+                          {t('admin.users.loginAs')}
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" onClick={() => handleEdit(user)} title={t('common.edit')}>
                         <Edit3 className="w-4 h-4" />
                       </Button>
