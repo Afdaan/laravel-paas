@@ -83,6 +83,10 @@ export const translations = {
       offline: "Connection Failure",
       offlineDesc: "Some data could not be loaded. Please check your network.",
     },
+    auth: {
+      impersonating: "You are securely authenticated as",
+      returnToAdmin: "Return to Admin",
+    },
     dashboard: {
       welcome: "Welcome back",
       activeProjects: "active projects",
@@ -214,6 +218,7 @@ export const translations = {
         modalDesc: "Configure the user's identity details and system privileges here.",
         namePlaceholder: "eg. John Matrix",
         emailPlaceholder: "operator@system.io",
+        loginAs: "Log In As User",
       },
       databases: {
         title: "Databases Management",
@@ -677,6 +682,10 @@ export const translations = {
       offline: "Kegagalan Koneksi",
       offlineDesc: "Sebagian data tidak termuat. Periksa koneksi jaringan.",
     },
+    auth: {
+      impersonating: "Anda terautentikasi dengan aman sebagai",
+      returnToAdmin: "Kembali ke Admin",
+    },
     dashboard: {
       welcome: "Selamat datang kembali",
       activeProjects: "project aktif",
@@ -808,6 +817,7 @@ export const translations = {
         modalDesc: "Konfigurasi detail identitas dan hak akses sistem.",
         namePlaceholder: "eg. John Matrix",
         emailPlaceholder: "operator@system.io",
+        loginAs: "Login Sebagai User",
       },
       databases: {
         title: "Database Management",

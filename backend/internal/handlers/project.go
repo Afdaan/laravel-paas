@@ -48,7 +48,14 @@ type CreateProjectRequest struct {
 
 // ListOwn returns user's own projects
 func (h *ProjectHandler) ListOwn(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return apperr.ErrUnauthorized
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return apperr.New(500, "AUTH_INTERNAL_ERROR", "Invalid user context")
+	}
 
 	projects, _, err := h.projectService.ListProjects(1, 100, userID, "", "")
 	if err != nil {
@@ -102,7 +109,14 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		return apperr.ErrBadRequest
 	}
 
-	userID := c.Locals("user_id").(uint)
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return apperr.ErrUnauthorized
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return apperr.New(500, "AUTH_INTERNAL_ERROR", "Invalid user context")
+	}
 
 	// Basic validation
 	if req.Name == "" || req.GithubURL == "" {
@@ -435,8 +449,21 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 		return nil, fmt.Errorf("invalid project ID")
 	}
 
-	userID := c.Locals("user_id").(uint)
-	role := models.Role(c.Locals("role").(string))
+	uidVal := c.Locals("user_id")
+	roleVal := c.Locals("role")
+
+	if uidVal == nil || roleVal == nil {
+		return nil, fmt.Errorf("unauthorized: missing user context")
+	}
+
+	userID, okUID := uidVal.(uint)
+	roleStr, okRole := roleVal.(string)
+
+	if !okUID || !okRole {
+		return nil, fmt.Errorf("internal server error: invalid user context format")
+	}
+
+	role := models.Role(roleStr)
 
 	project, err := h.projectService.GetProjectByID(uint(id))
 	if err != nil {

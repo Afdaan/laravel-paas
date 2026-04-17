@@ -127,6 +127,7 @@ func Setup(
 	admin.Get("/users/:id", userHandler.Get)
 	admin.Put("/users/:id", userHandler.Update)
 	admin.Delete("/users/:id", userHandler.Delete)
+	admin.Post("/users/:id/login-as", authHandler.LoginAsUser)
 
 	// Settings
 	admin.Get("/settings", settingHandler.List)

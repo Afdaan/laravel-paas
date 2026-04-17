@@ -39,11 +39,8 @@ func (s *UserService) GetUserByID(id uint) (*models.User, error) {
 }
 
 func (s *UserService) CreateUser(name, email, password string, role models.Role, creatorID *uint) (*models.User, string, error) {
-	// Check if email exists
+	// Check if email exists (Unscoped checked in Repo)
 	existing, _ := s.userRepo.GetByEmail(email)
-	if existing != nil {
-		return nil, "", apperr.New(409, "EMAIL_EXISTS", "A user with this email already exists")
-	}
 
 	plainPassword := password
 	if plainPassword == "" {
@@ -54,6 +51,23 @@ func (s *UserService) CreateUser(name, email, password string, role models.Role,
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, "", apperr.New(500, "PASSWORD_HASH_FAILED", "Failed to process password securely")
+	}
+
+	if existing != nil {
+		// If user was soft-deleted, we automatically restore them
+		if existing.DeletedAt.Valid {
+			existing.DeletedAt.Valid = false
+			existing.Name = name
+			existing.Password = string(hashedPassword)
+			existing.Role = role
+			existing.CreatedBy = creatorID
+			
+			if err := s.userRepo.Update(existing); err != nil {
+				return nil, "", err
+			}
+			return existing, plainPassword, nil
+		}
+		return nil, "", apperr.New(409, "EMAIL_EXISTS", "A user with this email already exists")
 	}
 
 	user := &models.User{

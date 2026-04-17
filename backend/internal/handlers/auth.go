@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
 )
 
@@ -92,4 +93,42 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(user)
+}
+
+// LoginAsUser generates a JWT token for the specified user, allowing administrators to impersonate them.
+func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
+	targetUserID, err := c.ParamsInt("id")
+	if err != nil {
+		return apperr.NewBadRequest("Invalid user ID")
+	}
+
+	// Make sure the user exists
+	targetUser, err := h.userService.GetUserByID(uint(targetUserID))
+	if err != nil {
+		return apperr.NewBadRequest("User not found")
+	}
+
+	// Make sure an admin is not trying to target another admin/superadmin to escalate privileges
+	if targetUser.Role != models.RoleStudent {
+		return apperr.New(403, "FORBIDDEN", "Cannot impersonate administrator accounts")
+	}
+
+	// Generate JWT token for the target user
+	token, err := h.service.GenerateToken(targetUser)
+	if err != nil {
+		return err
+	}
+
+	// Get admin ID who initiated this action
+	adminID := c.Locals("user_id").(uint)
+	
+	// Optionally: Record the login attempt by the admin acting as the user
+	go h.userService.UpdateActivity(targetUser.ID, c.IP(), true)
+	
+	_ = adminID // to prevent unused variable if not logging
+
+	return c.JSON(fiber.Map{
+		"token": token,
+		"user":  targetUser,
+	})
 }
