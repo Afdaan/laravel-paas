@@ -4,15 +4,18 @@
 // Handles routing and layout
 // ===========================================
 
-import { useEffect, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import useAuthStore from './stores/authStore'
-import { useState } from 'react'
-import { systemAPI, settingsAPI } from './services/api'
 import { toast } from 'sonner'
+
+// Stores & API Services
+import useAuthStore from './stores/authStore'
+import { systemAPI, settingsAPI } from './services/api'
+
+// Libs & Hooks
 import useTranslation from './lib/useTranslation'
 
-// Layouts
+// Layouts & Global Components
 import DashboardLayout from './components/DashboardLayout'
 import LoadingScreen from './components/LoadingScreen'
 import Setup from './pages/Setup'
@@ -37,6 +40,7 @@ const StudentDatabases = lazy(() => import('./pages/student/Databases'))
 const StudentFeedback = lazy(() => import('./pages/student/Feedback'))
 const AdminFeedback = lazy(() => import('./pages/admin/Feedback'))
 const AdminDatabases = lazy(() => import('./pages/admin/Databases'))
+const AdminDeploymentQueue = lazy(() => import('./pages/admin/DeploymentQueue'))
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -228,6 +232,7 @@ function App() {
           <Route path="settings" element={<AdminSettings />} />
           <Route path="feedback" element={<AdminFeedback />} />
           <Route path="databases" element={<AdminDatabases />} />
+          <Route path="queue" element={<AdminDeploymentQueue />} />
         </Route>
 
         {/* Fallback */}

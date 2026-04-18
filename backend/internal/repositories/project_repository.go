@@ -104,7 +104,7 @@ func (r *projectRepository) ListExpired() ([]models.Project, error) {
 // ListByStatus returns projects matching a specific status
 func (r *projectRepository) ListByStatus(status models.ProjectStatus) ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Where("status = ?", status).Find(&projects).Error
+	err := r.db.Preload("User").Where("status = ?", status).Find(&projects).Error
 	return projects, err
 }
 

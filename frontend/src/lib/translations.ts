@@ -375,6 +375,27 @@ export const translations = {
       optiFailed: "Optimization failed",
       pullSuccess: "Image successfully pulled to registry",
       pullFailed: "Failed to pull image",
+      queue: {
+        title: "Deployment Queue",
+        desc: "Monitor active builds and waiting jobs in real-time.",
+        activeBuilds: "Active Builds",
+        waitingJobs: "Waiting Jobs",
+        summary: {
+          active: "Active Builds",
+          queued: "Waiting in Queue",
+          processed: "Total Processed",
+          failed: "Failed Jobs",
+        },
+        table: {
+          project: "Project",
+          owner: "Owner",
+          type: "Type",
+          enqueued: "Enqueued",
+          status: "Status",
+        },
+        noActive: "No active builds",
+        noQueued: "Queue is empty",
+      },
     },
     projectDetail: {
       metrics: {
@@ -974,6 +995,27 @@ export const translations = {
       optiFailed: "Optimasi gagal",
       pullSuccess: "Image berhasil ditarik ke registri",
       pullFailed: "Gagal menarik image",
+      queue: {
+        title: "Deployment Queue",
+        desc: "Pantau build aktif dan antrean job secara realtime.",
+        activeBuilds: "Build Aktif",
+        waitingJobs: "Antrean Tunggu",
+        summary: {
+          active: "Build Aktif",
+          queued: "Menunggu Antrean",
+          processed: "Total Diproses",
+          failed: "Job Gagal",
+        },
+        table: {
+          project: "Project",
+          owner: "Pemilik",
+          type: "Tipe",
+          enqueued: "Antre Sejak",
+          status: "Status",
+        },
+        noActive: "Tidak ada build aktif",
+        noQueued: "Antrean kosong",
+      },
     },
     projectDetail: {
       metrics: {

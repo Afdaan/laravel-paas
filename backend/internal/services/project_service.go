@@ -258,6 +258,16 @@ func (s *ProjectService) UpdateProjectStatus(id uint, status models.ProjectStatu
 }
 
 
+// GetProjectsByStatus returns projects matching a specific status
+func (s *ProjectService) GetProjectsByStatus(status models.ProjectStatus) ([]models.Project, error) {
+	projects, err := s.projectRepo.ListByStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	s.PopulateURLs(projects)
+	return projects, nil
+}
+
 // GetTotalCount returns total number of projects
 func (s *ProjectService) GetTotalCount() (int64, error) {
 	return s.projectRepo.CountTotal()

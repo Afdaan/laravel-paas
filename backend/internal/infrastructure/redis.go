@@ -175,6 +175,24 @@ func (r *RedisService) IncrementDeploymentCounter(counter string) {
 	r.client.HIncrBy(r.ctx, deploymentStatsKey, counter, 1)
 }
 
+// ListDeploymentJobs returns all jobs currently in the queue
+func (r *RedisService) ListDeploymentJobs() ([]DeploymentJob, error) {
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list jobs: %w", err)
+	}
+
+	jobs := make([]DeploymentJob, 0, len(results))
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil {
+			jobs = append(jobs, job)
+		}
+	}
+
+	return jobs, nil
+}
+
 // SetCache sets a value in cache with expiration
 func (r *RedisService) SetCache(key string, value interface{}, expiration time.Duration) error {
 	data, err := json.Marshal(value)

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Loader2
 } from 'lucide-react'
+import { usePolling } from '../../lib/usePolling'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -82,6 +83,9 @@ function StudentDashboard() {
   useEffect(() => {
     fetchProjects()
   }, [])
+
+  // Poll for updates every 10 seconds
+  usePolling(fetchProjects, 10000)
 
   const runningProjects = (projects || []).filter(p => p.status === 'running').length
   const totalProjects = projects?.length || 0

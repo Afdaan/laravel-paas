@@ -410,13 +410,50 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	return proxy.Forward(target)(c)
 }
 
-// GetQueueStats returns deployment queue statistics
+// GetQueueStats returns deployment queue statistics and job lists
 func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
 	stats, err := h.redisService.GetDeploymentStats()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get queue stats"})
 	}
-	return c.JSON(fiber.Map{"stats": stats})
+
+	// Fetch active builds (currently building)
+	active, err := h.projectService.GetProjectsByStatus(models.StatusBuilding)
+	if err != nil {
+		active = []models.Project{}
+	}
+
+	// Fetch waiting jobs from Redis
+	queued, err := h.redisService.ListDeploymentJobs()
+	if err != nil {
+		queued = []infrastructure.DeploymentJob{}
+	}
+
+	// Enrich queued jobs with project details if possible
+	type EnrichedJob struct {
+		infrastructure.DeploymentJob
+		ProjectName string `json:"project_name"`
+		Email       string `json:"email"`
+	}
+	enrichedQueued := make([]EnrichedJob, 0, len(queued))
+	for _, job := range queued {
+		p, err := h.projectService.GetProjectByID(job.ProjectID)
+		if err == nil {
+			enrichedQueued = append(enrichedQueued, EnrichedJob{
+				DeploymentJob: job,
+				ProjectName:   p.Name,
+				Email:         p.User.Email,
+			})
+		} else {
+			enrichedQueued = append(enrichedQueued, EnrichedJob{DeploymentJob: job})
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"stats":  stats,
+		"active": active,
+		"queued": enrichedQueued,
+	})
 }
 
 // GetProjectsStats returns real-time resource usage for all running projects
