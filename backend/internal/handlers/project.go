@@ -424,45 +424,63 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
 	stats, err := h.redisService.GetDeploymentStats()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get queue stats"})
+		stats = make(map[string]string)
 	}
 
-	// Fetch active builds (currently building)
+	// 1. Fetch active builds (currently BUILDING) from DB
 	active, err := h.projectService.GetProjectsByStatus(models.StatusBuilding)
 	if err != nil {
 		active = []models.Project{}
 	}
 
-	// Fetch waiting jobs from Redis
-	queued, err := h.redisService.ListDeploymentJobs()
-	if err != nil {
-		queued = []infrastructure.DeploymentJob{}
-	}
+	// 2. Fetch all projects that SHOULD be waiting (QUEUED or PENDING) from DB
+	waitingProjs, _ := h.projectService.GetProjectsByStatuses([]models.ProjectStatus{models.StatusQueued, models.StatusPending})
 
-	// Enrich queued jobs with project details if possible
+	// 3. Fetch actual jobs from Redis
+	redisJobs, _ := h.redisService.ListDeploymentJobs()
+
+	// 4. Enrich and Merge 
 	type EnrichedJob struct {
 		infrastructure.DeploymentJob
 		ProjectName string `json:"project_name"`
 		Email       string `json:"email"`
 	}
-	enrichedQueued := make([]EnrichedJob, 0, len(queued))
-	for _, job := range queued {
+	
+	finalWaitList := make([]EnrichedJob, 0)
+	seenProjectIDs := make(map[uint]bool)
+
+	// Add Redis jobs first (they preserve queue order)
+	for _, job := range redisJobs {
+		eJob := EnrichedJob{DeploymentJob: job}
 		p, err := h.projectService.GetProjectByID(job.ProjectID)
 		if err == nil {
-			enrichedQueued = append(enrichedQueued, EnrichedJob{
-				DeploymentJob: job,
-				ProjectName:   p.Name,
-				Email:         p.User.Email,
+			eJob.ProjectName = p.Name
+			eJob.Email = p.User.Email
+		}
+		finalWaitList = append(finalWaitList, eJob)
+		seenProjectIDs[job.ProjectID] = true
+	}
+
+	// Add DB projects that are missing from Redis (but marked as Queued/Pending)
+	for _, p := range waitingProjs {
+		if !seenProjectIDs[p.ID] {
+			finalWaitList = append(finalWaitList, EnrichedJob{
+				DeploymentJob: infrastructure.DeploymentJob{
+					ProjectID:  p.ID,
+					UserID:     p.UserID,
+					Type:       "waiting",
+					EnqueuedAt: p.CreatedAt, // Fallback to creation time
+				},
+				ProjectName: p.Name,
+				Email:       p.User.Email,
 			})
-		} else {
-			enrichedQueued = append(enrichedQueued, EnrichedJob{DeploymentJob: job})
 		}
 	}
 
 	return c.JSON(fiber.Map{
 		"stats":  stats,
 		"active": active,
-		"queued": enrichedQueued,
+		"queued": finalWaitList,
 	})
 }
 
