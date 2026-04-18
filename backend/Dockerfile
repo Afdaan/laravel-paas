@@ -26,7 +26,7 @@ RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
 
 # Stage 2: Production
-FROM alpine:latest
+FROM alpine:3.20
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Backend API Service"

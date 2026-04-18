@@ -87,8 +87,20 @@ deploy_with_anti_downtime() {
 
     echo -e "${YELLOW}[DEPLOY] Working on $service_name (Tag: $image_tag)...${NC}"
 
-    if ! DOCKER_BUILDKIT=1 docker build -t "$image_name" "$context_dir"; then
-        echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+    local success=false
+    echo -e "${YELLOW}[BUILD] Running docker build with BuildKit... (Retry enabled: 3 attempts)${NC}"
+    
+    for attempt in {1..3}; do
+        if DOCKER_BUILDKIT=1 docker build -t "$image_name" "$context_dir"; then
+            success=true
+            break
+        fi
+        echo -e "${YELLOW}[WARN] Build attempt $attempt failed. Retrying in 5s...${NC}"
+        sleep 5
+    done
+
+    if [ "$success" = false ]; then
+        echo -e "${RED}[ERROR] Build failed for $service_name after 3 attempts. Keeping current version running.${NC}"
         return 1
     fi
     echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
