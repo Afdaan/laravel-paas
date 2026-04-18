@@ -118,7 +118,7 @@ const DeploymentQueue = () => {
               </div>
               <div>
                 <CardTitle className="text-xl">{t('admin.queue.activeBuilds')}</CardTitle>
-                <CardDescription>Projects currently being built</CardDescription>
+                <CardDescription>{t('admin.queue.activeDesc')}</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -172,7 +172,7 @@ const DeploymentQueue = () => {
               </div>
               <div>
                 <CardTitle className="text-xl">{t('admin.queue.waitingJobs')}</CardTitle>
-                <CardDescription>Jobs waiting for a free worker</CardDescription>
+                <CardDescription>{t('admin.queue.waitingDesc')}</CardDescription>
               </div>
             </div>
           </CardHeader>

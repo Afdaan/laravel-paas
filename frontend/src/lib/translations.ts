@@ -379,7 +379,9 @@ export const translations = {
         title: "Deployment Queue",
         desc: "Monitor active builds and waiting jobs in real-time.",
         activeBuilds: "Active Builds",
+        activeDesc: "Projects currently being built",
         waitingJobs: "Waiting Jobs",
+        waitingDesc: "Jobs waiting for a free worker",
         summary: {
           active: "Active Builds",
           queued: "Waiting in Queue",
@@ -999,7 +1001,9 @@ export const translations = {
         title: "Deployment Queue",
         desc: "Pantau build aktif dan antrean job secara realtime.",
         activeBuilds: "Build Aktif",
+        activeDesc: "Project yang sedang dalam proses build",
         waitingJobs: "Antrean Tunggu",
+        waitingDesc: "Job yang menunggu slot worker kosong",
         summary: {
           active: "Build Aktif",
           queued: "Menunggu Antrean",

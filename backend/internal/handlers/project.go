@@ -163,6 +163,16 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued)
 	h.projectService.UpdateActivity(project.ID)
 
+	// Check if already in queue to avoid duplicates
+	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
+	if isQueued {
+		queueLength, _ := h.redisService.GetQueueLength()
+		return c.JSON(fiber.Map{
+			"message":        "Project is already in queue",
+			"queue_position": queueLength,
+		})
+	}
+
 	// Enqueue redeployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
