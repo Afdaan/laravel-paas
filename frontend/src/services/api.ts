@@ -168,6 +168,9 @@ export const projectsAPI = {
   
   adminStats: () => 
     api.get('/admin/stats'),
+
+  getQueueStats: () => 
+    api.get('/admin/queue/stats'),
 }
 
 // ===========================================

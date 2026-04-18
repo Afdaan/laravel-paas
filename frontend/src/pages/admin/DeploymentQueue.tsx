@@ -9,11 +9,7 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Activity, 
-  ArrowRight,
-  Package,
-  User,
-  ExternalLink,
-  ChevronRight
+  Package
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
