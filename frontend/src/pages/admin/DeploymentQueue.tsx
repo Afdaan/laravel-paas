@@ -15,7 +15,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
+import { cn, formatDistanceToNow } from '@/lib/utils'
+import { useNavigate } from 'react-router-dom'
 
 interface QueuedJob {
   project_id: number;
@@ -30,6 +31,7 @@ interface ActiveBuild {
   id: number;
   name: string;
   status: string;
+  updated_at: string;
   user: {
     name: string;
     email: string;
@@ -38,6 +40,7 @@ interface ActiveBuild {
 
 const DeploymentQueue = () => {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [stats, setStats] = useState<any>(null)
   const [activeBuilds, setActiveBuilds] = useState<ActiveBuild[]>([])
   const [queuedJobs, setQueuedJobs] = useState<QueuedJob[]>([])
@@ -136,11 +139,16 @@ const DeploymentQueue = () => {
                 </TableHeader>
                 <TableBody>
                   {activeBuilds.map((project) => (
-                    <TableRow key={project.id}>
+                    <TableRow key={project.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/projects/${project.id}`)}>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Package className="w-4 h-4 text-muted-foreground" />
-                          <span className="font-semibold text-sm">{project.name}</span>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-sm">{project.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {t('admin.queue.started')} {formatDistanceToNow(new Date(project.updated_at), { addSuffix: true })}
+                            </span>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -203,8 +211,8 @@ const DeploymentQueue = () => {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {new Date(job.enqueued_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        <span className="text-xs font-mono text-muted-foreground" title={new Date(job.enqueued_at).toLocaleString()}>
+                          {formatDistanceToNow(new Date(job.enqueued_at), { addSuffix: true })}
                         </span>
                       </TableCell>
                     </TableRow>
