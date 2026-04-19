@@ -18,6 +18,7 @@ type ProjectRepository interface {
 	ListAll() ([]models.Project, error)
 	ListExpired() ([]models.Project, error)
 	ListByStatus(status models.ProjectStatus) ([]models.Project, error)
+	ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error)
 	Create(project *models.Project) error
 	Update(project *models.Project) error
 	UpdateStatus(id uint, status models.ProjectStatus) error
@@ -104,7 +105,14 @@ func (r *projectRepository) ListExpired() ([]models.Project, error) {
 // ListByStatus returns projects matching a specific status
 func (r *projectRepository) ListByStatus(status models.ProjectStatus) ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Where("status = ?", status).Find(&projects).Error
+	err := r.db.Preload("User").Where("status = ?", status).Find(&projects).Error
+	return projects, err
+}
+
+// ListByStatuses returns projects matching any of the given statuses
+func (r *projectRepository) ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error) {
+	var projects []models.Project
+	err := r.db.Preload("User").Where("status IN ?", statuses).Find(&projects).Error
 	return projects, err
 }
 

@@ -18,7 +18,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production with Nginx
-FROM nginx:alpine
+FROM nginx:1.27-alpine
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Frontend Dashboard"

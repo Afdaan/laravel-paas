@@ -375,6 +375,30 @@ export const translations = {
       optiFailed: "Optimization failed",
       pullSuccess: "Image successfully pulled to registry",
       pullFailed: "Failed to pull image",
+      queue: {
+        title: "Deployment Queue",
+        desc: "Monitor active builds and waiting jobs in real-time.",
+        activeBuilds: "Active Builds",
+        activeDesc: "Projects currently being built",
+        waitingJobs: "Waiting Jobs",
+        waitingDesc: "Jobs waiting for a free worker",
+        summary: {
+          active: "Active Builds",
+          queued: "Waiting in Queue",
+          processed: "Total Processed",
+          failed: "Failed Jobs",
+        },
+        table: {
+          project: "Project",
+          owner: "Owner",
+          type: "Type",
+          enqueued: "Enqueued",
+          started: "Started At",
+          status: "Status",
+        },
+        noActive: "No active builds",
+        noQueued: "Queue is empty",
+      },
     },
     projectDetail: {
       metrics: {
@@ -974,6 +998,30 @@ export const translations = {
       optiFailed: "Optimasi gagal",
       pullSuccess: "Image berhasil ditarik ke registri",
       pullFailed: "Gagal menarik image",
+      queue: {
+        title: "Deployment Queue",
+        desc: "Pantau build aktif dan antrean job secara realtime.",
+        activeBuilds: "Build Aktif",
+        activeDesc: "Project yang sedang dalam proses build",
+        waitingJobs: "Antrean Tunggu",
+        waitingDesc: "Job yang menunggu slot worker kosong",
+        summary: {
+          active: "Build Aktif",
+          queued: "Menunggu Antrean",
+          processed: "Total Diproses",
+          failed: "Job Gagal",
+        },
+        table: {
+          project: "Project",
+          owner: "Pemilik",
+          type: "Tipe",
+          enqueued: "Antre Sejak",
+          started: "Dimulai Pada",
+          status: "Status",
+        },
+        noActive: "Tidak ada build aktif",
+        noQueued: "Antrean kosong",
+      },
     },
     projectDetail: {
       metrics: {

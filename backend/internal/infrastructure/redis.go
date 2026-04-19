@@ -89,7 +89,7 @@ func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType stri
 	}
 
 	// Increment enqueued counter
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "total_enqueued", 1)
+	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 
 	return nil
 }
@@ -116,9 +116,6 @@ func (r *RedisService) DequeueDeployment(timeout time.Duration) (*DeploymentJob,
 
 	now := time.Now()
 	job.StartedAt = &now
-
-	// Increment processed counter
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "total_processed", 1)
 
 	return &job, nil
 }
@@ -173,6 +170,42 @@ func (r *RedisService) GetDeploymentStats() (map[string]string, error) {
 // IncrementDeploymentCounter increments a specific deployment counter
 func (r *RedisService) IncrementDeploymentCounter(counter string) {
 	r.client.HIncrBy(r.ctx, deploymentStatsKey, counter, 1)
+}
+// ListDeploymentJobs returns all jobs currently in the queue
+func (r *RedisService) ListDeploymentJobs() ([]DeploymentJob, error) {
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list jobs: %w", err)
+	}
+
+	jobs := make([]DeploymentJob, 0, len(results))
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil {
+			jobs = append(jobs, job)
+		}
+	}
+
+	return jobs, nil
+}
+
+// IsProjectQueued checks if a project is already in the deployment queue
+func (r *RedisService) IsProjectQueued(projectID uint) (bool, error) {
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return false, err
+	}
+
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil {
+			if job.ProjectID == projectID {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // SetCache sets a value in cache with expiration

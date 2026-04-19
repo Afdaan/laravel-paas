@@ -6,6 +6,7 @@
 package workers
 
 import (
+	"fmt"
 	"log/slog"
 	"os/exec"
 	"strconv"
@@ -171,38 +172,54 @@ func (w *DeploymentWorker) cleanupExpiredProjects() {
 }
 
 
-// recoverOrphanedBuilds finds projects left in building state due to unexpected shutdown
-// and pushes them back into the Redis queue
+// recoverOrphanedBuilds finds projects left in an inconsistent state due to unexpected shutdown
 func (w *DeploymentWorker) recoverOrphanedBuilds() {
-	orphanedProjects, err := w.projectRepo.ListByStatus(models.StatusBuilding)
-	if err != nil {
-		slog.Error("Failed to query orphaned builds", "error", err)
-		return
+	statuses := []models.ProjectStatus{
+		models.StatusBuilding,
+		models.StatusQueued,
+		models.StatusPending,
 	}
 
-	if len(orphanedProjects) == 0 {
-		return
-	}
+	for _, status := range statuses {
+		projects, err := w.projectRepo.ListByStatus(status)
+		if err != nil {
+			slog.Error("Failed to query orphaned projects for recovery", "status", status, "error", err)
+			continue
+		}
 
-	slog.Info("Recovering orphaned builds from previous session", "count", len(orphanedProjects))
+		if len(projects) == 0 {
+			continue
+		}
 
-	for i := range orphanedProjects {
-		project := orphanedProjects[i]
+		slog.Info("Recovering orphaned projects from previous session", 
+			"status", status, 
+			"count", len(projects))
 
-		// Reset status to queued
-		project.Status = models.StatusQueued
-		recoveryLog := "Recovered from unexpected server shutdown."
-		project.ErrorLog = &recoveryLog
-		w.projectRepo.Update(&project)
+		for i := range projects {
+			project := projects[i]
 
-		// Clear existing lock if any
-		w.redisService.ReleaseDeploymentLock(project.ID)
+			// Check if already in queue to avoid duplicates
+			isQueued, _ := w.redisService.IsProjectQueued(project.ID)
+			if isQueued {
+				slog.Info("Project is already in queue, skipping recovery", "id", project.ID)
+				continue
+			}
 
-		// Re-enqueue for full clean spin-up
-		if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
-			slog.Error("Failed to re-queue project", "id", project.ID, "error", err)
-		} else {
-			slog.Info("Project automatically re-queued", "id", project.ID)
+			// Reset status to queued
+			project.Status = models.StatusQueued
+			recoveryLog := fmt.Sprintf("Recovered from unexpected shutdown (previous status: %s).", status)
+			project.ErrorLog = &recoveryLog
+			w.projectRepo.Update(&project)
+
+			// Clear existing lock if any
+			w.redisService.ReleaseDeploymentLock(project.ID)
+
+			// Re-enqueue
+			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+				slog.Error("Failed to re-queue project during recovery", "id", project.ID, "error", err)
+			} else {
+				slog.Info("Project automatically re-queued for reliability", "id", project.ID)
+			}
 		}
 	}
 }
@@ -304,13 +321,13 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 30*time.Minute)
 	if err != nil {
 		slog.Error("Failed to acquire lock for project", "id", job.ProjectID, "error", err)
-		w.redisService.IncrementDeploymentCounter("failed_lock")
+		w.redisService.IncrementDeploymentCounter("failed")
 		return
 	}
 
 	if !locked {
 		slog.Warn("Project is already being deployed, skipping", "id", job.ProjectID)
-		w.redisService.IncrementDeploymentCounter("skipped_locked")
+		w.redisService.IncrementDeploymentCounter("failed")
 		return
 	}
 
@@ -325,7 +342,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	project, err := w.projectRepo.GetByID(job.ProjectID)
 	if err != nil {
 		slog.Error("Failed to find project for deployment", "projectId", job.ProjectID, "error", err)
-		w.redisService.IncrementDeploymentCounter("failed_not_found")
+		w.redisService.IncrementDeploymentCounter("failed")
 		return
 	}
 
@@ -340,7 +357,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		"projectName", project.Name,
 		"duration", duration.Round(time.Second))
 
-	w.redisService.IncrementDeploymentCounter("completed")
+	w.redisService.IncrementDeploymentCounter("processed")
 }
 
 // deployProject handles the full deployment process
@@ -469,7 +486,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg 
 	project.ErrorLog = &msg
 	w.projectRepo.Update(project)
 	w.projectService.InvalidateSubdomainCache(project.Subdomain)
-	w.redisService.IncrementDeploymentCounter("failed_deployment")
+	w.redisService.IncrementDeploymentCounter("failed")
 }
 
 // getSetting helper to get a setting value from service

@@ -313,89 +313,92 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
             <TabsContent value="tables" className="flex-1 min-h-0">
                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[600px]">
                   {/* Table Sidebar */}
-                  <Card className="lg:col-span-1 flex flex-col overflow-hidden">
-                     <CardHeader className="py-4 border-b bg-muted/20">
+                  <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/5">
+                     <CardHeader className="p-6 border-b bg-muted/30">
                         <div className="flex justify-between items-center">
-                           <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em]">{t('databaseManager.tableIndex')}</CardTitle>
-                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchTables}>
+                           <CardTitle className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.tableIndex')}</CardTitle>
+                           <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-primary/10 hover:text-primary transition-colors" onClick={fetchTables}>
                               <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
                            </Button>
                         </div>
                      </CardHeader>
-                     <CardContent className="flex-1 overflow-y-auto p-2 space-y-1 pt-2">
+                     <CardContent className="flex-1 overflow-y-auto p-3 space-y-1.5 pt-4">
                         {loading && tables.length === 0 ? (
-                           <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+                           <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary/30" /></div>
                         ) : tables.length === 0 ? (
-                           <div className="text-center py-20 text-muted-foreground font-bold uppercase tracking-widest text-[10px]">{t('databaseManager.noTables')}</div>
+                           <div className="text-center py-20 text-muted-foreground font-bold uppercase tracking-widest text-[10px] opacity-40">{t('databaseManager.noTables')}</div>
                         ) : (
                            tables.map(table => (
                               <button
                                  key={table.name}
                                  onClick={() => selectTable(table.name)}
                                  className={cn(
-                                    "w-full text-left p-3 rounded-lg transition-all border text-xs font-bold flex justify-between items-center group",
+                                    "w-full text-left px-4 py-3 rounded-xl transition-all border text-xs font-bold flex justify-between items-center group",
                                     selectedTable === table.name
-                                       ? 'bg-primary/10 border-primary/30 text-primary'
-                                       : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
+                                       ? 'bg-primary/10 border-primary/20 text-primary shadow-sm'
+                                       : 'border-transparent text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground'
                                  )}
                               >
-                                 <span className="truncate pr-2">{table.name}</span>
-                                 <span className="text-[9px] opacity-40 font-mono italic group-hover:opacity-100">{table.rows}</span>
+                                 <span className="truncate pr-2 tracking-tight">{table.name}</span>
+                                 <span className={cn(
+                                    "text-[9px] font-mono px-1.5 py-0.5 rounded-md transition-all",
+                                    selectedTable === table.name ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/40 group-hover:bg-muted-foreground/10 group-hover:text-muted-foreground'
+                                 )}>{table.rows}</span>
                               </button>
                            ))
                         )}
                      </CardContent>
                   </Card>
-
+ 
                   {/* Data Viewer */}
-                  <Card className="lg:col-span-3 flex flex-col overflow-hidden bg-background">
+                  <Card className="lg:col-span-3 flex flex-col overflow-hidden border-none shadow-2xl bg-card/50 backdrop-blur-xl ring-1 ring-white/5">
                      {selectedTable ? (
                         <>
-                           <CardHeader className="py-4 border-b flex flex-row items-center justify-between bg-muted/20">
-                              <div className="flex items-center gap-3">
-                                 <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                                    <Layers className="w-4 h-4" />
+                           <CardHeader className="p-8 border-b flex flex-row items-center justify-between bg-muted/20">
+                              <div className="flex items-center gap-4">
+                                 <div className="w-12 h-12 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-center text-primary shadow-inner">
+                                    <Layers className="w-6 h-6" />
                                  </div>
                                  <div>
-                                    <CardTitle className="text-sm font-bold uppercase tracking-widest">{selectedTable}</CardTitle>
-                                    <CardDescription className="text-[10px]">{t('databaseManager.rows')}: {tableData?.total || 0}</CardDescription>
+                                    <CardTitle className="text-xl font-black tracking-tight text-foreground/90 uppercase">{selectedTable}</CardTitle>
+                                    <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{t('databaseManager.rows')}: {tableData?.total || 0}</CardDescription>
                                  </div>
                               </div>
                               {!primaryKey && (
-                                 <Badge variant="outline" className="text-[9px] font-bold uppercase border-primary/20 text-primary">{t('databaseManager.readOnly')}</Badge>
+                                 <Badge variant="outline" className="text-[10px] font-black uppercase tracking-widest border-primary/20 bg-primary/5 text-primary px-3 py-1">{t('databaseManager.readOnly')}</Badge>
                               )}
                            </CardHeader>
-
+ 
                            <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
                               {loading ? (
-                                 <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 animate-spin text-primary/50" /></div>
+                                 <div className="flex items-center justify-center h-96"><Loader2 className="w-10 h-10 animate-spin text-primary/30" /></div>
                               ) : tableData && tableData.rows?.length > 0 ? (
                                  <div className="w-full">
                                     <table className="w-full border-collapse text-left text-xs">
                                        <thead>
-                                          <tr className="bg-muted/50 border-b">
+                                          <tr className="bg-muted/40 border-b border-white/5">
                                              {tableData.columns?.map((col: string) => (
-                                                <th key={col} className="p-4 font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">{col}</th>
+                                                <th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-white/5 last:border-r-0">{col}</th>
                                              ))}
                                              {primaryKey && (
-                                                <th className="p-4 font-bold uppercase tracking-widest text-muted-foreground/0 w-12">Action</th>
+                                                <th className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/0 w-12">{t('common.actions')}</th>
                                              )}
                                           </tr>
                                        </thead>
-                                       <tbody className="divide-y">
+                                       <tbody className="divide-y divide-white/5">
                                           {tableData.rows.map((row: any, i: number) => (
-                                             <tr key={i} className="hover:bg-muted/30 transition-colors">
+                                             <tr key={i} className="group hover:bg-white/[0.02] transition-colors">
                                                 {tableData.columns?.map((col: string) => (
-                                                   <td key={col} className="p-4 font-mono text-[11px] border-r last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[200px]">
-                                                      {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
+                                                   <td key={col} className="px-8 py-5 font-mono text-[11px] font-medium border-r border-white/5 last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px] text-foreground/80">
+                                                      {row[col] === null ? <span className="text-muted-foreground/30 italic font-normal">NULL</span> : String(row[col])}
                                                    </td>
                                                 ))}
                                                 {primaryKey && (
-                                                   <td className="p-2 text-right w-12">
+                                                   <td className="px-4 py-2 text-right w-12 border-white/5">
                                                       <Button
                                                          variant="ghost"
                                                          size="icon"
-                                                         className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
+                                                         className="h-9 w-9 text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
                                                          onClick={() => requestDeleteRow(row)}
                                                       >
                                                          <Trash2 className="w-4 h-4" />
@@ -408,38 +411,44 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                     </table>
                                  </div>
                               ) : (
-                                 <div className="flex flex-col items-center justify-center h-full gap-4 opacity-30">
-                                    <PackageOpen className="w-12 h-12" />
-                                    <p className="text-xs font-bold uppercase tracking-[0.2em]">{t('databaseManager.emptyTable')}</p>
+                                 <div className="flex flex-col items-center justify-center h-96 gap-6 opacity-20">
+                                    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+                                       <PackageOpen className="w-10 h-10" />
+                                    </div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.3em]">{t('databaseManager.emptyTable')}</p>
                                  </div>
                               )}
                            </CardContent>
                         </>
                      ) : (
-                        <CardContent className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4 opacity-40">
-                           <MousePointer2 className="w-10 h-10 animate-bounce" />
+                        <CardContent className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-6 opacity-30 h-96">
+                           <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center animate-pulse">
+                              <MousePointer2 className="w-10 h-10" />
+                           </div>
                            <p className="text-xs font-bold uppercase tracking-[0.3em]">{t('databaseManager.selectToView')}</p>
                         </CardContent>
                      )}
                   </Card>
                </div>
             </TabsContent>
-
+ 
             <TabsContent value="query" className="flex-1 space-y-6">
-               <div className="grid grid-cols-1 gap-6 h-[600px]">
-                  <Card className="flex flex-col overflow-hidden bg-zinc-950 border-zinc-800">
-                     <CardHeader className="py-3 px-4 border-b border-zinc-800 bg-zinc-900 flex flex-row items-center justify-between">
-                        <div className="flex items-center gap-3">
-                           <Terminal className="w-4 h-4 text-emerald-500" />
-                           <CardTitle className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{t('databaseManager.sqlWorkspace')}</CardTitle>
+               <div className="grid grid-cols-1 gap-6 h-auto">
+                  <Card className="flex flex-col overflow-hidden bg-zinc-950 border-zinc-800 shadow-2xl">
+                     <CardHeader className="py-4 px-8 border-b border-zinc-800 bg-zinc-900/50 flex flex-row items-center justify-between">
+                        <div className="flex items-center gap-4">
+                           <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                              <Terminal className="w-4 h-4 text-emerald-500" />
+                           </div>
+                           <CardTitle className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.25em]">{t('databaseManager.sqlWorkspace')}</CardTitle>
                         </div>
-                        <div className="flex items-center gap-2">
-                           <Button variant="ghost" size="xs" onClick={() => setQuery('')} className="text-zinc-500 hover:text-white uppercase font-bold text-[10px]">{t('common.cancel').split(' ')[0]}</Button>
+                        <div className="flex items-center gap-3">
+                           <Button variant="ghost" size="sm" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-300 uppercase font-bold text-[10px] tracking-widest">{t('common.cancel').split(' ')[0]}</Button>
                            <Button
                               size="sm"
                               onClick={executeQuery}
                               disabled={queryLoading || !query.trim()}
-                              className="h-8 bg-emerald-600 hover:bg-emerald-500 text-white"
+                              className="h-9 px-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-900/20 transition-all active:scale-95"
                            >
                               {queryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-3 h-3 mr-2 fill-current" />}
                               {t('projectDetail.actions.execute')}
@@ -449,40 +458,43 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      <Textarea
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder={t('databaseManager.queryPlaceholder')}
-                        className="flex-1 bg-transparent text-emerald-400 font-mono text-sm p-6 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-800"
+                        placeholder="SELECT * FROM users WHERE active = 1;"
+                        className="flex-1 min-h-[200px] bg-transparent text-emerald-400 font-mono text-base p-8 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-800 scrollbar-thin transition-colors"
                         spellCheck={false}
                      />
                   </Card>
-
-                  <Card className="flex flex-col overflow-hidden">
-                     <CardHeader className="py-3 px-4 bg-muted/50 border-b flex flex-row items-center justify-between">
-                        <CardTitle className="text-[10px] font-bold uppercase tracking-widest">{t('databaseManager.outputLog')}</CardTitle>
+ 
+                  <Card className="flex flex-col overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/5">
+                     <CardHeader className="py-4 px-8 bg-muted/30 border-b border-white/5 flex flex-row items-center justify-between">
+                        <CardTitle className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.outputLog')}</CardTitle>
                         {queryResult && (
-                           <Badge variant="secondary" className="text-[9px] uppercase tracking-tighter">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
+                           <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-muted/50 border-white/5">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
                         )}
                      </CardHeader>
-                     <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
+                     <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin min-h-[200px]">
                         {queryResult ? (
                            <div className="min-w-full">
                               {queryResult.status === 'error' ? (
-                                 <div className="p-6 text-red-500 font-mono text-xs whitespace-pre-wrap leading-relaxed border-l-2 border-red-500 bg-red-500/5">
-                                    <div className="font-bold text-red-600 mb-2 uppercase tracking-widest">[QUERY FAILED]</div>
-                                    {queryResult.error}
+                                 <div className="p-8 text-red-500 font-mono text-xs whitespace-pre-wrap leading-relaxed border-l-4 border-red-500 bg-red-500/5">
+                                    <div className="font-black text-red-600 mb-3 uppercase tracking-[0.2em] flex items-center gap-2">
+                                       <Trash2 className="w-4 h-4" />
+                                       [QUERY EXECUTION FAILED]
+                                    </div>
+                                    <span className="opacity-80">{queryResult.error}</span>
                                  </div>
                               ) : queryResult.rows && queryResult.rows.length > 0 ? (
                                  <table className="w-full text-xs text-left border-collapse">
                                     <thead>
-                                       <tr className="bg-muted/50 border-b">
-                                          {queryResult.columns?.map((col: string) => (<th key={col} className="p-3 font-bold uppercase tracking-widest text-muted-foreground border-r last:border-r-0">{col}</th>))}
+                                       <tr className="bg-muted/40 border-b border-white/5">
+                                          {queryResult.columns?.map((col: string) => (<th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-white/5 last:border-r-0">{col}</th>))}
                                        </tr>
                                     </thead>
-                                    <tbody className="divide-y">
+                                    <tbody className="divide-y divide-white/5">
                                        {queryResult.rows.map((row: any, i: number) => (
-                                          <tr key={i} className="hover:bg-muted/30">
+                                          <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                                              {queryResult.columns?.map((col: string) => (
-                                                <td key={col} className="p-3 font-mono text-[11px] border-r last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]">
-                                                   {row[col] !== null ? String(row[col]) : <span className="opacity-20">NULL</span>}
+                                                <td key={col} className="px-8 py-4 font-mono text-[11px] font-medium border-r border-white/5 last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px] text-foreground/80">
+                                                   {row[col] !== null ? String(row[col]) : <span className="opacity-30 italic font-normal">NULL</span>}
                                                 </td>
                                              ))}
                                           </tr>
@@ -490,19 +502,24 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                     </tbody>
                                  </table>
                               ) : (
-                                 <div className="p-6 text-emerald-500 font-mono text-xs whitespace-pre-wrap leading-relaxed">
-                                    <div className="font-bold text-emerald-600 mb-2 uppercase tracking-widest">[QUERY SUCCESSFUL]</div>
-                                    {t('databaseManager.transactionComplete', { count: queryResult.rows_affected || 0 })}
-                                    <div className="text-muted-foreground mt-4 opacity-50 uppercase tracking-widest text-[9px]">
-                                       -- EXECUTION TRACE: completed in {queryResult.duration || '0ms'} --
+                                 <div className="p-8 text-emerald-500 font-mono text-xs whitespace-pre-wrap leading-relaxed border-l-4 border-emerald-500 bg-emerald-500/5">
+                                    <div className="font-black text-emerald-600 mb-3 uppercase tracking-[0.2em] flex items-center gap-2">
+                                       <RefreshCw className="w-4 h-4" />
+                                       [QUERY COMPLETED SUCCESSFULLY]
+                                    </div>
+                                    <span className="opacity-80">{t('databaseManager.transactionComplete', { count: queryResult.rows_affected || 0 })}</span>
+                                    <div className="text-muted-foreground/40 mt-6 uppercase tracking-[0.2em] text-[9px] font-bold">
+                                       -- SESSION TRACE ID: {Math.random().toString(36).substr(2, 9).toUpperCase()} --
                                     </div>
                                  </div>
                               )}
                            </div>
                         ) : (
-                           <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-20 gap-4">
-                              <Terminal className="w-12 h-12" />
-                              <p className="text-[10px] font-bold uppercase tracking-[0.4em]">{t('databaseManager.awaiting')}</p>
+                           <div className="h-64 flex flex-col items-center justify-center text-muted-foreground opacity-20 gap-6 transition-opacity">
+                              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                                 <Terminal className="w-8 h-8" />
+                              </div>
+                              <p className="text-[10px] font-black uppercase tracking-[0.5em]">{t('databaseManager.awaiting')}</p>
                            </div>
                         )}
                      </CardContent>

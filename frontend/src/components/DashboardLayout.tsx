@@ -74,6 +74,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/admin/settings', icon: Icons.Settings, label: t('common.settings') },
         ],
         resources: [
+          { to: '/admin/queue', icon: Icons.Dashboard, label: t('admin.queue.title') },
           { to: '/admin/containers', icon: Icons.Containers, label: t('common.containers') },
           { to: '/admin/images', icon: Icons.Images, label: t('common.images') },
           { to: '/admin/networks', icon: Icons.Networks, label: t('common.networks') },

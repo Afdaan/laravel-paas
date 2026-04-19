@@ -23,6 +23,7 @@ import ConfirmationModal from '../../components/ConfirmationModal'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 
 interface ProjectData {
@@ -95,6 +96,9 @@ const StudentProjects = () => {
   useEffect(() => {
     fetchProjects()
   }, [fetchProjects])
+
+  // Poll for status updates every 5 seconds
+  usePolling(fetchProjects, 5000)
   
   const handleRedeploy = async (id: number, e: React.MouseEvent) => {
     e.preventDefault()

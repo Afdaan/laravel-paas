@@ -163,6 +163,16 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued)
 	h.projectService.UpdateActivity(project.ID)
 
+	// Check if already in queue to avoid duplicates
+	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
+	if isQueued {
+		queueLength, _ := h.redisService.GetQueueLength()
+		return c.JSON(fiber.Map{
+			"message":        "Project is already in queue",
+			"queue_position": queueLength,
+		})
+	}
+
 	// Enqueue redeployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -410,13 +420,68 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	return proxy.Forward(target)(c)
 }
 
-// GetQueueStats returns deployment queue statistics
+// GetQueueStats returns deployment queue statistics and job lists
 func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
 	stats, err := h.redisService.GetDeploymentStats()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get queue stats"})
+		stats = make(map[string]string)
 	}
-	return c.JSON(fiber.Map{"stats": stats})
+
+	// 1. Fetch active builds (currently BUILDING) from DB
+	active, err := h.projectService.GetProjectsByStatus(models.StatusBuilding)
+	if err != nil {
+		active = []models.Project{}
+	}
+
+	// 2. Fetch all projects that SHOULD be waiting (QUEUED or PENDING) from DB
+	waitingProjs, _ := h.projectService.GetProjectsByStatuses([]models.ProjectStatus{models.StatusQueued, models.StatusPending})
+
+	// 3. Fetch actual jobs from Redis
+	redisJobs, _ := h.redisService.ListDeploymentJobs()
+
+	// 4. Enrich and Merge 
+	type EnrichedJob struct {
+		infrastructure.DeploymentJob
+		ProjectName string `json:"project_name"`
+		Email       string `json:"email"`
+	}
+	
+	finalWaitList := make([]EnrichedJob, 0)
+	seenProjectIDs := make(map[uint]bool)
+
+	// Add Redis jobs first (they preserve queue order)
+	for _, job := range redisJobs {
+		eJob := EnrichedJob{DeploymentJob: job}
+		p, err := h.projectService.GetProjectByID(job.ProjectID)
+		if err == nil {
+			eJob.ProjectName = p.Name
+			eJob.Email = p.User.Email
+		}
+		finalWaitList = append(finalWaitList, eJob)
+		seenProjectIDs[job.ProjectID] = true
+	}
+
+	// Add DB projects that are missing from Redis (but marked as Queued/Pending)
+	for _, p := range waitingProjs {
+		if !seenProjectIDs[p.ID] {
+			finalWaitList = append(finalWaitList, EnrichedJob{
+				DeploymentJob: infrastructure.DeploymentJob{
+					ProjectID:  p.ID,
+					UserID:     p.UserID,
+					Type:       "waiting",
+					EnqueuedAt: p.CreatedAt, // Fallback to creation time
+				},
+				ProjectName: p.Name,
+				Email:       p.User.Email,
+			})
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"stats":  stats,
+		"active": active,
+		"queued": finalWaitList,
+	})
 }
 
 // GetProjectsStats returns real-time resource usage for all running projects

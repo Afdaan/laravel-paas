@@ -37,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 
 // Status Indicator Component
@@ -108,26 +109,20 @@ function StudentProjectDetail() {
 
   const [consecutiveErrors, setConsecutiveErrors] = useState(0)
 
-  useEffect(() => {
-    fetchProject()
-    const interval = setInterval(() => {
-      if (consecutiveErrors < 3) {
-        fetchProject()
-        if (project?.status === 'running') {
-          fetchStats()
-        }
+  usePolling(() => {
+    if (consecutiveErrors < 3) {
+      fetchProject()
+      if (project?.status === 'running') {
+        fetchStats()
       }
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [id, project?.status, consecutiveErrors])
+    }
+  }, 5000)
 
-  useEffect(() => {
+  usePolling(() => {
     if (activeTab === 'logs' && project?.container_id && consecutiveErrors < 3) {
       fetchLogs()
-      const interval = setInterval(fetchLogs, 5000)
-      return () => clearInterval(interval)
     }
-  }, [activeTab, project, consecutiveErrors])
+  }, activeTab === 'logs' ? 5000 : null)
 
   useEffect(() => {
     if (activeTab === 'environment') {
