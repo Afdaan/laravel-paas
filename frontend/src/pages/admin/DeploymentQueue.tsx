@@ -120,7 +120,7 @@ const DeploymentQueue = () => {
         />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
         {/* Active Builds */}
         <Card className="overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/10">
           <CardHeader className="flex flex-row items-center justify-between pb-6 bg-muted/30 border-b">
@@ -143,16 +143,16 @@ const DeploymentQueue = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50 border-b hover:bg-muted/50">
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.project')}</TableHead>
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.owner')}</TableHead>
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.started')}</TableHead>
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest text-right">{t('admin.queue.table.status')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.project')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.owner')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.started')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest text-right">{t('admin.queue.table.status')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {activeBuilds.map((project) => (
                     <TableRow key={project.id} className="cursor-pointer hover:bg-muted/30 border-muted/20 transition-colors" onClick={() => navigate(`/projects/${project.id}`)}>
-                      <TableCell className="py-4">
+                      <TableCell className="px-6 py-5">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-blue-500/5 border border-blue-500/10 flex items-center justify-center">
                             <Package className="w-4 h-4 text-blue-500/70" />
@@ -160,13 +160,13 @@ const DeploymentQueue = () => {
                           <span className="font-bold text-sm tracking-tight">{project.name}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="py-4">
+                      <TableCell className="px-6 py-5">
                         <div className="flex flex-col">
                           <span className="text-xs font-bold">{project.user?.name}</span>
                           <span className="text-[10px] text-muted-foreground/80 font-medium">{project.user?.email}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="py-4">
+                      <TableCell className="px-6 py-5">
                         <div className="flex flex-col">
                           <span className="text-xs font-mono font-bold text-primary/80">
                             {formatPreciseTime(project.updated_at)}
@@ -176,7 +176,7 @@ const DeploymentQueue = () => {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="py-4 text-right">
+                      <TableCell className="px-6 py-5 text-right">
                         <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 border-blue-500/20 gap-2 px-3 py-1 animate-pulse">
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                           {t('status.building')}
@@ -212,26 +212,26 @@ const DeploymentQueue = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50 border-b hover:bg-muted/50">
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.project')}</TableHead>
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.type')}</TableHead>
-                    <TableHead className="py-4 font-bold text-xs uppercase tracking-widest text-right">{t('admin.queue.table.enqueued')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.project')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest">{t('admin.queue.table.type')}</TableHead>
+                    <TableHead className="px-6 py-5 font-bold text-xs uppercase tracking-widest text-right">{t('admin.queue.table.enqueued')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {queuedJobs.map((job, i) => (
                     <TableRow key={`${job.project_id}-${i}`} className="hover:bg-muted/30 border-muted/20 transition-colors">
-                      <TableCell className="py-4">
+                      <TableCell className="px-6 py-5">
                         <div className="flex flex-col">
                           <span className="font-bold text-sm tracking-tight">{job.project_name || `Project #${job.project_id}`}</span>
                           <span className="text-[10px] text-muted-foreground/80 font-medium">{job.email || '...'}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="py-4">
+                      <TableCell className="px-6 py-5">
                         <Badge variant="secondary" className="capitalize text-[10px] font-bold px-2 py-0.5 bg-muted border border-muted-foreground/10">
                           {job.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="py-4 text-right">
+                      <TableCell className="px-6 py-5 text-right">
                         <div className="flex flex-col items-end">
                           <span className="text-xs font-mono font-bold text-amber-500/80" title={new Date(job.enqueued_at).toLocaleString()}>
                             {formatPreciseTime(job.enqueued_at)}
