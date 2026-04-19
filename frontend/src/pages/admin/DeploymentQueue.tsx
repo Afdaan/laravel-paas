@@ -258,9 +258,6 @@ function StatCard({ label, value, icon: Icon, color }: { label: string, value: n
   return (
     <Card className="hover:border-primary/40 transition-all duration-500 group overflow-hidden border border-white/5 shadow-2xl bg-card/10 backdrop-blur-xl">
       <CardContent className="p-8 relative">
-        <div className="absolute -right-6 -bottom-6 opacity-[0.03] group-hover:opacity-[0.08] group-hover:scale-125 transition-all duration-700">
-          <Icon className={cn("w-32 h-32", color)} />
-        </div>
         <div className="flex justify-between items-start relative z-10">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/60 mb-5">{label}</p>
