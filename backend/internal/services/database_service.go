@@ -190,7 +190,9 @@ func (s *DatabaseService) GetTableData(dbName, password, tableName string, page,
 
 
 	var total int64
-	db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName)).Scan(&total)
+	if err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName)).Scan(&total); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to count rows: %w", err)
+	}
 
 	// Enforce maximum safety limit
 	if limit > 200 {
@@ -215,7 +217,10 @@ func (s *DatabaseService) GetTableData(dbName, password, tableName string, page,
 			valuePtrs[i] = &values[i]
 		}
 
-		rows.Scan(valuePtrs...)
+		if err := rows.Scan(valuePtrs...); err != nil {
+			slog.Warn("Failed to scan row", "tableName", tableName, "error", err)
+			continue
+		}
 
 		row := make(map[string]interface{})
 		for i, col := range columns {
@@ -306,7 +311,10 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 			for i := range values {
 				valuePtrs[i] = &values[i]
 			}
-			rows.Scan(valuePtrs...)
+			if err := rows.Scan(valuePtrs...); err != nil {
+				slog.Warn("Failed to scan row in raw query", "error", err)
+				continue
+			}
 
 			row := make(map[string]interface{})
 			for i, col := range columns {
@@ -357,10 +365,14 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 
 	for tables.Next() {
 		var tableName string
-		tables.Scan(&tableName)
+		if err := tables.Scan(&tableName); err != nil {
+			continue
+		}
 
 		var tbl, createStmt string
-		db.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)).Scan(&tbl, &createStmt)
+		if err := db.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)).Scan(&tbl, &createStmt); err != nil {
+			continue
+		}
 		sqlDump.WriteString(fmt.Sprintf("-- Table: %s\n", tableName))
 		sqlDump.WriteString(fmt.Sprintf("DROP TABLE IF EXISTS `%s`;\n", tableName))
 		sqlDump.WriteString(createStmt + ";\n\n")
@@ -382,7 +394,10 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 			for i := range values {
 				valuePtrs[i] = &values[i]
 			}
-			rows.Scan(valuePtrs...)
+			if err := rows.Scan(valuePtrs...); err != nil {
+				slog.Warn("Failed to scan row during dump", "tableName", tableName, "error", err)
+				continue
+			}
 
 			var vals []string
 			for _, v := range values {
@@ -421,11 +436,17 @@ func (s *DatabaseService) ResetProjectDatabase(dbName, password string) (int, er
 		tables = append(tables, table)
 	}
 
-	db.Exec("SET FOREIGN_KEY_CHECKS = 0")
-	for _, table := range tables {
-		db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", table))
+	if _, err := db.Exec("SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+		slog.Warn("Failed to disable foreign key checks", "error", err)
 	}
-	db.Exec("SET FOREIGN_KEY_CHECKS = 1")
+	for _, table := range tables {
+		if _, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", table)); err != nil {
+			slog.Warn("Failed to drop table during reset", "table", table, "error", err)
+		}
+	}
+	if _, err := db.Exec("SET FOREIGN_KEY_CHECKS = 1"); err != nil {
+		slog.Warn("Failed to enable foreign key checks", "error", err)
+	}
 
 	return len(tables), nil
 }

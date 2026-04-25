@@ -120,7 +120,9 @@ func (w *DeploymentWorker) StartPruneScheduler() {
 			time.Sleep(durationToWait)
 
 			slog.Info("Executing 3 AM scheduled Docker cache prune")
-			w.dockerService.PruneImages()
+			if err := w.dockerService.PruneImages(); err != nil {
+				slog.Error("Scheduled image prune failed", "error", err)
+			}
 
 			// Optional: Aggressive BuildKit cache cleanup for absolute zero-cache state
 			exec.Command("docker", "builder", "prune", "-a", "-f").Run()
@@ -168,7 +170,11 @@ func (w *DeploymentWorker) cleanupExpiredProjects() {
 	}
 
 	// Global prune to cleanup any leftover layers
-	go w.dockerService.PruneImages()
+	go func() {
+		if err := w.dockerService.PruneImages(); err != nil {
+			slog.Error("Background image prune failed", "error", err)
+		}
+	}()
 }
 
 
@@ -209,10 +215,14 @@ func (w *DeploymentWorker) recoverOrphanedBuilds() {
 			project.Status = models.StatusQueued
 			recoveryLog := fmt.Sprintf("Recovered from unexpected shutdown (previous status: %s).", status)
 			project.ErrorLog = &recoveryLog
-			w.projectRepo.Update(&project)
+			if err := w.projectRepo.Update(&project); err != nil {
+				slog.Error("Failed to update project during recovery", "id", project.ID, "error", err)
+			}
 
 			// Clear existing lock if any
-			w.redisService.ReleaseDeploymentLock(project.ID)
+			if err := w.redisService.ReleaseDeploymentLock(project.ID); err != nil {
+				slog.Warn("Failed to release lock during recovery", "id", project.ID, "error", err)
+			}
 
 			// Re-enqueue
 			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
@@ -237,7 +247,11 @@ func (w *DeploymentWorker) recoverOrphanedDeletions() {
 		for i := range deletingProjects {
 			project := deletingProjects[i]
 			slog.Info("Re-triggering project deletion", "id", project.ID)
-			go w.projectService.DeleteProject(&project)
+			go func(p models.Project) {
+				if err := w.projectService.DeleteProject(&p); err != nil {
+					slog.Error("Failed to background delete orphaned project", "id", p.ID, "error", err)
+				}
+			}(project)
 		}
 	}
 }
@@ -283,7 +297,9 @@ func (w *DeploymentWorker) processJobs() {
 		if !w.running {
 			// If we got a job but we're stopping, put it back in the queue
 			if job != nil {
-				w.redisService.EnqueueDeployment(job.ProjectID, job.UserID, job.Type)
+				if err := w.redisService.EnqueueDeployment(job.ProjectID, job.UserID, job.Type); err != nil {
+					slog.Error("Failed to re-enqueue job during shutdown", "projectId", job.ProjectID, "error", err)
+				}
 			}
 			break
 		}
@@ -365,7 +381,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Update status to building and clear old error logs
 	project.Status = models.StatusBuilding
 	project.ErrorLog = nil
-	w.projectRepo.Update(project)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Error("Failed to update project status to building", "id", project.ID, "error", err)
+	}
 
 	// Step 1: Clone repository
 	projectPath, err := w.gitService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
@@ -389,7 +407,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 
 	project.LaravelVersion = laravelVersion
 	project.PHPVersion = finalPHPVersion
-	w.projectRepo.Update(project)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Warn("Failed to update project versions", "id", project.ID, "error", err)
+	}
 
 	// Step 3: Create student database
 	// Generate a unique crypto-random password if not already set
@@ -435,19 +455,25 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 		slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
 		// Cleanup failed new container
-		w.dockerService.RemoveContainer(newContainerID)
+		if err := w.dockerService.RemoveContainer(newContainerID); err != nil {
+			slog.Warn("Failed to cleanup failed container after migration failure", "id", newContainerID, "error", err)
+		}
 		w.updateProjectError(project, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
 		return
 	}
 
 	// Sync Redis Proxy Cache
-	w.projectService.CacheSubdomainMapping(project)
+	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
+		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)
+	}
 
 	// Step 6: Sync config to remote Nginx
 	if err := w.nginxService.SyncProject(project, projectDomain); err != nil {
 		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
 		// Cleanup failed new container
-		w.dockerService.RemoveContainer(newContainerID)
+		if err := w.dockerService.RemoveContainer(newContainerID); err != nil {
+			slog.Warn("Failed to cleanup failed container after nginx sync failure", "id", newContainerID, "error", err)
+		}
 		w.updateProjectError(project, "Failed to sync Nginx configuration: "+err.Error())
 		return
 	}
@@ -455,11 +481,17 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	// Step 7: SUCCESS! Finalize and Cleanup Old version
 	project.Status = models.StatusRunning
 	project.ContainerID = &newContainerID
-	w.projectRepo.Update(project)
-	w.projectService.InvalidateSubdomainCache(project.Subdomain)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Error("Failed to update project to running", "id", project.ID, "error", err)
+	}
+	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+		slog.Warn("Failed to invalidate cache after success", "subdomain", project.Subdomain, "error", err)
+	}
 
 	// Sync Redis Proxy Cache (again with new ID/Status)
-	w.projectService.CacheSubdomainMapping(project)
+	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
+		slog.Warn("Failed to update cached subdomain mapping", "subdomain", project.Subdomain, "error", err)
+	}
 
 	// Cleanup old container after successful switch
 	if oldContainerID != nil {
@@ -474,7 +506,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 				}
 				time.Sleep(1 * time.Second)
 			}
-			w.dockerService.RemoveContainer(*oldContainerID)
+			if err := w.dockerService.RemoveContainer(*oldContainerID); err != nil {
+				slog.Warn("Failed to remove old container after switch", "id", *oldContainerID, "error", err)
+			}
 		}()
 	}
 }
