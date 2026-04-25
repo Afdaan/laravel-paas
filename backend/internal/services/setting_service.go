@@ -7,6 +7,7 @@ package services
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
@@ -39,7 +40,9 @@ func (s *SettingService) Get(key, defaultValue string) string {
 	value = s.repo.GetValue(key, defaultValue)
 
 	// Save to Redis (long expiry since settings change rarely)
-	s.redisService.SetCache(cacheKey, value, 24*time.Hour)
+	if err := s.redisService.SetCache(cacheKey, value, 24*time.Hour); err != nil {
+		slog.Warn("Failed to cache setting in Redis", "key", key, "error", err)
+	}
 
 	return value
 }
@@ -72,7 +75,9 @@ func (s *SettingService) UpdateBulk(settings map[string]interface{}) error {
 			return err
 		}
 		// Invalidate Cache
-		s.redisService.DeleteCache("setting:" + key)
+		if err := s.redisService.DeleteCache("setting:" + key); err != nil {
+			slog.Warn("Failed to invalidate setting cache", "key", key, "error", err)
+		}
 	}
 	return nil
 }
@@ -81,6 +86,8 @@ func (s *SettingService) UpdateBulk(settings map[string]interface{}) error {
 func (s *SettingService) GetInt(key string, defaultValue int) int {
 	valStr := s.Get(key, fmt.Sprintf("%d", defaultValue))
 	var val int
-	fmt.Sscanf(valStr, "%d", &val)
+	if _, err := fmt.Sscanf(valStr, "%d", &val); err != nil {
+		slog.Warn("Failed to parse setting as integer", "key", key, "value", valStr, "error", err)
+	}
 	return val
 }

@@ -75,7 +75,9 @@ func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, erro
 	}
 
 	// 3. Store in Redis for next time (expires in 1 hour)
-	s.redisService.SetCache(cacheKey, p, 1*time.Hour)
+	if err := s.redisService.SetCache(cacheKey, p, 1*time.Hour); err != nil {
+		slog.Warn("Failed to cache project in Redis", "subdomain", subdomain, "error", err)
+	}
 	
 	return p, nil
 }
@@ -89,17 +91,25 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 
 	// 1. Sync Deletion to Nginx Proxy (Do this first to stop traffic)
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	s.nginxService.DeleteProject(project, projectDomain)
+	if err := s.nginxService.DeleteProject(project, projectDomain); err != nil {
+		slog.Warn("Failed to delete project from Nginx proxy", "subdomain", project.Subdomain, "error", err)
+	}
 
 	// Invalidate Redis Proxy Cache
-	s.InvalidateSubdomainCache(project.Subdomain)
+	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
+		slog.Warn("Failed to invalidate subdomain cache", "subdomain", project.Subdomain, "error", err)
+	}
 
 	// 2. Remove Docker Container & Image
 	if project.ContainerID != nil {
 		slog.Debug("Removing container", "id", *project.ContainerID)
-		s.dockerService.RemoveContainer(*project.ContainerID)
+		if err := s.dockerService.RemoveContainer(*project.ContainerID); err != nil {
+			slog.Warn("Failed to remove container", "id", *project.ContainerID, "error", err)
+		}
 	}
-	s.dockerService.RemoveImage(project.Subdomain)
+	if err := s.dockerService.RemoveImage(project.Subdomain); err != nil {
+		slog.Warn("Failed to remove docker image", "subdomain", project.Subdomain, "error", err)
+	}
 
 	// 3. Drop Student Database
 	if project.DatabaseName != "" {
@@ -110,7 +120,9 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	}
 
 	// 4. Cleanup Filesystem (Source Code & Persistent Data)
-	s.dockerService.CleanupProject(project.Subdomain)
+	if err := s.dockerService.CleanupProject(project.Subdomain); err != nil {
+		slog.Warn("Failed to cleanup project filesystem", "subdomain", project.Subdomain, "error", err)
+	}
 	s.storageService.CleanupPersistentData(project)
 
 	// 5. Hard Delete from Database
@@ -120,7 +132,11 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	}
 
 	// 7. Cleanup dangling images after deletion
-	go s.dockerService.PruneImages()
+	go func() {
+		if err := s.dockerService.PruneImages(); err != nil {
+			slog.Error("Failed to prune images after project deletion", "error", err)
+		}
+	}()
 
 	slog.Info("Project thoroughly purged from system", "name", project.Name)
 	return nil
@@ -243,7 +259,9 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	}
 
 	// Invalidate Metadata Cache
-	s.InvalidateSubdomainCache(project.Subdomain)
+	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
+		slog.Warn("Failed to invalidate subdomain cache after update", "subdomain", project.Subdomain, "error", err)
+	}
 
 	return project, nil
 }
@@ -252,7 +270,9 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 func (s *ProjectService) UpdateProjectStatus(id uint, status models.ProjectStatus) error {
 	project, err := s.projectRepo.GetByID(id)
 	if err == nil {
-		s.InvalidateSubdomainCache(project.Subdomain)
+		if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate subdomain cache after status update", "subdomain", project.Subdomain, "error", err)
+		}
 	}
 	return s.projectRepo.UpdateStatus(id, status)
 }
