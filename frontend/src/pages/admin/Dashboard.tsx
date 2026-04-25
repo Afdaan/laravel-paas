@@ -1,5 +1,5 @@
 // ===========================================
-// Admin Dashboard (PaaS Infrastructure)
+// Admin Dashboard (PaaS Infrastructure) - Compact UI
 // ===========================================
 
 import { useState, useEffect, memo, useCallback } from 'react'
@@ -93,9 +93,9 @@ const AdminDashboard = () => {
 
   if (isLoading && !data.system) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-muted-foreground font-semibold uppercase tracking-widest text-xs animate-pulse">{t('common.loading')}</p>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+        <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+        <p className="text-muted-foreground font-medium uppercase tracking-wider text-[10px] animate-pulse">{t('common.loading')}</p>
       </div>
     )
   }
@@ -107,7 +107,7 @@ const AdminDashboard = () => {
   const volumes = data?.volumes || []
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-5 animate-in fade-in duration-500 pb-10">
       <Header 
         t={t}
         onRefresh={fetchData} 
@@ -125,7 +125,7 @@ const AdminDashboard = () => {
         formatBytes={formatBytes} 
       />
       
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ResourceTable 
           t={t}
           title={t('admin.liveWorkload')} 
@@ -168,21 +168,21 @@ interface HeaderProps {
 }
 
 const Header = memo(({ t, onRefresh, onPrune, isPruning }: HeaderProps) => (
-  <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
     <div>
-      <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.platformDashboard')}</h1>
-      <p className="text-muted-foreground max-w-2xl">
+      <h1 className="text-xl font-semibold tracking-tight">{t('admin.platformDashboard')}</h1>
+      <p className="text-xs text-muted-foreground mt-0.5">
         {t('admin.adminDesc')}
       </p>
     </div>
     
-    <div className="flex items-center gap-4">
-      <Button variant="outline" onClick={onRefresh}>
-        <RefreshCw className="w-4 h-4 mr-2" />
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" className="h-8 text-xs px-3" onClick={onRefresh}>
+        <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
         {t('admin.refresh')}
       </Button>
-      <Button variant="destructive" onClick={onPrune} disabled={isPruning}>
-        <ShieldAlert className="w-4 h-4 mr-2" />
+      <Button variant="destructive" size="sm" className="h-8 text-xs px-3" onClick={onPrune} disabled={isPruning}>
+        <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />
         {isPruning ? t('admin.cleaning') : t('admin.purgeRegistry')}
       </Button>
     </div>
@@ -203,7 +203,7 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
   const memUsage = system ? (system.memory_used / system.memory_total) * 100 : 0
   
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <StatCard 
         title={t('admin.cpuLoad')} 
         value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
@@ -231,7 +231,7 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
         icon={Layers}
       />
       
-      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-6">
+      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <SmallStat icon={Network} label={t('common.networks')} value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label={t('common.volumes')} value={volumes?.length || 0} />
         <SmallStat icon={Box} label={t('admin.networks.dockerEngine')} value={system?.docker_version || 'N/A'} />
@@ -250,17 +250,19 @@ interface StatCardProps {
 
 const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps) => {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="w-4 h-4 text-muted-foreground" />
+    <Card className="shadow-sm border-border/50">
+      <CardHeader className="flex flex-row items-center justify-between p-4 pb-1">
+        <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{title}</CardTitle>
+        <Icon className="w-3.5 h-3.5 text-muted-foreground/60" />
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-muted-foreground mt-1 mb-4">{detail}</p>
-        <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+      <CardContent className="p-4 pt-0">
+        <div className="flex items-baseline gap-2 mb-1">
+          <div className="text-xl font-semibold leading-none">{value}</div>
+          <p className="text-[10px] text-muted-foreground">{detail}</p>
+        </div>
+        <div className="h-1.5 w-full bg-secondary/50 rounded-full overflow-hidden mt-3">
           <div 
-            className="h-full bg-primary transition-all duration-1000" 
+            className="h-full bg-primary transition-all duration-700 ease-out" 
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -277,18 +279,18 @@ interface SmallStatProps {
 
 const SmallStat = ({ icon: Icon, label, value }: SmallStatProps) => {
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between p-6">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center text-primary">
-            <Icon className="w-5 h-5" />
+    <Card className="shadow-sm border-border/50">
+      <CardContent className="flex items-center justify-between p-3.5">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center text-primary">
+            <Icon className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-sm font-medium text-muted-foreground">{label}</p>
-            <p className="text-2xl font-bold">{value}</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest leading-tight">{label}</p>
+            <p className="text-sm font-semibold leading-tight mt-0.5">{value}</p>
           </div>
         </div>
-        <Zap className="w-5 h-5 text-muted-foreground/30" />
+        <Zap className="w-4 h-4 text-muted-foreground/20" />
       </CardContent>
     </Card>
   )
@@ -305,24 +307,26 @@ interface ResourceTableProps {
 }
 
 const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAllPath }: ResourceTableProps) => (
-  <Card className="flex flex-col">
-    <CardHeader className="flex flex-row items-center justify-between">
-      <div className="flex items-center flex-row gap-4">
-        <Icon className="w-5 h-5 text-muted-foreground" />
+  <Card className="flex flex-col shadow-sm border-border/50 overflow-hidden">
+    <CardHeader className="flex flex-row items-center justify-between p-3.5 border-b border-border/40 bg-muted/20">
+      <div className="flex items-center flex-row gap-3">
+        <div className="p-1.5 bg-background border border-border/50 rounded text-muted-foreground">
+          <Icon className="w-3.5 h-3.5" />
+        </div>
         <div>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{subtitle}</CardDescription>
+          <CardTitle className="text-sm font-semibold leading-tight">{title}</CardTitle>
+          <CardDescription className="text-[10px] leading-tight mt-0.5">{subtitle}</CardDescription>
         </div>
       </div>
-      <Button variant="ghost" size="sm" render={<Link to={viewAllPath} />}>
-        {t('admin.viewAll')} <ChevronRight className="w-4 h-4 ml-1" />
+      <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2 text-muted-foreground hover:text-foreground" render={<Link to={viewAllPath} />}>
+        {t('admin.viewAll')} <ChevronRight className="w-3 h-3 ml-1" />
       </Button>
     </CardHeader>
-    <CardContent className="p-0 border-t flex-1 overflow-hidden">
+    <CardContent className="p-0 flex-1 overflow-hidden">
       {(!data || data.length === 0) ? (
-        <div className="p-12 text-center flex flex-col items-center justify-center h-full text-muted-foreground">
-          <Icon className="w-8 h-8 mb-4 opacity-50" />
-          <p className="text-sm font-medium uppercase tracking-widest">
+        <div className="p-8 text-center flex flex-col items-center justify-center h-full text-muted-foreground">
+          <Icon className="w-6 h-6 mb-3 opacity-30" />
+          <p className="text-[10px] font-medium uppercase tracking-widest">
             {type === 'containers' ? t('admin.networks.noContainers') : t('admin.networks.noImages')}
           </p>
         </div>
@@ -339,75 +343,114 @@ const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAl
   </Card>
 ))
 
-const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => (
+const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => {
+  const formatName = (name: string) => {
+    if (!name) return '';
+    let n = name.startsWith('/') ? name.substring(1) : name;
+    return n.replace(/^paas-(project-)?/, '');
+  };
+
+  return (
   <>
     <TableHeader>
-      <TableRow>
-        <TableHead className="w-[30%]">{t('admin.networks.identity')}</TableHead>
-        <TableHead className="w-[35%]">{t('admin.networks.protocol')}</TableHead>
-        <TableHead className="w-[15%] text-center">{t('common.status')}</TableHead>
-        <TableHead className="w-[20%] text-right">{t('admin.networks.uptime')}</TableHead>
+      <TableRow className="hover:bg-transparent border-b border-border/60">
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[32%]">{t('admin.networks.identity')}</TableHead>
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[33%]">{t('admin.networks.protocol')}</TableHead>
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[15%] text-center">{t('common.status')}</TableHead>
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[20%] text-right pr-6">{t('admin.networks.uptime')}</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
       {data.slice(0, 8).map((c) => (
-        <TableRow key={c.id}>
-          <TableCell>
-            <div className="font-medium truncate">
-              {c.names[0] || c.id.substring(0, 8)}
+        <TableRow key={c.id} className="group hover:bg-muted/30 border-b border-border/40 transition-colors">
+          <TableCell className="align-top py-1">
+            <div className="h-5 flex items-center text-xs font-medium truncate text-foreground/90 group-hover:text-foreground" title={c.names[0]}>
+              {formatName(c.names[0]) || c.id.substring(0, 8)}
             </div>
           </TableCell>
-          <TableCell>
-            <span className="text-xs text-muted-foreground truncate block">{c.image}</span>
+          <TableCell className="align-top py-1">
+            <div className="h-5 flex items-center text-[11px] text-muted-foreground truncate">
+              {c.image}
+            </div>
           </TableCell>
-          <TableCell className="text-center">
-            <Badge variant={c.state === 'running' ? 'default' : 'destructive'} className="capitalize">
-              {c.state === 'running' ? t('status.running') : (c.state === 'exited' ? t('status.stopped') : c.state)}
-            </Badge>
+          <TableCell className="text-center align-top py-1">
+            <div className="h-5 flex items-center justify-center">
+              <Badge 
+                variant="outline" 
+                className={c.state === 'running' 
+                  ? "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-gray-100 text-black border-transparent" 
+                  : "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-zinc-800 text-zinc-300 border-transparent"}
+              >
+                {c.state === 'running' ? t('status.running') : (c.state === 'exited' ? t('status.stopped') : c.state)}
+              </Badge>
+            </div>
           </TableCell>
-          <TableCell className="text-right text-xs text-muted-foreground truncate">
-            {c.status}
+          <TableCell className="text-right align-top py-1 pr-6">
+            <div className="h-5 flex items-center justify-end text-[10px] text-muted-foreground/80 font-mono">
+              {c.status}
+            </div>
           </TableCell>
         </TableRow>
       ))}
     </TableBody>
   </>
-))
+  )
+})
 
-const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => (
+const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => {
+  const formatRepo = (repo: string) => {
+    if (!repo) return '';
+    return repo.replace(/^paas-(project-)?/, '');
+  };
+
+  return (
   <>
     <TableHeader>
-      <TableRow>
-        <TableHead className="w-[35%]">{t('admin.images.repository')}</TableHead>
-        <TableHead className="w-[20%] text-center">{t('common.status')}</TableHead>
-        <TableHead className="w-[20%] text-center">{t('admin.images.tag')}</TableHead>
-        <TableHead className="w-[25%] text-right">{t('admin.images.size')}</TableHead>
+      <TableRow className="hover:bg-transparent border-b border-border/60">
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[35%]">{t('admin.images.repository')}</TableHead>
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[20%] text-center">{t('common.status')}</TableHead>
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[20%] text-center">{t('admin.images.tag')}</TableHead>
+        <TableHead className="h-8 py-1 text-[11px] font-medium w-[25%] text-right pr-6">{t('admin.images.size')}</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
       {data.slice(0, 8).map((img, i) => (
-        <TableRow key={i}>
-          <TableCell>
-            <div className="font-medium truncate">{img.repository}</div>
-            <div className="text-[10px] text-muted-foreground font-mono">{img.id?.substring(7, 19)}</div>
+        <TableRow key={i} className="group hover:bg-muted/30 border-b border-border/40 transition-colors">
+          <TableCell className="align-top py-1">
+            <div className="h-5 flex items-center text-xs font-medium truncate text-foreground/90 group-hover:text-foreground" title={img.repository}>
+              {formatRepo(img.repository)}
+            </div>
+            <div className="text-[9.5px] text-muted-foreground/50 font-mono leading-none">
+              {img.id?.substring(7, 19)}
+            </div>
           </TableCell>
-          <TableCell className="text-center">
-            <Badge variant={img.status === 'In Use' ? 'default' : 'secondary'}>
-              {img.status === 'In Use' ? t('status.inUse') : img.status}
-            </Badge>
+          <TableCell className="text-center align-top py-1">
+            <div className="h-5 flex items-center justify-center">
+              <Badge 
+                variant="outline" 
+                className={img.status === 'In Use' 
+                  ? "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-gray-100 text-black border-transparent" 
+                  : "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-zinc-800 text-zinc-300 border-transparent"}
+              >
+                {img.status === 'In Use' ? t('status.inUse') : img.status}
+              </Badge>
+            </div>
           </TableCell>
-          <TableCell className="text-center font-mono text-xs truncate">
-            {img.tag}
+          <TableCell className="text-center align-top py-1">
+            <div className="h-5 flex items-center justify-center text-[10.5px] font-mono text-muted-foreground/80 truncate">
+              {img.tag}
+            </div>
           </TableCell>
-          <TableCell className="text-right text-xs text-muted-foreground">
-            {img.size_human}
+          <TableCell className="text-right align-top py-1 pr-6">
+            <div className="h-5 flex items-center justify-end text-[10.5px] text-muted-foreground/80 font-mono">
+              {img.size_human}
+            </div>
           </TableCell>
         </TableRow>
       ))}
     </TableBody>
   </>
-))
+  )
+})
 
 export default AdminDashboard
-
-
