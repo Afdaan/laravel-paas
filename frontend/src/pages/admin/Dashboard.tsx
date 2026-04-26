@@ -1,5 +1,5 @@
 // ===========================================
-// Admin Dashboard (PaaS Infrastructure) - Compact UI
+// Admin Dashboard (PaaS Infrastructure)
 // ===========================================
 
 import { useState, useEffect, memo, useCallback } from 'react'
@@ -88,7 +88,8 @@ const AdminDashboard = () => {
     const k = 1024
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    const num = parseFloat((bytes / Math.pow(k, i)).toFixed(2))
+    return num.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' ' + sizes[i]
   }
 
   if (isLoading && !data.system) {
@@ -206,7 +207,7 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <StatCard 
         title={t('admin.cpuLoad')} 
-        value={`${(system?.cpu_usage || 0).toFixed(1)}%`}
+        value={`${(system?.cpu_usage || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
         detail={t('admin.cpuCoresDetail', { count: system?.cpu_cores || 1 })}
         progress={Math.min(system?.cpu_usage || 0, 100)}
         icon={Cpu}
@@ -249,6 +250,17 @@ interface StatCardProps {
 }
 
 const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps) => {
+  let displayValue = value;
+  let displayUnit = "";
+  
+  if (typeof value === 'string') {
+    const match = value.match(/^([\d.,]+)\s*([a-zA-Z%]+)$/);
+    if (match) {
+      displayValue = match[1];
+      displayUnit = match[2];
+    }
+  }
+
   return (
     <Card className="shadow-sm border-border/50">
       <CardHeader className="flex flex-row items-center justify-between p-4 pb-1">
@@ -257,8 +269,11 @@ const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps)
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="flex items-baseline gap-2 mb-1">
-          <div className="text-xl font-semibold leading-none">{value}</div>
-          <p className="text-[10px] text-muted-foreground">{detail}</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-bold tracking-tight tabular-nums">{displayValue}</span>
+            {displayUnit && <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">{displayUnit}</span>}
+          </div>
+          <p className="text-[10px] text-muted-foreground ml-1">{detail}</p>
         </div>
         <div className="h-1.5 w-full bg-secondary/50 rounded-full overflow-hidden mt-3">
           <div 
@@ -353,40 +368,40 @@ const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => {
   return (
   <>
     <TableHeader>
-      <TableRow className="hover:bg-transparent border-b border-border/60">
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[32%]">{t('admin.networks.identity')}</TableHead>
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[33%]">{t('admin.networks.protocol')}</TableHead>
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[15%] text-center">{t('common.status')}</TableHead>
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[20%] text-right pr-6">{t('admin.networks.uptime')}</TableHead>
+      <TableRow className="hover:bg-transparent border-b border-border/60 bg-muted/30">
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[35%]">{t('admin.networks.identity')}</TableHead>
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[30%]">{t('admin.networks.protocol')}</TableHead>
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[15%] text-center">{t('common.status')}</TableHead>
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[20%] text-right pr-8">{t('admin.networks.uptime')}</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
       {data.slice(0, 8).map((c) => (
-        <TableRow key={c.id} className="group hover:bg-muted/30 border-b border-border/40 transition-colors">
-          <TableCell className="align-top py-1">
-            <div className="h-5 flex items-center text-xs font-medium truncate text-foreground/90 group-hover:text-foreground" title={c.names[0]}>
-              {formatName(c.names[0]) || c.id.substring(0, 8)}
+        <TableRow key={c.id} className="group hover:bg-muted/30 border-b border-border/40 transition-colors h-11">
+          <TableCell className="align-middle py-2">
+            <div className="flex items-center text-xs font-medium truncate text-foreground/90 group-hover:text-foreground" title={c.names?.[0]}>
+              {formatName(c.names?.[0]) || c.id?.substring(0, 8)}
             </div>
           </TableCell>
-          <TableCell className="align-top py-1">
-            <div className="h-5 flex items-center text-[11px] text-muted-foreground truncate">
+          <TableCell className="align-middle py-2">
+            <div className="flex items-center text-[11px] text-muted-foreground truncate">
               {c.image}
             </div>
           </TableCell>
-          <TableCell className="text-center align-top py-1">
-            <div className="h-5 flex items-center justify-center">
+          <TableCell className="text-center align-middle py-2">
+            <div className="flex items-center justify-center">
               <Badge 
                 variant="outline" 
                 className={c.state === 'running' 
-                  ? "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-gray-100 text-black border-transparent" 
-                  : "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-zinc-800 text-zinc-300 border-transparent"}
+                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-gray-100 text-black border-transparent uppercase" 
+                  : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-zinc-800 text-zinc-300 border-transparent uppercase"}
               >
                 {c.state === 'running' ? t('status.running') : (c.state === 'exited' ? t('status.stopped') : c.state)}
               </Badge>
             </div>
           </TableCell>
-          <TableCell className="text-right align-top py-1 pr-6">
-            <div className="h-5 flex items-center justify-end text-[10px] text-muted-foreground/80 font-mono">
+          <TableCell className="text-right align-middle py-2 pr-8">
+            <div className="flex items-center justify-end text-[10.5px] text-muted-foreground/80 font-mono">
               {c.status}
             </div>
           </TableCell>
@@ -406,43 +421,45 @@ const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => {
   return (
   <>
     <TableHeader>
-      <TableRow className="hover:bg-transparent border-b border-border/60">
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[35%]">{t('admin.images.repository')}</TableHead>
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[20%] text-center">{t('common.status')}</TableHead>
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[20%] text-center">{t('admin.images.tag')}</TableHead>
-        <TableHead className="h-8 py-1 text-[11px] font-medium w-[25%] text-right pr-6">{t('admin.images.size')}</TableHead>
+      <TableRow className="hover:bg-transparent border-b border-border/60 bg-muted/30">
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[35%]">{t('admin.images.repository')}</TableHead>
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[20%] text-center">{t('common.status')}</TableHead>
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[20%] text-center">{t('admin.images.tag')}</TableHead>
+        <TableHead className="h-9 py-2 text-[11px] font-semibold text-muted-foreground/80 tracking-wide w-[25%] text-right pr-8">{t('admin.images.size')}</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
       {data.slice(0, 8).map((img, i) => (
-        <TableRow key={i} className="group hover:bg-muted/30 border-b border-border/40 transition-colors">
-          <TableCell className="align-top py-1">
-            <div className="h-5 flex items-center text-xs font-medium truncate text-foreground/90 group-hover:text-foreground" title={img.repository}>
-              {formatRepo(img.repository)}
-            </div>
-            <div className="text-[9.5px] text-muted-foreground/50 font-mono leading-none">
-              {img.id?.substring(7, 19)}
+        <TableRow key={i} className="group hover:bg-muted/30 border-b border-border/40 transition-colors h-11">
+          <TableCell className="align-middle py-2">
+            <div className="flex flex-col justify-center">
+              <div className="text-xs font-medium truncate text-foreground/90 group-hover:text-foreground leading-tight mb-0.5" title={img.repository}>
+                {formatRepo(img.repository)}
+              </div>
+              <div className="text-[10px] text-muted-foreground/60 font-mono leading-none">
+                {img.id?.substring(7, 19)}
+              </div>
             </div>
           </TableCell>
-          <TableCell className="text-center align-top py-1">
-            <div className="h-5 flex items-center justify-center">
+          <TableCell className="text-center align-middle py-2">
+            <div className="flex items-center justify-center">
               <Badge 
                 variant="outline" 
                 className={img.status === 'In Use' 
-                  ? "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-gray-100 text-black border-transparent" 
-                  : "h-5 px-2 tracking-tight text-[11px] font-medium rounded-full bg-zinc-800 text-zinc-300 border-transparent"}
+                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-gray-100 text-black border-transparent uppercase" 
+                  : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-zinc-800 text-zinc-300 border-transparent uppercase"}
               >
                 {img.status === 'In Use' ? t('status.inUse') : img.status}
               </Badge>
             </div>
           </TableCell>
-          <TableCell className="text-center align-top py-1">
-            <div className="h-5 flex items-center justify-center text-[10.5px] font-mono text-muted-foreground/80 truncate">
+          <TableCell className="text-center align-middle py-2">
+            <div className="flex items-center justify-center text-[10.5px] font-mono text-muted-foreground/80 truncate">
               {img.tag}
             </div>
           </TableCell>
-          <TableCell className="text-right align-top py-1 pr-6">
-            <div className="h-5 flex items-center justify-end text-[10.5px] text-muted-foreground/80 font-mono">
+          <TableCell className="text-right align-middle py-2 pr-8">
+            <div className="flex items-center justify-end text-[10.5px] text-muted-foreground/80 font-mono">
               {img.size_human}
             </div>
           </TableCell>

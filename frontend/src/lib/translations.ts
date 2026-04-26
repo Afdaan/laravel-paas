@@ -43,7 +43,7 @@ export const translations = {
       errorTitle: "Error",
       saveSuccess: "Data saved successfully",
       deleteSuccess: "Identity purged successfully",
-      updateSuccess: "Identity updated successfully",
+      updateSuccess: "Identity updated successfully", 
       loadError: "Failed to load data",
       actionFailed: "Action failed",
       copySuccess: "Copied to clipboard",
