@@ -37,12 +37,16 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 		slog.Info("Syncing source assets to persistent storage", "subdomain", project.Subdomain)
 		// We use -n (no-clobber) to avoid overwriting files the student/app has already created
 		// We copy content of source/storage/app/* into path/ (which is the volume root)
-		exec.Command("cp", "-an", projectSourceStorage+"/.", path).Run()
+		if err := exec.Command("cp", "-an", projectSourceStorage+"/.", path).Run(); err != nil {
+			slog.Warn("Failed to sync source assets", "subdomain", project.Subdomain, "error", err)
+		}
 	}
 
 	// Always ensure public exists as it's required for storage:link
 	publicPath := filepath.Join(path, "public")
-	os.MkdirAll(publicPath, 0777)
+	if err := os.MkdirAll(publicPath, 0777); err != nil {
+		slog.Warn("Failed to create public storage path", "path", publicPath, "error", err)
+	}
 
 	fullUserPath := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))
 	if err := s.ChmodRecursive(fullUserPath, 0777); err != nil {
@@ -83,7 +87,9 @@ func (s *StorageService) CopyFile(src, dst string) error {
 	}
 	defer sourceFile.Close()
 
-	os.MkdirAll(filepath.Dir(dst), 0755)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
 
 	destFile, err := os.Create(dst)
 	if err != nil {

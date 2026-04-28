@@ -56,8 +56,8 @@ func (s *MySQLService) CreateDatabase(dbName, password string) error {
 func (s *MySQLService) DropDatabase(dbName string) error {
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
 
-	utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	_, err := utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("DROP DATABASE IF EXISTS `%s`; DROP USER IF EXISTS '%s'@'%%';", dbName, dbName))
-	return nil
+	return err
 }

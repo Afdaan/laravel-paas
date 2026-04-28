@@ -65,15 +65,23 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	}
 
 	// Copy nginx and supervisor configs
-	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
-		filepath.Join(projectPath, "docker", "nginx.conf")); err != nil {
-		// Create docker directory if needed
-		os.MkdirAll(filepath.Join(projectPath, "docker"), 0755)
-		s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"),
-			filepath.Join(projectPath, "docker", "nginx.conf"))
+	nginxSrc := filepath.Join(s.cfg.TemplatesPath, "nginx.conf")
+	nginxDst := filepath.Join(projectPath, "docker", "nginx.conf")
+	if err := s.storage.CopyFile(nginxSrc, nginxDst); err != nil {
+		// Create docker directory if needed and try again
+		if err := os.MkdirAll(filepath.Join(projectPath, "docker"), 0755); err != nil {
+			return "", fmt.Errorf("failed to create docker directory: %w", err)
+		}
+		if err := s.storage.CopyFile(nginxSrc, nginxDst); err != nil {
+			return "", fmt.Errorf("failed to copy nginx.conf: %w", err)
+		}
 	}
-	s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"),
-		filepath.Join(projectPath, "docker", "supervisord.conf"))
+
+	supervisordSrc := filepath.Join(s.cfg.TemplatesPath, "supervisord.conf")
+	supervisordDst := filepath.Join(projectPath, "docker", "supervisord.conf")
+	if err := s.storage.CopyFile(supervisordSrc, supervisordDst); err != nil {
+		return "", fmt.Errorf("failed to copy supervisord.conf: %w", err)
+	}
 
 	// Append Config for Queue Worker if enabled
 	if project.QueueEnabled {
@@ -113,6 +121,7 @@ stdout_logfile_maxbytes=0
 	res, err := utils.Run(10*time.Minute, "docker", "buildx", "build", "--load",
 		"--label", models.LabelProjectManaged,
 		"-t", imageName, projectPath)
+	_ = res // ignore output if successful on first build attempt
 
 	if err != nil {
 		// Fallback to classic build
@@ -197,7 +206,9 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 func (s *DockerService) createEnvFile(project *models.Project, projectPath, projectDomain string) error {
 	// Generate random 32-byte key for APP_KEY
 	key := make([]byte, 32)
-	rand.Read(key)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("failed to generate random app key: %w", err)
+	}
 	appKey := base64.StdEncoding.EncodeToString(key)
 
 	envContent := fmt.Sprintf(`APP_NAME="%s"
@@ -242,8 +253,12 @@ func (s *DockerService) StopContainer(containerID string) error {
 
 // RemoveContainer stops and removes a container
 func (s *DockerService) RemoveContainer(containerID string) error {
-	exec.Command("docker", "stop", containerID).Run()
-	exec.Command("docker", "rm", containerID).Run()
+	if err := exec.Command("docker", "stop", containerID).Run(); err != nil {
+		slog.Warn("Failed to stop container during removal", "containerID", containerID, "error", err)
+	}
+	if err := exec.Command("docker", "rm", containerID).Run(); err != nil {
+		slog.Warn("Failed to remove container", "containerID", containerID, "error", err)
+	}
 	return nil
 }
 
@@ -271,7 +286,9 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 func (s *DockerService) RemoveImage(subdomain string) error {
 	imageName := fmt.Sprintf("paas-%s", subdomain)
 	// Try both with and without the paas- prefix in case naming varies
-	exec.Command("docker", "rmi", imageName).Run()
+	if err := exec.Command("docker", "rmi", imageName).Run(); err != nil {
+		slog.Warn("Failed to remove image", "image", imageName, "error", err)
+	}
 	return nil
 }
 
@@ -280,11 +297,15 @@ func (s *DockerService) PruneImages() error {
 	slog.Info("Starting Docker image pruning")
 
 	// 1. Remove dangling images (<none>)
-	utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
+	if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f"); err != nil {
+		slog.Warn("Failed to prune dangling images", "error", err)
+	}
 
 	// 2. Also remove unused project images (those with our label)
 	filter := fmt.Sprintf("label=%s=true", models.LabelProjectManaged)
-	utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter)
+	if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter); err != nil {
+		slog.Warn("Failed to prune project images", "error", err)
+	}
 
 	return nil
 }

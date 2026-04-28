@@ -22,10 +22,10 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		slog.Warn("No .env file found, using system environment variables")
-	}
+	// Load environment variables (Local .env takes precedence over Root .env)
+	// godotenv.Load does not overwrite existing environment variables
+	_ = godotenv.Load()        // Try local backend/.env
+	_ = godotenv.Load("../.env") // Try project root .env
 
 	// Initialize configuration
 	cfg := config.Load()

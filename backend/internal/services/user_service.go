@@ -134,7 +134,9 @@ func (s *UserService) DeleteUser(id uint) error {
 		slog.Info("Cascading deletion: Cleaning up user projects", "userId", id, "count", len(projects))
 		for i := range projects {
 			// Thorough cleanup (Docker, DB, Files, etc.)
-			s.projectService.DeleteProject(&projects[i])
+			if err := s.projectService.DeleteProject(&projects[i]); err != nil {
+				slog.Error("Failed to delete user project during cascade", "userId", id, "projectId", projects[i].ID, "error", err)
+			}
 		}
 	}
 
@@ -216,12 +218,16 @@ func (s *UserService) UpdateActivity(userID uint, ip string, forceLoginUpdate bo
 					u, err := s.userRepo.GetByID(uID)
 					if err == nil {
 						u.LastLocation = location
-						s.userRepo.Update(u)
+						if err := s.userRepo.Update(u); err != nil {
+							slog.Warn("Failed to update user location", "userId", uID, "error", err)
+						}
 					}
 				}
 			}(user.ID, ip)
 		}
-		s.userRepo.Update(user)
+		if err := s.userRepo.Update(user); err != nil {
+			slog.Error("Failed to update user activity", "userId", user.ID, "error", err)
+		}
 	}
 }
 

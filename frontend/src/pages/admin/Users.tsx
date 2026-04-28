@@ -313,17 +313,17 @@ const AdminUsers = () => {
           <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
               <TableRow className="bg-muted/20 hover:bg-muted/20">
-                <TableHead className="h-12 w-[28%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.name')}</TableHead>
-                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.roleLabel')}</TableHead>
-                <TableHead className="h-12 w-[16%] px-4 text-xs font-semibold uppercase tracking-wider">
+                <TableHead className="h-12 w-[24%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.name')}</TableHead>
+                <TableHead className="h-12 w-[12%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.roleLabel')}</TableHead>
+                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">
                   <div className="flex items-center gap-2">
                     <Activity className="w-3.5 h-3.5" />
                     {t('admin.users.activityLabel')}
                   </div>
                 </TableHead>
-                <TableHead className="h-12 w-[20%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.lastLoginLabel')}</TableHead>
+                <TableHead className="h-12 w-[16%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.lastLoginLabel')}</TableHead>
                 <TableHead className="h-12 w-[16%] px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.users.accessFromLabel')}</TableHead>
-                <TableHead className="h-12 w-[6%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
+                <TableHead className="h-12 w-[18%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

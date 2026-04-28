@@ -191,7 +191,7 @@ const AdminProjects = () => {
               <TableRow className="bg-muted/20 hover:bg-muted/20">
                 <TableHead className="h-12 w-[32%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.projectName')}</TableHead>
                 <TableHead className="h-12 w-[18%] px-4 text-xs font-semibold uppercase tracking-wider">Owner</TableHead>
-                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">Framework</TableHead>
+                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">Version</TableHead>
                 <TableHead className="h-12 w-[12%] px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
                 <TableHead className="h-12 w-[16%] px-4 text-center text-xs font-semibold uppercase tracking-wider">Resource Usage</TableHead>
                 <TableHead className="h-12 w-[8%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>

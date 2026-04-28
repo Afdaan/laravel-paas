@@ -148,15 +148,15 @@ const AdminContainers = () => {
           <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
               <TableRow className="bg-muted/20 hover:bg-muted/20">
-                <TableHead className="w-12 px-4 text-center">
+                <TableHead className="w-10 px-4 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.instanceDetail')}</TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.health')}</TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.resourceLoad')}</TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.gatewayPorts')}</TableHead>
-                <TableHead className="h-12 pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
+                <TableHead className="w-[26%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.instanceDetail')}</TableHead>
+                <TableHead className="w-[12%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
+                <TableHead className="w-[20%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.health')}</TableHead>
+                <TableHead className="w-[18%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.resourceLoad')}</TableHead>
+                <TableHead className="w-[16%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.containers.gatewayPorts')}</TableHead>
+                <TableHead className="w-[8%] h-12 pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -176,65 +176,89 @@ const AdminContainers = () => {
                   <TableCell className="px-4 py-3 text-center">
                     <Checkbox />
                   </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${c.state === 'running' ? 'bg-indigo-500/10 text-indigo-600' : 'bg-muted/50 text-muted-foreground'}`}>
-                        <Box className="w-5 h-5" />
+
+                  {/* Instance Detail */}
+                  <TableCell className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center ${c.state === 'running' ? 'bg-indigo-500/10 text-indigo-500' : 'bg-muted/50 text-muted-foreground'}`}>
+                        <Box className="w-4 h-4" />
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold truncate max-w-[200px]">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-semibold truncate">
                           {c.names[0]?.replace('/', '') || c.id.substring(0, 12)}
                         </span>
-                        <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">{c.image}</span>
+                        <span className="text-[11px] text-muted-foreground font-mono truncate">{c.image}</span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="px-4 py-3">
+
+                  {/* Status */}
+                  <TableCell className="px-4 py-4">
                     {c.state === 'running' ? (
-                      <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
+                      <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 bg-emerald-500/10 gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {t('status.running')}
+                      </Badge>
                     ) : (
-                      <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 border-rose-500/20 hover:bg-rose-500/20"><div className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" /> {t('status.stopped')}</Badge>
+                      <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                        {t('status.stopped')}
+                      </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <div className="flex flex-col gap-1.5 text-xs text-muted-foreground font-medium">
-                      <div className="flex items-center gap-1.5">
-                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
-                        {t('admin.containers.livenessCheck')}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {c.state === 'running' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-rose-500" />}
-                        {t('admin.containers.readinessProbe')}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <div className="flex flex-col gap-2 w-36">
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                        <div className="flex items-center gap-1"><Cpu className="w-3 h-3" /> CPU</div>
-                        <span className="font-mono">{(c.cpu_percent || 0).toFixed(1)}%</span>
-                      </div>
-                      <Progress value={Math.min(c.cpu_percent || 0, 100)} className="h-1.5" />
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground pt-1">
-                        <div className="flex items-center gap-1"><HardDrive className="w-3 h-3" /> MEM</div>
-                        <span className="font-mono">{(c.memory_usage || 0).toFixed(1)}MB</span>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
+
+                  {/* Health */}
+                  <TableCell className="px-4 py-4">
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-mono font-bold text-muted-foreground">{c.ip_address || t('common.unassigned')}</span>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {c.state === 'running'
+                          ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                          : <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />}
+                        <span>{t('admin.containers.livenessCheck')}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {c.state === 'running'
+                          ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                          : <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />}
+                        <span>{t('admin.containers.readinessProbe')}</span>
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  {/* Resource Load */}
+                  <TableCell className="px-4 py-4">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-1.5"><Cpu className="w-3 h-3" /> CPU</div>
+                        <span className="font-mono tabular-nums">{(c.cpu_percent || 0).toFixed(1)}%</span>
+                      </div>
+                      <Progress value={Math.min(c.cpu_percent || 0, 100)} className="h-1" />
+                      <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-1.5"><HardDrive className="w-3 h-3" /> MEM</div>
+                        <span className="font-mono tabular-nums">{(c.memory_usage || 0).toFixed(1)} MB</span>
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  {/* Gateway Ports */}
+                  <TableCell className="px-4 py-4">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[11px] font-mono font-medium text-muted-foreground">{c.ip_address || t('common.unassigned')}</span>
                       <div className="flex flex-wrap gap-1">
                         {c.ports?.slice(0, 2).map((p, i) => (
-                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0 bg-muted/50">
+                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0 h-5 bg-muted/60">
                             {p}
                           </Badge>
                         ))}
-                        {c.ports?.length > 2 && <span className="text-[10px] text-muted-foreground font-bold ml-1">+{c.ports.length - 2}</span>}
+                        {c.ports?.length > 2 && (
+                          <span className="text-[10px] text-muted-foreground font-semibold">+{c.ports.length - 2}</span>
+                        )}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="pl-4 pr-6 py-3 text-right">
+
+                  {/* Actions */}
+                  <TableCell className="pl-4 pr-6 py-4 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger>
                         <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50">
