@@ -20,10 +20,11 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - 'scripts/deploy-app.sh'
             frontend:
               - 'frontend/**'
-              - 'scripts/deploy-app.sh'
+            infra:
+              - 'scripts/**'
+              - '.github/workflows/**'
 
       - name: Sync codebase to Production
         run: |
@@ -39,17 +40,24 @@ jobs:
           cd /opt/laravel-paas
           chmod +x ./scripts/deploy-app.sh
           
-          if [ "${{ steps.filter.outputs.backend }}" == "true" ] && [ "${{ steps.filter.outputs.frontend }}" == "true" ]; then
-            echo "[CI/CD] Both components changed. Deploying ALL."
+          BACKEND="${{ steps.filter.outputs.backend }}"
+          FRONTEND="${{ steps.filter.outputs.frontend }}"
+          INFRA="${{ steps.filter.outputs.infra }}"
+
+          if [ "$INFRA" == "true" ]; then
+            echo "[CI/CD] Infrastructure changes detected. Deploying ALL to apply configuration."
             ./scripts/deploy-app.sh all
-          elif [ "${{ steps.filter.outputs.backend }}" == "true" ]; then
-            echo "[CI/CD] Only Backend changed. Deploying BACKEND."
+          elif [ "$BACKEND" == "true" ] && [ "$FRONTEND" == "true" ]; then
+            echo "[CI/CD] Both source components changed. Deploying ALL."
+            ./scripts/deploy-app.sh all
+          elif [ "$BACKEND" == "true" ]; then
+            echo "[CI/CD] Only Backend source changed. Deploying BACKEND."
             ./scripts/deploy-app.sh backend
-          elif [ "${{ steps.filter.outputs.frontend }}" == "true" ]; then
-            echo "[CI/CD] Only Frontend changed. Deploying FRONTEND."
+          elif [ "$FRONTEND" == "true" ]; then
+            echo "[CI/CD] Only Frontend source changed. Deploying FRONTEND."
             ./scripts/deploy-app.sh frontend
           else
-            echo "[CI/CD] No core components changed. Skipping deployment."
+            echo "[CI/CD] No relevant changes detected. Skipping deployment."
           fi
 
       - name: Notification on success
