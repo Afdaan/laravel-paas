@@ -111,6 +111,12 @@ function StudentProjectDetail() {
   const [baseDirInput, setBaseDirInput] = useState('')
   const [buildCommandInput, setBuildCommandInput] = useState('')
   const [startCommandInput, setStartCommandInput] = useState('')
+  const [nodeVersionInput, setNodeVersionInput] = useState('')
+  const [phpVersionInput, setPhpVersionInput] = useState('')
+  const [runtimeImageInput, setRuntimeImageInput] = useState('')
+  const [workerCommandInput, setWorkerCommandInput] = useState('')
+  const [queueEnabledInput, setQueueEnabledInput] = useState(false)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
@@ -337,52 +343,6 @@ function StudentProjectDetail() {
     }
   }
 
-  const handleUpdatePHP = async (newVersion: string | null) => {
-    if (!id || !newVersion) return
-    setConfirmModal({
-      title: t('projectDetail.messages.updatePHPConfirm', { version: newVersion }),
-      message: t('projectDetail.messages.redeployDesc'),
-      type: 'warning',
-      confirmText: t('common.confirm'),
-      isOpen: true,
-      onConfirm: async () => {
-        try {
-          await projectsAPI.update(id, { php_version: newVersion })
-          setProject(prev => prev ? ({ ...prev, php_version: newVersion, is_manual_version: true }) : null)
-          toast.success(t('common.success'))
-          projectsAPI.redeploy(id).then(() => fetchProject())
-        } catch (err) {
-          toast.error(t('common.error'))
-        }
-      }
-    })
-  }
-
-  const handleUpdateQueue = async (enabled: boolean) => {
-    if (!id) return
-    try {
-      await projectsAPI.update(id, { queue_enabled: enabled })
-      setProject(prev => prev ? ({ ...prev, queue_enabled: enabled }) : null)
-      toast.success(enabled ? 'Queue worker enabled' : 'Queue worker disabled')
-      projectsAPI.redeploy(id).then(() => fetchProject())
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
-  }
-
-  const handleUpdateWorkerCommand = async (command: string) => {
-    if (!id) return
-    try {
-      await projectsAPI.update(id, { worker_command: command })
-      setProject(prev => prev ? ({ ...prev, worker_command: command }) : null)
-      toast.success('Background service command updated')
-      // Only redeploy if it's currently "enabled" or we want to apply it immediately
-      projectsAPI.redeploy(id).then(() => fetchProject())
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
-  }
-
   const handleSaveEnv = async () => {
     if (!id) return
     setIsSavingEnv(true)
@@ -397,89 +357,67 @@ function StudentProjectDetail() {
     }
   }
 
-  const handleUpdateRuntimeImage = async (newImage: string) => {
-    if (!id || !newImage) return
-    setConfirmModal({
-      title: `Switch to ${newImage === 'alpine' ? 'Alpine Linux' : 'Debian Bookworm'}?`,
-      message: t('projectDetail.messages.redeployDesc'),
-      type: 'warning',
-      confirmText: t('common.confirm'),
-      isOpen: true,
-      onConfirm: async () => {
-        try {
-          await projectsAPI.update(id, { runtime_image: newImage })
-          setProject(prev => prev ? ({ ...prev, runtime_image: newImage }) : null)
-          toast.success(t('common.success'))
-          projectsAPI.redeploy(id).then(() => fetchProject())
-        } catch (err) {
-          toast.error(t('common.error'))
-        }
-      }
-    })
+  const isSettingsDirty = useMemo(() => {
+    if (!project) return false
+    return branchInput !== (project.branch || '') ||
+      baseDirInput !== (project.base_directory || '') ||
+      buildCommandInput !== (project.build_command || '') ||
+      startCommandInput !== (project.start_command || '') ||
+      nodeVersionInput !== (project.node_version || '20') ||
+      phpVersionInput !== (project.php_version || '8.2') ||
+      runtimeImageInput !== (project.runtime_image || 'alpine') ||
+      workerCommandInput !== (project.worker_command || '') ||
+      queueEnabledInput !== (project.queue_enabled || false)
+  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, runtimeImageInput, workerCommandInput, queueEnabledInput])
+
+  const handleResetSettings = () => {
+    if (!project) return
+    setBranchInput(project.branch || '')
+    setBaseDirInput(project.base_directory || '')
+    setBuildCommandInput(project.build_command || '')
+    setStartCommandInput(project.start_command || '')
+    setNodeVersionInput(project.node_version || '20')
+    setPhpVersionInput(project.php_version || '8.2')
+    setRuntimeImageInput(project.runtime_image || 'alpine')
+    setWorkerCommandInput(project.worker_command || '')
+    setQueueEnabledInput(project.queue_enabled || false)
+    toast.info(t('common.resetSuccess') || 'Settings reset to original values')
   }
 
-  const handleUpdateBranch = () => {
-    if (!id || !project || !branchInput || branchInput === project.branch) return
-
+  const handleSaveSettings = async () => {
+    if (!id || !project) return
+    
     setConfirmModal({
-      title: t('projectDetail.settings.updateBranch'),
-      message: t('projectDetail.settings.updateBranchConfirm', { branch: branchInput }),
-      type: 'warning',
-      confirmText: t('projectDetail.actions.redeploy'),
-      isOpen: true,
-      onConfirm: async () => {
-        try {
-          await projectsAPI.update(id, { branch: branchInput })
-          toast.success(t('common.success'))
-          projectsAPI.redeploy(id).then(() => fetchProject())
-        } catch (error) {
-          toast.error(t('common.error'))
-        }
-      }
-    })
-  }
-
-  const handleUpdateBaseDir = () => {
-    if (!id || !project || baseDirInput === project.base_directory) return
-
-    setConfirmModal({
-      title: t('newProject.baseDir'),
+      title: t('common.confirm'),
       message: t('projectDetail.settings.redeployWarning'),
       type: 'warning',
-      confirmText: t('projectDetail.actions.redeploy'),
+      confirmText: t('common.save'),
       isOpen: true,
       onConfirm: async () => {
+        setIsSavingSettings(true)
         try {
-          await projectsAPI.update(id, { base_directory: baseDirInput })
+          const payload = {
+            branch: branchInput,
+            base_directory: baseDirInput,
+            build_command: buildCommandInput,
+            start_command: startCommandInput,
+            node_version: nodeVersionInput,
+            php_version: phpVersionInput,
+            runtime_image: runtimeImageInput,
+            worker_command: workerCommandInput,
+            queue_enabled: queueEnabledInput
+          }
+          await projectsAPI.update(id, payload)
           toast.success(t('common.success'))
-          projectsAPI.redeploy(id).then(() => fetchProject())
+          await projectsAPI.redeploy(id)
+          fetchProject()
         } catch (error) {
           toast.error(t('common.error'))
+        } finally {
+          setIsSavingSettings(false)
         }
       }
     })
-  }
-  const handleUpdate = async (data: any) => {
-    if (!id) return
-    try {
-      await projectsAPI.update(id, data)
-      toast.success(t('common.success'))
-      projectsAPI.redeploy(id).then(() => fetchProject())
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
-  }
-
-  const handleUpdateNodeVersion = (version: string | null) => {
-    handleUpdate({ node_version: version })
-  }
-
-  const handleUpdateBuildCommand = () => {
-    handleUpdate({ build_command: buildCommandInput })
-  }
-
-  const handleUpdateStartCommand = (cmd: string) => {
-    handleUpdate({ start_command: cmd })
   }
 
   useEffect(() => {
@@ -488,6 +426,11 @@ function StudentProjectDetail() {
       setBaseDirInput(project.base_directory || '')
       setBuildCommandInput(project.build_command || '')
       setStartCommandInput(project.start_command || '')
+      setNodeVersionInput(project.node_version || '20')
+      setPhpVersionInput(project.php_version || '8.2')
+      setRuntimeImageInput(project.runtime_image || 'alpine')
+      setWorkerCommandInput(project.worker_command || '')
+      setQueueEnabledInput(project.queue_enabled || false)
     }
   }, [project])
 
@@ -1077,8 +1020,8 @@ function StudentProjectDetail() {
                     <div className="space-y-2">
                       <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.version')}</Label>
                       <Select
-                        value={project.php_version?.split('.dynamic')[0] || '8.2'}
-                        onValueChange={(value) => handleUpdatePHP(value)}
+                        value={phpVersionInput}
+                        onValueChange={(val) => setPhpVersionInput(val || '8.2')}
                       >
                         <SelectTrigger className="h-12 border-muted-foreground/20">
                           <SelectValue />
@@ -1093,14 +1036,14 @@ function StudentProjectDetail() {
 
                     <div className="flex items-center justify-between p-4 rounded-xl border bg-muted/20">
                       <div className="space-y-1">
-                        <Label className="text-sm font-bold">Queue Worker</Label>
+                        <Label className="text-sm font-bold">{t('projectDetail.metrics.queue')}</Label>
                         <p className="text-[10px] text-muted-foreground leading-relaxed">
-                          Run 'php artisan queue:work' in the background
+                          {t('projectDetail.settings.queueHandles')}
                         </p>
                       </div>
                       <Switch
-                        checked={project.queue_enabled}
-                        onCheckedChange={handleUpdateQueue}
+                        checked={queueEnabledInput}
+                        onCheckedChange={setQueueEnabledInput}
                       />
                     </div>
                   </>
@@ -1110,8 +1053,8 @@ function StudentProjectDetail() {
                       <div className="space-y-2">
                         <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.nodeVersion')}</Label>
                         <Select
-                          value={project.node_version || '20'}
-                          onValueChange={(value) => handleUpdateNodeVersion(value)}
+                          value={nodeVersionInput}
+                          onValueChange={(val) => setNodeVersionInput(val || '20')}
                         >
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
@@ -1138,18 +1081,18 @@ function StudentProjectDetail() {
                           </p>
                         </div>
                         <Switch
-                          checked={!!project.worker_command}
-                          onCheckedChange={(checked: boolean) => !checked && handleUpdateWorkerCommand('')}
+                          checked={workerCommandInput !== ''}
+                          onCheckedChange={(checked: boolean) => !checked && setWorkerCommandInput('')}
                         />
                       </div>
 
-                      {project.worker_command !== undefined && (
+                      {workerCommandInput !== undefined && (
                         <div className="space-y-2 pt-2 border-t border-border">
                           <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('projectDetail.metrics.customCommand')}</Label>
                           <div className="flex gap-2">
                             <Input
-                              defaultValue={project.worker_command}
-                              onBlur={(e) => project.worker_command !== e.target.value && handleUpdateWorkerCommand(e.target.value)}
+                              value={workerCommandInput}
+                              onChange={(e) => setWorkerCommandInput(e.target.value)}
                               placeholder="e.g. npm run worker"
                               className="h-9 text-xs font-mono"
                             />
@@ -1166,7 +1109,6 @@ function StudentProjectDetail() {
                             <Input
                               value={buildCommandInput}
                               onChange={(e) => setBuildCommandInput(e.target.value)}
-                              onBlur={handleUpdateBuildCommand}
                               placeholder="e.g. npm run build"
                               className="h-10 text-xs font-mono"
                             />
@@ -1180,7 +1122,6 @@ function StudentProjectDetail() {
                             <Input
                               value={startCommandInput}
                               onChange={(e) => setStartCommandInput(e.target.value)}
-                              onBlur={(e) => handleUpdateStartCommand(e.target.value)}
                               placeholder="e.g. node dist/main.js"
                               className="h-10 text-xs font-mono"
                             />
@@ -1213,15 +1154,15 @@ function StudentProjectDetail() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div
-                    onClick={() => project.runtime_image !== 'alpine' && handleUpdateRuntimeImage('alpine')}
+                    onClick={() => setRuntimeImageInput('alpine')}
                     className={cn(
                       "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200",
-                      (project.runtime_image === 'alpine' || !project.runtime_image) ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
+                      runtimeImageInput === 'alpine' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
                     )}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-bold text-sm">Alpine Linux</h4>
-                      {(project.runtime_image === 'alpine' || !project.runtime_image) ? (
+                      {runtimeImageInput === 'alpine' ? (
                         <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
                       ) : (
                         <div className="w-4 h-4 rounded-full border-2 border-muted" />
@@ -1233,15 +1174,15 @@ function StudentProjectDetail() {
                   </div>
 
                   <div
-                    onClick={() => project.runtime_image !== 'debian' && handleUpdateRuntimeImage('debian')}
+                    onClick={() => setRuntimeImageInput('debian')}
                     className={cn(
                       "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200",
-                      project.runtime_image === 'debian' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
+                      runtimeImageInput === 'debian' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
                     )}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-bold text-sm">Debian Slim</h4>
-                      {project.runtime_image === 'debian' ? (
+                      {runtimeImageInput === 'debian' ? (
                         <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
                       ) : (
                         <div className="w-4 h-4 rounded-full border-2 border-muted" />
@@ -1280,13 +1221,6 @@ function StudentProjectDetail() {
                       placeholder={t('projectDetail.settings.branchPlaceholder')}
                       className="h-10"
                     />
-                    <Button
-                      onClick={handleUpdateBranch}
-                      disabled={!branchInput || branchInput === project.branch}
-                      className="h-10"
-                    >
-                      {t('projectDetail.settings.updateBranch')}
-                    </Button>
                   </div>
                   <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
                     <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
@@ -1317,13 +1251,6 @@ function StudentProjectDetail() {
                       placeholder={t('newProject.baseDirPlaceholder')}
                       className="h-10"
                     />
-                    <Button
-                      onClick={handleUpdateBaseDir}
-                      disabled={baseDirInput === project.base_directory}
-                      className="h-10"
-                    >
-                      {t('common.save')}
-                    </Button>
                   </div>
                   <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
                     <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
@@ -1332,6 +1259,40 @@ function StudentProjectDetail() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Floating Action Bar for Settings */}
+          {activeTab === 'settings' && isSettingsDirty && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-8 duration-300">
+              <Card className="bg-background/80 backdrop-blur-xl border-primary/20 shadow-2xl overflow-hidden min-w-[320px]">
+                <CardContent className="p-3 flex items-center justify-between gap-6">
+                  <div className="flex items-center gap-3 pl-2">
+                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider">{t('common.settings')} changed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={handleResetSettings}
+                      disabled={isSavingSettings}
+                      className="text-xs font-bold h-9"
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      onClick={handleSaveSettings}
+                      disabled={isSavingSettings}
+                      className="gap-2 h-9 px-4 font-bold text-xs"
+                    >
+                      {isSavingSettings ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                      {t('common.save')}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
