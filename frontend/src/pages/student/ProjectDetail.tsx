@@ -71,17 +71,18 @@ function StatusIndicator({ status }: { status: string }) {
 
 function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass }: { title: string, value: string, subtext?: string, icon?: any, renderIcon?: (className: string) => React.ReactNode, colorClass?: string }) {
   return (
-    <Card className="bg-card border-border/50 backdrop-blur-sm overflow-hidden group hover:border-primary/20 transition-all duration-300">
-      <CardContent className="p-6">
+    <Card className="bg-card/50 border-border/40 backdrop-blur-md overflow-hidden group hover:border-primary/40 hover:shadow-[0_0_20px_rgba(var(--primary),0.05)] transition-all duration-500 relative">
+      <div className={cn("absolute top-0 left-0 w-1 h-full opacity-0 group-hover:opacity-100 transition-opacity duration-500", colorClass?.replace('text-', 'bg-'))} />
+      <CardContent className="p-5">
         <div className="flex items-center justify-between mb-4">
-          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground group-hover:text-muted-foreground/80 transition-colors">{title}</span>
-          <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-muted/50 shadow-sm">
-            {renderIcon ? renderIcon("w-5 h-5") : Icon && <Icon className={cn("w-4 h-4", colorClass || "text-muted-foreground")} />}
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70 group-hover:text-muted-foreground transition-colors">{title}</span>
+          <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/50 bg-muted/30 shadow-inner group-hover:scale-110 transition-transform duration-500">
+            {renderIcon ? renderIcon("w-5 h-5") : Icon && <Icon className={cn("w-4 h-4 transition-colors", colorClass || "text-muted-foreground")} />}
           </div>
         </div>
         <div className="space-y-1">
-          <div className="text-2xl font-bold tracking-tight text-foreground">{value}</div>
-          {subtext && <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{subtext}</div>}
+          <div className="text-2xl font-bold tracking-tight text-foreground/90 group-hover:text-foreground transition-colors">{value}</div>
+          {subtext && <div className="text-[9px] text-muted-foreground/60 font-bold uppercase tracking-widest">{subtext}</div>}
         </div>
       </CardContent>
     </Card>
@@ -1260,37 +1261,57 @@ function StudentProjectDetail() {
             </Card>
           </div>
 
-          {/* Floating Action Bar for Settings */}
+          {/* Floating Save Action Bar for Settings */}
           {activeTab === 'settings' && isSettingsDirty && (
-            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-8 duration-300">
-              <Card className="bg-background/80 backdrop-blur-xl border-primary/20 shadow-2xl overflow-hidden min-w-[320px]">
-                <CardContent className="p-3 flex items-center justify-between gap-6">
-                  <div className="flex items-center gap-3 pl-2">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                    <span className="text-xs font-bold uppercase tracking-wider">{t('common.settings')} changed</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleResetSettings}
-                      disabled={isSavingSettings}
-                      className="text-xs font-bold h-9"
-                    >
-                      {t('common.cancel')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveSettings}
-                      disabled={isSavingSettings}
-                      className="gap-2 h-9 px-4 font-bold text-xs"
-                    >
-                      {isSavingSettings ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                      {t('common.save')}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-10 duration-500">
+              <div className="relative group">
+                {/* Glow effect background */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-primary/50 to-blue-500/50 rounded-[22px] blur-xl opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+
+                <Card className="relative bg-zinc-950/90 backdrop-blur-2xl border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden min-w-[360px] rounded-[20px]">
+                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+
+                  <CardContent className="p-3 flex items-center justify-between gap-8">
+                    <div className="flex items-center gap-4 pl-3">
+                      <div className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 leading-tight">Configuration Changed</span>
+                        <span className="text-[9px] text-white/40 font-bold uppercase tracking-widest">{t('common.settings')}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pr-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleResetSettings}
+                        disabled={isSavingSettings}
+                        className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-white/50 hover:text-white hover:bg-white/5 transition-all"
+                      >
+                        {t('common.cancel')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveSettings}
+                        disabled={isSavingSettings}
+                        className="relative group/btn bg-white text-black hover:bg-white/90 h-10 px-6 rounded-full font-black text-[10px] uppercase tracking-wider transition-all overflow-hidden"
+                      >
+                        {isSavingSettings ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Save className="w-3.5 h-3.5" />
+                            <span>{t('common.save')}</span>
+                          </div>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
         </TabsContent>
