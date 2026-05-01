@@ -204,6 +204,9 @@ type UpdateRequest struct {
 	BaseDirectory string `json:"base_directory"`
 	QueueEnabled  bool   `json:"queue_enabled"`
 	WorkerCommand string `json:"worker_command"`
+	BuildCommand  string `json:"build_command"`
+	StartCommand  string `json:"start_command"`
+	NodeVersion   string `json:"node_version"`
 }
 
 // Update updates project details
@@ -218,7 +221,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.RuntimeImage, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand)
+	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.RuntimeImage, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
 	}

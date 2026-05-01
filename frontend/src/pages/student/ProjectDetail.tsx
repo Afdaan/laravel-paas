@@ -109,6 +109,10 @@ function StudentProjectDetail() {
   const [credentials, setCredentials] = useState<any>(null)
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
+  const [buildCommandInput, setBuildCommandInput] = useState('')
+  const [startCommandInput, setStartCommandInput] = useState('')
+
+  const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -455,6 +459,37 @@ function StudentProjectDetail() {
       }
     })
   }
+  const handleUpdate = async (data: any) => {
+    if (!id) return
+    try {
+      await projectsAPI.update(id, data)
+      toast.success(t('common.success'))
+      projectsAPI.redeploy(id).then(() => fetchProject())
+    } catch (error) {
+      toast.error(t('common.error'))
+    }
+  }
+
+  const handleUpdateNodeVersion = (version: string | null) => {
+    handleUpdate({ node_version: version })
+  }
+
+  const handleUpdateBuildCommand = () => {
+    handleUpdate({ build_command: buildCommandInput })
+  }
+
+  const handleUpdateStartCommand = (cmd: string) => {
+    handleUpdate({ start_command: cmd })
+  }
+
+  useEffect(() => {
+    if (project) {
+      setBranchInput(project.branch || '')
+      setBaseDirInput(project.base_directory || '')
+      setBuildCommandInput(project.build_command || '')
+      setStartCommandInput(project.start_command || '')
+    }
+  }, [project])
 
   const handleDelete = () => {
     if (!id) return
@@ -1070,11 +1105,34 @@ function StudentProjectDetail() {
                     </div>
                   </>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                    {isNodeRelated && (
+                      <div className="space-y-2">
+                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.nodeVersion')}</Label>
+                        <Select
+                          value={project.node_version || '20'}
+                          onValueChange={(value) => handleUpdateNodeVersion(value)}
+                        >
+                          <SelectTrigger className="h-12 border-muted-foreground/20">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[
+                              { v: '18', l: 'Node.js 18 (LTS)' },
+                              { v: '20', l: 'Node.js 20 (LTS)' },
+                              { v: '22', l: 'Node.js 22 (Current)' }
+                            ].map(item => (
+                              <SelectItem key={item.v} value={item.v}>{item.l}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
                     <div className="p-4 rounded-xl border bg-muted/20 space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
-                          <Label className="text-sm font-bold">Background Service</Label>
+                          <Label className="text-sm font-bold">{t('projectDetail.metrics.backgroundService')}</Label>
                           <p className="text-[10px] text-muted-foreground leading-relaxed">
                             Run a secondary process for background tasks
                           </p>
@@ -1087,7 +1145,7 @@ function StudentProjectDetail() {
 
                       {project.worker_command !== undefined && (
                         <div className="space-y-2 pt-2 border-t border-border">
-                          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Start Command</Label>
+                          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('projectDetail.metrics.customCommand')}</Label>
                           <div className="flex gap-2">
                             <Input
                               defaultValue={project.worker_command}
@@ -1099,6 +1157,38 @@ function StudentProjectDetail() {
                         </div>
                       )}
                     </div>
+
+                    {isNodeRelated && (
+                      <div className="space-y-4 pt-2 border-t">
+                        <div className="space-y-2">
+                          <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.buildCommand')}</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={buildCommandInput}
+                              onChange={(e) => setBuildCommandInput(e.target.value)}
+                              onBlur={handleUpdateBuildCommand}
+                              placeholder="e.g. npm run build"
+                              className="h-10 text-xs font-mono"
+                            />
+                          </div>
+                          <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.startCommand')}</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={startCommandInput}
+                              onChange={(e) => setStartCommandInput(e.target.value)}
+                              onBlur={(e) => handleUpdateStartCommand(e.target.value)}
+                              placeholder="e.g. node dist/main.js"
+                              className="h-10 text-xs font-mono"
+                            />
+                          </div>
+                          <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

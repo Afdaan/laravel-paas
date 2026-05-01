@@ -88,6 +88,11 @@ type Project struct {
 	WorkerCommand   string `gorm:"size:500" json:"worker_command"`    // Custom command for background service (non-PHP)
 	WorkerContainerID *string `gorm:"size:100" json:"worker_container_id,omitempty"`
 	
+	// Custom Build/Run Commands
+	BuildCommand string `gorm:"size:500" json:"build_command"` // Custom build step (e.g. npm run build)
+	StartCommand string `gorm:"size:500" json:"start_command"` // Custom start command (e.g. node dist/main.js)
+	NodeVersion  string `gorm:"size:20" json:"node_version"`   // Specific Node.js version (e.g. 18, 20)
+	
 	// Resource limits (override defaults)
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
 	MemoryLimit *string  `gorm:"size:20" json:"memory_limit,omitempty"`

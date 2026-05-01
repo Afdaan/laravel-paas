@@ -175,6 +175,12 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		imageName,
 	}
 
+	// 4.5. Append custom start command if provided
+	if project.StartCommand != "" {
+		parts := strings.Fields(project.StartCommand)
+		runArgs = append(runArgs, parts...)
+	}
+
 	res, runErr := utils.Run(1*time.Minute, "docker", runArgs...)
 	if runErr != nil {
 		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, res.Stderr))
@@ -295,12 +301,28 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	// Use project ID as cache key for better isolation but still allowing layer reuse
 	cacheKey := fmt.Sprintf("project-%d", project.ID)
 
-	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "railpack", "build",
+	buildArgs := []string{
+		"build",
 		"--name", imageName,
 		"--cache-key", cacheKey,
 		"--env", "NPM_CONFIG_JOBS=2",
 		"--env", "CI=true",
-		buildPath)
+	}
+
+	// Inject Node Version if specified
+	if project.NodeVersion != "" {
+		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_NODE_VERSION=%s", project.NodeVersion))
+	}
+
+	// Inject custom Build Command if specified
+	if project.BuildCommand != "" {
+		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_BUILD_CMD=%s", project.BuildCommand))
+	}
+
+	// Finalize build command with path
+	buildArgs = append(buildArgs, buildPath)
+
+	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "railpack", buildArgs...)
 
 	if err != nil {
 		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))

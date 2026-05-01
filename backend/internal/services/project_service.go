@@ -276,7 +276,7 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 }
 
 // UpdateProject updates project details
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, runtimeImage, baseDirectory string, queueEnabled bool, workerCommand string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, runtimeImage, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -310,6 +310,9 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	}
 	project.QueueEnabled = queueEnabled
 	project.WorkerCommand = workerCommand
+	project.BuildCommand = buildCommand
+	project.StartCommand = startCommand
+	project.NodeVersion = nodeVersion
 
 	if err := s.projectRepo.Update(project); err != nil {
 		return nil, err

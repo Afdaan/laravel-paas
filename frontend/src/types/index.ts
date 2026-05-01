@@ -34,6 +34,9 @@ export interface Project {
   runtime_image?: string;
   worker_command?: string;
   worker_container_id?: string;
+  build_command?: string;
+  start_command?: string;
+  node_version?: string;
   framework?: string;
 }
 
