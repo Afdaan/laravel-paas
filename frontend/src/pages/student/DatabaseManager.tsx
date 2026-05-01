@@ -313,7 +313,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
             <TabsContent value="tables" className="flex-1 min-h-0">
                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[600px]">
                   {/* Table Sidebar */}
-                  <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/5">
+                  <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/95 ring-1 ring-white/5">
                      <CardHeader className="p-6 border-b bg-muted/30">
                         <div className="flex justify-between items-center">
                            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.tableIndex')}</CardTitle>
@@ -351,7 +351,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                   </Card>
  
                   {/* Data Viewer */}
-                  <Card className="lg:col-span-3 flex flex-col overflow-hidden border-none shadow-2xl bg-card/50 backdrop-blur-xl ring-1 ring-white/5">
+                  <Card className="lg:col-span-3 flex flex-col overflow-hidden border-none shadow-2xl bg-card/95 ring-1 ring-white/5">
                      {selectedTable ? (
                         <>
                            <CardHeader className="p-8 border-b flex flex-row items-center justify-between bg-muted/20">
@@ -369,7 +369,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                               )}
                            </CardHeader>
  
-                           <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
+                           <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin will-change-transform">
                               {loading ? (
                                  <div className="flex items-center justify-center h-96"><Loader2 className="w-10 h-10 animate-spin text-primary/30" /></div>
                               ) : tableData && tableData.rows?.length > 0 ? (
@@ -464,7 +464,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                      />
                   </Card>
  
-                   <Card className="flex flex-col overflow-hidden border border-border/50 shadow-sm bg-card/50 backdrop-blur-md">
+                    <Card className="flex flex-col overflow-hidden border border-border/50 shadow-sm bg-card/95">
                       <CardHeader className="py-4 px-8 bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between">
                         <CardTitle className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.outputLog')}</CardTitle>
                         {queryResult && (
