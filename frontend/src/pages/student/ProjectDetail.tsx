@@ -156,12 +156,26 @@ function StudentProjectDetail() {
 
   const logLines = useMemo(() => {
     if (!logs) return []
-    return logs.split('\n')
+    const lines = logs.split('\n')
+    return lines.length > 500 ? lines.slice(-500) : lines
+  }, [logs])
+
+  const logOffset = useMemo(() => {
+    if (!logs) return 0
+    const lines = logs.split('\n')
+    return lines.length > 500 ? lines.length - 500 : 0
   }, [logs])
 
   const consoleLines = useMemo(() => {
     if (!consoleOutput) return []
-    return consoleOutput.split('\n')
+    const lines = consoleOutput.split('\n')
+    return lines.length > 500 ? lines.slice(-500) : lines
+  }, [consoleOutput])
+
+  const consoleOffset = useMemo(() => {
+    if (!consoleOutput) return 0
+    const lines = consoleOutput.split('\n')
+    return lines.length > 500 ? lines.length - 500 : 0
   }, [consoleOutput])
 
   const fetchProject = async () => {
@@ -201,7 +215,7 @@ function StudentProjectDetail() {
       const response = await projectsAPI.logs(id, 200, logType)
       setLogs(response.data.logs)
       if (logsEndRef.current) {
-        logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+        logsEndRef.current.scrollIntoView({ behavior: 'auto' })
       }
     } catch (error) { }
   }
@@ -789,8 +803,8 @@ function StudentProjectDetail() {
               </div>
 
               {consoleLines.length > 0 ? consoleLines.map((line: string, i: number) => (
-                <div key={i} className={cn("flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02] transition-colors duration-200", line.startsWith('$') ? "text-primary mt-2 font-bold" : "text-zinc-400")}>
-                  <span className="shrink-0 text-zinc-800 select-none w-6 text-right font-light">{i + 1}</span>
+                <div key={i} className={cn("flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02]", line.startsWith('$') ? "text-primary mt-2 font-bold" : "text-zinc-400")}>
+                  <span className="shrink-0 text-zinc-800 select-none w-6 text-right font-light">{consoleOffset + i + 1}</span>
                   <span className="break-all whitespace-pre-wrap">{line}</span>
                 </div>
               )) : (
@@ -973,12 +987,12 @@ function StudentProjectDetail() {
                 <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6"><RefreshCw size={12} /></Button>
               </div>
             </CardHeader>
-            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950/50">
+            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950">
               {logLines.length > 0 ? logLines.map((line: string, i: number) => {
                 const isTimestamp = /^\d{4}-\d{2}-\d{2}/.test(line) || /^\[\d{2}-\w{3}-\d{4}/.test(line)
                 return (
-                  <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02] transition-colors duration-200">
-                    <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{i + 1}</span>
+                  <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02]">
+                    <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{logOffset + i + 1}</span>
                     <span className="whitespace-pre-wrap font-mono">
                       {isTimestamp ? (
                         <>
@@ -1001,7 +1015,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          <BuildLogsConsole projectId={project.id} />
+          {activeTab === 'build' && <BuildLogsConsole projectId={project.id} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
