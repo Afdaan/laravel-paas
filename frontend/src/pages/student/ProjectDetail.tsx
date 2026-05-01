@@ -386,7 +386,7 @@ function StudentProjectDetail() {
 
   const handleSaveSettings = async () => {
     if (!id || !project) return
-    
+
     setConfirmModal({
       title: t('common.confirm'),
       message: t('projectDetail.settings.redeployWarning'),
@@ -1270,17 +1270,17 @@ function StudentProjectDetail() {
                     <span className="text-xs font-bold uppercase tracking-wider">{t('common.settings')} changed</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={handleResetSettings}
                       disabled={isSavingSettings}
                       className="text-xs font-bold h-9"
                     >
                       {t('common.cancel')}
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       onClick={handleSaveSettings}
                       disabled={isSavingSettings}
                       className="gap-2 h-9 px-4 font-bold text-xs"
