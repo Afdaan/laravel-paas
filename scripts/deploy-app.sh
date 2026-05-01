@@ -59,8 +59,8 @@ HOST_DATA_PATH="${HOST_DATA_PATH:-$DATA_PATH}"
 HOST_PROJECTS_PATH="${HOST_PROJECTS_PATH:-$PROJECTS_PATH}"
 
 # Ensure directories exist and have correct permissions
-mkdir -p "$PROJECTS_PATH" "$DATA_PATH"
-chmod 777 "$DATA_PATH"
+mkdir -p "$PROJECTS_PATH" "$DATA_PATH" /nix /var/cache/nixpacks
+chmod 777 "$DATA_PATH" /nix /var/cache/nixpacks
 
 # Helper to get next numeric tag for a service
 get_next_service_tag() {
@@ -171,6 +171,8 @@ deploy_backend() {
         --network paas-network \
         --restart unless-stopped \
         -v /var/run/docker.sock:/var/run/docker.sock \
+        -v /nix:/nix \
+        -v /var/cache/nixpacks:/root/.cache/nixpacks \
         -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "$PROJECTS_PATH:/app/storage/projects" \
         -v "$DATA_PATH:/app/storage/data" \
