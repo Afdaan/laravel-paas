@@ -488,33 +488,39 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	project.LaravelVersion = laravelVersion
 	project.PHPVersion = finalPHPVersion
 
-	// Step 2.5: Dynamic Framework Detection (Vercel-style)
-	project.Framework = "Other" // Default
-	detectors := []struct {
-		File      string
-		Framework string
-	}{
-		{"artisan", "Laravel"},
-		{"next.config.js", "Next.js"},
-		{"next.config.mjs", "Next.js"},
-		{"vite.config.js", "Vite"},
-		{"vite.config.ts", "Vite"},
-		{"package.json", "Node.js"}, // Fallback for other node apps
-		{"tsconfig.json", "TypeScript"},
-		{"go.mod", "Go"},
-		{"requirements.txt", "Python"},
-		{"main.py", "Python"},
-		{"Gemfile", "Ruby"},
-		{"Cargo.toml", "Rust"},
-		{"pom.xml", "Java"},
-		{"build.gradle", "Java"},
-		{"composer.json", "PHP"},
-		{"index.html", "Static"},
+	// Map of marker files to framework names
+	frameworks := map[string]string{
+		"artisan":         "Laravel",
+		"next.config.js":  "Next.js",
+		"next.config.mjs": "Next.js",
+		"nuxt.config.js":  "Nuxt.js",
+		"nuxt.config.ts":  "Nuxt.js",
+		"vite.config.js":  "Vite",
+		"vite.config.ts":  "Vite",
+		"src/App.tsx":     "React",
+		"src/App.jsx":     "React",
+		"src/App.vue":     "Vue",
+		"src/main.js":     "Node.js",
+		"svelte.config.js": "Svelte",
+		"angular.json":    "Angular",
+		"package.json":    "Node.js",
+		"tsconfig.json":   "TypeScript",
+		"go.mod":          "Go",
+		"requirements.txt": "Python",
+		"main.py":         "Python",
+		"Gemfile":         "Ruby",
+		"Cargo.toml":      "Rust",
+		"pom.xml":         "Java",
+		"build.gradle":    "Java",
+		"composer.json":   "PHP",
+		"index.html":      "Static",
 	}
 
-	for _, d := range detectors {
-		if _, err := os.Stat(filepath.Join(buildPath, d.File)); err == nil {
-			project.Framework = d.Framework
+	// Dynamic detection: First match wins
+	project.Framework = "Other"
+	for file, name := range frameworks {
+		if _, err := os.Stat(filepath.Join(buildPath, file)); err == nil {
+			project.Framework = name
 			break
 		}
 	}

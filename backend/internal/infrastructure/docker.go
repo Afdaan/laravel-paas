@@ -96,11 +96,11 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	// 3. Branching Build Strategy
 	if project.Framework == "Laravel" {
 		slog.Info("Using legacy Laravel build strategy", "subdomain", project.Subdomain)
-		internalPort = "80"
+		// Default Laravel port is 80 (nginx)
+		if internalPort == "" { internalPort = "80" }
 		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath)
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
-		internalPort = "8080"
 		err = s.railpackBuild(project, buildPath, imageName, logFilePath)
 	}
 
@@ -108,7 +108,29 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		return "", err
 	}
 
-	// 4. Start Web Container
+	// 3.5. NEW: Dynamic Port Detection from Image Metadata
+	// If port hasn't been manually set by user, try to detect it from image metadata
+	detectedPort, detectErr := s.DetectExposedPort(imageName)
+	if detectErr == nil && detectedPort > 0 {
+		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
+		p := detectedPort
+		project.Port = &p
+		internalPort = fmt.Sprintf("%d", p)
+	}
+
+	// 4. Determine Final Internal Port for Traefik
+	if project.Port != nil {
+		internalPort = fmt.Sprintf("%d", *project.Port)
+	} else if internalPort == "" {
+		// Fallback defaults if everything else fails
+		if project.Framework == "Laravel" {
+			internalPort = "80"
+		} else {
+			internalPort = "8080" // Safety default
+		}
+	}
+
+	// 5. Start Web Container
 	s.storage.EnsurePersistentPath(project)
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
 
@@ -431,6 +453,42 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 	}
 
 	slog.Info("Injected default railpack.json", "runtime", runtimeImage, "path", buildPath)
+}
+
+// DetectExposedPort inspects a docker image to find the first EXPOSEd port.
+// Returns the port number and nil if found, or 0 and error if not.
+func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
+	// docker image inspect <image> --format '{{json .Config.ExposedPorts}}'
+	res, err := utils.Run(10*time.Second, "docker", "image", "inspect", imageName, "--format", "{{json .Config.ExposedPorts}}")
+	if err != nil {
+		return 0, err
+	}
+
+	output := strings.TrimSpace(res.Stdout)
+	if output == "null" || output == "" || output == "{}" {
+		return 0, fmt.Errorf("no exposed ports found in image metadata")
+	}
+
+	// Output format: {"3000/tcp":{},"80/tcp":{}}
+	var exposed map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &exposed); err != nil {
+		return 0, err
+	}
+
+	// Pick the first port we find
+	for portKey := range exposed {
+		// portKey is something like "3000/tcp"
+		parts := strings.Split(portKey, "/")
+		if len(parts) > 0 {
+			var port int
+			fmt.Sscanf(parts[0], "%d", &port)
+			if port > 0 {
+				return port, nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("could not parse port from metadata")
 }
 
 // CreateEnvFile generates .env for project based on .env.example if available
