@@ -45,18 +45,13 @@ PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
 PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 
-# Smart Path Detection
-if [[ "$PROJECTS_PATH" == "/app/storage/"* ]]; then
-    PROJECTS_PATH="${PROJECT_ROOT}/${PROJECTS_PATH#/app/}"
-fi
-if [[ "$DATA_PATH" == "/app/storage/"* ]]; then
-    DATA_PATH="${PROJECT_ROOT}/${DATA_PATH#/app/}"
-fi
+# Deployment Mode
+APP_MODE=${APP_MODE:-"docker"}
+HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
 
+# Path initialization for host-side volume mounting
 PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
 DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
-HOST_DATA_PATH="${HOST_DATA_PATH:-$DATA_PATH}"
-HOST_PROJECTS_PATH="${HOST_PROJECTS_PATH:-$PROJECTS_PATH}"
 
 # Ensure directories exist and have correct permissions
 mkdir -p "$PROJECTS_PATH" "$DATA_PATH"
@@ -179,10 +174,8 @@ deploy_backend() {
         -v "$PROJECTS_PATH:/app/storage/projects" \
         -v "$DATA_PATH:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
-        -e DATA_PATH="/app/storage/data" \
-        -e PROJECTS_PATH="/app/storage/projects" \
-        -e HOST_DATA_PATH="$HOST_DATA_PATH" \
-        -e HOST_PROJECTS_PATH="$HOST_PROJECTS_PATH" \
+        -e APP_MODE="$APP_MODE" \
+        -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e PG_HOST=paas-postgres \
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \

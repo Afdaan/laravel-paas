@@ -7,14 +7,17 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
 // Config holds all application configuration
 type Config struct {
 	// App
-	AppEnv   string
-	AppDebug bool
+	AppMode      string // "local" or "docker"
+	HostRootPath string // Root directory on the host machine
+	AppEnv       string
+	AppDebug     bool
 
 	// Infra Database (PostgreSQL)
 	PGHost     string
@@ -66,10 +69,27 @@ type Config struct {
 
 // Load reads configuration from environment variables
 func Load() *Config {
+	appMode := getEnv("APP_MODE", "local")
+	hostRoot := getEnv("HOST_ROOT_PATH", ".")
+
+	// Determine internal paths based on mode
+	var projectsPath, dataPath, templatesPath string
+	if appMode == "docker" {
+		projectsPath = getEnv("PROJECTS_PATH", "/app/storage/projects")
+		dataPath = getEnv("DATA_PATH", "/app/storage/data")
+		templatesPath = getEnv("TEMPLATES_PATH", "/app/docker/templates")
+	} else {
+		projectsPath = getEnv("PROJECTS_PATH", "./storage/projects")
+		dataPath = getEnv("DATA_PATH", "./storage/data")
+		templatesPath = getEnv("TEMPLATES_PATH", "./docker/templates")
+	}
+
 	return &Config{
 		// App
-		AppEnv:   getEnv("APP_ENV", "production"),
-		AppDebug: getEnvBool("APP_DEBUG", false),
+		AppMode:      appMode,
+		HostRootPath: hostRoot,
+		AppEnv:       getEnv("APP_ENV", "production"),
+		AppDebug:     getEnvBool("APP_DEBUG", false),
 
 		// Infra Database (PostgreSQL)
 		PGHost:     getEnv("PG_HOST", "paas-postgres"),
@@ -103,13 +123,13 @@ func Load() *Config {
 		FrontendURL:   getEnv("FRONTEND_URL", "http://localhost:5173"),
 		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
-		// Docker
+		// Docker & Paths
 		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
-		ProjectsPath:     getEnv("PROJECTS_PATH", "/app/storage/projects"),
-		DataPath:         getEnv("DATA_PATH", "/app/storage/data"),
-		HostProjectsPath: getEnv("HOST_PROJECTS_PATH", getEnv("PROJECTS_PATH", "/app/storage/projects")),
-		HostDataPath:     getEnv("HOST_DATA_PATH", getEnv("DATA_PATH", "/app/storage/data")),
-		TemplatesPath:    getEnv("TEMPLATES_PATH", "/app/docker/templates"),
+		ProjectsPath:     projectsPath,
+		DataPath:         dataPath,
+		HostProjectsPath: getEnv("HOST_PROJECTS_PATH", filepath.Join(hostRoot, "storage/projects")),
+		HostDataPath:     getEnv("HOST_DATA_PATH", filepath.Join(hostRoot, "storage/data")),
+		TemplatesPath:    templatesPath,
 		DockerNetwork:    getEnv("DOCKER_NETWORK", "paas-network"),
 
 		// Nginx Remote Webhook

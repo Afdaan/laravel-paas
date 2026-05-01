@@ -32,7 +32,7 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	// projectSourceStorage = /home/afdaan/projects/subdomain/storage/app/
 	// path = /home/afdaan/data/user-1/subdomain/storage/
 	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "storage", "app")
-	
+
 	if _, err := os.Stat(projectSourceStorage); err == nil {
 		slog.Info("Syncing source assets to persistent storage", "subdomain", project.Subdomain)
 		// We use -n (no-clobber) to avoid overwriting files the student/app has already created.
@@ -86,6 +86,11 @@ func (s *StorageService) ChmodRecursive(path string, mode os.FileMode) error {
 func (s *StorageService) GetPersistentHostPath(project *models.Project) string {
 	s.EnsurePersistentPath(project)
 	return filepath.Join(s.cfg.HostDataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
+}
+
+// GetProjectsHostPath returns the project path as seen by the Host OS
+func (s *StorageService) GetProjectsHostPath(subdomain string) string {
+	return filepath.Join(s.cfg.HostProjectsPath, subdomain)
 }
 
 // CleanupPersistentData removes project storage folders

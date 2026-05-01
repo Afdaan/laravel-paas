@@ -32,7 +32,6 @@ type DockerService struct {
 	storage *StorageService
 }
 
-
 // ResolveBuildPath picks a safe build root under a project's folder.
 // If baseDirectory is invalid or escapes the project path, it falls back to auto-detection.
 func (s *DockerService) ResolveBuildPath(projectPath string, baseDirectory string) string {
@@ -97,7 +96,9 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 	if project.Framework == "Laravel" {
 		slog.Info("Using legacy Laravel build strategy", "subdomain", project.Subdomain)
 		// Default Laravel port is 80 (nginx)
-		if internalPort == "" { internalPort = "80" }
+		if internalPort == "" {
+			internalPort = "80"
+		}
 		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath)
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
@@ -157,7 +158,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
-		"--env-file", filepath.Join(projectPath, ".env"),
+		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
@@ -204,7 +205,6 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 
 // StartWorkerContainer starts a secondary container for background tasks
 func (s *DockerService) StartWorkerContainer(project *models.Project, imageName, cpuLimit, memoryLimit string) (string, error) {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-worker-%s-%d", project.Subdomain, timestamp)
@@ -217,7 +217,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--restart", "unless-stopped",
 		"--cpus", cpuLimit,
 		"--memory", memoryLimit,
-		"--env-file", filepath.Join(projectPath, ".env"),
+		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
@@ -284,7 +284,7 @@ stdout_logfile_maxbytes=0
 	// 4. Build using Docker Buildx
 	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "docker", "buildx", "build", "--load",
 		"--label", models.LabelProjectManaged,
-		"-t", imageName, buildPath)
+		"-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
 
 	if err != nil {
 		return apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s", project.Subdomain, res.Stderr))
@@ -334,7 +334,6 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 // StartExistingImage starts a container from an already built image.
 func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	s.storage.EnsurePersistentPath(project)
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
@@ -367,7 +366,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
-		"--env-file", filepath.Join(projectPath, ".env"),
+		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
@@ -513,7 +512,6 @@ func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from metadata")
 }
 
-// CreateEnvFile generates .env for project based on .env.example if available
 func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 	examplePath := filepath.Join(projectPath, ".env.example")

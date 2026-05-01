@@ -29,6 +29,7 @@ import { FrameworkIcon } from '@/components/FrameworkIcon'
 
 interface ProjectData {
   id: number;
+  uid: string;
   name: string;
   status: string;
   subdomain: string;
@@ -185,7 +186,7 @@ function StudentDashboard() {
               </TableHeader>
               <TableBody>
                 {(projects || []).slice(0, 5).map((project) => (
-                  <TableRow key={project.id}>
+                  <TableRow key={project.uid}>
                     <TableCell>
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center">
@@ -223,7 +224,7 @@ function StudentDashboard() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Link to={`/projects/${project.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                      <Link to={`/projects/${project.uid}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                         {t('common.details')}
                       </Link>
                     </TableCell>
