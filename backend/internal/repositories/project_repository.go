@@ -12,6 +12,7 @@ import (
 
 type ProjectRepository interface {
 	GetByID(id uint) (*models.Project, error)
+	GetByUID(uid string) (*models.Project, error)
 	GetBySubdomain(subdomain string) (*models.Project, error)
 	List(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error)
 	ListByUserID(userID uint) ([]models.Project, error)
@@ -41,6 +42,14 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 	var project models.Project
 	if err := r.db.Preload("User").First(&project, id).Error; err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (r *projectRepository) GetByUID(uid string) (*models.Project, error) {
+	var project models.Project
+	if err := r.db.Preload("User").Where("uid = ?", uid).First(&project).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil

@@ -8,9 +8,11 @@ package database
 import (
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -59,6 +61,36 @@ func Migrate(db *gorm.DB) error {
 	}
 
 	slog.Info("Migrations completed")
+
+	// Backfill UIDs for projects that don't have one
+	if err := BackfillUIDs(db, &config.Config{UIDSalt: os.Getenv("UID_SALT")}); err != nil {
+		slog.Warn("Failed to backfill UIDs", "error", err)
+	}
+
+	return nil
+}
+
+// BackfillUIDs ensures all projects have a persistent UID.
+// For existing projects, it uses the legacy encoding to keep current URLs working.
+func BackfillUIDs(db *gorm.DB, cfg *config.Config) error {
+	var projects []models.Project
+	if err := db.Where("uid = '' OR uid IS NULL").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	if len(projects) == 0 {
+		return nil
+	}
+
+	slog.Info("Backfilling UIDs for existing projects", "count", len(projects))
+	for _, p := range projects {
+		// Use legacy encoding to preserve existing URLs for these projects
+		legacyUID := utils.EncodeUID(p.ID, cfg.UIDSalt)
+		if err := db.Model(&p).Update("uid", legacyUID).Error; err != nil {
+			slog.Error("Failed to update project UID", "projectID", p.ID, "error", err)
+		}
+	}
+
 	return nil
 }
 

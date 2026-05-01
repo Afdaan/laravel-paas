@@ -83,6 +83,11 @@ func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 	return s.projectRepo.GetByID(id)
 }
 
+// GetProjectByUID fetches a project by its secure UID
+func (s *ProjectService) GetProjectByUID(uid string) (*models.Project, error) {
+	return s.projectRepo.GetByUID(uid)
+}
+
 // GetBySubdomain fetches a project by its subdomain with Redis caching
 func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, error) {
 	// 1. Try to fetch from Redis Cache first
@@ -264,6 +269,7 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		QueueEnabled:     queueEnabled,
 		Status:           models.StatusQueued,
 		ExpiresAt:        expiresAt,
+		UID:              utils.GenerateRandomUID(),
 	}
 
 	if project.RuntimeImage == "" {
@@ -374,13 +380,13 @@ func (s *ProjectService) GetRunningProjectsWithContainers() ([]models.Project, e
 	return s.projectRepo.GetRunningWithContainers()
 }
 
-// PopulateURL sets the URL field on a project model
+// PopulateURL sets the URL and UID fields on a project model
 func (s *ProjectService) PopulateURL(project *models.Project) {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	project.URL = "https://" + project.GetFullDomain(projectDomain)
 }
 
-// PopulateURLs sets the URL field on a slice of project models
+// PopulateURLs sets the URL and UID fields on a slice of project models
 func (s *ProjectService) PopulateURLs(projects []models.Project) {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	for i := range projects {

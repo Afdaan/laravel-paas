@@ -105,6 +105,7 @@ type Project struct {
 
 	// Virtual field for frontend
 	URL string `gorm:"-" json:"url,omitempty"`
+	UID string `gorm:"uniqueIndex;size:100" json:"uid"`
 }
 
 // ===========================================

@@ -682,9 +682,23 @@ func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 // Helper methods
 
 func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
-	id, err := strconv.Atoi(c.Params("id"))
+	idParam := c.Params("id")
+
+	var project *models.Project
+	var err error
+
+	// 1. Try to fetch by UID column first (Standard)
+	project, err = h.projectService.GetProjectByUID(idParam)
 	if err != nil {
-		return nil, fmt.Errorf("invalid project ID")
+		// 2. Fallback: Check if it's a numeric ID (for admins or transition)
+		id, errConv := strconv.Atoi(idParam)
+		if errConv == nil {
+			project, err = h.projectService.GetProjectByID(uint(id))
+		}
+	}
+
+	if err != nil || project == nil {
+		return nil, fmt.Errorf("project not found")
 	}
 
 	uidVal := c.Locals("user_id")
@@ -703,10 +717,7 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 
 	role := models.Role(roleStr)
 
-	project, err := h.projectService.GetProjectByID(uint(id))
-	if err != nil {
-		return nil, fmt.Errorf("project not found")
-	}
+	// Permission checks
 
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
 		return nil, fmt.Errorf("project not found")

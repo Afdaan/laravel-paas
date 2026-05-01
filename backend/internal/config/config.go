@@ -34,6 +34,9 @@ type Config struct {
 	JWTSecret      string
 	JWTExpiryHours int
 
+	// UID Obfuscation
+	UIDSalt string
+
 	// Redis
 	RedisHost     string
 	RedisPort     string
@@ -85,6 +88,9 @@ func Load() *Config {
 		// JWT
 		JWTSecret:      getEnv("JWT_SECRET", "change-this-secret"),
 		JWTExpiryHours: getEnvInt("JWT_EXPIRY_HOURS", 24),
+
+		// UID Obfuscation
+		UIDSalt: getEnv("UID_SALT", "change-this-salt"),
 
 		// Redis
 		RedisHost:     getEnv("REDIS_HOST", "paas-redis"),
