@@ -281,7 +281,7 @@ const AdminProjects = () => {
                     </TableCell>
                     <TableCell className="pl-4 pr-6 py-3 text-right">
                       <Link
-                        to={`/projects/${project.id}`}
+                        to={`/projects/${project.uid}`}
                       >
                         <Button variant="outline" size="sm" className="h-8">
                           {t('common.details')}

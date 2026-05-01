@@ -56,9 +56,9 @@ interface DatabaseManagerProps {
 
 export default function DatabaseManager({ embedded = false, projectId = null }: DatabaseManagerProps) {
    const { t } = useTranslation()
-   const params = useParams<{ id: string }>()
+   const params = useParams<{ uid: string }>()
    const navigate = useNavigate()
-   const id = projectId || params.id
+   const id = projectId || params.uid
    const [project, setProject] = useState<Project | null>(null)
    const [activeTab, setActiveTab] = useState('tables')
    const [tables, setTables] = useState<TableInfo[]>([])

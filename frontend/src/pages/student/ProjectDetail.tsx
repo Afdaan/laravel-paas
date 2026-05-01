@@ -91,7 +91,7 @@ function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass 
 
 function StudentProjectDetail() {
   const { t } = useTranslation()
-  const { id } = useParams<{ id: string }>()
+  const { uid } = useParams<{ uid: string }>()
   const navigate = useNavigate()
   const [project, setProject] = useState<Project | null>(null)
   const [logs, setLogs] = useState('')
@@ -163,7 +163,7 @@ function StudentProjectDetail() {
     if (activeTab === 'database') {
       fetchCredentials()
     }
-  }, [activeTab, id])
+  }, [activeTab, uid])
 
   const logLines = useMemo(() => {
     if (!logs) return []
@@ -190,9 +190,9 @@ function StudentProjectDetail() {
   }, [consoleOutput])
 
   const fetchProject = async () => {
-    if (!id) return
+    if (!uid) return
     try {
-      const response = await projectsAPI.get(id)
+      const response = await projectsAPI.get(uid)
       setProject(response.data)
       setBranchInput(response.data.branch || '')
       setBaseDirInput(response.data.base_directory || '')
@@ -205,6 +205,7 @@ function StudentProjectDetail() {
 
       if (error.response?.status === 404) {
         toast.error(t('projectDetail.messages.notFound') || 'Project not found')
+        // Permission checks
         navigate('/projects')
         return
       }
@@ -221,9 +222,9 @@ function StudentProjectDetail() {
   }
 
   const fetchLogs = async () => {
-    if (!id) return
+    if (!uid) return
     try {
-      const response = await projectsAPI.logs(id, 200, logType)
+      const response = await projectsAPI.logs(uid, 200, logType)
       setLogs(response.data.logs)
       if (logsEndRef.current) {
         logsEndRef.current.scrollIntoView({ behavior: 'auto' })
@@ -232,9 +233,9 @@ function StudentProjectDetail() {
   }
 
   const fetchStats = async () => {
-    if (!id) return
+    if (!uid) return
     try {
-      const response = await projectsAPI.stats(id)
+      const response = await projectsAPI.stats(uid)
       setStats(response.data)
     } catch (error) {
       setStats(null)
@@ -242,9 +243,9 @@ function StudentProjectDetail() {
   }
 
   const fetchEnv = async () => {
-    if (!id) return
+    if (!uid) return
     try {
-      const response = await projectsAPI.getEnv(id)
+      const response = await projectsAPI.getEnv(uid)
       setEnvContent(response.data.content)
     } catch (error) {
       toast.error(t('common.error'))
@@ -252,22 +253,22 @@ function StudentProjectDetail() {
   }
 
   const fetchCredentials = async () => {
-    if (!id) return
+    if (!uid) return
     try {
-      const response = await databaseAPI.getCredentials(id)
+      const response = await databaseAPI.getCredentials(uid)
       setCredentials(response.data)
     } catch (error) { }
   }
 
   const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!id || !consoleCommand.trim()) return
+    if (!uid || !consoleCommand.trim()) return
 
     setIsExecuting(true)
     setConsoleOutput(prev => prev + `\n$ php artisan ${consoleCommand}\n`)
 
     try {
-      const response = await projectsAPI.runArtisan(id, consoleCommand)
+      const response = await projectsAPI.runArtisan(uid, consoleCommand)
       setConsoleOutput(prev => prev + response.data.output + '\n')
       setConsoleCommand('')
     } catch (error: any) {
@@ -279,7 +280,7 @@ function StudentProjectDetail() {
   }
 
   const handleRedeploy = () => {
-    if (!id) return
+    if (!uid) return
     if (deployLocked) {
       toast.message(t('projectDetail.messages.buildTitle'), {
         description: `${t('projectDetail.actions.redeploy')} (${t(`status.${project?.status}`)})`,
@@ -295,7 +296,7 @@ function StudentProjectDetail() {
       onConfirm: () => {
         setProject(prev => prev ? ({ ...prev, status: 'queued' }) : null)
         toast.promise(
-          projectsAPI.redeploy(id),
+          projectsAPI.redeploy(uid),
           {
             loading: t('common.loading'),
             success: t('projectDetail.actions.redeployStarted'),
@@ -307,10 +308,10 @@ function StudentProjectDetail() {
   }
 
   const handleStop = async () => {
-    if (!id) return
+    if (!uid) return
     try {
       await toast.promise(
-        projectsAPI.stop(id),
+        projectsAPI.stop(uid),
         {
           loading: t('common.loading'),
           success: t('projectDetail.actions.stop'),
@@ -326,10 +327,10 @@ function StudentProjectDetail() {
   }
 
   const handleStart = async () => {
-    if (!id) return
+    if (!uid) return
     try {
       await toast.promise(
-        projectsAPI.start(id),
+        projectsAPI.start(uid),
         {
           loading: t('common.loading'),
           success: t('projectDetail.actions.start'),
@@ -345,12 +346,12 @@ function StudentProjectDetail() {
   }
 
   const handleSaveEnv = async () => {
-    if (!id) return
+    if (!uid) return
     setIsSavingEnv(true)
     try {
-      await projectsAPI.updateEnv(id, envContent)
+      await projectsAPI.updateEnv(uid, envContent)
       toast.success(t('common.success'))
-      projectsAPI.redeploy(id).then(() => fetchProject())
+      projectsAPI.redeploy(uid).then(() => fetchProject())
     } catch (error) {
       toast.error(t('common.error'))
     } finally {
@@ -386,7 +387,7 @@ function StudentProjectDetail() {
   }
 
   const handleSaveSettings = async () => {
-    if (!id || !project) return
+    if (!uid || !project) return
 
     setConfirmModal({
       title: t('common.confirm'),
@@ -408,9 +409,9 @@ function StudentProjectDetail() {
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput
           }
-          await projectsAPI.update(id, payload)
+          await projectsAPI.update(uid, payload)
           toast.success(t('common.success'))
-          await projectsAPI.redeploy(id)
+          await projectsAPI.redeploy(uid)
           fetchProject()
         } catch (error) {
           toast.error(t('common.error'))
@@ -436,7 +437,7 @@ function StudentProjectDetail() {
   }, [project])
 
   const handleDelete = () => {
-    if (!id) return
+    if (!uid) return
     setConfirmModal({
       title: t('projectDetail.messages.deleteConfirm'),
       message: t('projectDetail.messages.deleteDesc'),
@@ -445,7 +446,7 @@ function StudentProjectDetail() {
       isOpen: true,
       onConfirm: () => {
         toast.promise(
-          projectsAPI.delete(id),
+          projectsAPI.delete(uid),
           {
             loading: t('common.loading'),
             success: t('common.success'),
@@ -902,7 +903,7 @@ function StudentProjectDetail() {
                 </div>
               </CardContent>
             </Card>
-            <DatabaseManager embedded={true} projectId={id} />
+            <DatabaseManager embedded={true} projectId={uid} />
           </div>
         </TabsContent>
 
@@ -994,7 +995,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && <BuildLogsConsole projectId={project.id} />}
+          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">

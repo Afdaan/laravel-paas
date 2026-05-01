@@ -35,7 +35,7 @@ export default function Databases() {
       const data = response.data.data || []
       setProjects(data)
       if (data.length > 0) {
-        setSelectedProjectId(data[0].id)
+        setSelectedProjectId(data[0].uid)
       }
     } catch (error) {
       toast.error(t('common.error'))
@@ -49,7 +49,7 @@ export default function Databases() {
     p.database_name?.toLowerCase().includes(search.toLowerCase())
   )
 
-  const selectedProject = projects.find(p => p.id === Number(selectedProjectId))
+  const selectedProject = projects.find(p => p.uid === selectedProjectId || p.id === Number(selectedProjectId))
 
   if (isLoading) {
     return (
@@ -108,11 +108,11 @@ export default function Databases() {
                {filteredProjects.length > 0 ? (
                  filteredProjects.map(p => (
                    <button
-                     key={p.id}
-                     onClick={() => setSelectedProjectId(p.id)}
+                     key={p.uid}
+                     onClick={() => setSelectedProjectId(p.uid)}
                      className={cn(
                         "w-full text-left p-4 rounded-xl transition-all border group",
-                        selectedProjectId === p.id 
+                        selectedProjectId === p.uid 
                            ? 'bg-primary/10 border-primary/30 shadow-sm' 
                            : 'border-transparent hover:bg-muted hover:border-border'
                      )}
@@ -120,7 +120,7 @@ export default function Databases() {
                      <div className="flex items-center justify-between mb-2">
                        <span className={cn(
                           "font-bold text-xs uppercase tracking-tight",
-                          selectedProjectId === p.id ? 'text-primary' : 'text-foreground'
+                          selectedProjectId === p.uid ? 'text-primary' : 'text-foreground'
                        )}>
                          {p.name}
                        </span>

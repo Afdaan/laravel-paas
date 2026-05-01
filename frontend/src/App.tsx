@@ -209,9 +209,9 @@ function App() {
           <Route path="/dashboard" element={<StudentDashboard />} />
           <Route path="/projects" element={<StudentProjects />} />
           <Route path="/projects/new" element={<StudentNewProject />} />
-          <Route path="/projects/:id" element={<StudentProjectDetail />} />
+          <Route path="/projects/:uid" element={<StudentProjectDetail />} />
           <Route path="/databases" element={<StudentDatabases />} />
-          <Route path="/projects/:id/database" element={<DatabaseManager />} />
+          <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<StudentFeedback />} />
         </Route>
 

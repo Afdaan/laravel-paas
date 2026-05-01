@@ -29,6 +29,7 @@ import { FrameworkIcon } from '../../components/FrameworkIcon'
 
 interface ProjectData {
   id: number;
+  uid: string;
   name: string;
   status: string;
   subdomain: string;
@@ -107,7 +108,7 @@ const StudentProjects = () => {
   // Poll for status updates every 5 seconds
   usePolling(fetchProjects, 5000)
   
-  const handleRedeploy = async (id: number, e: React.MouseEvent) => {
+  const handleRedeploy = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -119,10 +120,10 @@ const StudentProjects = () => {
       confirmText: t('projectDetail.actions.redeploy'),
       onConfirm: () => {
         // Optimistic UI update
-        setProjects(prev => prev.map(p => p.id === id ? { ...p, status: 'queued' } : p))
+        setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status: 'queued' } : p))
         
         toast.promise(
-          projectsAPI.redeploy(id),
+          projectsAPI.redeploy(uid),
           {
             loading: t('projectDetail.messages.buildTitle'),
             success: t('common.success'),
@@ -135,7 +136,7 @@ const StudentProjects = () => {
 
   const isDeployLocked = (status: string) => status === 'queued' || status === 'pending' || status === 'building'
   
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
+  const handleDelete = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -147,7 +148,7 @@ const StudentProjects = () => {
       confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
-          await projectsAPI.delete(id)
+          await projectsAPI.delete(uid)
           toast.success(t('common.success'))
           fetchProjects()
         } catch (error) {
@@ -199,8 +200,8 @@ const StudentProjects = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 pb-12">
           {projects.map((project) => (
             <Card 
-              key={project.id} 
-              onClick={() => navigate(`/projects/${project.id}`)}
+              key={project.uid} 
+              onClick={() => navigate(`/projects/${project.uid}`)}
               className="group flex flex-col h-full hover:border-primary/30 transition-all cursor-pointer overflow-hidden border-border/50"
             >
               <CardContent className="p-6 flex flex-col h-full">
@@ -267,7 +268,7 @@ const StudentProjects = () => {
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={(e) => handleRedeploy(project.id, e)}
+                        onClick={(e) => handleRedeploy(project.uid, e)}
                         disabled={isDeployLocked(project.status)}
                         className={cn(
                           "h-9 w-9 text-muted-foreground hover:text-foreground",
@@ -284,7 +285,7 @@ const StudentProjects = () => {
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={(e) => handleDelete(project.id, e)}
+                        onClick={(e) => handleDelete(project.uid, e)}
                         className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30"
                         title={t('projectDetail.actions.delete')}
                       >

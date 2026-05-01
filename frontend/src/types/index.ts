@@ -12,6 +12,7 @@ export interface User {
 
 export interface Project {
   id: number;
+  uid: string;
   user_id: number;
   name: string;
   repository_url: string;

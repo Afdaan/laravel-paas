@@ -101,7 +101,7 @@ function StudentNewProject() {
     try {
       const response = await projectsAPI.create(formData)
       toast.success(t('common.success'))
-      navigate(`/projects/${response.data.project.id}`)
+      navigate(`/projects/${response.data.project.uid}`)
     } catch (error: any) {
       let errorMsg = error.response?.data?.error || t('common.actionFailed')
 
