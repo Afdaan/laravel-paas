@@ -483,7 +483,7 @@ export const translations = {
         buildCommand: "Custom Build Command",
         buildCommandDesc: "Executed during the build phase. Leave empty for default detection.",
         startCommand: "Custom Start Command",
-        startCommandDesc: "Executed to start your application. Overrides package.json start.",
+        startCommandDesc: "Executed to start your application. Leave empty for default behavior.",
       },
       overview: {
         connectionInfo: "Connection Info",
@@ -1139,7 +1139,7 @@ export const translations = {
         buildCommand: "Custom Build Command",
         buildCommandDesc: "Dijalankan selama fase build. Kosongkan untuk deteksi otomatis.",
         startCommand: "Custom Start Command",
-        startCommandDesc: "Perintah untuk memulai aplikasi. Overrides start configuration in package.json.",
+        startCommandDesc: "Perintah untuk menjalankan aplikasi. Kosongkan untuk konfigurasi default.",
       },
       overview: {
         connectionInfo: "informasi Koneksi",

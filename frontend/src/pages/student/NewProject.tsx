@@ -7,15 +7,13 @@ import {
   Rocket,
   Database,
   Settings,
-  Activity,
   Info,
   ChevronLeft,
   ArrowRight,
-  ShieldCheck,
-  Zap,
-  Cpu,
   Loader2,
   Layout,
+  Terminal,
+  Play,
   Box,
   CheckCircle2
 } from 'lucide-react'
@@ -32,6 +30,8 @@ interface NewProjectForm {
   database_name: string;
   base_directory: string;
   runtime_image: string;
+  build_command: string;
+  start_command: string;
   queue_enabled: boolean;
 }
 
@@ -53,6 +53,8 @@ function StudentNewProject() {
     database_name: '',
     base_directory: '',
     runtime_image: 'alpine',
+    build_command: '',
+    start_command: '',
     queue_enabled: false,
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
@@ -115,7 +117,7 @@ function StudentNewProject() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-10 pb-20 animate-in fade-in duration-500">
+    <div className="max-w-3xl mx-auto space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4">
         <Button
           variant="outline"
@@ -145,8 +147,8 @@ function StudentNewProject() {
         </Card>
       )}
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
+      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto space-y-8">
+        <div className="space-y-8">
           <Card className="p-8">
             <div className="space-y-8">
               {/* Project Name */}
@@ -260,14 +262,57 @@ function StudentNewProject() {
                 <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">{t('newProject.baseDirDesc')}</p>
               </div>
 
+              {/* Custom Commands */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t pt-8">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary/5 flex items-center justify-center text-primary/70">
+                      <Terminal className="w-4 h-4" />
+                    </div>
+                    <Label htmlFor="build_command" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      {t('projectDetail.settings.buildCommand')}
+                    </Label>
+                  </div>
+                  <Input
+                    id="build_command"
+                    name="build_command"
+                    value={formData.build_command}
+                    onChange={handleChange}
+                    placeholder="e.g. npm run build"
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.buildCommandDesc')}</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary/5 flex items-center justify-center text-primary/70">
+                      <Play className="w-4 h-4" />
+                    </div>
+                    <Label htmlFor="start_command" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      {t('projectDetail.settings.startCommand')}
+                    </Label>
+                  </div>
+                  <Input
+                    id="start_command"
+                    name="start_command"
+                    value={formData.start_command}
+                    onChange={handleChange}
+                    placeholder="e.g. php artisan serve"
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.startCommandDesc')}</p>
+                </div>
+              </div>
+
               {/* Runtime Image Selector */}
-              <div className="space-y-4">
+              <div className="space-y-4 border-t pt-8">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                     <Box className="w-4 h-4" />
                   </div>
                   <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    Runtime Base Image
+                    {t('projectDetail.settings.baseImageTitle')}
                   </Label>
                 </div>
 
@@ -335,67 +380,11 @@ function StudentNewProject() {
             )}
           </Button>
         </div>
-
-        <div className="space-y-6">
-          <Card className="p-8 space-y-8 bg-muted/20">
-            <div className="flex items-center gap-3 pb-6 border-b">
-              <ShieldCheck className="w-6 h-6 text-primary" />
-              <h3 className="text-sm font-bold uppercase tracking-[0.2em]">{t('newProject.pipeline')}</h3>
-            </div>
-
-            <ul className="space-y-6">
-              <PipelineStep
-                icon={Rocket}
-                title={t('newProject.steps.git.title')}
-                desc={t('newProject.steps.git.desc')}
-              />
-              <PipelineStep
-                icon={Activity}
-                title={t('newProject.steps.runtime.title')}
-                desc={t('newProject.steps.runtime.desc')}
-              />
-              <PipelineStep
-                icon={Database}
-                title={t('newProject.steps.resource.title')}
-                desc={t('newProject.steps.resource.desc')}
-              />
-              <PipelineStep
-                icon={Zap}
-                title={t('newProject.steps.network.title')}
-                desc={t('newProject.steps.network.desc')}
-              />
-              <PipelineStep
-                icon={Cpu}
-                title={t('newProject.steps.compute.title')}
-                desc={t('newProject.steps.compute.desc')}
-              />
-            </ul>
-
-            <div className="p-4 rounded-lg bg-background border flex items-start gap-3">
-              <Info className="w-4 h-4 text-primary mt-0.5" />
-              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider leading-relaxed">
-                {t('newProject.footerInfo')}
-              </p>
-            </div>
-          </Card>
-        </div>
       </form>
     </div>
   )
 }
 
-function PipelineStep({ icon: Icon, title, desc }: { icon: any, title: string, desc: string }) {
-  return (
-    <li className="flex gap-4 group">
-      <div className="w-10 h-10 rounded-xl bg-background border flex items-center justify-center text-muted-foreground group-hover:text-primary transition-colors shrink-0">
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <h4 className="text-xs font-bold uppercase tracking-widest mb-1">{title}</h4>
-        <p className="text-[11px] text-muted-foreground font-medium leading-normal">{desc}</p>
-      </div>
-    </li>
-  )
-}
+
 
 export default StudentNewProject

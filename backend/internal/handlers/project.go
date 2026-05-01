@@ -48,6 +48,8 @@ type CreateProjectRequest struct {
 	DatabaseName  string `json:"database_name"`
 	BaseDirectory string `json:"base_directory"`
 	RuntimeImage  string `json:"runtime_image"`
+	BuildCommand  string `json:"build_command"`
+	StartCommand  string `json:"start_command"`
 	QueueEnabled  bool   `json:"queue_enabled"`
 }
 
@@ -130,7 +132,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.RuntimeImage, req.QueueEnabled)
+	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.RuntimeImage, req.BuildCommand, req.StartCommand, req.QueueEnabled)
 	if err != nil {
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
