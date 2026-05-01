@@ -29,7 +29,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	// Configure GORM logger based on environment
 	logMode := logger.Silent
 	if cfg.AppDebug {
-		logMode = logger.Info
+		logMode = logger.Warn
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{

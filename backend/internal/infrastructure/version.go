@@ -14,6 +14,7 @@ import (
 	"regexp"
 
 	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // VersionService handles framework and runtime version detection
@@ -33,9 +34,18 @@ type ComposerJSON struct {
 func (s *VersionService) DetectVersions(projectPath string) (laravelVersion, phpVersion string, err error) {
 	composerPath := filepath.Join(projectPath, "composer.json")
 
+	// Safety Check: Ensure composer.json is a regular file and not a symlink to sensitive data.
+	if !utils.IsPathWithinRoot(projectPath, composerPath) {
+		return "", "", apperr.New(403, "SECURITY_VIOLATION", "Invalid project path")
+	}
+
+	if utils.IsSymlink(composerPath) {
+		return "", "", apperr.New(403, "SECURITY_VIOLATION", "composer.json must be a regular file, not a symbolic link")
+	}
+
 	data, err := os.ReadFile(composerPath)
 	if err != nil {
-		return "", "", apperr.New(422, "MISSING_COMPOSER_JSON", "Project is missing composer.json: "+err.Error())
+		return "", "", apperr.New(422, "READ_FAILED", "Failed to read composer.json: "+err.Error())
 	}
 
 	var composer ComposerJSON

@@ -124,6 +124,7 @@ export const settingsAPI = {
 // Projects API
 // ===========================================
 
+
 export const projectsAPI = {
   // Student endpoints
   listOwn: () => 
@@ -138,14 +139,20 @@ export const projectsAPI = {
   redeploy: (id: number | string) => 
     api.post(`/projects/${id}/redeploy`),
   
+  stop: (id: number | string) =>
+    api.post(`/projects/${id}/stop`),
+  
+  start: (id: number | string) =>
+    api.post(`/projects/${id}/start`),
+  
   update: (id: number | string, data: any) =>
     api.put(`/projects/${id}`, data),
   
   delete: (id: number | string) => 
     api.delete(`/projects/${id}`),
   
-  logs: (id: number | string, lines: number = 100) => 
-    api.get(`/projects/${id}/logs`, { params: { lines } }),
+  logs: (id: number | string, lines: number = 100, type: string = 'web') => 
+    api.get(`/projects/${id}/logs`, { params: { lines, type } }),
   
   stats: (id: number | string) => 
     api.get(`/projects/${id}/stats`),
@@ -158,6 +165,9 @@ export const projectsAPI = {
 
   updateEnv: (id: number | string, content: string) =>
     api.put(`/projects/${id}/env`, { content }),
+  
+  buildLogs: (id: number | string) =>
+    api.get(`/projects/${id}/build-logs`),
   
   // Admin endpoints
   listAll: (params: Record<string, any> = {}) => 

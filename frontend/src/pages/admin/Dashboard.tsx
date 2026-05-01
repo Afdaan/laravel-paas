@@ -393,8 +393,8 @@ const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => {
               <Badge 
                 variant="outline" 
                 className={c.state === 'running' 
-                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-gray-100 text-black border-transparent uppercase" 
-                  : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-zinc-800 text-zinc-300 border-transparent uppercase"}
+                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-transparent uppercase" 
+                  : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-muted text-muted-foreground border-transparent uppercase"}
               >
                 {c.state === 'running' ? t('status.running') : (c.state === 'exited' ? t('status.stopped') : c.state)}
               </Badge>
@@ -446,8 +446,8 @@ const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => {
               <Badge 
                 variant="outline" 
                 className={img.status === 'In Use' 
-                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-gray-100 text-black border-transparent uppercase" 
-                  : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-zinc-800 text-zinc-300 border-transparent uppercase"}
+                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-transparent uppercase" 
+                  : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-muted text-muted-foreground border-transparent uppercase"}
               >
                 {img.status === 'In Use' ? t('status.inUse') : img.status}
               </Badge>

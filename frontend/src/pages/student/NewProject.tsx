@@ -14,13 +14,15 @@ import {
   ShieldCheck,
   Zap,
   Cpu,
-  Loader2
+  Loader2,
+  Layout,
+  Box,
+  CheckCircle2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 interface NewProjectForm {
@@ -28,6 +30,8 @@ interface NewProjectForm {
   github_url: string;
   branch: string;
   database_name: string;
+  base_directory: string;
+  runtime_image: string;
   queue_enabled: boolean;
 }
 
@@ -47,6 +51,8 @@ function StudentNewProject() {
     github_url: '',
     branch: '',
     database_name: '',
+    base_directory: '',
+    runtime_image: 'alpine',
     queue_enabled: false,
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
@@ -70,10 +76,6 @@ function StudentNewProject() {
     if (validationErrors[name as keyof ValidationErrors]) {
       setValidationErrors(prev => ({ ...prev, [name]: undefined }))
     }
-  }
-
-  const handleSwitchChange = (checked: boolean) => {
-    setFormData(prev => ({ ...prev, queue_enabled: checked }))
   }
 
   const validateForm = () => {
@@ -238,20 +240,78 @@ function StudentNewProject() {
                 )}
               </div>
 
-              {/* Queue Worker */}
-              <div className={cn(
-                "p-6 rounded-xl border transition-all duration-300 flex items-center justify-between",
-                formData.queue_enabled ? "bg-primary/5 border-primary/30" : "bg-muted/50"
-              )}>
-                <div className="space-y-1">
-                  <Label htmlFor="queue_enabled" className="text-sm font-bold uppercase tracking-widest cursor-pointer">{t('newProject.queue')}</Label>
-                  <p className="text-muted-foreground text-xs font-medium italic">{t('newProject.queueDesc')}</p>
+              {/* Base Directory */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                    <Layout className="w-4 h-4" />
+                  </div>
+                  <Label htmlFor="base_directory" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    {t('newProject.baseDir')}
+                  </Label>
                 </div>
-                <Switch
-                  id="queue_enabled"
-                  checked={formData.queue_enabled}
-                  onCheckedChange={handleSwitchChange}
+                <Input
+                  id="base_directory"
+                  name="base_directory"
+                  value={formData.base_directory}
+                  onChange={handleChange}
+                  placeholder={t('newProject.baseDirPlaceholder')}
                 />
+                <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">{t('newProject.baseDirDesc')}</p>
+              </div>
+
+              {/* Runtime Image Selector */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                    <Box className="w-4 h-4" />
+                  </div>
+                  <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    Runtime Base Image
+                  </Label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, runtime_image: 'alpine' }))}
+                    className={cn(
+                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:border-primary/50",
+                      formData.runtime_image === 'alpine' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-bold text-sm">Alpine Linux</h4>
+                      {formData.runtime_image === 'alpine' ? (
+                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Recommended. Ultralight image (~200MB). Fast deployments and minimal security footprint.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setFormData(prev => ({ ...prev, runtime_image: 'debian' }))}
+                    className={cn(
+                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:border-primary/50",
+                      formData.runtime_image === 'debian' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-bold text-sm">Debian Bookworm</h4>
+                      {formData.runtime_image === 'debian' ? (
+                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Better compatibility (~600MB). Use if your app requires specific glibc libraries or complex extensions.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </Card>

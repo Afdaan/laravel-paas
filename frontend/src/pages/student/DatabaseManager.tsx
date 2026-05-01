@@ -376,25 +376,25 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                  <div className="w-full">
                                     <table className="w-full border-collapse text-left text-xs">
                                        <thead>
-                                          <tr className="bg-muted/40 border-b border-white/5">
-                                             {tableData.columns?.map((col: string) => (
-                                                <th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-white/5 last:border-r-0">{col}</th>
+                                      <tr className="bg-muted/40 border-b border-border/50">
+                                         {tableData.columns?.map((col: string) => (
+                                            <th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-border/30 last:border-r-0">{col}</th>
                                              ))}
                                              {primaryKey && (
                                                 <th className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/0 w-12">{t('common.actions')}</th>
                                              )}
                                           </tr>
                                        </thead>
-                                       <tbody className="divide-y divide-white/5">
-                                          {tableData.rows.map((row: any, i: number) => (
-                                             <tr key={i} className="group hover:bg-white/[0.02] transition-colors">
-                                                {tableData.columns?.map((col: string) => (
-                                                   <td key={col} className="px-8 py-5 font-mono text-[11px] font-medium border-r border-white/5 last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px] text-foreground/80">
-                                                      {row[col] === null ? <span className="text-muted-foreground/30 italic font-normal">NULL</span> : String(row[col])}
-                                                   </td>
-                                                ))}
-                                                {primaryKey && (
-                                                   <td className="px-4 py-2 text-right w-12 border-white/5">
+                                      <tbody className="divide-y divide-border/30">
+                                         {tableData.rows.map((row: any, i: number) => (
+                                            <tr key={i} className="group hover:bg-muted/20 transition-colors">
+                                               {tableData.columns?.map((col: string) => (
+                                                  <td key={col} className="px-8 py-5 font-mono text-[11px] font-medium border-r border-border/30 last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px] text-foreground/80">
+                                                     {row[col] === null ? <span className="text-muted-foreground/30 italic font-normal">NULL</span> : String(row[col])}
+                                                  </td>
+                                               ))}
+                                               {primaryKey && (
+                                                  <td className="px-4 py-2 text-right w-12 border-border/30">
                                                       <Button
                                                          variant="ghost"
                                                          size="icon"
@@ -434,16 +434,16 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
  
             <TabsContent value="query" className="flex-1 space-y-6">
                <div className="grid grid-cols-1 gap-6 h-auto">
-                  <Card className="flex flex-col overflow-hidden bg-zinc-950 border-zinc-800 shadow-2xl">
-                     <CardHeader className="py-4 px-8 border-b border-zinc-800 bg-zinc-900/50 flex flex-row items-center justify-between">
+                  <Card className="flex flex-col overflow-hidden bg-zinc-950 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 shadow-2xl">
+                     <CardHeader className="py-4 px-8 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex flex-row items-center justify-between">
                         <div className="flex items-center gap-4">
                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                               <Terminal className="w-4 h-4 text-emerald-500" />
                            </div>
-                           <CardTitle className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.25em]">{t('databaseManager.sqlWorkspace')}</CardTitle>
+                           <CardTitle className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.25em]">{t('databaseManager.sqlWorkspace')}</CardTitle>
                         </div>
                         <div className="flex items-center gap-3">
-                           <Button variant="ghost" size="sm" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-300 uppercase font-bold text-[10px] tracking-widest">{t('common.cancel').split(' ')[0]}</Button>
+                           <Button variant="ghost" size="sm" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 uppercase font-bold text-[10px] tracking-widest">{t('common.cancel').split(' ')[0]}</Button>
                            <Button
                               size="sm"
                               onClick={executeQuery}
@@ -459,16 +459,16 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="SELECT * FROM users WHERE active = 1;"
-                        className="flex-1 min-h-[200px] bg-transparent text-emerald-400 font-mono text-base p-8 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-800 scrollbar-thin transition-colors"
+                        className="flex-1 min-h-[200px] bg-transparent text-emerald-600 dark:text-emerald-400 font-mono text-base p-8 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-300 dark:placeholder:text-zinc-800 scrollbar-thin transition-colors"
                         spellCheck={false}
                      />
                   </Card>
  
-                  <Card className="flex flex-col overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/5">
-                     <CardHeader className="py-4 px-8 bg-muted/30 border-b border-white/5 flex flex-row items-center justify-between">
+                   <Card className="flex flex-col overflow-hidden border border-border/50 shadow-sm bg-card/50 backdrop-blur-md">
+                      <CardHeader className="py-4 px-8 bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between">
                         <CardTitle className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.outputLog')}</CardTitle>
                         {queryResult && (
-                           <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-muted/50 border-white/5">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
+                           <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-muted/50 border-border/30">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
                         )}
                      </CardHeader>
                      <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin min-h-[200px]">
@@ -485,15 +485,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                               ) : queryResult.rows && queryResult.rows.length > 0 ? (
                                  <table className="w-full text-xs text-left border-collapse">
                                     <thead>
-                                       <tr className="bg-muted/40 border-b border-white/5">
-                                          {queryResult.columns?.map((col: string) => (<th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-white/5 last:border-r-0">{col}</th>))}
-                                       </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                       {queryResult.rows.map((row: any, i: number) => (
-                                          <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                                             {queryResult.columns?.map((col: string) => (
-                                                <td key={col} className="px-8 py-4 font-mono text-[11px] font-medium border-r border-white/5 last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px] text-foreground/80">
+                                    <tr className="bg-muted/40 border-b border-border/50">
+                                       {queryResult.columns?.map((col: string) => (<th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-border/30 last:border-r-0">{col}</th>))}
+                                    </tr>
+                                 </thead>
+                                 <tbody className="divide-y divide-border/30">
+                                    {queryResult.rows.map((row: any, i: number) => (
+                                       <tr key={i} className="hover:bg-muted/20 transition-colors">
+                                          {queryResult.columns?.map((col: string) => (
+                                             <td key={col} className="px-8 py-4 font-mono text-[11px] font-medium border-r border-border/30 last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px] text-foreground/80">
                                                    {row[col] !== null ? String(row[col]) : <span className="opacity-30 italic font-normal">NULL</span>}
                                                 </td>
                                              ))}

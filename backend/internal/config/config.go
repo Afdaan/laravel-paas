@@ -30,7 +30,6 @@ type Config struct {
 	MYSQLUser     string
 	MYSQLPassword string
 
-
 	// JWT
 	JWTSecret      string
 	JWTExpiryHours int
@@ -43,16 +42,17 @@ type Config struct {
 	// Domain
 	BaseDomain    string
 	ProjectDomain string
+	FrontendURL   string
 	ACMEEmail     string
 
 	// Docker
-	DockerSocket   string
-	ProjectsPath   string
-	DataPath       string
+	DockerSocket     string
+	ProjectsPath     string
+	DataPath         string
 	HostProjectsPath string
 	HostDataPath     string
-	TemplatesPath  string
-	DockerNetwork  string
+	TemplatesPath    string
+	DockerNetwork    string
 
 	// Nginx Remote Webhook
 	NginxWebhookEnabled bool
@@ -94,16 +94,17 @@ func Load() *Config {
 		// Domain
 		BaseDomain:    getEnv("BASE_DOMAIN", "localhost"),
 		ProjectDomain: getEnv("PROJECT_DOMAIN", getEnv("BASE_DOMAIN", "localhost")),
+		FrontendURL:   getEnv("FRONTEND_URL", "http://localhost:5173"),
 		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
 		// Docker
-		DockerSocket:  getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
-		ProjectsPath:      getEnv("PROJECTS_PATH", "/app/storage/projects"),
-		DataPath:          getEnv("DATA_PATH", "/app/storage/data"),
-		HostProjectsPath:  getEnv("HOST_PROJECTS_PATH", getEnv("PROJECTS_PATH", "/app/storage/projects")),
-		HostDataPath:      getEnv("HOST_DATA_PATH", getEnv("DATA_PATH", "/app/storage/data")),
-		TemplatesPath:     getEnv("TEMPLATES_PATH", "/app/docker/templates"),
-		DockerNetwork:     getEnv("DOCKER_NETWORK", "paas-network"),
+		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
+		ProjectsPath:     getEnv("PROJECTS_PATH", "/app/storage/projects"),
+		DataPath:         getEnv("DATA_PATH", "/app/storage/data"),
+		HostProjectsPath: getEnv("HOST_PROJECTS_PATH", getEnv("PROJECTS_PATH", "/app/storage/projects")),
+		HostDataPath:     getEnv("HOST_DATA_PATH", getEnv("DATA_PATH", "/app/storage/data")),
+		TemplatesPath:    getEnv("TEMPLATES_PATH", "/app/docker/templates"),
+		DockerNetwork:    getEnv("DOCKER_NETWORK", "paas-network"),
 
 		// Nginx Remote Webhook
 		NginxWebhookEnabled: getEnvBool("NGINX_WEBHOOK_ENABLED", false),

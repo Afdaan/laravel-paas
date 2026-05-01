@@ -35,9 +35,10 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	
 	if _, err := os.Stat(projectSourceStorage); err == nil {
 		slog.Info("Syncing source assets to persistent storage", "subdomain", project.Subdomain)
-		// We use -n (no-clobber) to avoid overwriting files the student/app has already created
-		// We copy content of source/storage/app/* into path/ (which is the volume root)
-		if err := exec.Command("cp", "-an", projectSourceStorage+"/.", path).Run(); err != nil {
+		// We use -n (no-clobber) to avoid overwriting files the student/app has already created.
+		// We use -d to ensure symlinks are copied as symlinks and not followed.
+		// This prevents users from symlinking /etc/shadow into their storage and having us copy it.
+		if err := exec.Command("cp", "-and", projectSourceStorage+"/.", path).Run(); err != nil {
 			slog.Warn("Failed to sync source assets", "subdomain", project.Subdomain, "error", err)
 		}
 	}
@@ -56,13 +57,28 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	return path
 }
 
-// ChmodRecursive applies permissions recursively to a path
+// ChmodRecursive applies permissions recursively to a path, but safely skips symbolic links
+// to prevent following them to sensitive system files.
 func (s *StorageService) ChmodRecursive(path string, mode os.FileMode) error {
 	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
-		if err == nil {
-			return os.Chmod(name, mode)
+		if err != nil {
+			return err
 		}
-		return err
+
+		// Use Lstat to check the type of the entry without following it.
+		// Standard Walk provides info, but we re-verify with Lstat for maximum safety.
+		lInfo, err := os.Lstat(name)
+		if err != nil {
+			return err
+		}
+
+		// Skip symbolic links to avoid privilege escalation via symlink-to-system-file attacks.
+		// On Linux, chmod on a symlink follows it to the target.
+		if lInfo.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+
+		return os.Chmod(name, mode)
 	})
 }
 

@@ -16,7 +16,6 @@ import {
   PauseCircle,
   Zap,
   Layout,
-  Terminal,
   ChevronRight,
   Loader2
 } from 'lucide-react'
@@ -26,12 +25,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { FrameworkIcon } from '@/components/FrameworkIcon'
 
 interface ProjectData {
   id: number;
   name: string;
   status: string;
   subdomain: string;
+  url: string;
+  framework: string;
   created_at: string;
 }
 
@@ -68,7 +70,7 @@ function StudentDashboard() {
     if (isFirstLoad.current) {
       setIsLoading(true)
     }
-    
+
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
@@ -186,14 +188,14 @@ function StudentDashboard() {
                   <TableRow key={project.id}>
                     <TableCell>
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center font-bold text-foreground">
-                          {project.name.charAt(0).toUpperCase()}
+                        <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center">
+                          <FrameworkIcon framework={project.framework} variant="compact" className="w-7 h-7" />
                         </div>
                         <div>
                           <span className="font-semibold text-sm max-w-[200px] truncate block">{project.name}</span>
                           <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
-                            <Terminal className="w-3 h-3" />
-                            <span className="text-xs font-mono">laravel</span>
+                            <FrameworkIcon framework={project.framework} variant="plain" className="w-3 h-3" />
+                            <span className="text-xs font-mono">{project.framework || t('common.general')}</span>
                           </div>
                         </div>
                       </div>

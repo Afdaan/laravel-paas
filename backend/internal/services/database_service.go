@@ -103,7 +103,6 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 		return nil, err
 	}
 
-
 	rows, err := db.Query(`
 		SELECT 
 			TABLE_NAME,
@@ -144,7 +143,6 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 	if err != nil {
 		return nil, err
 	}
-
 
 	rows, err := db.Query(`
 		SELECT 
@@ -187,7 +185,6 @@ func (s *DatabaseService) GetTableData(dbName, password, tableName string, page,
 	if err != nil {
 		return nil, nil, 0, err
 	}
-
 
 	var total int64
 	if err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM `%s`", tableName)).Scan(&total); err != nil {
@@ -252,7 +249,7 @@ func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn s
 	}
 
 	query := fmt.Sprintf("DELETE FROM `%s` WHERE `%s` = ? LIMIT 1", tableName, pkColumn)
-	
+
 	result, err := db.Exec(query, pkValue)
 	if err != nil {
 		return 0, err
@@ -269,29 +266,101 @@ func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn s
 // ExecuteRawQuery runs a manual SQL query against a project database
 func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*QueryResult, error) {
 	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, apperr.New(400, "EMPTY_QUERY", "Query cannot be empty")
+	}
+
 	upperQuery := strings.ToUpper(query)
 
-	if strings.Contains(upperQuery, "DROP DATABASE") ||
-		strings.Contains(upperQuery, "CREATE DATABASE") ||
-		strings.Contains(upperQuery, "GRANT") ||
-		strings.Contains(upperQuery, "REVOKE") {
-		slog.Warn("Blocked forbidden SQL operation attempt", "query", upperQuery[:min(len(upperQuery), 80)])
-		return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
+	// Block dangerous operations
+	blockedPatterns := []string{
+		"DROP DATABASE",
+		"CREATE DATABASE",
+		"ALTER DATABASE",
+		"GRANT",
+		"REVOKE",
+		"CREATE USER",
+		"DROP USER",
+		"ALTER USER",
+		"SET PASSWORD",
+		"FLUSH PRIVILEGES",
+		"FLUSH HOSTS",
+		"FLUSH LOGS",
+		"LOAD_FILE",
+		"INTO OUTFILE",
+		"INTO DUMPFILE",
+		"LOAD DATA",
+		"SYSTEM ",
+		"\\! ",
+		"EXEC ",
+		"EXECUTE ",
+		"xp_",
+		"INFORMATION_SCHEMA.PROCESSLIST",
+		"mysql.",
+		"performance_schema.",
+		"sys.",
+		"UNION SELECT",
+		"SELECT.*INTO",
+	}
+
+	for _, pattern := range blockedPatterns {
+		if strings.Contains(upperQuery, pattern) {
+			slog.Warn("Blocked forbidden SQL operation attempt",
+				"query", query[:min(len(query), 100)],
+				"pattern", pattern,
+			)
+			return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
+		}
+	}
+
+	// Only allow SELECT, SHOW, DESCRIBE, INSERT, UPDATE, DELETE on user's own database
+	allowedPrefixes := []string{"SELECT", "SHOW", "DESCRIBE", "DESC", "INSERT", "UPDATE", "DELETE"}
+	allowed := false
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(upperQuery, prefix) {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "Only SELECT, INSERT, UPDATE, DELETE, SHOW, and DESCRIBE are allowed")
+	}
+
+	// Block cross-database queries
+	if strings.Contains(query, ".") && !strings.Contains(upperQuery, "INFORMATION_SCHEMA") {
+		parts := strings.Split(query, ".")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "`") {
+				part = strings.Trim(part, "`")
+			}
+			if part != dbName && part != "information_schema" && len(part) > 0 && !strings.HasPrefix(strings.ToUpper(part), "SELECT") {
+				if strings.Contains(upperQuery, "`"+part+"`") || strings.Contains(upperQuery, part+".") {
+					slog.Warn("Blocked cross-database query attempt",
+						"query", query[:min(len(query), 100)],
+						"target_db", part,
+					)
+					return nil, apperr.New(403, "SQL_CROSS_DATABASE", "Cross-database queries are not allowed")
+				}
+			}
+		}
 	}
 
 	db, err := s.ConnectToProjectDB(dbName, password)
 	if err != nil {
-		return nil, err
+		slog.Error("Failed to connect to project database", "database", dbName, "error", err.Error())
+		return nil, apperr.New(500, "DB_CONNECTION_FAILED", "Unable to connect to database")
 	}
-
 
 	start := time.Now()
 
 	// Handle data retrieval queries
-	if strings.HasPrefix(upperQuery, "SELECT") || strings.HasPrefix(upperQuery, "SHOW") || strings.HasPrefix(upperQuery, "DESCRIBE") {
+	if strings.HasPrefix(upperQuery, "SELECT") || strings.HasPrefix(upperQuery, "SHOW") || strings.HasPrefix(upperQuery, "DESCRIBE") || strings.HasPrefix(upperQuery, "DESC") {
 		rows, err := db.Query(query)
 		if err != nil {
-			return nil, err
+			slog.Warn("SQL query execution failed", "query", query[:min(len(query), 100)], "error", err.Error())
+			return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 		}
 		defer rows.Close()
 
@@ -338,7 +407,8 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	// Handle modification queries
 	result, err := db.Exec(query)
 	if err != nil {
-		return nil, err
+		slog.Warn("SQL modification query failed", "query", query[:min(len(query), 100)], "error", err.Error())
+		return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 	}
 
 	affected, _ := result.RowsAffected()
@@ -354,7 +424,6 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 	if err != nil {
 		return "", err
 	}
-
 
 	var sqlDump strings.Builder
 	sqlDump.WriteString(fmt.Sprintf("-- Database Export: %s\n", dbName))
@@ -424,7 +493,6 @@ func (s *DatabaseService) ResetProjectDatabase(dbName, password string) (int, er
 	if err != nil {
 		return 0, err
 	}
-
 
 	rows, _ := db.Query("SHOW TABLES")
 	defer rows.Close()

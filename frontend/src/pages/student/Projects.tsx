@@ -25,6 +25,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
+import { FrameworkIcon } from '../../components/FrameworkIcon'
 
 interface ProjectData {
   id: number;
@@ -35,8 +36,14 @@ interface ProjectData {
   created_at: string;
   php_version: string;
   laravel_version: string;
+  framework: string;
   database_name: string;
   branch: string;
+}
+
+const getFrameworkLabel = (framework?: string, fallback?: string) => {
+  if (!framework || framework === 'Other') return fallback || ''
+  return framework
 }
 
 const StatusBadge = ({ status }: { status: string }) => {
@@ -125,6 +132,8 @@ const StudentProjects = () => {
       }
     })
   }
+
+  const isDeployLocked = (status: string) => status === 'queued' || status === 'pending' || status === 'building'
   
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.preventDefault()
@@ -196,8 +205,8 @@ const StudentProjects = () => {
             >
               <CardContent className="p-6 flex flex-col h-full">
                 <div className="flex items-start justify-between mb-8">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                     <span className="text-xl font-bold uppercase">{project.name.charAt(0)}</span>
+                  <div className="w-12 h-12 flex items-center justify-center transition-all group-hover:scale-105 duration-300">
+                     <FrameworkIcon framework={project.framework} variant="tile" className="w-10 h-10" />
                   </div>
                   <StatusBadge status={project.status} />
                 </div>
@@ -206,6 +215,12 @@ const StudentProjects = () => {
                   <h3 className="font-bold text-xl tracking-tight mb-3 truncate" title={project.name}>
                     {project.name}
                   </h3>
+                  <div className="mb-3">
+                    <Badge variant="outline" className="gap-1.5 bg-muted/40 border-border/60 text-[10px] uppercase tracking-wider font-semibold">
+                      <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
+                      {getFrameworkLabel(project.framework, t('common.general'))}
+                    </Badge>
+                  </div>
                   <a 
                     href={project.url}
                     target="_blank"
@@ -223,10 +238,12 @@ const StudentProjects = () => {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Cpu className="w-4 h-4" />
-                      <span>{t('projectDetail.metrics.php')}</span>
+                      <span>{project.framework === 'Laravel' ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')}</span>
                     </div>
                       <Badge variant="secondary" className="font-mono text-[10px]">
-                        {t('projectDetail.settings.version')} {project.php_version}
+                        {project.framework === 'Laravel' 
+                          ? `${t('projectDetail.settings.version')} ${project.php_version}` 
+                          : getFrameworkLabel(project.framework, t('common.general'))}
                       </Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
@@ -246,13 +263,21 @@ const StudentProjects = () => {
                       <span className="text-xs font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
                       <Button
                         variant="outline"
                         size="icon"
                         onClick={(e) => handleRedeploy(project.id, e)}
-                        className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        title={t('projectDetail.actions.redeploy')}
+                        disabled={isDeployLocked(project.status)}
+                        className={cn(
+                          "h-9 w-9 text-muted-foreground hover:text-foreground",
+                          isDeployLocked(project.status) && "opacity-40"
+                        )}
+                        title={
+                          isDeployLocked(project.status)
+                            ? `${t('projectDetail.actions.redeploy')} (${t(`status.${project.status}`)})`
+                            : t('projectDetail.actions.redeploy')
+                        }
                       >
                          <RefreshCw className="w-4 h-4" />
                       </Button>

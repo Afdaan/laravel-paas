@@ -74,13 +74,19 @@ type Project struct {
 	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
 	Port         *int           `json:"port,omitempty"`
+	BaseDirectory string         `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
 	ErrorLog     *string        `gorm:"type:text" json:"error_log,omitempty"`
+	LastCommitHash string        `gorm:"size:100" json:"last_commit_hash,omitempty"`
 	
 	// Detected Laravel/PHP versions
 	LaravelVersion string `gorm:"size:20" json:"laravel_version,omitempty"`
 	PHPVersion     string `gorm:"size:20" json:"php_version,omitempty"`
+	Framework      string `gorm:"size:50" json:"framework,omitempty"`
+	RuntimeImage   string `gorm:"size:20;default:alpine" json:"runtime_image"` // alpine or debian
 	IsManualVersion bool  `gorm:"default:false" json:"is_manual_version"`
 	QueueEnabled    bool  `gorm:"default:false" json:"queue_enabled"` // Enables worker process
+	WorkerCommand   string `gorm:"size:500" json:"worker_command"`    // Custom command for background service (non-PHP)
+	WorkerContainerID *string `gorm:"size:100" json:"worker_container_id,omitempty"`
 	
 	// Resource limits (override defaults)
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`

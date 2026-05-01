@@ -30,6 +30,11 @@ export interface Project {
   is_manual_version?: boolean;
   container_id?: string;
   database_name?: string;
+  base_directory?: string;
+  runtime_image?: string;
+  worker_command?: string;
+  worker_container_id?: string;
+  framework?: string;
 }
 
 export interface ProjectStats {

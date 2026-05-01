@@ -1,0 +1,11 @@
+{
+  "deploy": {
+    "base": {
+      "image": "alpine:3.20"
+    }
+  },
+  "variables": {
+    "NODE_ENV": "production",
+    "COMPOSER_ALLOW_SUPERUSER": "1"
+  }
+}

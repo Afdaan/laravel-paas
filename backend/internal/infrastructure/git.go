@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
@@ -31,9 +32,15 @@ func NewGitService(cfg *config.Config) *GitService {
 }
 
 // CloneRepository clones a GitHub repository using a non-destructive sync strategy.
-// It preserves the existing .env file and storage/app directory across redeployments.
-func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (string, error) {
+// It returns the project path and the current commit hash.
+func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (string, string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+
+	// 1. Sanitize branch to prevent any shell or path-traversal tricks
+	safeBranch := filepath.Clean(branch)
+	if strings.Contains(safeBranch, "..") || strings.HasPrefix(safeBranch, "/") {
+		return "", "", apperr.New(400, "INVALID_BRANCH", "Invalid branch name provided")
+	}
 
 	// Backup existing .env before sync
 	var envBackup []byte
@@ -42,25 +49,37 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 		envBackup = data
 	}
 
-	// Non-destructive sync: clone to temp, then swap
-	tempPath := projectPath + "_temp"
-	os.RemoveAll(tempPath)
+	// 2. Use a truly unique temporary directory to avoid race conditions and collisions.
+	// os.MkdirTemp ensures the folder is created with 0700 permissions by default on many systems.
+	tempPath, err := os.MkdirTemp(s.cfg.ProjectsPath, subdomain+"_temp_*")
+	if err != nil {
+		return "", "", apperr.New(500, "TEMP_DIR_FAILED", "Failed to create temporary build directory: "+err.Error())
+	}
+	defer os.RemoveAll(tempPath) // Cleanup temp even on failure
 
-	res, err := utils.Run(5*time.Minute, "git", "clone", "--depth=1", "-b", branch, githubURL, tempPath)
+	slog.Info("Cloning repository", "url", githubURL, "branch", safeBranch, "tempPath", tempPath)
+
+	// 3. Use "--" to stop option parsing, preventing malicious URLs from injecting git flags.
+	// We also use -c advice.detachedHead=false to keep logs clean.
+	res, err := utils.Run(5*time.Minute, "git", "clone", "--depth=1", "-b", safeBranch, "--", githubURL, tempPath)
 
 	if err != nil {
-		return "", apperr.New(500, "GIT_CLONE_FAILED", fmt.Sprintf("Failed to clone repository from %s: %s", githubURL, res.Stderr))
+		return "", "", apperr.New(500, "GIT_CLONE_FAILED", fmt.Sprintf("Failed to clone repository: %s", res.Stderr))
 	}
 
-	// Swap temp clone into final project path
+	// Get the commit hash of the cloned repo
+	hashRes, _ := utils.Run(10*time.Second, "git", "-C", tempPath, "rev-parse", "HEAD")
+	commitHash := strings.TrimSpace(hashRes.Stdout)
+
+	// 4. Swap temp clone into final project path
+	// Ensure the parent directory exists
+	if err := os.MkdirAll(s.cfg.ProjectsPath, 0755); err != nil {
+		return "", "", apperr.New(500, "PROJECT_FS_ERROR", "Failed to prepare projects directory")
+	}
+
 	os.RemoveAll(projectPath)
 	if err := os.Rename(tempPath, projectPath); err != nil {
-		return "", apperr.New(500, "PROJECT_FS_ERROR", "Failed to finalize project directory: "+err.Error())
-	}
-
-	// Validate this is a Laravel project
-	if _, err := os.Stat(filepath.Join(projectPath, "artisan")); os.IsNotExist(err) {
-		return "", apperr.New(422, "NOT_LARAVEL_PROJECT", "The repository does not appear to be a valid Laravel project (missing artisan file)")
+		return "", "", apperr.New(500, "PROJECT_FS_ERROR", "Failed to finalize project directory: "+err.Error())
 	}
 
 	// Restore .env if it existed before sync
@@ -70,5 +89,21 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 		}
 	}
 
-	return projectPath, nil
+	return projectPath, commitHash, nil
+}
+
+// GetRemoteCommitHash retrieves the latest commit hash of a remote branch without cloning.
+func (s *GitService) GetRemoteCommitHash(githubURL, branch string) (string, error) {
+	res, err := utils.Run(30*time.Second, "git", "ls-remote", githubURL, branch)
+	if err != nil {
+		return "", err
+	}
+
+	// Output format: <hash> \t <ref>
+	parts := strings.Fields(res.Stdout)
+	if len(parts) > 0 {
+		return parts[0], nil
+	}
+
+	return "", fmt.Errorf("no commit hash found for branch %s", branch)
 }

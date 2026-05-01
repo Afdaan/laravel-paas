@@ -121,7 +121,7 @@ func (r *projectRepository) Create(project *models.Project) error {
 }
 
 func (r *projectRepository) Update(project *models.Project) error {
-	return r.db.Save(project).Error
+	return r.db.Omit("User").Save(project).Error
 }
 
 func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) error {
