@@ -36,6 +36,17 @@ export interface SystemStats {
   recentProjects: any[];
 }
 
+// Helper to simplify verbose OS names
+const simplifyOS = (os: string) => {
+  if (!os) return 'Linux'
+  return os
+    .replace(/GNU\/Linux/i, '')
+    .replace(/\(.*\)/g, '') // Remove (bookworm), (jammy), etc.
+    .replace(/Enterprise Linux/i, 'EL')
+    .replace(/Red Hat/i, 'RHEL')
+    .trim()
+}
+
 const AdminDashboard = () => {
   const { t } = useTranslation()
   const [data, setData] = useState<SystemStats>({
@@ -242,11 +253,11 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
       <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SmallStat icon={Network} label={t('common.networks')} value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label={t('common.volumes')} value={volumes?.length || 0} />
-        <SmallStat icon={Globe} label={t('admin.system.os')} value={system?.os || 'Linux'} />
+        <SmallStat icon={Globe} label={t('admin.system.os')} value={simplifyOS(system?.os)} />
         <SmallStat 
           icon={system?.is_docker ? Box : Server} 
           label={t('admin.system.mode')} 
-          value={system?.is_docker ? 'Docker Container' : 'Bare Metal'} 
+          value={system?.is_docker ? 'Docker' : 'Bare Metal'} 
           badge={system?.is_docker ? 'Virtual' : 'Host'}
         />
       </div>
@@ -310,24 +321,26 @@ interface SmallStatProps {
 const SmallStat = ({ icon: Icon, label, value, badge }: SmallStatProps & { badge?: string }) => {
   return (
     <Card className="group shadow-sm border-border/50 bg-background/40 backdrop-blur-sm hover:shadow-md hover:border-primary/20 transition-all duration-300">
-      <CardContent className="flex items-center justify-between p-3.5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-            <Icon className="w-4.5 h-4.5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-[0.15em] leading-tight">{label}</p>
-              {badge && (
-                <span className="text-[8px] font-bold px-1 rounded bg-primary/10 text-primary uppercase">
-                  {badge}
-                </span>
-              )}
-            </div>
-            <p className="text-sm font-bold leading-tight mt-1 truncate max-w-[120px]">{value}</p>
-          </div>
+      <CardContent className="flex items-center gap-3 p-3.5">
+        <div className="w-9 h-9 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+          <Icon className="w-4.5 h-4.5" />
         </div>
-        <Zap className="w-4 h-4 text-primary/20 group-hover:text-primary/40 transition-colors" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-[0.15em] leading-tight truncate">
+              {label}
+            </p>
+            {badge && (
+              <span className="text-[8px] font-bold px-1 rounded bg-primary/10 text-primary uppercase shrink-0">
+                {badge}
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-bold leading-tight mt-1 text-foreground truncate" title={String(value)}>
+            {value}
+          </p>
+        </div>
+        <Zap className="w-4 h-4 shrink-0 text-primary/20 group-hover:text-primary/40 transition-colors ml-auto" />
       </CardContent>
     </Card>
   )
