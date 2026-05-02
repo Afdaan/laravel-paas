@@ -865,13 +865,41 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		}
 	}
 
-	// 4. CPU Usage (More robust pipeline handling localized top output)
-	cpuCmd := "top -bn1 | grep '%Cpu(s)' | sed 's/,/./g' | awk '{print $2 + $4}'"
-	if res, err := utils.Run(5*time.Second, "sh", "-c", cpuCmd); err == nil {
-		cpuStr := strings.TrimSpace(res.Stdout)
-		if val, err := strconv.ParseFloat(cpuStr, 64); err == nil {
-			stats.CPUUsage = val
+	// 4. CPU Usage (Using /proc/stat - two samples for accuracy)
+	readCpuStat := func() (uint64, uint64) {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return 0, 0
 		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "cpu ") {
+				fields := strings.Fields(line)
+				if len(fields) < 5 {
+					return 0, 0
+				}
+				user, _ := strconv.ParseUint(fields[1], 10, 64)
+				nice, _ := strconv.ParseUint(fields[2], 10, 64)
+				system, _ := strconv.ParseUint(fields[3], 10, 64)
+				idle, _ := strconv.ParseUint(fields[4], 10, 64)
+				iowait, _ := strconv.ParseUint(fields[5], 10, 64)
+				irq, _ := strconv.ParseUint(fields[6], 10, 64)
+				softirq, _ := strconv.ParseUint(fields[7], 10, 64)
+				total := user + nice + system + idle + iowait + irq + softirq
+				return total, idle
+			}
+		}
+		return 0, 0
+	}
+
+	t1, i1 := readCpuStat()
+	time.Sleep(200 * time.Millisecond)
+	t2, i2 := readCpuStat()
+
+	if t2 > t1 {
+		totalDiff := float64(t2 - t1)
+		idleDiff := float64(i2 - i1)
+		stats.CPUUsage = (totalDiff - idleDiff) * 100.0 / totalDiff
 	}
 
 	// 5. CPU Cores
@@ -879,12 +907,10 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		stats.CPUCores = strings.Count(string(data), "processor")
 	}
 
-	// 6. Memory Usage (Using /proc/meminfo for better reliability)
+	// 6. Memory Usage (Using /proc/meminfo)
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
-		memInfo := string(data)
-		var total, available uint64
-		
-		lines := strings.Split(memInfo, "\n")
+		var total, available, free, buffers, cached uint64
+		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
 			fields := strings.Fields(line)
 			if len(fields) < 2 {
@@ -892,31 +918,25 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 			}
 			key := strings.TrimSuffix(fields[0], ":")
 			val, _ := strconv.ParseUint(fields[1], 10, 64)
-			
-			if key == "MemTotal" {
-				total = val * 1024 // Convert kB to B
-			} else if key == "MemAvailable" {
+			switch key {
+			case "MemTotal":
+				total = val * 1024
+			case "MemFree":
+				free = val * 1024
+			case "MemAvailable":
 				available = val * 1024
+			case "Buffers":
+				buffers = val * 1024
+			case "Cached":
+				cached = val * 1024
 			}
 		}
-		
 		if total > 0 {
+			if available == 0 {
+				available = free + buffers + cached
+			}
 			stats.MemoryTotal = total
 			stats.MemoryUsed = total - available
-		}
-	} else {
-		// Fallback to free -b if /proc/meminfo fails
-		if res, err := utils.Run(5*time.Second, "free", "-b"); err == nil {
-			lines := strings.Split(res.Stdout, "\n")
-			if len(lines) >= 2 {
-				fields := strings.Fields(lines[1])
-				if len(fields) >= 3 {
-					total, _ := strconv.ParseUint(fields[1], 10, 64)
-					used, _ := strconv.ParseUint(fields[2], 10, 64)
-					stats.MemoryTotal = total
-					stats.MemoryUsed = used
-				}
-			}
 		}
 	}
 
