@@ -6,6 +6,7 @@ import "time"
 type SystemStats struct {
 	Hostname      string  `json:"hostname"`
 	OS            string  `json:"os"`
+	IsDocker      bool    `json:"is_docker"`
 	CPUUsage      float64 `json:"cpu_usage"`
 	CPUCores      int     `json:"cpu_cores"`
 	MemoryUsed    uint64  `json:"memory_used"`

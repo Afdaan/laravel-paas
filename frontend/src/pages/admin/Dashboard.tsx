@@ -20,6 +20,8 @@ import {
   ShieldAlert,
   ChevronRight,
   Zap,
+  Globe,
+  Server,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -170,8 +172,13 @@ interface HeaderProps {
 
 const Header = memo(({ t, onRefresh, onPrune, isPruning }: HeaderProps) => (
   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-4">
-    <div>
-      <h1 className="text-xl font-semibold tracking-tight">{t('admin.platformDashboard')}</h1>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 mb-1">
+        <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">{t('admin.platformDashboard')}</h1>
+        <Badge variant="outline" className="h-5 px-1.5 text-[9px] font-bold uppercase tracking-widest bg-primary/5 text-primary border-primary/20 animate-pulse">
+          {t('common.status.live')}
+        </Badge>
+      </div>
       <p className="text-xs text-muted-foreground mt-0.5">
         {t('admin.adminDesc')}
       </p>
@@ -232,10 +239,16 @@ const SystemOverview = memo(({ t, system, containers, images, networks, volumes,
         icon={Layers}
       />
       
-      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SmallStat icon={Network} label={t('common.networks')} value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label={t('common.volumes')} value={volumes?.length || 0} />
-        <SmallStat icon={Box} label={t('admin.networks.dockerEngine')} value={system?.docker_version || 'N/A'} />
+        <SmallStat icon={Globe} label={t('admin.system.os')} value={system?.os || 'Linux'} />
+        <SmallStat 
+          icon={system?.is_docker ? Box : Server} 
+          label={t('admin.system.mode')} 
+          value={system?.is_docker ? 'Docker Container' : 'Bare Metal'} 
+          badge={system?.is_docker ? 'Virtual' : 'Host'}
+        />
       </div>
     </div>
   )
@@ -262,22 +275,24 @@ const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps)
   }
 
   return (
-    <Card className="shadow-sm border-border/50">
+    <Card className="group shadow-sm border-border/50 bg-background/50 backdrop-blur-sm hover:shadow-md hover:border-primary/20 transition-all duration-300">
       <CardHeader className="flex flex-row items-center justify-between p-4 pb-1">
-        <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{title}</CardTitle>
-        <Icon className="w-3.5 h-3.5 text-muted-foreground/60" />
+        <CardTitle className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">{title}</CardTitle>
+        <div className="p-1.5 rounded-md bg-muted/50 text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
+          <Icon className="w-3.5 h-3.5" />
+        </div>
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="flex items-baseline gap-2 mb-1">
           <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold tracking-tight tabular-nums">{displayValue}</span>
-            {displayUnit && <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">{displayUnit}</span>}
+            <span className="text-3xl font-extrabold tracking-tighter tabular-nums bg-clip-text text-transparent bg-gradient-to-b from-foreground to-foreground/80">{displayValue}</span>
+            {displayUnit && <span className="text-xs font-bold text-muted-foreground/70 tracking-tight">{displayUnit}</span>}
           </div>
-          <p className="text-[10px] text-muted-foreground ml-1">{detail}</p>
+          <p className="text-[10px] font-medium text-muted-foreground/60 ml-auto bg-muted/30 px-2 py-0.5 rounded-full">{detail}</p>
         </div>
-        <div className="h-1.5 w-full bg-secondary/50 rounded-full overflow-hidden mt-3">
+        <div className="h-2 w-full bg-secondary/30 rounded-full overflow-hidden mt-4 p-0.5">
           <div 
-            className="h-full bg-primary transition-all duration-700 ease-out" 
+            className="h-full rounded-full bg-gradient-to-r from-primary/80 via-primary to-primary shadow-[0_0_8px_rgba(var(--primary),0.4)] transition-all duration-1000 ease-in-out" 
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -292,20 +307,27 @@ interface SmallStatProps {
   value: string | number;
 }
 
-const SmallStat = ({ icon: Icon, label, value }: SmallStatProps) => {
+const SmallStat = ({ icon: Icon, label, value, badge }: SmallStatProps & { badge?: string }) => {
   return (
-    <Card className="shadow-sm border-border/50">
+    <Card className="group shadow-sm border-border/50 bg-background/40 backdrop-blur-sm hover:shadow-md hover:border-primary/20 transition-all duration-300">
       <CardContent className="flex items-center justify-between p-3.5">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center text-primary">
-            <Icon className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+            <Icon className="w-4.5 h-4.5" />
           </div>
           <div>
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest leading-tight">{label}</p>
-            <p className="text-sm font-semibold leading-tight mt-0.5">{value}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-[0.15em] leading-tight">{label}</p>
+              {badge && (
+                <span className="text-[8px] font-bold px-1 rounded bg-primary/10 text-primary uppercase">
+                  {badge}
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-bold leading-tight mt-1 truncate max-w-[120px]">{value}</p>
           </div>
         </div>
-        <Zap className="w-4 h-4 text-muted-foreground/20" />
+        <Zap className="w-4 h-4 text-primary/20 group-hover:text-primary/40 transition-colors" />
       </CardContent>
     </Card>
   )

@@ -34,6 +34,9 @@ export const translations = {
       details: "Details",
       date: "Date",
       status: "Status",
+      statusLive: {
+        live: "Live",
+      },
       url: "URL",
       name: "Name",
       projectName: "Project Name",
@@ -311,6 +314,10 @@ export const translations = {
         uptime: "Uptime",
         noContainers: "No Containers Found",
         noImages: "No Images Found",
+      },
+      system: {
+        os: "Operating System",
+        mode: "Cluster Mode",
       },
       settings: {
         title: "Global Settings",
@@ -690,6 +697,9 @@ export const translations = {
       details: "Details",
       date: "Date",
       status: "Status",
+      statusLive: {
+        live: "Live",
+      },
       url: "URL",
       name: "Name",
       projectName: "Project Name",
@@ -967,6 +977,10 @@ export const translations = {
         uptime: "Uptime",
         noContainers: "Container tidak ditemukan",
         noImages: "Image tidak ditemukan",
+      },
+      system: {
+        os: "Operating System",
+        mode: "Cluster Mode",
       },
       settings: {
         title: "Global Settings",

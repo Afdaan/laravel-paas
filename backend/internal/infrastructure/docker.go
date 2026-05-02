@@ -832,7 +832,7 @@ func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error
 // System & Global Docker Info
 // ===========================================
 
-// GetSystemStats retrieves host machine resource usage
+// GetSystemStats retrieves host machine resource usage with robust detection
 func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	stats := &models.SystemStats{
 		DiskPath: s.cfg.ProjectsPath,
@@ -840,39 +840,87 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		CPUCores: 1,
 	}
 
-	// Hostname
+	// 1. Hostname
 	if hostname, err := os.Hostname(); err == nil {
 		stats.Hostname = hostname
 	}
 
-	// CPU Usage
-	if res, err := utils.Run(5*time.Second, "sh", "-c", "top -bn1 | grep 'CPU:' | head -n1 | awk '{print $2}' | cut -d% -f1"); err == nil {
+	// 2. OS Distribution Detection
+	if data, err := os.ReadFile("/etc/os-release"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "PRETTY_NAME=") {
+				stats.OS = strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+				break
+			}
+		}
+	}
+
+	// 3. Docker Mode Detection
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		stats.IsDocker = true
+	} else if data, err := os.ReadFile("/proc/self/cgroup"); err == nil {
+		if strings.Contains(string(data), "docker") || strings.Contains(string(data), "containerd") {
+			stats.IsDocker = true
+		}
+	}
+
+	// 4. CPU Usage (More robust pipeline handling localized top output)
+	cpuCmd := "top -bn1 | grep '%Cpu(s)' | sed 's/,/./g' | awk '{print $2 + $4}'"
+	if res, err := utils.Run(5*time.Second, "sh", "-c", cpuCmd); err == nil {
 		cpuStr := strings.TrimSpace(res.Stdout)
 		if val, err := strconv.ParseFloat(cpuStr, 64); err == nil {
 			stats.CPUUsage = val
 		}
 	}
 
-	// CPU Cores
+	// 5. CPU Cores
 	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
 		stats.CPUCores = strings.Count(string(data), "processor")
 	}
 
-	// Memory Usage
-	if res, err := utils.Run(5*time.Second, "free", "-b"); err == nil {
-		lines := strings.Split(res.Stdout, "\n")
-		if len(lines) >= 2 {
-			fields := strings.Fields(lines[1])
-			if len(fields) >= 3 {
-				total, _ := strconv.ParseUint(fields[1], 10, 64)
-				used, _ := strconv.ParseUint(fields[2], 10, 64)
-				stats.MemoryTotal = total
-				stats.MemoryUsed = used
+	// 6. Memory Usage (Using /proc/meminfo for better reliability)
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		memInfo := string(data)
+		var total, available uint64
+		
+		lines := strings.Split(memInfo, "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			key := strings.TrimSuffix(fields[0], ":")
+			val, _ := strconv.ParseUint(fields[1], 10, 64)
+			
+			if key == "MemTotal" {
+				total = val * 1024 // Convert kB to B
+			} else if key == "MemAvailable" {
+				available = val * 1024
+			}
+		}
+		
+		if total > 0 {
+			stats.MemoryTotal = total
+			stats.MemoryUsed = total - available
+		}
+	} else {
+		// Fallback to free -b if /proc/meminfo fails
+		if res, err := utils.Run(5*time.Second, "free", "-b"); err == nil {
+			lines := strings.Split(res.Stdout, "\n")
+			if len(lines) >= 2 {
+				fields := strings.Fields(lines[1])
+				if len(fields) >= 3 {
+					total, _ := strconv.ParseUint(fields[1], 10, 64)
+					used, _ := strconv.ParseUint(fields[2], 10, 64)
+					stats.MemoryTotal = total
+					stats.MemoryUsed = used
+				}
 			}
 		}
 	}
 
-	// Disk Usage
+	// 7. Disk Usage
 	if res, err := utils.Run(5*time.Second, "df", "-b", s.cfg.ProjectsPath); err == nil {
 		lines := strings.Split(res.Stdout, "\n")
 		if len(lines) >= 2 {
@@ -886,7 +934,7 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		}
 	}
 
-	// Docker Version
+	// 8. Docker Version
 	if res, err := utils.Run(5*time.Second, "docker", "version", "--format", "{{.Server.Version}}"); err == nil {
 		stats.DockerVersion = strings.TrimSpace(res.Stdout)
 	}
@@ -894,7 +942,6 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	return stats, nil
 }
 
-// ListAllContainers returns all containers on the host with stats
 func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
 	// 1. Get stats for info merging in parallel (or just call it once as it's already one call)
 	statsMap, _ := s.GetAllContainerStats()
