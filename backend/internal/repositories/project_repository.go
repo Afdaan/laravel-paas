@@ -138,7 +138,7 @@ func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) e
 }
 
 func (r *projectRepository) Delete(id uint) error {
-	return r.db.Delete(&models.Project{}, id).Error
+	return r.db.Unscoped().Delete(&models.Project{}, id).Error
 }
 
 func (r *projectRepository) UpdateActivity(id uint) error {

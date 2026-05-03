@@ -71,6 +71,9 @@ type Config struct {
 func Load() *Config {
 	appMode := getEnv("APP_MODE", "local")
 	hostRoot := getEnv("HOST_ROOT_PATH", ".")
+	if abs, err := filepath.Abs(hostRoot); err == nil {
+		hostRoot = abs
+	}
 
 	// Determine internal paths based on mode
 	var projectsPath, dataPath, templatesPath string
@@ -84,7 +87,7 @@ func Load() *Config {
 		templatesPath = getEnv("TEMPLATES_PATH", "./docker/templates")
 	}
 
-	return &Config{
+	cfg := &Config{
 		// App
 		AppMode:      appMode,
 		HostRootPath: hostRoot,
@@ -138,6 +141,16 @@ func Load() *Config {
 		NginxWebhookKey:     getEnv("NGINX_WEBHOOK_KEY", ""),
 		InternalIP:          getEnv("INTERNAL_IP", "127.0.0.1"),
 	}
+
+	// Ensure host paths are absolute to prevent Docker volume naming errors
+	if abs, err := filepath.Abs(cfg.HostProjectsPath); err == nil {
+		cfg.HostProjectsPath = abs
+	}
+	if abs, err := filepath.Abs(cfg.HostDataPath); err == nil {
+		cfg.HostDataPath = abs
+	}
+
+	return cfg
 }
 
 // Helper functions to read environment variables
