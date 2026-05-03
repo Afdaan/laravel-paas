@@ -521,9 +521,20 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	mandatory, err := s.loadMandatoryEnv(project, projectDomain)
 	if err != nil {
 		slog.Error("Failed to load mandatory env template, falling back to basic config", "error", err)
+
+		// Securely generate a fallback APP_KEY
+		key := make([]byte, 32)
+		var appKey string
+		if _, err := rand.Read(key); err != nil {
+			appKey = "base64:fallback-key-generation-failed-check-logs"
+		} else {
+			appKey = "base64:" + base64.StdEncoding.EncodeToString(key)
+		}
+
 		// Basic fallback if template is missing
 		mandatory = map[string]string{
 			"APP_NAME":     fmt.Sprintf("\"%s\"", project.Name),
+			"APP_KEY":      appKey,
 			"DATABASE_URL": fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName),
 		}
 	}
@@ -1252,12 +1263,7 @@ func (s *DockerService) SaveEnvFile(subdomain, content string) error {
 
 // loadMandatoryEnv renders the default.env template and returns a map of key-values.
 func (s *DockerService) loadMandatoryEnv(project *models.Project, projectDomain string) (map[string]string, error) {
-	templatePath := filepath.Join("/app/docker/templates/default.env")
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		// Local dev fallback
-		templatePath = filepath.Join("docker/templates/default.env")
-	}
-
+	templatePath := filepath.Join(s.cfg.TemplatesPath, "default.env")
 	content, err := os.ReadFile(templatePath)
 	if err != nil {
 		return nil, err
@@ -1265,8 +1271,13 @@ func (s *DockerService) loadMandatoryEnv(project *models.Project, projectDomain 
 
 	// Prepare template data
 	key := make([]byte, 32)
-	rand.Read(key)
-	appKey := base64.StdEncoding.EncodeToString(key)
+	var appKey string
+	if _, err := rand.Read(key); err != nil {
+		slog.Error("Failed to generate random bytes for APP_KEY", "error", err)
+		appKey = "generation-failed-check-logs"
+	} else {
+		appKey = base64.StdEncoding.EncodeToString(key)
+	}
 
 	queueConn := "sync"
 	if project.QueueEnabled {

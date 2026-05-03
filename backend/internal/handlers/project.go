@@ -354,6 +354,9 @@ var allowedArtisanCommands = map[string]bool{
 	"about":          true,
 	"env":            true,
 	"storage:link":   true,
+	"key:generate":   true,
+	"migrate":        true,
+	"db:seed":        true,
 }
 
 // blockedArtisanPatterns contains command prefixes that are never allowed
@@ -364,7 +367,6 @@ var blockedArtisanPatterns = []string{
 	"db:seed",
 	"tinker",
 	"make:",
-	"key:generate",
 	"down",
 	"up",
 	"serve",
