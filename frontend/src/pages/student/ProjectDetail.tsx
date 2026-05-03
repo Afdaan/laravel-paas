@@ -472,9 +472,16 @@ function StudentProjectDetail() {
   const isLaravelProject = project.framework === 'Laravel'
   const isStopped = project.status === 'stopped'
   const frameworkLabel = project.framework && project.framework !== 'Other' ? project.framework : t('common.general')
-  const frameworkDetail = project.framework === 'Laravel' && project.php_version
-    ? `PHP ${project.php_version.replace('.dynamic', '')}`
-    : t('projectDetail.metrics.managedStack')
+  const frameworkDetail = useMemo(() => {
+    if (project.framework === 'Laravel') {
+      return project.php_version ? `PHP ${project.php_version.replace('.dynamic', '')}` : 'PHP Stack'
+    }
+    const isNode = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project.framework || '')
+    if (isNode) {
+      return project.node_version ? `Node.js ${project.node_version}` : 'Node.js Stack'
+    }
+    return t('projectDetail.metrics.managedStack')
+  }, [project.framework, project.php_version, project.node_version, t])
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
