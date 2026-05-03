@@ -407,9 +407,20 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 	// Wait a bit longer for the container and its internal services to fully initialize
 	time.Sleep(5 * time.Second)
 
-	// We use -u www-data to ensure that any log files or cache files created during migration
+	// Determine the best user to run the command (prefer www-data, fallback to root)
+	user := "root"
+	if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
+		user = "www-data"
+	}
+
+	// Ensure permissions for the web user before migration
+	if user != "root" {
+		utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache")
+	}
+
+	// We use the detected user to ensure that any log files or cache files created during migration
 	// are owned by the web user, preventing permission issues later.
-	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", "www-data", containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
+	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
 
 	if err != nil {
 		output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
@@ -1247,40 +1258,72 @@ func parseMemoryBytes(memStr string) float64 {
 }
 
 // ExecLaravelCommand runs artisan commands inside container
-func (s *DockerService) ExecLaravelCommand(containerID, command string) (string, error) {
+// ExecProjectCommand runs commands inside container (artisan for Laravel, shell for others)
+func (s *DockerService) ExecProjectCommand(project *models.Project, command string) (string, error) {
+	containerID := ""
+	if project.ContainerID != nil {
+		containerID = *project.ContainerID
+	}
+	if containerID == "" {
+		return "", fmt.Errorf("container not running")
+	}
+
 	// Split command string into args to avoiding shell injection
 	args := strings.Fields(command)
 
-	// Determine if we should add --force (for migrate/db:seed)
-	// and always add --no-interaction to prevent hanging
-	baseCmd := ""
-	if len(args) > 0 {
-		baseCmd = args[0]
-	}
-
-	hasNoInteraction := false
-	hasForce := false
-	for _, arg := range args {
-		if arg == "--no-interaction" || arg == "-n" {
-			hasNoInteraction = true
-		}
-		if arg == "--force" {
-			hasForce = true
+	// Determine the best user to run the command
+	// For Laravel (legacy) it's usually www-data
+	// For Node.js (railpack) it's often 'node' (UID 1000) or root
+	user := "root"
+	potentialUsers := []string{"www-data", "node"}
+	for _, u := range potentialUsers {
+		if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", u); err == nil && strings.TrimSpace(res.Stdout) != "" {
+			user = u
+			break
 		}
 	}
 
-	if !hasNoInteraction {
-		args = append(args, "--no-interaction")
+	// Prepare execution args based on framework
+	var fullArgs []string
+	if project.Framework == "Laravel" {
+		// Determine if we should add --force (for migrate/db:seed)
+		// and always add --no-interaction to prevent hanging
+		baseCmd := ""
+		if len(args) > 0 {
+			baseCmd = args[0]
+		}
+
+		hasNoInteraction := false
+		hasForce := false
+		for _, arg := range args {
+			if arg == "--no-interaction" || arg == "-n" {
+				hasNoInteraction = true
+			}
+			if arg == "--force" {
+				hasForce = true
+			}
+		}
+
+		if !hasNoInteraction {
+			args = append(args, "--no-interaction")
+		}
+
+		// Auto-add --force for commands that usually require it in production
+		if !hasForce && (baseCmd == "migrate" || baseCmd == "db:seed" || strings.HasPrefix(baseCmd, "migrate:")) {
+			args = append(args, "--force")
+		}
+
+		// Fix permissions as root before running as www-data to avoid "Permission denied" errors in logs/cache
+		if user != "root" {
+			utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache")
+		}
+
+		fullArgs = append([]string{"exec", "-u", user, containerID, "php", "artisan"}, args...)
+	} else {
+		// For other frameworks (Node.js, Go, etc.), run command directly
+		fullArgs = append([]string{"exec", "-u", user, containerID}, args...)
 	}
 
-	// Auto-add --force for commands that usually require it in production
-	if !hasForce && (baseCmd == "migrate" || baseCmd == "db:seed" || strings.HasPrefix(baseCmd, "migrate:")) {
-		args = append(args, "--force")
-	}
-
-	// We use -u www-data to ensure correct file permissions for logs/cache created by the command.
-	// We also use -i (interactive) but not -t (tty) to avoid "not a tty" errors while still allowing stream
-	fullArgs := append([]string{"exec", "-u", "www-data", containerID, "php", "artisan"}, args...)
 	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
 
 	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
@@ -1288,7 +1331,7 @@ func (s *DockerService) ExecLaravelCommand(containerID, command string) (string,
 		if output == "" {
 			output = "Command failed with no output"
 		}
-		return output, fmt.Errorf("artisan command failed: %w", err)
+		return output, fmt.Errorf("command failed: %w", err)
 	}
 
 	return output, nil

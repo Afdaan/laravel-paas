@@ -418,9 +418,9 @@ func (s *ProjectService) GetAllStats() (map[string]infrastructure.ContainerStats
 	return s.dockerService.GetAllContainerStats()
 }
 
-// ExecArtisan executes an artisan command in the container
-func (s *ProjectService) ExecArtisan(containerID string, command string) (string, error) {
-	return s.dockerService.ExecLaravelCommand(containerID, command)
+// ExecCommand executes a command in the container (automatically handles artisan for Laravel)
+func (s *ProjectService) ExecCommand(project *models.Project, command string) (string, error) {
+	return s.dockerService.ExecProjectCommand(project, command)
 }
 
 // GetEnv reads the .env file from the project storage

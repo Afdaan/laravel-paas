@@ -358,16 +358,22 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Command is required"})
 	}
 
-	if err := utils.ValidateCommand("Laravel", req.Command); err != nil {
-		slog.Warn("Blocked artisan command attempt",
+	framework := project.Framework
+	if framework == "" {
+		framework = "Laravel" // Default fallback
+	}
+
+	if err := utils.ValidateCommand(framework, req.Command); err != nil {
+		slog.Warn("Blocked command attempt",
 			"project_id", project.ID,
+			"framework", framework,
 			"command", req.Command,
 			"reason", err.Error(),
 		)
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	output, err := h.projectService.ExecArtisan(*project.ContainerID, req.Command)
+	output, err := h.projectService.ExecCommand(project, req.Command)
 	if err != nil {
 		slog.Warn("Artisan command returned error",
 			"project_id", project.ID,
