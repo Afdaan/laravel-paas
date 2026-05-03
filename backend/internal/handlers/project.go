@@ -20,6 +20,7 @@ import (
 	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // ProjectHandler handles project endpoints
@@ -337,81 +338,6 @@ type RunArtisanRequest struct {
 	Command string `json:"command"`
 }
 
-// allowedArtisanCommands is the list of safe artisan commands that students can execute
-var allowedArtisanCommands = map[string]bool{
-	"cache:clear":    true,
-	"cache:forget":   true,
-	"config:cache":   true,
-	"config:clear":   true,
-	"route:cache":    true,
-	"route:clear":    true,
-	"route:list":     true,
-	"view:cache":     true,
-	"view:clear":     true,
-	"optimize":       true,
-	"optimize:clear": true,
-	"list":           true,
-	"about":          true,
-	"env":            true,
-	"storage:link":   true,
-	"key:generate":   true,
-	"migrate":        true,
-	"db:seed":        true,
-}
-
-// blockedArtisanPatterns contains command prefixes that are never allowed
-var blockedArtisanPatterns = []string{
-	"migrate:fresh",
-	"migrate:reset",
-	"migrate:rollback",
-	"db:seed",
-	"tinker",
-	"make:",
-	"down",
-	"up",
-	"serve",
-	"schedule:run",
-	"schedule:work",
-	"queue:work",
-	"queue:listen",
-	"queue:restart",
-	"queue:retry",
-	"queue:forget",
-	"queue:flush",
-	"queue:prune-batches",
-	"optimize:v2",
-	"stub:publish",
-	"vendor:publish",
-	"install",
-	"test",
-	"pest",
-	"clear-compiled",
-}
-
-func validateArtisanCommand(command string) error {
-	// Extract base command (first word)
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return fmt.Errorf("empty command")
-	}
-
-	baseCommand := parts[0]
-
-	// Check against blocklist first
-	for _, pattern := range blockedArtisanPatterns {
-		if baseCommand == pattern || strings.HasPrefix(baseCommand, pattern) {
-			return fmt.Errorf("command '%s' is not allowed", baseCommand)
-		}
-	}
-
-	// Check against allowlist (if not in allowlist, reject)
-	if !allowedArtisanCommands[baseCommand] {
-		return fmt.Errorf("command '%s' is not in the allowed list", baseCommand)
-	}
-
-	return nil
-}
-
 // RunArtisan executes an artisan command
 func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
@@ -432,7 +358,7 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Command is required"})
 	}
 
-	if err := validateArtisanCommand(req.Command); err != nil {
+	if err := utils.ValidateCommand("Laravel", req.Command); err != nil {
 		slog.Warn("Blocked artisan command attempt",
 			"project_id", project.ID,
 			"command", req.Command,
