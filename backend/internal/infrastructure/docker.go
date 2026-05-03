@@ -542,8 +542,14 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	var finalLines []string
 	seen := make(map[string]bool)
 
-	// 2. Load from .env.example if it exists
-	if data, err := os.ReadFile(examplePath); err == nil {
+	// 2. Select base file: Prefer existing .env if it exists, fallback to .env.example
+	basePath := envPath
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		basePath = examplePath
+	}
+
+	// Load from base file if it exists
+	if data, err := os.ReadFile(basePath); err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
