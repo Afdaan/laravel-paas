@@ -547,18 +547,31 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			if trimmed == "" {
 				finalLines = append(finalLines, line)
 				continue
 			}
 
-			parts := strings.SplitN(trimmed, "=", 2)
+			// Handle commented lines that might contain mandatory keys
+			// e.g. "# DB_HOST=127.0.0.1" -> we want to uncomment and set to paas-mysql
+			isCommented := strings.HasPrefix(trimmed, "#")
+			effectiveLine := trimmed
+			if isCommented {
+				effectiveLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+			}
+
+			parts := strings.SplitN(effectiveLine, "=", 2)
 			if len(parts) == 2 {
 				key := strings.TrimSpace(parts[0])
 				if val, ok := mandatory[key]; ok {
+					// We found a mandatory key (even if it was commented out)
 					finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
 					seen[key] = true
+				} else if isCommented {
+					// It's a comment but not a mandatory key, keep as is
+					finalLines = append(finalLines, line)
 				} else {
+					// It's an active line but not mandatory, keep as is
 					finalLines = append(finalLines, line)
 				}
 			} else {
@@ -567,7 +580,7 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 		}
 	}
 
-	// 3. Add any missing mandatory variables
+	// 3. Add any missing mandatory variables that weren't found in .env.example
 	for key, val := range mandatory {
 		if !seen[key] {
 			finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
