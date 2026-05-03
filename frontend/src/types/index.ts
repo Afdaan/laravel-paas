@@ -39,6 +39,7 @@ export interface Project {
   start_command?: string;
   node_version?: string;
   framework?: string;
+  language_version?: string;
 }
 
 export interface ProjectStats {

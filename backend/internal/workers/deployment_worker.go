@@ -467,26 +467,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	project.LastCommitHash = cloneHash
 	w.projectRepo.Update(project)
 
-	// Step 2: Detect Laravel version (optional if not a Laravel project)
+	// Step 2: Detect Framework and Versions
 	// We must detect from the build path (monorepo support + path traversal guard)
 	buildPath := w.dockerService.ResolveBuildPath(projectPath, project.BaseDirectory)
-
-	laravelVersion, phpVersion, err := w.versionService.DetectVersions(buildPath)
-	if err != nil {
-		slog.Warn("Framework detection skipped or failed", "subdomain", project.Subdomain, "error", err)
-		// Fallback for non-Laravel projects
-		laravelVersion = "..."
-		phpVersion = "8.4" // Default PHP for non-Laravel
-	}
-
-	// Use manual PHP version if set, otherwise use detected version
-	finalPHPVersion := phpVersion
-	if project.IsManualVersion && project.PHPVersion != "" {
-		finalPHPVersion = project.PHPVersion
-	}
-
-	project.LaravelVersion = laravelVersion
-	project.PHPVersion = finalPHPVersion
 
 	// Ordered list of marker files to framework names (Priority matters!)
 	type marker struct {
@@ -520,7 +503,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 		{"index.html", "Static"},
 	}
 
-	// Dynamic detection: First match wins
+	// Dynamic framework detection: First match wins
 	project.Framework = "Other"
 	for _, m := range markers {
 		if _, err := os.Stat(filepath.Join(buildPath, m.file)); err == nil {
@@ -529,8 +512,45 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 		}
 	}
 
+	// Runtime version detection (Generic for the future)
+	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
+	project.LanguageVersion = langVersion
+
+	// Backward compatibility and specific field syncing
+	if project.Framework == "Laravel" {
+		laravelVersion, phpVersion, err := w.versionService.DetectVersions(buildPath)
+		if err == nil {
+			project.LaravelVersion = laravelVersion
+			project.PHPVersion = phpVersion
+			// Use manual PHP version if set
+			if project.IsManualVersion && project.PHPVersion != "" {
+				// project.PHPVersion is already set above, but if it was manual we keep it
+			}
+		} else {
+			project.PHPVersion = "8.4" // Fallback
+		}
+	} else {
+		// Sync NodeVersion if it's a JS project for backward compatibility in UI
+		isJS := false
+		jsFrameworks := []string{"Node.js", "Next.js", "Vite", "React", "Vue", "Nuxt.js", "Svelte", "Angular", "TypeScript"}
+		for _, f := range jsFrameworks {
+			if project.Framework == f {
+				isJS = true
+				break
+			}
+		}
+		if isJS {
+			project.NodeVersion = langVersion
+		}
+	}
+
 	if err := w.projectRepo.Update(project); err != nil {
 		slog.Warn("Failed to update project framework/versions", "id", project.ID, "error", err)
+	}
+
+	finalPHPVersion := project.PHPVersion
+	if finalPHPVersion == "" {
+		finalPHPVersion = "8.4"
 	}
 
 	// Capture old container ID for cleanup after successful deployment

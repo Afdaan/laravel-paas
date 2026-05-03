@@ -82,6 +82,7 @@ type Project struct {
 	LaravelVersion string `gorm:"size:20" json:"laravel_version,omitempty"`
 	PHPVersion     string `gorm:"size:20" json:"php_version,omitempty"`
 	Framework      string `gorm:"size:50" json:"framework,omitempty"`
+	LanguageVersion string `gorm:"size:20" json:"language_version,omitempty"`
 	RuntimeImage   string `gorm:"size:20;default:alpine" json:"runtime_image"` // alpine or debian
 	IsManualVersion bool  `gorm:"default:false" json:"is_manual_version"`
 	QueueEnabled    bool  `gorm:"default:false" json:"queue_enabled"` // Enables worker process

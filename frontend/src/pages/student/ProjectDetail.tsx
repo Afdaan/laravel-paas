@@ -117,6 +117,7 @@ function StudentProjectDetail() {
   const [runtimeImageInput, setRuntimeImageInput] = useState('')
   const [workerCommandInput, setWorkerCommandInput] = useState('')
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
+  const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
@@ -140,8 +141,11 @@ function StudentProjectDetail() {
     if (isNode) {
       return project.node_version ? `Node.js ${project.node_version}` : 'Node.js Stack'
     }
+    if (project.language_version) {
+      return `${project.framework} ${project.language_version}`
+    }
     return t('projectDetail.metrics.managedStack')
-  }, [project?.framework, project?.php_version, project?.node_version, t])
+  }, [project?.framework, project?.php_version, project?.node_version, project?.language_version, t])
 
   const deployLocked = project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building'
 
@@ -380,7 +384,8 @@ function StudentProjectDetail() {
       phpVersionInput !== (project.php_version || '8.2') ||
       runtimeImageInput !== (project.runtime_image || 'alpine') ||
       workerCommandInput !== (project.worker_command || '') ||
-      queueEnabledInput !== (project.queue_enabled || false)
+      queueEnabledInput !== (project.queue_enabled || false) ||
+      languageVersionInput !== (project.language_version || '')
   }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, runtimeImageInput, workerCommandInput, queueEnabledInput])
 
   const handleResetSettings = () => {
@@ -394,6 +399,7 @@ function StudentProjectDetail() {
     setRuntimeImageInput(project.runtime_image || 'alpine')
     setWorkerCommandInput(project.worker_command || '')
     setQueueEnabledInput(project.queue_enabled || false)
+    setLanguageVersionInput(project.language_version || '')
     toast.info(t('common.resetSuccess') || 'Settings reset to original values')
   }
 
@@ -418,7 +424,8 @@ function StudentProjectDetail() {
             php_version: phpVersionInput,
             runtime_image: runtimeImageInput,
             worker_command: workerCommandInput,
-            queue_enabled: queueEnabledInput
+            queue_enabled: queueEnabledInput,
+            language_version: languageVersionInput
           }
           await projectsAPI.update(uid, payload)
           toast.success(t('common.success'))
@@ -444,6 +451,7 @@ function StudentProjectDetail() {
       setRuntimeImageInput(project.runtime_image || 'alpine')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
+      setLanguageVersionInput(project.language_version || '')
     }
   }, [project])
 
@@ -1076,6 +1084,44 @@ function StudentProjectDetail() {
                               { v: '22', l: 'Node.js 22 (Current)' }
                             ].map(item => (
                               <SelectItem key={item.v} value={item.v}>{item.l}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {project.framework === 'Go' && (
+                      <div className="space-y-2">
+                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">Go Version</Label>
+                        <Select
+                          value={languageVersionInput}
+                          onValueChange={(val) => setLanguageVersionInput(val || '1.22')}
+                        >
+                          <SelectTrigger className="h-12 border-muted-foreground/20">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {['1.20', '1.21', '1.22'].map(v => (
+                              <SelectItem key={v} value={v}>Go {v}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {project.framework === 'Python' && (
+                      <div className="space-y-2">
+                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">Python Version</Label>
+                        <Select
+                          value={languageVersionInput}
+                          onValueChange={(val) => setLanguageVersionInput(val || '3.11')}
+                        >
+                          <SelectTrigger className="h-12 border-muted-foreground/20">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {['3.9', '3.10', '3.11', '3.12'].map(v => (
+                              <SelectItem key={v} value={v}>Python {v}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>

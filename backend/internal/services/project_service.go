@@ -283,44 +283,30 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 	return project, nil
 }
 
-// UpdateProject updates project details
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, runtimeImage, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, runtimeImage, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
 	}
 
-	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
-		return nil, apperr.ErrForbidden
+	// Permission check (Only owner or admin can update)
+	if project.UserID != userID && role != models.RoleSuperAdmin && role != models.RoleAdmin {
+		return nil, apperr.New(403, "FORBIDDEN", "You do not have permission to update this project")
 	}
 
 	if name != "" {
 		project.Name = name
 	}
-	if branch != "" {
-		project.Branch = branch
-	}
-	if phpVersion != "" {
-		project.PHPVersion = phpVersion
-		project.IsManualVersion = true
-	}
-	if runtimeImage != "" {
-		if err := validateRuntimeImage(runtimeImage); err != nil {
-			return nil, apperr.New(400, "INVALID_RUNTIME_IMAGE", err.Error())
-		}
-		project.RuntimeImage = runtimeImage
-	}
-	if baseDirectory != "" {
-		if err := validateBaseDirectory(baseDirectory); err != nil {
-			return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
-		}
-		project.BaseDirectory = baseDirectory
-	}
+	project.Branch = branch
+	project.PHPVersion = phpVersion
+	project.RuntimeImage = runtimeImage
+	project.BaseDirectory = baseDirectory
 	project.QueueEnabled = queueEnabled
 	project.WorkerCommand = workerCommand
 	project.BuildCommand = buildCommand
 	project.StartCommand = startCommand
 	project.NodeVersion = nodeVersion
+	project.LanguageVersion = languageVersion
 
 	if err := s.projectRepo.Update(project); err != nil {
 		return nil, err
