@@ -369,13 +369,16 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 
 	output, err := h.projectService.ExecArtisan(*project.ContainerID, req.Command)
 	if err != nil {
-		slog.Error("Artisan command execution failed",
+		slog.Warn("Artisan command returned error",
 			"project_id", project.ID,
 			"command", req.Command,
 			"error", err.Error(),
 		)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Command execution failed",
+		// We return 200 even if the command failed, because the "execution" was successful.
+		// The frontend will display the output which contains the error message from Artisan.
+		return c.JSON(fiber.Map{
+			"output": output,
+			"error":  "Command failed (non-zero exit code)",
 		})
 	}
 

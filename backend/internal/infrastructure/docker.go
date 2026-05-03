@@ -407,16 +407,16 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 	// Wait a bit longer for the container and its internal services to fully initialize
 	time.Sleep(5 * time.Second)
 
-	// Try running migration. We remove -u www-data to use the image's default user
-	// which is safer across different base images (Alpine vs Debian vs Custom)
-	res, err := utils.Run(2*time.Minute, "docker", "exec", containerID, "php", "artisan", "migrate", "--force")
+	// We use -u www-data to ensure that any log files or cache files created during migration
+	// are owned by the web user, preventing permission issues later.
+	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", "www-data", containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
 
 	if err != nil {
 		output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
 		if output == "" {
 			output = "(No output from migration command)"
 		}
-		return output, fmt.Errorf("migration failed: %s", strings.TrimSpace(res.Stderr))
+		return output, fmt.Errorf("migration failed: %s", output)
 	}
 
 	return res.Stdout, nil
@@ -1249,19 +1249,49 @@ func parseMemoryBytes(memStr string) float64 {
 // ExecLaravelCommand runs artisan commands inside container
 func (s *DockerService) ExecLaravelCommand(containerID, command string) (string, error) {
 	// Split command string into args to avoiding shell injection
-	// This assumes the command is a space-separated list of args for artisan
-	// e.g. "migrate --force" -> ["migrate", "--force"]
 	args := strings.Fields(command)
 
-	fullArgs := append([]string{"exec", containerID, "php", "artisan"}, args...)
-	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
-
-	if err != nil {
-		output := res.Stdout + "\n" + res.Stderr
-		return output, fmt.Errorf("command failed: %s", output)
+	// Determine if we should add --force (for migrate/db:seed)
+	// and always add --no-interaction to prevent hanging
+	baseCmd := ""
+	if len(args) > 0 {
+		baseCmd = args[0]
 	}
 
-	return res.Stdout, nil
+	hasNoInteraction := false
+	hasForce := false
+	for _, arg := range args {
+		if arg == "--no-interaction" || arg == "-n" {
+			hasNoInteraction = true
+		}
+		if arg == "--force" {
+			hasForce = true
+		}
+	}
+
+	if !hasNoInteraction {
+		args = append(args, "--no-interaction")
+	}
+
+	// Auto-add --force for commands that usually require it in production
+	if !hasForce && (baseCmd == "migrate" || baseCmd == "db:seed" || strings.HasPrefix(baseCmd, "migrate:")) {
+		args = append(args, "--force")
+	}
+
+	// We use -u www-data to ensure correct file permissions for logs/cache created by the command.
+	// We also use -i (interactive) but not -t (tty) to avoid "not a tty" errors while still allowing stream
+	fullArgs := append([]string{"exec", "-u", "www-data", containerID, "php", "artisan"}, args...)
+	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
+
+	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+	if err != nil {
+		if output == "" {
+			output = "Command failed with no output"
+		}
+		return output, fmt.Errorf("artisan command failed: %w", err)
+	}
+
+	return output, nil
 }
 
 // GetEnvFile reads the .env file for a project
