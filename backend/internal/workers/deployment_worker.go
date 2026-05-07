@@ -513,7 +513,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 
 	// Dynamic framework detection: First match wins
 	project.Framework = "Other"
-	for _, m := range markers {jel
+	for _, m := range markers {
 		if _, err := os.Stat(filepath.Join(buildPath, m.file)); err == nil {
 			project.Framework = m.name
 			break
