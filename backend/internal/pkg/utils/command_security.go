@@ -33,6 +33,7 @@ var commandRegistry = map[string]frameworkCommands{
 			"key:generate":   true,
 			"migrate":        true,
 			"db:seed":        true,
+			"game:faker":     true,
 		},
 		BlockedPatterns: []string{
 			"migrate:fresh",
