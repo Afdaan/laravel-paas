@@ -75,6 +75,7 @@ RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scr
 FROM node:20-alpine AS frontend
 WORKDIR /app
 RUN mkdir -p public/build
+COPY .env* ./
 
 # Copy lock files for tool detection
 COPY package*.json bun.lock* yarn.lock* pnpm-lock.yaml* ./

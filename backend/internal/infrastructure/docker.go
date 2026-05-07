@@ -83,6 +83,21 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		return "", fmt.Errorf("failed to create .env: %w", err)
 	}
 
+	// 2.1 Sync .env to buildPath for monorepo support.
+	// This ensures that build-time environment variables are available to frameworks 
+	// (like Vite or Next.js) when the source code is in a subdirectory.
+	if buildPath != projectPath {
+		sourceEnv := filepath.Join(projectPath, ".env")
+		targetEnv := filepath.Join(buildPath, ".env")
+		
+		if err := s.storage.CopyFile(sourceEnv, targetEnv); err != nil {
+			slog.Warn("Failed to sync .env to build directory", 
+				"subdomain", project.Subdomain, 
+				"target", buildPath,
+				"error", err)
+		}
+	}
+
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	logFilePath := filepath.Join(projectPath, "build.log")
 
@@ -315,6 +330,16 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--cache-key", cacheKey,
 		"--env", "NPM_CONFIG_JOBS=2",
 		"--env", "CI=true",
+	}
+
+	// Load environment variables from .env to pass to build phase.
+	// This is required for frontend frameworks (Vite, Next.js, etc.) that bake 
+	// environment variables into the static bundle at build time.
+	projectEnvFile := filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env")
+	if envVars, err := s.parseProjectEnv(projectEnvFile); err == nil {
+		for key, value := range envVars {
+			buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
+		}
 	}
 
 	// Inject Node Version if specified
@@ -1434,4 +1459,41 @@ func (s *DockerService) loadMandatoryEnv(project *models.Project, projectDomain 
 	}
 
 	return result, nil
+}
+
+// parseProjectEnv reads a .env file and returns a map of key-values.
+// It handles basic environment variable parsing including comments and quotes.
+func (s *DockerService) parseProjectEnv(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	envVars := make(map[string]string)
+	lines := strings.Split(string(data), "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		// Skip empty lines and comments
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Split by the first '=' character
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove surrounding quotes if they exist (e.g., "value" or 'value')
+		value = strings.Trim(value, "\"'")
+		
+		envVars[key] = value
+	}
+
+	return envVars, nil
 }
