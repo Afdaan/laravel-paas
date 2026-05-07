@@ -39,7 +39,7 @@ interface ImageData {
 
 const AdminImages = () => {
   const { t } = useTranslation()
-  const [data, setData] = useState<{ images: ImageData[], system: any }>({
+  const [data, setData] = useState<{ images: ImageData[], system: unknown }>({
     images: [],
     system: null
   })
@@ -201,7 +201,7 @@ const AdminImages = () => {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : filteredImages.map((img, i) => (
+              ) : filteredImages.map((img: ImageData, i: number) => (
                 <TableRow key={img.id || i} className="hover:bg-muted/20">
                   <TableCell className="px-4 py-3 text-center">
                     <Checkbox />

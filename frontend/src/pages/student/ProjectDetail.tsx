@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import useTranslation from '../../lib/useTranslation'
@@ -29,6 +29,7 @@ import {
   Code2,
   CheckCircle2
 } from 'lucide-react'
+import { AxiosError } from 'axios'
 import { projectsAPI, databaseAPI } from '../../services/api'
 import { Project, ProjectStats } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -50,7 +51,7 @@ import BuildLogsConsole from '@/components/BuildLogsConsole'
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
   const { t } = useTranslation()
-  const styles: Record<string, any> = {
+  const styles: Record<string, { color: string, label: string, pulse?: boolean }> = {
     running: { color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20', label: t('status.running') },
     building: { color: 'text-blue-500 bg-blue-500/10 border-blue-500/20', label: t('status.building'), pulse: true },
     queued: { color: 'text-purple-500 bg-purple-500/10 border-purple-500/20', label: t('status.queued') || 'Queued' },
@@ -69,7 +70,7 @@ function StatusIndicator({ status }: { status: string }) {
   )
 }
 
-function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass }: { title: string, value: string, subtext?: string, icon?: any, renderIcon?: (className: string) => React.ReactNode, colorClass?: string }) {
+function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass }: { title: string, value: string, subtext?: string, icon?: React.ElementType, renderIcon?: (className: string) => React.ReactNode, colorClass?: string }) {
   return (
     <Card className="bg-card/50 border-border/40 backdrop-blur-md overflow-hidden group hover:border-primary/40 hover:shadow-[0_0_20px_rgba(var(--primary),0.05)] transition-all duration-500 relative">
       <div className={cn("absolute top-0 left-0 w-1 h-full opacity-0 group-hover:opacity-100 transition-opacity duration-500", colorClass?.replace('text-', 'bg-'))} />
@@ -107,7 +108,7 @@ function StudentProjectDetail() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
-  const [credentials, setCredentials] = useState<any>(null)
+  const [credentials, setCredentials] = useState<Record<string, string> | null>(null)
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
   const [buildCommandInput, setBuildCommandInput] = useState('')
@@ -145,9 +146,86 @@ function StudentProjectDetail() {
       return `${project.framework} ${project.language_version}`
     }
     return t('projectDetail.metrics.managedStack')
-  }, [project?.framework, project?.php_version, project?.node_version, project?.language_version, t])
+  }, [project, t])
 
   const deployLocked = project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building'
+
+  const fetchProject = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await projectsAPI.get(uid)
+      setProject(response.data)
+      setBranchInput(response.data.branch || '')
+      setBaseDirInput(response.data.base_directory || '')
+      setConsecutiveErrors(0)
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      if (axiosError.response?.status === 401) {
+        navigate('/login')
+        return
+      }
+
+      if (axiosError.response?.status === 404) {
+        toast.error(t('projectDetail.messages.notFound') || 'Project not found')
+        // Permission checks
+        navigate('/projects')
+        return
+      }
+
+      setConsecutiveErrors(prev => prev + 1)
+
+      toast.error(t('common.error'), {
+        id: 'project-load-error',
+        description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [uid, navigate, t, consecutiveErrors])
+
+  const fetchLogs = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await projectsAPI.logs(uid, 200, logType)
+      setLogs(response.data.logs)
+      if (logsEndRef.current) {
+        logsEndRef.current.scrollIntoView({ behavior: 'auto' })
+      }
+    } catch (error) {
+      // Quietly fail for logs polling
+    }
+  }, [uid, logType])
+
+  const fetchStats = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await projectsAPI.stats(uid)
+      setStats(response.data)
+    } catch (error) {
+      // Stats may not be available for non-running containers
+      setStats(null)
+    }
+  }, [uid])
+
+  const fetchEnv = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await projectsAPI.getEnv(uid)
+      setEnvContent(response.data.content)
+    } catch (error) {
+      toast.error(t('common.error'))
+    }
+  }, [uid, t])
+
+  const fetchCredentials = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await databaseAPI.getCredentials(uid)
+      setCredentials(response.data)
+    } catch (error) {
+      // Credentials only available if DB is ready
+    }
+  }, [uid])
 
   usePolling(() => {
     if (consecutiveErrors < 3) {
@@ -169,7 +247,7 @@ function StudentProjectDetail() {
       setLogs('')
       fetchLogs()
     }
-  }, [logType, activeTab])
+  }, [logType, activeTab, project?.container_id, fetchLogs])
 
   useEffect(() => {
     if (activeTab === 'environment') {
@@ -178,7 +256,7 @@ function StudentProjectDetail() {
     if (activeTab === 'database') {
       fetchCredentials()
     }
-  }, [activeTab, uid])
+  }, [activeTab, uid, fetchEnv, fetchCredentials])
 
   const logLines = useMemo(() => {
     if (!logs) return []
@@ -204,76 +282,6 @@ function StudentProjectDetail() {
     return lines.length > 500 ? lines.length - 500 : 0
   }, [consoleOutput])
 
-  const fetchProject = async () => {
-    if (!uid) return
-    try {
-      const response = await projectsAPI.get(uid)
-      setProject(response.data)
-      setBranchInput(response.data.branch || '')
-      setBaseDirInput(response.data.base_directory || '')
-      setConsecutiveErrors(0)
-    } catch (error: any) {
-      if (error.response?.status === 401) {
-        navigate('/login')
-        return
-      }
-
-      if (error.response?.status === 404) {
-        toast.error(t('projectDetail.messages.notFound') || 'Project not found')
-        // Permission checks
-        navigate('/projects')
-        return
-      }
-
-      setConsecutiveErrors(prev => prev + 1)
-
-      toast.error(t('common.error'), {
-        id: 'project-load-error',
-        description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const fetchLogs = async () => {
-    if (!uid) return
-    try {
-      const response = await projectsAPI.logs(uid, 200, logType)
-      setLogs(response.data.logs)
-      if (logsEndRef.current) {
-        logsEndRef.current.scrollIntoView({ behavior: 'auto' })
-      }
-    } catch (error) { }
-  }
-
-  const fetchStats = async () => {
-    if (!uid) return
-    try {
-      const response = await projectsAPI.stats(uid)
-      setStats(response.data)
-    } catch (error) {
-      setStats(null)
-    }
-  }
-
-  const fetchEnv = async () => {
-    if (!uid) return
-    try {
-      const response = await projectsAPI.getEnv(uid)
-      setEnvContent(response.data.content)
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
-  }
-
-  const fetchCredentials = async () => {
-    if (!uid) return
-    try {
-      const response = await databaseAPI.getCredentials(uid)
-      setCredentials(response.data)
-    } catch (error) { }
-  }
 
   const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -286,8 +294,9 @@ function StudentProjectDetail() {
       const response = await projectsAPI.runArtisan(uid, consoleCommand)
       setConsoleOutput(prev => prev + response.data.output + '\n')
       setConsoleCommand('')
-    } catch (error: any) {
-      const errOut = error.response?.data?.output || error.message
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ output: string }>
+      const errOut = axiosError.response?.data?.output || axiosError.message
       setConsoleOutput(prev => prev + `Error: ${errOut}\n`)
     } finally {
       setIsExecuting(false)
@@ -334,8 +343,9 @@ function StudentProjectDetail() {
         },
       )
       fetchProject()
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError
+      if (axiosError?.response?.status === 404) {
         toast.error(t('projectDetail.messages.stopUnavailable'))
       }
     }
@@ -353,8 +363,9 @@ function StudentProjectDetail() {
         },
       )
       fetchProject()
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError
+      if (axiosError?.response?.status === 404) {
         toast.error(t('projectDetail.messages.startUnavailable'))
       }
     }
@@ -386,7 +397,7 @@ function StudentProjectDetail() {
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
       languageVersionInput !== (project.language_version || '')
-  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, runtimeImageInput, workerCommandInput, queueEnabledInput])
+  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, runtimeImageInput, workerCommandInput, queueEnabledInput, languageVersionInput])
 
   const handleResetSettings = () => {
     if (!project) return
@@ -431,7 +442,7 @@ function StudentProjectDetail() {
           toast.success(t('common.success'))
           await projectsAPI.redeploy(uid)
           fetchProject()
-        } catch (error) {
+        } catch (error: unknown) {
           toast.error(t('common.error'))
         } finally {
           setIsSavingSettings(false)

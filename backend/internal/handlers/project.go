@@ -168,7 +168,9 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
-	h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued)
+	if err := h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued); err != nil {
+		slog.Warn("Failed to update project status to queued", "id", project.ID, "error", err)
+	}
 	h.projectService.UpdateActivity(project.ID)
 
 	// Check if already in queue to avoid duplicates
@@ -435,7 +437,11 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	h.projectService.UpdateActivity(project.ID)
 
 	if project.ContainerID != nil {
-		go h.projectService.StopContainer(*project.ContainerID)
+		go func(id string) {
+			if err := h.projectService.StopContainer(id); err != nil {
+				slog.Warn("Background container stop failed", "container_id", id, "error", err)
+			}
+		}(*project.ContainerID)
 	}
 
 	return c.JSON(fiber.Map{
@@ -515,7 +521,9 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 3. Populate Cache for the next request
-	h.projectService.CacheSubdomainMapping(project_db)
+	if err := h.projectService.CacheSubdomainMapping(project_db); err != nil {
+		slog.Warn("Failed to cache subdomain mapping during proxy fallback", "subdomain", subdomain, "error", err)
+	}
 	h.projectService.UpdateActivity(project_db.ID)
 
 	if project_db.Port == nil {

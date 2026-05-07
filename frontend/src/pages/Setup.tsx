@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, ArrowRight, Loader2, User, Mail, Lock } from 'lucide-react'
 import { systemAPI } from '../services/api'
 import { toast } from 'sonner'
+import { AxiosError } from 'axios'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -75,8 +76,9 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
       toast.success(t('admin.setupSuccess'))
       onComplete()
       navigate('/login', { replace: true })
-    } catch (err: any) {
-      const message = err.response?.data?.error || t('common.actionFailed')
+    } catch (err: unknown) {
+      const axiosError = err as AxiosError<{ error: string }>
+      const message = axiosError.response?.data?.error || t('common.actionFailed')
       toast.error(message)
     } finally {
       setIsLoading(false)

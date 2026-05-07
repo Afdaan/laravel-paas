@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { feedbackAPI } from '../../services/api'
+import { AxiosError } from 'axios'
 import {
   MessageSquare,
   Send,
@@ -63,7 +64,7 @@ const StudentFeedback = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchFeedback()
@@ -88,8 +89,9 @@ const StudentFeedback = () => {
       setFormData({ title: '', content: '', type: 'suggestion' })
       setValidationErrors({})
       fetchFeedback()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.error'))
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      toast.error(axiosError.response?.data?.error || t('common.error'))
     } finally {
       setIsSubmitting(false)
     }
@@ -233,7 +235,7 @@ const StudentFeedback = () => {
                   <div className="flex items-center justify-between mb-4">
                     <Badge variant="outline" className="gap-1.5 py-1 px-2 uppercase text-[9px] font-bold border-primary/20 bg-primary/5">
                       {getTypeIcon(item.type)}
-                      {t(`feedback.${item.type}` as any)}
+                      {t(`feedback.${item.type}` as "feedback.suggestion" | "feedback.bug" | "feedback.trouble")}
                     </Badge>
                     {getStatusBadge(item.status)}
                   </div>

@@ -82,7 +82,6 @@ var (
 	loginLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per IP
 	queryLimiter   = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
 	proxyLimiter   = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
-	generalLimiter = NewRateLimiter(30, 1*time.Minute) // 30 req/min per IP
 	artisanLimiter = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
 	importLimiter  = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
 )

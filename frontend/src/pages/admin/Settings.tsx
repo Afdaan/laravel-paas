@@ -58,7 +58,7 @@ const AdminSettings = () => {
     fetchSettings()
   }, [fetchSettings])
   
-  const handleChange = (key: keyof PlatformSettings, value: any) => {
+  const handleChange = (key: keyof PlatformSettings, value: string | number | boolean) => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
   
@@ -272,7 +272,7 @@ const AdminSettings = () => {
                 min={10}
                 max={100}
                 step={5}
-                onValueChange={(val: any) => handleChange('cpu_limit_percent', Array.isArray(val) ? val[0] : val)}
+                onValueChange={(val) => handleChange('cpu_limit_percent', Array.isArray(val) ? val[0] : val)}
                 className="py-4"
               />
               <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
@@ -294,7 +294,7 @@ const AdminSettings = () => {
                 min={128}
                 max={2048}
                 step={128}
-                onValueChange={(val: any) => handleChange('memory_limit_mb', Array.isArray(val) ? val[0] : val)}
+                onValueChange={(val) => handleChange('memory_limit_mb', Array.isArray(val) ? val[0] : val)}
                 className="py-4"
               />
               <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">

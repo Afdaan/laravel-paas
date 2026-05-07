@@ -27,17 +27,42 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+export interface DockerContainer {
+  id: string;
+  names: string[];
+  image: string;
+  state: string;
+  status: string;
+}
+
+export interface DockerImage {
+  id: string;
+  repository: string;
+  tag: string;
+  status: string;
+  size_human: string;
+}
+
+export interface SystemInfo {
+  memory_used: number;
+  memory_total: number;
+  cpu_usage: number;
+  cpu_cores: number;
+  os: string;
+  is_docker: boolean;
+}
+
 export interface SystemStats {
-  system: any;
-  containers: any[];
-  images: any[];
-  networks: any[];
-  volumes: any[];
-  recentProjects: any[];
+  system: SystemInfo | null;
+  containers: DockerContainer[];
+  images: DockerImage[];
+  networks: unknown[];
+  volumes: unknown[];
+  recentProjects: unknown[];
 }
 
 // Helper to simplify verbose OS names
-const simplifyOS = (os: string) => {
+const simplifyOS = (os: string | undefined) => {
   if (!os) return 'Linux'
   return os
     .replace(/GNU\/Linux/i, '')
@@ -175,7 +200,7 @@ const AdminDashboard = () => {
 }
 
 interface HeaderProps {
-  t: any;
+  t: (key: string, data?: Record<string, string | number>) => string;
   onRefresh: () => void;
   onPrune: () => void;
   isPruning: boolean;
@@ -209,12 +234,12 @@ const Header = memo(({ t, onRefresh, onPrune, isPruning }: HeaderProps) => (
 ))
 
 interface SystemOverviewProps {
-  t: any;
-  system: any;
-  containers: any[];
-  images: any[];
-  networks: any[];
-  volumes: any[];
+  t: (key: string, data?: Record<string, string | number>) => string;
+  system: SystemInfo | null;
+  containers: DockerContainer[];
+  images: DockerImage[];
+  networks: unknown[];
+  volumes: unknown[];
   formatBytes: (bytes: number) => string;
 }
 
@@ -270,7 +295,7 @@ interface StatCardProps {
   value: string | number;
   detail: string;
   progress: number;
-  icon: any;
+  icon: React.ElementType;
 }
 
 const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps) => {
@@ -313,7 +338,7 @@ const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps)
 }
 
 interface SmallStatProps {
-  icon: any;
+  icon: React.ElementType;
   label: string;
   value: string | number;
 }
@@ -347,12 +372,12 @@ const SmallStat = ({ icon: Icon, label, value, badge }: SmallStatProps & { badge
 }
 
 interface ResourceTableProps {
-  t: any;
+  t: (key: string, data?: Record<string, string | number>) => string;
   title: string;
   subtitle: string;
-  icon: any;
-  data: any[];
-  type: string;
+  icon: React.ElementType;
+  data: (DockerContainer | DockerImage)[];
+  type: 'containers' | 'images';
   viewAllPath: string;
 }
 
@@ -383,9 +408,9 @@ const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAl
       ) : (
         <Table className="table-fixed">
           {type === 'containers' ? (
-            <ContainerTableBody data={data} t={t} />
+            <ContainerTableBody data={data as DockerContainer[]} t={t} />
           ) : (
-            <ImageTableBody data={data} t={t} />
+            <ImageTableBody data={data as DockerImage[]} t={t} />
           )}
         </Table>
       )}
@@ -393,10 +418,10 @@ const ResourceTable = memo(({ t, title, subtitle, icon: Icon, data, type, viewAl
   </Card>
 ))
 
-const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => {
+const ContainerTableBody = memo(({ data, t }: { data: DockerContainer[], t: (key: string, data?: Record<string, string | number>) => string }) => {
   const formatName = (name: string) => {
     if (!name) return '';
-    let n = name.startsWith('/') ? name.substring(1) : name;
+    const n = name.startsWith('/') ? name.substring(1) : name;
     return n.replace(/^paas-(project-)?/, '');
   };
 
@@ -411,7 +436,7 @@ const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => {
       </TableRow>
     </TableHeader>
     <TableBody>
-      {data.slice(0, 8).map((c) => (
+      {data.slice(0, 8).map((c: DockerContainer) => (
         <TableRow key={c.id} className="group hover:bg-muted/30 border-b border-border/40 transition-colors h-11">
           <TableCell className="align-middle py-2">
             <div className="flex items-center text-xs font-medium truncate text-foreground/90 group-hover:text-foreground" title={c.names?.[0]}>
@@ -447,7 +472,7 @@ const ContainerTableBody = memo(({ data, t }: { data: any[], t: any }) => {
   )
 })
 
-const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => {
+const ImageTableBody = memo(({ data, t }: { data: DockerImage[], t: (key: string, data?: Record<string, string | number>) => string }) => {
   const formatRepo = (repo: string) => {
     if (!repo) return '';
     return repo.replace(/^paas-(project-)?/, '');
@@ -464,7 +489,7 @@ const ImageTableBody = memo(({ data, t }: { data: any[], t: any }) => {
       </TableRow>
     </TableHeader>
     <TableBody>
-      {data.slice(0, 8).map((img, i) => (
+      {data.slice(0, 8).map((img: DockerImage, i: number) => (
         <TableRow key={i} className="group hover:bg-muted/30 border-b border-border/40 transition-colors h-11">
           <TableCell className="align-middle py-2">
             <div className="flex flex-col justify-center">

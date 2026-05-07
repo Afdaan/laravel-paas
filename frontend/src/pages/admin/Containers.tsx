@@ -42,7 +42,7 @@ interface ContainerData {
 
 const AdminContainers = () => {
   const { t } = useTranslation()
-  const [data, setData] = useState<{ containers: ContainerData[], system: any }>({
+  const [data, setData] = useState<{ containers: ContainerData[], system: unknown }>({
     containers: [],
     system: null
   })
@@ -171,7 +171,7 @@ const AdminContainers = () => {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : filteredContainers.map((c) => (
+              ) : filteredContainers.map((c: ContainerData) => (
                 <TableRow key={c.id} className="hover:bg-muted/20">
                   <TableCell className="px-4 py-3 text-center">
                     <Checkbox />

@@ -75,7 +75,7 @@ function App() {
   const navigate = useNavigate()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
 
-  const [settings, setSettings] = useState<any>(null)
+  const [settings, setSettings] = useState<Record<string, string> | null>(null)
 
   useEffect(() => {
     // Check if system is initialized
@@ -104,7 +104,7 @@ function App() {
 
   useEffect(() => {
     let idleTimer: NodeJS.Timeout
-    const timeoutMinutes = settings?.admin_idle_timeout || 15
+    const timeoutMinutes = settings?.admin_idle_timeout ? parseInt(settings.admin_idle_timeout) : 15
     const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
 
     const handleIdleLogout = () => {
@@ -132,7 +132,7 @@ function App() {
         events.forEach(event => window.removeEventListener(event, resetTimer))
       }
     }
-  }, [token, t, settings])
+  }, [token, t, settings, navigate])
 
   useEffect(() => {
     const handleExpired = () => {
@@ -173,7 +173,7 @@ function App() {
       window.removeEventListener('system:offline', handleOffline)
       window.removeEventListener('system:updating', handleUpdating)
     }
-  }, [t])
+  }, [t, navigate])
 
   if (isInitialized === null) {
     return <LoadingScreen />

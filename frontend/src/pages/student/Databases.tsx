@@ -6,7 +6,7 @@ import {
   Terminal,
   Loader2
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
@@ -25,11 +25,7 @@ export default function Databases() {
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  useEffect(() => {
-    fetchProjects()
-  }, [])
-
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       const response = await projectsAPI.listOwn()
       const data = response.data.data || []
@@ -42,7 +38,11 @@ export default function Databases() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [t])
+
+  useEffect(() => {
+    fetchProjects()
+  }, [fetchProjects])
 
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 

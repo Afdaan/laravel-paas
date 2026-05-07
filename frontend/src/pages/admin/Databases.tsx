@@ -40,7 +40,7 @@ interface AdminDatabaseInfo {
   status: string;
 }
 
-const StatusBadge = ({ status, t }: { status: string, t: any }) => {
+const StatusBadge = ({ status, t }: { status: string, t: (key: string) => string }) => {
   switch (status) {
     case 'running':
       return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>

@@ -4,7 +4,7 @@
 // Centralized API calls with axios
 // ===========================================
 
-import axios, { InternalAxiosRequestConfig } from 'axios'
+import axios, { InternalAxiosRequestConfig, AxiosError } from 'axios'
 
 // Create axios instance
 const api = axios.create({
@@ -26,8 +26,10 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 // Response interceptor - handle errors
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
+  async (error: AxiosError) => {
     const { config, response } = error
+    if (!config) return Promise.reject(error)
+    
     const wasAuthenticated = !!localStorage.getItem('token')
     
     // Global 401 Unauthorized handling
@@ -41,14 +43,15 @@ api.interceptors.response.use(
       window.dispatchEvent(new Event('system:updating'))
       
       // Auto-Retry Logic: Retry up to 3 times if it's a transient server error
-      config._retryCount = config._retryCount || 0
-      if (config._retryCount < 3) {
-        config._retryCount++
-        console.warn(`System swapping detected (HTTP ${response.status}). Retrying request... (${config._retryCount}/3)`)
+      const retryConfig = config as InternalAxiosRequestConfig & { _retryCount?: number }
+      retryConfig._retryCount = retryConfig._retryCount || 0
+      if (retryConfig._retryCount < 3) {
+        retryConfig._retryCount++
+        console.warn(`System swapping detected (HTTP ${response.status}). Retrying request... (${retryConfig._retryCount}/3)`)
         
         // Wait 1.5s before retrying to give backend time to swap
         await new Promise(resolve => setTimeout(resolve, 1500))
-        return api(config)
+        return api(retryConfig)
       }
     }
     
@@ -81,16 +84,16 @@ export const authAPI = {
 // ===========================================
 
 export const usersAPI = {
-  list: (params: Record<string, any> = {}) => 
+  list: (params: Record<string, unknown> = {}) => 
     api.get('/admin/users', { params }),
   
   get: (id: number | string) => 
     api.get(`/admin/users/${id}`),
   
-  create: (data: any) => 
+  create: (data: unknown) => 
     api.post('/admin/users', data),
   
-  update: (id: number | string, data: any) => 
+  update: (id: number | string, data: unknown) => 
     api.put(`/admin/users/${id}`, data),
   
   delete: (id: number | string) => 
@@ -116,7 +119,7 @@ export const settingsAPI = {
   list: () => 
     api.get('/admin/settings'),
   
-  update: (settings: any) => 
+  update: (settings: unknown) => 
     api.put('/admin/settings', { settings }),
 }
 
@@ -130,7 +133,7 @@ export const projectsAPI = {
   listOwn: () => 
     api.get('/projects'),
   
-  create: (data: any) => 
+  create: (data: unknown) => 
     api.post('/projects', data),
   
   get: (id: number | string) => 
@@ -145,7 +148,7 @@ export const projectsAPI = {
   start: (id: number | string) =>
     api.post(`/projects/${id}/start`),
   
-  update: (id: number | string, data: any) =>
+  update: (id: number | string, data: unknown) =>
     api.put(`/projects/${id}`, data),
   
   delete: (id: number | string) => 
@@ -170,7 +173,7 @@ export const projectsAPI = {
     api.get(`/projects/${id}/build-logs`),
   
   // Admin endpoints
-  listAll: (params: Record<string, any> = {}) => 
+  listAll: (params: Record<string, unknown> = {}) => 
     api.get('/admin/projects', { params }),
 
   listStats: () => 
@@ -207,7 +210,7 @@ export const databaseAPI = {
     }),
   
   // Delete row securely using primary key
-  deleteRow: (projectId: number | string, tableName: string, primaryKey: string, value: any) => 
+  deleteRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown) => 
     api.delete(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
       data: { primary_key: primaryKey, value } 
     }),
@@ -238,14 +241,14 @@ export const databaseAPI = {
 // ===========================================
 
 export const feedbackAPI = {
-  submit: (data: any) => 
+  submit: (data: unknown) => 
     api.post('/feedback', data),
   
   listOwn: () => 
     api.get('/feedback'),
   
   // Admin endpoints
-  listAll: (params: Record<string, any> = {}) => 
+  listAll: (params: Record<string, unknown> = {}) => 
     api.get('/admin/feedback', { params }),
   
   updateStatus: (id: number | string, status: string) => 
@@ -268,7 +271,7 @@ export const systemAPI = {
   getInitStatus: () => 
     api.get('/system/init-status'),
   
-  initialize: (data: any) => 
+  initialize: (data: unknown) => 
     api.post('/system/initialize', data),
 }
 

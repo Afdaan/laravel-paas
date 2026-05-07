@@ -5,6 +5,7 @@
 // ===========================================
 
 import { create } from 'zustand'
+import { AxiosError } from 'axios'
 import { authAPI } from '../services/api'
 import { User } from '../types'
 
@@ -71,8 +72,9 @@ const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const response = await authAPI.me()
       set({ user: response.data, isLoading: false })
-    } catch (error: any) {
-      const status = error?.response?.status
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError
+      const status = axiosError?.response?.status
       if (status === 401 || status === 403) {
         localStorage.removeItem('token')
         set({ token: null, user: null, isLoading: false })

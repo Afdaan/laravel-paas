@@ -41,7 +41,7 @@ interface ProjectData {
 // Status badge component
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation()
-  const configs: Record<string, any> = {
+  const configs: Record<string, { color: string, icon: React.ElementType, label: string, pulse?: boolean }> = {
     pending: { color: 'text-amber-600 bg-amber-500/10 border-amber-500/20', icon: Clock, label: t('status.pending') },
     building: { color: 'text-blue-600 bg-blue-500/10 border-blue-500/20', icon: Loader2, label: t('status.building'), pulse: true },
     running: { color: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20', icon: CheckCircle2, label: t('status.running') },
@@ -239,7 +239,7 @@ function StudentDashboard() {
   )
 }
 
-function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: number, icon: any, suffix?: string }) {
+function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: number, icon: React.ElementType, suffix?: string }) {
   return (
     <Card className="hover:border-primary/30 transition-colors group">
       <CardContent className="p-6">

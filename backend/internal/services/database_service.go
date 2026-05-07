@@ -500,7 +500,10 @@ func (s *DatabaseService) ResetProjectDatabase(dbName, password string) (int, er
 	var tables []string
 	for rows.Next() {
 		var table string
-		rows.Scan(&table)
+		if err := rows.Scan(&table); err != nil {
+			slog.Warn("Failed to scan table name during reset", "error", err)
+			continue
+		}
 		tables = append(tables, table)
 	}
 

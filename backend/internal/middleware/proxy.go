@@ -53,11 +53,7 @@ func IsInternalIP(ip string) bool {
 	}
 
 	_, ipNet, _ := net.ParseCIDR("100.64.0.0/10")
-	if ipNet.Contains(parsed) {
-		return true
-	}
-
-	return false
+	return ipNet.Contains(parsed)
 }
 
 // ProxyAuth middleware validates that proxy access is from authenticated users

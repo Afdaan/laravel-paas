@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
@@ -41,12 +41,12 @@ interface ActiveBuild {
 const DeploymentQueue = () => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<{ processed: number, failed: number } | null>(null)
   const [activeBuilds, setActiveBuilds] = useState<ActiveBuild[]>([])
   const [queuedJobs, setQueuedJobs] = useState<QueuedJob[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const response = await projectsAPI.getQueueStats()
       setStats(response.data.stats)
@@ -57,12 +57,12 @@ const DeploymentQueue = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [t])
 
   // Initial fetch
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
 
   // Poll every 5 seconds
   usePolling(fetchData, 5000)
@@ -254,7 +254,7 @@ const DeploymentQueue = () => {
   )
 }
 
-function StatCard({ label, value, icon: Icon, color }: { label: string, value: number, icon: any, color: string }) {
+function StatCard({ label, value, icon: Icon, color }: { label: string, value: number, icon: React.ElementType, color: string }) {
   return (
     <Card className="hover:border-primary/40 transition-all duration-500 group overflow-hidden border border-border/50 shadow-2xl bg-card/10 backdrop-blur-xl">
       <CardContent className="p-8 relative">
@@ -273,7 +273,7 @@ function StatCard({ label, value, icon: Icon, color }: { label: string, value: n
   )
 }
 
-function EmptyState({ message, icon: Icon = Package }: { message: string, icon?: any }) {
+function EmptyState({ message, icon: Icon = Package }: { message: string, icon?: React.ElementType }) {
   return (
     <div className="p-16 text-center flex flex-col items-center gap-4 transition-opacity duration-1000">
       <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-2">

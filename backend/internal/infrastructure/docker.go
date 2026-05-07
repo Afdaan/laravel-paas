@@ -255,10 +255,16 @@ func (s *DockerService) legacyLaravelBuild(project *models.Project, buildPath, i
 
 	// 2. Prepare Nginx and Supervisor Configs
 	dockerDir := filepath.Join(buildPath, "docker")
-	os.MkdirAll(dockerDir, 0755)
+	if err := os.MkdirAll(dockerDir, 0755); err != nil {
+		return fmt.Errorf("failed to create docker config directory: %w", err)
+	}
 
-	s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"), filepath.Join(dockerDir, "nginx.conf"))
-	s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"), filepath.Join(dockerDir, "supervisord.conf"))
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"), filepath.Join(dockerDir, "nginx.conf")); err != nil {
+		return fmt.Errorf("failed to copy nginx.conf: %w", err)
+	}
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"), filepath.Join(dockerDir, "supervisord.conf")); err != nil {
+		return fmt.Errorf("failed to copy supervisord.conf: %w", err)
+	}
 
 	// 3. Handle Queue Worker if enabled
 	if project.QueueEnabled {
@@ -276,7 +282,9 @@ stdout_logfile_maxbytes=0
 `
 		f, _ := os.OpenFile(filepath.Join(dockerDir, "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
 		if f != nil {
-			f.WriteString(workerConfig)
+			if _, err := f.WriteString(workerConfig); err != nil {
+				slog.Warn("Failed to write worker config to supervisord.conf", "error", err)
+			}
 			f.Close()
 		}
 	}
@@ -415,7 +423,9 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 
 	// Ensure permissions for the web user before migration
 	if user != "root" {
-		utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache")
+		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
+			slog.Warn("Failed to fix permissions before migration", "error", err, "stderr", res.Stderr)
+		}
 	}
 
 	// We use the detected user to ensure that any log files or cache files created during migration
@@ -513,7 +523,9 @@ func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
 		parts := strings.Split(portKey, "/")
 		if len(parts) > 0 {
 			var port int
-			fmt.Sscanf(parts[0], "%d", &port)
+			if _, err := fmt.Sscanf(parts[0], "%d", &port); err != nil {
+				continue
+			}
 			if port > 0 {
 				return port, nil
 			}
@@ -1315,7 +1327,9 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 
 		// Fix permissions as root before running as www-data to avoid "Permission denied" errors in logs/cache
 		if user != "root" {
-			utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache")
+			if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
+				slog.Warn("Failed to fix permissions before command execution", "error", err, "stderr", res.Stderr)
+			}
 		}
 
 		fullArgs = append([]string{"exec", "-u", user, containerID, "php", "artisan"}, args...)

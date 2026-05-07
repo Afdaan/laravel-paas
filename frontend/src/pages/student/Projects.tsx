@@ -49,7 +49,7 @@ const getFrameworkLabel = (framework?: string, fallback?: string) => {
 
 const StatusBadge = ({ status }: { status: string }) => {
   const { t } = useTranslation()
-  const configs: Record<string, any> = {
+  const configs: Record<string, { color: string, icon: React.ElementType, label: string, pulse?: boolean }> = {
     pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
     queued: { color: 'text-purple-600 border-purple-500/20 bg-purple-500/10', icon: Clock, label: t('status.queued') },
     building: { color: 'text-blue-600 border-blue-500/20 bg-blue-500/10', icon: Loader2, label: t('status.building'), pulse: true },

@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"strings"
 	"time"
 
@@ -75,7 +76,9 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 
 	if token != "" && token != authHeader {
 		// Blacklist for the remaining duration
-		h.service.Logout(token, time.Duration(h.cfg.JWTExpiryHours)*time.Hour)
+		if err := h.service.Logout(token, time.Duration(h.cfg.JWTExpiryHours)*time.Hour); err != nil {
+			slog.Warn("Failed to logout token", "error", err)
+		}
 	}
 
 	return c.JSON(fiber.Map{

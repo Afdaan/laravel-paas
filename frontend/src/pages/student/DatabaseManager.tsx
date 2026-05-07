@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -18,6 +18,7 @@ import {
    Loader2
 } from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
+import { AxiosError } from 'axios'
 import { Project } from '../../types'
 import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -37,8 +38,17 @@ interface TableInfo {
 
 interface TableData {
    columns: string[];
-   rows: any[];
+   rows: Record<string, unknown>[];
    total: number;
+}
+
+interface QueryResult {
+   columns?: string[];
+   rows?: Record<string, unknown>[];
+   rows_affected?: number;
+   duration?: string;
+   error?: string;
+   status: 'success' | 'error';
 }
 
 interface DatabaseCredentials {
@@ -70,7 +80,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
 
    // Query state
    const [query, setQuery] = useState('')
-   const [queryResult, setQueryResult] = useState<any>(null)
+   const [queryResult, setQueryResult] = useState<QueryResult | null>(null)
    const [queryLoading, setQueryLoading] = useState(false)
 
    // Import state
@@ -88,15 +98,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       confirmText: 'Confirm'
    })
 
-   useEffect(() => {
-      if (id) {
-         fetchProject()
-         fetchTables()
-         fetchCredentials()
-      }
-   }, [id])
-
-   const fetchProject = async () => {
+   const fetchProject = useCallback(async () => {
       if (!id) return
       try {
          const res = await projectsAPI.get(id)
@@ -107,9 +109,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
             navigate('/databases')
          }
       }
-   }
+   }, [id, embedded, navigate, t])
 
-   const fetchCredentials = async () => {
+   const fetchCredentials = useCallback(async () => {
       if (!id) return
       try {
          const res = await databaseAPI.getCredentials(id)
@@ -117,9 +119,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       } catch (err) {
          console.error('Failed to fetch credentials')
       }
-   }
+   }, [id])
 
-   const fetchTables = async () => {
+   const fetchTables = useCallback(async () => {
       if (!id) return
       setLoading(true)
       try {
@@ -130,7 +132,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       } finally {
          setLoading(false)
       }
-   }
+   }, [id, t])
+
+   useEffect(() => {
+      if (id) {
+         fetchProject()
+         fetchTables()
+         fetchCredentials()
+      }
+   }, [id, fetchProject, fetchTables, fetchCredentials])
 
    const selectTable = async (tableName: string) => {
       if (!id) return
@@ -145,7 +155,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          ])
          setTableData(dataRes.data)
 
-         const pkCol = structRes.data.columns.find((c: any) => c.key === 'PRI')
+         const pkCol = structRes.data.columns.find((c: { name: string, key: string }) => c.key === 'PRI')
          if (pkCol) {
             setPrimaryKey(pkCol.name)
          }
@@ -156,7 +166,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       }
    }
 
-   const requestDeleteRow = (row: any) => {
+   const requestDeleteRow = (row: Record<string, unknown>) => {
       if (!id || !selectedTable || !primaryKey) return;
 
       const pkValue = row[primaryKey];
@@ -173,8 +183,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                toast.success(t('common.success'));
                setConfirmModal(prev => ({ ...prev, isOpen: false }))
                selectTable(selectedTable);
-            } catch (err: any) {
-               toast.error(err.response?.data?.error || t('common.error'));
+            } catch (err: unknown) {
+               const axiosError = err as AxiosError<{ error: string }>
+               toast.error(axiosError.response?.data?.error || t('common.error'));
             }
          }
       })
@@ -187,9 +198,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          const res = await databaseAPI.query(id, query)
          setQueryResult({ ...res.data, status: 'success' })
          toast.success(t('databaseManager.querySuccess'))
-      } catch (err: any) {
-         setQueryResult({ error: err.response?.data?.error || t('common.error'), status: 'error' })
-         toast.error(err.response?.data?.error || t('common.error'))
+      } catch (err: unknown) {
+         const axiosError = err as AxiosError<{ error: string }>
+         setQueryResult({ error: axiosError.response?.data?.error || t('common.error'), status: 'error' })
+         toast.error(axiosError.response?.data?.error || t('common.error'))
       } finally {
          setQueryLoading(false)
       }
@@ -386,7 +398,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                           </tr>
                                        </thead>
                                        <tbody className="divide-y divide-border/30">
-                                          {tableData.rows.map((row: any, i: number) => (
+                                          {tableData.rows.map((row, i: number) => (
                                              <tr key={i} className="group hover:bg-muted/20 transition-colors">
                                                 {tableData.columns?.map((col: string) => (
                                                    <td key={col} className="px-8 py-5 font-mono text-[11px] font-medium border-r border-border/30 last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px] text-foreground/80">
@@ -490,7 +502,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                        </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/30">
-                                       {queryResult.rows.map((row: any, i: number) => (
+                                       {queryResult.rows.map((row, i: number) => (
                                           <tr key={i} className="hover:bg-muted/20 transition-colors">
                                              {queryResult.columns?.map((col: string) => (
                                                 <td key={col} className="px-8 py-4 font-mono text-[11px] font-medium border-r border-border/30 last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px] text-foreground/80">

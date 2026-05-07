@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
+import { AxiosError } from 'axios'
 import useTranslation from '../../lib/useTranslation'
 import {
   Rocket,
@@ -102,10 +103,11 @@ function StudentNewProject() {
       const response = await projectsAPI.create(formData)
       toast.success(t('common.success'))
       navigate(`/projects/${response.data.project.uid}`)
-    } catch (error: any) {
-      let errorMsg = error.response?.data?.error || t('common.actionFailed')
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      let errorMsg = axiosError.response?.data?.error || t('common.actionFailed')
 
-      if (errorMsg === 'Project limit reached' || error.response?.status === 403) {
+      if (errorMsg === 'Project limit reached' || axiosError.response?.status === 403) {
         errorMsg = t('newProject.restrictedDesc')
       }
 

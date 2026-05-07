@@ -128,7 +128,9 @@ func (w *DeploymentWorker) StartPruneScheduler() {
 			}
 
 			// Optional: Aggressive BuildKit cache cleanup for absolute zero-cache state
-			exec.Command("docker", "builder", "prune", "-a", "-f").Run()
+			if err := exec.Command("docker", "builder", "prune", "-a", "-f").Run(); err != nil {
+				slog.Warn("Failed to prune docker builder", "error", err)
+			}
 		}
 	}()
 }
@@ -405,7 +407,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
 	buildLogPath := filepath.Join(projectPath, "build.log")
 	if err := os.MkdirAll(projectPath, 0755); err == nil {
-		os.WriteFile(buildLogPath, []byte(""), 0644)
+		if err := os.WriteFile(buildLogPath, []byte(""), 0644); err != nil {
+			slog.Warn("Failed to clear build log", "path", buildLogPath, "error", err)
+		}
 	}
 
 	// Step 0: Check disk space (Pre-build guard)
@@ -448,7 +452,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 		defer wg.Done()
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
-			w.projectRepo.Update(project)
+			if err := w.projectRepo.Update(project); err != nil {
+				slog.Warn("Failed to save generated database password", "id", project.ID, "error", err)
+			}
 		}
 		dbErr = w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
 	}()
@@ -465,7 +471,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	}
 
 	project.LastCommitHash = cloneHash
-	w.projectRepo.Update(project)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Warn("Failed to update project commit hash", "id", project.ID, "error", err)
+	}
 
 	// Step 2: Detect Framework and Versions
 	// We must detect from the build path (monorepo support + path traversal guard)
@@ -524,7 +532,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 			project.PHPVersion = phpVersion
 			// Use manual PHP version if set
 			if project.IsManualVersion && project.PHPVersion != "" {
-				// project.PHPVersion is already set above, but if it was manual we keep it
+				slog.Debug("Using manual PHP version", "subdomain", project.Subdomain, "version", project.PHPVersion)
 			}
 		} else {
 			project.PHPVersion = "8.4" // Fallback
@@ -649,8 +657,12 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	// Step 8: Post-deployment cleanup (Real-time pruning)
 	go func() {
 		slog.Info("Performing post-deployment cleanup", "subdomain", project.Subdomain)
-		utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
-		utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
+		if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f"); err != nil {
+			slog.Warn("Background image prune failed", "error", err)
+		}
+		if err := utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f"); err != nil {
+			slog.Warn("Background volume prune failed", "error", err)
+		}
 	}()
 }
 
@@ -659,8 +671,12 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg 
 	project.Status = models.StatusFailed
 	msg := errorMsg
 	project.ErrorLog = &msg
-	w.projectRepo.Update(project)
-	w.projectService.InvalidateSubdomainCache(project.Subdomain)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Error("Failed to update project status on error", "id", project.ID, "error", err)
+	}
+	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+		slog.Warn("Failed to invalidate cache on error", "subdomain", project.Subdomain, "error", err)
+	}
 	w.redisService.IncrementDeploymentCounter("failed")
 }
 
@@ -692,9 +708,15 @@ func (w *DeploymentWorker) checkDiskSpace() {
 	if usage > 90 {
 		slog.Warn("Disk space critical, performing emergency prune", "usage", usage)
 		// Immediate cleanup
-		w.dockerService.PruneImages()
-		utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-a", "-f")
-		utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
+		if err := w.dockerService.PruneImages(); err != nil {
+			slog.Warn("Emergency image prune failed", "error", err)
+		}
+		if err := utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-a", "-f"); err != nil {
+			slog.Warn("Emergency builder prune failed", "error", err)
+		}
+		if err := utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f"); err != nil {
+			slog.Warn("Emergency volume prune failed", "error", err)
+		}
 	}
 }
 
@@ -709,7 +731,9 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project) error {
 
 	// Stop and remove current container
 	if project.ContainerID != nil {
-		w.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID)
+		if err := w.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID); err != nil {
+			slog.Warn("Failed to remove container during instant update", "id", *project.ContainerID, "error", err)
+		}
 	}
 
 	// Just start it again with the same image
@@ -728,7 +752,9 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error 
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
 	// Ensure .env is fresh
-	w.dockerService.CreateEnvFile(project, projectDomain)
+	if err := w.dockerService.CreateEnvFile(project, projectDomain); err != nil {
+		slog.Warn("Failed to create env file for redeploy", "id", project.ID, "error", err)
+	}
 
 	// Step 4.5: Capture old ID
 	var oldID *string
@@ -745,13 +771,17 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error 
 
 	project.ContainerID = &newID
 	project.Status = models.StatusRunning
-	w.projectRepo.Update(project)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Error("Failed to update project status after redeploy", "id", project.ID, "error", err)
+	}
 
 	// Cleanup old if exists
 	if oldID != nil {
 		go func() {
 			time.Sleep(5 * time.Second)
-			w.dockerService.RemoveContainer(*oldID, nil)
+			if err := w.dockerService.RemoveContainer(*oldID, nil); err != nil {
+				slog.Warn("Failed to remove old container after redeploy", "id", *oldID, "error", err)
+			}
 		}()
 	}
 
