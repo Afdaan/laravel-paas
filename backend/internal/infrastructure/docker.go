@@ -335,8 +335,9 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	// Load environment variables from .env to pass to build phase.
 	// This is required for frontend frameworks (Vite, Next.js, etc.) that bake 
 	// environment variables into the static bundle at build time.
-	projectEnvFile := filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env")
-	if envVars, err := s.parseProjectEnv(projectEnvFile); err == nil {
+	// Use the container-local ProjectsPath for internal file reading.
+	projectEnvPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env")
+	if envVars, err := s.parseProjectEnv(projectEnvPath); err == nil {
 		for key, value := range envVars {
 			buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
 		}

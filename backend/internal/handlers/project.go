@@ -435,17 +435,27 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	}
 
 	h.projectService.UpdateActivity(project.ID)
+	
+	// Set status to Queued so the UI shows immediate feedback
+	if err := h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued); err != nil {
+		slog.Warn("Failed to update project status after env update", "id", project.ID, "error", err)
+	}
 
-	if project.ContainerID != nil {
-		go func(id string) {
-			if err := h.projectService.StopContainer(id); err != nil {
-				slog.Warn("Background container stop failed", "container_id", id, "error", err)
-			}
-		}(*project.ContainerID)
+	// Automatically trigger a redeploy to apply changes.
+	// This is essential for frontend frameworks (Vite, Next.js) that need these
+	// variables during the build phase.
+	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+		slog.Error("Failed to auto-enqueue redeployment after env update",
+			"project_id", project.ID,
+			"error", err)
+
+		return c.JSON(fiber.Map{
+			"message": "Environment variables saved, but failed to queue auto-redeploy. Please redeploy manually.",
+		})
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "Environment variables updated. Please redeploy to apply changes.",
+		"message": "Environment variables updated. A new build has been queued to apply changes.",
 	})
 }
 
