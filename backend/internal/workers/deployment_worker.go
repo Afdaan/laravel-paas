@@ -419,7 +419,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	// OPTIMIZATION 2: Commit-Hash Caching (Skip Build if same)
 	// ---------------------------------------------------------
 	latestHash, hashErr := w.gitService.GetRemoteCommitHash(project.GithubURL, project.Branch)
-	if hashErr == nil && latestHash != "" && project.LastCommitHash == latestHash && project.ContainerID != nil {
+	if job.Type == "deploy" && hashErr == nil && latestHash != "" && project.LastCommitHash == latestHash && project.ContainerID != nil {
 		slog.Info("Commit hash hasn't changed, checking if we can skip build", "subdomain", project.Subdomain, "hash", latestHash)
 		// Check if image still exists
 		imageName := fmt.Sprintf("paas-%s", project.Subdomain)
@@ -513,7 +513,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 
 	// Dynamic framework detection: First match wins
 	project.Framework = "Other"
-	for _, m := range markers {
+	for _, m := range markers {jel
 		if _, err := os.Stat(filepath.Join(buildPath, m.file)); err == nil {
 			project.Framework = m.name
 			break
