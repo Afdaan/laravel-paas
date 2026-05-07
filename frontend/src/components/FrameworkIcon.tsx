@@ -59,6 +59,26 @@ function BrandGlyph({ icon }: { icon: SimpleIcon }) {
   )
 }
 
+function ViteLogo() {
+  return (
+    <svg viewBox="0 0 256 257" className="h-full w-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="viteGradient" x1="-0.11%" x2="101.14%" y1="100%" y2="0%">
+          <stop offset="0%" stopColor="#41D1FF" />
+          <stop offset="100%" stopColor="#BD34FE" />
+        </linearGradient>
+        <linearGradient id="boltGradient" x1="-12.1%" x2="89.63%" y1="50%" y2="50%">
+          <stop offset="0%" stopColor="#FFEA83" />
+          <stop offset="8.33%" stopColor="#FFDD35" />
+          <stop offset="100%" stopColor="#FFA800" />
+        </linearGradient>
+      </defs>
+      <path fill="url(#viteGradient)" d="M255.859 37.835L128 257L0.141 37.835L128 0l127.859 37.835z" />
+      <path fill="url(#boltGradient)" d="M150.5 0L128 77l-22.5-77L28 0l100 257L228 0h-77.5z" />
+    </svg>
+  )
+}
+
 export function FrameworkIcon({ framework, className, variant = 'tile' }: FrameworkIconProps) {
   const fw = normalizeFramework(framework)
   const icon = getFrameworkIcon(framework)
@@ -67,6 +87,15 @@ export function FrameworkIcon({ framework, className, variant = 'tile' }: Framew
     tile: 'rounded-2xl bg-muted/60 dark:bg-zinc-950/80 p-1.5 ring-1 ring-border dark:ring-white/10 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
     compact: 'rounded-lg bg-muted/40 p-1 ring-1 ring-border/60',
     plain: 'rounded-none bg-transparent p-0 ring-0 shadow-none',
+  }
+
+  // Special case for Vite (Premium Logo)
+  if (fw.includes('vite')) {
+    return (
+      <div className={cn('flex items-center justify-center', variants[variant], className)}>
+        <ViteLogo />
+      </div>
+    )
   }
 
   if (icon) {
