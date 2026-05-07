@@ -2,7 +2,7 @@
 // Command Utilities
 // ===========================================
 // Provides timeout-safe wrappers for os/exec
-// to prevent goroutine leaks from hung processes
+// to prevent goroutine leaks from hung processes.
 // ===========================================
 package utils
 
@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -26,10 +28,41 @@ type Result struct {
 // Run executes a command with a timeout.
 // If the command does not finish within the deadline, the process is killed.
 func Run(timeout time.Duration, name string, args ...string) (*Result, error) {
+	return RunInDirWithEnv(timeout, "", nil, name, args...)
+}
+
+// RunSilent executes a command with a timeout but discards output.
+// Used for fire-and-forget operations like cleanup.
+func RunSilent(timeout time.Duration, name string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
+	err := cmd.Run()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("command timed out after %s: %s %v", timeout, name, args)
+	}
+
+	return err
+}
+
+// RunWithLog executes a command with a timeout and writes stdout and stderr to a specified log file,
+// overwriting the log file if it already exists.
+func RunWithLog(timeout time.Duration, logFilePath string, name string, args ...string) (*Result, error) {
+	return RunInDirWithEnvWithLog(timeout, "", nil, logFilePath, name, args...)
+}
+
+// RunInDirWithEnv executes a command in a specific directory with optional environment variables.
+func RunInDirWithEnv(timeout time.Duration, dir string, env []string, name string, args ...string) (*Result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -49,18 +82,39 @@ func Run(timeout time.Duration, name string, args ...string) (*Result, error) {
 	return result, err
 }
 
-// RunSilent executes a command with a timeout but discards output.
-// Used for fire-and-forget operations like cleanup.
-func RunSilent(timeout time.Duration, name string, args ...string) error {
+// RunInDirWithEnvWithLog executes a command in a specific directory with optional env vars and logs to a file.
+func RunInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, logFilePath string, name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
-	err := cmd.Run()
-
-	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("command timed out after %s: %s %v", timeout, name, args)
+	cmd.Dir = dir
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
 	}
 
-	return err
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	// Open log file, create or overwrite
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file %s: %w", logFilePath, err)
+	}
+	defer logFile.Close()
+
+	cmd.Stdout = io.MultiWriter(&stdoutBuf, logFile)
+	cmd.Stderr = io.MultiWriter(&stderrBuf, logFile)
+
+	err = cmd.Run()
+
+	result := &Result{
+		Stdout: stdoutBuf.String(),
+		Stderr: stderrBuf.String(),
+	}
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return result, fmt.Errorf("command timed out after %s: %s %v", timeout, name, args)
+	}
+
+	return result, err
 }

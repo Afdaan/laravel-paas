@@ -6,6 +6,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
@@ -30,6 +32,33 @@ type DockerService struct {
 	storage *StorageService
 }
 
+// ResolveBuildPath picks a safe build root under a project's folder.
+// If baseDirectory is invalid or escapes the project path, it falls back to auto-detection.
+func (s *DockerService) ResolveBuildPath(projectPath string, baseDirectory string) string {
+	if strings.TrimSpace(baseDirectory) == "" {
+		return s.GetBuildPath(projectPath)
+	}
+
+	clean := filepath.Clean(baseDirectory)
+	// Disallow absolute paths and traversal.
+	if filepath.IsAbs(clean) || clean == "." || clean == string(os.PathSeparator) || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || clean == ".." {
+		slog.Warn("Invalid base_directory; falling back to auto-detection", "base_directory", baseDirectory)
+		return s.GetBuildPath(projectPath)
+	}
+
+	candidate := filepath.Join(projectPath, clean)
+	if !utils.IsPathWithinRoot(projectPath, candidate) {
+		slog.Warn("base_directory escapes project root; falling back to auto-detection", "base_directory", baseDirectory)
+		return s.GetBuildPath(projectPath)
+	}
+
+	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+		return candidate
+	}
+
+	return s.GetBuildPath(projectPath)
+}
+
 // NewDockerService creates a new Docker service
 func NewDockerService(cfg *config.Config, storage *StorageService) *DockerService {
 	return &DockerService{
@@ -42,109 +71,75 @@ func NewDockerService(cfg *config.Config, storage *StorageService) *DockerServic
 // Container Operations
 // ===========================================
 
-// BuildAndRun builds and starts a container for a project
+// BuildAndRun builds and starts a container for a project using Railpack
 func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
-	// Copy appropriate Dockerfile (try .dynamic version first for better support)
-	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
-	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
-	srcDockerfile := filepath.Join(s.cfg.TemplatesPath, dockerfile)
+	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
+	buildPath := s.ResolveBuildPath(projectPath, project.BaseDirectory)
 
-	// If .dynamic doesn't exist, fallback to regular version
-	if _, err := os.Stat(srcDockerfile); os.IsNotExist(err) {
-		dockerfile = fmt.Sprintf("Dockerfile.php%s", phpSlug)
-		srcDockerfile = filepath.Join(s.cfg.TemplatesPath, dockerfile)
-	}
-
-	dstDockerfile := filepath.Join(projectPath, "Dockerfile")
-	slog.Info("Using Dockerfile template", "template", srcDockerfile, "subdomain", project.Subdomain)
-
-	if err := s.storage.CopyFile(srcDockerfile, dstDockerfile); err != nil {
-		return "", fmt.Errorf("failed to copy Dockerfile (%s): %w", dockerfile, err)
-	}
-
-	// Copy nginx and supervisor configs
-	nginxSrc := filepath.Join(s.cfg.TemplatesPath, "nginx.conf")
-	nginxDst := filepath.Join(projectPath, "docker", "nginx.conf")
-	if err := s.storage.CopyFile(nginxSrc, nginxDst); err != nil {
-		// Create docker directory if needed and try again
-		if err := os.MkdirAll(filepath.Join(projectPath, "docker"), 0755); err != nil {
-			return "", fmt.Errorf("failed to create docker directory: %w", err)
-		}
-		if err := s.storage.CopyFile(nginxSrc, nginxDst); err != nil {
-			return "", fmt.Errorf("failed to copy nginx.conf: %w", err)
-		}
-	}
-
-	supervisordSrc := filepath.Join(s.cfg.TemplatesPath, "supervisord.conf")
-	supervisordDst := filepath.Join(projectPath, "docker", "supervisord.conf")
-	if err := s.storage.CopyFile(supervisordSrc, supervisordDst); err != nil {
-		return "", fmt.Errorf("failed to copy supervisord.conf: %w", err)
-	}
-
-	// Append Config for Queue Worker if enabled
-	if project.QueueEnabled {
-		workerConfig := `
-[program:laravel-worker]
-process_name=%(program_name)s_%(process_num)02d
-command=/bin/sh -c "sleep 20 && php /var/www/html/artisan queue:work database --sleep=3 --tries=3"
-autostart=true
-autorestart=true
-user=www-data
-numprocs=1
-redirect_stderr=true
-stdout_logfile=/dev/stdout
-stdout_logfile_maxbytes=0
-`
-		f, err := os.OpenFile(filepath.Join(projectPath, "docker", "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			return "", fmt.Errorf("failed to open supervisor config: %w", err)
-		}
-		defer f.Close()
-
-		if _, err := f.WriteString(workerConfig); err != nil {
-			return "", fmt.Errorf("failed to append supervisor config: %w", err)
-		}
-	}
-
-	// Create .env file for Laravel
-	if err := s.createEnvFile(project, projectPath, projectDomain); err != nil {
+	// 2. Prepare Environment
+	if err := s.CreateEnvFile(project, projectDomain); err != nil {
 		return "", fmt.Errorf("failed to create .env: %w", err)
 	}
 
-	// Build image
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+	logFilePath := filepath.Join(projectPath, "build.log")
 
-	// Step 1: Build image using utils.Run for timeout control
-	slog.Info("Building Docker image", "subdomain", project.Subdomain)
-	res, err := utils.Run(10*time.Minute, "docker", "buildx", "build", "--load",
-		"--label", models.LabelProjectManaged,
-		"-t", imageName, projectPath)
-	_ = res // ignore output if successful on first build attempt
+	// Set BuildKit host to use the local docker socket
+	os.Setenv("BUILDKIT_HOST", "unix:///var/run/docker.sock")
+
+	var err error
+	var internalPort string
+
+	// 3. Branching Build Strategy
+	if project.Framework == "Laravel" {
+		slog.Info("Using legacy Laravel build strategy", "subdomain", project.Subdomain)
+		// Default Laravel port is 80 (nginx)
+		if internalPort == "" {
+			internalPort = "80"
+		}
+		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath)
+	} else {
+		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
+		err = s.railpackBuild(project, buildPath, imageName, logFilePath)
+	}
 
 	if err != nil {
-		// Fallback to classic build
-		res, err = utils.Run(10*time.Minute, "docker", "build",
-			"--label", models.LabelProjectManaged,
-			"-t", imageName, projectPath)
-		if err != nil {
-			return "", apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s%s", project.Subdomain, res.Stdout, res.Stderr))
+		return "", err
+	}
+
+	// 3.5. NEW: Dynamic Port Detection from Image Metadata
+	// If port hasn't been manually set by user, try to detect it from image metadata
+	detectedPort, detectErr := s.DetectExposedPort(imageName)
+	if detectErr == nil && detectedPort > 0 {
+		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
+		p := detectedPort
+		project.Port = &p
+		internalPort = fmt.Sprintf("%d", p)
+	}
+
+	// 4. Determine Final Internal Port for Traefik
+	if project.Port != nil {
+		internalPort = fmt.Sprintf("%d", *project.Port)
+	} else if internalPort == "" {
+		// Fallback defaults if everything else fails
+		if project.Framework == "Laravel" {
+			internalPort = "80"
+		} else {
+			internalPort = "8080" // Safety default
 		}
 	}
 
-	// Step 2: Refresh permissions exactly before container start
+	// 5. Start Web Container
 	s.storage.EnsurePersistentPath(project)
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
 
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
-
-	// Blue-green deployment: unique router per deployment, shared service for traffic switching
 	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
 	serviceName := project.Subdomain
 
-	// Use provided limits or defaults
 	finalCPUs := models.DefaultDockerCPULimit
 	if cpuLimit > 0 {
 		finalCPUs = fmt.Sprintf("%.1f", cpuLimit)
@@ -162,88 +157,466 @@ stdout_logfile_maxbytes=0
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
+		"-e", fmt.Sprintf("PORT=%s", internalPort),
+		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
 			routerName, project.Subdomain, projectDomain),
 		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=80", serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 
-		// Map hierarchical persistent storage volume
+		// Standard Volume Mapping
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
+		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
+		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
 
 		imageName,
 	}
 
-	res, err = utils.Run(1*time.Minute, "docker", runArgs...)
-	if err != nil {
+	// 4.5. Append custom start command if provided
+	if project.StartCommand != "" {
+		parts := strings.Fields(project.StartCommand)
+		runArgs = append(runArgs, parts...)
+	}
+
+	res, runErr := utils.Run(1*time.Minute, "docker", runArgs...)
+	if runErr != nil {
 		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, res.Stderr))
 	}
 
-	containerID := strings.TrimSpace(res.Stdout)
+	mainContainerID := strings.TrimSpace(res.Stdout)
 
-	return containerID, nil
+	// 5. Start Worker Container if needed (for non-Laravel)
+	if project.Framework != "Laravel" && project.WorkerCommand != "" {
+		slog.Info("Starting background worker container", "subdomain", project.Subdomain, "command", project.WorkerCommand)
+		workerID, err := s.StartWorkerContainer(project, imageName, finalCPUs, finalMemory)
+		if err != nil {
+			slog.Error("Failed to start worker container", "subdomain", project.Subdomain, "error", err)
+		} else {
+			project.WorkerContainerID = &workerID
+		}
+	}
+
+	return mainContainerID, nil
+}
+
+// StartWorkerContainer starts a secondary container for background tasks
+func (s *DockerService) StartWorkerContainer(project *models.Project, imageName, cpuLimit, memoryLimit string) (string, error) {
+	hostPersistentPath := s.storage.GetPersistentHostPath(project)
+	timestamp := time.Now().Unix()
+	containerName := fmt.Sprintf("paas-worker-%s-%d", project.Subdomain, timestamp)
+
+	// Worker containers don't need Traefik labels as they don't handle HTTP traffic
+	runArgs := []string{
+		"run", "-d",
+		"--name", containerName,
+		"--network", models.NetworkName,
+		"--restart", "unless-stopped",
+		"--cpus", cpuLimit,
+		"--memory", memoryLimit,
+		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
+		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
+		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
+		imageName,
+	}
+
+	// Append custom worker command
+	parts := strings.Fields(project.WorkerCommand)
+	runArgs = append(runArgs, parts...)
+
+	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
+	if err != nil {
+		return "", fmt.Errorf("worker start failed: %s", res.Stderr)
+	}
+
+	return strings.TrimSpace(res.Stdout), nil
+}
+
+// legacyLaravelBuild handles the proven Dockerfile + Nginx approach
+func (s *DockerService) legacyLaravelBuild(project *models.Project, buildPath, imageName, phpVersion, logFilePath string) error {
+	// 1. Prepare Dockerfile
+	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
+	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
+	srcDockerfile := filepath.Join(s.cfg.TemplatesPath, dockerfile)
+
+	if _, err := os.Stat(srcDockerfile); os.IsNotExist(err) {
+		dockerfile = fmt.Sprintf("Dockerfile.php%s", phpSlug)
+		srcDockerfile = filepath.Join(s.cfg.TemplatesPath, dockerfile)
+	}
+
+	dstDockerfile := filepath.Join(buildPath, "Dockerfile")
+	if err := s.storage.CopyFile(srcDockerfile, dstDockerfile); err != nil {
+		return fmt.Errorf("failed to copy Dockerfile: %w", err)
+	}
+
+	// 2. Prepare Nginx and Supervisor Configs
+	dockerDir := filepath.Join(buildPath, "docker")
+	if err := os.MkdirAll(dockerDir, 0755); err != nil {
+		return fmt.Errorf("failed to create docker config directory: %w", err)
+	}
+
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "nginx.conf"), filepath.Join(dockerDir, "nginx.conf")); err != nil {
+		return fmt.Errorf("failed to copy nginx.conf: %w", err)
+	}
+	if err := s.storage.CopyFile(filepath.Join(s.cfg.TemplatesPath, "supervisord.conf"), filepath.Join(dockerDir, "supervisord.conf")); err != nil {
+		return fmt.Errorf("failed to copy supervisord.conf: %w", err)
+	}
+
+	// 3. Handle Queue Worker if enabled
+	if project.QueueEnabled {
+		workerConfig := `
+[program:laravel-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=/usr/local/bin/php /var/www/html/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+autostart=true
+autorestart=true
+user=www-data
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+`
+		f, _ := os.OpenFile(filepath.Join(dockerDir, "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
+		if f != nil {
+			if _, err := f.WriteString(workerConfig); err != nil {
+				slog.Warn("Failed to write worker config to supervisord.conf", "error", err)
+			}
+			f.Close()
+		}
+	}
+
+	// 4. Build using Docker Buildx
+	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "docker", "buildx", "build", "--load",
+		"--label", models.LabelProjectManaged,
+		"-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
+
+	if err != nil {
+		return apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s", project.Subdomain, res.Stderr))
+	}
+
+	return nil
+}
+
+// railpackBuild handles all other languages using Nixpacks-style auto-detection
+func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string) error {
+	s.injectDefaultRailpackConfig(buildPath, project.RuntimeImage)
+
+	// Optimization: Inject env vars to limit parallelism and use caching
+	// Use project ID as cache key for better isolation but still allowing layer reuse
+	cacheKey := fmt.Sprintf("project-%d", project.ID)
+
+	buildArgs := []string{
+		"build",
+		"--name", imageName,
+		"--cache-key", cacheKey,
+		"--env", "NPM_CONFIG_JOBS=2",
+		"--env", "CI=true",
+	}
+
+	// Inject Node Version if specified
+	if project.NodeVersion != "" {
+		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_NODE_VERSION=%s", project.NodeVersion))
+	}
+
+	// Inject custom Build Command if specified
+	if project.BuildCommand != "" {
+		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_BUILD_CMD=%s", project.BuildCommand))
+	}
+
+	// Finalize build command with path
+	buildArgs = append(buildArgs, buildPath)
+
+	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "railpack", buildArgs...)
+
+	if err != nil {
+		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))
+	}
+
+	return nil
+}
+
+// StartExistingImage starts a container from an already built image.
+func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
+	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+
+	s.storage.EnsurePersistentPath(project)
+	hostPersistentPath := s.storage.GetPersistentHostPath(project)
+
+	timestamp := time.Now().Unix()
+	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
+	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
+	serviceName := project.Subdomain
+
+	internalPort := "8080"
+	if project.Framework == "Laravel" {
+		internalPort = "80"
+	}
+
+	finalCPUs := models.DefaultDockerCPULimit
+	if project.CPULimit != nil {
+		finalCPUs = fmt.Sprintf("%.1f", *project.CPULimit)
+	}
+
+	finalMemory := models.DefaultDockerMemoryLimit
+	if project.MemoryLimit != nil {
+		finalMemory = *project.MemoryLimit
+	}
+
+	runArgs := []string{
+		"run", "-d",
+		"--name", containerName,
+		"--network", models.NetworkName,
+		"--restart", "unless-stopped",
+		"--cpus", finalCPUs,
+		"--memory", finalMemory,
+		"-e", fmt.Sprintf("PORT=%s", internalPort),
+		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+
+		"--label", "traefik.enable=true",
+		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
+			routerName, project.Subdomain, projectDomain),
+		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
+
+		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
+		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
+		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
+
+		imageName,
+	}
+
+	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
+	if err != nil {
+		return "", fmt.Errorf("failed to start container: %s", res.Stderr)
+	}
+
+	mainContainerID := strings.TrimSpace(res.Stdout)
+
+	// Restart Worker if needed
+	if project.Framework != "Laravel" && project.WorkerCommand != "" {
+		slog.Info("Restarting background worker container for existing image", "subdomain", project.Subdomain)
+		workerID, err := s.StartWorkerContainer(project, imageName, finalCPUs, finalMemory)
+		if err != nil {
+			slog.Error("Failed to restart worker container", "subdomain", project.Subdomain, "error", err)
+		} else {
+			project.WorkerContainerID = &workerID
+		}
+	}
+
+	return mainContainerID, nil
 }
 
 // RunMigrations executes artisan migrate inside the container
 func (s *DockerService) RunMigrations(containerID string) (string, error) {
-	// Wait a few seconds for MySQL to be ready inside the new container if needed
-	// But since we use background worker, we can afford a small delay
-	time.Sleep(2 * time.Second)
+	// Wait a bit longer for the container and its internal services to fully initialize
+	time.Sleep(5 * time.Second)
 
-	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", "www-data", containerID, "php", "artisan", "migrate", "--force")
+	// Determine the best user to run the command (prefer www-data, fallback to root)
+	user := "root"
+	if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
+		user = "www-data"
+	}
+
+	// Ensure permissions for the web user before migration
+	if user != "root" {
+		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
+			slog.Warn("Failed to fix permissions before migration", "error", err, "stderr", res.Stderr)
+		}
+	}
+
+	// We use the detected user to ensure that any log files or cache files created during migration
+	// are owned by the web user, preventing permission issues later.
+	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
 
 	if err != nil {
-		return res.Stdout + res.Stderr, fmt.Errorf("migration failed: %s", res.Stderr)
+		output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+		if output == "" {
+			output = "(No output from migration command)"
+		}
+		return output, fmt.Errorf("migration failed: %s", output)
 	}
 
 	return res.Stdout, nil
 }
 
-// createEnvFile generates .env for Laravel project
-func (s *DockerService) createEnvFile(project *models.Project, projectPath, projectDomain string) error {
-	// Generate random 32-byte key for APP_KEY
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return fmt.Errorf("failed to generate random app key: %w", err)
+// injectDefaultRailpackConfig writes a default railpack.json if one doesn't exist.
+// This uses template files from /app/docker/templates/
+func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeImage string) {
+	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
+
+	// Don't override if user already has one
+	if _, err := os.Stat(railpackConfigPath); err == nil {
+		slog.Info("User railpack.json found, skipping default injection", "path", railpackConfigPath)
+		return
 	}
-	appKey := base64.StdEncoding.EncodeToString(key)
 
-	envContent := fmt.Sprintf(`APP_NAME="%s"
-APP_ENV=production
-APP_KEY=base64:%s
-APP_DEBUG=true
-APP_URL=https://%s.%s
-
-DB_CONNECTION=mysql
-DB_HOST=paas-mysql
-DB_PORT=3306
-DB_DATABASE=%s
-DB_USERNAME=%s
-DB_PASSWORD=%s
-
-CACHE_DRIVER=file
-SESSION_DRIVER=cookie
-QUEUE_CONNECTION=sync
-`,
-		project.Name,
-		appKey,
-		project.Subdomain, projectDomain,
-		project.DatabaseName,
-		project.DatabaseName,
-		project.DatabasePassword,
-	)
-
-	// Set QUEUE_CONNECTION dynamically
-	queueConn := "sync"
-	if project.QueueEnabled {
-		queueConn = "database"
+	// Default to alpine if not specified. Only allow known templates.
+	if runtimeImage == "" {
+		runtimeImage = "alpine"
 	}
-	envContent = strings.Replace(envContent, "QUEUE_CONNECTION=sync", "QUEUE_CONNECTION="+queueConn, 1)
+	switch runtimeImage {
+	case "alpine", "debian":
+		// ok
+	default:
+		slog.Warn("Invalid runtime image; falling back to alpine", "runtime", runtimeImage)
+		runtimeImage = "alpine"
+	}
 
-	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(envContent), 0644)
+	// Load template from file system
+	templatePath := filepath.Join("/app/docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage))
+
+	// Fallback to local path for dev
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join("docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage))
+	}
+
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		slog.Warn("Failed to read railpack template, using fallback", "path", templatePath, "error", err)
+
+		// Ultimate fallback if files are missing
+		fallback := `{
+  "deploy": {
+    "base": {
+      "image": "alpine:3.20"
+    }
+  }
+}`
+		data = []byte(fallback)
+	}
+
+	if err := os.WriteFile(railpackConfigPath, data, 0644); err != nil {
+		slog.Warn("Failed to inject default railpack.json", "error", err)
+		return
+	}
+
+	slog.Info("Injected default railpack.json", "runtime", runtimeImage, "path", buildPath)
+}
+
+// DetectExposedPort inspects a docker image to find the first EXPOSEd port.
+// Returns the port number and nil if found, or 0 and error if not.
+func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
+	// docker image inspect <image> --format '{{json .Config.ExposedPorts}}'
+	res, err := utils.Run(10*time.Second, "docker", "image", "inspect", imageName, "--format", "{{json .Config.ExposedPorts}}")
+	if err != nil {
+		return 0, err
+	}
+
+	output := strings.TrimSpace(res.Stdout)
+	if output == "null" || output == "" || output == "{}" {
+		return 0, fmt.Errorf("no exposed ports found in image metadata")
+	}
+
+	// Output format: {"3000/tcp":{},"80/tcp":{}}
+	var exposed map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &exposed); err != nil {
+		return 0, err
+	}
+
+	// Pick the first port we find
+	for portKey := range exposed {
+		// portKey is something like "3000/tcp"
+		parts := strings.Split(portKey, "/")
+		if len(parts) > 0 {
+			var port int
+			if _, err := fmt.Sscanf(parts[0], "%d", &port); err != nil {
+				continue
+			}
+			if port > 0 {
+				return port, nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("could not parse port from metadata")
+}
+
+func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
+	examplePath := filepath.Join(projectPath, ".env.example")
+	envPath := filepath.Join(projectPath, ".env")
+
+	// 1. Load mandatory variables from template
+	mandatory, err := s.loadMandatoryEnv(project, projectDomain)
+	if err != nil {
+		slog.Error("Failed to load mandatory env template, falling back to basic config", "error", err)
+
+		// Securely generate a fallback APP_KEY
+		key := make([]byte, 32)
+		var appKey string
+		if _, err := rand.Read(key); err != nil {
+			appKey = "base64:fallback-key-generation-failed-check-logs"
+		} else {
+			appKey = "base64:" + base64.StdEncoding.EncodeToString(key)
+		}
+
+		// Basic fallback if template is missing
+		mandatory = map[string]string{
+			"APP_NAME":     fmt.Sprintf("\"%s\"", project.Name),
+			"APP_KEY":      appKey,
+			"DATABASE_URL": fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName),
+		}
+	}
+
+	var finalLines []string
+	seen := make(map[string]bool)
+
+	// 2. Select base file: Prefer existing .env if it exists, fallback to .env.example
+	basePath := envPath
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		basePath = examplePath
+	}
+
+	// Load from base file if it exists
+	if data, err := os.ReadFile(basePath); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				finalLines = append(finalLines, line)
+				continue
+			}
+
+			// Handle commented lines that might contain mandatory keys
+			// e.g. "# DB_HOST=127.0.0.1" -> we want to uncomment and set to paas-mysql
+			isCommented := strings.HasPrefix(trimmed, "#")
+			effectiveLine := trimmed
+			if isCommented {
+				effectiveLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+			}
+
+			parts := strings.SplitN(effectiveLine, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				if val, ok := mandatory[key]; ok {
+					// We found a mandatory key (even if it was commented out)
+					finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
+					seen[key] = true
+				} else if isCommented {
+					// It's a comment but not a mandatory key, keep as is
+					finalLines = append(finalLines, line)
+				} else {
+					// It's an active line but not mandatory, keep as is
+					finalLines = append(finalLines, line)
+				}
+			} else {
+				finalLines = append(finalLines, line)
+			}
+		}
+	}
+
+	// 3. Add any missing mandatory variables that weren't found in .env.example
+	for key, val := range mandatory {
+		if !seen[key] {
+			finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
+		}
+	}
+
+	return os.WriteFile(envPath, []byte(strings.Join(finalLines, "\n")), 0644)
 }
 
 // StopContainer stops a running container
@@ -251,8 +624,19 @@ func (s *DockerService) StopContainer(containerID string) error {
 	return utils.RunSilent(30*time.Second, "docker", "stop", containerID)
 }
 
-// RemoveContainer stops and removes a container
-func (s *DockerService) RemoveContainer(containerID string) error {
+// StartContainer starts a stopped container
+func (s *DockerService) StartContainer(containerID string) error {
+	return utils.RunSilent(30*time.Second, "docker", "start", containerID)
+}
+
+// RemoveContainer stops and removes a container, including associated workers
+func (s *DockerService) RemoveContainer(containerID string, workerContainerID *string) error {
+	if workerContainerID != nil && *workerContainerID != "" {
+		slog.Debug("Removing worker container", "workerID", *workerContainerID)
+		_ = exec.Command("docker", "stop", *workerContainerID).Run()
+		_ = exec.Command("docker", "rm", *workerContainerID).Run()
+	}
+
 	if err := exec.Command("docker", "stop", containerID).Run(); err != nil {
 		slog.Warn("Failed to stop container during removal", "containerID", containerID, "error", err)
 	}
@@ -316,15 +700,69 @@ func (s *DockerService) CleanupProject(subdomain string) error {
 	return os.RemoveAll(projectPath)
 }
 
+// GetBuildPath recursively finds the first directory containing project markers
+func (s *DockerService) GetBuildPath(root string) string {
+	markers := []string{
+		"artisan",
+		"composer.json",
+		"package.json",
+		"go.mod",
+		"requirements.txt",
+		"Gemfile",
+		"Cargo.toml",
+		"mix.exs",
+	}
+
+	// 1. Check root first
+	for _, marker := range markers {
+		if _, err := os.Stat(filepath.Join(root, marker)); err == nil {
+			return root
+		}
+	}
+
+	// 2. If not at root, check first-level subdirectories (dynamic monorepo)
+	// We only check 1 level deep to avoid accidental detection of nested vendor/node_modules
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return root
+	}
+
+	// Priority subdirectories for monorepos
+	priorityDirs := []string{"backend", "app", "server", "api"}
+
+	for _, pDir := range priorityDirs {
+		pPath := filepath.Join(root, pDir)
+		for _, marker := range markers {
+			if _, err := os.Stat(filepath.Join(pPath, marker)); err == nil {
+				return pPath
+			}
+		}
+	}
+
+	// Fallback to searching all non-hidden directories
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			dirPath := filepath.Join(root, entry.Name())
+			for _, marker := range markers {
+				if _, err := os.Stat(filepath.Join(dirPath, marker)); err == nil {
+					return dirPath
+				}
+			}
+		}
+	}
+
+	return root
+}
+
 // ===========================================
 // Logs & Stats
 // ===========================================
 
-// GetContainerLogs retrieves container logs
-func (s *DockerService) GetContainerLogs(containerID string, lines int) (string, error) {
+// GetLogs retrieves logs from a specific container ID
+func (s *DockerService) GetLogs(containerID string, lines int) (string, error) {
 	res, err := utils.Run(15*time.Second, "docker", "logs", "--tail", strconv.Itoa(lines), containerID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get logs: %s", res.Stderr)
+		return "", fmt.Errorf("failed to get logs for %s: %s", containerID, res.Stderr)
 	}
 
 	return res.Stdout + res.Stderr, nil
@@ -447,7 +885,7 @@ func (s *DockerService) GetAllContainerStats() (map[string]ContainerStats, error
 // System & Global Docker Info
 // ===========================================
 
-// GetSystemStats retrieves host machine resource usage
+// GetSystemStats retrieves host machine resource usage with robust detection
 func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	stats := &models.SystemStats{
 		DiskPath: s.cfg.ProjectsPath,
@@ -455,39 +893,107 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		CPUCores: 1,
 	}
 
-	// Hostname
+	// 1. Hostname
 	if hostname, err := os.Hostname(); err == nil {
 		stats.Hostname = hostname
 	}
 
-	// CPU Usage
-	if res, err := utils.Run(5*time.Second, "sh", "-c", "top -bn1 | grep 'CPU:' | head -n1 | awk '{print $2}' | cut -d% -f1"); err == nil {
-		cpuStr := strings.TrimSpace(res.Stdout)
-		if val, err := strconv.ParseFloat(cpuStr, 64); err == nil {
-			stats.CPUUsage = val
-		}
-	}
-
-	// CPU Cores
-	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
-		stats.CPUCores = strings.Count(string(data), "processor")
-	}
-
-	// Memory Usage
-	if res, err := utils.Run(5*time.Second, "free", "-b"); err == nil {
-		lines := strings.Split(res.Stdout, "\n")
-		if len(lines) >= 2 {
-			fields := strings.Fields(lines[1])
-			if len(fields) >= 3 {
-				total, _ := strconv.ParseUint(fields[1], 10, 64)
-				used, _ := strconv.ParseUint(fields[2], 10, 64)
-				stats.MemoryTotal = total
-				stats.MemoryUsed = used
+	// 2. OS Distribution Detection
+	if data, err := os.ReadFile("/etc/os-release"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "PRETTY_NAME=") {
+				stats.OS = strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+				break
 			}
 		}
 	}
 
-	// Disk Usage
+	// 3. Docker Mode Detection
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		stats.IsDocker = true
+	} else if data, err := os.ReadFile("/proc/self/cgroup"); err == nil {
+		if strings.Contains(string(data), "docker") || strings.Contains(string(data), "containerd") {
+			stats.IsDocker = true
+		}
+	}
+
+	// 4. CPU Usage (Using /proc/stat - two samples for accuracy)
+	readCpuStat := func() (uint64, uint64) {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return 0, 0
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "cpu ") {
+				fields := strings.Fields(line)
+				if len(fields) < 5 {
+					return 0, 0
+				}
+				user, _ := strconv.ParseUint(fields[1], 10, 64)
+				nice, _ := strconv.ParseUint(fields[2], 10, 64)
+				system, _ := strconv.ParseUint(fields[3], 10, 64)
+				idle, _ := strconv.ParseUint(fields[4], 10, 64)
+				iowait, _ := strconv.ParseUint(fields[5], 10, 64)
+				irq, _ := strconv.ParseUint(fields[6], 10, 64)
+				softirq, _ := strconv.ParseUint(fields[7], 10, 64)
+				total := user + nice + system + idle + iowait + irq + softirq
+				return total, idle
+			}
+		}
+		return 0, 0
+	}
+
+	t1, i1 := readCpuStat()
+	time.Sleep(200 * time.Millisecond)
+	t2, i2 := readCpuStat()
+
+	if t2 > t1 {
+		totalDiff := float64(t2 - t1)
+		idleDiff := float64(i2 - i1)
+		stats.CPUUsage = (totalDiff - idleDiff) * 100.0 / totalDiff
+	}
+
+	// 5. CPU Cores
+	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
+		stats.CPUCores = strings.Count(string(data), "processor")
+	}
+
+	// 6. Memory Usage (Using /proc/meminfo)
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		var total, available, free, buffers, cached uint64
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			key := strings.TrimSuffix(fields[0], ":")
+			val, _ := strconv.ParseUint(fields[1], 10, 64)
+			switch key {
+			case "MemTotal":
+				total = val * 1024
+			case "MemFree":
+				free = val * 1024
+			case "MemAvailable":
+				available = val * 1024
+			case "Buffers":
+				buffers = val * 1024
+			case "Cached":
+				cached = val * 1024
+			}
+		}
+		if total > 0 {
+			if available == 0 {
+				available = free + buffers + cached
+			}
+			stats.MemoryTotal = total
+			stats.MemoryUsed = total - available
+		}
+	}
+
+	// 7. Disk Usage
 	if res, err := utils.Run(5*time.Second, "df", "-b", s.cfg.ProjectsPath); err == nil {
 		lines := strings.Split(res.Stdout, "\n")
 		if len(lines) >= 2 {
@@ -501,7 +1007,7 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 		}
 	}
 
-	// Docker Version
+	// 8. Docker Version
 	if res, err := utils.Run(5*time.Second, "docker", "version", "--format", "{{.Server.Version}}"); err == nil {
 		stats.DockerVersion = strings.TrimSpace(res.Stdout)
 	}
@@ -509,7 +1015,6 @@ func (s *DockerService) GetSystemStats() (*models.SystemStats, error) {
 	return stats, nil
 }
 
-// ListAllContainers returns all containers on the host with stats
 func (s *DockerService) ListAllContainers() ([]models.DockerContainer, error) {
 	// 1. Get stats for info merging in parallel (or just call it once as it's already one call)
 	statsMap, _ := s.GetAllContainerStats()
@@ -765,21 +1270,85 @@ func parseMemoryBytes(memStr string) float64 {
 }
 
 // ExecLaravelCommand runs artisan commands inside container
-func (s *DockerService) ExecLaravelCommand(containerID, command string) (string, error) {
-	// Split command string into args to avoiding shell injection
-	// This assumes the command is a space-separated list of args for artisan
-	// e.g. "migrate --force" -> ["migrate", "--force"]
-	args := strings.Fields(command)
-
-	fullArgs := append([]string{"exec", containerID, "php", "artisan"}, args...)
-	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
-
-	if err != nil {
-		output := res.Stdout + "\n" + res.Stderr
-		return output, fmt.Errorf("command failed: %s", output)
+// ExecProjectCommand runs commands inside container (artisan for Laravel, shell for others)
+func (s *DockerService) ExecProjectCommand(project *models.Project, command string) (string, error) {
+	containerID := ""
+	if project.ContainerID != nil {
+		containerID = *project.ContainerID
+	}
+	if containerID == "" {
+		return "", fmt.Errorf("container not running")
 	}
 
-	return res.Stdout, nil
+	// Split command string into args to avoiding shell injection
+	args := strings.Fields(command)
+
+	// Determine the best user to run the command
+	// For Laravel (legacy) it's usually www-data
+	// For Node.js (railpack) it's often 'node' (UID 1000) or root
+	user := "root"
+	potentialUsers := []string{"www-data", "node"}
+	for _, u := range potentialUsers {
+		if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", u); err == nil && strings.TrimSpace(res.Stdout) != "" {
+			user = u
+			break
+		}
+	}
+
+	// Prepare execution args based on framework
+	var fullArgs []string
+	if project.Framework == "Laravel" {
+		// Determine if we should add --force (for migrate/db:seed)
+		// and always add --no-interaction to prevent hanging
+		baseCmd := ""
+		if len(args) > 0 {
+			baseCmd = args[0]
+		}
+
+		hasNoInteraction := false
+		hasForce := false
+		for _, arg := range args {
+			if arg == "--no-interaction" || arg == "-n" {
+				hasNoInteraction = true
+			}
+			if arg == "--force" {
+				hasForce = true
+			}
+		}
+
+		if !hasNoInteraction {
+			args = append(args, "--no-interaction")
+		}
+
+		// Auto-add --force for commands that usually require it in production
+		if !hasForce && (baseCmd == "migrate" || baseCmd == "db:seed" || strings.HasPrefix(baseCmd, "migrate:")) {
+			args = append(args, "--force")
+		}
+
+		// Fix permissions as root before running as www-data to avoid "Permission denied" errors in logs/cache
+		if user != "root" {
+			if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
+				slog.Warn("Failed to fix permissions before command execution", "error", err, "stderr", res.Stderr)
+			}
+		}
+
+		fullArgs = append([]string{"exec", "-u", user, containerID, "php", "artisan"}, args...)
+	} else {
+		// For other frameworks (Node.js, Go, etc.), run command directly
+		fullArgs = append([]string{"exec", "-u", user, containerID}, args...)
+	}
+
+	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
+
+	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+	if err != nil {
+		if output == "" {
+			output = "Command failed with no output"
+		}
+		return output, fmt.Errorf("command failed: %w", err)
+	}
+
+	return output, nil
 }
 
 // GetEnvFile reads the .env file for a project
@@ -796,4 +1365,73 @@ func (s *DockerService) GetEnvFile(subdomain string) (string, error) {
 func (s *DockerService) SaveEnvFile(subdomain, content string) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
 	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(content), 0644)
+}
+
+// loadMandatoryEnv renders the default.env template and returns a map of key-values.
+func (s *DockerService) loadMandatoryEnv(project *models.Project, projectDomain string) (map[string]string, error) {
+	templatePath := filepath.Join(s.cfg.TemplatesPath, "default.env")
+	content, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare template data
+	key := make([]byte, 32)
+	var appKey string
+	if _, err := rand.Read(key); err != nil {
+		slog.Error("Failed to generate random bytes for APP_KEY", "error", err)
+		appKey = "generation-failed-check-logs"
+	} else {
+		appKey = base64.StdEncoding.EncodeToString(key)
+	}
+
+	queueConn := "sync"
+	if project.QueueEnabled {
+		queueConn = "database"
+	}
+
+	data := struct {
+		ProjectName      string
+		Subdomain        string
+		Domain           string
+		AppKey           string
+		DatabaseName     string
+		DatabasePassword string
+		QueueConnection  string
+	}{
+		ProjectName:      project.Name,
+		Subdomain:        project.Subdomain,
+		Domain:           projectDomain,
+		AppKey:           "base64:" + appKey,
+		DatabaseName:     project.DatabaseName,
+		DatabasePassword: project.DatabasePassword,
+		QueueConnection:  queueConn,
+	}
+
+	tmpl, err := template.New("env").Parse(string(content))
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return nil, err
+	}
+
+	// Parse rendered template into map
+	result := make(map[string]string)
+	lines := strings.Split(buf.String(), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) == 2 {
+			result[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+
+	return result, nil
 }

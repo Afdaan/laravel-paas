@@ -8,28 +8,57 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      - name: Sync codebase
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ github.event.before }}
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            infra:
+              - 'scripts/**'
+              - '.github/workflows/**'
+
+      - name: Sync codebase to Production
         run: |
           TARGET_DIR="/opt/laravel-paas"
-          if [ ! -d "$TARGET_DIR" ]; then
-            exit 1
-          fi
-          
           cd "$TARGET_DIR"
           git config --global --add safe.directory "$TARGET_DIR"
           git fetch origin
           git checkout ${{ github.ref_name }}
           git pull origin ${{ github.ref_name }}
 
-      - name: Building Deployment
+      - name: Conditional Deployment
         run: |
           cd /opt/laravel-paas
-          if [ -f "./scripts/deploy-app.sh" ]; then
-            chmod +x ./scripts/deploy-app.sh
+          chmod +x ./scripts/deploy-app.sh
+          
+          BACKEND="${{ steps.filter.outputs.backend }}"
+          FRONTEND="${{ steps.filter.outputs.frontend }}"
+          INFRA="${{ steps.filter.outputs.infra }}"
+
+          if [ "$INFRA" == "true" ]; then
+            echo "[CI/CD] Infrastructure changes detected. Deploying ALL to apply configuration."
             ./scripts/deploy-app.sh all
+          elif [ "$BACKEND" == "true" ] && [ "$FRONTEND" == "true" ]; then
+            echo "[CI/CD] Both source components changed. Deploying ALL."
+            ./scripts/deploy-app.sh all
+          elif [ "$BACKEND" == "true" ]; then
+            echo "[CI/CD] Only Backend source changed. Deploying BACKEND."
+            ./scripts/deploy-app.sh backend
+          elif [ "$FRONTEND" == "true" ]; then
+            echo "[CI/CD] Only Frontend source changed. Deploying FRONTEND."
+            ./scripts/deploy-app.sh frontend
           else
-            chmod +x ./scripts/start.sh
-            ./scripts/start.sh
+            echo "[CI/CD] No relevant changes detected. Skipping deployment."
           fi
 
       - name: Notification on success

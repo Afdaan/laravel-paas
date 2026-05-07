@@ -36,7 +36,7 @@ interface ProjectStats {
   memory_max_mb: number;
 }
 
-const StatusBadge = ({ status, t }: { status: Project['status'], t: any }) => {
+const StatusBadge = ({ status, t }: { status: Project['status'], t: (key: string) => string }) => {
   switch (status) {
     case 'running':
       return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
@@ -52,7 +52,7 @@ const StatusBadge = ({ status, t }: { status: Project['status'], t: any }) => {
   }
 }
 
-const ResourceBar = ({ label, value, max, icon: Icon, suffix = '' }: { label: string, value: number, max?: number, icon: any, suffix?: string }) => {
+const ResourceBar = ({ label, value, max, icon: Icon, suffix = '' }: { label: string, value: number, max?: number, icon: React.ElementType, suffix?: string }) => {
   const percentage = max ? Math.min((value / max) * 100, 100) : Math.min(value, 100)
 
   let colorClass = 'bg-emerald-500'
@@ -107,7 +107,7 @@ const AdminProjects = () => {
       setIsLoading(false)
       isFirstLoad.current = false
     }
-  }, [page, search, statusFilter])
+  }, [page, search, statusFilter, limit, t])
 
   useEffect(() => {
     fetchProjects()
@@ -281,7 +281,7 @@ const AdminProjects = () => {
                     </TableCell>
                     <TableCell className="pl-4 pr-6 py-3 text-right">
                       <Link
-                        to={`/projects/${project.id}`}
+                        to={`/projects/${project.uid}`}
                       >
                         <Button variant="outline" size="sm" className="h-8">
                           {t('common.details')}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -18,6 +18,7 @@ import {
    Loader2
 } from 'lucide-react'
 import { databaseAPI, projectsAPI } from '../../services/api'
+import { AxiosError } from 'axios'
 import { Project } from '../../types'
 import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -37,8 +38,17 @@ interface TableInfo {
 
 interface TableData {
    columns: string[];
-   rows: any[];
+   rows: Record<string, unknown>[];
    total: number;
+}
+
+interface QueryResult {
+   columns?: string[];
+   rows?: Record<string, unknown>[];
+   rows_affected?: number;
+   duration?: string;
+   error?: string;
+   status: 'success' | 'error';
 }
 
 interface DatabaseCredentials {
@@ -56,9 +66,9 @@ interface DatabaseManagerProps {
 
 export default function DatabaseManager({ embedded = false, projectId = null }: DatabaseManagerProps) {
    const { t } = useTranslation()
-   const params = useParams<{ id: string }>()
+   const params = useParams<{ uid: string }>()
    const navigate = useNavigate()
-   const id = projectId || params.id
+   const id = projectId || params.uid
    const [project, setProject] = useState<Project | null>(null)
    const [activeTab, setActiveTab] = useState('tables')
    const [tables, setTables] = useState<TableInfo[]>([])
@@ -70,7 +80,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
 
    // Query state
    const [query, setQuery] = useState('')
-   const [queryResult, setQueryResult] = useState<any>(null)
+   const [queryResult, setQueryResult] = useState<QueryResult | null>(null)
    const [queryLoading, setQueryLoading] = useState(false)
 
    // Import state
@@ -88,15 +98,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       confirmText: 'Confirm'
    })
 
-   useEffect(() => {
-      if (id) {
-         fetchProject()
-         fetchTables()
-         fetchCredentials()
-      }
-   }, [id])
-
-   const fetchProject = async () => {
+   const fetchProject = useCallback(async () => {
       if (!id) return
       try {
          const res = await projectsAPI.get(id)
@@ -107,9 +109,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
             navigate('/databases')
          }
       }
-   }
+   }, [id, embedded, navigate, t])
 
-   const fetchCredentials = async () => {
+   const fetchCredentials = useCallback(async () => {
       if (!id) return
       try {
          const res = await databaseAPI.getCredentials(id)
@@ -117,9 +119,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       } catch (err) {
          console.error('Failed to fetch credentials')
       }
-   }
+   }, [id])
 
-   const fetchTables = async () => {
+   const fetchTables = useCallback(async () => {
       if (!id) return
       setLoading(true)
       try {
@@ -130,7 +132,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       } finally {
          setLoading(false)
       }
-   }
+   }, [id, t])
+
+   useEffect(() => {
+      if (id) {
+         fetchProject()
+         fetchTables()
+         fetchCredentials()
+      }
+   }, [id, fetchProject, fetchTables, fetchCredentials])
 
    const selectTable = async (tableName: string) => {
       if (!id) return
@@ -145,7 +155,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          ])
          setTableData(dataRes.data)
 
-         const pkCol = structRes.data.columns.find((c: any) => c.key === 'PRI')
+         const pkCol = structRes.data.columns.find((c: { name: string, key: string }) => c.key === 'PRI')
          if (pkCol) {
             setPrimaryKey(pkCol.name)
          }
@@ -156,7 +166,7 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
       }
    }
 
-   const requestDeleteRow = (row: any) => {
+   const requestDeleteRow = (row: Record<string, unknown>) => {
       if (!id || !selectedTable || !primaryKey) return;
 
       const pkValue = row[primaryKey];
@@ -173,8 +183,9 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                toast.success(t('common.success'));
                setConfirmModal(prev => ({ ...prev, isOpen: false }))
                selectTable(selectedTable);
-            } catch (err: any) {
-               toast.error(err.response?.data?.error || t('common.error'));
+            } catch (err: unknown) {
+               const axiosError = err as AxiosError<{ error: string }>
+               toast.error(axiosError.response?.data?.error || t('common.error'));
             }
          }
       })
@@ -187,9 +198,10 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
          const res = await databaseAPI.query(id, query)
          setQueryResult({ ...res.data, status: 'success' })
          toast.success(t('databaseManager.querySuccess'))
-      } catch (err: any) {
-         setQueryResult({ error: err.response?.data?.error || t('common.error'), status: 'error' })
-         toast.error(err.response?.data?.error || t('common.error'))
+      } catch (err: unknown) {
+         const axiosError = err as AxiosError<{ error: string }>
+         setQueryResult({ error: axiosError.response?.data?.error || t('common.error'), status: 'error' })
+         toast.error(axiosError.response?.data?.error || t('common.error'))
       } finally {
          setQueryLoading(false)
       }
@@ -313,8 +325,8 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
             <TabsContent value="tables" className="flex-1 min-h-0">
                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[600px]">
                   {/* Table Sidebar */}
-                  <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/5">
-                     <CardHeader className="p-6 border-b bg-muted/30">
+                  <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/95 ring-1 ring-white/5">
+                     <CardHeader className="px-6 py-3 bg-muted/10">
                         <div className="flex justify-between items-center">
                            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.tableIndex')}</CardTitle>
                            <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-primary/10 hover:text-primary transition-colors" onClick={fetchTables}>
@@ -349,12 +361,12 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                         )}
                      </CardContent>
                   </Card>
- 
+
                   {/* Data Viewer */}
-                  <Card className="lg:col-span-3 flex flex-col overflow-hidden border-none shadow-2xl bg-card/50 backdrop-blur-xl ring-1 ring-white/5">
+                  <Card className="lg:col-span-3 flex flex-col overflow-hidden border-none shadow-2xl bg-card/95 ring-1 ring-white/5">
                      {selectedTable ? (
                         <>
-                           <CardHeader className="p-8 border-b flex flex-row items-center justify-between bg-muted/20">
+                           <CardHeader className="px-8 py-4 flex flex-row items-center justify-between bg-muted/5">
                               <div className="flex items-center gap-4">
                                  <div className="w-12 h-12 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-center text-primary shadow-inner">
                                     <Layers className="w-6 h-6" />
@@ -368,33 +380,33 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                  <Badge variant="outline" className="text-[10px] font-black uppercase tracking-widest border-primary/20 bg-primary/5 text-primary px-3 py-1">{t('databaseManager.readOnly')}</Badge>
                               )}
                            </CardHeader>
- 
-                           <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin">
+
+                           <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin will-change-transform">
                               {loading ? (
                                  <div className="flex items-center justify-center h-96"><Loader2 className="w-10 h-10 animate-spin text-primary/30" /></div>
                               ) : tableData && tableData.rows?.length > 0 ? (
                                  <div className="w-full">
                                     <table className="w-full border-collapse text-left text-xs">
                                        <thead>
-                                          <tr className="bg-muted/40 border-b border-white/5">
+                                          <tr className="bg-muted/40 border-b border-border/50">
                                              {tableData.columns?.map((col: string) => (
-                                                <th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-white/5 last:border-r-0">{col}</th>
+                                                <th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-border/30 last:border-r-0">{col}</th>
                                              ))}
                                              {primaryKey && (
                                                 <th className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/0 w-12">{t('common.actions')}</th>
                                              )}
                                           </tr>
                                        </thead>
-                                       <tbody className="divide-y divide-white/5">
-                                          {tableData.rows.map((row: any, i: number) => (
-                                             <tr key={i} className="group hover:bg-white/[0.02] transition-colors">
+                                       <tbody className="divide-y divide-border/30">
+                                          {tableData.rows.map((row, i: number) => (
+                                             <tr key={i} className="group hover:bg-muted/20 transition-colors">
                                                 {tableData.columns?.map((col: string) => (
-                                                   <td key={col} className="px-8 py-5 font-mono text-[11px] font-medium border-r border-white/5 last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px] text-foreground/80">
+                                                   <td key={col} className="px-8 py-5 font-mono text-[11px] font-medium border-r border-border/30 last:border-r-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px] text-foreground/80">
                                                       {row[col] === null ? <span className="text-muted-foreground/30 italic font-normal">NULL</span> : String(row[col])}
                                                    </td>
                                                 ))}
                                                 {primaryKey && (
-                                                   <td className="px-4 py-2 text-right w-12 border-white/5">
+                                                   <td className="px-4 py-2 text-right w-12 border-border/30">
                                                       <Button
                                                          variant="ghost"
                                                          size="icon"
@@ -431,19 +443,19 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                   </Card>
                </div>
             </TabsContent>
- 
+
             <TabsContent value="query" className="flex-1 space-y-6">
                <div className="grid grid-cols-1 gap-6 h-auto">
-                  <Card className="flex flex-col overflow-hidden bg-zinc-950 border-zinc-800 shadow-2xl">
-                     <CardHeader className="py-4 px-8 border-b border-zinc-800 bg-zinc-900/50 flex flex-row items-center justify-between">
+                  <Card className="flex flex-col overflow-hidden bg-zinc-950 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 shadow-2xl">
+                     <CardHeader className="py-2.5 px-8 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 flex flex-row items-center justify-between">
                         <div className="flex items-center gap-4">
                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                               <Terminal className="w-4 h-4 text-emerald-500" />
                            </div>
-                           <CardTitle className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.25em]">{t('databaseManager.sqlWorkspace')}</CardTitle>
+                           <CardTitle className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.25em]">{t('databaseManager.sqlWorkspace')}</CardTitle>
                         </div>
                         <div className="flex items-center gap-3">
-                           <Button variant="ghost" size="sm" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-300 uppercase font-bold text-[10px] tracking-widest">{t('common.cancel').split(' ')[0]}</Button>
+                           <Button variant="ghost" size="sm" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 uppercase font-bold text-[10px] tracking-widest">{t('common.cancel').split(' ')[0]}</Button>
                            <Button
                               size="sm"
                               onClick={executeQuery}
@@ -459,16 +471,16 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="SELECT * FROM users WHERE active = 1;"
-                        className="flex-1 min-h-[200px] bg-transparent text-emerald-400 font-mono text-base p-8 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-800 scrollbar-thin transition-colors"
+                        className="flex-1 min-h-[200px] bg-transparent text-emerald-600 dark:text-emerald-400 font-mono text-base p-8 focus-visible:ring-0 resize-none border-none placeholder:text-zinc-300 dark:placeholder:text-zinc-800 scrollbar-thin transition-colors"
                         spellCheck={false}
                      />
                   </Card>
- 
-                  <Card className="flex flex-col overflow-hidden border-none shadow-xl bg-card/50 backdrop-blur-md ring-1 ring-white/5">
-                     <CardHeader className="py-4 px-8 bg-muted/30 border-b border-white/5 flex flex-row items-center justify-between">
+
+                  <Card className="flex flex-col overflow-hidden border border-border/50 shadow-sm bg-card/95">
+                     <CardHeader className="py-2.5 px-8 bg-muted/10 border-border/50 flex flex-row items-center justify-between">
                         <CardTitle className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">{t('databaseManager.outputLog')}</CardTitle>
                         {queryResult && (
-                           <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-muted/50 border-white/5">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
+                           <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-muted/50 border-border/30">{t('databaseManager.queryDuration', { ms: queryResult.duration || '0ms' })}</Badge>
                         )}
                      </CardHeader>
                      <CardContent className="flex-1 overflow-auto p-0 scrollbar-thin min-h-[200px]">
@@ -485,15 +497,15 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                               ) : queryResult.rows && queryResult.rows.length > 0 ? (
                                  <table className="w-full text-xs text-left border-collapse">
                                     <thead>
-                                       <tr className="bg-muted/40 border-b border-white/5">
-                                          {queryResult.columns?.map((col: string) => (<th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-white/5 last:border-r-0">{col}</th>))}
+                                       <tr className="bg-muted/40 border-b border-border/50">
+                                          {queryResult.columns?.map((col: string) => (<th key={col} className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 border-r border-border/30 last:border-r-0">{col}</th>))}
                                        </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                       {queryResult.rows.map((row: any, i: number) => (
-                                          <tr key={i} className="hover:bg-white/[0.02] transition-colors">
+                                    <tbody className="divide-y divide-border/30">
+                                       {queryResult.rows.map((row, i: number) => (
+                                          <tr key={i} className="hover:bg-muted/20 transition-colors">
                                              {queryResult.columns?.map((col: string) => (
-                                                <td key={col} className="px-8 py-4 font-mono text-[11px] font-medium border-r border-white/5 last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px] text-foreground/80">
+                                                <td key={col} className="px-8 py-4 font-mono text-[11px] font-medium border-r border-border/30 last:border-r-0 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px] text-foreground/80">
                                                    {row[col] !== null ? String(row[col]) : <span className="opacity-30 italic font-normal">NULL</span>}
                                                 </td>
                                              ))}

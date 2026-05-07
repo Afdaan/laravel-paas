@@ -7,14 +7,17 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
 // Config holds all application configuration
 type Config struct {
 	// App
-	AppEnv   string
-	AppDebug bool
+	AppMode      string // "local" or "docker"
+	HostRootPath string // Root directory on the host machine
+	AppEnv       string
+	AppDebug     bool
 
 	// Infra Database (PostgreSQL)
 	PGHost     string
@@ -30,10 +33,12 @@ type Config struct {
 	MYSQLUser     string
 	MYSQLPassword string
 
-
 	// JWT
 	JWTSecret      string
 	JWTExpiryHours int
+
+	// UID Obfuscation
+	UIDSalt string
 
 	// Redis
 	RedisHost     string
@@ -43,16 +48,17 @@ type Config struct {
 	// Domain
 	BaseDomain    string
 	ProjectDomain string
+	FrontendURL   string
 	ACMEEmail     string
 
 	// Docker
-	DockerSocket   string
-	ProjectsPath   string
-	DataPath       string
+	DockerSocket     string
+	ProjectsPath     string
+	DataPath         string
 	HostProjectsPath string
 	HostDataPath     string
-	TemplatesPath  string
-	DockerNetwork  string
+	TemplatesPath    string
+	DockerNetwork    string
 
 	// Nginx Remote Webhook
 	NginxWebhookEnabled bool
@@ -63,10 +69,30 @@ type Config struct {
 
 // Load reads configuration from environment variables
 func Load() *Config {
-	return &Config{
+	appMode := getEnv("APP_MODE", "local")
+	hostRoot := getEnv("HOST_ROOT_PATH", ".")
+	if abs, err := filepath.Abs(hostRoot); err == nil {
+		hostRoot = abs
+	}
+
+	// Determine internal paths based on mode
+	var projectsPath, dataPath, templatesPath string
+	if appMode == "docker" {
+		projectsPath = getEnv("PROJECTS_PATH", "/app/storage/projects")
+		dataPath = getEnv("DATA_PATH", "/app/storage/data")
+		templatesPath = getEnv("TEMPLATES_PATH", "/app/docker/templates")
+	} else {
+		projectsPath = getEnv("PROJECTS_PATH", "./storage/projects")
+		dataPath = getEnv("DATA_PATH", "./storage/data")
+		templatesPath = getEnv("TEMPLATES_PATH", "./docker/templates")
+	}
+
+	cfg := &Config{
 		// App
-		AppEnv:   getEnv("APP_ENV", "production"),
-		AppDebug: getEnvBool("APP_DEBUG", false),
+		AppMode:      appMode,
+		HostRootPath: hostRoot,
+		AppEnv:       getEnv("APP_ENV", "production"),
+		AppDebug:     getEnvBool("APP_DEBUG", false),
 
 		// Infra Database (PostgreSQL)
 		PGHost:     getEnv("PG_HOST", "paas-postgres"),
@@ -86,6 +112,9 @@ func Load() *Config {
 		JWTSecret:      getEnv("JWT_SECRET", "change-this-secret"),
 		JWTExpiryHours: getEnvInt("JWT_EXPIRY_HOURS", 24),
 
+		// UID Obfuscation
+		UIDSalt: getEnv("UID_SALT", "change-this-salt"),
+
 		// Redis
 		RedisHost:     getEnv("REDIS_HOST", "paas-redis"),
 		RedisPort:     getEnv("REDIS_PORT", "6379"),
@@ -94,16 +123,17 @@ func Load() *Config {
 		// Domain
 		BaseDomain:    getEnv("BASE_DOMAIN", "localhost"),
 		ProjectDomain: getEnv("PROJECT_DOMAIN", getEnv("BASE_DOMAIN", "localhost")),
+		FrontendURL:   getEnv("FRONTEND_URL", "http://localhost:5173"),
 		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
-		// Docker
-		DockerSocket:  getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
-		ProjectsPath:      getEnv("PROJECTS_PATH", "/app/storage/projects"),
-		DataPath:          getEnv("DATA_PATH", "/app/storage/data"),
-		HostProjectsPath:  getEnv("HOST_PROJECTS_PATH", getEnv("PROJECTS_PATH", "/app/storage/projects")),
-		HostDataPath:      getEnv("HOST_DATA_PATH", getEnv("DATA_PATH", "/app/storage/data")),
-		TemplatesPath:     getEnv("TEMPLATES_PATH", "/app/docker/templates"),
-		DockerNetwork:     getEnv("DOCKER_NETWORK", "paas-network"),
+		// Docker & Paths
+		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
+		ProjectsPath:     projectsPath,
+		DataPath:         dataPath,
+		HostProjectsPath: getEnv("HOST_PROJECTS_PATH", filepath.Join(hostRoot, "storage/projects")),
+		HostDataPath:     getEnv("HOST_DATA_PATH", filepath.Join(hostRoot, "storage/data")),
+		TemplatesPath:    templatesPath,
+		DockerNetwork:    getEnv("DOCKER_NETWORK", "paas-network"),
 
 		// Nginx Remote Webhook
 		NginxWebhookEnabled: getEnvBool("NGINX_WEBHOOK_ENABLED", false),
@@ -111,6 +141,16 @@ func Load() *Config {
 		NginxWebhookKey:     getEnv("NGINX_WEBHOOK_KEY", ""),
 		InternalIP:          getEnv("INTERNAL_IP", "127.0.0.1"),
 	}
+
+	// Ensure host paths are absolute to prevent Docker volume naming errors
+	if abs, err := filepath.Abs(cfg.HostProjectsPath); err == nil {
+		cfg.HostProjectsPath = abs
+	}
+	if abs, err := filepath.Abs(cfg.HostDataPath); err == nil {
+		cfg.HostDataPath = abs
+	}
+
+	return cfg
 }
 
 // Helper functions to read environment variables

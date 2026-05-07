@@ -7,10 +7,12 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
@@ -34,9 +36,23 @@ func NewDatabaseHandler(cfg *config.Config, databaseService *services.DatabaseSe
 
 // getProjectForUser fetches project and validates ownership
 func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, error) {
-	id, err := strconv.Atoi(c.Params("id"))
+	idParam := c.Params("id")
+
+	var project *models.Project
+	var err error
+
+	// 1. Try to fetch by UID column first (Standard for frontend)
+	project, err = h.projectService.GetProjectByUID(idParam)
 	if err != nil {
-		return nil, fmt.Errorf("invalid project ID")
+		// 2. Fallback: Check if it's a numeric ID (for transition/admin)
+		id, errConv := strconv.Atoi(idParam)
+		if errConv == nil {
+			project, err = h.projectService.GetProjectByID(uint(id))
+		}
+	}
+
+	if err != nil || project == nil {
+		return nil, fmt.Errorf("project not found")
 	}
 
 	uidVal := c.Locals("user_id")
@@ -55,11 +71,6 @@ func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, erro
 
 	role := models.Role(roleStr)
 
-	project, err := h.projectService.GetProjectByID(uint(id))
-	if err != nil {
-		return nil, fmt.Errorf("project not found")
-	}
-
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
 		return nil, fmt.Errorf("project not found")
 	}
@@ -71,7 +82,7 @@ func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, erro
 func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	return c.JSON(fiber.Map{
@@ -87,14 +98,14 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	tables, err := h.databaseService.ListProjectTables(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
+		slog.Warn("Failed to list project tables", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to project database. Please ensure your project is running.",
-			"details": err.Error(),
 		})
 	}
 
@@ -105,7 +116,7 @@ func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	tableName := c.Params("table")
@@ -115,7 +126,8 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 
 	columns, err := h.databaseService.GetTableStructure(project.DatabaseName, project.DatabasePassword, tableName)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Warn("Failed to get table structure", "project_id", project.ID, "table", tableName, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table structure"})
 	}
 
 	return c.JSON(fiber.Map{"columns": columns})
@@ -125,7 +137,7 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	tableName := c.Params("table")
@@ -134,7 +146,8 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 
 	columns, rows, total, err := h.databaseService.GetTableData(project.DatabaseName, project.DatabasePassword, tableName, page, limit)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Warn("Failed to get table data", "project_id", project.ID, "table", tableName, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table data"})
 	}
 
 	return c.JSON(fiber.Map{
@@ -156,7 +169,7 @@ type DeleteTableRowRequest struct {
 func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	tableName := c.Params("table")
@@ -175,7 +188,8 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 
 	deleted, err := h.databaseService.DeleteTableRow(project.DatabaseName, project.DatabasePassword, tableName, req.PrimaryKey, req.Value)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Warn("Failed to delete table row", "project_id", project.ID, "table", tableName, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete row"})
 	}
 
 	return c.JSON(fiber.Map{
@@ -184,7 +198,7 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 	})
 }
 
-// ExecuteQuery runs a SQL query
+// ExecuteQueryRequest represents a SQL query execution request
 type ExecuteQueryRequest struct {
 	Query string `json:"query"`
 }
@@ -192,7 +206,7 @@ type ExecuteQueryRequest struct {
 func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	var req ExecuteQueryRequest
@@ -202,7 +216,15 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 
 	result, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, req.Query)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		appErr, ok := err.(*apperr.AppError)
+		if ok && appErr != nil {
+			return c.Status(appErr.HTTPStatus).JSON(fiber.Map{
+				"error": appErr.Message,
+				"code":  appErr.Code,
+			})
+		}
+		slog.Error("Database query execution failed", "project_id", project.ID, "error", err.Error())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Query execution failed"})
 	}
 
 	return c.JSON(result)
@@ -212,12 +234,13 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 func (h *DatabaseHandler) ExportDatabase(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	dump, err := h.databaseService.GenerateProjectDump(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Warn("Failed to export database", "project_id", project.ID, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to export database"})
 	}
 
 	c.Set("Content-Type", "application/sql")
@@ -233,7 +256,7 @@ type ImportRequest struct {
 func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	var req ImportRequest
@@ -245,8 +268,6 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "SQL content is required"})
 	}
 
-	// This logic remains slightly in handler to handle the multifile/multistatement response structure if needed,
-	// but let's shift it to service too for consistency.
 	statements := strings.Split(req.SQL, ";")
 	successCount := 0
 	var errors []string
@@ -258,7 +279,7 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		}
 		res, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, stmt)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("Error in statement: %s", err.Error()))
+			errors = append(errors, "Statement execution failed")
 		} else {
 			if res.RowsAffected > 0 || res.Columns != nil {
 				successCount++
@@ -277,12 +298,13 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	dropped, err := h.databaseService.ResetProjectDatabase(project.DatabaseName, project.DatabasePassword)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Warn("Failed to reset database", "project_id", project.ID, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database"})
 	}
 
 	return c.JSON(fiber.Map{
@@ -295,7 +317,8 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 func (h *DatabaseHandler) AdminListAll(c *fiber.Ctx) error {
 	databases, err := h.databaseService.AdminListAllDatabases()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Error("Failed to list all databases", "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve database list"})
 	}
 
 	return c.JSON(fiber.Map{"databases": databases})

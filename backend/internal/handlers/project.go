@@ -7,6 +7,9 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,9 +17,10 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/proxy"
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
-	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // ProjectHandler handles project endpoints
@@ -39,11 +43,15 @@ func NewProjectHandler(cfg *config.Config, redisService *infrastructure.RedisSer
 
 // CreateProjectRequest represents project creation payload
 type CreateProjectRequest struct {
-	Name         string `json:"name"`
-	GithubURL    string `json:"github_url"`
-	Branch       string `json:"branch"`
-	DatabaseName string `json:"database_name"`
-	QueueEnabled bool   `json:"queue_enabled"`
+	Name          string `json:"name"`
+	GithubURL     string `json:"github_url"`
+	Branch        string `json:"branch"`
+	DatabaseName  string `json:"database_name"`
+	BaseDirectory string `json:"base_directory"`
+	RuntimeImage  string `json:"runtime_image"`
+	BuildCommand  string `json:"build_command"`
+	StartCommand  string `json:"start_command"`
+	QueueEnabled  bool   `json:"queue_enabled"`
 }
 
 // ListOwn returns user's own projects
@@ -125,18 +133,20 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName)
+	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.RuntimeImage, req.BuildCommand, req.StartCommand, req.QueueEnabled)
 	if err != nil {
+		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
+			"error": "Failed to create project",
 		})
 	}
 
 	// Enqueue deployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, userID, "deploy"); err != nil {
+		slog.Error("Failed to enqueue deployment", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"project": project,
-			"warning": "Failed to queue deployment: " + err.Error(),
+			"warning": "Project created but deployment queue failed. Please redeploy.",
 		})
 	}
 
@@ -155,12 +165,12 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
-	h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued)
+	if err := h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued); err != nil {
+		slog.Warn("Failed to update project status to queued", "id", project.ID, "error", err)
+	}
 	h.projectService.UpdateActivity(project.ID)
 
 	// Check if already in queue to avoid duplicates
@@ -175,8 +185,9 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 
 	// Enqueue redeployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+		slog.Error("Failed to enqueue redeployment", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to queue redeployment: " + err.Error(),
+			"error": "Failed to queue redeployment",
 		})
 	}
 
@@ -191,16 +202,24 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 
 // UpdateRequest represents project update payload
 type UpdateRequest struct {
-	Name         string `json:"name"`
-	Branch       string `json:"branch"`
-	QueueEnabled bool   `json:"queue_enabled"`
+	Name          string `json:"name"`
+	Branch        string `json:"branch"`
+	PHPVersion    string `json:"php_version"`
+	RuntimeImage  string `json:"runtime_image"`
+	BaseDirectory string `json:"base_directory"`
+	QueueEnabled  bool   `json:"queue_enabled"`
+	WorkerCommand string `json:"worker_command"`
+	BuildCommand  string `json:"build_command"`
+	StartCommand  string `json:"start_command"`
+	NodeVersion   string `json:"node_version"`
+	LanguageVersion string `json:"language_version"`
 }
 
 // Update updates project details
 func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	var req UpdateRequest
@@ -208,7 +227,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.QueueEnabled)
+	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.RuntimeImage, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion, req.LanguageVersion)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
 	}
@@ -220,9 +239,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	if err := h.projectService.DeleteProject(project); err != nil {
@@ -240,7 +257,7 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	if project.ContainerID == nil {
@@ -248,9 +265,11 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	}
 
 	lines, _ := strconv.Atoi(c.Query("lines", "100"))
-	logs, err := h.projectService.GetLogs(*project.ContainerID, lines)
+	logType := c.Query("type", "web")
+	logs, err := h.projectService.GetLogs(project, logType, lines)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get logs"})
+		slog.Warn("Failed to get project logs", "project_id", project.ID, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve logs"})
 	}
 
 	h.projectService.UpdateActivity(project.ID)
@@ -258,11 +277,49 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"logs": logs})
 }
 
+// BuildLogs returns the railpack build log output
+func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
+	f, err := os.Open(logPath)
+	if err != nil {
+		// Log not available yet or project not building
+		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
+	}
+	defer f.Close()
+
+	st, err := f.Stat()
+	if err != nil {
+		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
+	}
+
+	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
+	const maxBytes = 256 * 1024
+	size := st.Size()
+	readSize := int64(maxBytes)
+	if size < readSize {
+		readSize = size
+	}
+
+	buf := make([]byte, readSize)
+	off := size - readSize
+	if off < 0 {
+		off = 0
+	}
+	_, _ = f.ReadAt(buf, off)
+
+	return c.JSON(fiber.Map{"logs": string(buf)})
+}
+
 // Stats returns project resource usage
 func (h *ProjectHandler) Stats(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	if project.ContainerID == nil {
@@ -288,7 +345,7 @@ type RunArtisanRequest struct {
 func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	if project.ContainerID == nil {
@@ -300,11 +357,37 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	output, err := h.projectService.ExecArtisan(*project.ContainerID, req.Command)
+	if req.Command == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Command is required"})
+	}
+
+	framework := project.Framework
+	if framework == "" {
+		framework = "Laravel" // Default fallback
+	}
+
+	if err := utils.ValidateCommand(framework, req.Command); err != nil {
+		slog.Warn("Blocked command attempt",
+			"project_id", project.ID,
+			"framework", framework,
+			"command", req.Command,
+			"reason", err.Error(),
+		)
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	output, err := h.projectService.ExecCommand(project, req.Command)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error":  "Command failed",
-			"output": err.Error(),
+		slog.Warn("Artisan command returned error",
+			"project_id", project.ID,
+			"command", req.Command,
+			"error", err.Error(),
+		)
+		// We return 200 even if the command failed, because the "execution" was successful.
+		// The frontend will display the output which contains the error message from Artisan.
+		return c.JSON(fiber.Map{
+			"output": output,
+			"error":  "Command failed (non-zero exit code)",
 		})
 	}
 
@@ -317,7 +400,7 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 func (h *ProjectHandler) GetEnv(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	content, err := h.projectService.GetEnv(project.Subdomain)
@@ -339,7 +422,7 @@ type UpdateEnvRequest struct {
 func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
 	var req UpdateEnvRequest
@@ -354,12 +437,45 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	h.projectService.UpdateActivity(project.ID)
 
 	if project.ContainerID != nil {
-		go h.projectService.StopContainer(*project.ContainerID)
+		go func(id string) {
+			if err := h.projectService.StopContainer(id); err != nil {
+				slog.Warn("Background container stop failed", "container_id", id, "error", err)
+			}
+		}(*project.ContainerID)
 	}
 
 	return c.JSON(fiber.Map{
 		"message": "Environment variables updated. Please redeploy to apply changes.",
 	})
+}
+
+// Stop stops a project
+func (h *ProjectHandler) Stop(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	if err := h.projectService.StopProject(project); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to stop project"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Project stopped successfully"})
+}
+
+// Start starts a stopped project
+func (h *ProjectHandler) Start(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	if err := h.projectService.StartProject(project); err != nil {
+		slog.Error("Failed to start project", "project_id", project.ID, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to start project"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Project started successfully"})
 }
 
 // AdminStats returns overview statistics
@@ -388,12 +504,12 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	if err == nil && project.Status == models.StatusRunning && project.Port != nil {
 		// Cache hit! Forward with path stripping
 		targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
-		
+
 		// Map the path correctly by stripping the /proxy prefix
 		// Fiber's wildcard parameter (*) holds the rest of the path
 		path := c.Params("*")
 		target := targetURL + "/" + path
-		
+
 		h.projectService.UpdateActivity(project.ID)
 		return proxy.Forward(target)(c)
 	}
@@ -405,7 +521,9 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 3. Populate Cache for the next request
-	h.projectService.CacheSubdomainMapping(project_db)
+	if err := h.projectService.CacheSubdomainMapping(project_db); err != nil {
+		slog.Warn("Failed to cache subdomain mapping during proxy fallback", "subdomain", subdomain, "error", err)
+	}
 	h.projectService.UpdateActivity(project_db.ID)
 
 	if project_db.Port == nil {
@@ -439,13 +557,13 @@ func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
 	// 3. Fetch actual jobs from Redis
 	redisJobs, _ := h.redisService.ListDeploymentJobs()
 
-	// 4. Enrich and Merge 
+	// 4. Enrich and Merge
 	type EnrichedJob struct {
 		infrastructure.DeploymentJob
 		ProjectName string `json:"project_name"`
 		Email       string `json:"email"`
 	}
-	
+
 	finalWaitList := make([]EnrichedJob, 0)
 	seenProjectIDs := make(map[uint]bool)
 
@@ -488,7 +606,8 @@ func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
 func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 	statsMap, err := h.projectService.GetAllStats()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Error("Failed to get all project stats", "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve stats"})
 	}
 
 	projects, _ := h.projectService.GetRunningProjectsWithContainers()
@@ -509,9 +628,23 @@ func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 // Helper methods
 
 func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
-	id, err := strconv.Atoi(c.Params("id"))
+	idParam := c.Params("id")
+
+	var project *models.Project
+	var err error
+
+	// 1. Try to fetch by UID column first (Standard)
+	project, err = h.projectService.GetProjectByUID(idParam)
 	if err != nil {
-		return nil, fmt.Errorf("invalid project ID")
+		// 2. Fallback: Check if it's a numeric ID (for admins or transition)
+		id, errConv := strconv.Atoi(idParam)
+		if errConv == nil {
+			project, err = h.projectService.GetProjectByID(uint(id))
+		}
+	}
+
+	if err != nil || project == nil {
+		return nil, fmt.Errorf("project not found")
 	}
 
 	uidVal := c.Locals("user_id")
@@ -530,10 +663,7 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 
 	role := models.Role(roleStr)
 
-	project, err := h.projectService.GetProjectByID(uint(id))
-	if err != nil {
-		return nil, fmt.Errorf("project not found")
-	}
+	// Permission checks
 
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
 		return nil, fmt.Errorf("project not found")

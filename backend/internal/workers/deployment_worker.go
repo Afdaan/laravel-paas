@@ -8,17 +8,20 @@ package workers
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/services"
-	"github.com/laravel-paas/backend/internal/infrastructure"
-	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
@@ -125,7 +128,9 @@ func (w *DeploymentWorker) StartPruneScheduler() {
 			}
 
 			// Optional: Aggressive BuildKit cache cleanup for absolute zero-cache state
-			exec.Command("docker", "builder", "prune", "-a", "-f").Run()
+			if err := exec.Command("docker", "builder", "prune", "-a", "-f").Run(); err != nil {
+				slog.Warn("Failed to prune docker builder", "error", err)
+			}
 		}
 	}()
 }
@@ -177,7 +182,6 @@ func (w *DeploymentWorker) cleanupExpiredProjects() {
 	}()
 }
 
-
 // recoverOrphanedBuilds finds projects left in an inconsistent state due to unexpected shutdown
 func (w *DeploymentWorker) recoverOrphanedBuilds() {
 	statuses := []models.ProjectStatus{
@@ -197,8 +201,8 @@ func (w *DeploymentWorker) recoverOrphanedBuilds() {
 			continue
 		}
 
-		slog.Info("Recovering orphaned projects from previous session", 
-			"status", status, 
+		slog.Info("Recovering orphaned projects from previous session",
+			"status", status,
 			"count", len(projects))
 
 		for i := range projects {
@@ -316,13 +320,14 @@ func (w *DeploymentWorker) processJobs() {
 
 		// Process the job
 		w.wg.Add(1)
-		sem <- struct{}{}
+		localSem := sem
+		localSem <- struct{}{}
 
-		go func(j *infrastructure.DeploymentJob) {
+		go func(j *infrastructure.DeploymentJob, sema chan struct{}) {
 			defer w.wg.Done()
-			defer func() { <-sem }()
+			defer func() { <-sema }()
 			w.processDeployment(j)
-		}(job)
+		}(job, localSem)
 	}
 }
 
@@ -334,7 +339,9 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		"queuedDuration", time.Since(job.EnqueuedAt).Round(time.Second))
 
 	// Try to acquire lock for this project
-	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 30*time.Minute)
+	// Build can take > 30m (clone + railpack build + docker run + migrations),
+	// keep lock long enough to avoid concurrent deployments of same project.
+	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 2*time.Hour)
 	if err != nil {
 		slog.Error("Failed to acquire lock for project", "id", job.ProjectID, "error", err)
 		w.redisService.IncrementDeploymentCounter("failed")
@@ -364,7 +371,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 
 	// Execute deployment
 	startTime := time.Now()
-	w.deployProject(project)
+	w.deployProject(project, job)
 	duration := time.Since(startTime)
 
 	slog.Info("Completed deployment job",
@@ -377,7 +384,18 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 }
 
 // deployProject handles the full deployment process
-func (w *DeploymentWorker) deployProject(project *models.Project) {
+func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastructure.DeploymentJob) {
+	// ---------------------------------------------------------
+	// OPTIMIZATION 1: Instant Updates (Skip Build for Env Changes)
+	// ---------------------------------------------------------
+	if job.Type == "update_env" && project.ContainerID != nil {
+		slog.Info("Performing instant environment update (skipping build)", "subdomain", project.Subdomain)
+		if err := w.instantUpdateEnv(project); err == nil {
+			return // Success
+		}
+		slog.Warn("Instant update failed, falling back to full deployment", "subdomain", project.Subdomain)
+	}
+
 	// Update status to building and clear old error logs
 	project.Status = models.StatusBuilding
 	project.ErrorLog = nil
@@ -385,42 +403,162 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 		slog.Error("Failed to update project status to building", "id", project.ID, "error", err)
 	}
 
-	// Step 1: Clone repository
-	projectPath, err := w.gitService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
-	if err != nil {
-		w.updateProjectError(project, "Failed to clone repository: "+err.Error())
+	// Thoroughly clear the previous build log to ensure a fresh UI experience
+	projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+	buildLogPath := filepath.Join(projectPath, "build.log")
+	if err := os.MkdirAll(projectPath, 0755); err == nil {
+		if err := os.WriteFile(buildLogPath, []byte(""), 0644); err != nil {
+			slog.Warn("Failed to clear build log", "path", buildLogPath, "error", err)
+		}
+	}
+
+	// Step 0: Check disk space (Pre-build guard)
+	w.checkDiskSpace()
+
+	// ---------------------------------------------------------
+	// OPTIMIZATION 2: Commit-Hash Caching (Skip Build if same)
+	// ---------------------------------------------------------
+	latestHash, hashErr := w.gitService.GetRemoteCommitHash(project.GithubURL, project.Branch)
+	if hashErr == nil && latestHash != "" && project.LastCommitHash == latestHash && project.ContainerID != nil {
+		slog.Info("Commit hash hasn't changed, checking if we can skip build", "subdomain", project.Subdomain, "hash", latestHash)
+		// Check if image still exists
+		imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+		checkImg, _ := exec.Command("docker", "image", "inspect", imageName).Output()
+		if len(checkImg) > 0 {
+			slog.Info("Image found, skipping build and redeploying existing image", "subdomain", project.Subdomain)
+			if err := w.redeployExistingImage(project); err == nil {
+				return // Success
+			}
+		}
+	}
+
+	// ---------------------------------------------------------
+	// OPTIMIZATION 3: Parallel Task Execution (Clone & DB)
+	// ---------------------------------------------------------
+	var cloneHash string
+	var cloneErr error
+	var dbErr error
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	// Task A: Clone Repository
+	go func() {
+		defer wg.Done()
+		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
+	}()
+
+	// Task B: Create Student Database
+	go func() {
+		defer wg.Done()
+		if project.DatabasePassword == "" {
+			project.DatabasePassword = utils.GeneratePassword(16)
+			if err := w.projectRepo.Update(project); err != nil {
+				slog.Warn("Failed to save generated database password", "id", project.ID, "error", err)
+			}
+		}
+		dbErr = w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+	}()
+
+	wg.Wait()
+
+	if cloneErr != nil {
+		w.updateProjectError(project, "Failed to clone repository: "+cloneErr.Error())
+		return
+	}
+	if dbErr != nil {
+		w.updateProjectError(project, "Failed to create database: "+dbErr.Error())
 		return
 	}
 
-	// Step 2: Detect Laravel version
-	laravelVersion, phpVersion, err := w.versionService.DetectVersions(projectPath)
-	if err != nil {
-		w.updateProjectError(project, "Failed to detect Laravel version: "+err.Error())
-		return
-	}
-
-	// Use manual PHP version if set, otherwise use detected version
-	finalPHPVersion := phpVersion
-	if project.IsManualVersion && project.PHPVersion != "" {
-		finalPHPVersion = project.PHPVersion
-	}
-
-	project.LaravelVersion = laravelVersion
-	project.PHPVersion = finalPHPVersion
+	project.LastCommitHash = cloneHash
 	if err := w.projectRepo.Update(project); err != nil {
-		slog.Warn("Failed to update project versions", "id", project.ID, "error", err)
+		slog.Warn("Failed to update project commit hash", "id", project.ID, "error", err)
 	}
 
-	// Step 3: Create student database
-	// Generate a unique crypto-random password if not already set
-	if project.DatabasePassword == "" {
-		project.DatabasePassword = utils.GeneratePassword(16)
-		w.projectRepo.Update(project)
+	// Step 2: Detect Framework and Versions
+	// We must detect from the build path (monorepo support + path traversal guard)
+	buildPath := w.dockerService.ResolveBuildPath(projectPath, project.BaseDirectory)
+
+	// Ordered list of marker files to framework names (Priority matters!)
+	type marker struct {
+		file string
+		name string
+	}
+	markers := []marker{
+		{"artisan", "Laravel"},
+		{"next.config.js", "Next.js"},
+		{"next.config.mjs", "Next.js"},
+		{"nuxt.config.js", "Nuxt.js"},
+		{"nuxt.config.ts", "Nuxt.js"},
+		{"vite.config.js", "Vite"},
+		{"vite.config.ts", "Vite"},
+		{"src/App.tsx", "React"},
+		{"src/App.jsx", "React"},
+		{"src/App.vue", "Vue"},
+		{"src/main.js", "Node.js"},
+		{"svelte.config.js", "Svelte"},
+		{"angular.json", "Angular"},
+		{"package.json", "Node.js"},
+		{"tsconfig.json", "TypeScript"},
+		{"go.mod", "Go"},
+		{"requirements.txt", "Python"},
+		{"main.py", "Python"},
+		{"Gemfile", "Ruby"},
+		{"Cargo.toml", "Rust"},
+		{"pom.xml", "Java"},
+		{"build.gradle", "Java"},
+		{"composer.json", "PHP"},
+		{"index.html", "Static"},
 	}
 
-	if err := w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword); err != nil {
-		w.updateProjectError(project, "Failed to create database: "+err.Error())
-		return
+	// Dynamic framework detection: First match wins
+	project.Framework = "Other"
+	for _, m := range markers {
+		if _, err := os.Stat(filepath.Join(buildPath, m.file)); err == nil {
+			project.Framework = m.name
+			break
+		}
+	}
+
+	// Runtime version detection (Generic for the future)
+	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
+	project.LanguageVersion = langVersion
+
+	// Backward compatibility and specific field syncing
+	if project.Framework == "Laravel" {
+		laravelVersion, phpVersion, err := w.versionService.DetectVersions(buildPath)
+		if err == nil {
+			project.LaravelVersion = laravelVersion
+			project.PHPVersion = phpVersion
+			// Use manual PHP version if set
+			if project.IsManualVersion && project.PHPVersion != "" {
+				slog.Debug("Using manual PHP version", "subdomain", project.Subdomain, "version", project.PHPVersion)
+			}
+		} else {
+			project.PHPVersion = "8.4" // Fallback
+		}
+	} else {
+		// Sync NodeVersion if it's a JS project for backward compatibility in UI
+		isJS := false
+		jsFrameworks := []string{"Node.js", "Next.js", "Vite", "React", "Vue", "Nuxt.js", "Svelte", "Angular", "TypeScript"}
+		for _, f := range jsFrameworks {
+			if project.Framework == f {
+				isJS = true
+				break
+			}
+		}
+		if isJS {
+			project.NodeVersion = langVersion
+		}
+	}
+
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Warn("Failed to update project framework/versions", "id", project.ID, "error", err)
+	}
+
+	finalPHPVersion := project.PHPVersion
+	if finalPHPVersion == "" {
+		finalPHPVersion = "8.4"
 	}
 
 	// Capture old container ID for cleanup after successful deployment
@@ -450,16 +588,20 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 		return
 	}
 
-	// Step 5: Run database migrations
-	slog.Info("Running database migrations", "subdomain", project.Subdomain)
-	if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
-		slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-		// Cleanup failed new container
-		if err := w.dockerService.RemoveContainer(newContainerID); err != nil {
-			slog.Warn("Failed to cleanup failed container after migration failure", "id", newContainerID, "error", err)
+	// Step 5: Run database migrations (Only if artisan exists)
+	if project.Framework == "Laravel" {
+		slog.Info("Running database migrations", "subdomain", project.Subdomain)
+		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
+			// Cleanup failed new container
+			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
+				slog.Warn("Failed to cleanup failed container after migration failure", "id", newContainerID, "error", err)
+			}
+			w.updateProjectError(project, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			return
 		}
-		w.updateProjectError(project, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
-		return
+	} else {
+		slog.Info("Skipping database migrations for non-Laravel framework", "subdomain", project.Subdomain, "framework", project.Framework)
 	}
 
 	// Sync Redis Proxy Cache
@@ -471,7 +613,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 	if err := w.nginxService.SyncProject(project, projectDomain); err != nil {
 		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
 		// Cleanup failed new container
-		if err := w.dockerService.RemoveContainer(newContainerID); err != nil {
+		if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup failed container after nginx sync failure", "id", newContainerID, "error", err)
 		}
 		w.updateProjectError(project, "Failed to sync Nginx configuration: "+err.Error())
@@ -506,11 +648,22 @@ func (w *DeploymentWorker) deployProject(project *models.Project) {
 				}
 				time.Sleep(1 * time.Second)
 			}
-			if err := w.dockerService.RemoveContainer(*oldContainerID); err != nil {
+			if err := w.dockerService.RemoveContainer(*oldContainerID, nil); err != nil {
 				slog.Warn("Failed to remove old container after switch", "id", *oldContainerID, "error", err)
 			}
 		}()
 	}
+
+	// Step 8: Post-deployment cleanup (Real-time pruning)
+	go func() {
+		slog.Info("Performing post-deployment cleanup", "subdomain", project.Subdomain)
+		if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f"); err != nil {
+			slog.Warn("Background image prune failed", "error", err)
+		}
+		if err := utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f"); err != nil {
+			slog.Warn("Background volume prune failed", "error", err)
+		}
+	}()
 }
 
 // updateProjectError sets project status to failed
@@ -518,12 +671,119 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, errorMsg 
 	project.Status = models.StatusFailed
 	msg := errorMsg
 	project.ErrorLog = &msg
-	w.projectRepo.Update(project)
-	w.projectService.InvalidateSubdomainCache(project.Subdomain)
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Error("Failed to update project status on error", "id", project.ID, "error", err)
+	}
+	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+		slog.Warn("Failed to invalidate cache on error", "subdomain", project.Subdomain, "error", err)
+	}
 	w.redisService.IncrementDeploymentCounter("failed")
 }
 
 // getSetting helper to get a setting value from service
 func (w *DeploymentWorker) getSetting(key string, defaultValue string) string {
 	return w.settingService.Get(key, defaultValue)
+}
+
+// checkDiskSpace performs a pre-build check to ensure the server has enough space.
+func (w *DeploymentWorker) checkDiskSpace() {
+	res, err := utils.Run(5*time.Second, "df", "-h", w.cfg.ProjectsPath)
+	if err != nil {
+		return
+	}
+
+	lines := strings.Split(res.Stdout, "\n")
+	if len(lines) < 2 {
+		return
+	}
+
+	fields := strings.Fields(lines[1])
+	if len(fields) < 5 {
+		return
+	}
+
+	usageStr := strings.TrimSuffix(fields[4], "%")
+	usage, _ := strconv.Atoi(usageStr)
+
+	if usage > 90 {
+		slog.Warn("Disk space critical, performing emergency prune", "usage", usage)
+		// Immediate cleanup
+		if err := w.dockerService.PruneImages(); err != nil {
+			slog.Warn("Emergency image prune failed", "error", err)
+		}
+		if err := utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-a", "-f"); err != nil {
+			slog.Warn("Emergency builder prune failed", "error", err)
+		}
+		if err := utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f"); err != nil {
+			slog.Warn("Emergency volume prune failed", "error", err)
+		}
+	}
+}
+
+// instantUpdateEnv restarts the container with a new environment file without rebuilding.
+func (w *DeploymentWorker) instantUpdateEnv(project *models.Project) error {
+	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+
+	// Update .env file
+	if err := w.dockerService.CreateEnvFile(project, projectDomain); err != nil {
+		return err
+	}
+
+	// Stop and remove current container
+	if project.ContainerID != nil {
+		if err := w.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID); err != nil {
+			slog.Warn("Failed to remove container during instant update", "id", *project.ContainerID, "error", err)
+		}
+	}
+
+	// Just start it again with the same image
+	newID, err := w.dockerService.StartExistingImage(project, projectDomain)
+	if err != nil {
+		return err
+	}
+
+	project.ContainerID = &newID
+	project.Status = models.StatusRunning
+	return w.projectRepo.Update(project)
+}
+
+// redeployExistingImage restarts a project using its already built image.
+func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error {
+	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+
+	// Ensure .env is fresh
+	if err := w.dockerService.CreateEnvFile(project, projectDomain); err != nil {
+		slog.Warn("Failed to create env file for redeploy", "id", project.ID, "error", err)
+	}
+
+	// Step 4.5: Capture old ID
+	var oldID *string
+	if project.ContainerID != nil {
+		tmp := *project.ContainerID
+		oldID = &tmp
+	}
+
+	// Start new container from existing image
+	newID, err := w.dockerService.StartExistingImage(project, projectDomain)
+	if err != nil {
+		return err
+	}
+
+	project.ContainerID = &newID
+	project.Status = models.StatusRunning
+	if err := w.projectRepo.Update(project); err != nil {
+		slog.Error("Failed to update project status after redeploy", "id", project.ID, "error", err)
+	}
+
+	// Cleanup old if exists
+	if oldID != nil {
+		go func() {
+			time.Sleep(5 * time.Second)
+			if err := w.dockerService.RemoveContainer(*oldID, nil); err != nil {
+				slog.Warn("Failed to remove old container after redeploy", "id", *oldID, "error", err)
+			}
+		}()
+	}
+
+	return nil
 }

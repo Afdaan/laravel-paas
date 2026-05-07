@@ -16,7 +16,6 @@ import {
   PauseCircle,
   Zap,
   Layout,
-  Terminal,
   ChevronRight,
   Loader2
 } from 'lucide-react'
@@ -26,19 +25,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { FrameworkIcon } from '@/components/FrameworkIcon'
 
 interface ProjectData {
   id: number;
+  uid: string;
   name: string;
   status: string;
   subdomain: string;
+  url: string;
+  framework: string;
   created_at: string;
 }
 
 // Status badge component
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation()
-  const configs: Record<string, any> = {
+  const configs: Record<string, { color: string, icon: React.ElementType, label: string, pulse?: boolean }> = {
     pending: { color: 'text-amber-600 bg-amber-500/10 border-amber-500/20', icon: Clock, label: t('status.pending') },
     building: { color: 'text-blue-600 bg-blue-500/10 border-blue-500/20', icon: Loader2, label: t('status.building'), pulse: true },
     running: { color: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20', icon: CheckCircle2, label: t('status.running') },
@@ -68,7 +71,7 @@ function StudentDashboard() {
     if (isFirstLoad.current) {
       setIsLoading(true)
     }
-    
+
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
@@ -183,17 +186,17 @@ function StudentDashboard() {
               </TableHeader>
               <TableBody>
                 {(projects || []).slice(0, 5).map((project) => (
-                  <TableRow key={project.id}>
+                  <TableRow key={project.uid}>
                     <TableCell>
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center font-bold text-foreground">
-                          {project.name.charAt(0).toUpperCase()}
+                        <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center">
+                          <FrameworkIcon framework={project.framework} variant="compact" className="w-7 h-7" />
                         </div>
                         <div>
                           <span className="font-semibold text-sm max-w-[200px] truncate block">{project.name}</span>
                           <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
-                            <Terminal className="w-3 h-3" />
-                            <span className="text-xs font-mono">laravel</span>
+                            <FrameworkIcon framework={project.framework} variant="plain" className="w-3 h-3" />
+                            <span className="text-xs font-mono">{project.framework || t('common.general')}</span>
                           </div>
                         </div>
                       </div>
@@ -221,7 +224,7 @@ function StudentDashboard() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Link to={`/projects/${project.id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                      <Link to={`/projects/${project.uid}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                         {t('common.details')}
                       </Link>
                     </TableCell>
@@ -236,7 +239,7 @@ function StudentDashboard() {
   )
 }
 
-function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: number, icon: any, suffix?: string }) {
+function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: number, icon: React.ElementType, suffix?: string }) {
   return (
     <Card className="hover:border-primary/30 transition-colors group">
       <CardContent className="p-6">

@@ -12,6 +12,7 @@ import (
 
 type ProjectRepository interface {
 	GetByID(id uint) (*models.Project, error)
+	GetByUID(uid string) (*models.Project, error)
 	GetBySubdomain(subdomain string) (*models.Project, error)
 	List(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error)
 	ListByUserID(userID uint) ([]models.Project, error)
@@ -41,6 +42,14 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 	var project models.Project
 	if err := r.db.Preload("User").First(&project, id).Error; err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (r *projectRepository) GetByUID(uid string) (*models.Project, error) {
+	var project models.Project
+	if err := r.db.Preload("User").Where("uid = ?", uid).First(&project).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -121,7 +130,7 @@ func (r *projectRepository) Create(project *models.Project) error {
 }
 
 func (r *projectRepository) Update(project *models.Project) error {
-	return r.db.Save(project).Error
+	return r.db.Omit("User").Save(project).Error
 }
 
 func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) error {
@@ -129,7 +138,7 @@ func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) e
 }
 
 func (r *projectRepository) Delete(id uint) error {
-	return r.db.Delete(&models.Project{}, id).Error
+	return r.db.Unscoped().Delete(&models.Project{}, id).Error
 }
 
 func (r *projectRepository) UpdateActivity(id uint) error {

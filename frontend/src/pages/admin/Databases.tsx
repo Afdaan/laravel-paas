@@ -40,7 +40,7 @@ interface AdminDatabaseInfo {
   status: string;
 }
 
-const StatusBadge = ({ status, t }: { status: string, t: any }) => {
+const StatusBadge = ({ status, t }: { status: string, t: (key: string) => string }) => {
   switch (status) {
     case 'running':
       return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
@@ -116,8 +116,8 @@ const AdminDatabases = () => {
         </div>
       </div>
 
-      <Card className="gap-0 py-0 border-none shadow-2xl bg-card/50 backdrop-blur-xl ring-1 ring-white/10 overflow-hidden">
-        <CardHeader className="border-b border-white/5 py-8 px-8 bg-muted/20">
+      <Card className="gap-0 py-0 border border-border/50 shadow-sm bg-card/50 backdrop-blur-xl overflow-hidden">
+        <CardHeader className="border-b border-border/50 py-8 px-8 bg-muted/20">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="relative flex-1 w-full max-w-2xl">
               <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
@@ -128,11 +128,11 @@ const AdminDatabases = () => {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                className="pl-12 h-12 bg-background/50 border-white/5 rounded-xl focus-visible:ring-primary/20"
+                className="pl-12 h-12 bg-background/50 border-border rounded-xl focus-visible:ring-primary/20"
               />
             </div>
  
-            <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading} className="h-12 w-12 rounded-xl border-white/5 bg-background/50">
+            <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading} className="h-12 w-12 rounded-xl border-border/50 bg-background/50">
               <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
@@ -142,7 +142,7 @@ const AdminDatabases = () => {
           <div className="overflow-x-auto">
           <Table className="min-w-[1080px]">
             <TableHeader>
-              <TableRow className="bg-muted/40 border-b border-white/5 hover:bg-muted/40 transition-none">
+              <TableRow className="bg-muted/40 border-b border-border/50 hover:bg-muted/40 transition-none">
                 <TableHead className="h-14 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.identity')}</TableHead>
                 <TableHead className="h-14 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.student')}</TableHead>
                 <TableHead className="h-14 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.connection')}</TableHead>
@@ -153,7 +153,7 @@ const AdminDatabases = () => {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow className="border-white/5">
+                <TableRow className="border-border/50">
                   <TableCell colSpan={6} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center gap-4 opacity-30">
                       <RefreshCw className="w-10 h-10 animate-spin" />
@@ -162,7 +162,7 @@ const AdminDatabases = () => {
                   </TableCell>
                 </TableRow>
               ) : paginatedDatabases.length === 0 ? (
-                <TableRow className="border-white/5">
+                <TableRow className="border-border/50">
                   <TableCell colSpan={6} className="h-64 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground opacity-30">
                       <div className="w-20 h-20 bg-muted/50 rounded-full flex items-center justify-center mb-6">
@@ -173,10 +173,10 @@ const AdminDatabases = () => {
                   </TableCell>
                 </TableRow>
               ) : paginatedDatabases.map((db) => (
-                <TableRow key={db.project_id} className="group hover:bg-white/[0.02] border-white/5 transition-colors">
+                <TableRow key={db.project_id} className="group hover:bg-muted/20 border-border/50 transition-colors">
                   <TableCell className="px-8 py-5">
                     <div className="flex items-center gap-5">
-                      <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all group-hover:scale-110 duration-500 shadow-lg ${db.status === 'running' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-muted/30 text-muted-foreground/60 border-white/5'
+                      <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all group-hover:scale-110 duration-500 shadow-lg ${db.status === 'running' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-muted/30 text-muted-foreground/60 border-border/50'
                         }`}>
                         <Database className="w-6 h-6" />
                       </div>
@@ -190,7 +190,7 @@ const AdminDatabases = () => {
                   </TableCell>
                   <TableCell className="px-8 py-5">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-muted/50 border border-white/5 flex items-center justify-center text-muted-foreground">
+                      <div className="w-10 h-10 rounded-full bg-muted/50 border border-border/50 flex items-center justify-center text-muted-foreground">
                         <User className="w-5 h-5" />
                       </div>
                       <div className="flex flex-col justify-center min-w-0">
@@ -206,13 +206,13 @@ const AdminDatabases = () => {
                     </div>
                   </TableCell>
                   <TableCell className="px-8 py-5 text-center whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2 text-xs font-black rounded-xl border border-white/5 bg-muted/20 px-3 py-1.5 shadow-inner">
+                    <div className="inline-flex items-center gap-2 text-xs font-black rounded-xl border border-border/50 bg-muted/20 px-3 py-1.5 shadow-inner">
                        <Layers className="w-4 h-4 text-muted-foreground/60" />
                        {db.table_count}
                      </div>
                   </TableCell>
                   <TableCell className="px-8 py-5 text-center whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2 text-xs font-black rounded-xl border border-white/5 bg-muted/20 px-3 py-1.5 shadow-inner">
+                    <div className="inline-flex items-center gap-2 text-xs font-black rounded-xl border border-border/50 bg-muted/20 px-3 py-1.5 shadow-inner">
                        <HardDrive className="w-4 h-4 text-muted-foreground/60" />
                        {db.size}
                      </div>

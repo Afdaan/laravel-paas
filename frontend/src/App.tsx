@@ -75,7 +75,7 @@ function App() {
   const navigate = useNavigate()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
 
-  const [settings, setSettings] = useState<any>(null)
+  const [settings, setSettings] = useState<Record<string, string> | null>(null)
 
   useEffect(() => {
     // Check if system is initialized
@@ -104,7 +104,7 @@ function App() {
 
   useEffect(() => {
     let idleTimer: NodeJS.Timeout
-    const timeoutMinutes = settings?.admin_idle_timeout || 15
+    const timeoutMinutes = settings?.admin_idle_timeout ? parseInt(settings.admin_idle_timeout) : 15
     const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
 
     const handleIdleLogout = () => {
@@ -132,7 +132,7 @@ function App() {
         events.forEach(event => window.removeEventListener(event, resetTimer))
       }
     }
-  }, [token, t, settings])
+  }, [token, t, settings, navigate])
 
   useEffect(() => {
     const handleExpired = () => {
@@ -173,7 +173,7 @@ function App() {
       window.removeEventListener('system:offline', handleOffline)
       window.removeEventListener('system:updating', handleUpdating)
     }
-  }, [t])
+  }, [t, navigate])
 
   if (isInitialized === null) {
     return <LoadingScreen />
@@ -209,9 +209,9 @@ function App() {
           <Route path="/dashboard" element={<StudentDashboard />} />
           <Route path="/projects" element={<StudentProjects />} />
           <Route path="/projects/new" element={<StudentNewProject />} />
-          <Route path="/projects/:id" element={<StudentProjectDetail />} />
+          <Route path="/projects/:uid" element={<StudentProjectDetail />} />
           <Route path="/databases" element={<StudentDatabases />} />
-          <Route path="/projects/:id/database" element={<DatabaseManager />} />
+          <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<StudentFeedback />} />
         </Route>
 

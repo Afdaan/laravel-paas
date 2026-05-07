@@ -6,9 +6,10 @@
 package services
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
-	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
@@ -21,6 +22,7 @@ import (
 type UserService struct {
 	userRepo       repositories.UserRepository
 	projectService *ProjectService
+	initMu         sync.Mutex
 }
 
 func NewUserService(userRepo repositories.UserRepository, projectService *ProjectService) *UserService {
@@ -61,7 +63,7 @@ func (s *UserService) CreateUser(name, email, password string, role models.Role,
 			existing.Password = string(hashedPassword)
 			existing.Role = role
 			existing.CreatedBy = creatorID
-			
+
 			if err := s.userRepo.Update(existing); err != nil {
 				return nil, "", err
 			}
@@ -162,6 +164,9 @@ func (s *UserService) IsInitialized() (bool, error) {
 }
 
 func (s *UserService) InitializeSuperAdmin(name, email, password string) (*models.User, error) {
+	s.initMu.Lock()
+	defer s.initMu.Unlock()
+
 	initialized, err := s.IsInitialized()
 	if err != nil {
 		return nil, err
@@ -186,6 +191,7 @@ func (s *UserService) InitializeSuperAdmin(name, email, password string) (*model
 		return nil, err
 	}
 
+	slog.Info("System initialized with superadmin", "email", email, "user_id", user.ID)
 	return user, nil
 }
 
@@ -197,7 +203,7 @@ func (s *UserService) UpdateActivity(userID uint, ip string, forceLoginUpdate bo
 	}
 
 	now := time.Now()
-	
+
 	// Throttling: only update activity if at least 5 minutes have passed
 	// This reduces unnecessary database writes on every API call
 	shouldUpdateActivity := forceLoginUpdate
@@ -210,7 +216,7 @@ func (s *UserService) UpdateActivity(userID uint, ip string, forceLoginUpdate bo
 		if forceLoginUpdate {
 			user.LastLogin = &now
 			user.LastIP = ip
-			
+
 			// Attempt to detect location asynchronously
 			go func(uID uint, userIP string) {
 				location := s.detectLocation(userIP)
@@ -261,4 +267,3 @@ func (s *UserService) detectLocation(ip string) string {
 
 	return ""
 }
-

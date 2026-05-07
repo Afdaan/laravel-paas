@@ -26,18 +26,29 @@ RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
 
 # Stage 2: Production
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Backend API Service"
 
-# Install dependencies
-RUN apk --no-cache add \
+# Install dependencies and Docker CLI with Buildx
+RUN apt-get update && apt-get install -y \
     ca-certificates \
     git \
-    docker-cli \
-    docker-cli-buildx \
-    curl
+    curl \
+    tar \
+    gnupg \
+    lsb-release \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt-get update && apt-get install -y \
+    docker-ce-cli \
+    docker-buildx-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Railpack CLI
+RUN curl -sSL https://railpack.com/install.sh | sh
 
 WORKDIR /app
 

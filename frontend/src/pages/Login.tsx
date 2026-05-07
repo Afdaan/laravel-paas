@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { systemAPI } from '../services/api'
+import { AxiosError } from 'axios'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
 import { ArrowRight, ArrowLeft, Terminal, Loader2, Eye, EyeOff } from 'lucide-react'
@@ -38,7 +39,9 @@ function Login() {
         if (!data.is_initialized) {
           navigate('/setup', { replace: true })
         }
-      } catch (e) {}
+      } catch (e) {
+        // Ignore errors during initial check, will be caught by global offline handler
+      }
     }
     checkInit()
 
@@ -47,7 +50,7 @@ function Login() {
       const destination = from || (isAdmin ? '/admin/dashboard' : '/dashboard')
       navigate(destination, { replace: true })
     }
-  }, [token, user, navigate])
+  }, [token, user, navigate, from])
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,8 +73,9 @@ function Login() {
       const isAdminMatched = user.role === 'superadmin' || user.role === 'admin'
       const destination = from || (isAdminMatched ? '/admin/dashboard' : '/dashboard')
       navigate(destination)
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('login.failed'))
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      toast.error(axiosError.response?.data?.error || t('login.failed'))
     } finally {
       setIsLoading(false)
     }

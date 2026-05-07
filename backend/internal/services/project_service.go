@@ -8,16 +8,17 @@ package services
 import (
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
+	"github.com/laravel-paas/backend/internal/repositories"
 )
 
 type ProjectService struct {
@@ -31,8 +32,33 @@ type ProjectService struct {
 	redisService   *infrastructure.RedisService
 }
 
+func validateRuntimeImage(runtimeImage string) error {
+	switch runtimeImage {
+	case "", "alpine", "debian":
+		return nil
+	default:
+		return fmt.Errorf("invalid runtime_image (allowed: alpine, debian)")
+	}
+}
+
+func validateBaseDirectory(baseDirectory string) error {
+	bd := strings.TrimSpace(baseDirectory)
+	if bd == "" {
+		return nil
+	}
+	clean := filepath.Clean(bd)
+	if filepath.IsAbs(clean) || clean == "." || clean == string(filepath.Separator) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("invalid base_directory")
+	}
+	// Avoid Windows-style separators sneaking in.
+	if strings.ContainsRune(bd, '\\') {
+		return fmt.Errorf("invalid base_directory")
+	}
+	return nil
+}
+
 func NewProjectService(
-	cfg *config.Config, 
+	cfg *config.Config,
 	projectRepo repositories.ProjectRepository,
 	settingService *SettingService,
 	dockerService *infrastructure.DockerService,
@@ -57,12 +83,17 @@ func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 	return s.projectRepo.GetByID(id)
 }
 
+// GetProjectByUID fetches a project by its secure UID
+func (s *ProjectService) GetProjectByUID(uid string) (*models.Project, error) {
+	return s.projectRepo.GetByUID(uid)
+}
+
 // GetBySubdomain fetches a project by its subdomain with Redis caching
 func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, error) {
 	// 1. Try to fetch from Redis Cache first
 	var project models.Project
 	cacheKey := fmt.Sprintf("project:subdomain:%s", subdomain)
-	
+
 	if err := s.redisService.GetCache(cacheKey, &project); err == nil {
 		slog.Debug("Subdomain cache hit", "subdomain", subdomain)
 		return &project, nil
@@ -78,15 +109,15 @@ func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, erro
 	if err := s.redisService.SetCache(cacheKey, p, 1*time.Hour); err != nil {
 		slog.Warn("Failed to cache project in Redis", "subdomain", subdomain, "error", err)
 	}
-	
+
 	return p, nil
 }
 
 // DeleteProject performs a thorough cleanup of all project resources
 func (s *ProjectService) DeleteProject(project *models.Project) error {
-	slog.Info("Executing thorough project deletion", 
-		"id", project.ID, 
-		"name", project.Name, 
+	slog.Info("Executing thorough project deletion",
+		"id", project.ID,
+		"name", project.Name,
 		"subdomain", project.Subdomain)
 
 	// 1. Sync Deletion to Nginx Proxy (Do this first to stop traffic)
@@ -102,8 +133,8 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 
 	// 2. Remove Docker Container & Image
 	if project.ContainerID != nil {
-		slog.Debug("Removing container", "id", *project.ContainerID)
-		if err := s.dockerService.RemoveContainer(*project.ContainerID); err != nil {
+		slog.Debug("Removing containers", "mainID", *project.ContainerID, "workerID", project.WorkerContainerID)
+		if err := s.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to remove container", "id", *project.ContainerID, "error", err)
 		}
 	}
@@ -189,13 +220,20 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseName string) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseName, baseDirectory, runtimeImage, buildCommand, startCommand string, queueEnabled bool) (*models.Project, error) {
 	// Enforce per-user project limit
 	maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
 	count, _ := s.projectRepo.CountByUserID(userID)
 
 	if int(count) >= maxProjects {
 		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
+	}
+
+	if err := validateRuntimeImage(runtimeImage); err != nil {
+		return nil, apperr.New(400, "INVALID_RUNTIME_IMAGE", err.Error())
+	}
+	if err := validateBaseDirectory(baseDirectory); err != nil {
+		return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
 	}
 
 	// 5. Generate unique subdomain using the refactored string utility
@@ -224,8 +262,18 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		Subdomain:        subdomain,
 		DatabaseName:     dbName,
 		DatabasePassword: dbPassword,
+		BaseDirectory:    baseDirectory,
+		RuntimeImage:     runtimeImage,
+		BuildCommand:     buildCommand,
+		StartCommand:     startCommand,
+		QueueEnabled:     queueEnabled,
 		Status:           models.StatusQueued,
 		ExpiresAt:        expiresAt,
+		UID:              utils.GenerateRandomUID(),
+	}
+
+	if project.RuntimeImage == "" {
+		project.RuntimeImage = "alpine"
 	}
 
 	if err := s.projectRepo.Create(project); err != nil {
@@ -235,24 +283,30 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 	return project, nil
 }
 
-// UpdateProject updates project details
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch string, queueEnabled bool) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, runtimeImage, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
 	}
 
-	if role != models.RoleAdmin && role != models.RoleSuperAdmin && project.UserID != userID {
-		return nil, apperr.ErrForbidden
+	// Permission check (Only owner or admin can update)
+	if project.UserID != userID && role != models.RoleSuperAdmin && role != models.RoleAdmin {
+		return nil, apperr.New(403, "FORBIDDEN", "You do not have permission to update this project")
 	}
 
 	if name != "" {
 		project.Name = name
 	}
-	if branch != "" {
-		project.Branch = branch
-	}
+	project.Branch = branch
+	project.PHPVersion = phpVersion
+	project.RuntimeImage = runtimeImage
+	project.BaseDirectory = baseDirectory
 	project.QueueEnabled = queueEnabled
+	project.WorkerCommand = workerCommand
+	project.BuildCommand = buildCommand
+	project.StartCommand = startCommand
+	project.NodeVersion = nodeVersion
+	project.LanguageVersion = languageVersion
 
 	if err := s.projectRepo.Update(project); err != nil {
 		return nil, err
@@ -276,7 +330,6 @@ func (s *ProjectService) UpdateProjectStatus(id uint, status models.ProjectStatu
 	}
 	return s.projectRepo.UpdateStatus(id, status)
 }
-
 
 // GetProjectsByStatus returns projects matching a specific status
 func (s *ProjectService) GetProjectsByStatus(status models.ProjectStatus) ([]models.Project, error) {
@@ -313,14 +366,13 @@ func (s *ProjectService) GetRunningProjectsWithContainers() ([]models.Project, e
 	return s.projectRepo.GetRunningWithContainers()
 }
 
-
-// PopulateURL sets the URL field on a project model
+// PopulateURL sets the URL and UID fields on a project model
 func (s *ProjectService) PopulateURL(project *models.Project) {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	project.URL = "https://" + project.GetFullDomain(projectDomain)
 }
 
-// PopulateURLs sets the URL field on a slice of project models
+// PopulateURLs sets the URL and UID fields on a slice of project models
 func (s *ProjectService) PopulateURLs(projects []models.Project) {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	for i := range projects {
@@ -328,9 +380,18 @@ func (s *ProjectService) PopulateURLs(projects []models.Project) {
 	}
 }
 
-// GetLogs returns container logs
-func (s *ProjectService) GetLogs(containerID string, lines int) (string, error) {
-	return s.dockerService.GetContainerLogs(containerID, lines)
+// GetLogs returns container logs (either web or worker)
+func (s *ProjectService) GetLogs(project *models.Project, logType string, lines int) (string, error) {
+	containerID := project.ContainerID
+	if logType == "worker" {
+		containerID = project.WorkerContainerID
+	}
+
+	if containerID == nil || *containerID == "" {
+		return "", fmt.Errorf("no container running for type %s", logType)
+	}
+
+	return s.dockerService.GetLogs(*containerID, lines)
 }
 
 // GetStats returns container resource usage
@@ -343,9 +404,9 @@ func (s *ProjectService) GetAllStats() (map[string]infrastructure.ContainerStats
 	return s.dockerService.GetAllContainerStats()
 }
 
-// ExecArtisan executes an artisan command in the container
-func (s *ProjectService) ExecArtisan(containerID string, command string) (string, error) {
-	return s.dockerService.ExecLaravelCommand(containerID, command)
+// ExecCommand executes a command in the container (automatically handles artisan for Laravel)
+func (s *ProjectService) ExecCommand(project *models.Project, command string) (string, error) {
+	return s.dockerService.ExecProjectCommand(project, command)
 }
 
 // GetEnv reads the .env file from the project storage
@@ -361,6 +422,40 @@ func (s *ProjectService) SaveEnv(subdomain string, content string) error {
 // StopContainer stops a container
 func (s *ProjectService) StopContainer(containerID string) error {
 	return s.dockerService.StopContainer(containerID)
+}
+
+// StopProject stops both web and worker containers and updates status
+func (s *ProjectService) StopProject(project *models.Project) error {
+	if project.ContainerID != nil {
+		if err := s.dockerService.StopContainer(*project.ContainerID); err != nil {
+			slog.Warn("Failed to stop web container", "id", *project.ContainerID, "error", err)
+		}
+	}
+	if project.WorkerContainerID != nil {
+		if err := s.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
+			slog.Warn("Failed to stop worker container", "id", *project.WorkerContainerID, "error", err)
+		}
+	}
+
+	project.Status = models.StatusStopped
+	return s.projectRepo.UpdateStatus(project.ID, project.Status)
+}
+
+// StartProject starts both web and worker containers and updates status
+func (s *ProjectService) StartProject(project *models.Project) error {
+	if project.ContainerID != nil {
+		if err := s.dockerService.StartContainer(*project.ContainerID); err != nil {
+			return fmt.Errorf("failed to start web container: %w", err)
+		}
+	}
+	if project.WorkerContainerID != nil {
+		if err := s.dockerService.StartContainer(*project.WorkerContainerID); err != nil {
+			slog.Warn("Failed to start worker container", "id", *project.WorkerContainerID, "error", err)
+		}
+	}
+
+	project.Status = models.StatusRunning
+	return s.projectRepo.UpdateStatus(project.ID, project.Status)
 }
 
 // CacheSubdomainMapping syncs project lookup data to Redis

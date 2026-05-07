@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { usersAPI } from '../../services/api'
+import { AxiosError } from 'axios'
 import useTranslation from '../../lib/useTranslation'
 import { useNavigate } from 'react-router-dom'
 import { User as UserType } from '../../types'
@@ -40,7 +41,7 @@ import { Card, CardContent } from '@/components/ui/card'
 
 interface ImportResults {
   total: number;
-  created: any[];
+  created: UserType[];
   errors: string[];
 }
 
@@ -52,7 +53,7 @@ interface ImportResults {
  * Formats a date string into a human-readable "time ago" format.
  * Relies on the provided translation function for i18n support.
  */
-const formatTimeAgo = (dateStr: string | undefined, t: (key: string, options?: any) => string) => {
+const formatTimeAgo = (dateStr: string | undefined, t: (key: string, data?: Record<string, string | number>) => string) => {
   if (!dateStr) return '-'
   
   const date = new Date(dateStr)
@@ -131,8 +132,9 @@ const AdminUsers = () => {
       setEditingUser(null)
       setFormData({ name: '', email: '', role: 'student', password: '' })
       fetchUsers()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.actionFailed'))
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      toast.error(axiosError.response?.data?.error || t('common.actionFailed'))
     }
   }
 
@@ -153,8 +155,9 @@ const AdminUsers = () => {
       await usersAPI.delete(id.toString())
       toast.success(t('common.deleteSuccess'))
       fetchUsers()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.actionFailed'))
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      toast.error(axiosError.response?.data?.error || t('common.actionFailed'))
     }
   }
 
@@ -165,8 +168,9 @@ const AdminUsers = () => {
       await loginAsClient(token)
       toast.success('Successfully logged in as user')
       navigate('/dashboard')
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.actionFailed'))
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      toast.error(axiosError.response?.data?.error || t('common.actionFailed'))
     }
   }
 
@@ -179,8 +183,9 @@ const AdminUsers = () => {
       setImportResults(response.data)
       toast.success(t('admin.users.importSuccess', { count: response.data.total }))
       fetchUsers()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.actionFailed'))
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ error: string }>
+      toast.error(axiosError.response?.data?.error || t('common.actionFailed'))
     }
 
     e.target.value = ''

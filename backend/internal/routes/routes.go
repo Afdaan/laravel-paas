@@ -43,11 +43,23 @@ func Setup(
 	// Global Middlewares
 	// ===========================================
 	app.Use(recover.New())
-	app.Use(logger.New())
+	app.Use(logger.New(logger.Config{
+		Next: func(c *fiber.Ctx) bool {
+			// Skip logging for high-frequency polling endpoints to keep console clean
+			path := c.Path()
+			return path == "/health" ||
+				(c.Method() == "GET" && (path == "/api/projects/stats" ||
+					path == "/api/admin/stats" ||
+					path == "/api/queue/stats" ||
+					(len(path) > 15 && path[len(path)-11:] == "/build-logs") ||
+					(len(path) > 10 && path[len(path)-5:] == "/logs")))
+		},
+	}))
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
+		AllowOrigins:     cfg.FrontendURL,
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		AllowCredentials: true,
 	}))
 
 	// ===========================================
@@ -86,21 +98,25 @@ func Setup(
 	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 
 	// ===========================================
-	// Subdomain Proxy for Student Projects
+	// Subdomain Proxy for Student Projects (protected + rate limited)
 	// ===========================================
-	app.All("/proxy/*", projectHandler.ProxyToProject)
+	proxyGroup := app.Group("/proxy", middleware.ProxyAuth(cfg.JWTSecret, redisService, userService))
+	proxyGroup.Use(middleware.RateLimitProxy())
+	proxyGroup.Use(middleware.ValidateProxyTarget())
+	proxyGroup.All("/*", projectHandler.ProxyToProject)
 
 	// -----------------------------
-	// Auth Routes (public)
+	// Auth Routes (public, rate limited)
 	// -----------------------------
 	auth := api.Group("/auth")
-	auth.Post("/login", authHandler.Login)
+	auth.Post("/login", middleware.RateLimitLogin(), authHandler.Login)
 
 	// -----------------------------
-	// System Init (public)
+	// System Init (public, rate limited)
 	// -----------------------------
-	api.Get("/system/init-status", systemHandler.GetInitStatus)
-	api.Post("/system/initialize", systemHandler.InitializeSystem)
+	systemInit := api.Group("/system", middleware.RateLimitLogin())
+	systemInit.Get("/init-status", systemHandler.GetInitStatus)
+	systemInit.Post("/initialize", systemHandler.InitializeSystem)
 
 	// -----------------------------
 	// Protected Routes
@@ -160,10 +176,13 @@ func Setup(
 	projects.Get("/:id", projectHandler.Get)
 	projects.Put("/:id", projectHandler.Update)
 	projects.Post("/:id/redeploy", projectHandler.Redeploy)
+	projects.Post("/:id/stop", projectHandler.Stop)
+	projects.Post("/:id/start", projectHandler.Start)
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
+	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
 	projects.Get("/:id/stats", projectHandler.Stats)
-	projects.Post("/:id/artisan", projectHandler.RunArtisan)
+	projects.Post("/:id/artisan", middleware.RateLimitArtisan(), projectHandler.RunArtisan)
 	projects.Get("/:id/env", projectHandler.GetEnv)
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
 
@@ -175,9 +194,9 @@ func Setup(
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
 	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)
 	projects.Delete("/:id/database/tables/:table/rows", databaseHandler.DeleteTableRow)
-	projects.Post("/:id/database/query", databaseHandler.ExecuteQuery)
+	projects.Post("/:id/database/query", middleware.RateLimitQuery(), databaseHandler.ExecuteQuery)
 	projects.Get("/:id/database/export", databaseHandler.ExportDatabase)
-	projects.Post("/:id/database/import", databaseHandler.ImportDatabase)
+	projects.Post("/:id/database/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
 	projects.Post("/:id/database/reset", databaseHandler.ResetDatabase)
 
 	return app

@@ -47,7 +47,7 @@ const AdminFeedback = () => {
   const fetchFeedback = useCallback(async () => {
     setIsLoading(true)
     try {
-      const params: any = {}
+      const params: Record<string, string> = {}
       if (filterStatus !== 'all') params.status = filterStatus
       if (filterType !== 'all') params.type = filterType
 
@@ -194,7 +194,7 @@ const AdminFeedback = () => {
 }
 
 const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, onUpdate: (id: number, status: string) => void, onDelete: (id: number) => void }) => {
-  const typeConfigs: Record<string, any> = {
+  const typeConfigs: Record<string, { color: string, icon: React.ElementType, glow: string, label: string }> = {
     bug: { color: 'text-rose-600', icon: Bug, glow: 'bg-rose-500/10', label: 'Critical Bug' },
     trouble: { color: 'text-amber-600', icon: AlertTriangle, glow: 'bg-amber-500/10', label: 'Infra Issue' },
     suggestion: { color: 'text-indigo-600', icon: Lightbulb, glow: 'bg-indigo-500/10', label: 'Suggestion' },

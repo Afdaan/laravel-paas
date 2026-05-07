@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
@@ -41,12 +41,12 @@ interface ActiveBuild {
 const DeploymentQueue = () => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<{ processed: number, failed: number } | null>(null)
   const [activeBuilds, setActiveBuilds] = useState<ActiveBuild[]>([])
   const [queuedJobs, setQueuedJobs] = useState<QueuedJob[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const response = await projectsAPI.getQueueStats()
       setStats(response.data.stats)
@@ -57,12 +57,12 @@ const DeploymentQueue = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [t])
 
   // Initial fetch
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
 
   // Poll every 5 seconds
   usePolling(fetchData, 5000)
@@ -123,7 +123,7 @@ const DeploymentQueue = () => {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
         {/* Active Builds */}
         <Card className="overflow-hidden border-none shadow-2xl bg-card/50 backdrop-blur-xl ring-1 ring-white/10">
-          <CardHeader className="flex flex-row items-center justify-between p-8 bg-muted/20 border-b border-white/5">
+          <CardHeader className="flex flex-row items-center justify-between p-8 bg-muted/20 border-b border-border/50">
             <div className="flex items-center gap-5">
               <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-inner relative overflow-hidden group">
                 <div className="absolute inset-0 bg-blue-500/5 animate-pulse" />
@@ -143,7 +143,7 @@ const DeploymentQueue = () => {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40 border-b border-white/5 hover:bg-muted/40 transition-none">
+                  <TableRow className="bg-muted/40 border-b border-border/50 hover:bg-muted/40 transition-none">
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.project')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.owner')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.started')}</TableHead>
@@ -152,7 +152,7 @@ const DeploymentQueue = () => {
                 </TableHeader>
                 <TableBody>
                   {activeBuilds.map((project) => (
-                    <TableRow key={project.id} className="group cursor-pointer hover:bg-white/[0.02] border-white/5 transition-all duration-300" onClick={() => navigate(`/projects/${project.id}`)}>
+                    <TableRow key={project.id} className="group cursor-pointer hover:bg-muted/20 border-border/50 transition-all duration-300" onClick={() => navigate(`/projects/${project.id}`)}>
                       <TableCell className="px-8 py-6">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-500">
@@ -193,7 +193,7 @@ const DeploymentQueue = () => {
 
         {/* Waiting Queue */}
         <Card className="overflow-hidden border-none shadow-2xl bg-card/50 backdrop-blur-xl ring-1 ring-white/10">
-          <CardHeader className="flex flex-row items-center justify-between p-8 bg-muted/20 border-b border-white/5">
+          <CardHeader className="flex flex-row items-center justify-between p-8 bg-muted/20 border-b border-border/50">
             <div className="flex items-center gap-5">
               <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shadow-sm">
                 <Clock className="w-7 h-7 text-amber-500" />
@@ -212,7 +212,7 @@ const DeploymentQueue = () => {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40 border-b border-white/5 hover:bg-muted/40 transition-none">
+                  <TableRow className="bg-muted/40 border-b border-border/50 hover:bg-muted/40 transition-none">
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.project')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.type')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-right">{t('admin.queue.table.enqueued')}</TableHead>
@@ -220,7 +220,7 @@ const DeploymentQueue = () => {
                 </TableHeader>
                 <TableBody>
                   {queuedJobs.map((job, i) => (
-                    <TableRow key={`${job.project_id}-${i}`} className="group hover:bg-white/[0.02] border-white/5 transition-all duration-300">
+                    <TableRow key={`${job.project_id}-${i}`} className="group hover:bg-muted/20 border-border/50 transition-all duration-300">
                       <TableCell className="px-8 py-6">
                         <div className="flex flex-col gap-0.5">
                           <span className="font-bold text-base tracking-tight text-foreground/90 group-hover:text-amber-500 transition-colors">{job.project_name || `Project #${job.project_id}`}</span>
@@ -228,7 +228,7 @@ const DeploymentQueue = () => {
                         </div>
                       </TableCell>
                       <TableCell className="px-8 py-6">
-                        <Badge variant="secondary" className="capitalize text-[10px] font-black tracking-widest px-3 py-1 bg-muted/50 border border-white/5 rounded-md text-muted-foreground shadow-sm">
+                        <Badge variant="secondary" className="capitalize text-[10px] font-black tracking-widest px-3 py-1 bg-muted/50 border border-border/50 rounded-md text-muted-foreground shadow-sm">
                           {job.type}
                         </Badge>
                       </TableCell>
@@ -254,16 +254,16 @@ const DeploymentQueue = () => {
   )
 }
 
-function StatCard({ label, value, icon: Icon, color }: { label: string, value: number, icon: any, color: string }) {
+function StatCard({ label, value, icon: Icon, color }: { label: string, value: number, icon: React.ElementType, color: string }) {
   return (
-    <Card className="hover:border-primary/40 transition-all duration-500 group overflow-hidden border border-white/5 shadow-2xl bg-card/10 backdrop-blur-xl">
+    <Card className="hover:border-primary/40 transition-all duration-500 group overflow-hidden border border-border/50 shadow-2xl bg-card/10 backdrop-blur-xl">
       <CardContent className="p-8 relative">
         <div className="flex justify-between items-start relative z-10">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/60 mb-5">{label}</p>
             <div className="text-4xl font-black tracking-tighter text-foreground/90 group-hover:translate-x-1 transition-transform duration-500">{value}</div>
           </div>
-          <div className={cn("w-14 h-14 rounded-2xl bg-muted/30 border border-white/10 flex items-center justify-center group-hover:scale-110 group-hover:-rotate-12 transition-all duration-500 shadow-xl relative overflow-hidden", color)}>
+          <div className={cn("w-14 h-14 rounded-2xl bg-muted/30 border border-border flex items-center justify-center group-hover:scale-110 group-hover:-rotate-12 transition-all duration-500 shadow-xl relative overflow-hidden", color)}>
             <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
             <Icon className="w-7 h-7 relative z-10" />
           </div>
@@ -273,7 +273,7 @@ function StatCard({ label, value, icon: Icon, color }: { label: string, value: n
   )
 }
 
-function EmptyState({ message, icon: Icon = Package }: { message: string, icon?: any }) {
+function EmptyState({ message, icon: Icon = Package }: { message: string, icon?: React.ElementType }) {
   return (
     <div className="p-16 text-center flex flex-col items-center gap-4 transition-opacity duration-1000">
       <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-2">

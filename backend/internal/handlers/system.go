@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"log/slog"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
@@ -64,7 +67,8 @@ func (h *SystemHandler) GetStats(c *fiber.Ctx) error {
 	rVolumes := <-volumesChan
 
 	if rSystem.err != nil {
-		return rSystem.err
+		slog.Error("Failed to get system stats", "error", rSystem.err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve system stats"})
 	}
 
 	// For non-critical errors, we return empty slices
@@ -101,7 +105,8 @@ func (h *SystemHandler) GetStats(c *fiber.Ctx) error {
 func (h *SystemHandler) PruneSystem(c *fiber.Ctx) error {
 	err := h.dockerService.PruneImages()
 	if err != nil {
-		return err
+		slog.Error("Failed to prune system", "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to prune system resources"})
 	}
 
 	return c.JSON(fiber.Map{"message": "System pruned successfully"})
@@ -129,25 +134,33 @@ func (h *SystemHandler) InitializeSystem(c *fiber.Ctx) error {
 
 	var req InitRequest
 	if err := c.BodyParser(&req); err != nil {
-		return err
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
 	// Validate input (basic check)
 	if req.Name == "" || req.Email == "" || len(req.Password) < 8 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"message": "Invalid input. Name, email, and password (min 8 chars) are required.",
+			"error": "Name, email, and password (min 8 chars) are required",
 		})
 	}
 
 	user, err := h.userService.InitializeSuperAdmin(req.Name, req.Email, req.Password)
 	if err != nil {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"message": err.Error(),
-		})
+		appErr, ok := err.(*apperr.AppError)
+		if ok && appErr != nil {
+			return c.Status(appErr.HTTPStatus).JSON(fiber.Map{"error": appErr.Message})
+		}
+		slog.Error("System initialization failed", "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to initialize system"})
 	}
 
 	return c.JSON(fiber.Map{
 		"message": "System initialized successfully",
-		"user":    user,
+		"user": fiber.Map{
+			"id":    user.ID,
+			"name":  user.Name,
+			"email": user.Email,
+			"role":  user.Role,
+		},
 	})
 }

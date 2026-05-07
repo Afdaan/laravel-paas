@@ -3,6 +3,7 @@ export interface User {
   name: string;
   email: string;
   role: 'student' | 'admin' | 'superadmin';
+  password?: string;
   last_login?: string;
   last_activity?: string;
   last_ip?: string;
@@ -12,6 +13,7 @@ export interface User {
 
 export interface Project {
   id: number;
+  uid: string;
   user_id: number;
   name: string;
   repository_url: string;
@@ -30,6 +32,15 @@ export interface Project {
   is_manual_version?: boolean;
   container_id?: string;
   database_name?: string;
+  base_directory?: string;
+  runtime_image?: string;
+  worker_command?: string;
+  worker_container_id?: string;
+  build_command?: string;
+  start_command?: string;
+  node_version?: string;
+  framework?: string;
+  language_version?: string;
 }
 
 export interface ProjectStats {

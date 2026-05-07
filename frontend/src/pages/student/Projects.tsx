@@ -25,9 +25,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
+import { FrameworkIcon } from '../../components/FrameworkIcon'
 
 interface ProjectData {
   id: number;
+  uid: string;
   name: string;
   status: string;
   subdomain: string;
@@ -35,13 +37,19 @@ interface ProjectData {
   created_at: string;
   php_version: string;
   laravel_version: string;
+  framework: string;
   database_name: string;
   branch: string;
 }
 
+const getFrameworkLabel = (framework?: string, fallback?: string) => {
+  if (!framework || framework === 'Other') return fallback || ''
+  return framework
+}
+
 const StatusBadge = ({ status }: { status: string }) => {
   const { t } = useTranslation()
-  const configs: Record<string, any> = {
+  const configs: Record<string, { color: string, icon: React.ElementType, label: string, pulse?: boolean }> = {
     pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
     queued: { color: 'text-purple-600 border-purple-500/20 bg-purple-500/10', icon: Clock, label: t('status.queued') },
     building: { color: 'text-blue-600 border-blue-500/20 bg-blue-500/10', icon: Loader2, label: t('status.building'), pulse: true },
@@ -100,7 +108,7 @@ const StudentProjects = () => {
   // Poll for status updates every 5 seconds
   usePolling(fetchProjects, 5000)
   
-  const handleRedeploy = async (id: number, e: React.MouseEvent) => {
+  const handleRedeploy = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -112,10 +120,10 @@ const StudentProjects = () => {
       confirmText: t('projectDetail.actions.redeploy'),
       onConfirm: () => {
         // Optimistic UI update
-        setProjects(prev => prev.map(p => p.id === id ? { ...p, status: 'queued' } : p))
+        setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status: 'queued' } : p))
         
         toast.promise(
-          projectsAPI.redeploy(id),
+          projectsAPI.redeploy(uid),
           {
             loading: t('projectDetail.messages.buildTitle'),
             success: t('common.success'),
@@ -125,8 +133,10 @@ const StudentProjects = () => {
       }
     })
   }
+
+  const isDeployLocked = (status: string) => status === 'queued' || status === 'pending' || status === 'building'
   
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
+  const handleDelete = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -138,7 +148,7 @@ const StudentProjects = () => {
       confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
-          await projectsAPI.delete(id)
+          await projectsAPI.delete(uid)
           toast.success(t('common.success'))
           fetchProjects()
         } catch (error) {
@@ -190,14 +200,14 @@ const StudentProjects = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 pb-12">
           {projects.map((project) => (
             <Card 
-              key={project.id} 
-              onClick={() => navigate(`/projects/${project.id}`)}
+              key={project.uid} 
+              onClick={() => navigate(`/projects/${project.uid}`)}
               className="group flex flex-col h-full hover:border-primary/30 transition-all cursor-pointer overflow-hidden border-border/50"
             >
               <CardContent className="p-6 flex flex-col h-full">
                 <div className="flex items-start justify-between mb-8">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                     <span className="text-xl font-bold uppercase">{project.name.charAt(0)}</span>
+                  <div className="w-12 h-12 flex items-center justify-center transition-all group-hover:scale-105 duration-300">
+                     <FrameworkIcon framework={project.framework} variant="tile" className="w-10 h-10" />
                   </div>
                   <StatusBadge status={project.status} />
                 </div>
@@ -206,6 +216,12 @@ const StudentProjects = () => {
                   <h3 className="font-bold text-xl tracking-tight mb-3 truncate" title={project.name}>
                     {project.name}
                   </h3>
+                  <div className="mb-3">
+                    <Badge variant="outline" className="gap-1.5 bg-muted/40 border-border/60 text-[10px] uppercase tracking-wider font-semibold">
+                      <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
+                      {getFrameworkLabel(project.framework, t('common.general'))}
+                    </Badge>
+                  </div>
                   <a 
                     href={project.url}
                     target="_blank"
@@ -223,10 +239,12 @@ const StudentProjects = () => {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Cpu className="w-4 h-4" />
-                      <span>{t('projectDetail.metrics.php')}</span>
+                      <span>{project.framework === 'Laravel' ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')}</span>
                     </div>
                       <Badge variant="secondary" className="font-mono text-[10px]">
-                        {t('projectDetail.settings.version')} {project.php_version}
+                        {project.framework === 'Laravel' 
+                          ? `${t('projectDetail.settings.version')} ${project.php_version}` 
+                          : getFrameworkLabel(project.framework, t('common.general'))}
                       </Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
@@ -246,20 +264,28 @@ const StudentProjects = () => {
                       <span className="text-xs font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
                    
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={(e) => handleRedeploy(project.id, e)}
-                        className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        title={t('projectDetail.actions.redeploy')}
+                        onClick={(e) => handleRedeploy(project.uid, e)}
+                        disabled={isDeployLocked(project.status)}
+                        className={cn(
+                          "h-9 w-9 text-muted-foreground hover:text-foreground",
+                          isDeployLocked(project.status) && "opacity-40"
+                        )}
+                        title={
+                          isDeployLocked(project.status)
+                            ? `${t('projectDetail.actions.redeploy')} (${t(`status.${project.status}`)})`
+                            : t('projectDetail.actions.redeploy')
+                        }
                       >
                          <RefreshCw className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={(e) => handleDelete(project.id, e)}
+                        onClick={(e) => handleDelete(project.uid, e)}
                         className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30"
                         title={t('projectDetail.actions.delete')}
                       >

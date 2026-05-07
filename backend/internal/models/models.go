@@ -74,13 +74,25 @@ type Project struct {
 	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
 	Port         *int           `json:"port,omitempty"`
+	BaseDirectory string         `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
 	ErrorLog     *string        `gorm:"type:text" json:"error_log,omitempty"`
+	LastCommitHash string        `gorm:"size:100" json:"last_commit_hash,omitempty"`
 	
 	// Detected Laravel/PHP versions
 	LaravelVersion string `gorm:"size:20" json:"laravel_version,omitempty"`
 	PHPVersion     string `gorm:"size:20" json:"php_version,omitempty"`
+	Framework      string `gorm:"size:50" json:"framework,omitempty"`
+	LanguageVersion string `gorm:"size:20" json:"language_version,omitempty"`
+	RuntimeImage   string `gorm:"size:20;default:alpine" json:"runtime_image"` // alpine or debian
 	IsManualVersion bool  `gorm:"default:false" json:"is_manual_version"`
 	QueueEnabled    bool  `gorm:"default:false" json:"queue_enabled"` // Enables worker process
+	WorkerCommand   string `gorm:"size:500" json:"worker_command"`    // Custom command for background service (non-PHP)
+	WorkerContainerID *string `gorm:"size:100" json:"worker_container_id,omitempty"`
+	
+	// Custom Build/Run Commands
+	BuildCommand string `gorm:"size:500" json:"build_command"` // Custom build step (e.g. npm run build)
+	StartCommand string `gorm:"size:500" json:"start_command"` // Custom start command (e.g. node dist/main.js)
+	NodeVersion  string `gorm:"size:20" json:"node_version"`   // Specific Node.js version (e.g. 18, 20)
 	
 	// Resource limits (override defaults)
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
@@ -94,6 +106,7 @@ type Project struct {
 
 	// Virtual field for frontend
 	URL string `gorm:"-" json:"url,omitempty"`
+	UID string `gorm:"uniqueIndex;size:100" json:"uid"`
 }
 
 // ===========================================
