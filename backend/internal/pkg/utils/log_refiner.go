@@ -4,6 +4,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // LogRefiner is an io.Writer that filters out noise from build logs.
@@ -17,6 +18,8 @@ type LogRefiner struct {
 	ansiPattern *regexp.Regexp
 	// buffer for partial lines
 	buf string
+	// mutex for thread safety (Stdout and Stderr use the same refiner)
+	mu sync.Mutex
 }
 
 // NewLogRefiner creates a new LogRefiner.
@@ -34,7 +37,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^#\d+\s+[0-9.]+\s*(\s+-\s(Downloading|Installing|Extracting archive)|[0-9]+/[0-9]+\s\[|48 packages you are using|Use the .*composer fund|npm notice|run .*npm fund|packages are looking for funding|moderate severity vulnerabilities|To address all issues|npm warn config production|npm audit|Run .*npm audit|audited .* packages|found .* vulnerabilities)`),
 			
 			// 4. Hide Laravel specific progress dots (the long lines of dots in package discovery)
-			regexp.MustCompile(`[90m\.`), 
+			regexp.MustCompile(`\[90m\.`), 
 			
 			// 5. Hide Railpack branding and internal metadata headers
 			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|↳ Using config|⚠ The config|↳ Detected|↳ Using|↳ Deploying|↳ Output directory|  Packages|  ──────────|node\s+│|caddy\s+│|  Steps|  ▸ |  Deploy|\$ caddy run)`),
@@ -55,6 +58,9 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 }
 
 func (r *LogRefiner) Write(p []byte) (n int, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Add current write to buffer
 	r.buf += string(p)
 	
