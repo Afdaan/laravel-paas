@@ -178,6 +178,7 @@ func Setup(
 	projects.Post("/:id/redeploy", projectHandler.Redeploy)
 	projects.Post("/:id/stop", projectHandler.Stop)
 	projects.Post("/:id/start", projectHandler.Start)
+	projects.Post("/:id/restart", projectHandler.Restart)
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)

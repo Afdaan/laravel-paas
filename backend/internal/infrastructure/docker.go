@@ -655,6 +655,11 @@ func (s *DockerService) StartContainer(containerID string) error {
 	return utils.RunSilent(30*time.Second, "docker", "start", containerID)
 }
 
+// RestartContainer restarts a container
+func (s *DockerService) RestartContainer(containerID string) error {
+	return utils.RunSilent(30*time.Second, "docker", "restart", containerID)
+}
+
 // RemoveContainer stops and removes a container, including associated workers
 func (s *DockerService) RemoveContainer(containerID string, workerContainerID *string) error {
 	if workerContainerID != nil && *workerContainerID != "" {

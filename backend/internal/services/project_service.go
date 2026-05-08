@@ -458,6 +458,23 @@ func (s *ProjectService) StartProject(project *models.Project) error {
 	return s.projectRepo.UpdateStatus(project.ID, project.Status)
 }
 
+// RestartProject restarts both web and worker containers
+func (s *ProjectService) RestartProject(project *models.Project) error {
+	if project.ContainerID != nil {
+		if err := s.dockerService.RestartContainer(*project.ContainerID); err != nil {
+			return fmt.Errorf("failed to restart web container: %w", err)
+		}
+	}
+	if project.WorkerContainerID != nil {
+		if err := s.dockerService.RestartContainer(*project.WorkerContainerID); err != nil {
+			slog.Warn("Failed to restart worker container", "id", *project.WorkerContainerID, "error", err)
+		}
+	}
+
+	project.Status = models.StatusRunning
+	return s.projectRepo.UpdateStatus(project.ID, project.Status)
+}
+
 // CacheSubdomainMapping syncs project lookup data to Redis
 func (s *ProjectService) CacheSubdomainMapping(project *models.Project) error {
 	if project.Port == nil {

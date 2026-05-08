@@ -434,6 +434,8 @@ export const translations = {
       actions: {
         redeploy: "Redeploy",
         redeployStarted: "Redeploy initiated",
+        restart: "Restart Container",
+        restartStarted: "Restart initiated",
         stop: "Stop Project",
         start: "Start Project",
         delete: "Delete Project",
@@ -446,6 +448,8 @@ export const translations = {
       messages: {
         redeployConfirm: "Redeploy Project?",
         redeployDesc: "This will rebuild your container. The application will be briefly unavailable during deployment.",
+        restartConfirm: "Restart Container?",
+        restartDesc: "This will restart your container without rebuilding the image. Quick and keeps current image.",
         deleteConfirm: "Delete Project Permanently?",
         deleteDesc: "This action cannot be undone. All project files, database, and configurations will be permanently destroyed.",
         buildTitle: "Setting Up Your Project",
@@ -455,6 +459,7 @@ export const translations = {
         failedDesc: "Deployment failed. Please check build logs for detailed error information.",
         notFound: "Project not found or you don't have access to it.",
         stopUnavailable: "Stop endpoint is unavailable. Please restart backend and try again.",
+        restartUnavailable: "Restart endpoint is unavailable. Please try again later.",
         startUnavailable: "Start endpoint is unavailable. Please restart backend and try again.",
         updatePHPConfirm: "Update PHP to version {{version}}?",
         buildLogs: "Build Logs",
@@ -1097,6 +1102,8 @@ export const translations = {
       actions: {
         redeploy: "Redeploy",
         redeployStarted: "Redeploy initiated",
+        restart: "Restart Container",
+        restartStarted: "Restart dimulai",
         stop: "Hentikan Project",
         start: "Jalankan Project",
         delete: "Hapus Project",
@@ -1109,6 +1116,8 @@ export const translations = {
       messages: {
         redeployConfirm: "Konfirmasi Redeploy?",
         redeployDesc: "Container akan di-rebuild. Aplikasi akan offline selama proses deployment berlangsung.",
+        restartConfirm: "Restart Container?",
+        restartDesc: "Mulai ulang container tanpa proses build ulang image. Lebih cepat karena menggunakan image yang sudah ada.",
         deleteConfirm: "Hapus Project Permanen?",
         deleteDesc: "Tindakan ini tidak dapat dibatalkan. File project, database, dan konfigurasi akan dimusnahkan selamanya.",
         buildTitle: "Menyiapkan Project",
@@ -1118,6 +1127,7 @@ export const translations = {
         failedDesc: "Deployment gagal. Silakan periksa log build untuk informasi kesalahan detail.",
         notFound: "Project tidak ditemukan atau akses ditolak.",
         stopUnavailable: "Endpoint stop belum tersedia. Restart backend lalu coba lagi.",
+        restartUnavailable: "Fitur restart saat ini tidak tersedia. Silakan coba lagi nanti.",
         startUnavailable: "Endpoint start belum tersedia. Restart backend lalu coba lagi.",
         updatePHPConfirm: "Update PHP ke versi {{version}}?",
         buildLogs: "Build Logs",

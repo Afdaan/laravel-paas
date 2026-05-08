@@ -46,6 +46,8 @@ import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import BuildLogsConsole from '@/components/BuildLogsConsole'
+import { RedeployButton } from '../../components/project/RedeployButton'
+import { RestartButton } from '../../components/project/RestartButton'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -302,32 +304,8 @@ function StudentProjectDetail() {
     }
   }
 
-  const handleRedeploy = () => {
-    if (!uid) return
-    if (deployLocked) {
-      toast.message(t('projectDetail.messages.buildTitle'), {
-        description: `${t('projectDetail.actions.redeploy')} (${t(`status.${project?.status}`)})`,
-      })
-      return
-    }
-    setConfirmModal({
-      title: t('projectDetail.messages.redeployConfirm'),
-      message: t('projectDetail.messages.redeployDesc'),
-      type: 'warning',
-      confirmText: t('projectDetail.actions.redeploy'),
-      isOpen: true,
-      onConfirm: () => {
-        setProject(prev => prev ? ({ ...prev, status: 'queued' }) : null)
-        toast.promise(
-          projectsAPI.redeploy(uid),
-          {
-            loading: t('common.loading'),
-            success: t('projectDetail.actions.redeployStarted'),
-            error: t('common.error'),
-          }
-        )
-      }
-    })
+  const onStarted = () => {
+    setProject(prev => prev ? ({ ...prev, status: 'queued' }) : null)
   }
 
   const handleStop = async () => {
@@ -602,23 +580,22 @@ function StudentProjectDetail() {
             >
               <Power className="w-4 h-4" />
               {t('projectDetail.actions.stop')}
-            </Button>
+              </Button>
           )}
 
-          <Button
-            variant="outline"
-            onClick={handleRedeploy}
-            disabled={deployLocked}
-            className={cn("gap-2", deployLocked && "opacity-40")}
-            title={
-              deployLocked
-                ? `${t('projectDetail.actions.redeploy')} (${t(`status.${project.status}`)})`
-                : t('projectDetail.actions.redeploy')
-            }
-          >
-            <RefreshCw className={cn("w-4 h-4", project.status === 'building' && "animate-spin")} />
-            {t('projectDetail.actions.redeploy')}
-          </Button>
+          <RestartButton
+            projectId={uid || ''}
+            status={project.status}
+            onStarted={onStarted}
+            onSuccess={fetchProject}
+          />
+
+          <RedeployButton
+            projectId={uid || ''}
+            status={project.status}
+            onStarted={onStarted}
+            onSuccess={fetchProject}
+          />
           <Button variant="outline" size="icon" onClick={handleDelete} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30">
             <Trash2 className="w-4 h-4" />
           </Button>

@@ -488,6 +488,21 @@ func (h *ProjectHandler) Start(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Project started successfully"})
 }
 
+// Restart restarts a project
+func (h *ProjectHandler) Restart(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	if err := h.projectService.RestartProject(project); err != nil {
+		slog.Error("Failed to restart project", "project_id", project.ID, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to restart project"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Project restarted successfully"})
+}
+
 // AdminStats returns overview statistics
 func (h *ProjectHandler) AdminStats(c *fiber.Ctx) error {
 	totalProjects, _ := h.projectService.GetTotalCount()

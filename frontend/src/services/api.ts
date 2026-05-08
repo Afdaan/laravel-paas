@@ -148,6 +148,9 @@ export const projectsAPI = {
   start: (id: number | string) =>
     api.post(`/projects/${id}/start`),
   
+  restart: (id: number | string) =>
+    api.post(`/projects/${id}/restart`),
+  
   update: (id: number | string, data: unknown) =>
     api.put(`/projects/${id}`, data),
   
