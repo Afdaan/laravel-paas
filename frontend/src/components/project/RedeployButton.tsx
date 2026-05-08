@@ -31,7 +31,7 @@ export function RedeployButton({
   const { t } = useTranslation()
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   
-  const deployLocked = status === 'queued' || status === 'pending' || status === 'building'
+  const deployLocked = status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
   const handleRedeploy = async (e: React.MouseEvent) => {
     e.preventDefault()

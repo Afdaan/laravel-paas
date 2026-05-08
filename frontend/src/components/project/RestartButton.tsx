@@ -32,7 +32,7 @@ export function RestartButton({
   const { t } = useTranslation()
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   
-  const deployLocked = status === 'queued' || status === 'pending' || status === 'building'
+  const deployLocked = status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
   const handleRestart = async (e: React.MouseEvent) => {
     e.preventDefault()

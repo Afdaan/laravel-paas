@@ -460,6 +460,12 @@ func (s *ProjectService) StartProject(project *models.Project) error {
 
 // RestartProject restarts both web and worker containers
 func (s *ProjectService) RestartProject(project *models.Project) error {
+	// Set status to restarting
+	project.Status = models.StatusRestarting
+	if err := s.projectRepo.UpdateStatus(project.ID, project.Status); err != nil {
+		slog.Error("Failed to update status to restarting", "id", project.ID, "error", err)
+	}
+
 	if project.ContainerID != nil {
 		if err := s.dockerService.RestartContainer(*project.ContainerID); err != nil {
 			return fmt.Errorf("failed to restart web container: %w", err)

@@ -59,6 +59,7 @@ function StatusIndicator({ status }: { status: string }) {
     failed: { color: 'text-rose-500 bg-rose-500/10 border-rose-500/20', label: t('status.failed') },
     pending: { color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', label: t('status.pending') },
     stopped: { color: 'text-slate-500 bg-slate-500/10 border-slate-500/20 dark:text-slate-400', label: t('status.stopped') },
+    restarting: { color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20', label: t('status.restarting'), pulse: true },
   }
 
   const current = styles[status] || styles.pending
@@ -149,7 +150,7 @@ function StudentProjectDetail() {
     return t('projectDetail.metrics.managedStack')
   }, [project, t])
 
-  const deployLocked = project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building'
+  const deployLocked = project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
 
   const fetchProject = useCallback(async () => {
     if (!uid) return
@@ -304,8 +305,8 @@ function StudentProjectDetail() {
     }
   }
 
-  const onStarted = () => {
-    setProject(prev => prev ? ({ ...prev, status: 'queued' }) : null)
+  const onActionStarted = (status: any = 'queued') => {
+    setProject(prev => prev ? ({ ...prev, status }) : null)
   }
 
   const handleStop = async () => {
@@ -586,14 +587,14 @@ function StudentProjectDetail() {
           <RestartButton
             projectId={uid || ''}
             status={project.status}
-            onStarted={onStarted}
+            onStarted={() => onActionStarted('restarting')}
             onSuccess={fetchProject}
           />
 
           <RedeployButton
             projectId={uid || ''}
             status={project.status}
-            onStarted={onStarted}
+            onStarted={() => onActionStarted('queued')}
             onSuccess={fetchProject}
           />
           <Button variant="outline" size="icon" onClick={handleDelete} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30">

@@ -6,7 +6,6 @@ import {
   Plus, 
   Rocket, 
   ExternalLink, 
-  RefreshCw, 
   Trash2, 
   Clock, 
   CheckCircle2, 
@@ -26,6 +25,8 @@ import { Badge } from '@/components/ui/badge'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
+import { RedeployButton } from '../../components/project/RedeployButton'
+import { RestartButton } from '../../components/project/RestartButton'
 
 interface ProjectData {
   id: number;
@@ -56,6 +57,7 @@ const StatusBadge = ({ status }: { status: string }) => {
     running: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.running') },
     failed: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: t('status.failed') },
     stopped: { color: 'text-slate-600 border-slate-500/20 bg-slate-500/10 dark:text-slate-400', icon: PauseCircle, label: t('status.stopped') },
+    restarting: { color: 'text-indigo-600 border-indigo-500/20 bg-indigo-500/10', icon: Loader2, label: t('status.restarting'), pulse: true },
   }
 
   const config = configs[status] || configs.pending
@@ -108,33 +110,10 @@ const StudentProjects = () => {
   // Poll for status updates every 5 seconds
   usePolling(fetchProjects, 5000)
   
-  const handleRedeploy = async (uid: string, e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    setConfirmModal({
-      isOpen: true,
-      title: t('projectDetail.messages.redeployConfirm'),
-      message: t('projectDetail.messages.redeployDesc'),
-      type: 'warning',
-      confirmText: t('projectDetail.actions.redeploy'),
-      onConfirm: () => {
-        // Optimistic UI update
-        setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status: 'queued' } : p))
-        
-        toast.promise(
-          projectsAPI.redeploy(uid),
-          {
-            loading: t('projectDetail.messages.buildTitle'),
-            success: t('common.success'),
-            error: t('common.error')
-          }
-        )
-      }
-    })
+  const onActionStarted = (uid: string, status: any = 'queued') => {
+    setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status } : p))
   }
 
-  const isDeployLocked = (status: string) => status === 'queued' || status === 'pending' || status === 'building'
   
   const handleDelete = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
@@ -265,23 +244,24 @@ const StudentProjects = () => {
                    </div>
                    
                   <div className="flex gap-2">
-                      <Button
+                      <RestartButton
+                        projectId={project.uid}
+                        status={project.status}
                         variant="outline"
                         size="icon"
-                        onClick={(e) => handleRedeploy(project.uid, e)}
-                        disabled={isDeployLocked(project.status)}
-                        className={cn(
-                          "h-9 w-9 text-muted-foreground hover:text-foreground",
-                          isDeployLocked(project.status) && "opacity-40"
-                        )}
-                        title={
-                          isDeployLocked(project.status)
-                            ? `${t('projectDetail.actions.redeploy')} (${t(`status.${project.status}`)})`
-                            : t('projectDetail.actions.redeploy')
-                        }
-                      >
-                         <RefreshCw className="w-4 h-4" />
-                      </Button>
+                        className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                        onStarted={() => onActionStarted(project.uid, 'restarting')}
+                        onSuccess={fetchProjects}
+                      />
+                      <RedeployButton
+                        projectId={project.uid}
+                        status={project.status}
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                        onStarted={() => onActionStarted(project.uid, 'queued')}
+                        onSuccess={fetchProjects}
+                      />
                       <Button
                         variant="outline"
                         size="icon"

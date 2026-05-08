@@ -58,6 +58,7 @@ const (
 	StatusFailed   ProjectStatus = "failed"
 	StatusDeleting ProjectStatus = "deleting"
 	StatusStopped  ProjectStatus = "stopped"
+	StatusRestarting ProjectStatus = "restarting"
 )
 
 // Project represents a deployed Laravel application
