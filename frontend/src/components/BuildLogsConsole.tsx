@@ -115,7 +115,7 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
       <CardContent className="flex-1 p-0 overflow-hidden bg-zinc-950">
         <div
           ref={scrollRef}
-          className="h-full overflow-y-auto p-6 font-mono text-[11px] leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30"
+          className="h-full overflow-y-auto p-6 font-mono text-[11px] leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30 cursor-text"
         >
           {logLines.length > 0 ? logLines.map((line: string, i: number) => (
             <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02]">

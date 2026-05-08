@@ -775,7 +775,7 @@ function StudentProjectDetail() {
               </div>
             </CardHeader>
 
-            <div id="console-scroll-area" className="flex-1 p-6 overflow-auto font-mono text-[11px] text-zinc-300 custom-scrollbar bg-zinc-950/50">
+            <div id="console-scroll-area" className="flex-1 p-6 overflow-auto font-mono text-[11px] text-zinc-300 custom-scrollbar bg-zinc-950/50 cursor-text">
               <div className="text-amber-400/80 mb-6 flex flex-col gap-2 border-b border-white/5 pb-4">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
                   <AlertTriangle size={14} />
@@ -973,7 +973,7 @@ function StudentProjectDetail() {
                 <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6"><RefreshCw size={12} /></Button>
               </div>
             </CardHeader>
-            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950">
+            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950 cursor-text">
               {logLines.length > 0 ? logLines.map((line: string, i: number) => {
                 const isTimestamp = /^\d{4}-\d{2}-\d{2}/.test(line) || /^\[\d{2}-\w{3}-\d{4}/.test(line)
                 return (
