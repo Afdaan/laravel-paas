@@ -11,6 +11,8 @@ type LogRefiner struct {
 	writer io.Writer
 	// Patterns to completely hide
 	hidePatterns []*regexp.Regexp
+	// Pattern to strip from the beginning of kept lines (e.g. Docker timestamps)
+	stripPattern *regexp.Regexp
 }
 
 // NewLogRefiner creates a new LogRefiner.
@@ -32,7 +34,11 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 4. General Infrastructure & Hash Noise
 			regexp.MustCompile(`sha256:[a-f0-9]{64}`), 
 			regexp.MustCompile(`(resolving|extracting|transferring context|loading secrets|docker-image://|\[2mmise\[0m)`),
+			
+			// 5. Hide lines that are just a Docker timestamp and nothing else (empty lines from build)
+			regexp.MustCompile(`^#\d+ [0-9.]+ \s*$`),
 		},
+		stripPattern: regexp.MustCompile(`^#\d+ [0-9.]+ `),
 	}
 }
 
@@ -57,7 +63,13 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 		}
 
 		if !shouldHide {
-			filteredLines = append(filteredLines, line)
+			// Strip the prefix (e.g., "#20 1.234 ") to make the output clean
+			cleanedLine := r.stripPattern.ReplaceAllString(line, "")
+			
+			// Only add if it's not empty after cleaning (unless it was already an empty line without a prefix)
+			if cleanedLine != "" || line == "" {
+				filteredLines = append(filteredLines, cleanedLine)
+			}
 		}
 	}
 
