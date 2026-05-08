@@ -39,8 +39,12 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 4. Hide Laravel specific progress dots (the long lines of dots in package discovery)
 			regexp.MustCompile(`\[90m\.`), 
 			
-			// 5. Hide Railpack branding and internal metadata headers
-			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|↳ Using config|⚠ The config|↳ Detected|↳ Using|↳ Deploying|↳ Output directory|  Packages|  ──────────|node\s+│|caddy\s+│|  Steps|  ▸ |  Deploy|\$ caddy run)`),
+			// 5. Hide Railpack branding, metadata headers, and ALL step commands
+			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|↳ Using config|⚠ The config|↳ Detected|↳ Using|↳ Deploying|↳ Output directory|  Packages|  ──────────|  Steps|  ▸ |  Deploy)`),
+			// Hide Railpack package table rows (node, caddy, bun, python, go, etc.)
+			regexp.MustCompile(`^\s*(node|caddy|bun|python|go|ruby|java|php|deno|mise)\s+│`),
+			// Hide ALL Railpack step commands ($ bun install, $ npm ci, $ caddy run, etc.)
+			regexp.MustCompile(`^\s+\$\s+`),
 			
 			// 6. Hide final Docker metadata and build times
 			regexp.MustCompile(`(Loaded image:|Successfully built image in|Run with \x60docker run|built in [0-9.]+(s|ms))`),
@@ -51,6 +55,36 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			
 			// 8. Hide lines that are just a Docker timestamp and nothing else (empty lines from build)
 			regexp.MustCompile(`^#\d+\s+[0-9.]+\s*$`),
+			
+			// 9. Hide Docker/Railpack error blocks and separators
+			regexp.MustCompile(`^-{4,}$`),                                          // ------ separators
+			regexp.MustCompile(`^\s*>\s+.+:$`),                                      // > bun install --frozen-lockfile:
+			regexp.MustCompile(`^[0-9]+\.[0-9]+\s+`),                                // 0.254 bun install... (timestamp-prefixed duplicate lines)
+			regexp.MustCompile(`(ERRO failed to solve|unrecognized image format)`),   // Internal Docker errors
+			
+			// 10. Hide Yarn / pnpm specific noise
+			regexp.MustCompile(`(YN0000:|YN0002:|YN0013:|YN0032:|YN0035:|YN0060:|YN0062:)`), // Yarn Berry status codes
+			regexp.MustCompile(`(Packages: \+|Progress:|Already up to date|Lockfile is up to date)`), // pnpm progress
+			
+			// 11. Hide pip / Python build noise
+			regexp.MustCompile(`(Collecting |Requirement already satisfied|Successfully installed|Using cached|Downloading .+\.whl|Building wheel for|Created wheel for)`),
+			
+			// 12. Hide Go module noise
+			regexp.MustCompile(`(go: downloading |go: finding |go: extracting )`),
+			
+			// 13. Hide Ruby/Bundler noise
+			regexp.MustCompile(`(Fetching gem metadata|Resolving dependencies\.\.\.|Using bundler|Installing .+ with native extensions|Bundle complete!|Bundled gems are installed)`),
+			
+			// 14. Hide Deno noise
+			regexp.MustCompile(`(Download https://deno\.land|Check file://)`),
+			
+			// 15. Hide Nixpacks metadata (alternative to Railpack)
+			regexp.MustCompile(`(Nixpacks|nixpacks|nix-support|\/nix\/store\/)`),
+			
+			// 16. General infrastructure leak prevention
+			regexp.MustCompile(`^(COPY|RUN|ADD|WORKDIR|FROM|ENV|EXPOSE|CMD|ENTRYPOINT|ARG|LABEL|VOLUME|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD)\s`), // Dockerfile instructions
+			regexp.MustCompile(`(\/app\/storage\/|\/tmp\/build|\/var\/cache\/|\.docker\/|layer already exists|Pushing image|Pulling from)`),       // Internal paths & Docker ops
+			regexp.MustCompile(`^[a-f0-9]{12}$`),                                    // Short container/layer IDs
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
