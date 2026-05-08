@@ -85,6 +85,13 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^(COPY|RUN|ADD|WORKDIR|FROM|ENV|EXPOSE|CMD|ENTRYPOINT|ARG|LABEL|VOLUME|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD)\s`), // Dockerfile instructions
 			regexp.MustCompile(`(\/app\/storage\/|\/tmp\/build|\/var\/cache\/|\.docker\/|layer already exists|Pushing image|Pulling from)`),       // Internal paths & Docker ops
 			regexp.MustCompile(`^[a-f0-9]{12}$`),                                    // Short container/layer IDs
+			
+			// 17. Hide Dockerfile source code leaks in error output
+			regexp.MustCompile(`^Dockerfile:\d+`),                                    // Dockerfile:112
+			regexp.MustCompile(`^\s*\d+\s+\|`),                                      // 111 |     # Production asset build  /  112 | >>> RUN ...
+			regexp.MustCompile(`^ERROR: failed to build`),                            // ERROR: failed to build: failed to solve: process...
+			regexp.MustCompile(`^\s*>\s+\[.+\]\s+RUN\s`),                             // > [frontend 13/15] RUN if [ -f package.json ]...
+			regexp.MustCompile(`(shtool|Extension .+ is missing|Installing missing extensions|Configuring extension|Configuring libtool|appending configuration tag|Generating files|configure: |config\.status:)`),  // PHP extension build noise
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),

@@ -754,7 +754,7 @@ function StudentProjectDetail() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => navigator.clipboard.writeText(consoleOutput)}
+                  onClick={() => { navigator.clipboard.writeText(consoleOutput); toast.success(t('common.copySuccess')) }}
                   className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Copy Logs"
                 >
@@ -952,7 +952,7 @@ function StudentProjectDetail() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => navigator.clipboard.writeText(logs)}
+                  onClick={() => { navigator.clipboard.writeText(logs); toast.success(t('common.copySuccess')) }}
                   className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Copy Logs"
                 >

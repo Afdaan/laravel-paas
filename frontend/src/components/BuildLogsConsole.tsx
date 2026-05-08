@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { projectsAPI } from '../services/api'
 import { Terminal, Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import useTranslation from '@/lib/useTranslation'
 
 interface BuildLogsConsoleProps {
@@ -65,7 +66,7 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(logs)
-    // Optional: add toast notification here
+    toast.success(t('common.copySuccess'))
   }
 
   const scrollToBottom = () => {
