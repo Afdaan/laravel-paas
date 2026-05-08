@@ -105,13 +105,17 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`\/var\/www\/html`),                                      // Internal container path
 			regexp.MustCompile(`(Writing .+ to disk|Manifest compiled|Compiling common classes)`), // Laravel optimization internals
 			regexp.MustCompile(`(npm warn|npm WARN)`),                                   // npm warnings (deprecated packages, peer deps)
-			regexp.MustCompile(`\d+ vulnerabilities \(`),                                // npm audit summary (e.g. "46 vulnerabilities (5 low, 13 moderate)")
+			regexp.MustCompile(`\d+ vulnerabilities \(`),                                // npm audit summary
 			regexp.MustCompile(`To address (all )?issues`),                              // npm audit suggestion
 			regexp.MustCompile(`(run.*npm audit|npm audit fix)`),                        // npm audit fix suggestion
 			regexp.MustCompile(`Browserslist.*outdated`),                                // caniuse-lite outdated warning
 			regexp.MustCompile(`npx browserslist`),                                      // browserslist update suggestion
 			regexp.MustCompile(`Can't resolve.*/app/resources`),                         // webpack resolve errors exposing container paths
 			regexp.MustCompile(`in '/app`),                                              // webpack/node resolve context path
+			regexp.MustCompile(`(libtool: |make: |cc |install: |strip )`),               // Build tool noise
+			regexp.MustCompile(`(Entering directory|Leaving directory)`),                 // Make directory noise
+			regexp.MustCompile(`(Circular .* dependency dropped)`),                       // JIT circular dependency noise
+			regexp.MustCompile(`(Installing shared extensions|shared_alloc|ZendAccelerator)`), // PHP internal build noise
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
