@@ -91,14 +91,14 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
         <div className="flex items-center gap-2">
           <button
             onClick={copyToClipboard}
-            className="p-1.5 hover:bg-white/10 rounded-md text-zinc-500 hover:text-white"
+            className="p-1.5 hover:bg-white/10 rounded-md text-zinc-500 hover:text-white cursor-pointer transition-colors"
             title="Copy Logs"
           >
             <Copy className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={scrollToBottom}
-            className="p-1.5 hover:bg-white/10 rounded-md text-zinc-500 hover:text-white"
+            className="p-1.5 hover:bg-white/10 rounded-md text-zinc-500 hover:text-white cursor-pointer transition-colors"
             title="Scroll to Bottom"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
@@ -106,7 +106,7 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
           <div className="w-px h-3 bg-white/10 mx-1" />
           <button
             onClick={() => setLogs('')}
-            className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 px-2"
+            className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 px-2 cursor-pointer transition-colors"
           >
             {t('projectDetail.actions.clear')}
           </button>
@@ -115,10 +115,10 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
       <CardContent className="flex-1 p-0 overflow-hidden bg-zinc-950">
         <div
           ref={scrollRef}
-          className="h-full overflow-y-auto p-6 font-mono text-[11px] leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30 cursor-text"
+          className="h-full overflow-y-auto p-6 font-mono text-[11px] leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30"
         >
           {logLines.length > 0 ? logLines.map((line: string, i: number) => (
-            <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02]">
+            <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
               <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{lineOffset + i + 1}</span>
               <span className="whitespace-pre-wrap break-all">{line}</span>
             </div>

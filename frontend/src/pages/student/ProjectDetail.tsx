@@ -755,7 +755,7 @@ function StudentProjectDetail() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => navigator.clipboard.writeText(consoleOutput)}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white"
+                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Copy Logs"
                 >
                   <Copy className="w-3.5 h-3.5" />
@@ -765,17 +765,17 @@ function StudentProjectDetail() {
                     const el = document.getElementById('console-scroll-area');
                     if (el) el.scrollTop = el.scrollHeight;
                   }}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white"
+                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Scroll to Bottom"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400">{t('projectDetail.actions.clear')}</Button>
+                <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
               </div>
             </CardHeader>
 
-            <div id="console-scroll-area" className="flex-1 p-6 overflow-auto font-mono text-[11px] text-zinc-300 custom-scrollbar bg-zinc-950/50 cursor-text">
+            <div id="console-scroll-area" className="flex-1 p-6 overflow-auto font-mono text-[11px] text-zinc-300 custom-scrollbar bg-zinc-950/50">
               <div className="text-amber-400/80 mb-6 flex flex-col gap-2 border-b border-white/5 pb-4">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
                   <AlertTriangle size={14} />
@@ -789,7 +789,7 @@ function StudentProjectDetail() {
               </div>
 
               {consoleLines.length > 0 ? consoleLines.map((line: string, i: number) => (
-                <div key={i} className={cn("flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02]", line.startsWith('$') ? "text-primary mt-2 font-bold" : "text-zinc-400")}>
+                <div key={i} className={cn("flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors", line.startsWith('$') ? "text-primary mt-2 font-bold" : "text-zinc-400")}>
                   <span className="shrink-0 text-zinc-800 select-none w-6 text-right font-light">{consoleOffset + i + 1}</span>
                   <span className="break-all whitespace-pre-wrap">{line}</span>
                 </div>
@@ -953,7 +953,7 @@ function StudentProjectDetail() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => navigator.clipboard.writeText(logs)}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white"
+                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Copy Logs"
                 >
                   <Copy className="w-3.5 h-3.5" />
@@ -963,21 +963,21 @@ function StudentProjectDetail() {
                     const el = document.getElementById('runtime-logs-scroll');
                     if (el) el.scrollTop = el.scrollHeight;
                   }}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white"
+                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Scroll to Bottom"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={() => setLogs('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400">{t('projectDetail.actions.clear')}</Button>
-                <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6"><RefreshCw size={12} /></Button>
+                <Button variant="ghost" size="xs" onClick={() => setLogs('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
+                <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6 cursor-pointer"><RefreshCw size={12} /></Button>
               </div>
             </CardHeader>
-            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950 cursor-text">
+            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950">
               {logLines.length > 0 ? logLines.map((line: string, i: number) => {
                 const isTimestamp = /^\d{4}-\d{2}-\d{2}/.test(line) || /^\[\d{2}-\w{3}-\d{4}/.test(line)
                 return (
-                  <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.02]">
+                  <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
                     <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{logOffset + i + 1}</span>
                     <span className="whitespace-pre-wrap font-mono">
                       {isTimestamp ? (
