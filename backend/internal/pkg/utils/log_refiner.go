@@ -73,9 +73,9 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 			// Strip the prefix (e.g., "#20 1.234 ") to make the output clean
 			cleanedLine := r.stripPattern.ReplaceAllString(line, "")
 			
-			// If it was a prefixed line that is now empty, skip it to avoid "ngebug ada yang kosong"
-			// But keep lines that were originally empty (line == "")
-			if cleanedLine == "" && line != "" {
+			// Aggressively skip any line that is empty or just whitespace
+			// This fixes the "ngebug ada yang kosong" issue by ensuring no blank lines enter the log
+			if strings.TrimSpace(cleanedLine) == "" {
 				continue
 			}
 			
