@@ -18,16 +18,18 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 	return &LogRefiner{
 		writer: w,
 		hidePatterns: []*regexp.Regexp{
-			// Docker BuildKit internal/infra steps (headers and generic setup)
-			regexp.MustCompile(`^#\d+ (\[internal\]|FROM|WORKDIR|COPY|RUN mkdir|RUN cat|RUN if \[ -f|RUN \{ echo|CACHED|transferring context|transferring dockerfile|resolve|extracting|sending tarball|unpacking|naming to|\[railpack\]|loading|merge|create mise|install mise|install apt|mkfile|caddy fmt)`),
+			// 1. Hide ALL Docker/BuildKit step headers and status lines (lines starting with #num but no timestamp)
+			// Example: "#10 [composer 6/14] RUN...", "#1 DONE", "#13 copy...", "#10"
+			// This preserves output lines like "#20 1.168 Installing..." because they have a digit (timestamp) after the number.
+			regexp.MustCompile(`^#\d+(?:\s[^0-9]|$)`), 
 			
-			// Compilation & Package Manager Noise (Alpine/PHP/Apt/Caddy)
+			// 2. Hide specific noise from the output lines (lines that DO have timestamps)
 			regexp.MustCompile(`^#\d+ [0-9.]+ (checking for |checking whether |checking |creating |compiling |/bin/sh | cc |mkdir \.?libs|LD_LIBRARY_PATH|Libraries have been installed|Build complete|Don't forget to run|find \. -name|rm -rf|Purging |OK: |Executing busybox|Get:|Fetched|Reading|Building|Selecting|Preparing|Unpacking|Setting up|Processing|Configuring for:|PHP Api Version:|Zend Module Api No:|Zend Extension Api No:|Appending configuration tag|config\.status:creating|\( *[0-9]+/[0-9]+\) (Upgrading|Installing|Purging))`),
 			
-			// Composer & NPM Progress/Auditing Noise
+			// 3. Hide Composer & NPM specific noise from output lines
 			regexp.MustCompile(`^#\d+ [0-9.]+ (\s+-\s(Downloading|Installing|Extracting archive)|[0-9]+/[0-9]+\s\[|48 packages you are using|Use the .*composer fund|npm notice|run .*npm fund|packages are looking for funding|moderate severity vulnerabilities|To address all issues|npm warn config production)`),
 			
-			// General Infrastructure & Hash Noise
+			// 4. General Infrastructure & Hash Noise
 			regexp.MustCompile(`sha256:[a-f0-9]{64}`), 
 			regexp.MustCompile(`(resolving|extracting|transferring context|loading secrets|docker-image://|\[2mmise\[0m)`),
 		},
