@@ -92,6 +92,26 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^ERROR: failed to build`),                            // ERROR: failed to build: failed to solve: process...
 			regexp.MustCompile(`^\s*>\s+\[.+\]\s+RUN\s`),                             // > [frontend 13/15] RUN if [ -f package.json ]...
 			regexp.MustCompile(`(shtool|Extension .+ is missing|Installing missing extensions|Configuring extension|Configuring libtool|appending configuration tag|Generating files|configure: |config\.status:)`),  // PHP extension build noise
+
+			// 18. Laravel framework output that leaks internal paths and infrastructure
+			regexp.MustCompile(`storage/app/public.*public/storage`),                   // php artisan storage:link output
+			regexp.MustCompile(`Discovered Package:`),                                   // php artisan package:discover internal list
+			regexp.MustCompile(`Package manifest generated`),                            // package:discover completion
+			regexp.MustCompile(`(Generated optimized autoload|Generating optimized autoload|autoload files)`), // composer dump-autoload
+			regexp.MustCompile(`Configuration cache`),                                   // php artisan config:cache
+			regexp.MustCompile(`Route cache`),                                           // php artisan route:cache
+			regexp.MustCompile(`(Compiled views cleared|View cache cleared|Views compiled)`), // php artisan view:cache/clear
+			regexp.MustCompile(`(application key|APP_KEY|key:generate)`),                // APP_KEY related warnings
+			regexp.MustCompile(`\/var\/www\/html`),                                      // Internal container path
+			regexp.MustCompile(`(Writing .+ to disk|Manifest compiled|Compiling common classes)`), // Laravel optimization internals
+			regexp.MustCompile(`(npm warn|npm WARN)`),                                   // npm warnings (deprecated packages, peer deps)
+			regexp.MustCompile(`\d+ vulnerabilities \(`),                                // npm audit summary (e.g. "46 vulnerabilities (5 low, 13 moderate)")
+			regexp.MustCompile(`To address (all )?issues`),                              // npm audit suggestion
+			regexp.MustCompile(`(run.*npm audit|npm audit fix)`),                        // npm audit fix suggestion
+			regexp.MustCompile(`Browserslist.*outdated`),                                // caniuse-lite outdated warning
+			regexp.MustCompile(`npx browserslist`),                                      // browserslist update suggestion
+			regexp.MustCompile(`Can't resolve.*/app/resources`),                         // webpack resolve errors exposing container paths
+			regexp.MustCompile(`in '/app`),                                              // webpack/node resolve context path
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
