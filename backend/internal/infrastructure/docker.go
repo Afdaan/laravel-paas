@@ -305,7 +305,7 @@ stdout_logfile_maxbytes=0
 	}
 
 	// 4. Build using Docker Buildx
-	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "docker", "buildx", "build", "--load",
+	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "docker", "buildx", "build", "--load",
 		"--label", models.LabelProjectManaged,
 		"-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
 
@@ -356,7 +356,7 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	// Finalize build command with path
 	buildArgs = append(buildArgs, buildPath)
 
-	res, err := utils.RunWithLog(30*time.Minute, logFilePath, "railpack", buildArgs...)
+	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "railpack", buildArgs...)
 
 	if err != nil {
 		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))

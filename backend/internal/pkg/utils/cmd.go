@@ -47,10 +47,14 @@ func RunSilent(timeout time.Duration, name string, args ...string) error {
 	return err
 }
 
-// RunWithLog executes a command with a timeout and writes stdout and stderr to a specified log file,
-// overwriting the log file if it already exists.
+// RunWithLog executes a command with a timeout and writes stdout and stderr to a specified log file.
 func RunWithLog(timeout time.Duration, logFilePath string, name string, args ...string) (*Result, error) {
 	return RunInDirWithEnvWithLog(timeout, "", nil, logFilePath, name, args...)
+}
+
+// RunWithRefinedLog executes a command with a timeout and writes filtered stdout and stderr to a specified log file.
+func RunWithRefinedLog(timeout time.Duration, logFilePath string, name string, args ...string) (*Result, error) {
+	return RunInDirWithEnvWithRefinedLog(timeout, "", nil, logFilePath, name, args...)
 }
 
 // RunInDirWithEnv executes a command in a specific directory with optional environment variables.
@@ -84,6 +88,15 @@ func RunInDirWithEnv(timeout time.Duration, dir string, env []string, name strin
 
 // RunInDirWithEnvWithLog executes a command in a specific directory with optional env vars and logs to a file.
 func RunInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, logFilePath string, name string, args ...string) (*Result, error) {
+	return runInDirWithEnvWithLog(timeout, dir, env, logFilePath, false, name, args...)
+}
+
+// RunInDirWithEnvWithRefinedLog executes a command in a specific directory with optional env vars and logs filtered output to a file.
+func RunInDirWithEnvWithRefinedLog(timeout time.Duration, dir string, env []string, logFilePath string, name string, args ...string) (*Result, error) {
+	return runInDirWithEnvWithLog(timeout, dir, env, logFilePath, true, name, args...)
+}
+
+func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, logFilePath string, refined bool, name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -102,8 +115,13 @@ func RunInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 	}
 	defer logFile.Close()
 
-	cmd.Stdout = io.MultiWriter(&stdoutBuf, logFile)
-	cmd.Stderr = io.MultiWriter(&stderrBuf, logFile)
+	var output io.Writer = logFile
+	if refined {
+		output = NewLogRefiner(logFile)
+	}
+
+	cmd.Stdout = io.MultiWriter(&stdoutBuf, output)
+	cmd.Stderr = io.MultiWriter(&stderrBuf, output)
 
 	err = cmd.Run()
 
