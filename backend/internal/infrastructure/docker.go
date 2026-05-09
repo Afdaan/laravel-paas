@@ -539,12 +539,6 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeImage string) {
 	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
 
-	// Don't override if user already has one
-	if _, err := os.Stat(railpackConfigPath); err == nil {
-		slog.Info("User railpack.json found, skipping default injection", "path", railpackConfigPath)
-		return
-	}
-
 	// Default to alpine if not specified. Only allow known templates.
 	if runtimeImage == "" {
 		runtimeImage = "alpine"
