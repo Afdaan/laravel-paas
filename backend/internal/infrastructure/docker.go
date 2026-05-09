@@ -582,9 +582,15 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 
 		// Basic fallback if template is missing
 		mandatory = map[string]string{
-			"APP_NAME":     fmt.Sprintf("\"%s\"", project.Name),
-			"APP_KEY":      appKey,
-			"DATABASE_URL": fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName),
+			"APP_NAME":      fmt.Sprintf("\"%s\"", project.Name),
+			"APP_KEY":       appKey,
+			"DB_CONNECTION":  "mysql",
+			"DB_HOST":        "paas-mysql",
+			"DB_PORT":        "3306",
+			"DB_DATABASE":    project.DatabaseName,
+			"DB_USERNAME":    project.DatabaseName,
+			"DB_PASSWORD":    project.DatabasePassword,
+			"DATABASE_URL":   fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName),
 		}
 	}
 
@@ -638,6 +644,11 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	// 3. Add any missing mandatory variables that weren't found in .env.example
 	for key, val := range mandatory {
 		if !seen[key] {
+			// Special handling: Skip adding DATABASE_URL if it's not already present in the file.
+			// This avoids redundancy for projects that use individual DB_* variables (standard Laravel).
+			if key == "DATABASE_URL" {
+				continue
+			}
 			finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
 		}
 	}
