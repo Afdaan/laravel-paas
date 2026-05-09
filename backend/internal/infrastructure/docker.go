@@ -680,6 +680,12 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 	examplePath := filepath.Join(projectPath, ".env.example")
 	envPath := filepath.Join(projectPath, ".env")
+ 
+	// Only create if .env doesn't exist (Initial setup)
+	// This prevents overwriting user modifications during re-deploys.
+	if _, err := os.Stat(envPath); err == nil {
+		return nil
+	}
 
 	// 1. Load mandatory variables from template
 	mandatory, err := s.loadMandatoryEnv(project, projectDomain)
