@@ -320,12 +320,16 @@ stdout_logfile_maxbytes=0
 func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string) error {
 	s.injectDefaultRailpackConfig(buildPath, project.RuntimeImage)
 
-	// Pre-sync lockfiles before handing off to Railpack.
-	// Railpack enforces --frozen-lockfile for Bun/Yarn, which fails when the user's
-	// lockfile is out of sync with package.json (common after adding/changing deps locally).
-	// Running the package manager once here updates the lockfile in-place so that
-	// Railpack's subsequent --frozen-lockfile check passes cleanly.
-	s.presyncLockfile(buildPath, project.Subdomain)
+	// Strip strict lockfiles before Railpack runs.
+	// Railpack hardcodes --frozen-lockfile when it detects bun.lock or yarn.lock,
+	// causing builds to fail when the user's lockfile is out of sync with package.json.
+	// A pre-sync approach requires the package manager on the host, which is not guaranteed.
+	// Deleting the lockfile forces a fresh resolve bounded by package.json semver constraints.
+	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {
+		if err := os.Remove(filepath.Join(buildPath, lockfile)); err == nil {
+			slog.Info("Stripped lockfile to allow non-frozen install", "file", lockfile, "subdomain", project.Subdomain)
+		}
+	}
 
 	// Use project ID as cache key for better isolation but still allowing layer reuse
 	cacheKey := fmt.Sprintf("project-%d", project.ID)
@@ -379,38 +383,6 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	}
 
 	return nil
-}
-
-// presyncLockfile runs a non-frozen install pass before Railpack to ensure the lockfile
-// is in sync with package.json. Railpack enforces --frozen-lockfile for Bun and Yarn,
-// which fails when the user hasn't committed their updated lockfile after changing deps.
-// This is a host-level operation, not inside Docker, so it requires the relevant
-// package manager to be installed on the build host.
-func (s *DockerService) presyncLockfile(buildPath, subdomain string) {
-	type lockfileManager struct {
-		lockfile string
-		cmd      string
-		args     []string
-	}
-
-	candidates := []lockfileManager{
-		{"bun.lock", "bun", []string{"install"}},
-		{"yarn.lock", "yarn", []string{"install", "--no-immutable"}},
-		{"pnpm-lock.yaml", "pnpm", []string{"install", "--no-frozen-lockfile"}},
-	}
-
-	for _, candidate := range candidates {
-		if _, err := os.Stat(filepath.Join(buildPath, candidate.lockfile)); err != nil {
-			continue
-		}
-
-		slog.Info("Pre-syncing lockfile before Railpack", "lockfile", candidate.lockfile, "subdomain", subdomain)
-		res, err := utils.RunInDirWithEnv(2*time.Minute, buildPath, nil, candidate.cmd, candidate.args...)
-		if err != nil {
-			slog.Warn("Lockfile pre-sync failed, Railpack will proceed as-is", "lockfile", candidate.lockfile, "subdomain", subdomain, "stderr", res.Stderr)
-		}
-		return
-	}
 }
 
 // StartExistingImage starts a container from an already built image.
