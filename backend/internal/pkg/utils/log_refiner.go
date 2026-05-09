@@ -116,6 +116,12 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(Entering directory|Leaving directory)`),                 // Make directory noise
 			regexp.MustCompile(`(Circular .* dependency dropped)`),                       // JIT circular dependency noise
 			regexp.MustCompile(`(Installing shared extensions|shared_alloc|ZendAccelerator)`), // PHP internal build noise
+			
+			// 19. Hide Railpack/Nixpacks toolchain management (mise, node, bun install noise)
+			regexp.MustCompile(`(mise |[1/3] install|[1/3] download|[2/3] generate checksum|[3/3] extract)`),
+			regexp.MustCompile(`(v\d+\.\d+\.\d+|✓ installed)`),                          // Generic version and success checkmarks
+			regexp.MustCompile(`(Hit:\d+ http:\/\/deb\.debian\.org|bookworm InRelease)`), // Debian/Apt repository noise
+			regexp.MustCompile(`(warn: incorrect peer dependency|note: try re-running without --frozen-lockfile)`), // Bun noise
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
