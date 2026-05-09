@@ -546,7 +546,6 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 	}
 
 	// Default to alpine if not specified. Only allow known templates.
-	forcedRuntime := runtimeImage != ""
 	if runtimeImage == "" {
 		runtimeImage = "alpine"
 	}
@@ -609,21 +608,13 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 			}
 		}
 
-		// 2. Handle Static Sites: If it's a pure static site and no specific runtime was forced,
-		// we should remove the "base image" to let Railpack use its optimized Nginx/Caddy images.
-		// If we force Alpine, Railpack might not include a web server by default.
+		// 2. Handle Static Sites: We now ensure the user's OS choice (Alpine/Debian) is respected.
 		_, errHtml := os.Stat(filepath.Join(buildPath, "index.html"))
 		_, errStatic := os.Stat(filepath.Join(buildPath, "Staticfile"))
 		isStatic := (errHtml == nil || errStatic == nil)
 		
-		if isStatic && !forcedRuntime {
-			if deploy, ok := config["deploy"].(map[string]interface{}); ok {
-				if _, exists := deploy["base"]; exists {
-					delete(deploy, "base")
-					modified = true
-					slog.Info("Removed forced base image for static site to allow Railpack Nginx defaults", "path", buildPath)
-				}
-			}
+		if isStatic {
+			slog.Debug("Static site detected, maintaining selected base image", "runtime", runtimeImage, "path", buildPath)
 		}
 
 		if modified {
