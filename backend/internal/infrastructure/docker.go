@@ -1258,7 +1258,7 @@ func parsePorts(portStr string) []string {
 		return []string{}
 	}
 	// Example: "0.0.0.0:80->80/tcp, :::80->80/tcp" or "80/tcp"
-	return strings.Split(portStr, ", ")
+	return strings.Split(portStr, ",")
 }
 
 // ListAllImages returns all images on the host

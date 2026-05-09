@@ -244,14 +244,16 @@ const AdminContainers = () => {
                   <TableCell className="px-4 py-4">
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[11px] font-mono font-medium text-muted-foreground">{c.ip_address || t('common.unassigned')}</span>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 max-w-[180px]">
                         {c.ports?.slice(0, 2).map((p, i) => (
-                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0 h-5 bg-muted/60">
+                          <Badge key={i} variant="secondary" className="text-[10px] font-mono px-1.5 py-0 h-5 bg-muted/60 truncate max-w-[140px]" title={p}>
                             {p}
                           </Badge>
                         ))}
                         {c.ports?.length > 2 && (
-                          <span className="text-[10px] text-muted-foreground font-semibold">+{c.ports.length - 2}</span>
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-dashed opacity-60">
+                            +{c.ports.length - 2}
+                          </Badge>
                         )}
                       </div>
                     </div>
