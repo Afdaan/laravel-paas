@@ -339,6 +339,7 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--name", imageName,
 		"--cache-key", cacheKey,
 		"--env", "NPM_CONFIG_JOBS=2",
+		"--env", "NPM_CONFIG_LEGACY_PEER_DEPS=true", // Handle React RC and other pre-release peer dep mismatches
 	}
 
 	// Load environment variables from .env to pass to build phase.
