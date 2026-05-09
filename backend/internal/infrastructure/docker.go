@@ -329,18 +329,6 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--name", imageName,
 		"--cache-key", cacheKey,
 		"--env", "NPM_CONFIG_JOBS=2",
-		"--env", "CI=true",
-		"--env", "DO_NOT_TRACK=1",                   // Silence various tool analytics
-		"--env", "NEXT_TELEMETRY_DISABLED=1",        // Silence Next.js telemetry
-		"--env", "BUN_INSTALL_FROZEN_LOCKFILE=false", // Resilience: Allow bun to update lockfile
-		"--env", "YARN_ENABLE_IMMUTABLE_INSTALLS=false", // Resilience: Disable Yarn strict lockfile
-		"--env", "PNPM_CONFIG_FROZEN_LOCKFILE=false",  // Resilience: Disable pnpm strict lockfile
-		"--env", "COMPOSER_ALLOW_SUPERUSER=1",        // Fix: Allow composer to run as root in container
-		"--env", "NPM_CONFIG_AUDIT=false",           // Speed: skip npm audit
-		"--env", "NPM_CONFIG_FUND=false",            // Less noise: skip fund messages
-		
-		// Force non-frozen installs for all common package managers to avoid lockfile mismatch errors
-		"--env", "NIXPACKS_INSTALL_CMD=npm install || yarn install || pnpm install || bun install",
 	}
 
 	// Load environment variables from .env to pass to build phase.

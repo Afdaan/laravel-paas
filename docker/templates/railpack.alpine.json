@@ -4,8 +4,18 @@
       "image": "alpine:3.20"
     }
   },
+  "phases": {
+    "install": {
+      "cmds": [
+        "npm install --no-audit --no-fund || yarn install --no-immutable || pnpm install --no-frozen-lockfile || bun install"
+      ]
+    }
+  },
   "variables": {
     "NODE_ENV": "production",
+    "CI": "true",
+    "DO_NOT_TRACK": "1",
+    "BUN_INSTALL_FROZEN_LOCKFILE": "false",
     "COMPOSER_ALLOW_SUPERUSER": "1"
   }
 }
