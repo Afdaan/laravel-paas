@@ -380,13 +380,54 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=0s")
 		}
 
-		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))
+		// Extract only the actionable error lines from stderr, discarding internal
+		// Railpack/BuildKit noise that is not meaningful to the end user.
+		userMessage := sanitizeBuildError(res.Stderr)
+		return apperr.New(500, "BUILD_FAILED", userMessage)
 	}
 
 	return nil
 }
 
-// StartExistingImage starts a container from an already built image.
+// sanitizeBuildError strips internal build system noise from stderr output
+// and returns only the lines that are actionable by the end user.
+func sanitizeBuildError(stderr string) string {
+	noisePatterns := []string{
+		"ERRO failed to solve",
+		"failed to solve:",
+		"unrecognized image format",
+		"INFO No package manager",
+		"Railpack build failed",
+		" ERRO ",
+		" INFO ",
+		" WARN ",
+	}
+
+	var kept []string
+	for _, line := range strings.Split(stderr, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		isNoise := false
+		for _, pattern := range noisePatterns {
+			if strings.Contains(trimmed, pattern) {
+				isNoise = true
+				break
+			}
+		}
+		if !isNoise {
+			kept = append(kept, trimmed)
+		}
+	}
+
+	if len(kept) == 0 {
+		return "Build failed. Check the build logs for details."
+	}
+	return strings.Join(kept, "\n")
+}
+
+
 func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 
