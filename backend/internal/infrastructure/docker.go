@@ -592,14 +592,18 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 			}
 			// Also remove Node-specific variables
 			if variables, ok := config["variables"].(map[string]interface{}); ok {
-				nodeVars := []string{"NPM_CONFIG_LEGACY_PEER_DEPS", "BUN_INSTALL_FROZEN_LOCKFILE", "NODE_ENV"}
-				for _, v := range nodeVars {
-					if _, exists := variables[v]; exists {
-						delete(variables, v)
-						modified = true
-					}
+			nodeVars := []string{"NPM_CONFIG_LEGACY_PEER_DEPS", "BUN_INSTALL_FROZEN_LOCKFILE", "NODE_ENV"}
+			for _, v := range nodeVars {
+				if _, exists := variables[v]; exists {
+					delete(variables, v)
+					modified = true
 				}
 			}
+			
+			// Inject build ID to bust Railpack/Docker cache for every build
+			variables["PAAS_BUILD_ID"] = fmt.Sprintf("%d", time.Now().Unix())
+			modified = true
+		}
 		}
 
 		// 2. Handle Static Sites: We now ensure the user's OS choice (Alpine/Debian) is respected.
