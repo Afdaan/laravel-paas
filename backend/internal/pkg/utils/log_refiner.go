@@ -40,7 +40,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`\[90m\.`), 
 			
 			// 5. Hide Railpack branding, metadata headers, and ALL step commands
-			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|↳ Using config|⚠ The config|↳ Detected|↳ Using|↳ Deploying|↳ Output directory|  Packages|  ──────────|  Steps|  ▸ |  Deploy)`),
+			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|↳ Using config|⚠ The config|↳ Output directory|  Packages|  ──────────)`),
 			// Hide Railpack package table rows (node, caddy, bun, python, go, etc.)
 			regexp.MustCompile(`^\s*(node|caddy|bun|python|go|ruby|java|php|deno|mise)\s+│`),
 			// Hide ALL Railpack step commands ($ bun install, $ npm ci, $ caddy run, etc.)
