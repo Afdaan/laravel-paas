@@ -543,6 +543,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 	}
 
 	// Default to alpine if not specified. Only allow known templates.
+	forcedRuntime := runtimeImage != ""
 	if runtimeImage == "" {
 		runtimeImage = "alpine"
 	}
@@ -577,12 +578,64 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 		data = []byte(fallback)
 	}
 
+	// Post-processing: Refine configuration based on project contents
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err == nil {
+		modified := false
+
+		// 1. Only keep the Node-specific install phase if package.json exists.
+		// This phase is a fix for frozen-lockfile issues which only affects Node/Bun projects.
+		// For other languages (Go, PHP, Static, etc.), we should let Railpack use its native phases.
+		if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err != nil {
+			if phases, ok := config["phases"].(map[string]interface{}); ok {
+				if _, exists := phases["install"]; exists {
+					delete(phases, "install")
+					modified = true
+					slog.Debug("Removed Node-specific install phase for non-Node project", "path", buildPath)
+				}
+			}
+			// Also remove Node-specific variables
+			if variables, ok := config["variables"].(map[string]interface{}); ok {
+				nodeVars := []string{"NPM_CONFIG_LEGACY_PEER_DEPS", "BUN_INSTALL_FROZEN_LOCKFILE", "NODE_ENV"}
+				for _, v := range nodeVars {
+					if _, exists := variables[v]; exists {
+						delete(variables, v)
+						modified = true
+					}
+				}
+			}
+		}
+
+		// 2. Handle Static Sites: If it's a pure static site and no specific runtime was forced,
+		// we should remove the "base image" to let Railpack use its optimized Nginx/Caddy images.
+		// If we force Alpine, Railpack might not include a web server by default.
+		_, errHtml := os.Stat(filepath.Join(buildPath, "index.html"))
+		_, errStatic := os.Stat(filepath.Join(buildPath, "Staticfile"))
+		isStatic := (errHtml == nil || errStatic == nil)
+		
+		if isStatic && !forcedRuntime {
+			if deploy, ok := config["deploy"].(map[string]interface{}); ok {
+				if _, exists := deploy["base"]; exists {
+					delete(deploy, "base")
+					modified = true
+					slog.Info("Removed forced base image for static site to allow Railpack Nginx defaults", "path", buildPath)
+				}
+			}
+		}
+
+		if modified {
+			if newData, err := json.MarshalIndent(config, "", "  "); err == nil {
+				data = newData
+			}
+		}
+	}
+
 	if err := os.WriteFile(railpackConfigPath, data, 0644); err != nil {
 		slog.Warn("Failed to inject default railpack.json", "error", err)
 		return
 	}
 
-	slog.Info("Injected default railpack.json", "runtime", runtimeImage, "path", buildPath)
+	slog.Info("Injected refined railpack.json", "runtime", runtimeImage, "path", buildPath)
 }
 
 // DetectExposedPort inspects a docker image to find the first EXPOSEd port.
@@ -815,6 +868,8 @@ func (s *DockerService) GetBuildPath(root string) string {
 		"Gemfile",
 		"Cargo.toml",
 		"mix.exs",
+		"index.html",
+		"Staticfile",
 	}
 
 	// 1. Check root first
@@ -831,8 +886,8 @@ func (s *DockerService) GetBuildPath(root string) string {
 		return root
 	}
 
-	// Priority subdirectories for monorepos
-	priorityDirs := []string{"backend", "app", "server", "api"}
+	// Priority subdirectories for monorepos and common project structures
+	priorityDirs := []string{"backend", "app", "server", "api", "frontend", "web", "ui", "public", "src"}
 
 	for _, pDir := range priorityDirs {
 		pPath := filepath.Join(root, pDir)
