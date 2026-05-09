@@ -604,6 +604,10 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 		}
 
 		// Inject build ID to bust Railpack/Docker cache for every build for ALL projects
+		if _, exists := config["variables"]; !exists {
+			config["variables"] = make(map[string]interface{})
+		}
+		
 		if vars, ok := config["variables"].(map[string]interface{}); ok {
 			vars["PAAS_BUILD_ID"] = fmt.Sprintf("%d", time.Now().Unix())
 			modified = true
