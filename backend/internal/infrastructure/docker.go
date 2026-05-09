@@ -330,6 +330,14 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--cache-key", cacheKey,
 		"--env", "NPM_CONFIG_JOBS=2",
 		"--env", "CI=true",
+		"--env", "DO_NOT_TRACK=1",                   // Silence various tool analytics
+		"--env", "NEXT_TELEMETRY_DISABLED=1",        // Silence Next.js telemetry
+		"--env", "BUN_INSTALL_FROZEN_LOCKFILE=false", // Resilience: Allow bun to update lockfile
+		"--env", "YARN_ENABLE_IMMUTABLE_INSTALLS=false", // Resilience: Disable Yarn strict lockfile
+		"--env", "PNPM_CONFIG_FROZEN_LOCKFILE=false",  // Resilience: Disable pnpm strict lockfile
+		"--env", "COMPOSER_ALLOW_SUPERUSER=1",        // Fix: Allow composer to run as root in container
+		"--env", "NPM_CONFIG_AUDIT=false",           // Speed: skip npm audit
+		"--env", "NPM_CONFIG_FUND=false",            // Less noise: skip fund messages
 	}
 
 	// Load environment variables from .env to pass to build phase.
@@ -359,6 +367,17 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "railpack", buildArgs...)
 
 	if err != nil {
+		// Cleanup: Remove failed image and prune cache if it looks like a corruption issue.
+		// We use RunSilent for cleanup to prevent cluttering the main logic with non-fatal errors.
+		slog.Warn("Railpack build failed, performing cleanup", "subdomain", project.Subdomain, "error", err)
+		
+		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
+		
+		if strings.Contains(res.Stderr, "unrecognized image format") || strings.Contains(res.Stderr, "failed to solve") {
+			slog.Info("Detected build kit corruption, pruning builder cache", "subdomain", project.Subdomain)
+			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=1h")
+		}
+
 		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))
 	}
 
