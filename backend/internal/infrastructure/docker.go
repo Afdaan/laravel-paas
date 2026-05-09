@@ -338,6 +338,9 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--env", "COMPOSER_ALLOW_SUPERUSER=1",        // Fix: Allow composer to run as root in container
 		"--env", "NPM_CONFIG_AUDIT=false",           // Speed: skip npm audit
 		"--env", "NPM_CONFIG_FUND=false",            // Less noise: skip fund messages
+		
+		// Force non-frozen installs for all common package managers to avoid lockfile mismatch errors
+		"--env", "NIXPACKS_INSTALL_CMD=npm install || yarn install || pnpm install || bun install",
 	}
 
 	// Load environment variables from .env to pass to build phase.
@@ -374,8 +377,8 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
 		
 		if strings.Contains(res.Stderr, "unrecognized image format") || strings.Contains(res.Stderr, "failed to solve") {
-			slog.Info("Detected build kit corruption, pruning builder cache", "subdomain", project.Subdomain)
-			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=1h")
+			slog.Info("Detected build kit corruption, pruning builder cache and disabling cache for next run", "subdomain", project.Subdomain)
+			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=0s")
 		}
 
 		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))
