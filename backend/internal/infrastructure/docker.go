@@ -98,6 +98,9 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		}
 	}
 
+	// 2.2 Inject .dockerignore if missing to optimize build context size
+	s.injectDockerIgnore(projectPath)
+
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	logFilePath := filepath.Join(projectPath, "build.log")
 
@@ -637,6 +640,34 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 
 	slog.Info("Injected refined railpack.json", "runtime", runtimeImage, "path", buildPath)
 }
+ 
+func (s *DockerService) injectDockerIgnore(projectPath string) {
+	ignorePath := filepath.Join(projectPath, ".dockerignore")
+	if _, err := os.Stat(ignorePath); err == nil {
+		// User already has a .dockerignore, respect it
+		return
+	}
+
+	templatePath := filepath.Join("/app/docker/templates", ".dockerignore")
+	// Fallback to local path for dev environment
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = "docker/templates/.dockerignore"
+	}
+
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		slog.Warn("Failed to read .dockerignore template", "path", templatePath, "error", err)
+		return
+	}
+
+	if err := os.WriteFile(ignorePath, data, 0644); err != nil {
+		slog.Warn("Failed to write .dockerignore to project", "path", ignorePath, "error", err)
+		return
+	}
+
+	slog.Debug("Injected default .dockerignore", "path", ignorePath)
+}
+
 
 // DetectExposedPort inspects a docker image to find the first EXPOSEd port.
 // Returns the port number and nil if found, or 0 and error if not.
