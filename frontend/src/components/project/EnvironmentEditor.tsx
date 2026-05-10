@@ -97,16 +97,13 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
+          autoCapitalize="off"
+          data-gramm="false"
           className={cn(
-            "w-full h-full p-8 font-mono text-[13px] leading-relaxed resize-none bg-transparent text-zinc-300 outline-none custom-scrollbar",
+            "w-full h-full p-8 font-mono text-[13px] leading-relaxed resize-none bg-transparent text-zinc-300 outline-none overflow-y-auto custom-scrollbar",
             "selection:bg-primary/30 selection:text-white",
             isEnvHidden ? "opacity-0 select-none pointer-events-none" : "opacity-100"
           )}
-          style={{ 
-            fieldSizing: 'content' as any, // Explicitly override if needed, but here we want normal
-            height: '100%',
-            overflowY: 'auto'
-          }}
           placeholder={t('projectDetail.secrets.placeholder')}
         />
         
