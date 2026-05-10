@@ -32,15 +32,6 @@ type ProjectService struct {
 	redisService   *infrastructure.RedisService
 }
 
-func validateRuntimeImage(runtimeImage string) error {
-	switch runtimeImage {
-	case "", "alpine", "debian":
-		return nil
-	default:
-		return fmt.Errorf("invalid runtime_image (allowed: alpine, debian)")
-	}
-}
-
 func validateBaseDirectory(baseDirectory string) error {
 	bd := strings.TrimSpace(baseDirectory)
 	if bd == "" {
@@ -220,7 +211,7 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseName, baseDirectory, runtimeImage, buildCommand, startCommand string, queueEnabled bool) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool) (*models.Project, error) {
 	// Enforce per-user project limit
 	maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
 	count, _ := s.projectRepo.CountByUserID(userID)
@@ -229,9 +220,7 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
 	}
 
-	if err := validateRuntimeImage(runtimeImage); err != nil {
-		return nil, apperr.New(400, "INVALID_RUNTIME_IMAGE", err.Error())
-	}
+
 	if err := validateBaseDirectory(baseDirectory); err != nil {
 		return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
 	}
@@ -263,17 +252,12 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		DatabaseName:     dbName,
 		DatabasePassword: dbPassword,
 		BaseDirectory:    baseDirectory,
-		RuntimeImage:     runtimeImage,
 		BuildCommand:     buildCommand,
 		StartCommand:     startCommand,
 		QueueEnabled:     queueEnabled,
 		Status:           models.StatusQueued,
 		ExpiresAt:        expiresAt,
 		UID:              utils.GenerateRandomUID(),
-	}
-
-	if project.RuntimeImage == "" {
-		project.RuntimeImage = "alpine"
 	}
 
 	if err := s.projectRepo.Create(project); err != nil {
@@ -283,7 +267,7 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 	return project, nil
 }
 
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, runtimeImage, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -299,7 +283,6 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	}
 	project.Branch = branch
 	project.PHPVersion = phpVersion
-	project.RuntimeImage = runtimeImage
 	project.BaseDirectory = baseDirectory
 	project.QueueEnabled = queueEnabled
 	project.WorkerCommand = workerCommand

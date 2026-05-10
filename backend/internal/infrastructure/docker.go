@@ -321,7 +321,7 @@ stdout_logfile_maxbytes=0
 
 // railpackBuild handles all other languages using Nixpacks-style auto-detection
 func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string) error {
-	s.injectDefaultRailpackConfig(buildPath, project.RuntimeImage)
+	s.injectDefaultRailpackConfig(buildPath)
 
 	// Strip strict lockfiles before Railpack runs.
 	// Railpack hardcodes --frozen-lockfile when it detects bun.lock or yarn.lock,
@@ -540,40 +540,24 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 	return res.Stdout, nil
 }
 
-// injectDefaultRailpackConfig writes a default railpack.json if one doesn't exist.
-// This uses template files from /app/docker/templates/
-func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeImage string) {
-	slog.Info("Injecting Railpack configuration", "runtime", runtimeImage, "buildPath", buildPath)
+// injectDefaultRailpackConfig writes an optimized railpack.json for the project.
+// It uses a single unified template and dynamically adjusts phases.
+func (s *DockerService) injectDefaultRailpackConfig(buildPath string) {
+	slog.Info("Injecting optimized Railpack configuration", "buildPath", buildPath)
 	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
 
-	// 1. Determine runtime image (default to alpine)
-	if runtimeImage == "" {
-		runtimeImage = "alpine"
-	}
-	
-	// Normalize to lowercase for filename
-	runtimeImage = strings.ToLower(runtimeImage)
-	if !strings.Contains(runtimeImage, "alpine") && !strings.Contains(runtimeImage, "debian") {
-		slog.Warn("Invalid runtime image value, defaulting to alpine", "value", runtimeImage)
-		runtimeImage = "alpine"
-	} else if strings.Contains(runtimeImage, "alpine") {
-		runtimeImage = "alpine"
-	} else {
-		runtimeImage = "debian"
-	}
-
-	// 2. Resolve template path (check multiple locations)
+	// 1. Resolve template path (we now use a single unified template)
 	possiblePaths := []string{
-		filepath.Join("/app/docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage)),
-		filepath.Join("docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage)),
-		filepath.Join("../docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage)),
+		filepath.Join("/app/docker/templates", "railpack.json"),
+		filepath.Join("docker/templates", "railpack.json"),
+		filepath.Join("../docker/templates", "railpack.json"),
 	}
 
 	var templateData []byte
 	var finalTemplatePath string
 
 	for _, p := range possiblePaths {
-		if data, e := os.ReadFile(p); e == nil {
+		if data, err := os.ReadFile(p); err == nil {
 			templateData = data
 			finalTemplatePath = p
 			break
@@ -581,39 +565,36 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 	}
 
 	if templateData == nil {
-		slog.Error("CRITICAL: Failed to find railpack templates in any location", "runtime", runtimeImage)
-		// Ultimate safety fallback
-		templateData = []byte(`{"deploy":{"base":{"image":"alpine:3.20"}}}`)
+		slog.Error("CRITICAL: Failed to find railpack templates in any location")
+		templateData = []byte(`{"deploy":{"base":{"image":"debian:bookworm-slim"}}}`)
 	} else {
 		slog.Info("Loaded railpack template", "path", finalTemplatePath)
 	}
 
-	// 3. Refine configuration based on project contents
+	// 2. Refine configuration based on project contents
 	var config map[string]interface{}
 	if err := json.Unmarshal(templateData, &config); err == nil {
 		modified := false
 
-		// 3.1. Detect Static Site for logging purposes
-		_, errHtml := os.Stat(filepath.Join(buildPath, "index.html"))
-		_, errStatic := os.Stat(filepath.Join(buildPath, "Staticfile"))
-		isStatic := (errHtml == nil || errStatic == nil)
-
-		if isStatic {
-			slog.Debug("Static site detected, ensuring compatible base image", "runtime", runtimeImage, "path", buildPath)
+		hasPackageJson := false
+		if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
+			hasPackageJson = true
 		}
 
-		// 3.2. Framework-Specific Cleanup:
-		// Only keep the Node-specific install phase if package.json exists.
-		if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err != nil {
+		// 2.1 Framework-Specific Optimizations
+		if !hasPackageJson {
+			// Remove Node-specific phases and variables for non-Node projects
 			if phases, ok := config["phases"].(map[string]interface{}); ok {
 				if _, exists := phases["install"]; exists {
 					delete(phases, "install")
 					modified = true
-					slog.Debug("Removed Node-specific install phase for non-Node project", "path", buildPath)
+				}
+				if _, exists := phases["build"]; exists {
+					delete(phases, "build")
+					modified = true
 				}
 			}
 
-			// Remove Node-specific variables for non-Node projects
 			if variables, ok := config["variables"].(map[string]interface{}); ok {
 				nodeVars := []string{"NPM_CONFIG_LEGACY_PEER_DEPS", "BUN_INSTALL_FROZEN_LOCKFILE", "NODE_ENV"}
 				for _, v := range nodeVars {
@@ -623,25 +604,10 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 					}
 				}
 			}
+			slog.Debug("Applied non-Node optimizations", "path", buildPath)
 		}
 
-		// 3.3. Force base image synchronization
-		if deploy, ok := config["deploy"].(map[string]interface{}); ok {
-			if base, ok := deploy["base"].(map[string]interface{}); ok {
-				expectedImage := "alpine:3.20"
-				if runtimeImage == "debian" {
-					expectedImage = "debian:bookworm-slim"
-				}
-
-				if base["image"] != expectedImage {
-					slog.Info("Correcting base image in railpack.json", "from", base["image"], "to", expectedImage)
-					base["image"] = expectedImage
-					modified = true
-				}
-			}
-		}
-
-		// 3.4. Cache Busting: Inject a unique build ID
+		// 2.2 Cache Busting: Inject a unique build ID
 		if _, exists := config["variables"]; !exists {
 			config["variables"] = make(map[string]interface{})
 		}
@@ -658,11 +624,11 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 		}
 	}
 
-	// 4. Finalize: Write the refined railpack.json to the build directory
+	// 3. Finalize: Write the refined railpack.json to the build directory
 	if err := os.WriteFile(railpackConfigPath, templateData, 0644); err != nil {
 		slog.Error("Failed to write railpack.json", "path", railpackConfigPath, "error", err)
 	} else {
-		slog.Info("Successfully injected refined railpack.json", "path", railpackConfigPath)
+		slog.Info("Successfully injected optimized railpack.json", "path", railpackConfigPath)
 	}
 }
  

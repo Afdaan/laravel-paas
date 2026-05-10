@@ -23,8 +23,7 @@ import {
   Save,
   Copy,
   Blocks,
-  Code2,
-  CheckCircle2
+  Code2
 } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { projectsAPI, databaseAPI } from '../../services/api'
@@ -114,7 +113,6 @@ function StudentProjectDetail() {
   const [startCommandInput, setStartCommandInput] = useState('')
   const [nodeVersionInput, setNodeVersionInput] = useState('')
   const [phpVersionInput, setPhpVersionInput] = useState('')
-  const [runtimeImageInput, setRuntimeImageInput] = useState('')
   const [workerCommandInput, setWorkerCommandInput] = useState('')
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
@@ -343,11 +341,10 @@ function StudentProjectDetail() {
       startCommandInput !== (project.start_command || '') ||
       nodeVersionInput !== (project.node_version || '20') ||
       phpVersionInput !== (project.php_version || '8.2') ||
-      runtimeImageInput !== (project.runtime_image || 'alpine') ||
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
       languageVersionInput !== (project.language_version || '')
-  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, runtimeImageInput, workerCommandInput, queueEnabledInput, languageVersionInput])
+  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, languageVersionInput])
 
   const handleResetSettings = () => {
     if (!project) return
@@ -357,7 +354,6 @@ function StudentProjectDetail() {
     setStartCommandInput(project.start_command || '')
     setNodeVersionInput(project.node_version || '20')
     setPhpVersionInput(project.php_version || '8.2')
-    setRuntimeImageInput(project.runtime_image || 'alpine')
     setWorkerCommandInput(project.worker_command || '')
     setQueueEnabledInput(project.queue_enabled || false)
     setLanguageVersionInput(project.language_version || '')
@@ -383,7 +379,6 @@ function StudentProjectDetail() {
             start_command: startCommandInput,
             node_version: nodeVersionInput,
             php_version: phpVersionInput,
-            runtime_image: runtimeImageInput,
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput,
             language_version: languageVersionInput
@@ -409,7 +404,6 @@ function StudentProjectDetail() {
       setStartCommandInput(project.start_command || '')
       setNodeVersionInput(project.node_version || '20')
       setPhpVersionInput(project.php_version || '8.2')
-      setRuntimeImageInput(project.runtime_image || 'alpine')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
       setLanguageVersionInput(project.language_version || '')
@@ -1097,66 +1091,6 @@ function StudentProjectDetail() {
                 )}
 
                 <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                  <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                    <Box className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('projectDetail.settings.baseImageTitle')}</CardTitle>
-                    <CardDescription>{t('projectDetail.settings.baseImageDesc')}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div
-                    onClick={() => setRuntimeImageInput('alpine')}
-                    className={cn(
-                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200",
-                      runtimeImageInput === 'alpine' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-sm">Alpine Linux</h4>
-                      {runtimeImageInput === 'alpine' ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Ultralight (~200MB). Recommended for most apps.
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setRuntimeImageInput('debian')}
-                    className={cn(
-                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200",
-                      runtimeImageInput === 'debian' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-sm">Debian Slim</h4>
-                      {runtimeImageInput === 'debian' ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Better compatibility (~600MB). Use for complex requirements.
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5">
                   <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
                 </p>
               </CardContent>
