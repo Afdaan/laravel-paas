@@ -72,7 +72,7 @@ func NewDockerService(cfg *config.Config, storage *StorageService) *DockerServic
 // ===========================================
 
 // BuildAndRun builds and starts a container for a project using Railpack
-func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool) (string, error) {
+func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool, noCache bool) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
@@ -117,10 +117,10 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		if internalPort == "" {
 			internalPort = "80"
 		}
-		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath)
+		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath, noCache)
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
-		err = s.railpackBuild(project, buildPath, imageName, logFilePath)
+		err = s.railpackBuild(project, buildPath, imageName, logFilePath, noCache)
 	}
 
 	if err != nil {
@@ -255,7 +255,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 }
 
 // legacyLaravelBuild handles the proven Dockerfile + Nginx approach
-func (s *DockerService) legacyLaravelBuild(project *models.Project, buildPath, imageName, phpVersion, logFilePath string) error {
+func (s *DockerService) legacyLaravelBuild(project *models.Project, buildPath, imageName, phpVersion, logFilePath string, noCache bool) error {
 	// 1. Prepare Dockerfile
 	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
 	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
@@ -308,9 +308,13 @@ stdout_logfile_maxbytes=0
 	}
 
 	// 4. Build using Docker Buildx
-	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "docker", "buildx", "build", "--load",
-		"--label", models.LabelProjectManaged,
-		"-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
+	buildArgs := []string{"buildx", "build", "--load"}
+	if noCache {
+		buildArgs = append(buildArgs, "--no-cache")
+	}
+	buildArgs = append(buildArgs, "--label", models.LabelProjectManaged, "-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
+
+	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "docker", buildArgs...)
 
 	if err != nil {
 		return apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s", project.Subdomain, res.Stderr))
@@ -320,7 +324,7 @@ stdout_logfile_maxbytes=0
 }
 
 // railpackBuild handles all other languages using Nixpacks-style auto-detection
-func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string) error {
+func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string, noCache bool) error {
 	s.injectDefaultRailpackConfig(buildPath)
 
 	// Strip strict lockfiles before Railpack runs.
@@ -336,6 +340,9 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 
 	// Use project ID as cache key for better isolation but still allowing layer reuse
 	cacheKey := fmt.Sprintf("project-%d", project.ID)
+	if noCache {
+		cacheKey = fmt.Sprintf("project-%d-%d", project.ID, time.Now().Unix())
+	}
 
 	buildArgs := []string{
 		"build",

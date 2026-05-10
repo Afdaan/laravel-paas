@@ -585,7 +585,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	memoryLimit := memoryMB + "m"
 
 	// Start deployment process
-	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy")
+	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy")
 
 	if err != nil {
 		w.updateProjectError(project, "Failed to deploy container: "+err.Error())
