@@ -343,6 +343,7 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--cache-key", cacheKey,
 		"--env", "NPM_CONFIG_JOBS=2",
 		"--env", "NPM_CONFIG_LEGACY_PEER_DEPS=true", // Handle React RC and other pre-release peer dep mismatches
+		"--env", fmt.Sprintf("PAAS_BUILD_ID=%d", time.Now().Unix()), // Bust Railpack/Docker cache for every build
 	}
 
 	// Load environment variables from .env to pass to build phase.
@@ -613,13 +614,14 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeIma
 			modified = true
 		}
 
-		// 2. Handle Static Sites: We now ensure the user's OS choice (Alpine/Debian) is respected.
+		// 2. Handle Static Sites: Ensure we use the correct base image from the selected template.
+		// We've already loaded the correct template (alpine or debian) based on the project settings.
 		_, errHtml := os.Stat(filepath.Join(buildPath, "index.html"))
 		_, errStatic := os.Stat(filepath.Join(buildPath, "Staticfile"))
 		isStatic := (errHtml == nil || errStatic == nil)
 		
 		if isStatic {
-			slog.Debug("Static site detected, maintaining selected base image", "runtime", runtimeImage, "path", buildPath)
+			slog.Debug("Static site detected, using selected base image", "runtime", runtimeImage, "path", buildPath)
 		}
 
 		if modified {
