@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Eye, EyeOff, Save, Loader2, ShieldAlert, AlertTriangle } from 'lucide-react'
@@ -14,30 +14,32 @@ interface EnvironmentEditorProps {
 
 export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   const { t } = useTranslation()
-  const [envContent, setEnvContent] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    fetchEnv()
-  }, [uid])
-
-  const fetchEnv = async () => {
-    try {
-      const response = await projectsAPI.getEnv(uid)
-      setEnvContent(response.data.content)
-    } catch (error) {
-      toast.error(t('common.error'))
-    } finally {
-      setIsLoading(false)
+    const loadEnv = async () => {
+      try {
+        const response = await projectsAPI.getEnv(uid)
+        if (textareaRef.current) {
+          textareaRef.current.value = response.data.content
+        }
+      } catch (error) {
+        toast.error(t('common.error'))
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }
+    loadEnv()
+  }, [uid, t])
 
   const handleSaveEnv = async () => {
+    const content = textareaRef.current?.value || ''
     setIsSavingEnv(true)
     try {
-      await projectsAPI.updateEnv(uid, envContent)
+      await projectsAPI.updateEnv(uid, content)
       toast.success(t('common.success'))
       if (onSave) onSave()
     } catch (error) {
@@ -90,9 +92,11 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
       </CardHeader>
       
       <div className="flex-1 relative bg-zinc-950 overflow-hidden">
+        {/* Uncontrolled textarea: React does not re-render on every keystroke/paste.
+            Value is read via ref only when Save is clicked. */}
         <textarea
-          value={envContent}
-          onChange={e => setEnvContent(e.target.value)}
+          ref={textareaRef}
+          defaultValue=""
           readOnly={isEnvHidden}
           spellCheck={false}
           autoComplete="off"
