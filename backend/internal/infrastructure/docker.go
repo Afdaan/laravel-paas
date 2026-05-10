@@ -339,32 +339,37 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 
 	buildArgs := []string{
 		"build",
-		"--name", imageName,
+		"--name",      imageName,
 		"--cache-key", cacheKey,
-		"--env", "NPM_CONFIG_JOBS=2",
-		"--env", "NPM_CONFIG_LEGACY_PEER_DEPS=true", // Handle React RC and other pre-release peer dep mismatches
-		"--env", fmt.Sprintf("PAAS_BUILD_ID=%d", time.Now().Unix()), // Bust Railpack/Docker cache for every build
+	}
+	// Collect all environment variables in a map to avoid duplicates
+	envs := map[string]string{
+		"NPM_CONFIG_JOBS":             "2",
+		"NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+		"PAAS_BUILD_ID":               fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
-	// Load environment variables from .env to pass to build phase.
-	// This is required for frontend frameworks (Vite, Next.js, etc.) that bake 
-	// environment variables into the static bundle at build time.
-	// Use the container-local ProjectsPath for internal file reading.
+	// Load environment variables from .env
 	projectEnvPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env")
 	if envVars, err := s.parseProjectEnv(projectEnvPath); err == nil {
 		for key, value := range envVars {
-			buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
+			envs[key] = value
 		}
 	}
 
 	// Inject Node Version if specified
 	if project.NodeVersion != "" {
-		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_NODE_VERSION=%s", project.NodeVersion))
+		envs["NIXPACKS_NODE_VERSION"] = project.NodeVersion
 	}
 
 	// Inject custom Build Command if specified
 	if project.BuildCommand != "" {
-		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_BUILD_CMD=%s", project.BuildCommand))
+		envs["NIXPACKS_BUILD_CMD"] = project.BuildCommand
+	}
+
+	// Append all envs to buildArgs
+	for key, value := range envs {
+		buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
 	}
 
 	// Finalize build command with path

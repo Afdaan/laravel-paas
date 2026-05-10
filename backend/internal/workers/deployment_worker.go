@@ -318,6 +318,10 @@ func (w *DeploymentWorker) processJobs() {
 			continue
 		}
 
+		slog.Info("Worker dequeued new deployment job", 
+			"projectId", job.ProjectID, 
+			"type", job.Type)
+
 		// Process the job
 		w.wg.Add(1)
 		localSem := sem
