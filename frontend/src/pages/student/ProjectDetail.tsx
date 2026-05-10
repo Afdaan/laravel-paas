@@ -19,8 +19,6 @@ import {
   Box,
   AlertTriangle,
   GitBranch,
-  Eye,
-  EyeOff,
   Loader2,
   Save,
   Copy,
@@ -38,7 +36,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePolling } from '@/lib/usePolling'
@@ -48,6 +45,7 @@ import { FrameworkIcon } from '../../components/FrameworkIcon'
 import BuildLogsConsole from '@/components/BuildLogsConsole'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
+import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -92,6 +90,8 @@ function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass 
   )
 }
 
+
+
 function StudentProjectDetail() {
   const { t } = useTranslation()
   const { uid } = useParams<{ uid: string }>()
@@ -104,12 +104,9 @@ function StudentProjectDetail() {
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  const [envContent, setEnvContent] = useState('')
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleCommand, setConsoleCommand] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
-  const [isEnvHidden, setIsEnvHidden] = useState(true)
-  const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string> | null>(null)
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
@@ -123,8 +120,6 @@ function StudentProjectDetail() {
   const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
 
-  const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
-
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -133,6 +128,8 @@ function StudentProjectDetail() {
     onConfirm: () => { },
     confirmText: t('common.confirm')
   })
+
+  const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
   const [consecutiveErrors, setConsecutiveErrors] = useState(0)
   const frameworkDetail = useMemo(() => {
@@ -209,15 +206,6 @@ function StudentProjectDetail() {
     }
   }, [uid])
 
-  const fetchEnv = useCallback(async () => {
-    if (!uid) return
-    try {
-      const response = await projectsAPI.getEnv(uid)
-      setEnvContent(response.data.content)
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
-  }, [uid, t])
 
   const fetchCredentials = useCallback(async () => {
     if (!uid) return
@@ -252,13 +240,10 @@ function StudentProjectDetail() {
   }, [logType, activeTab, project?.container_id, fetchLogs])
 
   useEffect(() => {
-    if (activeTab === 'environment') {
-      fetchEnv()
-    }
     if (activeTab === 'database') {
       fetchCredentials()
     }
-  }, [activeTab, uid, fetchEnv, fetchCredentials])
+  }, [activeTab, uid, fetchCredentials])
 
   const logLines = useMemo(() => {
     if (!logs) return []
@@ -349,19 +334,6 @@ function StudentProjectDetail() {
     }
   }
 
-  const handleSaveEnv = async () => {
-    if (!uid) return
-    setIsSavingEnv(true)
-    try {
-      await projectsAPI.updateEnv(uid, envContent)
-      toast.success(t('common.success'))
-      projectsAPI.redeploy(uid).then(() => fetchProject())
-    } catch (error) {
-      toast.error(t('common.error'))
-    } finally {
-      setIsSavingEnv(false)
-    }
-  }
 
   const isSettingsDirty = useMemo(() => {
     if (!project) return false
@@ -820,65 +792,10 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="environment" className="pt-0">
-          <Card className="flex flex-col h-[600px] overflow-hidden border-border/50 shadow-sm">
-            <CardHeader className="pb-4 flex flex-row items-center justify-between border-b border-border">
-              <div>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-primary" />
-                  {t('projectDetail.tabs.secrets')}
-                </CardTitle>
-                <CardDescription className="text-xs">{t('projectDetail.secrets.desc')}</CardDescription>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" size="sm" onClick={() => setIsEnvHidden(!isEnvHidden)} className="h-9">
-                  {isEnvHidden ? <Eye className="w-3.5 h-3.5 mr-2" /> : <EyeOff className="w-3.5 h-3.5 mr-2" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{isEnvHidden ? t('projectDetail.actions.reveal') : t('projectDetail.actions.hide')}</span>
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setConfirmModal({
-                      title: 'Simpan perubahan .env?',
-                      message: 'Container akan dijalankan ulang (redeploy) untuk menerapkan konfigurasi baru.',
-                      type: 'warning',
-                      confirmText: 'Simpan & Redeploy',
-                      isOpen: true,
-                      onConfirm: handleSaveEnv
-                    })
-                  }}
-                  disabled={isSavingEnv || isEnvHidden}
-                  className="h-9 px-6 bg-primary hover:bg-primary/90"
-                >
-                  {isSavingEnv ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-2" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t('common.save')}</span>
-                </Button>
-              </div>
-            </CardHeader>
-            <div className="flex-1 relative bg-muted/30">
-              <Textarea
-                value={envContent}
-                onChange={e => setEnvContent(e.target.value)}
-                readOnly={isEnvHidden}
-                spellCheck={false}
-                className={cn(
-                  "absolute inset-0 h-full w-full rounded-none border-none p-10 font-mono text-[11px] leading-relaxed resize-none bg-transparent focus-visible:ring-0 custom-scrollbar",
-                  isEnvHidden && "opacity-0 select-none pointer-events-none"
-                )}
-                placeholder={t('projectDetail.secrets.placeholder')}
-              />
-              {isEnvHidden && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="px-6 py-3 bg-card/80 border border-border backdrop-blur-md rounded-full shadow-lg flex items-center gap-3">
-                    <ShieldAlert className="w-4 h-4 text-primary" />
-                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground">{t('projectDetail.secrets.locked')}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="p-4 bg-amber-500/5 text-amber-600 dark:text-amber-500/80 text-[9px] font-bold uppercase tracking-[0.15em] border-t border-border/50 flex items-center justify-center gap-3">
-              <AlertTriangle size={14} className="animate-pulse" /> {t('projectDetail.secrets.redeployNote')}
-            </div>
-          </Card>
+          <EnvironmentEditor 
+            uid={uid || ''} 
+            onSave={() => projectsAPI.redeploy(uid || '').then(() => fetchProject())} 
+          />
         </TabsContent>
 
         <TabsContent value="database" className="pt-0">
