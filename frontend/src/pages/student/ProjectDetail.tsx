@@ -862,7 +862,7 @@ function StudentProjectDetail() {
                 spellCheck={false}
                 className={cn(
                   "absolute inset-0 h-full w-full rounded-none border-none p-10 font-mono text-[11px] leading-relaxed resize-none bg-transparent focus-visible:ring-0 custom-scrollbar",
-                  isEnvHidden && "blur-md select-none opacity-30"
+                  isEnvHidden && "opacity-0 select-none pointer-events-none"
                 )}
                 placeholder={t('projectDetail.secrets.placeholder')}
               />

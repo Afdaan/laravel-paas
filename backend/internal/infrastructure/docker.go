@@ -72,14 +72,14 @@ func NewDockerService(cfg *config.Config, storage *StorageService) *DockerServic
 // ===========================================
 
 // BuildAndRun builds and starts a container for a project using Railpack
-func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string) (string, error) {
+func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
 	buildPath := s.ResolveBuildPath(projectPath, project.BaseDirectory)
 
 	// 2. Prepare Environment
-	if err := s.CreateEnvFile(project, projectDomain); err != nil {
+	if err := s.CreateEnvFile(project, projectDomain, isInitial); err != nil {
 		return "", fmt.Errorf("failed to create .env: %w", err)
 	}
 
@@ -710,13 +710,13 @@ func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from metadata")
 }
 
-func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string) error {
+func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string, isInitial bool) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 	examplePath := filepath.Join(projectPath, ".env.example")
 	envPath := filepath.Join(projectPath, ".env")
  
-	// Only create if .env doesn't exist (Initial setup)
-	// This prevents overwriting user modifications during re-deploys.
+	// If .env already exists, NEVER overwrite it.
+	// We only proceed if the file is missing.
 	if _, err := os.Stat(envPath); err == nil {
 		return nil
 	}
@@ -751,11 +751,16 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 
 	var finalLines []string
 	seen := make(map[string]bool)
-
-	// 2. Select base file: Prefer existing .env if it exists, fallback to .env.example
-	basePath := envPath
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		basePath = examplePath
+ 
+	// Select base file:
+	// - On initial deploy: try to use .env.example as a template to help user get started.
+	// - On redeploy: NEVER use .env.example as a base, as it causes resets. 
+	//   We only use the mandatory DB variables if .env is missing.
+	basePath := ""
+	if isInitial {
+		if _, err := os.Stat(examplePath); err == nil {
+			basePath = examplePath
+		}
 	}
 
 	// Load from base file if it exists
