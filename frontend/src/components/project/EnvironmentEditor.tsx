@@ -18,14 +18,13 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   const [isEnvHidden, setIsEnvHidden] = useState(true)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [initialContent, setInitialContent] = useState('')
 
   useEffect(() => {
     const loadEnv = async () => {
       try {
         const response = await projectsAPI.getEnv(uid)
-        if (textareaRef.current) {
-          textareaRef.current.value = response.data.content
-        }
+        setInitialContent(response.data.content)
       } catch (error) {
         toast.error(t('common.error'))
       } finally {
@@ -96,7 +95,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
             Value is read via ref only when Save is clicked. */}
         <textarea
           ref={textareaRef}
-          defaultValue=""
+          defaultValue={initialContent}
           readOnly={isEnvHidden}
           spellCheck={false}
           autoComplete="off"
