@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
 import { projectsAPI } from '@/services/api'
 import { toast } from 'sonner'
+import ConfirmationModal from '@/components/ConfirmationModal'
 
 interface EnvironmentEditorProps {
   uid: string
@@ -19,6 +20,15 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [initialContent, setInitialContent] = useState('')
+
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '' as React.ReactNode,
+    type: 'warning' as 'danger' | 'warning' | 'info',
+    onConfirm: () => { },
+    confirmText: t('common.confirm')
+  })
 
   useEffect(() => {
     const loadEnv = async () => {
@@ -48,6 +58,17 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
     }
   }
 
+  const triggerSave = () => {
+    setConfirmModal({
+      title: t('common.confirm'),
+      message: t('projectDetail.settings.redeployWarning'),
+      type: 'warning',
+      confirmText: t('common.save'),
+      isOpen: true,
+      onConfirm: handleSaveEnv
+    })
+  }
+
   if (isLoading) {
     return (
       <Card className="flex items-center justify-center h-[600px] border-border/50 bg-card/50">
@@ -57,7 +78,12 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   }
 
   return (
-    <Card className="flex flex-col h-[600px] overflow-hidden border-border/50 shadow-sm bg-card">
+    <>
+      <ConfirmationModal
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        {...confirmModal}
+      />
+      <Card className="flex flex-col h-[600px] overflow-hidden border-border/50 shadow-sm bg-card">
       <CardHeader className="pb-4 flex flex-row items-center justify-between border-b border-border bg-card">
         <div>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -80,7 +106,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           </Button>
           <Button
             size="sm"
-            onClick={handleSaveEnv}
+            onClick={triggerSave}
             disabled={isSavingEnv || isEnvHidden}
             className="h-9 px-6 bg-primary hover:bg-primary/90"
           >
@@ -103,9 +129,9 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           autoCapitalize="off"
           data-gramm="false"
           className={cn(
-            "w-full h-full p-8 font-mono text-[13px] leading-relaxed resize-none bg-transparent text-zinc-300 outline-none overflow-y-auto custom-scrollbar",
+            "w-full h-full p-8 font-mono text-[13px] leading-relaxed resize-none bg-transparent text-zinc-300 outline-none overflow-y-auto custom-scrollbar transition-all duration-300",
             "selection:bg-primary/30 selection:text-white",
-            isEnvHidden ? "opacity-0 select-none pointer-events-none" : "opacity-100"
+            isEnvHidden ? "blur-md opacity-40 select-none pointer-events-none" : "opacity-100 blur-0"
           )}
           placeholder={t('projectDetail.secrets.placeholder')}
         />
@@ -127,5 +153,6 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
         {t('projectDetail.secrets.redeployNote')}
       </div>
     </Card>
+    </>
   )
 }
