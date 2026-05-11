@@ -287,8 +287,8 @@ function StudentProjectDetail() {
       setIsExecuting(false)
     }
   }
-
-  const onActionStarted = (status: any = 'queued') => {
+  
+  const onActionStarted = (status: Project['status'] = 'queued') => {
     setProject(prev => prev ? ({ ...prev, status }) : null)
   }
 

@@ -40,6 +40,7 @@ export interface Project {
   node_version?: string;
   framework?: string;
   language_version?: string;
+  created_at: string;
 }
 
 export interface ProjectStats {

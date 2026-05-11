@@ -12,7 +12,7 @@ interface RedeployButtonProps {
   status: string
   onStarted?: () => void
   onSuccess?: () => void
-  onError?: (error: any) => void
+  onError?: (error: unknown) => void
   className?: string
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"
   size?: "default" | "sm" | "lg" | "icon"
@@ -62,7 +62,7 @@ export function RedeployButton({
         }
       )
       if (onSuccess) onSuccess()
-    } catch (error) {
+    } catch (error: unknown) {
       if (onError) onError(error)
     }
   }

@@ -27,28 +27,14 @@ import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
-
-interface ProjectData {
-  id: number;
-  uid: string;
-  name: string;
-  status: string;
-  subdomain: string;
-  url: string;
-  created_at: string;
-  php_version: string;
-  laravel_version: string;
-  framework: string;
-  database_name: string;
-  branch: string;
-}
+import { Project } from '../../types'
 
 const getFrameworkLabel = (framework?: string, fallback?: string) => {
   if (!framework || framework === 'Other') return fallback || ''
   return framework
 }
 
-const StatusBadge = ({ status }: { status: string }) => {
+const StatusBadge = ({ status }: { status: Project['status'] }) => {
   const { t } = useTranslation()
   const configs: Record<string, { color: string, icon: React.ElementType, label: string, pulse?: boolean }> = {
     pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
@@ -74,7 +60,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 const StudentProjects = () => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [projects, setProjects] = useState<ProjectData[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const isFirstLoad = useRef(true)
   
@@ -109,8 +95,7 @@ const StudentProjects = () => {
 
   // Poll for status updates every 5 seconds
   usePolling(fetchProjects, 5000)
-  
-  const onActionStarted = (uid: string, status: any = 'queued') => {
+  const onActionStarted = (uid: string, status: Project['status'] = 'queued') => {
     setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status } : p))
   }
 
@@ -130,7 +115,7 @@ const StudentProjects = () => {
           await projectsAPI.delete(uid)
           toast.success(t('common.success'))
           fetchProjects()
-        } catch (error) {
+        } catch (error: unknown) {
           toast.error(t('common.error'))
         }
       }

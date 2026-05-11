@@ -13,7 +13,7 @@ interface RestartButtonProps {
   status: string
   onStarted?: () => void
   onSuccess?: () => void
-  onError?: (error: any) => void
+  onError?: (error: unknown) => void
   className?: string
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"
   size?: "default" | "sm" | "lg" | "icon"

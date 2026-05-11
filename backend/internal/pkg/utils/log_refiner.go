@@ -18,8 +18,17 @@ type LogRefiner struct {
 	ansiPattern *regexp.Regexp
 	// buffer for partial lines
 	buf string
+	// started indicates if the build header has been written
+	started bool
+	// lastStep tracks the last status message to avoid duplicates
+	lastStep string
 	// mutex for thread safety (Stdout and Stderr use the same refiner)
 	mu sync.Mutex
+}
+
+type logTransformation struct {
+	pattern     *regexp.Regexp
+	replacement string
 }
 
 // NewLogRefiner creates a new LogRefiner.
@@ -34,26 +43,26 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^#\d+\s+[0-9.]+\s+(checking for |checking whether |checking |creating |compiling |/bin/sh | cc |mkdir \.?libs|LD_LIBRARY_PATH|Libraries have been installed|Build complete|Don't forget to run|find \. -name|rm -rf|Purging |OK: |Executing busybox|Get:|Fetched|Reading|Building|Selecting|Preparing|Unpacking|Setting up|Processing|Configuring for:|PHP Api Version:|Zend Module Api No:|Zend Extension Api No:|Appending configuration tag|config\.status:creating|\( *[0-9]+/[0-9]+\) (Upgrading|Installing|Purging))`),
 
 			// 3. Hide Composer & NPM specific noise from output lines (Audits, Funding, Vulnerabilities)
-			regexp.MustCompile(`^#\d+\s+[0-9.]+\s*(\s+-\s(Downloading|Installing|Extracting archive)|[0-9]+/[0-9]+\s\[|48 packages you are using|Use the .*composer fund|npm notice|run .*npm fund|packages are looking for funding|moderate severity vulnerabilities|To address all issues|npm warn config production|npm audit|Run .*npm audit|audited .* packages|found .* vulnerabilities)`),
+			regexp.MustCompile(`^#\d+\s+[0-9.]+\s*([0-9]+/[0-9]+\s\[|\d+ packages you are using|Use the .*composer fund|npm notice|run .*npm fund|packages are looking for funding|[a-zA-Z]+ severity vulnerabilities|To address all issues|npm warn config production|npm audit|Run .*npm audit|audited .* packages|found .* vulnerabilities)`),
 
 			// 4. Hide Laravel specific progress dots (the long lines of dots in package discovery)
 			regexp.MustCompile(`\[90m\.`),
 
 			// 5. Hide Railpack branding, metadata headers, and ALL step commands
-			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|↳ Using config|⚠ The config|↳ Output directory|  Packages|  ──────────)`),
+			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|⚠ The config|↳ Output directory|  Packages|  ──────────)`),
 			// Hide Railpack package table rows (node, caddy, bun, python, go, etc.)
 			regexp.MustCompile(`^\s*(node|caddy|bun|python|go|ruby|java|php|deno|mise)\s+│`),
 			// Hide ALL Railpack step commands ($ bun install, $ npm ci, $ caddy run, etc.)
 			regexp.MustCompile(`^\s+\$\s+`),
 			// Hide build steps 
-			regexp.MustCompile(`^\s*(↳|▸|Steps|Deploy)`),
+			regexp.MustCompile(`^\s*(↳|▸|Steps)`),
 
-			// 6. Hide final Docker metadata and build times
-			regexp.MustCompile(`(Loaded image:|Successfully built image in|Run with \x60docker run|built in [0-9.]+(s|ms))`),
+			// 6. Hide final Docker metadata (Except the build time which we will transform)
+			regexp.MustCompile(`(Loaded image:|Run with \x60docker run)`),
 
 			// 7. General Infrastructure & Hash Noise
 			regexp.MustCompile(`sha256:[a-f0-9]{64}`),
-			regexp.MustCompile(`(resolving|extracting|transferring context|loading secrets|docker-image://|\[2mmise\[0m)`),
+			regexp.MustCompile(`(resolving|transferring context|loading secrets|docker-image://|\[2mmise\[0m)`),
 
 			// 8. Hide lines that are just a Docker timestamp and nothing else (empty lines from build)
 			regexp.MustCompile(`^#\d+\s+[0-9.]+\s*$`),
@@ -65,7 +74,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(ERRO failed to solve|unrecognized image format)`), // Internal Docker errors
 
 			// 10. Hide Yarn / pnpm specific noise
-			regexp.MustCompile(`(YN0000:|YN0002:|YN0013:|YN0032:|YN0035:|YN0060:|YN0062:)`),          // Yarn Berry status codes
+			regexp.MustCompile(`(YN\d{4}:)`),          // Yarn Berry status codes
 			regexp.MustCompile(`(Packages: \+|Progress:|Already up to date|Lockfile is up to date)`), // pnpm progress
 
 			// 11. Hide pip / Python build noise
@@ -84,8 +93,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(Nixpacks|nixpacks|nix-support|\/nix\/store\/)`),
 
 			// 16. General infrastructure leak prevention
-			regexp.MustCompile(`^(COPY|RUN|ADD|WORKDIR|FROM|ENV|EXPOSE|CMD|ENTRYPOINT|ARG|LABEL|VOLUME|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD)\s`), // Dockerfile instructions
-			regexp.MustCompile(`(\/app\/storage\/|\/tmp\/build|\/var\/cache\/|\.docker\/|layer already exists|Pushing image|Pulling from)`),      // Internal paths & Docker ops
+			regexp.MustCompile(`^(#\d+\s+[0-9.]+\s*)?(COPY|RUN|ADD|WORKDIR|FROM|ENV|EXPOSE|CMD|ENTRYPOINT|ARG|LABEL|VOLUME|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD)\s`), // Dockerfile instructions
+			regexp.MustCompile(`(\/app\/storage\/|\/tmp\/build|\/var\/cache\/|\.docker\/|layer already exists|Pushing image|Pulling from|Build starting\.\.\.)`),      // Internal paths & Docker ops
 			regexp.MustCompile(`^[a-f0-9]{12}$`), // Short container/layer IDs
 
 			// 17. Hide Dockerfile source code leaks in error output
@@ -99,7 +108,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`storage/app/public.*public/storage`),                                          // php artisan storage:link output
 			regexp.MustCompile(`Discovered Package:`),                                                         // php artisan package:discover internal list
 			regexp.MustCompile(`Package manifest generated`),                                                  // package:discover completion
-			regexp.MustCompile(`(Generated optimized autoload|Generating optimized autoload|autoload files)`), // composer dump-autoload
+			// (Removed generated optimized autoload from here to allow it)
 			regexp.MustCompile(`Configuration cache`),                                                         // php artisan config:cache
 			regexp.MustCompile(`Route cache`),                                                                 // php artisan route:cache
 			regexp.MustCompile(`(Compiled views cleared|View cache cleared|Views compiled)`),                  // php artisan view:cache/clear
@@ -120,8 +129,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(Installing shared extensions|shared_alloc|ZendAccelerator)`),                 // PHP internal build noise
 
 			// 19. Hide Railpack/Nixpacks toolchain management (mise, node, bun install noise)
-			regexp.MustCompile(`(mise |[1/3] install|[1/3] download|[2/3] generate checksum|[3/3] extract)`),
-			regexp.MustCompile(`(v\d+\.\d+\.\d+|✓ installed)`),                                                     // Generic version and success checkmarks
+			regexp.MustCompile(`(mise\b|\[\d+/\d+\]\s+(install|download|extract|generate))`),
+			regexp.MustCompile(`^(#\d+\s+[0-9.]+\s*)?(v\d+\.\d+\.\d+|✓ installed)$`),                               // Generic version and success checkmarks
 			regexp.MustCompile(`(Hit:\d+ http:\/\/deb\.debian\.org|bookworm InRelease)`),                           // Debian/Apt repository noise
 			regexp.MustCompile(`(warn: incorrect peer dependency|note: try re-running without --frozen-lockfile)`), // Bun noise
 
@@ -137,6 +146,20 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
 	}
+}
+
+var buildTransformations = []logTransformation{
+	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun|composer|php|go|python|pip|pip3|ruby|bundle|rake|make|deno|mise)\s+(install|ci|i|get|add|download)`), "Installing dependencies..."},
+	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+run\s+(build|prod|production)`), "Building application..."},
+	{regexp.MustCompile(`^\s*\$\s*(php|python|go|ruby|node|deno|bun)\s+(artisan|manage\.py|main\.go|app\.rb|index\.js|server\.ts)\s+`), "Running application build step..."},
+	{regexp.MustCompile(`^\[\d+/\d+\]\s+(install|download|extracting).*`), "Installing dependencies..."},
+	{regexp.MustCompile(`^\[\d+/\d+\]\s+(build|generate|compiling).*`), "Building application..."},
+	{regexp.MustCompile(`^↳ Using config.*`), "Detected configuration..."},
+	{regexp.MustCompile(`^Successfully built image in\s+(.*)`), "Build completed in $1"},
+	{regexp.MustCompile(`^built in\s+(.*)`), "Build completed in $1"},
+	{regexp.MustCompile(`^Deploy.*`), "Deploying application..."},
+	{regexp.MustCompile(`^[-*]?\s*(Installing|Downloading|Extracting)\s+([^:(\s]+).*`), "- $1 $2"},
+	{regexp.MustCompile(`^(Generating|Generated) optimized autoload files.*`), "Optimizing autoload files..."},
 }
 
 func (r *LogRefiner) Write(p []byte) (n int, err error) {
@@ -181,8 +204,33 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 		if !shouldHide {
 			cleanedLine := r.stripPattern.ReplaceAllString(line, "")
 			cleanedLine = r.ansiPattern.ReplaceAllString(cleanedLine, "")
-			
-			if strings.TrimSpace(cleanedLine) != "" {
+			cleanedLine = strings.TrimSpace(cleanedLine)
+
+			if cleanedLine != "" {
+				// Apply transformations
+				isStatus := false
+				for _, t := range buildTransformations {
+					if t.pattern.MatchString(cleanedLine) {
+						cleanedLine = t.pattern.ReplaceAllString(cleanedLine, t.replacement)
+						isStatus = true
+						break
+					}
+				}
+
+				if isStatus {
+					if cleanedLine == r.lastStep {
+						continue // Skip duplicate status message
+					}
+					r.lastStep = cleanedLine
+				} else {
+					r.lastStep = "" // Reset last step if it's a real log line
+				}
+
+				if !r.started {
+					r.writer.Write([]byte("Build process started\n"))
+					r.started = true
+				}
+
 				r.writer.Write([]byte(cleanedLine + "\n"))
 			}
 		}
