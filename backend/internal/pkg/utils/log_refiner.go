@@ -45,6 +45,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^\s*(node|caddy|bun|python|go|ruby|java|php|deno|mise)\s+│`),
 			// Hide ALL Railpack step commands ($ bun install, $ npm ci, $ caddy run, etc.)
 			regexp.MustCompile(`^\s+\$\s+`),
+			// Hide build steps 
+			regexp.MustCompile(`^\s*(↳|▸|Steps|Deploy)`),
 
 			// 6. Hide final Docker metadata and build times
 			regexp.MustCompile(`(Loaded image:|Successfully built image in|Run with \x60docker run|built in [0-9.]+(s|ms))`),
