@@ -32,7 +32,8 @@ jobs:
           docker run --rm \
             --user $(id -u):$(id -g) \
             -e HOME=/tmp \
+            -v /tmp/npm-cache:/tmp/.npm \
             -v $(pwd):/app \
             -w /app \
             node:20-alpine \
-            sh -c "npm install && npm run lint && rm -rf node_modules"
+            sh -c "npm config set fetch-retry-maxtimeout 600000 && npm config set fetch-retries 5 && npm ci && npm run lint && rm -rf node_modules"

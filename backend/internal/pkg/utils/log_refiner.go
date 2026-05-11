@@ -227,11 +227,15 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 				}
 
 				if !r.started {
-					r.writer.Write([]byte("Build process started\n"))
+					if _, err := r.writer.Write([]byte("Build process started\n")); err != nil {
+						return len(p), err
+					}
 					r.started = true
 				}
 
-				r.writer.Write([]byte(cleanedLine + "\n"))
+				if _, err := r.writer.Write([]byte(cleanedLine + "\n")); err != nil {
+					return len(p), err
+				}
 			}
 		}
 	}
