@@ -124,6 +124,15 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(v\d+\.\d+\.\d+|✓ installed)`),                                                     // Generic version and success checkmarks
 			regexp.MustCompile(`(Hit:\d+ http:\/\/deb\.debian\.org|bookworm InRelease)`),                           // Debian/Apt repository noise
 			regexp.MustCompile(`(warn: incorrect peer dependency|note: try re-running without --frozen-lockfile)`), // Bun noise
+
+			// 20. Hide APT/dpkg noise (Reading database, package installation stats, triggers)
+			regexp.MustCompile(`(NEW packages will be installed|upgraded, .* newly installed|get [0-9.]+ [kMG]?B of archives|After this operation, [0-9.]+ [kMG]?B|debconf: delaying|Reading database \.\.\.|files and directories currently installed|Selecting previously unselected|Preparing to unpack|Unpacking |Setting up |Processing triggers)`),
+
+			// 21. Hide Vite/Rollup/Build noise (Asset summaries, transformation progress)
+			regexp.MustCompile(`(transforming\.\.\.|modules transformed|rendering chunks\.\.\.|computing gzip size\.\.\.|dist\/.* │ gzip:|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit|vite v[0-9.]+|building for production|Done in [0-9.]+(s|ms))`),
+
+			// 22. Aggressive Vercel-style filtering (Hiding package manager summaries and internal env vars)
+			regexp.MustCompile(`(added \d+ packages|audited \d+ packages|found \d+ vulnerabilities|vulnerabilities? found|up to date in|packages are looking for funding|NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
