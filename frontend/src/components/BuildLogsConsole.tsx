@@ -8,9 +8,10 @@ import ConfirmationModal from './ConfirmationModal'
 
 interface BuildLogsConsoleProps {
   projectId: string | number
+  status?: string
 }
 
-const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
+const BuildLogsConsole = ({ projectId, status }: BuildLogsConsoleProps) => {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<string>('')
   const [clearedLength, setClearedLength] = useState(0)
@@ -137,7 +138,18 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
               <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{lineOffset + i + 1}</span>
               <span className="whitespace-pre-wrap break-all">{line}</span>
             </div>
-          )) : (
+          )) : (status === 'queued' || status === 'building') ? (
+            <div className="flex flex-col gap-1 opacity-70 mt-2">
+              <div className="flex gap-4 group py-0.5 px-2 rounded -mx-2">
+                <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">1</span>
+                <span className="text-blue-400">System <span className="text-zinc-500">Preparing build environment...</span></span>
+              </div>
+              <div className="flex gap-4 group py-0.5 px-2 rounded -mx-2">
+                <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">2</span>
+                <span className="text-blue-400 animate-pulse">System <span className="text-zinc-500">Retrieving project source code and configuration...</span></span>
+              </div>
+            </div>
+          ) : (
             <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4">
               <Terminal size={48} />
               <p className="uppercase tracking-[0.4em] font-bold text-xs animate-pulse">

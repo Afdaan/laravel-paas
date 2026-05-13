@@ -52,8 +52,9 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|⚠ The config|↳ Output directory|  Packages|  ──────────)`),
 			// Hide Railpack package table rows (node, caddy, bun, python, go, etc.)
 			regexp.MustCompile(`^\s*(node|caddy|bun|python|go|ruby|java|php|deno|mise)\s+│`),
-			// Hide ALL Railpack step commands ($ bun install, $ npm ci, $ caddy run, etc.)
-			regexp.MustCompile(`^\s+\$\s+`),
+			// Hide Railpack step commands EXCEPT build/install commands (those get transformed below)
+			regexp.MustCompile(`^\s+\$\s+(caddy|mise|chmod|chown|cp|mv|mkdir|rm|ln|cat|echo|sed|awk|tar|curl|wget|git)\s`),
+			regexp.MustCompile(`^\s+\$\s+[a-z]+\s+(run\s+(dev|start|serve|watch|preview)|test|lint|format)\s`),
 			// Hide build steps 
 			regexp.MustCompile(`^\s*(↳|▸|Steps)`),
 
@@ -137,8 +138,11 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 20. Hide APT/dpkg noise (Reading database, package installation stats, triggers)
 			regexp.MustCompile(`(NEW packages will be installed|upgraded, .* newly installed|get [0-9.]+ [kMG]?B of archives|After this operation, [0-9.]+ [kMG]?B|debconf: delaying|Reading database \.\.\.|files and directories currently installed|Selecting previously unselected|Preparing to unpack|Unpacking |Setting up |Processing triggers)`),
 
-			// 21. Hide minimal Vite/Rollup noise but ALLOW asset summaries and transformation progress
-			regexp.MustCompile(`(computing gzip size\.\.\.|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit)`),
+			// 21. Hide Vite/Rollup internal progress noise but ALLOW asset table, version, and build timing
+			regexp.MustCompile(`(transforming\.\.\.|\d+\s+modules? transformed|rendering chunks\.\.\.|computing gzip size\.\.\.|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit)`),
+
+			// 23. Hide lone fragment lines left over after ANSI/prefix stripping
+			regexp.MustCompile(`^\s*transformed\.\s*$`),
 
 			// 22. Hide internal env vars but ALLOW package manager summaries
 			regexp.MustCompile(`(NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
@@ -149,15 +153,28 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 }
 
 var buildTransformations = []logTransformation{
-	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun|composer|php|go|python|pip|pip3|ruby|bundle|rake|make|deno|mise)\s+(install|ci|i|get|add|download)`), "> $1 $2"},
-	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+run\s+(build|prod|production)`), "> $1 run $2"},
-	{regexp.MustCompile(`^\s*\$\s*(php|python|go|ruby|node|deno|bun)\s+(artisan|manage\.py|main\.go|app\.rb|index\.js|server\.ts)\s+`), "> $1 $2"},
+	// Transform Railpack $ commands into clean "> command" format
+	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+(install|ci|i|add)\b.*`), "> $1 $2"},
+	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+run\s+(build|prod|production)\b.*`), "> $1 run $2"},
+	{regexp.MustCompile(`^\s*\$\s*(composer)\s+(install|update|dump-autoload)\b.*`), "> $1 $2"},
+	{regexp.MustCompile(`^\s*\$\s*(php)\s+(artisan)\s+(.*)`), "> $1 $2 $3"},
+	{regexp.MustCompile(`^\s*\$\s*(pip|pip3|python)\s+(install|setup\.py)\b.*`), "> $1 $2"},
+	{regexp.MustCompile(`^\s*\$\s*(go)\s+(build|install|mod)\b.*`), "> $1 $2"},
+	{regexp.MustCompile(`^\s*\$\s*(bundle|rake|gem)\s+(install|exec)\b.*`), "> $1 $2"},
+	// Hide any remaining $ commands that weren't transformed (infrastructure noise)
+	{regexp.MustCompile(`^\s*\$\s+.+`), ""},
+
+	// Transform progress indicators
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(install|download|extracting).*`), "Installing dependencies..."},
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(build|generate|compiling).*`), "Building application..."},
 	{regexp.MustCompile(`^↳ Using config.*`), "Detected configuration..."},
-	{regexp.MustCompile(`^Successfully built image in\s+(.*)`), "Build completed in $1"},
-	{regexp.MustCompile(`^built in\s+(.*)`), "Build completed in $1"},
+
+	// Transform final build status lines
+	{regexp.MustCompile(`^INFO\s+Successfully built image in\s+(.*)`), "Successfully built image in $1"},
+	{regexp.MustCompile(`^Successfully built image in\s+(.*)`), "Successfully built image in $1"},
 	{regexp.MustCompile(`^Deploy.*`), "Deploying application..."},
+
+	// Transform dependency install noise into clean one-liners
 	{regexp.MustCompile(`^[-*]?\s*(Installing|Downloading|Extracting)\s+([^:(\s]+).*`), "- $1 $2"},
 	{regexp.MustCompile(`^(Generating|Generated) optimized autoload files.*`), "Optimizing autoload files..."},
 }
@@ -217,6 +234,11 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 					}
 				}
 
+				// Skip lines that became empty after transformation (infrastructure noise)
+				if cleanedLine == "" {
+					continue
+				}
+
 				if isStatus {
 					if cleanedLine == r.lastStep {
 						continue // Skip duplicate status message
@@ -227,7 +249,7 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 				}
 
 				if !r.started {
-					if _, err := r.writer.Write([]byte("Build process started\n")); err != nil {
+					if _, err := r.writer.Write([]byte("Running build container...\nInitializing build environment...\n")); err != nil {
 						return len(p), err
 					}
 					r.started = true

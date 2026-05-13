@@ -948,7 +948,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} />}
+          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
