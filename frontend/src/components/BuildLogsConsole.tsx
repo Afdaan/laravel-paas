@@ -4,6 +4,7 @@ import { projectsAPI } from '../services/api'
 import { Terminal, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import useTranslation from '@/lib/useTranslation'
+import ConfirmationModal from './ConfirmationModal'
 
 interface BuildLogsConsoleProps {
   projectId: string | number
@@ -12,20 +13,24 @@ interface BuildLogsConsoleProps {
 const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<string>('')
+  const [clearedLength, setClearedLength] = useState(0)
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Limit to last 500 lines for performance
   const logLines = useMemo(() => {
     if (!logs) return []
-    const lines = logs.split('\n')
+    const visibleLogs = clearedLength > 0 ? logs.substring(clearedLength) : logs
+    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.slice(-500) : lines
-  }, [logs])
+  }, [logs, clearedLength])
 
   const lineOffset = useMemo(() => {
     if (!logs) return 0
-    const lines = logs.split('\n')
+    const visibleLogs = clearedLength > 0 ? logs.substring(clearedLength) : logs
+    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.length - 500 : 0
-  }, [logs])
+  }, [logs, clearedLength])
 
   useEffect(() => {
     let isMounted = true
@@ -75,6 +80,15 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
     }
   }
 
+  const handleClear = () => {
+    setIsConfirmOpen(true)
+  }
+
+  const confirmClear = () => {
+    setClearedLength(logs.length)
+    toast.success(t('common.success'))
+  }
+
   return (
     <Card className="bg-zinc-950 text-white border-none overflow-hidden flex flex-col h-[600px] gap-0 py-0 shadow-2xl">
       <CardHeader className="bg-zinc-900/80 px-4 py-3 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
@@ -106,7 +120,7 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
           </button>
           <div className="w-px h-3 bg-white/10 mx-1" />
           <button
-            onClick={() => setLogs('')}
+            onClick={handleClear}
             className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 px-2 cursor-pointer transition-colors"
           >
             {t('projectDetail.actions.clear')}
@@ -133,6 +147,15 @@ const BuildLogsConsole = ({ projectId }: BuildLogsConsoleProps) => {
           )}
         </div>
       </CardContent>
+      <ConfirmationModal
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={confirmClear}
+        title={t('projectDetail.actions.clear')}
+        message={t('common.confirmClearLogs') || 'Confirm clearing build logs? New logs will still appear.'}
+        type="warning"
+        confirmText={t('common.confirm')}
+      />
     </Card>
   )
 }

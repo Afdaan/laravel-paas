@@ -137,11 +137,11 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 20. Hide APT/dpkg noise (Reading database, package installation stats, triggers)
 			regexp.MustCompile(`(NEW packages will be installed|upgraded, .* newly installed|get [0-9.]+ [kMG]?B of archives|After this operation, [0-9.]+ [kMG]?B|debconf: delaying|Reading database \.\.\.|files and directories currently installed|Selecting previously unselected|Preparing to unpack|Unpacking |Setting up |Processing triggers)`),
 
-			// 21. Hide Vite/Rollup/Build noise (Asset summaries, transformation progress)
-			regexp.MustCompile(`(transforming\.\.\.|modules transformed|rendering chunks\.\.\.|computing gzip size\.\.\.|dist\/.* │ gzip:|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit|vite v[0-9.]+|building for production|Done in [0-9.]+(s|ms))`),
+			// 21. Hide minimal Vite/Rollup noise but ALLOW asset summaries and transformation progress
+			regexp.MustCompile(`(computing gzip size\.\.\.|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit)`),
 
-			// 22. Aggressive Vercel-style filtering (Hiding package manager summaries and internal env vars)
-			regexp.MustCompile(`(added \d+ packages|audited \d+ packages|found \d+ vulnerabilities|vulnerabilities? found|up to date in|packages are looking for funding|NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
+			// 22. Hide internal env vars but ALLOW package manager summaries
+			regexp.MustCompile(`(NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
@@ -149,9 +149,9 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 }
 
 var buildTransformations = []logTransformation{
-	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun|composer|php|go|python|pip|pip3|ruby|bundle|rake|make|deno|mise)\s+(install|ci|i|get|add|download)`), "Installing dependencies..."},
-	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+run\s+(build|prod|production)`), "Building application..."},
-	{regexp.MustCompile(`^\s*\$\s*(php|python|go|ruby|node|deno|bun)\s+(artisan|manage\.py|main\.go|app\.rb|index\.js|server\.ts)\s+`), "Running application build step..."},
+	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun|composer|php|go|python|pip|pip3|ruby|bundle|rake|make|deno|mise)\s+(install|ci|i|get|add|download)`), "> $1 $2"},
+	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+run\s+(build|prod|production)`), "> $1 run $2"},
+	{regexp.MustCompile(`^\s*\$\s*(php|python|go|ruby|node|deno|bun)\s+(artisan|manage\.py|main\.go|app\.rb|index\.js|server\.ts)\s+`), "> $1 $2"},
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(install|download|extracting).*`), "Installing dependencies..."},
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(build|generate|compiling).*`), "Building application..."},
 	{regexp.MustCompile(`^↳ Using config.*`), "Detected configuration..."},

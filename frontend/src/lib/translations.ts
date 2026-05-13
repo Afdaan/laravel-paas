@@ -81,6 +81,7 @@ export const translations = {
       student: "Student",
       size: "Size",
       justNow: "Just now",
+      confirmClearLogs: "Are you sure you want to clear the logs? New logs will still appear.",
     },
     system: {
       updating: "System Update in Progress",
@@ -750,6 +751,7 @@ export const translations = {
       student: "Siswa",
       size: "Ukuran",
       justNow: "Baru saja",
+      confirmClearLogs: "Konfirmasi pembersihan log? Log baru akan tetap muncul.",
     },
     system: {
       updating: "System Update sedang berjalan",

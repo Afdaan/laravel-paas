@@ -117,6 +117,9 @@ function StudentProjectDetail() {
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
+  
+  const [consoleClearedLength, setConsoleClearedLength] = useState(0)
+  const [logsClearedLength, setLogsClearedLength] = useState(0)
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -233,6 +236,7 @@ function StudentProjectDetail() {
   useEffect(() => {
     if (activeTab === 'logs' && project?.container_id) {
       setLogs('')
+      setLogsClearedLength(0)
       fetchLogs()
     }
   }, [logType, activeTab, project?.container_id, fetchLogs])
@@ -245,28 +249,60 @@ function StudentProjectDetail() {
 
   const logLines = useMemo(() => {
     if (!logs) return []
-    const lines = logs.split('\n')
+    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
+    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.slice(-500) : lines
-  }, [logs])
+  }, [logs, logsClearedLength])
 
   const logOffset = useMemo(() => {
     if (!logs) return 0
-    const lines = logs.split('\n')
+    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
+    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.length - 500 : 0
-  }, [logs])
+  }, [logs, logsClearedLength])
 
   const consoleLines = useMemo(() => {
     if (!consoleOutput) return []
-    const lines = consoleOutput.split('\n')
+    const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
+    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.slice(-500) : lines
-  }, [consoleOutput])
+  }, [consoleOutput, consoleClearedLength])
 
   const consoleOffset = useMemo(() => {
     if (!consoleOutput) return 0
-    const lines = consoleOutput.split('\n')
+    const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
+    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.length - 500 : 0
-  }, [consoleOutput])
+  }, [consoleOutput, consoleClearedLength])
 
+
+  const handleClearConsole = () => {
+    setConfirmModal({
+      title: t('projectDetail.actions.clear'),
+      message: t('common.confirmClearLogs') || 'Confirm clearing the console? New logs will still appear.',
+      type: 'warning',
+      confirmText: t('common.confirm'),
+      isOpen: true,
+      onConfirm: () => {
+        setConsoleClearedLength(consoleOutput.length)
+        toast.success(t('common.success'))
+      }
+    })
+  }
+
+  const handleClearLogs = () => {
+    setConfirmModal({
+      title: t('projectDetail.actions.clear'),
+      message: t('common.confirmClearLogs') || 'Confirm clearing the logs? New logs will still appear.',
+      type: 'warning',
+      confirmText: t('common.confirm'),
+      isOpen: true,
+      onConfirm: () => {
+        setLogsClearedLength(logs.length)
+        toast.success(t('common.success'))
+      }
+    })
+  }
 
   const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -737,7 +773,7 @@ function StudentProjectDetail() {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
+                <Button variant="ghost" size="xs" onClick={handleClearConsole} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
               </div>
             </CardHeader>
 
@@ -880,7 +916,7 @@ function StudentProjectDetail() {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={() => setLogs('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
+                <Button variant="ghost" size="xs" onClick={handleClearLogs} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
                 <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6 cursor-pointer"><RefreshCw size={12} /></Button>
               </div>
             </CardHeader>
