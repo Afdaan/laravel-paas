@@ -138,6 +138,14 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 20. Hide APT/dpkg noise (Reading database, package installation stats, triggers)
 			regexp.MustCompile(`(NEW packages will be installed|upgraded, .* newly installed|get [0-9.]+ [kMG]?B of archives|After this operation, [0-9.]+ [kMG]?B|debconf: delaying|Reading database \.\.\.|files and directories currently installed|Selecting previously unselected|Preparing to unpack|Unpacking |Setting up |Processing triggers)`),
 
+			// 21. Hide curl/wget/bash progress bars and bun install messages
+			regexp.MustCompile(`^([#=O\-\s]+|\s*\d+\.\d+%|[#=O\-\s]+\d+\.\d+%)$`),
+			regexp.MustCompile(`(Executing bash-|bun was installed successfully|Manually add the directory|export BUN_INSTALL|export PATH=.*BUN_INSTALL|To get started, run:|bun --help)`),
+
+			// 22. Hide verbose Composer/NPM dependency download and install lines
+			regexp.MustCompile(`^-\s*(Downloading|Installing)\s+([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)`),
+			regexp.MustCompile(`(Verifying lock file contents|Package operations: \d+ installs)`),
+
 			// 21. Hide Vite/Rollup internal progress noise but ALLOW asset table, version, and build timing
 			regexp.MustCompile(`(transforming\.\.\.|\d+\s+modules? transformed|rendering chunks\.\.\.|computing gzip size\.\.\.|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit)`),
 
@@ -174,8 +182,6 @@ var buildTransformations = []logTransformation{
 	{regexp.MustCompile(`^Successfully built image in\s+(.*)`), "Successfully built image in $1"},
 	{regexp.MustCompile(`^Deploy.*`), "Deploying application..."},
 
-	// Transform dependency install noise into clean one-liners
-	{regexp.MustCompile(`^[-*]?\s*(Installing|Downloading|Extracting)\s+([^:(\s]+).*`), "- $1 $2"},
 	{regexp.MustCompile(`^(Generating|Generated) optimized autoload files.*`), "Optimizing autoload files..."},
 }
 
