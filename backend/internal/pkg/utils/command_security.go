@@ -33,6 +33,7 @@ var commandRegistry = map[string]frameworkCommands{
 			"key:generate":   true,
 			"migrate":        true,
 			"db:seed":        true,
+			"livewire:publish": true,
 		},
 		BlockedPatterns: []string{
 			"migrate:fresh",
