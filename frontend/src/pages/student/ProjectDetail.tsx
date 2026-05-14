@@ -155,8 +155,6 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.get(uid)
       setProject(response.data)
-      setBranchInput(response.data.branch || '')
-      setBaseDirInput(response.data.base_directory || '')
       setConsecutiveErrors(0)
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: string }>
@@ -433,7 +431,7 @@ function StudentProjectDetail() {
   }
 
   useEffect(() => {
-    if (project) {
+    if (project && !isSettingsDirty) {
       setBranchInput(project.branch || '')
       setBaseDirInput(project.base_directory || '')
       setBuildCommandInput(project.build_command || '')
@@ -444,7 +442,7 @@ function StudentProjectDetail() {
       setQueueEnabledInput(project.queue_enabled || false)
       setLanguageVersionInput(project.language_version || '')
     }
-  }, [project])
+  }, [project, isSettingsDirty])
 
   const handleDelete = () => {
     if (!uid) return
