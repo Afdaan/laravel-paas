@@ -430,8 +430,25 @@ function StudentProjectDetail() {
     })
   }
 
+  const settingsInitialized = useRef(false)
+
   useEffect(() => {
-    if (project && !isSettingsDirty) {
+    if (project && !settingsInitialized.current) {
+      setBranchInput(project.branch || '')
+      setBaseDirInput(project.base_directory || '')
+      setBuildCommandInput(project.build_command || '')
+      setStartCommandInput(project.start_command || '')
+      setNodeVersionInput(project.node_version || '20')
+      setPhpVersionInput(project.php_version || '8.2')
+      setWorkerCommandInput(project.worker_command || '')
+      setQueueEnabledInput(project.queue_enabled || false)
+      setLanguageVersionInput(project.language_version || '')
+      settingsInitialized.current = true
+    }
+  }, [project])
+
+  useEffect(() => {
+    if (project && !isSettingsDirty && settingsInitialized.current) {
       setBranchInput(project.branch || '')
       setBaseDirInput(project.base_directory || '')
       setBuildCommandInput(project.build_command || '')
