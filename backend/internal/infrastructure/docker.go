@@ -687,22 +687,49 @@ func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
 		return 0, err
 	}
 
-	// Pick the first port we find
+	// 1. Collect and sort all available ports
+	var ports []int
 	for portKey := range exposed {
-		// portKey is something like "3000/tcp"
 		parts := strings.Split(portKey, "/")
 		if len(parts) > 0 {
-			var port int
-			if _, err := fmt.Sscanf(parts[0], "%d", &port); err != nil {
-				continue
-			}
-			if port > 0 {
-				return port, nil
+			var p int
+			if _, err := fmt.Sscanf(parts[0], "%d", &p); err == nil && p > 0 {
+				ports = append(ports, p)
 			}
 		}
 	}
 
-	return 0, fmt.Errorf("could not parse port from metadata")
+	if len(ports) == 0 {
+		return 0, fmt.Errorf("no valid ports parsed from metadata")
+	}
+
+	// 2. Prioritize common web ports
+	priorityPorts := []int{80, 8080, 3000, 5000}
+	for _, p := range priorityPorts {
+		for _, available := range ports {
+			if available == p {
+				return available, nil
+			}
+		}
+	}
+
+	// 3. If no priority port found, pick the smallest one but AVOID 9000 if alternatives exist
+	// (9000 is usually PHP-FPM FastCGI, not HTTP)
+	var fallback int
+	for _, p := range ports {
+		if p == 9000 && len(ports) > 1 {
+			continue
+		}
+		if fallback == 0 || p < fallback {
+			fallback = p
+		}
+	}
+
+	if fallback > 0 {
+		return fallback, nil
+	}
+
+	return ports[0], nil
 }
 
 func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string, isInitial bool) error {
