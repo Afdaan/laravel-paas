@@ -524,9 +524,10 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
-	if err == nil && project.Status == models.StatusRunning && project.Port != nil {
-		// Cache hit! Forward with path stripping
-		targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+	if err == nil && project.Status == models.StatusRunning && project.Port != nil && project.ContainerID != nil {
+		// Cache hit! Forward with internal Docker routing
+		// We use the container ID as the hostname because they are in the same paas-network
+		targetURL := fmt.Sprintf("http://%s:%d", *project.ContainerID, *project.Port)
 
 		// Map the path correctly by stripping the /proxy prefix
 		// Fiber's wildcard parameter (*) holds the rest of the path
@@ -549,12 +550,12 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 	h.projectService.UpdateActivity(project_db.ID)
 
-	if project_db.Port == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project port not configured"})
+	if project_db.Port == nil || project_db.ContainerID == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project container or port not configured"})
 	}
 
-	// 4. Forward with path stripping
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project_db.Port)
+	// 4. Forward with internal Docker routing
+	targetURL := fmt.Sprintf("http://%s:%d", *project_db.ContainerID, *project_db.Port)
 	path := c.Params("*")
 	target := targetURL + "/" + path
 

@@ -226,11 +226,23 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 	}
 
 	// 5. Generate unique subdomain using the refactored string utility
+	// GenerateSubdomain already appends a random 6-character suffix
 	subdomain := utils.GenerateSubdomain(name)
+
+	// Extract the random suffix to ensure database name is also unique
+	// Subdomain format: "name-suffix"
+	parts := strings.Split(subdomain, "-")
+	suffix := parts[len(parts)-1]
 
 	dbName := databaseName
 	if dbName == "" {
 		dbName = strings.ReplaceAll(subdomain, "-", "_")
+	} else {
+		// Even if user provides a database name, we sanitize it and append the 
+		// same unique suffix to prevent collisions across users.
+		dbName = fmt.Sprintf("%s_%s", 
+			strings.Trim(strings.ReplaceAll(strings.ToLower(dbName), "-", "_"), "_"), 
+			suffix)
 	}
 
 	// Always generate a random password if not provided to ensure successful MySQL user creation
