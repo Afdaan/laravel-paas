@@ -107,7 +107,7 @@ func (r *projectRepository) ListAll() ([]models.Project, error) {
 // ListExpired returns projects whose expiry date has passed
 func (r *projectRepository) ListExpired() ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Where("expires_at IS NOT NULL AND expires_at < NOW()").Find(&projects).Error
+	err := r.db.Preload("User").Where("expires_at IS NOT NULL AND expires_at < NOW()").Find(&projects).Error
 	return projects, err
 }
 

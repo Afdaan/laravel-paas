@@ -6,6 +6,7 @@ package infrastructure
 		"fmt"
 		"log/slog"
 		"net/http"
+		"strings"
 		"time"
 
 		"github.com/laravel-paas/backend/internal/config"
@@ -47,8 +48,8 @@ package infrastructure
 			slog.Warn("Project has no port assigned, defaulting to 80 for Nginx sync", "subdomain", project.Subdomain)
 		}
 
-		// Use stable User ID for folder naming to prevent orphans/conflicts
-		userFolder := fmt.Sprintf("user-%d", project.UserID)
+		// Determine target configuration directory using a sanitized, traceable identifier.
+		userFolder := s.getUserFolderName(project)
 
 		payload := WebhookPayload{
 			Action:     "sync",
@@ -68,7 +69,7 @@ package infrastructure
 			return nil
 		}
 
-		userFolder := fmt.Sprintf("user-%d", project.UserID)
+		userFolder := s.getUserFolderName(project)
 
 		payload := WebhookPayload{
 			Action:     "delete",
@@ -109,5 +110,39 @@ package infrastructure
 
 		slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action)
 		return nil
+	}
+
+	// getUserFolderName generates a predictable, POSIX-compliant directory name based on the user's email.
+	// It strips all special characters and appends the user ID to guarantee uniqueness and prevent directory traversal or collision issues.
+	func (s *NginxWebhookService) getUserFolderName(project *models.Project) string {
+		if project.User.Email == "" {
+			return fmt.Sprintf("user-%d", project.UserID)
+		}
+
+		emailPrefix := strings.Split(project.User.Email, "@")[0]
+		
+		// Sanitize prefix: preserve only alphanumeric characters.
+		// Replace any special character with a hyphen to maintain readability.
+		emailPrefix = strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+				return r
+			}
+			return '-'
+		}, emailPrefix)
+
+		// Collapse consecutive hyphens to prevent malformed directory names (e.g., "user--name" -> "user-name").
+		for strings.Contains(emailPrefix, "--") {
+			emailPrefix = strings.ReplaceAll(emailPrefix, "--", "-")
+		}
+		
+		// Remove leading and trailing hyphens to ensure valid directory naming constraints.
+		emailPrefix = strings.Trim(emailPrefix, "-")
+		
+		// Fallback to generic prefix if sanitization stripped the entire string.
+		if emailPrefix == "" {
+			emailPrefix = "user"
+		}
+
+		return fmt.Sprintf("%s-%d", strings.ToLower(emailPrefix), project.UserID)
 	}
 	
