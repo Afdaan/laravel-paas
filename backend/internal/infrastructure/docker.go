@@ -72,14 +72,14 @@ func NewDockerService(cfg *config.Config, storage *StorageService) *DockerServic
 // ===========================================
 
 // BuildAndRun builds and starts a container for a project using Railpack
-func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string) (string, error) {
+func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool, noCache bool) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
 	buildPath := s.ResolveBuildPath(projectPath, project.BaseDirectory)
 
 	// 2. Prepare Environment
-	if err := s.CreateEnvFile(project, projectDomain); err != nil {
+	if err := s.CreateEnvFile(project, projectDomain, isInitial); err != nil {
 		return "", fmt.Errorf("failed to create .env: %w", err)
 	}
 
@@ -98,6 +98,9 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		}
 	}
 
+	// 2.2 Inject .dockerignore if missing to optimize build context size
+	s.injectDockerIgnore(projectPath)
+
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	logFilePath := filepath.Join(projectPath, "build.log")
 
@@ -114,10 +117,10 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		if internalPort == "" {
 			internalPort = "80"
 		}
-		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath)
+		err = s.legacyLaravelBuild(project, buildPath, imageName, phpVersion, logFilePath, noCache)
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
-		err = s.railpackBuild(project, buildPath, imageName, logFilePath)
+		err = s.railpackBuild(project, buildPath, imageName, logFilePath, noCache)
 	}
 
 	if err != nil {
@@ -252,7 +255,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 }
 
 // legacyLaravelBuild handles the proven Dockerfile + Nginx approach
-func (s *DockerService) legacyLaravelBuild(project *models.Project, buildPath, imageName, phpVersion, logFilePath string) error {
+func (s *DockerService) legacyLaravelBuild(project *models.Project, buildPath, imageName, phpVersion, logFilePath string, noCache bool) error {
 	// 1. Prepare Dockerfile
 	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
 	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
@@ -305,9 +308,13 @@ stdout_logfile_maxbytes=0
 	}
 
 	// 4. Build using Docker Buildx
-	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "docker", "buildx", "build", "--load",
-		"--label", models.LabelProjectManaged,
-		"-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
+	buildArgs := []string{"buildx", "build", "--load"}
+	if noCache {
+		buildArgs = append(buildArgs, "--no-cache")
+	}
+	buildArgs = append(buildArgs, "--label", models.LabelProjectManaged, "-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
+
+	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "docker", buildArgs...)
 
 	if err != nil {
 		return apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s", project.Subdomain, res.Stderr))
@@ -317,40 +324,59 @@ stdout_logfile_maxbytes=0
 }
 
 // railpackBuild handles all other languages using Nixpacks-style auto-detection
-func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string) error {
-	s.injectDefaultRailpackConfig(buildPath, project.RuntimeImage)
+func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageName, logFilePath string, noCache bool) error {
+	s.injectDefaultRailpackConfig(buildPath)
 
-	// Optimization: Inject env vars to limit parallelism and use caching
+	// Strip strict lockfiles before Railpack runs.
+	// Railpack hardcodes --frozen-lockfile when it detects bun.lock or yarn.lock,
+	// causing builds to fail when the user's lockfile is out of sync with package.json.
+	// A pre-sync approach requires the package manager on the host, which is not guaranteed.
+	// Deleting the lockfile forces a fresh resolve bounded by package.json semver constraints.
+	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {
+		if err := os.Remove(filepath.Join(buildPath, lockfile)); err == nil {
+			slog.Info("Stripped lockfile to allow non-frozen install", "file", lockfile, "subdomain", project.Subdomain)
+		}
+	}
+
 	// Use project ID as cache key for better isolation but still allowing layer reuse
 	cacheKey := fmt.Sprintf("project-%d", project.ID)
+	if noCache {
+		cacheKey = fmt.Sprintf("project-%d-%d", project.ID, time.Now().Unix())
+	}
 
 	buildArgs := []string{
 		"build",
-		"--name", imageName,
+		"--name",      imageName,
 		"--cache-key", cacheKey,
-		"--env", "NPM_CONFIG_JOBS=2",
-		"--env", "CI=true",
+	}
+	// Collect all environment variables in a map to avoid duplicates
+	envs := map[string]string{
+		"NPM_CONFIG_JOBS":             "2",
+		"NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+		"PAAS_BUILD_ID":               fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
-	// Load environment variables from .env to pass to build phase.
-	// This is required for frontend frameworks (Vite, Next.js, etc.) that bake 
-	// environment variables into the static bundle at build time.
-	// Use the container-local ProjectsPath for internal file reading.
+	// Load environment variables from .env
 	projectEnvPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env")
 	if envVars, err := s.parseProjectEnv(projectEnvPath); err == nil {
 		for key, value := range envVars {
-			buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
+			envs[key] = value
 		}
 	}
 
 	// Inject Node Version if specified
 	if project.NodeVersion != "" {
-		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_NODE_VERSION=%s", project.NodeVersion))
+		envs["NIXPACKS_NODE_VERSION"] = project.NodeVersion
 	}
 
 	// Inject custom Build Command if specified
 	if project.BuildCommand != "" {
-		buildArgs = append(buildArgs, "--env", fmt.Sprintf("NIXPACKS_BUILD_CMD=%s", project.BuildCommand))
+		envs["NIXPACKS_BUILD_CMD"] = project.BuildCommand
+	}
+
+	// Append all envs to buildArgs
+	for key, value := range envs {
+		buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
 	}
 
 	// Finalize build command with path
@@ -359,13 +385,65 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "railpack", buildArgs...)
 
 	if err != nil {
-		return apperr.New(500, "RAILPACK_BUILD_FAILED", fmt.Sprintf("Railpack build failed for %s: %s", project.Subdomain, res.Stderr))
+		// Cleanup: Remove failed image and prune cache if it looks like a corruption issue.
+		// We use RunSilent for cleanup to prevent cluttering the main logic with non-fatal errors.
+		slog.Warn("Railpack build failed, performing cleanup", "subdomain", project.Subdomain, "error", err)
+		
+		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
+		
+		if strings.Contains(res.Stderr, "unrecognized image format") || strings.Contains(res.Stderr, "failed to solve") {
+			slog.Info("Detected build kit corruption, pruning builder cache and disabling cache for next run", "subdomain", project.Subdomain)
+			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=0s")
+		}
+
+		// Extract only the actionable error lines from stderr, discarding internal
+		// Railpack/BuildKit noise that is not meaningful to the end user.
+		userMessage := sanitizeBuildError(res.Stderr)
+		return apperr.New(500, "BUILD_FAILED", userMessage)
 	}
 
 	return nil
 }
 
-// StartExistingImage starts a container from an already built image.
+// sanitizeBuildError strips internal build system noise from stderr output
+// and returns only the lines that are actionable by the end user.
+func sanitizeBuildError(stderr string) string {
+	noisePatterns := []string{
+		"ERRO failed to solve",
+		"failed to solve:",
+		"unrecognized image format",
+		"INFO No package manager",
+		"Railpack build failed",
+		" ERRO ",
+		" INFO ",
+		" WARN ",
+	}
+
+	var kept []string
+	for _, line := range strings.Split(stderr, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		isNoise := false
+		for _, pattern := range noisePatterns {
+			if strings.Contains(trimmed, pattern) {
+				isNoise = true
+				break
+			}
+		}
+		if !isNoise {
+			kept = append(kept, trimmed)
+		}
+	}
+
+	if len(kept) == 0 {
+		return "Build failed. Check the build logs for details."
+	}
+	return strings.Join(kept, "\n")
+}
+
+
 func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 
@@ -438,7 +516,9 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 
 // RunMigrations executes artisan migrate inside the container
 func (s *DockerService) RunMigrations(containerID string) (string, error) {
-	// Wait a bit longer for the container and its internal services to fully initialize
+	// Infrastructure buffer: Wait for the container network stack and internal services 
+	// (like PHP-FPM or the application server) to fully initialize before executing 
+	// migration commands. This prevents "connection refused" or "socket not found" errors.
 	time.Sleep(5 * time.Second)
 
 	// Determine the best user to run the command (prefer www-data, fallback to root)
@@ -469,59 +549,125 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 	return res.Stdout, nil
 }
 
-// injectDefaultRailpackConfig writes a default railpack.json if one doesn't exist.
-// This uses template files from /app/docker/templates/
-func (s *DockerService) injectDefaultRailpackConfig(buildPath string, runtimeImage string) {
+// injectDefaultRailpackConfig writes an optimized railpack.json for the project.
+// It uses a single unified template and dynamically adjusts phases.
+func (s *DockerService) injectDefaultRailpackConfig(buildPath string) {
+	slog.Info("Injecting optimized Railpack configuration", "buildPath", buildPath)
 	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
 
-	// Don't override if user already has one
-	if _, err := os.Stat(railpackConfigPath); err == nil {
-		slog.Info("User railpack.json found, skipping default injection", "path", railpackConfigPath)
+	// 1. Resolve template path (we now use a single unified template)
+	possiblePaths := []string{
+		filepath.Join("/app/docker/templates", "railpack.json"),
+		filepath.Join("docker/templates", "railpack.json"),
+		filepath.Join("../docker/templates", "railpack.json"),
+	}
+
+	var templateData []byte
+	var finalTemplatePath string
+
+	for _, p := range possiblePaths {
+		if data, err := os.ReadFile(p); err == nil {
+			templateData = data
+			finalTemplatePath = p
+			break
+		}
+	}
+
+	if templateData == nil {
+		slog.Error("CRITICAL: Failed to find railpack templates in any location")
+		templateData = []byte(`{"deploy":{"base":{"image":"debian:bookworm-slim"}}}`)
+	} else {
+		slog.Info("Loaded railpack template", "path", finalTemplatePath)
+	}
+
+	// 2. Refine configuration based on project contents
+	var config map[string]interface{}
+	if err := json.Unmarshal(templateData, &config); err == nil {
+		modified := false
+
+		hasPackageJson := false
+		if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
+			hasPackageJson = true
+		}
+
+		// 2.1 Framework-Specific Optimizations
+		if !hasPackageJson {
+			// Remove Node-specific phases and variables for non-Node projects
+			if phases, ok := config["phases"].(map[string]interface{}); ok {
+				if _, exists := phases["install"]; exists {
+					delete(phases, "install")
+					modified = true
+				}
+				if _, exists := phases["build"]; exists {
+					delete(phases, "build")
+					modified = true
+				}
+			}
+
+			if variables, ok := config["variables"].(map[string]interface{}); ok {
+				nodeVars := []string{"NPM_CONFIG_LEGACY_PEER_DEPS", "BUN_INSTALL_FROZEN_LOCKFILE", "NODE_ENV"}
+				for _, v := range nodeVars {
+					if _, exists := variables[v]; exists {
+						delete(variables, v)
+						modified = true
+					}
+				}
+			}
+			slog.Debug("Applied non-Node optimizations", "path", buildPath)
+		}
+
+		// 2.2 Cache Busting: Inject a unique build ID
+		if _, exists := config["variables"]; !exists {
+			config["variables"] = make(map[string]interface{})
+		}
+
+		if vars, ok := config["variables"].(map[string]interface{}); ok {
+			vars["PAAS_BUILD_ID"] = fmt.Sprintf("%d", time.Now().Unix())
+			modified = true
+		}
+
+		if modified {
+			if newData, err := json.MarshalIndent(config, "", "  "); err == nil {
+				templateData = newData
+			}
+		}
+	}
+
+	// 3. Finalize: Write the refined railpack.json to the build directory
+	if err := os.WriteFile(railpackConfigPath, templateData, 0644); err != nil {
+		slog.Error("Failed to write railpack.json", "path", railpackConfigPath, "error", err)
+	} else {
+		slog.Info("Successfully injected optimized railpack.json", "path", railpackConfigPath)
+	}
+}
+ 
+func (s *DockerService) injectDockerIgnore(projectPath string) {
+	ignorePath := filepath.Join(projectPath, ".dockerignore")
+	if _, err := os.Stat(ignorePath); err == nil {
+		// User already has a .dockerignore, respect it
 		return
 	}
 
-	// Default to alpine if not specified. Only allow known templates.
-	if runtimeImage == "" {
-		runtimeImage = "alpine"
-	}
-	switch runtimeImage {
-	case "alpine", "debian":
-		// ok
-	default:
-		slog.Warn("Invalid runtime image; falling back to alpine", "runtime", runtimeImage)
-		runtimeImage = "alpine"
-	}
-
-	// Load template from file system
-	templatePath := filepath.Join("/app/docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage))
-
-	// Fallback to local path for dev
+	templatePath := filepath.Join("/app/docker/templates", ".dockerignore")
+	// Fallback to local path for dev environment
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		templatePath = filepath.Join("docker/templates", fmt.Sprintf("railpack.%s.json", runtimeImage))
+		templatePath = "docker/templates/.dockerignore"
 	}
 
 	data, err := os.ReadFile(templatePath)
 	if err != nil {
-		slog.Warn("Failed to read railpack template, using fallback", "path", templatePath, "error", err)
-
-		// Ultimate fallback if files are missing
-		fallback := `{
-  "deploy": {
-    "base": {
-      "image": "alpine:3.20"
-    }
-  }
-}`
-		data = []byte(fallback)
-	}
-
-	if err := os.WriteFile(railpackConfigPath, data, 0644); err != nil {
-		slog.Warn("Failed to inject default railpack.json", "error", err)
+		slog.Warn("Failed to read .dockerignore template", "path", templatePath, "error", err)
 		return
 	}
 
-	slog.Info("Injected default railpack.json", "runtime", runtimeImage, "path", buildPath)
+	if err := os.WriteFile(ignorePath, data, 0644); err != nil {
+		slog.Warn("Failed to write .dockerignore to project", "path", ignorePath, "error", err)
+		return
+	}
+
+	slog.Debug("Injected default .dockerignore", "path", ignorePath)
 }
+
 
 // DetectExposedPort inspects a docker image to find the first EXPOSEd port.
 // Returns the port number and nil if found, or 0 and error if not.
@@ -543,28 +689,61 @@ func (s *DockerService) DetectExposedPort(imageName string) (int, error) {
 		return 0, err
 	}
 
-	// Pick the first port we find
+	// 1. Collect and sort all available ports
+	var ports []int
 	for portKey := range exposed {
-		// portKey is something like "3000/tcp"
 		parts := strings.Split(portKey, "/")
 		if len(parts) > 0 {
-			var port int
-			if _, err := fmt.Sscanf(parts[0], "%d", &port); err != nil {
-				continue
-			}
-			if port > 0 {
-				return port, nil
+			var p int
+			if _, err := fmt.Sscanf(parts[0], "%d", &p); err == nil && p > 0 {
+				ports = append(ports, p)
 			}
 		}
 	}
 
-	return 0, fmt.Errorf("could not parse port from metadata")
+	if len(ports) == 0 {
+		return 0, fmt.Errorf("no valid ports parsed from metadata")
+	}
+
+	// 2. Prioritize common web ports
+	priorityPorts := []int{80, 8080, 3000, 5000}
+	for _, p := range priorityPorts {
+		for _, available := range ports {
+			if available == p {
+				return available, nil
+			}
+		}
+	}
+
+	// 3. If no priority port found, pick the smallest one but AVOID 9000 if alternatives exist
+	// (9000 is usually PHP-FPM FastCGI, not HTTP)
+	var fallback int
+	for _, p := range ports {
+		if p == 9000 && len(ports) > 1 {
+			continue
+		}
+		if fallback == 0 || p < fallback {
+			fallback = p
+		}
+	}
+
+	if fallback > 0 {
+		return fallback, nil
+	}
+
+	return ports[0], nil
 }
 
-func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string) error {
+func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string, isInitial bool) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 	examplePath := filepath.Join(projectPath, ".env.example")
 	envPath := filepath.Join(projectPath, ".env")
+ 
+	// If .env already exists, NEVER overwrite it.
+	// We only proceed if the file is missing.
+	if _, err := os.Stat(envPath); err == nil {
+		return nil
+	}
 
 	// 1. Load mandatory variables from template
 	mandatory, err := s.loadMandatoryEnv(project, projectDomain)
@@ -582,19 +761,30 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 
 		// Basic fallback if template is missing
 		mandatory = map[string]string{
-			"APP_NAME":     fmt.Sprintf("\"%s\"", project.Name),
-			"APP_KEY":      appKey,
-			"DATABASE_URL": fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName),
+			"APP_NAME":      fmt.Sprintf("\"%s\"", project.Name),
+			"APP_KEY":       appKey,
+			"DB_CONNECTION":  "mysql",
+			"DB_HOST":        "paas-mysql",
+			"DB_PORT":        "3306",
+			"DB_DATABASE":    project.DatabaseName,
+			"DB_USERNAME":    project.DatabaseName,
+			"DB_PASSWORD":    project.DatabasePassword,
+			"DATABASE_URL":   fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName),
 		}
 	}
 
 	var finalLines []string
 	seen := make(map[string]bool)
-
-	// 2. Select base file: Prefer existing .env if it exists, fallback to .env.example
-	basePath := envPath
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		basePath = examplePath
+ 
+	// Select base file:
+	// - On initial deploy: try to use .env.example as a template to help user get started.
+	// - On redeploy: NEVER use .env.example as a base, as it causes resets. 
+	//   We only use the mandatory DB variables if .env is missing.
+	basePath := ""
+	if isInitial {
+		if _, err := os.Stat(examplePath); err == nil {
+			basePath = examplePath
+		}
 	}
 
 	// Load from base file if it exists
@@ -638,6 +828,11 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	// 3. Add any missing mandatory variables that weren't found in .env.example
 	for key, val := range mandatory {
 		if !seen[key] {
+			// Special handling: Skip adding DATABASE_URL if it's not already present in the file.
+			// This avoids redundancy for projects that use individual DB_* variables (standard Laravel).
+			if key == "DATABASE_URL" {
+				continue
+			}
 			finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
 		}
 	}
@@ -742,6 +937,8 @@ func (s *DockerService) GetBuildPath(root string) string {
 		"Gemfile",
 		"Cargo.toml",
 		"mix.exs",
+		"index.html",
+		"Staticfile",
 	}
 
 	// 1. Check root first
@@ -758,8 +955,8 @@ func (s *DockerService) GetBuildPath(root string) string {
 		return root
 	}
 
-	// Priority subdirectories for monorepos
-	priorityDirs := []string{"backend", "app", "server", "api"}
+	// Priority subdirectories for monorepos and common project structures
+	priorityDirs := []string{"backend", "app", "server", "api", "frontend", "web", "ui", "public", "src"}
 
 	for _, pDir := range priorityDirs {
 		pPath := filepath.Join(root, pDir)
@@ -1130,7 +1327,7 @@ func parsePorts(portStr string) []string {
 		return []string{}
 	}
 	// Example: "0.0.0.0:80->80/tcp, :::80->80/tcp" or "80/tcp"
-	return strings.Split(portStr, ", ")
+	return strings.Split(portStr, ",")
 }
 
 // ListAllImages returns all images on the host

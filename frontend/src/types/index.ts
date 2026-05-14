@@ -33,7 +33,6 @@ export interface Project {
   container_id?: string;
   database_name?: string;
   base_directory?: string;
-  runtime_image?: string;
   worker_command?: string;
   worker_container_id?: string;
   build_command?: string;
@@ -41,6 +40,7 @@ export interface Project {
   node_version?: string;
   framework?: string;
   language_version?: string;
+  created_at: string;
 }
 
 export interface ProjectStats {

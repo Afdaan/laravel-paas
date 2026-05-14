@@ -48,7 +48,6 @@ type CreateProjectRequest struct {
 	Branch        string `json:"branch"`
 	DatabaseName  string `json:"database_name"`
 	BaseDirectory string `json:"base_directory"`
-	RuntimeImage  string `json:"runtime_image"`
 	BuildCommand  string `json:"build_command"`
 	StartCommand  string `json:"start_command"`
 	QueueEnabled  bool   `json:"queue_enabled"`
@@ -133,7 +132,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.RuntimeImage, req.BuildCommand, req.StartCommand, req.QueueEnabled)
+	project, err := h.projectService.CreateProject(userID, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled)
 	if err != nil {
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -205,7 +204,6 @@ type UpdateRequest struct {
 	Name          string `json:"name"`
 	Branch        string `json:"branch"`
 	PHPVersion    string `json:"php_version"`
-	RuntimeImage  string `json:"runtime_image"`
 	BaseDirectory string `json:"base_directory"`
 	QueueEnabled  bool   `json:"queue_enabled"`
 	WorkerCommand string `json:"worker_command"`
@@ -227,7 +225,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.RuntimeImage, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion, req.LanguageVersion)
+	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion, req.LanguageVersion)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
 	}
@@ -526,9 +524,10 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
-	if err == nil && project.Status == models.StatusRunning && project.Port != nil {
-		// Cache hit! Forward with path stripping
-		targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project.Port)
+	if err == nil && project.Status == models.StatusRunning && project.Port != nil && project.ContainerID != nil {
+		// Cache hit! Forward with internal Docker routing
+		// We use the container ID as the hostname because they are in the same paas-network
+		targetURL := fmt.Sprintf("http://%s:%d", *project.ContainerID, *project.Port)
 
 		// Map the path correctly by stripping the /proxy prefix
 		// Fiber's wildcard parameter (*) holds the rest of the path
@@ -551,12 +550,12 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 	h.projectService.UpdateActivity(project_db.ID)
 
-	if project_db.Port == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project port not configured"})
+	if project_db.Port == nil || project_db.ContainerID == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project container or port not configured"})
 	}
 
-	// 4. Forward with path stripping
-	targetURL := fmt.Sprintf("http://127.0.0.1:%d", *project_db.Port)
+	// 4. Forward with internal Docker routing
+	targetURL := fmt.Sprintf("http://%s:%d", *project_db.ContainerID, *project_db.Port)
 	path := c.Params("*")
 	target := targetURL + "/" + path
 

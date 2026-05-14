@@ -1,0 +1,18 @@
+[Unit]
+Description=Laravel PaaS Nginx Webhook Proxy
+After=network.target nginx.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/paas-webhook
+ExecStart=/opt/paas-webhook/venv/bin/python3 webhook.py
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=append:/var/log/paas-webhook.log
+StandardError=append:/var/log/paas-webhook.log
+
+[Install]
+WantedBy=multi-user.target

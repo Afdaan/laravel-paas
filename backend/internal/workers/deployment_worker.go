@@ -318,6 +318,10 @@ func (w *DeploymentWorker) processJobs() {
 			continue
 		}
 
+		slog.Info("Worker dequeued new deployment job", 
+			"projectId", job.ProjectID, 
+			"type", job.Type)
+
 		// Process the job
 		w.wg.Add(1)
 		localSem := sem
@@ -581,7 +585,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	memoryLimit := memoryMB + "m"
 
 	// Start deployment process
-	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit)
+	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy")
 
 	if err != nil {
 		w.updateProjectError(project, "Failed to deploy container: "+err.Error())
@@ -725,7 +729,7 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project) error {
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
 	// Update .env file
-	if err := w.dockerService.CreateEnvFile(project, projectDomain); err != nil {
+	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
 		return err
 	}
 
@@ -752,7 +756,7 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error 
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
 	// Ensure .env is fresh
-	if err := w.dockerService.CreateEnvFile(project, projectDomain); err != nil {
+	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
 		slog.Warn("Failed to create env file for redeploy", "id", project.ID, "error", err)
 	}
 

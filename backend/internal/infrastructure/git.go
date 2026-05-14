@@ -42,37 +42,39 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 		return "", "", apperr.New(400, "INVALID_BRANCH", "Invalid branch name provided")
 	}
 
-	// Backup existing .env before sync
-	var envBackup []byte
+	// 1. Prepare backup of .env to a persistent temporary location outside the projectPath
+	// to ensure it survives os.RemoveAll(projectPath)
 	envPath := filepath.Join(projectPath, ".env")
-	if data, err := os.ReadFile(envPath); err == nil {
-		envBackup = data
+	envBackupPath := filepath.Join(s.cfg.ProjectsPath, subdomain+".env.bak")
+	
+	hasEnv := false
+	if _, err := os.Stat(envPath); err == nil {
+		if err := utils.RunSilent(time.Minute, "cp", envPath, envBackupPath); err == nil {
+			hasEnv = true
+			slog.Info("Backed up .env file before sync", "subdomain", subdomain)
+		}
 	}
 
-	// 2. Use a truly unique temporary directory to avoid race conditions and collisions.
-	// os.MkdirTemp ensures the folder is created with 0700 permissions by default on many systems.
+	// 2. Use a truly unique temporary directory to avoid race conditions
 	tempPath, err := os.MkdirTemp(s.cfg.ProjectsPath, subdomain+"_temp_*")
 	if err != nil {
 		return "", "", apperr.New(500, "TEMP_DIR_FAILED", "Failed to create temporary build directory: "+err.Error())
 	}
-	defer os.RemoveAll(tempPath) // Cleanup temp even on failure
+	defer os.RemoveAll(tempPath)
 
 	slog.Info("Cloning repository", "url", githubURL, "branch", safeBranch, "tempPath", tempPath)
 
-	// 3. Use "--" to stop option parsing, preventing malicious URLs from injecting git flags.
-	// We also use -c advice.detachedHead=false to keep logs clean.
+	// 3. Clone the repository
 	res, err := utils.Run(5*time.Minute, "git", "clone", "--depth=1", "-b", safeBranch, "--", githubURL, tempPath)
-
 	if err != nil {
 		return "", "", apperr.New(500, "GIT_CLONE_FAILED", fmt.Sprintf("Failed to clone repository: %s", res.Stderr))
 	}
 
-	// Get the commit hash of the cloned repo
+	// Get the commit hash
 	hashRes, _ := utils.Run(10*time.Second, "git", "-C", tempPath, "rev-parse", "HEAD")
 	commitHash := strings.TrimSpace(hashRes.Stdout)
 
 	// 4. Swap temp clone into final project path
-	// Ensure the parent directory exists
 	if err := os.MkdirAll(s.cfg.ProjectsPath, 0755); err != nil {
 		return "", "", apperr.New(500, "PROJECT_FS_ERROR", "Failed to prepare projects directory")
 	}
@@ -82,10 +84,12 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 		return "", "", apperr.New(500, "PROJECT_FS_ERROR", "Failed to finalize project directory: "+err.Error())
 	}
 
-	// Restore .env if it existed before sync
-	if envBackup != nil {
-		if err := os.WriteFile(envPath, envBackup, 0644); err != nil {
+	// 5. Restore .env from backup
+	if hasEnv {
+		if err := utils.RunSilent(time.Minute, "mv", envBackupPath, envPath); err != nil {
 			slog.Warn("Failed to restore .env file after sync", "subdomain", subdomain, "error", err)
+		} else {
+			slog.Info("Restored .env file after sync", "subdomain", subdomain)
 		}
 	}
 

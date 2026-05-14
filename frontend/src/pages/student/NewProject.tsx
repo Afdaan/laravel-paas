@@ -14,9 +14,7 @@ import {
   Loader2,
   Layout,
   Terminal,
-  Play,
-  Box,
-  CheckCircle2
+  Play
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -30,7 +28,6 @@ interface NewProjectForm {
   branch: string;
   database_name: string;
   base_directory: string;
-  runtime_image: string;
   build_command: string;
   start_command: string;
   queue_enabled: boolean;
@@ -53,7 +50,6 @@ function StudentNewProject() {
     branch: '',
     database_name: '',
     base_directory: '',
-    runtime_image: 'alpine',
     build_command: '',
     start_command: '',
     queue_enabled: false,
@@ -304,60 +300,6 @@ function StudentNewProject() {
                     className="font-mono text-xs"
                   />
                   <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.startCommandDesc')}</p>
-                </div>
-              </div>
-
-              {/* Runtime Image Selector */}
-              <div className="space-y-4 border-t pt-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                    <Box className="w-4 h-4" />
-                  </div>
-                  <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    {t('projectDetail.settings.baseImageTitle')}
-                  </Label>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div
-                    onClick={() => setFormData(prev => ({ ...prev, runtime_image: 'alpine' }))}
-                    className={cn(
-                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:border-primary/50",
-                      formData.runtime_image === 'alpine' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-sm">Alpine Linux</h4>
-                      {formData.runtime_image === 'alpine' ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Recommended. Ultralight image (~200MB). Fast deployments and minimal security footprint.
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setFormData(prev => ({ ...prev, runtime_image: 'debian' }))}
-                    className={cn(
-                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:border-primary/50",
-                      formData.runtime_image === 'debian' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-sm">Debian Bookworm</h4>
-                      {formData.runtime_image === 'debian' ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Better compatibility (~600MB). Use if your app requires specific glibc libraries or complex extensions.
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>

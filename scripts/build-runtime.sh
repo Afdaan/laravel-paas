@@ -20,14 +20,14 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}🏗 Building Laravel PaaS Runtime Images...${NC}"
+echo -e "${BLUE}Building Laravel PaaS Runtime Images...${NC}"
 
 # Versions to build
 VERSIONS=("8.0" "8.1" "8.2" "8.3" "8.4")
 
 for VERSION in "${VERSIONS[@]}"; do
     TAG="paas-runtime-php:${VERSION}-alpine"
-    echo -e "${YELLOW}🔹 Building PHP ${VERSION} runtime... ($TAG)${NC}"
+    echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG)${NC}"
 
     docker build \
         --build-arg PHP_VERSION="${VERSION}" \

@@ -117,10 +117,10 @@ const AdminDatabases = () => {
       </div>
 
       <Card className="gap-0 py-0 border border-border/50 shadow-sm bg-card/50 backdrop-blur-xl overflow-hidden">
-        <CardHeader className="border-b border-border/50 py-8 px-8 bg-muted/20">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+        <CardHeader className="p-6 border-b border-border/50 bg-muted/20">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="relative flex-1 w-full max-w-2xl">
-              <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
               <Input
                 placeholder={t('common.search')}
                 value={search}
@@ -128,12 +128,12 @@ const AdminDatabases = () => {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
-                className="pl-12 h-12 bg-background/50 border-border rounded-xl focus-visible:ring-primary/20"
+                className="pl-9 h-10 bg-background/50 border-border"
               />
             </div>
  
-            <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading} className="h-12 w-12 rounded-xl border-border/50 bg-background/50">
-              <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+            <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading} className="h-10 w-10 border-border/50 bg-background/50">
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </CardHeader>
@@ -143,12 +143,12 @@ const AdminDatabases = () => {
           <Table className="min-w-[1080px]">
             <TableHeader>
               <TableRow className="bg-muted/40 border-b border-border/50 hover:bg-muted/40 transition-none">
-                <TableHead className="h-14 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.identity')}</TableHead>
-                <TableHead className="h-14 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.student')}</TableHead>
-                <TableHead className="h-14 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.connection')}</TableHead>
-                <TableHead className="h-14 px-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.tables')}</TableHead>
-                <TableHead className="h-14 px-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.size')}</TableHead>
-                <TableHead className="h-14 px-8 text-right text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.actions')}</TableHead>
+                <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.identity')}</TableHead>
+                <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.student')}</TableHead>
+                <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.connection')}</TableHead>
+                <TableHead className="h-12 px-6 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.tables')}</TableHead>
+                <TableHead className="h-12 px-6 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.size')}</TableHead>
+                <TableHead className="h-12 pl-4 pr-6 text-right text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -174,59 +174,59 @@ const AdminDatabases = () => {
                 </TableRow>
               ) : paginatedDatabases.map((db) => (
                 <TableRow key={db.project_id} className="group hover:bg-muted/20 border-border/50 transition-colors">
-                  <TableCell className="px-8 py-5">
-                    <div className="flex items-center gap-5">
-                      <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all group-hover:scale-110 duration-500 shadow-lg ${db.status === 'running' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-muted/30 text-muted-foreground/60 border-border/50'
+                  <TableCell className="px-6 py-3">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all group-hover:scale-110 duration-500 shadow-sm ${db.status === 'running' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-muted/30 text-muted-foreground/60 border-border/50'
                         }`}>
-                        <Database className="w-6 h-6" />
+                        <Database className="w-5 h-5" />
                       </div>
                       <div className="flex flex-col justify-center min-w-0">
-                        <span className="text-base font-bold truncate max-w-[220px] group-hover:text-primary transition-colors">{db.database_name}</span>
-                        <span className="text-[10px] text-muted-foreground/60 uppercase font-black tracking-[0.15em] mt-1">
+                        <span className="text-sm font-bold truncate max-w-[220px] group-hover:text-primary transition-colors">{db.database_name}</span>
+                        <span className="text-[10px] text-muted-foreground/60 uppercase font-black tracking-[0.15em] mt-0.5">
                           {t('admin.databases.mysqlInstance')}
                         </span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-muted/50 border border-border/50 flex items-center justify-center text-muted-foreground">
-                        <User className="w-5 h-5" />
+                  <TableCell className="px-6 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-muted/50 border border-border/50 flex items-center justify-center text-muted-foreground">
+                        <User className="w-4 h-4" />
                       </div>
                       <div className="flex flex-col justify-center min-w-0">
                         <span className="text-xs font-black uppercase tracking-tight truncate max-w-[160px] text-foreground/90">{db.student_name}</span>
-                        <span className="text-[10px] text-muted-foreground/50 uppercase font-bold mt-0.5">{t('common.student')}</span>
+                        <span className="text-[10px] text-muted-foreground/50 uppercase font-bold">{t('common.student')}</span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="px-8 py-5">
-                    <div className="flex flex-col items-start gap-2">
+                  <TableCell className="px-6 py-3">
+                    <div className="flex flex-col items-start gap-1">
                        <span className="text-sm font-bold text-foreground/80 truncate max-w-[220px]">{db.project_name}</span>
                        <StatusBadge status={db.status} t={t} />
                     </div>
                   </TableCell>
-                  <TableCell className="px-8 py-5 text-center whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2 text-xs font-black rounded-xl border border-border/50 bg-muted/20 px-3 py-1.5 shadow-inner">
-                       <Layers className="w-4 h-4 text-muted-foreground/60" />
+                  <TableCell className="px-6 py-3 text-center whitespace-nowrap">
+                    <div className="inline-flex items-center gap-2 text-[10px] font-black rounded-lg border border-border/50 bg-muted/20 px-2 py-1 shadow-inner">
+                       <Layers className="w-3.5 h-3.5 text-muted-foreground/60" />
                        {db.table_count}
                      </div>
                   </TableCell>
-                  <TableCell className="px-8 py-5 text-center whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2 text-xs font-black rounded-xl border border-border/50 bg-muted/20 px-3 py-1.5 shadow-inner">
-                       <HardDrive className="w-4 h-4 text-muted-foreground/60" />
+                  <TableCell className="px-6 py-3 text-center whitespace-nowrap">
+                    <div className="inline-flex items-center gap-2 text-[10px] font-black rounded-lg border border-border/50 bg-muted/20 px-2 py-1 shadow-inner">
+                       <HardDrive className="w-3.5 h-3.5 text-muted-foreground/60" />
                        {db.size}
                      </div>
                   </TableCell>
-                  <TableCell className="px-8 py-5 text-right">
-                    <div className="flex items-center justify-end gap-3">
+                  <TableCell className="px-6 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
                       <Link to={`/projects/${db.project_id}/database`}>
-                        <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold bg-primary/5 border-primary/20 text-primary hover:bg-primary hover:text-white transition-all">
+                        <Button variant="outline" size="sm" className="h-8 px-3 rounded-lg font-bold bg-primary/5 border-primary/20 text-primary hover:bg-primary hover:text-white transition-all text-[10px]">
                            {t('admin.databases.manage')}
                         </Button>
                       </Link>
                       <Link to={`/projects/${db.project_id}`}>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground/40 hover:text-primary hover:bg-primary/5 transition-all">
-                           <ExternalLink className="w-4 h-4" />
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground/40 hover:text-primary hover:bg-primary/5 transition-all">
+                           <ExternalLink className="w-3.5 h-3.5" />
                         </Button>
                       </Link>
                     </div>

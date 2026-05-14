@@ -19,14 +19,11 @@ import {
   Box,
   AlertTriangle,
   GitBranch,
-  Eye,
-  EyeOff,
   Loader2,
   Save,
   Copy,
   Blocks,
-  Code2,
-  CheckCircle2
+  Code2
 } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { projectsAPI, databaseAPI } from '../../services/api'
@@ -38,7 +35,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePolling } from '@/lib/usePolling'
@@ -48,6 +44,7 @@ import { FrameworkIcon } from '../../components/FrameworkIcon'
 import BuildLogsConsole from '@/components/BuildLogsConsole'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
+import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -92,6 +89,8 @@ function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass 
   )
 }
 
+
+
 function StudentProjectDetail() {
   const { t } = useTranslation()
   const { uid } = useParams<{ uid: string }>()
@@ -104,12 +103,9 @@ function StudentProjectDetail() {
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  const [envContent, setEnvContent] = useState('')
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleCommand, setConsoleCommand] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
-  const [isEnvHidden, setIsEnvHidden] = useState(true)
-  const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [credentials, setCredentials] = useState<Record<string, string> | null>(null)
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
@@ -117,13 +113,13 @@ function StudentProjectDetail() {
   const [startCommandInput, setStartCommandInput] = useState('')
   const [nodeVersionInput, setNodeVersionInput] = useState('')
   const [phpVersionInput, setPhpVersionInput] = useState('')
-  const [runtimeImageInput, setRuntimeImageInput] = useState('')
   const [workerCommandInput, setWorkerCommandInput] = useState('')
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
-
-  const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
+  
+  const [consoleClearedLength, setConsoleClearedLength] = useState(0)
+  const [logsClearedLength, setLogsClearedLength] = useState(0)
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -133,6 +129,8 @@ function StudentProjectDetail() {
     onConfirm: () => { },
     confirmText: t('common.confirm')
   })
+
+  const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
   const [consecutiveErrors, setConsecutiveErrors] = useState(0)
   const frameworkDetail = useMemo(() => {
@@ -157,8 +155,6 @@ function StudentProjectDetail() {
     try {
       const response = await projectsAPI.get(uid)
       setProject(response.data)
-      setBranchInput(response.data.branch || '')
-      setBaseDirInput(response.data.base_directory || '')
       setConsecutiveErrors(0)
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: string }>
@@ -209,15 +205,6 @@ function StudentProjectDetail() {
     }
   }, [uid])
 
-  const fetchEnv = useCallback(async () => {
-    if (!uid) return
-    try {
-      const response = await projectsAPI.getEnv(uid)
-      setEnvContent(response.data.content)
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
-  }, [uid, t])
 
   const fetchCredentials = useCallback(async () => {
     if (!uid) return
@@ -247,43 +234,73 @@ function StudentProjectDetail() {
   useEffect(() => {
     if (activeTab === 'logs' && project?.container_id) {
       setLogs('')
+      setLogsClearedLength(0)
       fetchLogs()
     }
   }, [logType, activeTab, project?.container_id, fetchLogs])
 
   useEffect(() => {
-    if (activeTab === 'environment') {
-      fetchEnv()
-    }
     if (activeTab === 'database') {
       fetchCredentials()
     }
-  }, [activeTab, uid, fetchEnv, fetchCredentials])
+  }, [activeTab, uid, fetchCredentials])
 
   const logLines = useMemo(() => {
     if (!logs) return []
-    const lines = logs.split('\n')
+    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
+    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.slice(-500) : lines
-  }, [logs])
+  }, [logs, logsClearedLength])
 
   const logOffset = useMemo(() => {
     if (!logs) return 0
-    const lines = logs.split('\n')
+    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
+    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.length - 500 : 0
-  }, [logs])
+  }, [logs, logsClearedLength])
 
   const consoleLines = useMemo(() => {
     if (!consoleOutput) return []
-    const lines = consoleOutput.split('\n')
+    const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
+    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.slice(-500) : lines
-  }, [consoleOutput])
+  }, [consoleOutput, consoleClearedLength])
 
   const consoleOffset = useMemo(() => {
     if (!consoleOutput) return 0
-    const lines = consoleOutput.split('\n')
+    const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
+    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.length - 500 : 0
-  }, [consoleOutput])
+  }, [consoleOutput, consoleClearedLength])
 
+
+  const handleClearConsole = () => {
+    setConfirmModal({
+      title: t('projectDetail.actions.clear'),
+      message: t('common.confirmClearLogs') || 'Confirm clearing the console? New logs will still appear.',
+      type: 'warning',
+      confirmText: t('common.confirm'),
+      isOpen: true,
+      onConfirm: () => {
+        setConsoleClearedLength(consoleOutput.length)
+        toast.success(t('common.success'))
+      }
+    })
+  }
+
+  const handleClearLogs = () => {
+    setConfirmModal({
+      title: t('projectDetail.actions.clear'),
+      message: t('common.confirmClearLogs') || 'Confirm clearing the logs? New logs will still appear.',
+      type: 'warning',
+      confirmText: t('common.confirm'),
+      isOpen: true,
+      onConfirm: () => {
+        setLogsClearedLength(logs.length)
+        toast.success(t('common.success'))
+      }
+    })
+  }
 
   const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -304,8 +321,8 @@ function StudentProjectDetail() {
       setIsExecuting(false)
     }
   }
-
-  const onActionStarted = (status: any = 'queued') => {
+  
+  const onActionStarted = (status: Project['status'] = 'queued') => {
     setProject(prev => prev ? ({ ...prev, status }) : null)
   }
 
@@ -349,19 +366,6 @@ function StudentProjectDetail() {
     }
   }
 
-  const handleSaveEnv = async () => {
-    if (!uid) return
-    setIsSavingEnv(true)
-    try {
-      await projectsAPI.updateEnv(uid, envContent)
-      toast.success(t('common.success'))
-      projectsAPI.redeploy(uid).then(() => fetchProject())
-    } catch (error) {
-      toast.error(t('common.error'))
-    } finally {
-      setIsSavingEnv(false)
-    }
-  }
 
   const isSettingsDirty = useMemo(() => {
     if (!project) return false
@@ -371,11 +375,10 @@ function StudentProjectDetail() {
       startCommandInput !== (project.start_command || '') ||
       nodeVersionInput !== (project.node_version || '20') ||
       phpVersionInput !== (project.php_version || '8.2') ||
-      runtimeImageInput !== (project.runtime_image || 'alpine') ||
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
       languageVersionInput !== (project.language_version || '')
-  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, runtimeImageInput, workerCommandInput, queueEnabledInput, languageVersionInput])
+  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, languageVersionInput])
 
   const handleResetSettings = () => {
     if (!project) return
@@ -385,7 +388,6 @@ function StudentProjectDetail() {
     setStartCommandInput(project.start_command || '')
     setNodeVersionInput(project.node_version || '20')
     setPhpVersionInput(project.php_version || '8.2')
-    setRuntimeImageInput(project.runtime_image || 'alpine')
     setWorkerCommandInput(project.worker_command || '')
     setQueueEnabledInput(project.queue_enabled || false)
     setLanguageVersionInput(project.language_version || '')
@@ -411,7 +413,6 @@ function StudentProjectDetail() {
             start_command: startCommandInput,
             node_version: nodeVersionInput,
             php_version: phpVersionInput,
-            runtime_image: runtimeImageInput,
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput,
             language_version: languageVersionInput
@@ -430,19 +431,18 @@ function StudentProjectDetail() {
   }
 
   useEffect(() => {
-    if (project) {
+    if (project && !isSettingsDirty) {
       setBranchInput(project.branch || '')
       setBaseDirInput(project.base_directory || '')
       setBuildCommandInput(project.build_command || '')
       setStartCommandInput(project.start_command || '')
       setNodeVersionInput(project.node_version || '20')
       setPhpVersionInput(project.php_version || '8.2')
-      setRuntimeImageInput(project.runtime_image || 'alpine')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
       setLanguageVersionInput(project.language_version || '')
     }
-  }, [project])
+  }, [project, isSettingsDirty])
 
   const handleDelete = () => {
     if (!uid) return
@@ -754,7 +754,7 @@ function StudentProjectDetail() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => navigator.clipboard.writeText(consoleOutput)}
+                  onClick={() => { navigator.clipboard.writeText(consoleOutput); toast.success(t('common.copySuccess')) }}
                   className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Copy Logs"
                 >
@@ -771,7 +771,7 @@ function StudentProjectDetail() {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={() => setConsoleOutput('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
+                <Button variant="ghost" size="xs" onClick={handleClearConsole} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
               </div>
             </CardHeader>
 
@@ -820,65 +820,10 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="environment" className="pt-0">
-          <Card className="flex flex-col h-[600px] overflow-hidden border-border/50 shadow-sm">
-            <CardHeader className="pb-4 flex flex-row items-center justify-between border-b border-border">
-              <div>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-primary" />
-                  {t('projectDetail.tabs.secrets')}
-                </CardTitle>
-                <CardDescription className="text-xs">{t('projectDetail.secrets.desc')}</CardDescription>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" size="sm" onClick={() => setIsEnvHidden(!isEnvHidden)} className="h-9">
-                  {isEnvHidden ? <Eye className="w-3.5 h-3.5 mr-2" /> : <EyeOff className="w-3.5 h-3.5 mr-2" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{isEnvHidden ? t('projectDetail.actions.reveal') : t('projectDetail.actions.hide')}</span>
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setConfirmModal({
-                      title: 'Simpan perubahan .env?',
-                      message: 'Container akan dijalankan ulang (redeploy) untuk menerapkan konfigurasi baru.',
-                      type: 'warning',
-                      confirmText: 'Simpan & Redeploy',
-                      isOpen: true,
-                      onConfirm: handleSaveEnv
-                    })
-                  }}
-                  disabled={isSavingEnv || isEnvHidden}
-                  className="h-9 px-6 bg-primary hover:bg-primary/90"
-                >
-                  {isSavingEnv ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-2" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t('common.save')}</span>
-                </Button>
-              </div>
-            </CardHeader>
-            <div className="flex-1 relative bg-muted/30">
-              <Textarea
-                value={envContent}
-                onChange={e => setEnvContent(e.target.value)}
-                readOnly={isEnvHidden}
-                spellCheck={false}
-                className={cn(
-                  "absolute inset-0 h-full w-full rounded-none border-none p-10 font-mono text-[11px] leading-relaxed resize-none bg-transparent focus-visible:ring-0 custom-scrollbar",
-                  isEnvHidden && "blur-md select-none opacity-30"
-                )}
-                placeholder={t('projectDetail.secrets.placeholder')}
-              />
-              {isEnvHidden && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="px-6 py-3 bg-card/80 border border-border backdrop-blur-md rounded-full shadow-lg flex items-center gap-3">
-                    <ShieldAlert className="w-4 h-4 text-primary" />
-                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground">{t('projectDetail.secrets.locked')}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="p-4 bg-amber-500/5 text-amber-600 dark:text-amber-500/80 text-[9px] font-bold uppercase tracking-[0.15em] border-t border-border/50 flex items-center justify-center gap-3">
-              <AlertTriangle size={14} className="animate-pulse" /> {t('projectDetail.secrets.redeployNote')}
-            </div>
-          </Card>
+          <EnvironmentEditor 
+            uid={uid || ''} 
+            onSave={() => projectsAPI.redeploy(uid || '').then(() => fetchProject())} 
+          />
         </TabsContent>
 
         <TabsContent value="database" className="pt-0">
@@ -952,7 +897,7 @@ function StudentProjectDetail() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => navigator.clipboard.writeText(logs)}
+                  onClick={() => { navigator.clipboard.writeText(logs); toast.success(t('common.copySuccess')) }}
                   className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
                   title="Copy Logs"
                 >
@@ -969,7 +914,7 @@ function StudentProjectDetail() {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={() => setLogs('')} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
+                <Button variant="ghost" size="xs" onClick={handleClearLogs} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
                 <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6 cursor-pointer"><RefreshCw size={12} /></Button>
               </div>
             </CardHeader>
@@ -1001,7 +946,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} />}
+          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
@@ -1180,66 +1125,6 @@ function StudentProjectDetail() {
                 )}
 
                 <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                  <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                    <Box className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('projectDetail.settings.baseImageTitle')}</CardTitle>
-                    <CardDescription>{t('projectDetail.settings.baseImageDesc')}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div
-                    onClick={() => setRuntimeImageInput('alpine')}
-                    className={cn(
-                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200",
-                      runtimeImageInput === 'alpine' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-sm">Alpine Linux</h4>
-                      {runtimeImageInput === 'alpine' ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Ultralight (~200MB). Recommended for most apps.
-                    </p>
-                  </div>
-
-                  <div
-                    onClick={() => setRuntimeImageInput('debian')}
-                    className={cn(
-                      "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200",
-                      runtimeImageInput === 'debian' ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "border-muted bg-muted/20 hover:border-primary/30"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-sm">Debian Slim</h4>
-                      {runtimeImageInput === 'debian' ? (
-                        <CheckCircle2 className="w-4 h-4 text-primary fill-primary/20" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Better compatibility (~600MB). Use for complex requirements.
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5">
                   <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
                 </p>
               </CardContent>

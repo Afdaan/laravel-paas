@@ -1,0 +1,28 @@
+{
+  "deploy": {
+    "base": {
+      "image": "debian:bookworm-slim"
+    }
+  },
+  "phases": {
+    "install": {
+      "cmds": [
+        "npm install --legacy-peer-deps --no-audit --no-fund || yarn install --no-immutable || pnpm install --no-frozen-lockfile || bun install"
+      ]
+    },
+    "build": {
+      "cmds": [
+        "npm run build --if-present || yarn build || pnpm run build || bun run build || true",
+        "npm prune --omit=dev || yarn workspaces focus --production || pnpm prune --prod || bun pm untrust || true"
+      ]
+    }
+  },
+  "variables": {
+    "NODE_ENV": "production",
+    "CI": "true",
+    "DO_NOT_TRACK": "1",
+    "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+    "BUN_INSTALL_FROZEN_LOCKFILE": "false",
+    "COMPOSER_ALLOW_SUPERUSER": "1"
+  }
+}

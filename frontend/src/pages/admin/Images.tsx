@@ -180,13 +180,13 @@ const AdminImages = () => {
                 <TableHead className="w-12 px-4 text-center">
                   <Checkbox />
                 </TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.images.repository')}</TableHead>
-                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.tag')}</TableHead>
-                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.lifecycle')}</TableHead>
-                <TableHead className="h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.images.orchestratedBy')}</TableHead>
-                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.scan')}</TableHead>
-                <TableHead className="h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.size')}</TableHead>
-                <TableHead className="h-12 pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
+                <TableHead className="w-[28%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.images.repository')}</TableHead>
+                <TableHead className="w-[12%] h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.tag')}</TableHead>
+                <TableHead className="w-[14%] h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.lifecycle')}</TableHead>
+                <TableHead className="w-[20%] h-12 px-4 text-xs font-semibold uppercase tracking-wider">{t('admin.images.orchestratedBy')}</TableHead>
+                <TableHead className="w-[10%] h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.scan')}</TableHead>
+                <TableHead className="w-[11%] h-12 px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('admin.images.size')}</TableHead>
+                <TableHead className="w-20 h-12 pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -222,17 +222,17 @@ const AdminImages = () => {
                     </div>
                   </TableCell>
                   <TableCell className="px-4 py-3 text-center">
-                    <Badge variant="secondary" className="px-2 py-0.5 text-[10px] font-mono bg-muted/50">
+                    <Badge variant="secondary" className="px-2 py-0.5 text-[10px] font-mono bg-muted/50 min-w-[65px] justify-center">
                       {img.tag}
                     </Badge>
                   </TableCell>
                   <TableCell className="px-4 py-3 text-center">
                     {img.status === 'In Use' ? (
-                      <Badge variant="outline" className="text-blue-600 border-blue-500/40 bg-blue-500/10">
+                      <Badge variant="outline" className="text-blue-600 border-blue-500/40 bg-blue-500/10 min-w-[90px] justify-center">
                         <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 animate-pulse" /> {t('admin.used')}
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="text-muted-foreground font-medium">
+                      <Badge variant="outline" className="text-muted-foreground font-medium min-w-[90px] justify-center">
                         <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5" /> {t('admin.unused')}
                       </Badge>
                     )}
