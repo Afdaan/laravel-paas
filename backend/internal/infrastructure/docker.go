@@ -516,7 +516,9 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 
 // RunMigrations executes artisan migrate inside the container
 func (s *DockerService) RunMigrations(containerID string) (string, error) {
-	// Wait a bit longer for the container and its internal services to fully initialize
+	// Infrastructure buffer: Wait for the container network stack and internal services 
+	// (like PHP-FPM or the application server) to fully initialize before executing 
+	// migration commands. This prevents "connection refused" or "socket not found" errors.
 	time.Sleep(5 * time.Second)
 
 	// Determine the best user to run the command (prefer www-data, fallback to root)

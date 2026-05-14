@@ -1,111 +1,51 @@
-# Nginx Webhook - Komunikasi 2 VPS
+# Nginx Webhook Proxy (Python Version)
 
-## Arsitektur
+This script acts as a bridge between the **Laravel PaaS Backend** and the **Remote Nginx VPS**. It automatically manages Nginx configurations and SSL certificates (via Certbot) when projects are created or deleted.
 
-```
-┌─────────────────┐         ┌─────────────────┐
-│   VPS PaaS      │         │   VPS Nginx     │
-│  (Laravel PaaS) │  HTTP   │  (IP Public)    │
-│                 │ ──────► │                 │
-│  webhook-client │         │  webhook.sh     │
-└─────────────────┘         └─────────────────┘
-```
+## 🚀 Installation on Nginx VPS
 
-## Setup VPS Nginx (IP Public)
-
-1. **Install dependencies:**
-   ```bash
-   apt update
-   apt install socat certbot nginx
-   ```
-
-2. **Copy webhook script:**
-   ```bash
-   mkdir -p /opt/nginx-webhook
-   cp webhook.sh /opt/nginx-webhook/
-   chmod +x /opt/nginx-webhook/webhook.sh
-   ```
-
-3. **Edit config:**
-   ```bash
-   nano /opt/nginx-webhook/nginx-webhook.service
-   # Ganti:
-   #   WEBHOOK_SECRET=your-secret-key-here
-   #   BASE_DOMAIN=smkmuh1bantul.sch.id
-   ```
-
-4. **Install service:**
-   ```bash
-   cp nginx-webhook.service /etc/systemd/system/
-   systemctl daemon-reload
-   systemctl enable nginx-webhook
-   systemctl start nginx-webhook
-   ```
-
-5. **Buat directory untuk sites:**
-   ```bash
-   mkdir -p /etc/nginx/sites-available/paas
-   ```
-
-6. **Pastikan proxy_params dan ssl_params ada:**
-   ```bash
-   # /etc/nginx/proxy_params (jika belum ada)
-   cat > /etc/nginx/proxy_params << 'EOF'
-   proxy_set_header Host $host;
-   proxy_set_header X-Real-IP $remote_addr;
-   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-   proxy_set_header X-Forwarded-Proto $scheme;
-   proxy_http_version 1.1;
-   proxy_set_header Upgrade $http_upgrade;
-   proxy_set_header Connection "upgrade";
-   EOF
-   ```
-
-## Setup VPS PaaS
-
-1. **Copy client script:**
-   ```bash
-   cp webhook-client.sh /usr/local/bin/
-   chmod +x /usr/local/bin/webhook-client.sh
-   ```
-
-2. **Set environment:**
-   ```bash
-   export WEBHOOK_URL="http://192.168.255.1:5000"  # IP VPS Nginx
-   export WEBHOOK_SECRET="your-secret-key-here"   # Same as server
-   ```
-
-## Usage
-
-**Create project:**
+### 1. Prerequisites
+Ensure your Nginx VPS has Python 3 and Certbot installed:
 ```bash
-webhook-client.sh create my-project 192.168.255.114 3001
+sudo apt update
+sudo apt install python3-pip python3-venv certbot python3-certbot-nginx -y
 ```
 
-**Delete project:**
+### 2. Setup Directory
 ```bash
-webhook-client.sh delete my-project
+sudo mkdir -p /opt/paas-webhook
+sudo chown $USER:$USER /opt/paas-webhook
+# Copy files from this directory to /opt/paas-webhook on the VPS
 ```
 
-**Health check:**
+### 3. Create Virtual Environment & Install Dependencies
 ```bash
-webhook-client.sh health
+cd /opt/paas-webhook
+python3 -m venv venv
+source venv/bin/activate
+pip install flask python-dotenv
 ```
 
-## API Endpoints
+### 4. Configuration
+Create a `.env` file based on `.env.example`:
+```bash
+cp .env.example .env
+nano .env
+```
+Make sure `WEBHOOK_KEY` matches the `NGINX_WEBHOOK_KEY` in your PaaS Backend `.env`.
 
-| Method | Endpoint | Body | Description |
-|--------|----------|------|-------------|
-| POST | /webhook/create | `{subdomain, backend_ip, port}` | Create nginx + SSL |
-| POST | /webhook/update | `{subdomain, backend_ip, port}` | Update config |
-| POST | /webhook/delete | `{subdomain}` | Remove config |
-| GET | /webhook/health | - | Health check |
+### 5. Deployment with Systemd
+Copy the service file to systemd:
+```bash
+sudo cp paas-webhook.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable paas-webhook
+sudo systemctl start paas-webhook
+```
 
-## Security
-
-- Webhook hanya listen di port internal (5000)
-- Gunakan firewall untuk block akses dari luar:
-  ```bash
-  ufw allow from 192.168.255.0/24 to any port 5000
-  ```
-- Secret key untuk autentikasi
+## 🛠 Features
+- **Auto-SSL**: Automatically provisions Let's Encrypt certificates.
+- **Port Detection**: Proxies traffic to the correct internal port of the PaaS VPS.
+- **Security**: Authorized via shared secret key.
+- **Monorepo Support**: Organizes configs into subdirectories per user.
+- **Rate Limiting**: Includes built-in Nginx rate limiting templates.
