@@ -209,55 +209,42 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.type')}</Label>
                           <div className="text-sm font-mono font-bold text-primary">CNAME</div>
                         </div>
-                        <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-muted-foreground/5 transition-all hover:bg-muted/40">
-                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.host')}</Label>
+                        <div 
+                          className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10 cursor-pointer group/box"
+                          onClick={() => {
+                            const host = domain.domain.replace(`.${projectUrl?.replace('https://', '').replace('http://', '')}`, '')
+                            const subdomainHost = host === domain.domain ? '@' : host
+                            navigator.clipboard.writeText(subdomainHost)
+                            toast.success(t('common.copied'))
+                          }}
+                        >
                           <div className="flex items-center justify-between">
-                            <div className="text-sm font-mono font-bold text-foreground">
-                              {(() => {
-                                const parts = domain.domain.split('.')
-                                if (parts.length > 2) {
-                                  return parts.slice(0, -2).join('.')
-                                }
-                                return '@'
-                              })()}
-                            </div>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="h-6 px-2 text-[10px] hover:bg-primary/10"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                const parts = domain.domain.split('.')
-                                const host = parts.length > 2 ? parts.slice(0, -2).join('.') : '@'
-                                navigator.clipboard.writeText(host)
-                                toast.success(t('common.copied'))
-                              }}
-                            >
-                              {t('common.copy')}
-                            </Button>
+                            <Label className="text-[10px] uppercase text-primary/70 font-bold tracking-widest cursor-pointer">{t('common.host')}</Label>
+                            <span className="text-[10px] text-primary/40 font-medium opacity-0 group-hover/box:opacity-100 transition-opacity uppercase">{t('common.copy')}</span>
+                          </div>
+                          <div className="text-sm font-mono font-bold text-foreground truncate">
+                            {(() => {
+                              const host = domain.domain.replace(`.${projectUrl?.replace('https://', '').replace('http://', '')}`, '')
+                              return host === domain.domain ? '@' : host
+                            })()}
                           </div>
                         </div>
                       </div>
                       
-                      <div className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10">
-                        <Label className="text-[10px] uppercase text-primary/70 font-bold tracking-widest">{t('common.value')}</Label>
+                      <div 
+                        className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10 cursor-pointer group/box"
+                        onClick={() => {
+                          const target = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`
+                          navigator.clipboard.writeText(target)
+                          toast.success(t('common.copied'))
+                        }}
+                      >
                         <div className="flex items-center justify-between">
-                          <div className="text-sm font-mono font-bold text-foreground truncate pr-4">
-                            {projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`}
-                          </div>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-6 px-2 text-[10px] hover:bg-primary/20"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              const target = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`
-                              navigator.clipboard.writeText(target)
-                              toast.success(t('common.copied'))
-                            }}
-                          >
-                            {t('common.copy')}
-                          </Button>
+                          <Label className="text-[10px] uppercase text-primary/70 font-bold tracking-widest cursor-pointer">{t('common.value')}</Label>
+                          <span className="text-[10px] text-primary/40 font-medium opacity-0 group-hover/box:opacity-100 transition-opacity uppercase">{t('common.copy')}</span>
+                        </div>
+                        <div className="text-sm font-mono font-bold text-foreground truncate">
+                          {projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`}
                         </div>
                       </div>
 

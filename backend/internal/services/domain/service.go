@@ -168,24 +168,36 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 	}
 
 	// Determine the expected target
-	baseDomain := s.cfg.BaseDomain
-	expectedCNAME := fmt.Sprintf("%s.%s.", project.Subdomain, baseDomain) // trailing dot for fully qualified
+	projectDomain := s.cfg.ProjectDomain
+	if projectDomain == "" {
+		projectDomain = s.cfg.BaseDomain
+	}
+	expectedCNAME := fmt.Sprintf("%s.%s.", project.Subdomain, projectDomain)
 
 	// Lookup CNAME
 	cname, err := net.LookupCNAME(domain.Domain)
 	if err == nil {
-		if cname == expectedCNAME || strings.HasSuffix(cname, baseDomain+".") {
+		cname = strings.ToLower(strings.TrimSuffix(cname, "."))
+		expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
+
+		if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
 			domain.Status = models.DomainStatusActive
 			s.db.Save(&domain)
 			return &domain, nil
 		}
+		
+		// If CNAME exists but is wrong
+		return &domain, apperr.New(400, "VERIFICATION_FAILED", fmt.Sprintf("Domain points to %s instead of %s", cname, expectedTrimmed))
 	}
 
-	// Fallback to A record check if CNAME doesn't match directly
+	// Fallback to A record check
 	ips, err := net.LookupHost(domain.Domain)
 	if err == nil && len(ips) > 0 {
-		// If they point it directly to our IP
-		if s.cfg.InternalIP != "" && contains(ips, s.cfg.InternalIP) {
+		// Try to resolve our project domain to see its current IP
+		platformIPs, _ := net.LookupHost(fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
+		
+		// If they point it directly to our platform IP
+		if len(platformIPs) > 0 && containsAny(ips, platformIPs) {
 			domain.Status = models.DomainStatusActive
 			s.db.Save(&domain)
 			return &domain, nil
@@ -195,7 +207,19 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 	domain.Status = models.DomainStatusError
 	s.db.Save(&domain)
 
-	return &domain, apperr.New(400, "VERIFICATION_FAILED", "DNS verification failed. Please ensure your CNAME or A record is correctly pointing to our servers.")
+	return &domain, apperr.New(400, "VERIFICATION_FAILED", "DNS propagation not detected yet. Please ensure your CNAME is correctly pointing to " + strings.TrimSuffix(expectedCNAME, "."))
+}
+
+// containsAny checks if any element of slice A exists in slice B
+func containsAny(a, b []string) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if x == y {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func contains(slice []string, val string) bool {
