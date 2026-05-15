@@ -170,8 +170,8 @@ const StudentProjects = () => {
             >
               <CardContent className="p-6 flex flex-col h-full">
                 <div className="flex items-start justify-between mb-8">
-                  <div className="w-12 h-12 flex items-center justify-center transition-all group-hover:scale-105 duration-300">
-                     <FrameworkIcon framework={project.framework} variant="tile" className="w-10 h-10" />
+                  <div className="transition-transform duration-300 group-hover:scale-105">
+                     <FrameworkIcon framework={project.framework} variant="tile" className="h-11 w-11" />
                   </div>
                   <StatusBadge status={project.status} />
                 </div>

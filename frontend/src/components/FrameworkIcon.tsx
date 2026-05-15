@@ -84,7 +84,7 @@ export function FrameworkIcon({ framework, className, variant = 'tile' }: Framew
   const icon = getFrameworkIcon(framework)
 
   const variants: Record<NonNullable<FrameworkIconProps['variant']>, string> = {
-    tile: 'rounded-2xl bg-muted/60 dark:bg-zinc-950/80 p-1.5 ring-1 ring-border dark:ring-white/10 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
+    tile: 'rounded-xl bg-muted/50 p-2.5 ring-1 ring-border/70 shadow-sm dark:bg-muted/20 dark:ring-white/10 [&>svg]:h-full [&>svg]:w-full',
     compact: 'rounded-lg bg-muted/40 p-1 ring-1 ring-border/60',
     plain: 'rounded-none bg-transparent p-0 ring-0 shadow-none',
   }

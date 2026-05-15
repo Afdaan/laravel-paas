@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
+import { projectsAPI } from '../services/api'
+import { Project } from '../types'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import {
   LayoutDashboard,
@@ -22,11 +24,18 @@ import {
   Moon,
   Globe,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  ChevronDown
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const Icons = {
   Dashboard: LayoutDashboard,
@@ -48,6 +57,24 @@ interface DashboardLayoutProps {
   isAdmin?: boolean;
 }
 
+const projectStatusTone = (status?: Project['status']) => {
+  switch (status) {
+    case 'running':
+      return 'bg-emerald-500'
+    case 'building':
+    case 'deploying':
+    case 'queued':
+    case 'pending':
+    case 'restarting':
+      return 'bg-amber-500'
+    case 'failed':
+    case 'error':
+      return 'bg-rose-500'
+    default:
+      return 'bg-muted-foreground'
+  }
+}
+
 function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { t } = useTranslation()
   const { user, logout, adminToken, returnToAdmin } = useAuthStore()
@@ -55,8 +82,13 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [isProjectsLoading, setIsProjectsLoading] = useState(false)
   
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
+  const activeProjectUID = projectRouteMatch?.[1]
+  const showProjectSwitcher = !isAdmin && !!activeProjectUID && activeProjectUID !== 'new'
   
   const handleLogout = async () => {
     await logout()
@@ -97,6 +129,37 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
   const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : t('common.initialsFallback')
   const sidebarWidth = isSidebarCollapsed ? 'w-[72px]' : 'w-64'
+  const activeProject = useMemo(
+    () => projects.find((project) => project.uid === activeProjectUID),
+    [projects, activeProjectUID]
+  )
+
+  useEffect(() => {
+    if (!showProjectSwitcher) return
+
+    let isMounted = true
+    setIsProjectsLoading(true)
+    projectsAPI.listOwn()
+      .then((res) => {
+        if (isMounted) {
+          setProjects(res.data.data || [])
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setProjects([])
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsProjectsLoading(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [showProjectSwitcher])
   
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
@@ -289,8 +352,77 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         )}
 
         {/* Orbital Header */}
-        <header className="h-16 flex items-center justify-between px-8 border-b">
-           <div></div>
+        <header className="h-16 flex items-center justify-between gap-4 px-8 border-b">
+           <div className="flex min-w-0 items-center">
+             {showProjectSwitcher && (
+               <DropdownMenu>
+                 <DropdownMenuTrigger className="group flex h-10 min-w-0 max-w-[360px] items-center gap-3 rounded-lg border border-border bg-card px-3 text-left shadow-sm transition-colors hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/20">
+                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                     <FolderGit2 className="h-4 w-4" />
+                   </div>
+                   <div className="min-w-0 flex-1">
+                     <div className="truncate text-sm font-semibold leading-none">
+                       {activeProject?.name || activeProjectUID}
+                     </div>
+                     <div className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+                       <span className={`h-1.5 w-1.5 rounded-full ${projectStatusTone(activeProject?.status)}`} />
+                       <span className="truncate uppercase tracking-wide">
+                         {activeProject?.status || (isProjectsLoading ? t('common.loading') : 'Project')}
+                       </span>
+                     </div>
+                   </div>
+                   <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[popup-open]:rotate-180" />
+                 </DropdownMenuTrigger>
+
+                 <DropdownMenuContent align="start" className="w-[360px] p-1.5">
+                   <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                     {t('common.projects')}
+                   </div>
+                   {projects.length > 0 ? (
+                     projects.map((project) => {
+                       const isActive = project.uid === activeProjectUID
+                       return (
+                         <DropdownMenuItem
+                           key={project.uid}
+                           onClick={() => navigate(`/projects/${project.uid}`)}
+                           className={`flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2.5 ${isActive ? 'bg-accent text-accent-foreground' : ''}`}
+                         >
+                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-background">
+                             <FolderGit2 className="h-4 w-4 text-muted-foreground" />
+                           </div>
+                           <div className="min-w-0 flex-1">
+                             <div className="truncate text-sm font-medium leading-none">{project.name}</div>
+                             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                               <span className={`h-1.5 w-1.5 rounded-full ${projectStatusTone(project.status)}`} />
+                               <span className="truncate">{project.subdomain || project.uid}</span>
+                             </div>
+                           </div>
+                           {isActive && (
+                             <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                               Active
+                             </span>
+                           )}
+                         </DropdownMenuItem>
+                       )
+                     })
+                   ) : (
+                     <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+                       {isProjectsLoading ? t('common.loading') : t('common.noData')}
+                     </div>
+                   )}
+                   <div className="mt-1 border-t pt-1">
+                     <DropdownMenuItem
+                       onClick={() => navigate('/projects/new')}
+                       className="cursor-pointer gap-2 rounded-md px-2.5 py-2 text-sm"
+                     >
+                       <Plus className="h-4 w-4" />
+                       {t('common.newProject')}
+                     </DropdownMenuItem>
+                   </div>
+                 </DropdownMenuContent>
+               </DropdownMenu>
+             )}
+           </div>
            
            <div className="flex items-center gap-4">
              <LanguageSwitcher />
