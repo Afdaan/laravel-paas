@@ -198,7 +198,7 @@ func Setup(
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
 
 	// Domain Management Routes
-	projects.Mount("/:id/domains", domainHandler.Routes())
+	domainHandler.RegisterRoutes(projects.Group("/:id/domains"))
 
 	// -----------------------------
 	// Database Management Routes

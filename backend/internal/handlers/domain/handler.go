@@ -21,18 +21,13 @@ func NewDomainHandler(domainService *domain.DomainService, projectService *proje
 	}
 }
 
-// Routes returns the router for domain endpoints
-func (h *DomainHandler) Routes() *fiber.App {
-	r := fiber.New()
-
-	r.Get("/", h.List)
-	r.Get("/all", h.ListAll)
-	r.Post("/", h.Add)
+// RegisterRoutes registers the domain endpoints to a router
+func (h *DomainHandler) RegisterRoutes(r fiber.Router) {
+	r.Get("", h.List)
+	r.Post("", h.Add)
 	r.Delete("/:domainID", h.Remove)
 	r.Post("/:domainID/verify", h.Verify)
 	r.Post("/:domainID/transfer", h.Transfer)
-
-	return r
 }
 
 func (h *DomainHandler) List(c *fiber.Ctx) error {
