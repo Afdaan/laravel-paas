@@ -166,83 +166,90 @@ server {{
 }}
 """
 
+def cert_covers_all(cert_name, domains):
+    """Checks if an existing Let's Encrypt certificate covers all required domains."""
+    cert_file = f"/etc/letsencrypt/live/{cert_name}/fullchain.pem"
+    if not os.path.exists(cert_file):
+        return False
+    try:
+        # Use openssl to check Subject Alternative Names (SAN)
+        cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        cert_text = result.stdout.lower()
+        for d in domains:
+            if f"dns:{d.lower()}" not in cert_text:
+                return False
+        return True
+    except Exception as e:
+        logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
+        return False
+
 def sync_project(subdomain, domain, custom_domains, internal_ip, port, project_dir):
-    """Handles project Nginx configuration and SSL provisioning."""
+    """Handles project Nginx configuration using an Atomic Commit workflow with Smart SSL."""
     
-    # Combine domains for Nginx config
     all_domains_list = [domain] + custom_domains
     all_domains_str = " ".join(all_domains_list)
     
-    # We check SSL on the primary domain. If any custom domains are added, 
-    # certbot --expand will add them to the existing certificate later.
-    cert_path = f"/etc/letsencrypt/live/{domain}/fullchain.pem"
-    options_ssl_path = "/etc/letsencrypt/options-ssl-nginx.conf"
+    # Check if we already have a certificate that covers everything
+    needs_ssl_expansion = not cert_covers_all(domain, all_domains_list)
+    has_ssl_options = os.path.exists("/etc/letsencrypt/options-ssl-nginx.conf")
     
-    has_cert = os.path.exists(cert_path)
-    has_ssl_options = os.path.exists(options_ssl_path)
-    
-    # Logic: Prioritize existing SSL, but repair if options are missing
-    use_manual_ssl = has_cert
-    if use_manual_ssl and not has_ssl_options:
-        logging.warning(f"[{subdomain}] Cert exists but SSL options missing. Retrying Certbot.")
-        use_manual_ssl = False
+    # If we have a cert that covers all AND we have ssl options, we can use SSL immediately
+    use_ssl = (not needs_ssl_expansion) and has_ssl_options
 
     file_path = os.path.join(project_dir, f"project-{subdomain}.conf")
-    
-    # Backup old config for rollback
-    old_content = None
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
-            old_content = f.read()
+    temp_path = f"{file_path}.tmp"
+    backup_path = f"{file_path}.bak"
 
-    conf_content = get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=use_manual_ssl, primary_domain=domain)
-    
-    try:
-        with open(file_path, "w") as f:
+    def apply_config(ssl_enabled):
+        conf_content = get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=ssl_enabled, primary_domain=domain)
+        with open(temp_path, "w") as f:
             f.write(conf_content)
         
-        # VERIFY: Run nginx -t before reloading
+        old_existed = os.path.exists(file_path)
+        if old_existed: os.rename(file_path, backup_path)
+        os.rename(temp_path, file_path)
+
         test_success, test_out = run_command(["nginx", "-t"])
         if not test_success:
-            logging.error(f"[{subdomain}] Nginx syntax test failed! Rolling back. Error: {test_out}")
-            if old_content:
-                with open(file_path, "w") as f:
-                    f.write(old_content)
-            else:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
+            os.remove(file_path)
+            if old_existed: os.rename(backup_path, file_path)
             return False, f"Nginx syntax error: {test_out}"
 
-        # RELOAD: Only if syntax is valid
-        success, _ = run_command(["nginx", "-s", "reload"])
-        if not success:
-            return False, "Nginx reload failed"
-            
-    except Exception as e:
-        logging.exception(f"[{subdomain}] Critical error during sync")
-        return False, str(e)
+        if os.path.exists(backup_path): os.remove(backup_path)
+        run_command(["nginx", "-s", "reload"])
+        return True, "Success"
 
-    if use_manual_ssl:
-        logging.info(f"[{subdomain}] Sync complete using existing SSL.")
-        return True, "Synced with existing SSL"
+    # 1. Initial Apply: Use SSL if possible, otherwise start with HTTP
+    success, msg = apply_config(ssl_enabled=use_ssl)
+    if not success: return False, msg
 
-    # Provision new SSL or Expand existing
-    logging.info(f"[{subdomain}] Provisioning/Expanding SSL certificate for {all_domains_str}")
+    # 2. Expansion: If SSL is needed, provision it now
+    if needs_ssl_expansion:
+        logging.info(f"[{subdomain}] Provisioning SSL certificate via Webroot for: {all_domains_str}")
+        
+        # We use certonly --webroot so Certbot doesn't touch our Nginx configs
+        certbot_args = [
+            "certbot", "certonly", "--webroot", "-w", "/var/www/html",
+            "--non-interactive", "--agree-tos",
+            "-m", SSL_EMAIL, "--cert-name", domain, "--expand"
+        ]
+        for d in all_domains_list: certbot_args.extend(["-d", d])
+        
+        ssl_success, ssl_out = run_command(certbot_args)
+        if ssl_success:
+            logging.info(f"[{subdomain}] SSL certificates provisioned. Committing HTTPS configuration.")
+            # COMMIT: Re-apply with SSL enabled now that we have the cert files
+            success, msg = apply_config(ssl_enabled=True)
+            if success:
+                return True, "Synced with SSL (Committed)"
+            else:
+                return False, f"SSL provisioned but Nginx commit failed: {msg}"
+        else:
+            logging.warning(f"[{subdomain}] SSL provisioning failed. Remaining on HTTP. Error: {ssl_out}")
+            return True, "Synced (HTTP only)"
     
-    certbot_args = [
-        "certbot", "--nginx", "--non-interactive", "--agree-tos",
-        "-m", SSL_EMAIL, "--cert-name", domain, "--expand", "--redirect"
-    ]
-    
-    for d in all_domains_list:
-        certbot_args.extend(["-d", d])
-    
-    ssl_success, _ = run_command(certbot_args)
-    if not ssl_success:
-        logging.warning(f"[{subdomain}] SSL provisioning failed. HTTP active.")
-        return True, "Synced (HTTP only)"
-    
-    return True, "Synced with new SSL"
+    return True, "Synced (SSL already active)"
 
 def delete_project(subdomain, project_dir):
     """Cleans up project Nginx configuration."""

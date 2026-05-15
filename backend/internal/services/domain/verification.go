@@ -40,6 +40,10 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
 			domain.Status = models.DomainStatusActive
 			s.db.Save(&domain)
+
+			// Trigger Nginx Sync to provision SSL for the new domain
+			s.projectService.SyncProjectNginx(project)
+			
 			return &domain, nil
 		}
 		
@@ -52,6 +56,10 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		if len(platformIPs) > 0 && containsAny(ips, platformIPs) {
 			domain.Status = models.DomainStatusActive
 			s.db.Save(&domain)
+
+			// Trigger Nginx Sync to provision SSL for the new domain
+			s.projectService.SyncProjectNginx(project)
+
 			return &domain, nil
 		}
 	}
