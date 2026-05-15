@@ -691,6 +691,7 @@ function StudentProjectDetail() {
           <TabsTrigger value="database">{t('projectDetail.tabs.database')}</TabsTrigger>
           <TabsTrigger value="logs">{t('projectDetail.tabs.logs')}</TabsTrigger>
           <TabsTrigger value="build">{t('projectDetail.tabs.build')}</TabsTrigger>
+          <TabsTrigger value="domains">{t('projectDetail.tabs.domains')}</TabsTrigger>
           <TabsTrigger value="settings">{t('projectDetail.tabs.settings')}</TabsTrigger>
         </TabsList>
 
@@ -1175,40 +1176,24 @@ function StudentProjectDetail() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.branchTitle')}</Label>
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.branchTitle')}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={branchInput}
                       onChange={(e) => setBranchInput(e.target.value)}
                       placeholder={t('projectDetail.settings.branchPlaceholder')}
-                      className="h-10"
+                      className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                    <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
+                  <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
+                    <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
                   </p>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                    <Globe className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('projectDetail.settings.customDomain') || 'Custom Domain'}</CardTitle>
-                    <CardDescription>{t('projectDetail.settings.customDomainDesc') || 'Manage custom domains for your project'}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} projectUrl={project.url} />
-              </CardContent>
-            </Card>
 
             <Card>
               <CardHeader>
@@ -1222,19 +1207,19 @@ function StudentProjectDetail() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('newProject.baseDir')}</Label>
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('newProject.baseDir')}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={baseDirInput}
                       onChange={(e) => setBaseDirInput(e.target.value)}
                       placeholder={t('newProject.baseDirPlaceholder')}
-                      className="h-10"
+                      className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                    <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
+                  <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
+                    <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
                   </p>
                 </div>
               </CardContent>
@@ -1294,6 +1279,25 @@ function StudentProjectDetail() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="domains" className="pt-0">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">{t('projectDetail.settings.customDomain') || 'Custom Domain'}</CardTitle>
+                  <CardDescription>{t('projectDetail.settings.customDomainDesc') || 'Manage custom domains for your project'}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {project && <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} projectUrl={project.url} />}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
