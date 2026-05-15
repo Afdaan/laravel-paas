@@ -254,17 +254,21 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                       </div>
 
                       <Button
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 group h-auto"
+                        variant="outline"
+                        className="w-full h-auto py-4 bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-500 transition-all duration-300 rounded-lg group overflow-hidden relative"
                         onClick={(e) => handleVerifyDomain(e, domain.id)}
                         disabled={verifyingId === domain.id}
                       >
-                        <div className="flex flex-col items-center gap-1">
+                        <div className="relative z-10 flex flex-col items-center gap-1">
                           <div className="flex items-center gap-2">
-                            <RefreshCw className={`w-4 h-4 ${verifyingId === domain.id ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
-                            <span className="text-sm uppercase tracking-wider">{t('common.verify')}</span>
+                            <RefreshCw className={`w-3.5 h-3.5 ${verifyingId === domain.id ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-700'}`} />
+                            <span className="text-xs font-bold uppercase tracking-[0.2em]">{t('common.verify')}</span>
                           </div>
-                          <span className="text-[9px] font-normal opacity-70 lowercase">Check DNS propagation status</span>
+                          <span className="text-[9px] font-medium opacity-60 uppercase tracking-widest">Verify DNS propagation</span>
                         </div>
+                        {verifyingId === domain.id && (
+                          <div className="absolute inset-0 bg-emerald-500/10 animate-pulse" />
+                        )}
                       </Button>
                     </div>
                   </div>
