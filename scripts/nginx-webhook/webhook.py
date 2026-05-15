@@ -124,7 +124,7 @@ def run_command(command_args):
         logging.error(f"Command failed: {cmd_str} | Error: {error_msg}")
         return False, error_msg
 
-def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False):
+def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False, primary_domain=None):
     """Generates the full Nginx configuration string."""
     proxy_config = PROXY_DIRECTIVES_TEMPLATE.format(internal_ip=internal_ip, port=port)
     
@@ -155,8 +155,8 @@ server {{
     server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
 
-    ssl_certificate /etc/letsencrypt/live/{domain}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{domain}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/{primary_domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{primary_domain}/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
@@ -195,7 +195,7 @@ def sync_project(subdomain, domain, custom_domains, internal_ip, port, project_d
         with open(file_path, "r") as f:
             old_content = f.read()
 
-    conf_content = get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=use_manual_ssl)
+    conf_content = get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=use_manual_ssl, primary_domain=domain)
     
     try:
         with open(file_path, "w") as f:
