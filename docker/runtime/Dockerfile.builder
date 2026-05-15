@@ -1,18 +1,21 @@
 # Unified Builder Base Image for Laravel PaaS
 # Contains PHP, Composer, Node.js, Pnpm, and Bun
 
+# Global ARGs must be declared before the first FROM to be used in any FROM instruction
+ARG PHP_VERSION=8.3
+
 # Stage 1: Get Bun binary from official Alpine-compatible image
 FROM oven/bun:alpine AS bun-source
 
 # Stage 2: Main Builder
-ARG PHP_VERSION=8.3
 FROM php:${PHP_VERSION}-cli-alpine
 
-# Set build arguments
+# Re-declare ARG to make it available inside this stage scope
+ARG PHP_VERSION
+# Set node version argument
 ARG NODE_VERSION=20
 
 # Install system build dependencies
-# We include libc6-compat and libstdc++ for binary compatibility
 RUN apk add --no-cache \
     git \
     unzip \
@@ -43,10 +46,9 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Install 'n' node version manager and upgrade Node.js to target version
-# This ensures pnpm and other modern tools have the required engine version
 RUN npm install -g n && n $NODE_VERSION
 
-# Enable corepack for modern pnpm/yarn management (avoids EBADENGINE errors)
+# Enable corepack for modern pnpm/yarn management
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy Bun binary from the source stage
@@ -54,5 +56,3 @@ COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
 
 # Set working directory
 WORKDIR /app
-
-# The build command will be executed dynamically here via multi-stage builds.
