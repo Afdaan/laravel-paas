@@ -32,8 +32,9 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		return nil, apperr.New(404, "NOT_FOUND", "Domain not found")
 	}
 
-	rateKey := fmt.Sprintf("ratelimit:domain_verify:%d", domainID)
-	allowed, err := s.redisService.RateLimit(rateKey, 5, 1*time.Hour)
+	rateKey := fmt.Sprintf("ratelimit:domain_verify_v2:%d", domainID)
+	// Loosened limit to 20 requests per hour for better developer experience
+	allowed, err := s.redisService.RateLimit(rateKey, 20, 1*time.Hour)
 	if err != nil {
 		return nil, err
 	}
