@@ -211,7 +211,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         </div>
                         <div 
                           className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10 cursor-pointer group/box"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             const host = domain.domain.replace(`.${projectUrl?.replace('https://', '').replace('http://', '')}`, '')
                             const subdomainHost = host === domain.domain ? '@' : host
                             navigator.clipboard.writeText(subdomainHost)
@@ -233,7 +234,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                       
                       <div 
                         className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10 cursor-pointer group/box"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation()
                           const target = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`
                           navigator.clipboard.writeText(target)
                           toast.success(t('common.copied'))
