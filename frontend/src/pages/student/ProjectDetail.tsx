@@ -1164,7 +1164,7 @@ function StudentProjectDetail() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="max-w-md">
               <CardHeader>
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
