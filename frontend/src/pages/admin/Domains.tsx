@@ -113,10 +113,10 @@ const AdminDomains = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-[34%] pl-6 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
-                <TableHead className="w-[26%] text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.owner')}</TableHead>
-                <TableHead className="w-[26%] text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.linkedProject')}</TableHead>
-                <TableHead className="w-[14%] pr-6 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
+                <TableHead className="w-[34%] pl-6 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
+                <TableHead className="w-[26%] text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.owner')}</TableHead>
+                <TableHead className="w-[26%] text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.linkedProject')}</TableHead>
+                <TableHead className="w-[14%] pr-6 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -124,16 +124,16 @@ const AdminDomains = () => {
                 <TableRow key={domain.id} className="hover:bg-muted/25 transition-colors">
                   <TableCell className="py-4 pl-6 font-medium">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/30 text-muted-foreground">
-                        <Globe className="h-4 w-4" />
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/25 text-muted-foreground">
+                        <Globe className="h-3.5 w-3.5" />
                       </div>
                       <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-sm font-semibold">{domain.domain}</span>
+                        <span className="truncate text-[13px] font-semibold">{domain.domain}</span>
                         <a 
                           href={`https://${domain.domain}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="flex w-fit items-center gap-1 text-[10px] text-muted-foreground hover:text-primary"
+                          className="flex w-fit items-center gap-1 text-[9px] text-muted-foreground hover:text-primary"
                         >
                           {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
                         </a>
@@ -142,22 +142,24 @@ const AdminDomains = () => {
                   </TableCell>
                   <TableCell className="py-4">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
                         {domain.project?.user?.name?.substring(0, 2).toUpperCase() || 'NA'}
                       </div>
                       <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-sm font-medium">{domain.project?.user?.name || t('common.unassigned')}</span>
-                        <span className="truncate text-[10px] text-muted-foreground">{domain.project?.user?.email || '-'}</span>
+                        <span className="truncate text-[13px] font-medium">{domain.project?.user?.name || t('common.unassigned')}</span>
+                        <span className="truncate text-[9px] text-muted-foreground">{domain.project?.user?.email || '-'}</span>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="py-4">
                     {domain.project ? (
-                      <div className="flex items-center gap-3">
-                        <FrameworkIcon framework={domain.project.framework} variant="compact" className="h-8 w-8 shrink-0" />
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/20">
+                          <FrameworkIcon framework={domain.project.framework} variant="plain" className="h-5 w-5" />
+                        </div>
                         <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-sm font-medium text-foreground/90">{domain.project.name}</span>
-                          <span className="truncate text-[10px] text-muted-foreground">
+                          <span className="truncate text-[13px] font-medium text-foreground/90">{domain.project.name}</span>
+                          <span className="truncate text-[9px] text-muted-foreground">
                             {domain.project.framework || domain.project.subdomain || domain.project.uid}
                           </span>
                         </div>
