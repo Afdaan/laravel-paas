@@ -89,11 +89,15 @@ func (s *DomainService) ListDomains(projectID uint) ([]models.CustomDomain, erro
 // ListUserDomains returns all domains across all projects of a user
 func (s *DomainService) ListUserDomains(userID uint) ([]models.CustomDomain, error) {
 	var domains []models.CustomDomain
-	err := s.db.Joins("Project").
-		Where("projects.user_id = ?", userID).
-		Order("custom_domains.created_at DESC").
+	
+	// Use GORM subquery for better reliability and automatic soft-delete handling
+	subQuery := s.db.Model(&models.Project{}).Select("id").Where("user_id = ?", userID)
+	
+	err := s.db.Where("project_id IN (?)", subQuery).
+		Order("created_at DESC").
 		Preload("Project").
 		Find(&domains).Error
+		
 	return domains, err
 }
 

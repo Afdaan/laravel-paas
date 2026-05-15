@@ -12,6 +12,30 @@ import (
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
+func sanitizeCommand(cmd string) string {
+	if cmd == "" {
+		return ""
+	}
+	lines := strings.Split(cmd, "\n")
+	var cleanLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			// If line already ends with && or ;, don't double it up (basic check)
+			if strings.HasSuffix(trimmed, "&&") || strings.HasSuffix(trimmed, ";") {
+				cleanLines = append(cleanLines, trimmed)
+			} else {
+				cleanLines = append(cleanLines, trimmed)
+			}
+		}
+	}
+	if len(cleanLines) == 0 {
+		return ""
+	}
+	// Join with && to ensure sequential execution
+	return strings.Join(cleanLines, " && ")
+}
+
 // GetProjectByID fetches a project with preloaded associations
 func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 	return s.projectRepo.GetByID(id)
@@ -181,8 +205,8 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		DatabaseName:     dbName,
 		DatabasePassword: dbPassword,
 		BaseDirectory:    baseDirectory,
-		BuildCommand:     buildCommand,
-		StartCommand:     startCommand,
+		BuildCommand:     sanitizeCommand(buildCommand),
+		StartCommand:     strings.TrimSpace(startCommand),
 		QueueEnabled:     queueEnabled,
 		Status:           models.StatusQueued,
 		ExpiresAt:        expiresAt,
@@ -215,8 +239,8 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	project.BaseDirectory = baseDirectory
 	project.QueueEnabled = queueEnabled
 	project.WorkerCommand = workerCommand
-	project.BuildCommand = buildCommand
-	project.StartCommand = startCommand
+	project.BuildCommand = sanitizeCommand(buildCommand)
+	project.StartCommand = strings.TrimSpace(startCommand)
 	project.NodeVersion = nodeVersion
 	project.LanguageVersion = languageVersion
 

@@ -1114,37 +1114,40 @@ function StudentProjectDetail() {
                       )}
                     </div>
 
-                    {isNodeRelated && (
-                      <div className="space-y-4 pt-2 border-t">
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.buildCommand')}</Label>
-                          <div className="flex gap-2">
-                            <Textarea
-                              value={buildCommandInput}
-                              onChange={(e) => setBuildCommandInput(e.target.value)}
-                              placeholder="e.g. npm install && npm run build"
-                              className="min-h-[80px] text-xs font-mono"
-                            />
-                          </div>
-                          <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
-                        </div>
 
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.startCommand')}</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              value={startCommandInput}
-                              onChange={(e) => setStartCommandInput(e.target.value)}
-                              placeholder="e.g. node dist/main.js"
-                              className="h-10 text-xs font-mono"
-                            />
-                          </div>
-                          <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
+
+                {/* Common Custom Commands Area */}
+                <div className="space-y-4 pt-6 mt-6 border-t border-dashed">
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Code2 size={14} className="text-primary" />
+                      {t('projectDetail.settings.buildCommand')}
+                    </Label>
+                    <Textarea
+                      value={buildCommandInput}
+                      onChange={(e) => setBuildCommandInput(e.target.value)}
+                      placeholder="e.g. npm install && npm run build"
+                      className="min-h-[80px] text-xs font-mono border-muted-foreground/20"
+                    />
+                    <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Play size={14} className="text-primary" />
+                      {t('projectDetail.settings.startCommand')}
+                    </Label>
+                    <Input
+                      value={startCommandInput}
+                      onChange={(e) => setStartCommandInput(e.target.value)}
+                      placeholder={project.framework === 'Laravel' ? 'Leave empty for default PHP-FPM' : 'e.g. node dist/main.js'}
+                      className="h-10 text-xs font-mono border-muted-foreground/20"
+                    />
+                    <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
+                  </div>
+                </div>
 
                 <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
                   <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}

@@ -52,7 +52,7 @@ func (h *DomainHandler) List(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) ListAll(c *fiber.Ctx) error {
-	userID := c.Locals("userId").(uint)
+	userID := c.Locals("user_id").(uint)
 
 	domains, err := h.domainService.ListUserDomains(userID)
 	if err != nil {
@@ -160,7 +160,7 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) Transfer(c *fiber.Ctx) error {
-	userID := c.Locals("userId").(uint)
+	userID := c.Locals("user_id").(uint)
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
