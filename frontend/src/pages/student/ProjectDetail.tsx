@@ -1164,66 +1164,67 @@ function StudentProjectDetail() {
               </CardContent>
             </Card>
 
-            <Card className="max-w-md">
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
-                    <RefreshCw className="w-5 h-5" />
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
+                      <RefreshCw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
+                      <CardDescription>{t('projectDetail.settings.branchDesc')}</CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
-                    <CardDescription>{t('projectDetail.settings.branchDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.branchTitle')}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={branchInput}
+                        onChange={(e) => setBranchInput(e.target.value)}
+                        placeholder={t('projectDetail.settings.branchPlaceholder')}
+                        className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
+                      />
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
+                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
+                    </p>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.branchTitle')}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={branchInput}
-                      onChange={(e) => setBranchInput(e.target.value)}
-                      placeholder={t('projectDetail.settings.branchPlaceholder')}
-                      className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
-                    />
-                  </div>
-                  <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
-                    <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-muted/50 rounded-lg flex items-center justify-center text-muted-foreground">
-                    <Layout className="w-5 h-5" />
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-muted/50 rounded-lg flex items-center justify-center text-muted-foreground">
+                      <Layout className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{t('newProject.baseDir')}</CardTitle>
+                      <CardDescription>{t('newProject.baseDirDesc')}</CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('newProject.baseDir')}</CardTitle>
-                    <CardDescription>{t('newProject.baseDirDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('newProject.baseDir')}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={baseDirInput}
+                        onChange={(e) => setBaseDirInput(e.target.value)}
+                        placeholder={t('newProject.baseDirPlaceholder')}
+                        className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
+                      />
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
+                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
+                    </p>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('newProject.baseDir')}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={baseDirInput}
-                      onChange={(e) => setBaseDirInput(e.target.value)}
-                      placeholder={t('newProject.baseDirPlaceholder')}
-                      className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
-                    />
-                  </div>
-                  <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
-                    <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
 
           {/* Floating Save Action Bar for Settings */}
