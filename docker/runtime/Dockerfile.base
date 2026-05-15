@@ -50,6 +50,7 @@ RUN apk add --no-cache --virtual .build-deps \
     && docker-php-ext-configure intl \
     && docker-php-ext-configure ldap \
     && docker-php-ext-install -j$(nproc) \
+        pdo \
         pdo_mysql \
         pdo_pgsql \
         mbstring \

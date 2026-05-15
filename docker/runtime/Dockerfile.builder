@@ -20,6 +20,8 @@ ARG NODE_VERSION
 
 # Install system build dependencies (minimal needed for PHP extensions and general building)
 RUN apk add --no-cache \
+    $PHPIZE_DEPS \
+    linux-headers \
     git \
     unzip \
     zip \
@@ -31,6 +33,7 @@ RUN apk add --no-cache \
     libc6-compat \
     libstdc++ \
     libgcc \
+    zlib-dev \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
@@ -40,15 +43,20 @@ RUN apk add --no-cache \
     libxml2-dev \
     imagemagick-dev \
     libmemcached-dev \
-    gmp-dev
+    gmp-dev \
+    postgresql-dev \
+    openldap-dev
 
 # Install required PHP extensions for Composer builds
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure intl \
+    && docker-php-ext-configure ldap \
     && docker-php-ext-install -j$(nproc) \
         gd \
         zip \
         pdo \
         pdo_mysql \
+        pdo_pgsql \
         mbstring \
         exif \
         pcntl \
@@ -58,6 +66,9 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         soap \
         sockets \
         gmp \
+        ldap \
+        xml \
+        fileinfo \
     && printf "\n" | pecl install redis imagick \
     && docker-php-ext-enable redis imagick
 
