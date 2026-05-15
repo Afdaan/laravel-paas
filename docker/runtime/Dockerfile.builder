@@ -19,6 +19,9 @@ RUN apk add --no-cache \
     python3 \
     make \
     g++ \
+    libc6-compat \
+    libstdc++ \
+    libgcc \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
@@ -33,8 +36,8 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
 # Install Composer globally
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Install pnpm globally
-RUN npm install -g pnpm
+# Install pnpm, bun, and n (node version manager) globally
+RUN npm install -g pnpm bun n
 
 # Set working directory
 WORKDIR /app

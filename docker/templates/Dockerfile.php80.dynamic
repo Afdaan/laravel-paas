@@ -1,13 +1,21 @@
 # Laravel Dockerfile - PHP 8.0 (Dynamic)
 # Unified Builder: PHP, Composer, and Node.js combined
 
+# Dynamic build arguments
+ARG NODE_VERSION=20
+ARG BUILD_COMMAND=""
+
 # Stage 1: Unified Builder
 FROM paas-builder-base:8.0-alpine AS builder
 WORKDIR /app
-RUN mkdir -p public/build
 
-# Dynamic build command argument (fallback for existing projects)
-ARG BUILD_COMMAND="if [ -f bun.lock ]; then bun install && bun run build; elif [ -f package-lock.json ]; then npm ci && npm run build; elif [ -f yarn.lock ]; then yarn install && yarn build; elif [ -f pnpm-lock.yaml ]; then pnpm install && pnpm build; else npm install && npm run build; fi"
+# Switch Node.js version if requested
+RUN if [ "$NODE_VERSION" != "20" ]; then \
+        echo "Switching Node.js to version $NODE_VERSION..." && \
+        n "$NODE_VERSION" || echo "Failed to switch Node version, using default."; \
+    fi
+
+RUN mkdir -p public/build
 
 # Copy all files
 COPY . .
@@ -58,8 +66,18 @@ PHP_EOF
 
 RUN php detect_extensions.php > /tmp/required_extensions.txt
 
-# Execute user-defined build command
-RUN eval "$BUILD_COMMAND"
+# Execute user-defined build command or auto-detect JS build
+RUN if [ -n "$BUILD_COMMAND" ]; then \
+        echo "Executing custom build command..." && \
+        eval "$BUILD_COMMAND"; \
+    elif [ -f package.json ]; then \
+        echo "Auto-detecting package manager..." && \
+        if [ -f bun.lock ]; then bun install && bun run build; \
+        elif [ -f pnpm-lock.yaml ]; then pnpm install && pnpm build; \
+        elif [ -f yarn.lock ]; then yarn install && yarn build; \
+        elif [ -f package-lock.json ]; then npm ci && npm run build; \
+        else npm install && npm run build; fi \
+    fi
 
 # Sync Vite 5+ manifest location for Laravel compatibility
 RUN if [ -f public/build/.vite/manifest.json ]; then \

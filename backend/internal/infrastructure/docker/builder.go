@@ -228,6 +228,9 @@ stdout_logfile_maxbytes=0
 	if project.BuildCommand != "" {
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("BUILD_COMMAND=%s", project.BuildCommand))
 	}
+	if project.NodeVersion != "" {
+		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("NODE_VERSION=%s", project.NodeVersion))
+	}
 	buildArgs = append(buildArgs, "--label", models.LabelProjectManaged, "-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
 
 	res, err := utils.RunWithRefinedLog(30*time.Minute, logFilePath, "docker", buildArgs...)
