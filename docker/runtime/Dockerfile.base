@@ -65,11 +65,12 @@ RUN apk add --no-cache --virtual .build-deps \
         sockets \
         gmp \
         ldap \
+        fileinfo \
     && if [ "$INSTALL_REDIS" = "true" ]; then \
         printf "\n" | pecl install redis && docker-php-ext-enable redis; \
     fi \
     && if [ "$INSTALL_IMAGICK" = "true" ]; then \
-        # Handle cases where Imagick version might be unstable for certain PHP versions
+        # Use a stable version for Imagick to avoid build failures on newer PHP
         printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
     fi \
     && apk del .build-deps \

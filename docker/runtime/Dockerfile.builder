@@ -36,11 +36,30 @@ RUN apk add --no-cache \
     freetype-dev \
     libzip-dev \
     oniguruma-dev \
-    icu-dev
+    icu-dev \
+    libxml2-dev \
+    imagemagick-dev \
+    libmemcached-dev \
+    gmp-dev
 
 # Install required PHP extensions for Composer builds
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) gd zip pdo pdo_mysql mbstring exif pcntl bcmath intl
+    && docker-php-ext-install -j$(nproc) \
+        gd \
+        zip \
+        pdo \
+        pdo_mysql \
+        mbstring \
+        exif \
+        pcntl \
+        bcmath \
+        intl \
+        opcache \
+        soap \
+        sockets \
+        gmp \
+    && printf "\n" | pecl install redis imagick \
+    && docker-php-ext-enable redis imagick
 
 # Install Composer globally
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
