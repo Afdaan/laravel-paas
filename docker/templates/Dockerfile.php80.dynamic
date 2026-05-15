@@ -2,19 +2,11 @@
 # Unified Builder: PHP, Composer, and Node.js combined
 
 # Dynamic build arguments
-ARG NODE_VERSION=20
 ARG BUILD_COMMAND=""
 
 # Stage 1: Unified Builder
 FROM paas-builder-base:8.0-alpine AS builder
 WORKDIR /app
-
-# Switch Node.js version if requested
-RUN if [ "$NODE_VERSION" != "20" ]; then \
-        echo "Switching Node.js to version $NODE_VERSION..." && \
-        n "$NODE_VERSION" || echo "Failed to switch Node version, using default."; \
-    fi
-
 RUN mkdir -p public/build
 
 # Copy all files
