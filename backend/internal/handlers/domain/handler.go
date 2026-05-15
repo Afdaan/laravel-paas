@@ -139,8 +139,7 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 
 	domainData, err := h.domainService.VerifyDomain(uint(domainID), uint(projectID), project)
 	if err != nil {
-		// Even if error, we return the domain so the frontend knows the status
-		return c.Status(400).JSON(fiber.Map{
+		return c.JSON(fiber.Map{
 			"error": fiber.Map{
 				"code":    "VERIFICATION_FAILED",
 				"message": err.Error(),

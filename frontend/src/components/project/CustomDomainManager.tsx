@@ -121,8 +121,15 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     e.stopPropagation()
     setVerifyingId(domainId)
     try {
-      await projectsAPI.verifyDomain(projectId, domainId)
-      toast.success(t('common.success'))
+      const res = await projectsAPI.verifyDomain(projectId, domainId)
+      
+      // If the backend returned 200 but with an error payload (propagation fail)
+      if (res.data?.error) {
+        toast.error(res.data.error.message || t('common.error'))
+      } else {
+        toast.success(t('common.success'))
+      }
+      
       fetchDomains()
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: { message: string } }>
