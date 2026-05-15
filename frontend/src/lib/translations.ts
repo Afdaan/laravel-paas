@@ -410,6 +410,23 @@ export const translations = {
         noActive: "No active builds",
         noQueued: "Queue is empty",
       },
+      domains: {
+        title: "Global Domains Audit",
+        desc: "Monitor and audit all custom domains registered across the entire platform.",
+      },
+    },
+    domains: {
+      transfer: "Transfer Domain",
+      transferDesc: "Move this domain to another project. All traffic will be redirected to the target project immediately.",
+      selectTarget: "Select Target Project",
+      transferAction: "Initiate Transfer",
+      transferSuccess: "Domain successfully migrated to target project",
+      confirmDelete: "Are you sure you want to remove this domain?",
+      noDomains: "No custom domains found",
+      noDomainsDesc: "You haven't added any custom domains yet. Add them in your project settings.",
+      domainName: "Domain Name",
+      linkedProject: "Linked Project",
+      owner: "Owner",
     },
     projectDetail: {
       metrics: {
@@ -1085,6 +1102,23 @@ export const translations = {
         noActive: "Tidak ada build aktif",
         noQueued: "Antrean kosong",
       },
+      domains: {
+        title: "Global Domains Audit",
+        desc: "Pantau dan audit semua custom domain yang terdaftar di seluruh platform.",
+      },
+    },
+    domains: {
+      transfer: "Transfer Domain",
+      transferDesc: "Pindahkan domain ini ke project lain. Semua trafik akan diarahkan ke project tujuan segera.",
+      selectTarget: "Pilih Target Project",
+      transferAction: "Mulai Transfer",
+      transferSuccess: "Domain berhasil dipindahkan ke target project",
+      confirmDelete: "Yakin ingin menghapus domain ini?",
+      noDomains: "No custom domains found",
+      noDomainsDesc: "Belum ada custom domain yang ditambahkan. Tambahkan melalui pengaturan project.",
+      domainName: "Domain Name",
+      linkedProject: "Linked Project",
+      owner: "Owner",
     },
     projectDetail: {
       metrics: {
@@ -1227,6 +1261,10 @@ export const translations = {
         title: "Database Manager",
         desc: "Kelola struktur data, ekspor SQL, dan jalankan query.",
       },
+      domains: {
+        title: "Custom Domains",
+        desc: "Kelola semua custom domain di seluruh project dalam satu tempat.",
+      },
     },
     status: {
       pending: "Pending",
@@ -1343,22 +1381,5 @@ export const translations = {
       noClusters: "Tidak ada cluster terisolasi",
       selectTarget: "Pilih Target Cluster",
     },
-    domains: {
-      title: "Custom Domains",
-      desc: "Kelola semua domain di seluruh project dalam satu tempat.",
-    },
   },
-  domains: {
-    transfer: "Transfer Domain",
-    transferDesc: "Move this domain to another project. All traffic will be redirected to the target project immediately.",
-    selectTarget: "Select Target Project",
-    transferAction: "Initiate Transfer",
-    transferSuccess: "Domain successfully migrated to target project",
-    confirmDelete: "Are you sure you want to remove this domain?",
-    noDomains: "No custom domains found",
-    noDomainsDesc: "You haven't added any custom domains yet. Add them in your project settings.",
-    domainName: "Domain Name",
-    linkedProject: "Linked Project",
-    owner: "Owner",
-  }
 }

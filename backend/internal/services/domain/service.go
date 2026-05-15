@@ -90,8 +90,9 @@ func (s *DomainService) ListDomains(projectID uint) ([]models.CustomDomain, erro
 func (s *DomainService) ListUserDomains(userID uint) ([]models.CustomDomain, error) {
 	var domains []models.CustomDomain
 	err := s.db.Joins("Project").
-		Where("`Project`.user_id = ?", userID).
-		Order("created_at DESC").
+		Where("projects.user_id = ?", userID).
+		Order("custom_domains.created_at DESC").
+		Preload("Project").
 		Find(&domains).Error
 	return domains, err
 }
