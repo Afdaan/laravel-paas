@@ -189,11 +189,21 @@ function StudentDashboard() {
                   <TableRow key={project.uid}>
                     <TableCell>
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-muted border rounded-lg flex items-center justify-center">
+                        <Link
+                          to={`/projects/${project.uid}`}
+                          className="flex h-10 w-10 items-center justify-center rounded-lg border bg-muted transition-colors hover:border-primary/40 hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          title={project.name}
+                        >
                           <FrameworkIcon framework={project.framework} variant="compact" className="w-7 h-7" />
-                        </div>
+                        </Link>
                         <div>
-                          <span className="font-semibold text-sm max-w-[200px] truncate block">{project.name}</span>
+                          <Link
+                            to={`/projects/${project.uid}`}
+                            className="block max-w-[200px] truncate text-sm font-semibold transition-colors hover:text-primary focus:outline-none focus:text-primary"
+                            title={project.name}
+                          >
+                            {project.name}
+                          </Link>
                           <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
                             <FrameworkIcon framework={project.framework} variant="plain" className="w-3 h-3" />
                             <span className="text-xs font-mono">{project.framework || t('common.general')}</span>
