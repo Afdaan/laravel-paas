@@ -84,6 +84,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const location = useLocation()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [projects, setProjects] = useState<Project[]>([])
+  const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [isProjectsLoading, setIsProjectsLoading] = useState(false)
   
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -130,37 +131,62 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
   const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : t('common.initialsFallback')
   const sidebarWidth = isSidebarCollapsed ? 'w-[72px]' : 'w-64'
+  const isAdminBrowsingAsAdmin = isAdmin && !adminToken
   const activeProject = useMemo(
-    () => projects.find((project) => project.uid === activeProjectUID),
-    [projects, activeProjectUID]
+    () => projects.find((project) => project.uid === activeProjectUID || String(project.id) === activeProjectUID) || currentProject,
+    [projects, currentProject, activeProjectUID]
   )
 
   useEffect(() => {
-    if (!showProjectSwitcher) return
+    if (!showProjectSwitcher || !activeProjectUID) {
+      setCurrentProject(null)
+      setProjects([])
+      return
+    }
 
     let isMounted = true
     setIsProjectsLoading(true)
-    projectsAPI.listOwn()
-      .then((res) => {
-        if (isMounted) {
-          setProjects(res.data.data || [])
+
+    const loadProjects = async () => {
+      try {
+        const currentRes = await projectsAPI.get(activeProjectUID)
+        if (!isMounted) return
+
+        const fetchedCurrent = currentRes.data as Project
+        setCurrentProject(fetchedCurrent)
+
+        const listRes = isAdminBrowsingAsAdmin
+          ? await projectsAPI.listAll({ page: 1, limit: 100 })
+          : await projectsAPI.listOwn()
+        if (!isMounted) return
+
+        let nextProjects = (listRes.data.data || []) as Project[]
+        if (isAdminBrowsingAsAdmin) {
+          nextProjects = nextProjects.filter((project) => project.user_id === fetchedCurrent.user_id)
         }
-      })
-      .catch(() => {
+
+        const hasCurrent = nextProjects.some((project) => project.uid === fetchedCurrent.uid || project.id === fetchedCurrent.id)
+        if (!hasCurrent) {
+          nextProjects = [fetchedCurrent, ...nextProjects]
+        }
+
+        setProjects(nextProjects)
+      } catch (error) {
         if (isMounted) {
+          setCurrentProject(null)
           setProjects([])
         }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsProjectsLoading(false)
-        }
-      })
+      } finally {
+        if (isMounted) setIsProjectsLoading(false)
+      }
+    }
+
+    loadProjects()
 
     return () => {
       isMounted = false
     }
-  }, [showProjectSwitcher])
+  }, [showProjectSwitcher, activeProjectUID, isAdminBrowsingAsAdmin, user?.id])
   
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
@@ -379,7 +405,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                    </div>
                    {projects.length > 0 ? (
                      projects.map((project) => {
-                       const isActive = project.uid === activeProjectUID
+                       const isActive = project.uid === activeProjectUID || String(project.id) === activeProjectUID || project.uid === activeProject?.uid
                        return (
                          <DropdownMenuItem
                            key={project.uid}

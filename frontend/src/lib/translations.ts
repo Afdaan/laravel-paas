@@ -598,6 +598,7 @@ export const translations = {
       inactive: "Inactive",
       inUse: "In Use",
       ready: "Ready",
+      active: "Active",
     },
     feedback: {
       title: "Support Hub",
@@ -1303,6 +1304,7 @@ export const translations = {
       inactive: "Inactive",
       inUse: "In Use",
       ready: "Ready",
+      active: "Active",
     },
     feedback: {
       title: "Support Hub",
