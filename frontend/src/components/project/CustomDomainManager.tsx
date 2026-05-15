@@ -155,12 +155,12 @@ export function CustomDomainManager({ projectId, subdomain }: CustomDomainManage
                           {isActive ? (
                             <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium uppercase tracking-tighter">
                               <CheckCircle2 className="w-3 h-3" />
-                              {t('status.active')}
+                              {t('common.active')}
                             </div>
                           ) : isError ? (
                             <div className="flex items-center gap-1 text-[10px] text-rose-500 font-medium uppercase tracking-tighter">
                               <XCircle className="w-3 h-3" />
-                              {t('status.error')}
+                              {t('common.error')}
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 text-[10px] text-amber-500 font-medium uppercase tracking-tighter">
@@ -263,6 +263,20 @@ export function CustomDomainManager({ projectId, subdomain }: CustomDomainManage
                         <RefreshCw className="w-3 h-3 mt-0.5 animate-pulse text-amber-500 shrink-0" />
                         <span>{t('projectDetail.settings.dnsPropagationDesc')}</span>
                       </div>
+
+                      <Button
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 group h-auto"
+                        onClick={(e) => handleVerifyDomain(e, domain.id)}
+                        disabled={verifyingId === domain.id}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center gap-2">
+                            <RefreshCw className={`w-4 h-4 ${verifyingId === domain.id ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+                            <span className="text-sm uppercase tracking-wider">{t('common.verify')}</span>
+                          </div>
+                          <span className="text-[9px] font-normal opacity-70 lowercase">Check DNS propagation status</span>
+                        </div>
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

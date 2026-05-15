@@ -147,7 +147,13 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 	}
 
 	// Trigger Nginx Sync upon successful verification
-	h.projectService.SyncProjectNginx(project)
+	// We MUST reload the project to get the updated custom domains status
+	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
+	if err == nil {
+		h.projectService.SyncProjectNginx(updatedProject)
+	} else {
+		h.projectService.SyncProjectNginx(project)
+	}
 
 	return c.JSON(fiber.Map{
 		"data": domainData,
