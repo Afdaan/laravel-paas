@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -17,15 +18,15 @@ import {
   MessageSquare,
   ArrowRightLeft,
   ShieldCheck,
-  Zap,
   Sun,
   Moon,
-  Globe
+  Globe,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 
 const Icons = {
   Dashboard: LayoutDashboard,
@@ -53,6 +54,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   
@@ -94,46 +96,105 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
       }
 
   const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : t('common.initialsFallback')
+  const sidebarWidth = isSidebarCollapsed ? 'w-[72px]' : 'w-64'
   
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
-      <aside className="w-64 border-r bg-card flex flex-col z-50">
+      <aside className={`${sidebarWidth} border-r bg-card flex flex-col z-50 transition-[width] duration-200 ease-out`}>
         {/* Logo Branding */}
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-4 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center text-primary-foreground shadow-sm">
-               <span className="font-bold tracking-tighter text-sm">LP</span>
-            </div>
-            <h1 className="text-xl font-bold tracking-tighter">PaaS</h1>
+        <div className="px-3 py-4">
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
+            <button
+              type="button"
+              className={`flex min-w-0 items-center gap-3 rounded-lg p-1.5 text-left transition-colors hover:bg-muted ${isSidebarCollapsed ? 'justify-center' : 'flex-1'}`}
+              onClick={() => navigate(isAdmin ? '/admin/dashboard' : '/dashboard')}
+              title="PaaS"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <span className="text-xs font-bold tracking-tighter">LP</span>
+              </div>
+              {!isSidebarCollapsed && (
+                <div className="min-w-0">
+                  <h1 className="truncate text-base font-semibold tracking-tight">PaaS</h1>
+                  <p className="truncate text-[10px] font-medium text-muted-foreground">
+                    {isAdmin ? t('common.globalAdmin') : t('common.student')}
+                  </p>
+                </div>
+              )}
+            </button>
+
+            {!isSidebarCollapsed && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setIsSidebarCollapsed(true)}
+                title="Collapse sidebar"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            )}
           </div>
-          
-          <Badge variant={isAdmin ? "destructive" : "secondary"} className="w-full justify-center">
-            {isAdmin ? <ShieldCheck className="w-3 h-3 mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
-            {isAdmin ? t('common.globalAdmin') : t('common.authenticatedHub')}
-          </Badge>
+
+          {isSidebarCollapsed && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setIsSidebarCollapsed(false)}
+              title="Expand sidebar"
+              className="mx-auto mt-2 flex text-muted-foreground hover:text-foreground"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </Button>
+          )}
         </div>
-        
+
+        {!isSidebarCollapsed && !isAdmin && (
+          <div className="px-3 pb-3">
+            <Button render={<NavLink to="/projects/new" />} className="h-9 w-full justify-start gap-2" size="sm">
+              <Plus className="h-4 w-4" />
+              {t('common.newProject')}
+            </Button>
+          </div>
+        )}
+        {isSidebarCollapsed && !isAdmin && (
+          <div className="px-3 pb-3">
+            <Button
+              render={<NavLink to="/projects/new" title={t('common.newProject')} />}
+              className="h-9 w-full px-0"
+              size="sm"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         {/* Navigation Registry */}
-        <nav className="flex-1 px-4 py-4 space-y-6 overflow-y-auto">
+        <nav className={`flex-1 overflow-y-auto ${isSidebarCollapsed ? 'px-3 py-2' : 'px-3 py-3'} space-y-5`}>
           {/* Main Group */}
           <div className="space-y-1">
-            <h4 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.main')}</h4>
+            {!isSidebarCollapsed && (
+              <h4 className="px-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t('common.main')}</h4>
+            )}
             {navItems.management.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
+                title={item.label}
                 className={({ isActive }) =>
-                  `flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  `flex h-9 items-center rounded-md text-sm font-medium transition-colors ${
+                    isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
+                  } ${
                     isActive
-                       ? 'bg-secondary text-secondary-foreground'
-                       : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                       ? 'bg-secondary text-secondary-foreground shadow-sm'
+                       : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
                   }`
                 }
               >
-                <div className="flex items-center gap-3">
-                  <item.icon className="w-4 h-4" />
-                  <span>{item.label}</span>
+                <div className={`flex min-w-0 items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                 </div>
               </NavLink>
             ))}
@@ -141,73 +202,71 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
           {/* Infrastructure Group (Admin Only) */}
           {isAdmin && navItems.resources && (
-            <div className="space-y-1 pt-4">
-                <h4 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('common.infrastructure')}</h4>
-                {navItems.resources.map((item) => (
+            <div className="space-y-1 pt-2">
+              {!isSidebarCollapsed && (
+                <h4 className="px-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t('common.infrastructure')}</h4>
+              )}
+              {navItems.resources.map((item) => (
                 <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      `flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                        isActive
-                           ? 'bg-secondary text-secondary-foreground'
-                           : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-                      }`
-                    }
+                  key={item.to}
+                  to={item.to}
+                  title={item.label}
+                  className={({ isActive }) =>
+                    `flex h-9 items-center rounded-md text-sm font-medium transition-colors ${
+                      isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
+                    } ${
+                      isActive
+                         ? 'bg-secondary text-secondary-foreground shadow-sm'
+                         : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                    }`
+                  }
                 >
-                    <div className="flex items-center gap-3">
-                      <item.icon className="w-4 h-4" />
-                      <span>{item.label}</span>
-                    </div>
+                  <div className={`flex min-w-0 items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                  </div>
                 </NavLink>
-                ))}
-            </div>
-          )}
-          
-          {/* Action Trigger (Student Only) */}
-          {!isAdmin && (
-            <div className="pt-4">
-              <Button render={<NavLink to="/projects/new" />} className="w-full justify-start" size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                {t('common.newProject')}
-              </Button>
+              ))}
             </div>
           )}
         </nav>
         
-        <div className="p-4 border-t">
-          <div className="flex items-center gap-3 mb-4 rounded-md p-2 hover:bg-muted transition-colors">
-            <Avatar className="w-9 h-9">
+        <div className={`${isSidebarCollapsed ? 'p-3' : 'p-3'} border-t`}>
+          <div className={`mb-2 flex items-center rounded-md transition-colors hover:bg-muted ${isSidebarCollapsed ? 'justify-center p-1.5' : 'gap-3 p-2'}`}>
+            <Avatar className="h-9 w-9">
               <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium leading-none truncate">{user?.name}</p>
-              <p className="text-xs text-muted-foreground truncate mt-1">{user?.email}</p>
-            </div>
+            {!isSidebarCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-none truncate">{user?.name}</p>
+                <p className="text-xs text-muted-foreground truncate mt-1">{user?.email}</p>
+              </div>
+            )}
           </div>
           
           <div className="space-y-1">
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
-              <Button variant="ghost" className="w-full justify-start text-xs h-8" render={<NavLink to="/admin" />}>
-                <ArrowRightLeft className="w-3 h-3 mr-2" />
-                {t('common.adminPanel')}
+              <Button variant="ghost" className={`h-8 w-full text-xs ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/admin" title={t('common.adminPanel')} />}>
+                <ArrowRightLeft className={`h-3.5 w-3.5 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
+                {!isSidebarCollapsed && t('common.adminPanel')}
               </Button>
             )}
             
             {isAdmin && (
-              <Button variant="ghost" className="w-full justify-start text-xs h-8" render={<NavLink to="/dashboard" />}>
-                <ArrowRightLeft className="w-3 h-3 mr-2" />
-                {t('common.studentView')}
+              <Button variant="ghost" className={`h-8 w-full text-xs ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/dashboard" title={t('common.studentView')} />}>
+                <ArrowRightLeft className={`h-3.5 w-3.5 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
+                {!isSidebarCollapsed && t('common.studentView')}
               </Button>
             )}
             
             <Button 
                variant="ghost" 
-               className="w-full justify-start text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+               className={`h-8 w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`}
                onClick={handleLogout}
+               title={t('common.logout')}
             >
-              <LogOut className="w-3 h-3 mr-2" />
-              {t('common.logout')}
+              <LogOut className={`h-3.5 w-3.5 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
+              {!isSidebarCollapsed && t('common.logout')}
             </Button>
           </div>
         </div>

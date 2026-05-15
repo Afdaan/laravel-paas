@@ -192,7 +192,9 @@ const Domains = () => {
                 onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
               >
                 <SelectTrigger className="h-11 w-full border-border/70 bg-background px-3 hover:bg-muted/30 transition-colors">
-                  <SelectValue placeholder={t('domains.selectTarget')} />
+                  <SelectValue placeholder={t('domains.selectTarget')}>
+                    {projects.find(p => p.id.toString() === transferModal.targetProjectId)?.name}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)] p-1">
                   {projects
@@ -215,7 +217,7 @@ const Domains = () => {
               </Select>
             </div>
           </div>
-          <DialogFooter className="mt-0">
+          <DialogFooter className="mt-0 px-5 pb-5 pt-4">
             <Button variant="outline" onClick={() => setTransferModal(prev => ({ ...prev, isOpen: false }))}>
               {t('common.cancel')}
             </Button>
