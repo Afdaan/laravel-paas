@@ -148,7 +148,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         setIsSidebarCollapsed(true)
       } else {
         setIsSidebarCollapsed(false)
-        setSidebarWidth(Math.min(Math.max(newWidth, 200), 480))
+        setSidebarWidth(Math.min(Math.max(newWidth, 200), 320))
       }
     }
 
