@@ -204,40 +204,64 @@ export function CustomDomainManager({ projectId, subdomain }: CustomDomainManage
                   >
                     <div className="p-4 space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-muted-foreground/5">
-                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.type') || 'Type'}</Label>
-                          <div className="text-xs font-mono font-bold text-primary">CNAME</div>
+                        <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-muted-foreground/5 transition-all hover:bg-muted/40">
+                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.type')}</Label>
+                          <div className="text-sm font-mono font-bold text-primary">CNAME</div>
                         </div>
-                        <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-muted-foreground/5">
-                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.host') || 'Host'}</Label>
-                          <div className="text-xs font-mono font-bold">@ / www</div>
+                        <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-muted-foreground/5 transition-all hover:bg-muted/40">
+                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.host')}</Label>
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-mono font-bold text-foreground">
+                              {(() => {
+                                const parts = domain.domain.split('.')
+                                if (parts.length > 2) {
+                                  return parts.slice(0, -2).join('.')
+                                }
+                                return '@'
+                              })()}
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 px-2 text-[10px] hover:bg-primary/10"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const parts = domain.domain.split('.')
+                                const host = parts.length > 2 ? parts.slice(0, -2).join('.') : '@'
+                                navigator.clipboard.writeText(host)
+                                toast.success(t('common.copied'))
+                              }}
+                            >
+                              {t('common.copy')}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       
-                      <div className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10">
-                        <Label className="text-[10px] uppercase text-primary/60 font-bold tracking-widest">{t('common.value') || 'Value / Target'}</Label>
+                      <div className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10">
+                        <Label className="text-[10px] uppercase text-primary/70 font-bold tracking-widest">{t('common.value')}</Label>
                         <div className="flex items-center justify-between">
-                          <div className="text-xs font-mono font-bold truncate pr-4">
+                          <div className="text-sm font-mono font-bold text-foreground truncate pr-4">
                             {subdomain}.{window.location.hostname}
                           </div>
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="h-6 px-2 text-[10px] hover:bg-primary/10"
+                            className="h-6 px-2 text-[10px] hover:bg-primary/20"
                             onClick={(e) => {
                               e.stopPropagation()
                               navigator.clipboard.writeText(`${subdomain}.${window.location.hostname}`)
-                              toast.success(t('common.copied') || 'Copied to clipboard')
+                              toast.success(t('common.copied'))
                             }}
                           >
-                            {t('common.copy') || 'Copy'}
+                            {t('common.copy')}
                           </Button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground italic">
-                        <RefreshCw className="w-3 h-3 animate-pulse text-amber-500" />
-                        {t('projectDetail.settings.dnsPropagationDesc') || 'DNS changes can take up to 24 hours to propagate worldwide.'}
+                      <div className="flex items-start gap-2 p-2 rounded bg-amber-500/5 text-[10px] text-muted-foreground leading-tight">
+                        <RefreshCw className="w-3 h-3 mt-0.5 animate-pulse text-amber-500 shrink-0" />
+                        <span>{t('projectDetail.settings.dnsPropagationDesc')}</span>
                       </div>
                     </div>
                   </div>
