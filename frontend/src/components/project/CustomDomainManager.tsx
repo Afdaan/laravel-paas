@@ -170,6 +170,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                             </div>
                           )}
                         </div>
+                        <div className="text-[9px] text-muted-foreground/50 font-medium uppercase tracking-widest mt-1 pl-1">
+                          Last sync: {domain.updated_at ? new Date(domain.updated_at).toLocaleTimeString() : 'Never'}
+                        </div>
                       </div>
                     </div>
 
@@ -213,9 +216,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/10 transition-all hover:bg-primary/10 cursor-pointer group/box"
                           onClick={(e) => {
                             e.stopPropagation()
-                            const host = domain.domain.replace(`.${projectUrl?.replace('https://', '').replace('http://', '')}`, '')
-                            const subdomainHost = host === domain.domain ? '@' : host
-                            navigator.clipboard.writeText(subdomainHost)
+                            const parts = domain.domain.split('.')
+                            const host = parts.length > 2 ? parts.slice(0, -2).join('.') : '@'
+                            navigator.clipboard.writeText(host)
                             toast.success(t('common.copied'))
                           }}
                         >
@@ -225,8 +228,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           </div>
                           <div className="text-sm font-mono font-bold text-foreground truncate">
                             {(() => {
-                              const host = domain.domain.replace(`.${projectUrl?.replace('https://', '').replace('http://', '')}`, '')
-                              return host === domain.domain ? '@' : host
+                              const parts = domain.domain.split('.')
+                              return parts.length > 2 ? parts.slice(0, -2).join('.') : '@'
                             })()}
                           </div>
                         </div>

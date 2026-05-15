@@ -18,6 +18,7 @@ export interface CustomDomain {
   project_id: number;
   project?: Project;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Project {
