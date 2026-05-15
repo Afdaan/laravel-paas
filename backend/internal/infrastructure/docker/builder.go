@@ -125,8 +125,8 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",
-		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
-			routerName, project.Subdomain, projectDomain),
+		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
+			routerName, project.GetTraefikHostRule(projectDomain)),
 		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),

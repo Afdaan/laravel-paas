@@ -48,7 +48,6 @@ func (s *ProjectService) GetProjectByUID(uid string) (*models.Project, error) {
 
 // GetBySubdomain fetches a project by its subdomain with Redis caching
 func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, error) {
-	// 1. Try to fetch from Redis Cache first
 	var project models.Project
 	cacheKey := fmt.Sprintf("project:subdomain:%s", subdomain)
 
@@ -57,13 +56,11 @@ func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, erro
 		return &project, nil
 	}
 
-	// 2. Cache miss: fetch from DB
 	p, err := s.projectRepo.GetBySubdomain(subdomain)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. Store in Redis for next time (expires in 1 hour)
 	if err := s.redisService.SetCache(cacheKey, p, 1*time.Hour); err != nil {
 		slog.Warn("Failed to cache project in Redis", "subdomain", subdomain, "error", err)
 	}
@@ -71,25 +68,21 @@ func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, erro
 	return p, nil
 }
 
-// DeleteProject performs a thorough cleanup of all project resources
 func (s *ProjectService) DeleteProject(project *models.Project) error {
 	slog.Info("Executing thorough project deletion",
 		"id", project.ID,
 		"name", project.Name,
 		"subdomain", project.Subdomain)
 
-	// 1. Sync Deletion to Nginx Proxy (Do this first to stop traffic)
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	if err := s.nginxService.DeleteProject(project, projectDomain); err != nil {
 		slog.Warn("Failed to delete project from Nginx proxy", "subdomain", project.Subdomain, "error", err)
 	}
 
-	// Invalidate Redis Proxy Cache
 	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate subdomain cache", "subdomain", project.Subdomain, "error", err)
 	}
 
-	// 2. Remove Docker Container & Image
 	if project.ContainerID != nil {
 		slog.Debug("Removing containers", "mainID", *project.ContainerID, "workerID", project.WorkerContainerID)
 		if err := s.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID); err != nil {
@@ -136,6 +129,66 @@ func (s *ProjectService) SyncProjectNginx(project *models.Project) error {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	return s.nginxService.SyncProject(project, projectDomain)
 }
+
+func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) error {
+	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+
+	if project.ContainerID == nil || *project.ContainerID == "" {
+		return nil
+	}
+
+	slog.Info("Executing zero-downtime container recreation with health guard",
+		"subdomain", project.Subdomain,
+		"projectId", project.ID)
+
+	oldWebID := *project.ContainerID
+	oldWorkerID := project.WorkerContainerID
+
+	newID, err := s.dockerService.StartExistingImage(project, projectDomain)
+	if err != nil {
+		slog.Error("Failed to start new container during recreation", "subdomain", project.Subdomain, "error", err)
+		return err
+	}
+
+	isHealthy := false
+	maxWait := 30
+	for i := 0; i < maxWait; i++ {
+		if s.dockerService.IsContainerHealthy(newID) {
+			isHealthy = true
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !isHealthy {
+		slog.Error("New container failed health check, rolling back", "subdomain", project.Subdomain, "newID", newID)
+		
+		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
+			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
+		}
+
+		return fmt.Errorf("recreation failed: new container is unhealthy")
+	}
+
+	project.ContainerID = &newID
+	if err := s.projectRepo.Update(project); err != nil {
+		slog.Warn("Failed to update container metadata", "id", project.ID, "error", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	slog.Info("Cleaning up legacy containers",
+		"subdomain", project.Subdomain,
+		"oldWebID", oldWebID)
+
+	if err := s.dockerService.RemoveContainer(oldWebID, oldWorkerID); err != nil {
+		slog.Warn("Failed to remove old containers after successful swap", "error", err)
+	}
+
+	return nil
+}
+
+
 
 // ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {

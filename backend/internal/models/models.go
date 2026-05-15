@@ -6,6 +6,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -155,6 +156,20 @@ func (u *User) IsSuperAdmin() bool {
 // GetFullDomain returns complete project URL
 func (p *Project) GetFullDomain(baseDomain string) string {
 	return p.Subdomain + "." + baseDomain
+}
+
+// GetTraefikHostRule returns the Traefik host rule including all active custom domains
+func (p *Project) GetTraefikHostRule(projectDomain string) string {
+	// Start with the primary domain
+	rule := fmt.Sprintf("Host(`%s.%s`)", p.Subdomain, projectDomain)
+
+	// Append active custom domains
+	for _, cd := range p.CustomDomains {
+		if cd.Status == DomainStatusActive {
+			rule += fmt.Sprintf(" || Host(`%s`)", cd.Domain)
+		}
+	}
+	return rule
 }
 
 // ===========================================

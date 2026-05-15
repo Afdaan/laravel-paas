@@ -93,7 +93,9 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	serviceName := project.Subdomain
 
 	internalPort := "8080"
-	if project.Framework == "Laravel" {
+	if project.Port != nil {
+		internalPort = fmt.Sprintf("%d", *project.Port)
+	} else if project.Framework == "Laravel" {
 		internalPort = "80"
 	}
 
@@ -118,10 +120,12 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",
-		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s.%s`)",
-			routerName, project.Subdomain, projectDomain),
+		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
+			routerName, project.GetTraefikHostRule(projectDomain)),
 		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
+		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
