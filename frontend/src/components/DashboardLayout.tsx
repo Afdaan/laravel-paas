@@ -357,13 +357,13 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
            <div className="flex min-w-0 items-center">
              {showProjectSwitcher && (
                <DropdownMenu>
-                 <DropdownMenuTrigger className="group flex h-10 min-w-0 max-w-[360px] items-center gap-3 rounded-lg border border-border bg-card px-3 text-left shadow-sm transition-colors hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/20">
-                   <FrameworkIcon framework={activeProject?.framework} variant="compact" className="h-7 w-7 shrink-0" />
+                 <DropdownMenuTrigger className="group flex h-11 min-w-0 max-w-[380px] items-center gap-3 rounded-lg border border-border bg-card px-3.5 py-2 text-left shadow-sm transition-colors hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/20">
+                   <FrameworkIcon framework={activeProject?.framework} variant="compact" className="h-8 w-8 shrink-0" />
                    <div className="min-w-0 flex-1">
-                     <div className="truncate text-sm font-semibold leading-none">
+                     <div className="truncate text-sm font-semibold leading-tight">
                        {activeProject?.name || activeProjectUID}
                      </div>
-                     <div className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+                     <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
                        <span className={`h-1.5 w-1.5 rounded-full ${projectStatusTone(activeProject?.status)}`} />
                        <span className="truncate uppercase tracking-wide">
                          {activeProject?.status || (isProjectsLoading ? t('common.loading') : 'Project')}

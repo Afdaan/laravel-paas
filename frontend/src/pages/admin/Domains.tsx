@@ -29,7 +29,7 @@ const StatusBadge = ({ status }: { status: CustomDomain['status'] }) => {
   const { t } = useTranslation()
   const configs = {
     pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
-    active: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.ready') },
+    active: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.active') },
     error: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: t('status.failed') },
   }
 
