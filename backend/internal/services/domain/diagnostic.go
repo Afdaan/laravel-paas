@@ -3,7 +3,6 @@ package domain
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -67,17 +66,17 @@ func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.P
 	expectedValueLower := strings.ToLower(expectedValue)
 	if diagnostic.CurrentCNAME == expectedValueLower || strings.HasSuffix(diagnostic.CurrentCNAME, projectDomain) {
 		diagnostic.IsMatch = true
-		diagnostic.Message = "Perfect! Your domain is correctly configured."
+		diagnostic.Message = "Valid configuration detected."
 	} else if len(ips) > 0 {
-		platformIPs, _ := net.LookupHost(expectedValue)
+		platformIPs, _ := resolver.LookupHost(ctx, expectedValue)
 		if len(platformIPs) > 0 && containsAny(ips, platformIPs) {
 			diagnostic.IsMatch = true
-			diagnostic.Message = "Domain points to platform IP via A record. (CNAME is recommended for better reliability)."
+			diagnostic.Message = "Routing established via A record."
 		} else {
-			diagnostic.Message = "Domain points to an incorrect IP address."
+			diagnostic.Message = "Domain resolves to an external IP address."
 		}
 	} else {
-		diagnostic.Message = "DNS records not found or still propagating."
+		diagnostic.Message = "No active DNS records detected."
 	}
 
 	return diagnostic, nil

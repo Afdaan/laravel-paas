@@ -402,8 +402,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
 
                             {/* Status Overlay */}
                             <div className="mt-6 text-center space-y-1">
-                              <div className={`text-[11px] font-bold uppercase tracking-widest ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                {diagnosticData[domain.id]?.is_match ? 'Connection Established' : 'Awaiting Proper Routing'}
+                              <div className={`text-[10px] font-black uppercase tracking-[0.2em] ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                {diagnosticData[domain.id]?.is_match ? 'STATUS: ACTIVE' : 'STATUS: PENDING'}
                               </div>
                               <p className="text-[10px] text-muted-foreground/60 max-w-[200px] mx-auto leading-tight">{diagnosticData[domain.id]?.message}</p>
                             </div>
