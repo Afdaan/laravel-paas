@@ -90,6 +90,7 @@ export const translations = {
       size: "Size",
       justNow: "Just now",
       confirmClearLogs: "Are you sure you want to clear the logs? New logs will still appear.",
+      dragToResize: "Drag to resize navbar (collapse if dragged left)",
     },
     system: {
       updating: "System Update in Progress",
@@ -796,6 +797,7 @@ export const translations = {
       size: "Ukuran",
       justNow: "Baru saja",
       confirmClearLogs: "Konfirmasi pembersihan log? Log baru akan tetap muncul.",
+      dragToResize: "Seret untuk mengubah ukuran navbar (sembunyikan jika mentok kiri)",
     },
     system: {
       updating: "System Update sedang berjalan",

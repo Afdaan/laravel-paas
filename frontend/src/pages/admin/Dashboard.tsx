@@ -212,7 +212,7 @@ const Header = memo(({ t, onRefresh, onPrune, isPruning }: HeaderProps) => (
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">{t('admin.platformDashboard')}</h1>
         <Badge variant="outline" className="h-5 px-1.5 text-[9px] font-bold uppercase tracking-widest bg-primary/5 text-primary border-primary/20 animate-pulse">
-          {t('common.status.live')}
+          {t('common.statusLive.live')}
         </Badge>
       </div>
       <p className="text-xs text-muted-foreground mt-0.5">

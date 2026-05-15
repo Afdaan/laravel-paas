@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -83,6 +83,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(256)
+  const [isDragging, setIsDragging] = useState(false)
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [isProjectsLoading, setIsProjectsLoading] = useState(false)
@@ -130,8 +132,42 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
       }
 
   const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : t('common.initialsFallback')
-  const sidebarWidth = isSidebarCollapsed ? 'w-[72px]' : 'w-64'
   const isAdminBrowsingAsAdmin = isAdmin && !adminToken
+
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = e.clientX
+      if (newWidth < 150) {
+        setIsSidebarCollapsed(true)
+      } else {
+        setIsSidebarCollapsed(false)
+        setSidebarWidth(Math.min(Math.max(newWidth, 200), 480))
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging])
   const activeProject = useMemo(
     () => projects.find((project) => project.uid === activeProjectUID || String(project.id) === activeProjectUID) || currentProject,
     [projects, currentProject, activeProjectUID]
@@ -191,7 +227,21 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
-      <aside className={`${sidebarWidth} border-r bg-card flex flex-col z-50 transition-[width] duration-200 ease-out`}>
+      <aside 
+        style={{ width: isSidebarCollapsed ? 72 : sidebarWidth }}
+        className={`relative border-r bg-card flex flex-col z-50 select-none shrink-0 ${
+          isDragging ? '' : 'transition-[width] duration-200 ease-out'
+        }`}
+      >
+        {/* Resize Handle */}
+        <div
+          className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/40 transition-colors z-50 ${
+            isDragging ? 'bg-primary/60 w-2' : ''
+          }`}
+          onMouseDown={startResizing}
+          title={t('common.dragToResize')}
+        />
+
         {/* Logo Branding */}
         <div className="px-3 py-4">
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
@@ -337,15 +387,15 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           <div className="space-y-1">
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
               <Button variant="ghost" className={`h-8 w-full text-xs ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/admin" title={t('common.adminPanel')} />}>
-                <ArrowRightLeft className={`h-3.5 w-3.5 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
-                {!isSidebarCollapsed && t('common.adminPanel')}
+                <ArrowRightLeft className={`h-3.5 w-3.5 shrink-0 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
+                {!isSidebarCollapsed && <span className="truncate">{t('common.adminPanel')}</span>}
               </Button>
             )}
             
             {isAdmin && (
               <Button variant="ghost" className={`h-8 w-full text-xs ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/dashboard" title={t('common.studentView')} />}>
-                <ArrowRightLeft className={`h-3.5 w-3.5 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
-                {!isSidebarCollapsed && t('common.studentView')}
+                <ArrowRightLeft className={`h-3.5 w-3.5 shrink-0 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
+                {!isSidebarCollapsed && <span className="truncate">{t('common.studentView')}</span>}
               </Button>
             )}
             
@@ -355,8 +405,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                onClick={handleLogout}
                title={t('common.logout')}
             >
-              <LogOut className={`h-3.5 w-3.5 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
-              {!isSidebarCollapsed && t('common.logout')}
+              <LogOut className={`h-3.5 w-3.5 shrink-0 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
+              {!isSidebarCollapsed && <span className="truncate">{t('common.logout')}</span>}
             </Button>
           </div>
         </div>
