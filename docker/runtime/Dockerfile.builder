@@ -48,14 +48,13 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # --- NODE.JS INTEGRATION (The Reliable Way) ---
 # Instead of 'apk add nodejs' or 'n', we copy the verified Alpine binaries
 COPY --from=node-source /usr/local/bin/node /usr/local/bin/node
-COPY --from=node-source /usr/local/bin/corepack /usr/local/bin/corepack
 COPY --from=node-source /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 # --- PACKAGE MANAGERS ---
-# Enable corepack for pnpm and yarn (native in modern Node)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm and yarn via npm (simpler than corepack for multi-stage setups)
+RUN npm install -g pnpm yarn
 
 # Copy Bun binary from the source stage
 COPY --from=bun-source /usr/local/bin/bun /usr/local/bin/bun
