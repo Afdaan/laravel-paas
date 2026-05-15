@@ -224,7 +224,7 @@ const (
 type CustomDomain struct {
 	ID        uint               `gorm:"primaryKey" json:"id"`
 	ProjectID uint               `gorm:"not null;index" json:"project_id"`
-	Project   Project            `gorm:"foreignKey:ProjectID" json:"-"`
+	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	Domain    string             `gorm:"uniqueIndex;size:255;not null" json:"domain"`
 	Status    CustomDomainStatus `gorm:"size:20;not null;default:pending" json:"status"`
 	CreatedAt time.Time          `json:"created_at"`

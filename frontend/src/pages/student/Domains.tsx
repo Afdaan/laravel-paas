@@ -166,32 +166,50 @@ const Domains = () => {
               {t('domains.transferDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-6 space-y-4">
-             <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('domains.domainName')}</label>
-                <div className="p-3 bg-muted rounded-md font-mono text-sm">{transferModal.domain?.domain}</div>
-             </div>
-             <div className="space-y-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('domains.selectTarget')}</label>
-                <Select 
-                  value={transferModal.targetProjectId} 
-                  onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('domains.selectTarget')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects
-                      .filter(p => p.id !== transferModal.domain?.project_id)
-                      .map(p => (
-                        <SelectItem key={p.id} value={p.id.toString()}>
-                          {p.name} ({p.subdomain})
-                        </SelectItem>
-                      ))
-                    }
-                  </SelectContent>
-                </Select>
-             </div>
+          <div className="py-4 space-y-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
+                <Globe size={12} className="text-primary/50" />
+                {t('domains.domainName')}
+              </label>
+              <div className="p-4 bg-muted/30 border border-border/50 rounded-xl font-mono text-sm shadow-inner flex items-center justify-between group">
+                <span className="text-foreground/80">{transferModal.domain?.domain}</span>
+                <Globe className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary/50 transition-colors" />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
+                <FolderGit2 size={12} className="text-primary/50" />
+                {t('domains.selectTarget')}
+              </label>
+              <Select 
+                value={transferModal.targetProjectId} 
+                onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
+              >
+                <SelectTrigger className="h-11 border-muted-foreground/20 bg-background hover:bg-muted/30 transition-colors">
+                  <SelectValue placeholder={t('domains.selectTarget')} />
+                </SelectTrigger>
+                <SelectContent align="start" className="w-full min-w-[var(--radix-select-trigger-width)]">
+                  {projects
+                    .filter(p => p.id !== transferModal.domain?.project_id)
+                    .map(p => (
+                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{p.subdomain}</span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  }
+                  {projects.filter(p => p.id !== transferModal.domain?.project_id).length === 0 && (
+                    <div className="p-4 text-center text-xs text-muted-foreground italic">
+                      No other projects available
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTransferModal(prev => ({ ...prev, isOpen: false }))}>
@@ -235,11 +253,11 @@ const Domains = () => {
         <div className="bg-card border rounded-lg overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/50 hover:bg-muted/50">
-                <TableHead className="w-[40%] font-semibold">{t('domains.domainName')}</TableHead>
-                <TableHead className="w-[30%] font-semibold">{t('domains.linkedProject')}</TableHead>
-                <TableHead className="w-[15%] font-semibold">{t('common.status')}</TableHead>
-                <TableHead className="w-[15%] text-right font-semibold">{t('common.actions')}</TableHead>
+              <TableRow className="bg-muted/30 hover:bg-muted/30 border-b-0">
+                <TableHead className="w-[40%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
+                <TableHead className="w-[30%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.linkedProject')}</TableHead>
+                <TableHead className="w-[15%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
+                <TableHead className="w-[15%] text-right font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -284,20 +302,20 @@ const Domains = () => {
                       <DropdownMenuTrigger className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20">
                         <MoreVertical className="w-4 h-4" />
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="w-48 p-1.5">
                         <DropdownMenuItem 
-                          className="gap-2"
+                          className="gap-3 py-2 cursor-pointer focus:bg-primary/5 focus:text-primary transition-colors"
                           onClick={() => setTransferModal({ isOpen: true, domain, targetProjectId: '' })}
                         >
                           <ArrowRightLeft className="w-4 h-4" />
-                          {t('domains.transfer')}
+                          <span className="font-medium text-xs">{t('domains.transfer')}</span>
                         </DropdownMenuItem>
                         <DropdownMenuItem 
-                          className="gap-2 text-destructive focus:text-destructive"
+                          className="gap-3 py-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 transition-colors"
                           onClick={() => handleRemove(domain)}
                         >
                           <Trash2 className="w-4 h-4" />
-                          {t('common.delete')}
+                          <span className="font-medium text-xs">{t('common.delete')}</span>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
