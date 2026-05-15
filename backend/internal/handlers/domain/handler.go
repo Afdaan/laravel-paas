@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services/domain"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 )
@@ -27,6 +28,7 @@ func (h *DomainHandler) RegisterRoutes(r fiber.Router) {
 	r.Post("", h.Add)
 	r.Delete("/:domainID", h.Remove)
 	r.Post("/:domainID/verify", h.Verify)
+	r.Get("/:domainID/diagnostic", h.Diagnostic)
 	r.Post("/:domainID/transfer", h.Transfer)
 }
 
@@ -183,4 +185,45 @@ func (h *DomainHandler) Transfer(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "Domain transferred successfully"})
+}
+
+func (h *DomainHandler) Diagnostic(c *fiber.Ctx) error {
+	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil || projectID == 0 {
+		return apperr.New(400, "INVALID_ID", "Invalid project ID")
+	}
+
+	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
+	if err != nil || domainID == 0 {
+		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
+	}
+
+	project, err := h.projectService.GetProjectByID(uint(projectID))
+	if err != nil {
+		return apperr.New(404, "PROJECT_NOT_FOUND", "Project not found")
+	}
+
+	// Find the domain in the project
+	var domain models.CustomDomain
+	found := false
+	for _, d := range project.CustomDomains {
+		if d.ID == uint(domainID) {
+			domain = d
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return apperr.New(404, "DOMAIN_NOT_FOUND", "Domain not found in this project")
+	}
+
+	diagnostic, err := h.domainService.GetDomainDiagnostic(domain.Domain, project)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"data": diagnostic,
+	})
 }

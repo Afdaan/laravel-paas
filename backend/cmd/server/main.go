@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -94,6 +95,11 @@ func main() {
 	worker := workers.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
 	worker.Start()
 
+	// Initialize and start domain verification worker (MXToolbox-style background check)
+	domainWorker := workers.NewDomainWorker(db, domainService, projectService)
+	domainCtx, cancelDomainWorker := context.WithCancel(context.Background())
+	go domainWorker.Start(domainCtx)
+
 	// Initialize server
 	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)
 
@@ -113,8 +119,11 @@ func main() {
 
 		slog.Warn("Graceful shutdown initiated...")
 
-		// 1. Stop the Worker (Finish current deployment)
-		slog.Info("Shutting down worker...")
+		// 0. Stop the Domain Worker
+		cancelDomainWorker()
+
+		// 1. Stop the Deployment Worker (Finish current deployment)
+		slog.Info("Shutting down deployment worker...")
 		worker.Stop()
 
 		// 2. Stop accepting new requests (Fiber)

@@ -21,6 +21,17 @@ export interface CustomDomain {
   updated_at: string;
 }
 
+export interface DomainDiagnostic {
+  domain: string;
+  expected_type: string;
+  expected_host: string;
+  expected_value: string;
+  current_cname: string;
+  current_ips: string[];
+  is_match: boolean;
+  message: string;
+}
+
 export interface Project {
   id: number;
   uid: string;

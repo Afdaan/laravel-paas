@@ -188,6 +188,9 @@ export const projectsAPI = {
   verifyDomain: (id: number | string, domainId: number | string) =>
     api.post(`/projects/${id}/domains/${domainId}/verify`),
   
+  getDomainDiagnostic: (id: number | string, domainId: number | string) =>
+    api.get(`/projects/${id}/domains/${domainId}/diagnostic`),
+  
   // Admin endpoints
   listAll: (params: Record<string, unknown> = {}) => 
     api.get('/admin/projects', { params }),
