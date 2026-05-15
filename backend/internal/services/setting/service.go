@@ -3,15 +3,16 @@
 // ===========================================
 // Manages system-wide configurations and settings
 // ===========================================
-package services
+package setting
 
 import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
-	"github.com/laravel-paas/backend/internal/infrastructure"
 )
 
 type SettingService struct {

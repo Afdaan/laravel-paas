@@ -55,6 +55,7 @@ func Migrate(db *gorm.DB) error {
 		&models.Setting{},
 		&models.ResourceLog{},
 		&models.Feedback{},
+		&models.CustomDomain{},
 	)
 	if err != nil {
 		return fmt.Errorf("migration failed: %w", err)

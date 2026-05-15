@@ -1,73 +1,16 @@
-// ===========================================
-// Project Service
-// ===========================================
-// Centralized business logic for project management
-// ===========================================
-package services
+package project
 
 import (
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
-	"github.com/laravel-paas/backend/internal/repositories"
 )
-
-type ProjectService struct {
-	cfg            *config.Config
-	projectRepo    repositories.ProjectRepository
-	settingService *SettingService
-	dockerService  *infrastructure.DockerService
-	storageService *infrastructure.StorageService
-	mysqlService   *infrastructure.MySQLService
-	nginxService   *infrastructure.NginxWebhookService
-	redisService   *infrastructure.RedisService
-}
-
-func validateBaseDirectory(baseDirectory string) error {
-	bd := strings.TrimSpace(baseDirectory)
-	if bd == "" {
-		return nil
-	}
-	clean := filepath.Clean(bd)
-	if filepath.IsAbs(clean) || clean == "." || clean == string(filepath.Separator) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("invalid base_directory")
-	}
-	// Avoid Windows-style separators sneaking in.
-	if strings.ContainsRune(bd, '\\') {
-		return fmt.Errorf("invalid base_directory")
-	}
-	return nil
-}
-
-func NewProjectService(
-	cfg *config.Config,
-	projectRepo repositories.ProjectRepository,
-	settingService *SettingService,
-	dockerService *infrastructure.DockerService,
-	storageService *infrastructure.StorageService,
-	mysqlService *infrastructure.MySQLService,
-	redisService *infrastructure.RedisService,
-) *ProjectService {
-	return &ProjectService{
-		cfg:            cfg,
-		projectRepo:    projectRepo,
-		settingService: settingService,
-		dockerService:  dockerService,
-		storageService: storageService,
-		mysqlService:   mysqlService,
-		nginxService:   infrastructure.NewNginxWebhookService(cfg),
-		redisService:   redisService,
-	}
-}
 
 // GetProjectByID fetches a project with preloaded associations
 func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
@@ -164,35 +107,10 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	return nil
 }
 
-// GetSetting fetches a platform setting with a fallback
-func (s *ProjectService) GetSetting(key, defaultValue string) string {
-	return s.settingService.Get(key, defaultValue)
-}
-
-// UpdateActivity updates the last_accessed_at and expires_at fields
-func (s *ProjectService) UpdateActivity(projectID uint) {
-	go func() {
-		now := time.Now()
-		expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
-
-		project, err := s.projectRepo.GetByID(projectID)
-		if err != nil {
-			slog.Error("Failed to fetch project for activity update", "id", projectID, "error", err)
-			return
-		}
-
-		project.LastAccessedAt = &now
-		if expiryDays > 0 {
-			expire := now.AddDate(0, 0, expiryDays)
-			project.ExpiresAt = &expire
-		} else {
-			project.ExpiresAt = nil
-		}
-
-		if err := s.projectRepo.Update(project); err != nil {
-			slog.Error("Failed to update project activity", "id", projectID, "error", err)
-		}
-	}()
+// SyncProjectNginx triggers a sync to the remote Nginx proxy
+func (s *ProjectService) SyncProjectNginx(project *models.Project) error {
+	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+	return s.nginxService.SyncProject(project, projectDomain)
 }
 
 // ListProjects returns paginated projects with filtering
@@ -220,7 +138,6 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
 	}
 
-
 	if err := validateBaseDirectory(baseDirectory); err != nil {
 		return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
 	}
@@ -238,10 +155,10 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 	if dbName == "" {
 		dbName = strings.ReplaceAll(subdomain, "-", "_")
 	} else {
-		// Even if user provides a database name, we sanitize it and append the 
+		// Even if user provides a database name, we sanitize it and append the
 		// same unique suffix to prevent collisions across users.
-		dbName = fmt.Sprintf("%s_%s", 
-			strings.Trim(strings.ReplaceAll(strings.ToLower(dbName), "-", "_"), "_"), 
+		dbName = fmt.Sprintf("%s_%s",
+			strings.Trim(strings.ReplaceAll(strings.ToLower(dbName), "-", "_"), "_"),
 			suffix)
 	}
 
@@ -359,135 +276,4 @@ func (s *ProjectService) GetRunningCount() (int64, error) {
 // GetRunningProjectsWithContainers returns projects that have containers
 func (s *ProjectService) GetRunningProjectsWithContainers() ([]models.Project, error) {
 	return s.projectRepo.GetRunningWithContainers()
-}
-
-// PopulateURL sets the URL and UID fields on a project model
-func (s *ProjectService) PopulateURL(project *models.Project) {
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	project.URL = "https://" + project.GetFullDomain(projectDomain)
-}
-
-// PopulateURLs sets the URL and UID fields on a slice of project models
-func (s *ProjectService) PopulateURLs(projects []models.Project) {
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	for i := range projects {
-		projects[i].URL = "https://" + projects[i].GetFullDomain(projectDomain)
-	}
-}
-
-// GetLogs returns container logs (either web or worker)
-func (s *ProjectService) GetLogs(project *models.Project, logType string, lines int) (string, error) {
-	containerID := project.ContainerID
-	if logType == "worker" {
-		containerID = project.WorkerContainerID
-	}
-
-	if containerID == nil || *containerID == "" {
-		return "", fmt.Errorf("no container running for type %s", logType)
-	}
-
-	return s.dockerService.GetLogs(*containerID, lines)
-}
-
-// GetStats returns container resource usage
-func (s *ProjectService) GetStats(containerID string) (*infrastructure.ContainerStats, error) {
-	return s.dockerService.GetContainerStats(containerID)
-}
-
-// GetAllStats returns resource usage for all containers
-func (s *ProjectService) GetAllStats() (map[string]infrastructure.ContainerStats, error) {
-	return s.dockerService.GetAllContainerStats()
-}
-
-// ExecCommand executes a command in the container (automatically handles artisan for Laravel)
-func (s *ProjectService) ExecCommand(project *models.Project, command string) (string, error) {
-	return s.dockerService.ExecProjectCommand(project, command)
-}
-
-// GetEnv reads the .env file from the project storage
-func (s *ProjectService) GetEnv(subdomain string) (string, error) {
-	return s.dockerService.GetEnvFile(subdomain)
-}
-
-// SaveEnv saves the .env file to the project storage
-func (s *ProjectService) SaveEnv(subdomain string, content string) error {
-	return s.dockerService.SaveEnvFile(subdomain, content)
-}
-
-// StopContainer stops a container
-func (s *ProjectService) StopContainer(containerID string) error {
-	return s.dockerService.StopContainer(containerID)
-}
-
-// StopProject stops both web and worker containers and updates status
-func (s *ProjectService) StopProject(project *models.Project) error {
-	if project.ContainerID != nil {
-		if err := s.dockerService.StopContainer(*project.ContainerID); err != nil {
-			slog.Warn("Failed to stop web container", "id", *project.ContainerID, "error", err)
-		}
-	}
-	if project.WorkerContainerID != nil {
-		if err := s.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to stop worker container", "id", *project.WorkerContainerID, "error", err)
-		}
-	}
-
-	project.Status = models.StatusStopped
-	return s.projectRepo.UpdateStatus(project.ID, project.Status)
-}
-
-// StartProject starts both web and worker containers and updates status
-func (s *ProjectService) StartProject(project *models.Project) error {
-	if project.ContainerID != nil {
-		if err := s.dockerService.StartContainer(*project.ContainerID); err != nil {
-			return fmt.Errorf("failed to start web container: %w", err)
-		}
-	}
-	if project.WorkerContainerID != nil {
-		if err := s.dockerService.StartContainer(*project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to start worker container", "id", *project.WorkerContainerID, "error", err)
-		}
-	}
-
-	project.Status = models.StatusRunning
-	return s.projectRepo.UpdateStatus(project.ID, project.Status)
-}
-
-// RestartProject restarts both web and worker containers
-func (s *ProjectService) RestartProject(project *models.Project) error {
-	// Set status to restarting
-	project.Status = models.StatusRestarting
-	if err := s.projectRepo.UpdateStatus(project.ID, project.Status); err != nil {
-		slog.Error("Failed to update status to restarting", "id", project.ID, "error", err)
-	}
-
-	if project.ContainerID != nil {
-		if err := s.dockerService.RestartContainer(*project.ContainerID); err != nil {
-			return fmt.Errorf("failed to restart web container: %w", err)
-		}
-	}
-	if project.WorkerContainerID != nil {
-		if err := s.dockerService.RestartContainer(*project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to restart worker container", "id", *project.WorkerContainerID, "error", err)
-		}
-	}
-
-	project.Status = models.StatusRunning
-	return s.projectRepo.UpdateStatus(project.ID, project.Status)
-}
-
-// CacheSubdomainMapping syncs project lookup data to Redis
-func (s *ProjectService) CacheSubdomainMapping(project *models.Project) error {
-	if project.Port == nil {
-		return nil
-	}
-	key := fmt.Sprintf("proxy:subdomain:%s", project.Subdomain)
-	// Cache for 1 hour, auto-refresh on access
-	return s.redisService.SetCache(key, project, 1*time.Hour)
-}
-
-// InvalidateSubdomainCache removes project mapping from Redis
-func (s *ProjectService) InvalidateSubdomainCache(subdomain string) error {
-	key := fmt.Sprintf("proxy:subdomain:%s", subdomain)
-	return s.redisService.DeleteCache(key)
 }

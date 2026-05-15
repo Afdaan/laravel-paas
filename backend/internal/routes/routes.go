@@ -14,9 +14,14 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/handlers"
+	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/backend/internal/services/setting"
 )
 
 // Setup initializes the Fiber app with all routes
@@ -24,14 +29,15 @@ func Setup(
 	db *gorm.DB,
 	cfg *config.Config,
 	redisService *infrastructure.RedisService,
-	dockerService *infrastructure.DockerService,
+	dockerService *docker.DockerService,
 	storageService *infrastructure.StorageService,
-	projectService *services.ProjectService,
+	projectService *projectServicePkg.ProjectService,
 	userService *services.UserService,
-	settingService *services.SettingService,
+	settingService *setting.SettingService,
 	authService *services.AuthService,
 	databaseService *services.DatabaseService,
 	feedbackService *services.FeedbackService,
+	domainHandler *domainHandlerPkg.DomainHandler,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
@@ -91,7 +97,7 @@ func Setup(
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
 	userHandler := handlers.NewUserHandler(userService)
-	projectHandler := handlers.NewProjectHandler(cfg, redisService, projectService, userService)
+	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, redisService, projectService, userService)
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
@@ -131,6 +137,9 @@ func Setup(
 	protected.Post("/feedback", feedbackHandler.Create)
 	protected.Get("/feedback", feedbackHandler.ListOwn)
 
+	// Domains (Centralized Student view)
+	protected.Get("/domains", domainHandler.ListAll)
+
 	// -----------------------------
 	// Admin Routes
 	// -----------------------------
@@ -162,6 +171,7 @@ func Setup(
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
 	admin.Get("/databases", databaseHandler.AdminListAll)
+	admin.Get("/domains", domainHandler.ListGlobal)
 
 	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)
@@ -186,6 +196,9 @@ func Setup(
 	projects.Post("/:id/artisan", middleware.RateLimitArtisan(), projectHandler.RunArtisan)
 	projects.Get("/:id/env", projectHandler.GetEnv)
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
+
+	// Domain Management Routes
+	projects.Mount("/:id/domains", domainHandler.Routes())
 
 	// -----------------------------
 	// Database Management Routes

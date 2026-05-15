@@ -16,17 +16,18 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 )
 
 // DatabaseHandler handles database management endpoints
 type DatabaseHandler struct {
 	cfg             *config.Config
 	databaseService *services.DatabaseService
-	projectService  *services.ProjectService
+	projectService  *projectServicePkg.ProjectService
 }
 
 // NewDatabaseHandler creates a new database handler
-func NewDatabaseHandler(cfg *config.Config, databaseService *services.DatabaseService, projectService *services.ProjectService) *DatabaseHandler {
+func NewDatabaseHandler(cfg *config.Config, databaseService *services.DatabaseService, projectService *projectServicePkg.ProjectService) *DatabaseHandler {
 	return &DatabaseHandler{
 		cfg:             cfg,
 		databaseService: databaseService,

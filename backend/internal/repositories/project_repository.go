@@ -41,7 +41,7 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 
 func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Preload("User").First(&project, id).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").First(&project, id).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -49,7 +49,7 @@ func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 
 func (r *projectRepository) GetByUID(uid string) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Preload("User").Where("uid = ?", uid).First(&project).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").Where("uid = ?", uid).First(&project).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -57,7 +57,7 @@ func (r *projectRepository) GetByUID(uid string) (*models.Project, error) {
 
 func (r *projectRepository) GetBySubdomain(subdomain string) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Where("subdomain = ?", subdomain).First(&project).Error; err != nil {
+	if err := r.db.Preload("CustomDomains").Where("subdomain = ?", subdomain).First(&project).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -68,7 +68,7 @@ func (r *projectRepository) List(page, limit int, userID uint, status string, se
 	var total int64
 	offset := (page - 1) * limit
 
-	query := r.db.Model(&models.Project{}).Preload("User")
+	query := r.db.Model(&models.Project{}).Preload("User").Preload("CustomDomains")
 
 	if userID != 0 {
 		query = query.Where("user_id = ?", userID)
@@ -90,7 +90,7 @@ func (r *projectRepository) List(page, limit int, userID uint, status string, se
 
 func (r *projectRepository) ListByUserID(userID uint) ([]models.Project, error) {
 	var projects []models.Project
-	if err := r.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&projects).Error; err != nil {
+	if err := r.db.Preload("CustomDomains").Where("user_id = ?", userID).Order("created_at DESC").Find(&projects).Error; err != nil {
 		return nil, err
 	}
 	return projects, nil
@@ -98,7 +98,7 @@ func (r *projectRepository) ListByUserID(userID uint) ([]models.Project, error) 
 
 func (r *projectRepository) ListAll() ([]models.Project, error) {
 	var projects []models.Project
-	if err := r.db.Preload("User").Order("created_at DESC").Find(&projects).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").Order("created_at DESC").Find(&projects).Error; err != nil {
 		return nil, err
 	}
 	return projects, nil
@@ -107,21 +107,21 @@ func (r *projectRepository) ListAll() ([]models.Project, error) {
 // ListExpired returns projects whose expiry date has passed
 func (r *projectRepository) ListExpired() ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Where("expires_at IS NOT NULL AND expires_at < NOW()").Find(&projects).Error
+	err := r.db.Preload("User").Preload("CustomDomains").Where("expires_at IS NOT NULL AND expires_at < NOW()").Find(&projects).Error
 	return projects, err
 }
 
 // ListByStatus returns projects matching a specific status
 func (r *projectRepository) ListByStatus(status models.ProjectStatus) ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Where("status = ?", status).Find(&projects).Error
+	err := r.db.Preload("User").Preload("CustomDomains").Where("status = ?", status).Find(&projects).Error
 	return projects, err
 }
 
 // ListByStatuses returns projects matching any of the given statuses
 func (r *projectRepository) ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Where("status IN ?", statuses).Find(&projects).Error
+	err := r.db.Preload("User").Preload("CustomDomains").Where("status IN ?", statuses).Find(&projects).Error
 	return projects, err
 }
 

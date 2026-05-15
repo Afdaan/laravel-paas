@@ -19,7 +19,8 @@ import {
   ShieldCheck,
   Zap,
   Sun,
-  Moon
+  Moon,
+  Globe
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
@@ -39,6 +40,7 @@ const Icons = {
   Networks: Network,
   Volumes: HardDrive,
   Feedback: MessageSquare,
+  Domains: Globe,
 }
 
 interface DashboardLayoutProps {
@@ -71,6 +73,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/admin/users', icon: Icons.Users, label: t('common.users') },
           { to: '/admin/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/admin/databases', icon: Icons.Database, label: t('common.databases') },
+          { to: '/admin/domains', icon: Icons.Domains, label: t('common.domains') },
           { to: '/admin/settings', icon: Icons.Settings, label: t('common.settings') },
         ],
         resources: [
@@ -86,6 +89,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
           { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/databases', icon: Icons.Database, label: t('common.databases') },
+          { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
         ]
       }
 

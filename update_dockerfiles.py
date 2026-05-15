@@ -1,8 +1,16 @@
-# Laravel Dockerfile - PHP 8.1 (Dynamic)
+import os
+import glob
+import re
+
+template_dir = 'docker/templates'
+
+dynamic_files = glob.glob(os.path.join(template_dir, 'Dockerfile.php*.dynamic'))
+
+template_content = r"""# Laravel Dockerfile - PHP {VERSION} (Dynamic)
 # Unified Builder: PHP, Composer, and Node.js combined
 
 # Stage 1: Unified Builder
-FROM paas-builder-base:8.1-alpine AS builder
+FROM paas-builder-base:{VERSION}-alpine AS builder
 WORKDIR /app
 RUN mkdir -p public/build
 
@@ -70,10 +78,10 @@ RUN if [ -f public/build/.vite/manifest.json ]; then \
 RUN mkdir -p /app/public/build
 
 # Stage 2: Production (Optimized Runtime)
-FROM paas-runtime-php:8.1-alpine
+FROM paas-runtime-php:{VERSION}-alpine
 
 LABEL maintainer="Laravel PaaS"
-LABEL description="Laravel with PHP 8.1 (Dynamic & Fast)"
+LABEL description="Laravel with PHP {VERSION} (Dynamic & Fast)"
 
 # Copy extension requirements
 COPY --from=builder /tmp/required_extensions.txt /tmp/
@@ -141,3 +149,15 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+"""
+
+for filepath in dynamic_files:
+    m = re.search(r'Dockerfile\.php(\d)(\d)\.dynamic', filepath)
+    if not m: continue
+    version = f"{m.group(1)}.{m.group(2)}"
+    
+    new_content = template_content.replace("{VERSION}", version)
+    with open(filepath, 'w') as f:
+        f.write(new_content)
+
+print("Updated Dockerfile templates to use Unified Builder.")

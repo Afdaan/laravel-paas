@@ -10,6 +10,7 @@ export const translations = {
       networks: "Networks",
       volumes: "Volumes",
       databases: "Databases",
+      domains: "Domains",
       feedback: "Feedback",
       logout: "Logout",
       newProject: "New Project",
@@ -551,6 +552,10 @@ export const translations = {
         title: "Database Manager",
         desc: "Manage data structures, export SQL, and run queries directly.",
       },
+      domains: {
+        title: "Custom Domains",
+        desc: "Manage all your custom domains across your projects in one place.",
+      },
     },
     status: {
       pending: "Pending",
@@ -680,6 +685,7 @@ export const translations = {
       networks: "Networks",
       volumes: "Volumes",
       databases: "Databases",
+      domains: "Domains",
       feedback: "Feedback",
       logout: "Logout",
       newProject: "New Project",
@@ -1335,7 +1341,24 @@ export const translations = {
       searchSchema: "Cari schema...",
       activeInstances: "Instance Aktif",
       noClusters: "Tidak ada cluster terisolasi",
-      selectTarget: "Pilih Target Cluster"
-    }
+      selectTarget: "Pilih Target Cluster",
+    },
+    domains: {
+      title: "Custom Domains",
+      desc: "Kelola semua domain di seluruh project dalam satu tempat.",
+    },
+  },
+  domains: {
+    transfer: "Transfer Domain",
+    transferDesc: "Move this domain to another project. All traffic will be redirected to the target project immediately.",
+    selectTarget: "Select Target Project",
+    transferAction: "Initiate Transfer",
+    transferSuccess: "Domain successfully migrated to target project",
+    confirmDelete: "Are you sure you want to remove this domain?",
+    noDomains: "No custom domains found",
+    noDomainsDesc: "You haven't added any custom domains yet. Add them in your project settings.",
+    domainName: "Domain Name",
+    linkedProject: "Linked Project",
+    owner: "Owner",
   }
 }

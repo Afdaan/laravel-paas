@@ -41,6 +41,8 @@ const StudentFeedback = lazy(() => import('./pages/student/Feedback'))
 const AdminFeedback = lazy(() => import('./pages/admin/Feedback'))
 const AdminDatabases = lazy(() => import('./pages/admin/Databases'))
 const AdminDeploymentQueue = lazy(() => import('./pages/admin/DeploymentQueue'))
+const StudentDomains = lazy(() => import('./pages/student/Domains'))
+const AdminDomains = lazy(() => import('./pages/admin/Domains'))
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -211,6 +213,7 @@ function App() {
           <Route path="/projects/new" element={<StudentNewProject />} />
           <Route path="/projects/:uid" element={<StudentProjectDetail />} />
           <Route path="/databases" element={<StudentDatabases />} />
+          <Route path="/domains" element={<StudentDomains />} />
           <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<StudentFeedback />} />
         </Route>
@@ -232,6 +235,7 @@ function App() {
           <Route path="settings" element={<AdminSettings />} />
           <Route path="feedback" element={<AdminFeedback />} />
           <Route path="databases" element={<AdminDatabases />} />
+          <Route path="domains" element={<AdminDomains />} />
           <Route path="queue" element={<AdminDeploymentQueue />} />
         </Route>
 

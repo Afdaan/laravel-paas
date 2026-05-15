@@ -124,14 +124,14 @@ def run_command(command_args):
         logging.error(f"Command failed: {cmd_str} | Error: {error_msg}")
         return False, error_msg
 
-def get_nginx_config(domain, internal_ip, port, ssl_enabled=False):
+def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False):
     """Generates the full Nginx configuration string."""
     proxy_config = PROXY_DIRECTIVES_TEMPLATE.format(internal_ip=internal_ip, port=port)
     
     if not ssl_enabled:
         return f"""server {{
     listen 80;
-    server_name {domain};
+    server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
 
     location /.well-known/acme-challenge/ {{
@@ -146,13 +146,13 @@ def get_nginx_config(domain, internal_ip, port, ssl_enabled=False):
 
     return f"""server {{
     listen 80;
-    server_name {domain};
+    server_name {all_domains_str};
     return 301 https://$host$request_uri;
 }}
 
 server {{
     listen 443 ssl;
-    server_name {domain};
+    server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
 
     ssl_certificate /etc/letsencrypt/live/{domain}/fullchain.pem;
@@ -166,8 +166,15 @@ server {{
 }}
 """
 
-def sync_project(subdomain, domain, internal_ip, port, project_dir):
+def sync_project(subdomain, domain, custom_domains, internal_ip, port, project_dir):
     """Handles project Nginx configuration and SSL provisioning."""
+    
+    # Combine domains for Nginx config
+    all_domains_list = [domain] + custom_domains
+    all_domains_str = " ".join(all_domains_list)
+    
+    # We check SSL on the primary domain. If any custom domains are added, 
+    # certbot --expand will add them to the existing certificate later.
     cert_path = f"/etc/letsencrypt/live/{domain}/fullchain.pem"
     options_ssl_path = "/etc/letsencrypt/options-ssl-nginx.conf"
     
@@ -180,26 +187,55 @@ def sync_project(subdomain, domain, internal_ip, port, project_dir):
         logging.warning(f"[{subdomain}] Cert exists but SSL options missing. Retrying Certbot.")
         use_manual_ssl = False
 
-    conf_content = get_nginx_config(domain, internal_ip, port, ssl_enabled=use_manual_ssl)
     file_path = os.path.join(project_dir, f"project-{subdomain}.conf")
     
-    with open(file_path, "w") as f:
-        f.write(conf_content)
+    # Backup old config for rollback
+    old_content = None
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            old_content = f.read()
+
+    conf_content = get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=use_manual_ssl)
     
-    success, _ = run_command(["nginx", "-s", "reload"])
-    if not success:
-        return False, "Nginx reload failed"
+    try:
+        with open(file_path, "w") as f:
+            f.write(conf_content)
+        
+        # VERIFY: Run nginx -t before reloading
+        test_success, test_out = run_command(["nginx", "-t"])
+        if not test_success:
+            logging.error(f"[{subdomain}] Nginx syntax test failed! Rolling back. Error: {test_out}")
+            if old_content:
+                with open(file_path, "w") as f:
+                    f.write(old_content)
+            else:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            return False, f"Nginx syntax error: {test_out}"
+
+        # RELOAD: Only if syntax is valid
+        success, _ = run_command(["nginx", "-s", "reload"])
+        if not success:
+            return False, "Nginx reload failed"
+            
+    except Exception as e:
+        logging.exception(f"[{subdomain}] Critical error during sync")
+        return False, str(e)
 
     if use_manual_ssl:
         logging.info(f"[{subdomain}] Sync complete using existing SSL.")
         return True, "Synced with existing SSL"
 
-    # Provision new SSL
-    logging.info(f"[{subdomain}] Provisioning new SSL certificate for {domain}")
+    # Provision new SSL or Expand existing
+    logging.info(f"[{subdomain}] Provisioning/Expanding SSL certificate for {all_domains_str}")
+    
     certbot_args = [
         "certbot", "--nginx", "--non-interactive", "--agree-tos",
-        "-m", SSL_EMAIL, "-d", domain, "--redirect"
+        "-m", SSL_EMAIL, "--cert-name", domain, "--expand", "--redirect"
     ]
+    
+    for d in all_domains_list:
+        certbot_args.extend(["-d", d])
     
     ssl_success, _ = run_command(certbot_args)
     if not ssl_success:
@@ -234,6 +270,7 @@ def webhook():
     action = data.get("action")
     subdomain = data.get("subdomain")
     domain = data.get("domain")
+    custom_domains = data.get("custom_domains", [])
     user_folder = data.get("user_folder", "project-student")
 
     if not all([action, subdomain, domain]):
@@ -250,7 +287,7 @@ def webhook():
             if not internal_ip or not port:
                 return jsonify({"error": "Missing IP/Port"}), 400
             
-            success, message = sync_project(subdomain, domain, internal_ip, port, project_dir)
+            success, message = sync_project(subdomain, domain, custom_domains, internal_ip, port, project_dir)
             return jsonify({"message": message}), 200 if success else 500
 
         if action == "delete":

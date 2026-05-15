@@ -256,3 +256,22 @@ func (r *RedisService) IsBlacklisted(token string) bool {
 	exists, err := r.client.Exists(r.ctx, key).Result()
 	return err == nil && exists > 0
 }
+
+// RateLimit checks and increments a rate limit counter
+func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) (bool, error) {
+	count, err := r.client.Get(r.ctx, key).Int()
+	if err != nil && err != redis.Nil {
+		return false, err
+	}
+
+	if count >= limit {
+		return false, nil // Limit exceeded
+	}
+
+	r.client.Incr(r.ctx, key)
+	if count == 0 {
+		r.client.Expire(r.ctx, key, duration)
+	}
+
+	return true, nil
+}

@@ -16,16 +16,17 @@ import (
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"github.com/laravel-paas/backend/internal/repositories"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService struct {
 	userRepo       repositories.UserRepository
-	projectService *ProjectService
+	projectService *projectServicePkg.ProjectService
 	initMu         sync.Mutex
 }
 
-func NewUserService(userRepo repositories.UserRepository, projectService *ProjectService) *UserService {
+func NewUserService(userRepo repositories.UserRepository, projectService *projectServicePkg.ProjectService) *UserService {
 	return &UserService{
 		userRepo:       userRepo,
 		projectService: projectService,

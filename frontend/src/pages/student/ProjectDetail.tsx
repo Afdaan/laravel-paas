@@ -35,6 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePolling } from '@/lib/usePolling'
@@ -45,6 +46,7 @@ import BuildLogsConsole from '@/components/BuildLogsConsole'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
+import { CustomDomainManager } from '../../components/project/CustomDomainManager'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -572,10 +574,13 @@ function StudentProjectDetail() {
                 </a>
               )}
             </div>
-            <Badge variant="outline" className="gap-1.5 bg-muted/50 border-border/50">
-              <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
-              {frameworkLabel}
-            </Badge>
+            {project.custom_domains && project.custom_domains.length > 0 && (
+              <Badge variant="outline" className="gap-1.5 bg-primary/10 text-primary border-primary/20">
+                <Globe className="w-3.5 h-3.5" />
+                {project.custom_domains[0].domain}
+                {project.custom_domains.length > 1 && ` (+${project.custom_domains.length - 1})`}
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -1114,11 +1119,11 @@ function StudentProjectDetail() {
                         <div className="space-y-2">
                           <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.buildCommand')}</Label>
                           <div className="flex gap-2">
-                            <Input
+                            <Textarea
                               value={buildCommandInput}
                               onChange={(e) => setBuildCommandInput(e.target.value)}
-                              placeholder="e.g. npm run build"
-                              className="h-10 text-xs font-mono"
+                              placeholder="e.g. npm install && npm run build"
+                              className="min-h-[80px] text-xs font-mono"
                             />
                           </div>
                           <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
@@ -1174,6 +1179,23 @@ function StudentProjectDetail() {
                     <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">{t('projectDetail.settings.customDomain') || 'Custom Domain'}</CardTitle>
+                    <CardDescription>{t('projectDetail.settings.customDomainDesc') || 'Manage custom domains for your project'}</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} />
               </CardContent>
             </Card>
 

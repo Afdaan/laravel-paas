@@ -175,6 +175,19 @@ export const projectsAPI = {
   buildLogs: (id: number | string) =>
     api.get(`/projects/${id}/build-logs`),
   
+  // Custom Domain endpoints
+  listDomains: (id: number | string) =>
+    api.get(`/projects/${id}/domains`),
+
+  addDomain: (id: number | string, domain: string) =>
+    api.post(`/projects/${id}/domains`, { domain }),
+
+  removeDomain: (id: number | string, domainId: number | string) =>
+    api.delete(`/projects/${id}/domains/${domainId}`),
+
+  verifyDomain: (id: number | string, domainId: number | string) =>
+    api.post(`/projects/${id}/domains/${domainId}/verify`),
+  
   // Admin endpoints
   listAll: (params: Record<string, unknown> = {}) => 
     api.get('/admin/projects', { params }),
@@ -259,6 +272,17 @@ export const feedbackAPI = {
   
   delete: (id: number | string) => 
     api.delete(`/admin/feedback/${id}`),
+}
+
+export const domainsAPI = {
+  listOwn: () =>
+    api.get('/domains'),
+
+  listAll: () =>
+    api.get('/admin/domains'),
+
+  transfer: (domainId: number | string, targetProjectId: number | string) =>
+    api.post(`/projects/0/domains/${domainId}/transfer`, { target_project_id: targetProjectId }),
 }
 
 export const systemAPI = {

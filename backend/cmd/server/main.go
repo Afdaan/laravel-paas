@@ -17,8 +17,13 @@ import (
 	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/services/setting"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/backend/internal/workers"
 	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/infrastructure/docker"
+	domainServicePkg "github.com/laravel-paas/backend/internal/services/domain"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 )
 
 func main() {
@@ -64,7 +69,7 @@ func main() {
 
 	// Initialize Infrastructure Services
 	storageService := infrastructure.NewStorageService(cfg)
-	dockerService := infrastructure.NewDockerService(cfg, storageService)
+	dockerService := docker.NewDockerService(cfg, storageService)
 	gitService := infrastructure.NewGitService(cfg)
 	versionService := infrastructure.NewVersionService()
 	mysqlService := infrastructure.NewMySQLService()
@@ -76,19 +81,21 @@ func main() {
 	feedbackRepo := repositories.NewFeedbackRepository(db)
 
 	// Initialize Core Services
-	settingService := services.NewSettingService(settingRepo, redisService)
+	settingService := setting.NewSettingService(settingRepo, redisService)
 	feedbackService := services.NewFeedbackService(feedbackRepo)
-	projectService := services.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService)
+	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService)
 	userService := services.NewUserService(userRepo, projectService)
 	authService := services.NewAuthService(userRepo, cfg, redisService)
 	databaseService := services.NewDatabaseService(db, cfg)
+	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
+	domainHandler := domainHandlerPkg.NewDomainHandler(domainService, projectService)
 
 	// Initialize and start deployment worker
 	worker := workers.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
 	worker.Start()
 
 	// Initialize server
-	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService)
+	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

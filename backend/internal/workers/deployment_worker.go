@@ -18,24 +18,27 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/infrastructure/docker"
+	"github.com/laravel-paas/backend/internal/infrastructure/nginx"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"github.com/laravel-paas/backend/internal/repositories"
-	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/backend/internal/services/setting"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
 type DeploymentWorker struct {
 	cfg            *config.Config
-	projectService *services.ProjectService
-	dockerService  *infrastructure.DockerService
+	projectService *projectServicePkg.ProjectService
+	dockerService  *docker.DockerService
 	gitService     *infrastructure.GitService
 	versionService *infrastructure.VersionService
 	mysqlService   *infrastructure.MySQLService
 	redisService   *infrastructure.RedisService
-	nginxService   *infrastructure.NginxWebhookService
+	nginxService   *nginx.NginxWebhookService
 	projectRepo    repositories.ProjectRepository
-	settingService *services.SettingService
+	settingService *setting.SettingService
 
 	running  bool
 	stopChan chan struct{}
@@ -46,13 +49,13 @@ type DeploymentWorker struct {
 func NewDeploymentWorker(
 	cfg *config.Config,
 	projectRepo repositories.ProjectRepository,
-	settingService *services.SettingService,
+	settingService *setting.SettingService,
 	redisService *infrastructure.RedisService,
-	dockerService *infrastructure.DockerService,
+	dockerService *docker.DockerService,
 	gitService *infrastructure.GitService,
 	versionService *infrastructure.VersionService,
 	mysqlService *infrastructure.MySQLService,
-	projectService *services.ProjectService,
+	projectService *projectServicePkg.ProjectService,
 ) *DeploymentWorker {
 	return &DeploymentWorker{
 		cfg:            cfg,
@@ -62,7 +65,7 @@ func NewDeploymentWorker(
 		versionService: versionService,
 		mysqlService:   mysqlService,
 		redisService:   redisService,
-		nginxService:   infrastructure.NewNginxWebhookService(cfg),
+		nginxService:   nginx.NewNginxWebhookService(cfg),
 		projectRepo:    projectRepo,
 		settingService: settingService,
 		running:        false,
@@ -318,8 +321,8 @@ func (w *DeploymentWorker) processJobs() {
 			continue
 		}
 
-		slog.Info("Worker dequeued new deployment job", 
-			"projectId", job.ProjectID, 
+		slog.Info("Worker dequeued new deployment job",
+			"projectId", job.ProjectID,
 			"type", job.Type)
 
 		// Process the job

@@ -107,6 +107,8 @@ type Project struct {
 	// Virtual field for frontend
 	URL string `gorm:"-" json:"url,omitempty"`
 	UID string `gorm:"uniqueIndex;size:100" json:"uid"`
+
+	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
 }
 
 // ===========================================
@@ -188,4 +190,28 @@ type Feedback struct {
 	Status    FeedbackStatus `gorm:"size:20;not null;default:pending" json:"status"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// ===========================================
+// CustomDomain Model
+// ===========================================
+
+// CustomDomainStatus represents DNS verification state
+type CustomDomainStatus string
+
+const (
+	DomainStatusPending CustomDomainStatus = "pending"
+	DomainStatusActive  CustomDomainStatus = "active"
+	DomainStatusError   CustomDomainStatus = "error"
+)
+
+// CustomDomain represents a custom domain mapped to a project
+type CustomDomain struct {
+	ID        uint               `gorm:"primaryKey" json:"id"`
+	ProjectID uint               `gorm:"not null;index" json:"project_id"`
+	Project   Project            `gorm:"foreignKey:ProjectID" json:"-"`
+	Domain    string             `gorm:"uniqueIndex;size:255;not null" json:"domain"`
+	Status    CustomDomainStatus `gorm:"size:20;not null;default:pending" json:"status"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
 }

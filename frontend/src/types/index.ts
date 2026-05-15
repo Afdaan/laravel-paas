@@ -11,6 +11,15 @@ export interface User {
   created_at?: string;
 }
 
+export interface CustomDomain {
+  id: number;
+  domain: string;
+  status: 'active' | 'pending' | 'error';
+  project_id: number;
+  project?: Project;
+  created_at: string;
+}
+
 export interface Project {
   id: number;
   uid: string;
@@ -40,6 +49,7 @@ export interface Project {
   node_version?: string;
   framework?: string;
   language_version?: string;
+  custom_domains?: CustomDomain[];
   created_at: string;
 }
 

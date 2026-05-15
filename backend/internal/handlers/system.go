@@ -5,17 +5,17 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/services"
 )
 
 type SystemHandler struct {
 	userService   *services.UserService
-	dockerService *infrastructure.DockerService
+	dockerService *docker.DockerService
 }
 
-func NewSystemHandler(userService *services.UserService, dockerService *infrastructure.DockerService) *SystemHandler {
+func NewSystemHandler(userService *services.UserService, dockerService *docker.DockerService) *SystemHandler {
 	return &SystemHandler{
 		userService:   userService,
 		dockerService: dockerService,
