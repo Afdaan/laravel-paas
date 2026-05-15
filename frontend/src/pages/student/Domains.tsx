@@ -18,7 +18,7 @@ import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -156,26 +156,30 @@ const Domains = () => {
 
       {/* Transfer Modal */}
       <Dialog open={transferModal.isOpen} onOpenChange={(open) => setTransferModal(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="p-0 sm:max-w-[460px] overflow-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ArrowRightLeft className="w-5 h-5 text-primary" />
-              {t('domains.transfer')}
-            </DialogTitle>
-            <DialogDescription>
+            <div className="px-5 pt-5">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <ArrowRightLeft className="w-4 h-4 text-primary" />
+                {t('domains.transfer')}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="px-5 text-xs leading-relaxed">
               {t('domains.transferDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-6">
+          <div className="px-5 pb-5 pt-2 space-y-5">
             <div className="space-y-3">
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
                 <Globe size={12} className="text-primary/50" />
                 {t('domains.domainName')}
               </label>
-              <div className="p-4 bg-muted/30 border border-border/50 rounded-xl font-mono text-sm shadow-inner flex items-center justify-between group">
-                <span className="text-foreground/80">{transferModal.domain?.domain}</span>
-                <Globe className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary/50 transition-colors" />
-              </div>
+              <Card className="border-border/70 bg-muted/20 shadow-none">
+                <CardContent className="flex items-center justify-between gap-3 p-3">
+                  <span className="truncate font-mono text-sm text-foreground/90">{transferModal.domain?.domain}</span>
+                  <Globe className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                </CardContent>
+              </Card>
             </div>
 
             <div className="space-y-3">
@@ -187,23 +191,23 @@ const Domains = () => {
                 value={transferModal.targetProjectId} 
                 onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
               >
-                <SelectTrigger className="h-11 border-muted-foreground/20 bg-background hover:bg-muted/30 transition-colors">
+                <SelectTrigger className="h-11 w-full border-border/70 bg-background px-3 hover:bg-muted/30 transition-colors">
                   <SelectValue placeholder={t('domains.selectTarget')} />
                 </SelectTrigger>
-                <SelectContent align="start" className="w-full min-w-[var(--radix-select-trigger-width)]">
+                <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)] p-1">
                   {projects
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (
-                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium">{p.name}</span>
-                          <span className="text-[10px] text-muted-foreground">{p.subdomain}</span>
+                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5 pl-2 pr-8">
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <span className="truncate text-sm font-medium leading-none">{p.name}</span>
+                          <span className="truncate text-[10px] leading-none text-muted-foreground">{p.subdomain}</span>
                         </div>
                       </SelectItem>
                     ))
                   }
                   {projects.filter(p => p.id !== transferModal.domain?.project_id).length === 0 && (
-                    <div className="p-4 text-center text-xs text-muted-foreground italic">
+                    <div className="p-4 text-center text-xs text-muted-foreground">
                       No other projects available
                     </div>
                   )}
@@ -211,7 +215,7 @@ const Domains = () => {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-0">
             <Button variant="outline" onClick={() => setTransferModal(prev => ({ ...prev, isOpen: false }))}>
               {t('common.cancel')}
             </Button>
@@ -254,16 +258,16 @@ const Domains = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30 border-b-0">
-                <TableHead className="w-[40%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
+                <TableHead className="w-[42%] pl-6 font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
                 <TableHead className="w-[30%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.linkedProject')}</TableHead>
-                <TableHead className="w-[15%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
-                <TableHead className="w-[15%] text-right font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.actions')}</TableHead>
+                <TableHead className="w-[16%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
+                <TableHead className="w-[12%] pr-6 text-right font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {domains.map((domain) => (
                 <TableRow key={domain.id} className="group transition-colors">
-                  <TableCell className="font-medium py-4">
+                  <TableCell className="font-medium py-4 pl-6">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
                         <Globe className="w-4 h-4" />
@@ -297,28 +301,30 @@ const Domains = () => {
                   <TableCell>
                     <StatusBadge status={domain.status} />
                   </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20">
-                        <MoreVertical className="w-4 h-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48 p-1.5">
-                        <DropdownMenuItem 
-                          className="gap-3 py-2 cursor-pointer focus:bg-primary/5 focus:text-primary transition-colors"
-                          onClick={() => setTransferModal({ isOpen: true, domain, targetProjectId: '' })}
-                        >
-                          <ArrowRightLeft className="w-4 h-4" />
-                          <span className="font-medium text-xs">{t('domains.transfer')}</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          className="gap-3 py-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 transition-colors"
-                          onClick={() => handleRemove(domain)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span className="font-medium text-xs">{t('common.delete')}</span>
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  <TableCell className="pr-6">
+                    <div className="flex justify-end">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-muted-foreground opacity-70 transition-colors hover:border-border hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary/20">
+                          <MoreVertical className="w-4 h-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48 p-1.5">
+                          <DropdownMenuItem 
+                            className="gap-3 py-2 cursor-pointer focus:bg-primary/5 focus:text-primary transition-colors"
+                            onClick={() => setTransferModal({ isOpen: true, domain, targetProjectId: '' })}
+                          >
+                            <ArrowRightLeft className="w-4 h-4" />
+                            <span className="font-medium text-xs">{t('domains.transfer')}</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="gap-3 py-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 transition-colors"
+                            onClick={() => handleRemove(domain)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span className="font-medium text-xs">{t('common.delete')}</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
