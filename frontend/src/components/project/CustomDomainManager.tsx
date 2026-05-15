@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Globe, Plus, Trash2, CheckCircle2, XCircle, AlertCircle, RefreshCw } from 'lucide-react'
+import { Globe, Plus, Trash2, CheckCircle2, XCircle, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
 import { projectsAPI } from '@/services/api'
 import { CustomDomain } from '@/types'
@@ -188,7 +188,20 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         <Globe className="w-4 h-4" />
                       </div>
                       <div className="space-y-0.5">
-                        <span className="font-semibold text-sm tracking-tight">{domain.domain}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm tracking-tight">{domain.domain}</span>
+                          {isActive && (
+                            <a 
+                              href={`https://${domain.domain}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-primary/40 hover:text-primary hover:bg-primary/10 transition-all"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2">
                           {isActive ? (
                             <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium uppercase tracking-tighter">
