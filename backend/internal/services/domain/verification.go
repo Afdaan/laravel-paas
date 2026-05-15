@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -9,6 +10,20 @@ import (
 	"github.com/laravel-paas/backend/internal/apperr"
 	"github.com/laravel-paas/backend/internal/models"
 )
+
+// getRealtimeResolver returns a resolver that bypasses local cache by querying a public DNS server
+func getRealtimeResolver() *net.Resolver {
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{
+				Timeout: 5 * time.Second,
+			}
+			// Query Google DNS (8.8.8.8) directly to bypass local caching
+			return d.DialContext(ctx, network, "8.8.8.8:53")
+		},
+	}
+}
 
 // VerifyDomain verifies if the domain's CNAME or A record points to our platform
 func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *models.Project) (*models.CustomDomain, error) {
@@ -31,8 +46,11 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		projectDomain = s.cfg.BaseDomain
 	}
 	expectedCNAME := fmt.Sprintf("%s.%s.", project.Subdomain, projectDomain)
+	resolver := getRealtimeResolver()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	cname, err := net.LookupCNAME(domain.Domain)
+	cname, err := resolver.LookupCNAME(ctx, domain.Domain)
 	if err == nil {
 		cname = strings.ToLower(strings.TrimSuffix(cname, "."))
 		expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
@@ -40,31 +58,25 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
 			domain.Status = models.DomainStatusActive
 			s.db.Save(&domain)
-
-			// Trigger Nginx Sync to provision SSL for the new domain
-			s.projectService.SyncProjectNginx(project)
 			
 			return &domain, nil
 		}
-		
-		return &domain, apperr.New(400, "VERIFICATION_FAILED", fmt.Sprintf("Domain points to %s instead of %s", cname, expectedTrimmed))
+		// Fallthrough to IP check if CNAME doesn't match exactly
 	}
 
-	ips, err := net.LookupHost(domain.Domain)
+	ips, err := resolver.LookupHost(ctx, domain.Domain)
 	if err == nil && len(ips) > 0 {
-		platformIPs, _ := net.LookupHost(fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
+		platformIPs, _ := resolver.LookupHost(ctx, fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
 		if len(platformIPs) > 0 && containsAny(ips, platformIPs) {
 			domain.Status = models.DomainStatusActive
 			s.db.Save(&domain)
 
-			// Trigger Nginx Sync to provision SSL for the new domain
-			s.projectService.SyncProjectNginx(project)
-
 			return &domain, nil
 		}
 	}
 
-	domain.Status = models.DomainStatusError
+	// Set back to PENDING instead of ERROR to avoid scaring the user during propagation
+	domain.Status = models.DomainStatusPending
 	s.db.Save(&domain)
 
 	return &domain, apperr.New(400, "VERIFICATION_FAILED", "DNS propagation not detected yet. Please ensure your CNAME is correctly pointing to " + strings.TrimSuffix(expectedCNAME, "."))

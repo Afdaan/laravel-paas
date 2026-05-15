@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/laravel-paas/backend/internal/models"
 	"golang.org/x/net/publicsuffix"
@@ -48,13 +50,17 @@ func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.P
 		ExpectedValue: expectedValue,
 	}
 
-	// Current State Check
-	cname, err := net.LookupCNAME(domainName)
+	resolver := getRealtimeResolver()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Current State Check using real-time resolver
+	cname, err := resolver.LookupCNAME(ctx, domainName)
 	if err == nil {
 		diagnostic.CurrentCNAME = strings.ToLower(strings.TrimSuffix(cname, "."))
 	}
 
-	ips, _ := net.LookupHost(domainName)
+	ips, _ := resolver.LookupHost(ctx, domainName)
 	diagnostic.CurrentIPs = ips
 
 	// Logic for Match

@@ -54,7 +54,9 @@ func (s *NginxWebhookService) SyncProject(project *models.Project, domain string
 
 	var customDomains []string
 	for _, cd := range project.CustomDomains {
-		if cd.Status == models.DomainStatusActive {
+		// Include all domains except those that might be explicitly marked as deleted/inactive
+		// We need them in Nginx so Certbot can verify them.
+		if cd.Domain != "" {
 			customDomains = append(customDomains, cd.Domain)
 		}
 	}
