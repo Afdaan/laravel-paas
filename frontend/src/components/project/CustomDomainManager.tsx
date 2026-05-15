@@ -13,9 +13,10 @@ import { AxiosError } from 'axios'
 interface CustomDomainManagerProps {
   projectId: number | string
   subdomain: string
+  projectUrl?: string
 }
 
-export function CustomDomainManager({ projectId, subdomain }: CustomDomainManagerProps) {
+export function CustomDomainManager({ projectId, subdomain, projectUrl }: CustomDomainManagerProps) {
   const { t } = useTranslation()
   const [domains, setDomains] = useState<CustomDomain[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -242,7 +243,7 @@ export function CustomDomainManager({ projectId, subdomain }: CustomDomainManage
                         <Label className="text-[10px] uppercase text-primary/70 font-bold tracking-widest">{t('common.value')}</Label>
                         <div className="flex items-center justify-between">
                           <div className="text-sm font-mono font-bold text-foreground truncate pr-4">
-                            {subdomain}.{window.location.hostname}
+                            {projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`}
                           </div>
                           <Button 
                             variant="ghost" 
@@ -250,7 +251,8 @@ export function CustomDomainManager({ projectId, subdomain }: CustomDomainManage
                             className="h-6 px-2 text-[10px] hover:bg-primary/20"
                             onClick={(e) => {
                               e.stopPropagation()
-                              navigator.clipboard.writeText(`${subdomain}.${window.location.hostname}`)
+                              const target = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`
+                              navigator.clipboard.writeText(target)
                               toast.success(t('common.copied'))
                             }}
                           >

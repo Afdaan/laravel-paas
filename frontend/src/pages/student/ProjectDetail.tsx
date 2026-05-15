@@ -1198,7 +1198,7 @@ function StudentProjectDetail() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
-                <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} />
+                <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} projectUrl={project.url} />
               </CardContent>
             </Card>
 
