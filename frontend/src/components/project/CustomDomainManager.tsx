@@ -356,12 +356,18 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                               <div className="space-y-2">
                                 <div className="text-[9px] uppercase text-muted-foreground/60 font-bold tracking-widest flex items-center gap-1.5">
                                   <div className="w-1 h-1 rounded-full bg-muted-foreground/30" />
-                                  Current A Records
+                                  Network Routing
                                 </div>
                                 <div className="text-xs font-mono font-semibold flex flex-wrap gap-1.5">
-                                  {diagnosticData[domain.id]?.current_ips?.length ? diagnosticData[domain.id]?.current_ips.map((ip: string) => (
-                                    <span key={ip} className="px-2 py-0.5 rounded-md bg-background/50 border border-muted-foreground/5 shadow-sm text-primary/80">{ip}</span>
-                                  )) : <span className="text-muted-foreground/40 italic">No record found</span>}
+                                  {diagnosticData[domain.id]?.current_ips?.length ? diagnosticData[domain.id]?.current_ips.map((ip: string) => {
+                                    const isPlatformIp = diagnosticData[domain.id]?.expected_value?.includes(ip) || ip.startsWith('103.247'); // Simple heuristic for platform IPs
+                                    return (
+                                      <div key={ip} className="flex items-center gap-2 px-2 py-0.5 rounded-md bg-background/50 border border-muted-foreground/5 shadow-sm">
+                                        <div className={`w-1.5 h-1.5 rounded-full ${isPlatformIp ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                        <span className="text-primary/80">{isPlatformIp ? 'Platform Edge Node' : 'External Routing'}</span>
+                                      </div>
+                                    )
+                                  }) : <span className="text-muted-foreground/40 italic">No network detected</span>}
                                 </div>
                               </div>
                             </div>
