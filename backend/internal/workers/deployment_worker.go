@@ -618,13 +618,9 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 
 	// Step 6: Sync config to remote Nginx
 	if err := w.nginxService.SyncProject(project, projectDomain); err != nil {
-		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
-		// Cleanup failed new container
-		if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to cleanup failed container after nginx sync failure", "id", newContainerID, "error", err)
-		}
-		w.updateProjectError(project, "Failed to sync Nginx configuration: "+err.Error())
-		return
+		slog.Error("Nginx sync failed, container is still running. Manual sync may be required.", "subdomain", project.Subdomain, "error", err)
+		// Don't rollback the container — it's already running fine.
+		// The admin can retry Nginx sync from the dashboard.
 	}
 
 	// Step 7: SUCCESS! Finalize and Cleanup Old version
