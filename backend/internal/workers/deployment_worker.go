@@ -90,8 +90,53 @@ func (w *DeploymentWorker) Start() {
 	// Start threads
 	w.StartPruneScheduler()
 	w.StartExpiryJanitor()
+	w.StartStaleBuildWatchdog()
 
 	go w.processJobs()
+}
+
+// StartStaleBuildWatchdog periodically checks for projects stuck in "building" status
+// and resets them to "failed" so they can be redeployed. This prevents deployments
+// from appearing stuck forever when the worker hangs or crashes mid-build.
+func (w *DeploymentWorker) StartStaleBuildWatchdog() {
+	go func() {
+		time.Sleep(2 * time.Minute) // Initial delay
+
+		for w.running {
+			staleThreshold := 15 * time.Minute
+
+			projects, err := w.projectRepo.ListByStatus(models.StatusBuilding)
+			if err != nil {
+				slog.Error("Stale build watchdog: failed to query building projects", "error", err)
+				time.Sleep(5 * time.Minute)
+				continue
+			}
+
+			for i := range projects {
+				project := projects[i]
+				if time.Since(project.UpdatedAt) > staleThreshold {
+					slog.Warn("Stale build watchdog: detected stuck deployment, resetting status",
+						"projectId", project.ID,
+						"subdomain", project.Subdomain,
+						"stuckFor", time.Since(project.UpdatedAt).Round(time.Second))
+
+					errorMsg := fmt.Sprintf("Deployment timed out after %s. The build may have completed but a subsequent step (migration or configuration sync) failed silently. Please try redeploying.", time.Since(project.UpdatedAt).Round(time.Second))
+					project.Status = models.StatusFailed
+					project.ErrorLog = &errorMsg
+					if err := w.projectRepo.Update(&project); err != nil {
+						slog.Error("Stale build watchdog: failed to reset project", "id", project.ID, "error", err)
+					}
+
+					// Release the deployment lock so the project can be redeployed
+					if err := w.redisService.ReleaseDeploymentLock(project.ID); err != nil {
+						slog.Warn("Stale build watchdog: failed to release lock", "id", project.ID, "error", err)
+					}
+				}
+			}
+
+			time.Sleep(5 * time.Minute)
+		}
+	}()
 }
 
 // Stop signals the worker to shut down gracefully
@@ -348,7 +393,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	// Try to acquire lock for this project
 	// Build can take > 30m (clone + railpack build + docker run + migrations),
 	// keep lock long enough to avoid concurrent deployments of same project.
-	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 2*time.Hour)
+	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 45*time.Minute)
 	if err != nil {
 		slog.Error("Failed to acquire lock for project", "id", job.ProjectID, "error", err)
 		w.redisService.IncrementDeploymentCounter("failed")
