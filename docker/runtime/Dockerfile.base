@@ -76,7 +76,8 @@ RUN apk add --no-cache --virtual .build-deps \
     fi \
     && apk del .build-deps \
     && docker-php-source delete \
-    && rm -rf /var/cache/apk/* /tmp/pear /tmp/* /usr/src/*
+    && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \
+    && rm -rf /var/cache/apk/* /tmp/pear /tmp/* /usr/src/* /usr/share/man /usr/share/doc /usr/share/info /usr/local/include/* /usr/local/lib/*.a
 
 # PHP configuration optimization
 RUN { \

@@ -104,7 +104,7 @@ COPY --from=builder /tmp/required_extensions.txt /tmp/
 RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
     MISSING_EXTS="" && \
     for ext in $REQUIRED_EXTS; do \
-        if ! php -m | grep -qi "^$ext$"; then \
+        if ! php -m | grep -qi "$ext"; then \
             MISSING_EXTS="$MISSING_EXTS $ext" && \
             echo "Extension $ext is missing, adding to install list..."; \
         fi \
@@ -116,7 +116,8 @@ RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
         && apk del .build-deps; \
     fi && \
     docker-php-source delete && \
-    rm -rf /var/cache/apk/* /tmp/required_extensions.txt /tmp/* /usr/src/*
+    find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + && \
+    rm -rf /var/cache/apk/* /tmp/required_extensions.txt /tmp/* /usr/src/* /usr/share/man /usr/share/doc /usr/share/info /usr/local/include/* /usr/local/lib/*.a
 
 # Optimized PHP configuration
 RUN { \

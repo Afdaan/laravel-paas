@@ -125,7 +125,9 @@ COPY . .
 COPY --from=composer /app/vendor /tmp/vendor
 RUN rm -rf /var/www/html/vendor && mv /tmp/vendor /var/www/html/vendor
 COPY --from=frontend /app/public/build* ./public/build/
-RUN rm -rf /var/www/html/node_modules /var/www/html/tests /var/www/html/.git /var/www/html/detect_extensions.php /root/.npm /root/.bun /root/.cache
+RUN rm -rf /var/www/html/node_modules /var/www/html/tests /var/www/html/.git /var/www/html/detect_extensions.php /root/.npm /root/.bun /root/.cache \
+    && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \
+    && rm -rf /var/cache/apk/* /tmp/* /usr/src/* /usr/share/man /usr/share/doc /usr/share/info /usr/local/include/* /usr/local/lib/*.a
 
 RUN mkdir -p storage/app/public \
              storage/framework/cache/data \

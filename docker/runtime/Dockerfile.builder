@@ -72,7 +72,8 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && printf "\n" | pecl install redis imagick \
     && docker-php-ext-enable redis imagick \
     && docker-php-source delete \
-    && rm -rf /tmp/pear /tmp/* /usr/src/*
+    && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \
+    && rm -rf /var/cache/apk/* /tmp/pear /tmp/* /usr/src/* /usr/share/man /usr/share/doc /usr/share/info /usr/local/include/* /usr/local/lib/*.a
 
 # Install Composer globally
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
