@@ -176,6 +176,9 @@ deploy_backend() {
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -e APP_MODE="$APP_MODE" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
+        -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
+        -e HOST_DATA_PATH="$DATA_PATH" \
+        -e HOST_TEMPLATES_PATH="${PROJECT_ROOT}/docker/templates" \
         -e PG_HOST=paas-postgres \
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
