@@ -102,8 +102,8 @@ func (m *WorkerManager) manageWorkers() {
 		maxWorkers = 3
 	}
 
-	var targetVersion string
-	if err := m.redisService.GetCache("worker:target_version", &targetVersion); err != nil || targetVersion == "" {
+	targetVersion, err := m.redisService.GetString("worker:target_version")
+	if err != nil || targetVersion == "" {
 		targetVersion = "latest"
 	}
 

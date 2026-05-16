@@ -239,6 +239,18 @@ func (r *RedisService) GetCache(key string, dest interface{}) error {
 	return nil
 }
 
+// GetString gets a raw string value from Redis
+func (r *RedisService) GetString(key string) (string, error) {
+	val, err := r.client.Get(r.ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", fmt.Errorf("key not found")
+		}
+		return "", fmt.Errorf("failed to get string: %w", err)
+	}
+	return val, nil
+}
+
 // DeleteCache deletes a key from cache
 func (r *RedisService) DeleteCache(key string) error {
 	return r.client.Del(r.ctx, key).Err()
