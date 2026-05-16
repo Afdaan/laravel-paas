@@ -216,7 +216,12 @@ deploy_worker() {
     DOCKER_BUILDKIT=1 docker build -t "paas-worker:$WORKER_TAG" -t "paas-worker:latest" -f "${PROJECT_ROOT}/docker/worker/Dockerfile" "${PROJECT_ROOT}"
     
     echo -e "${YELLOW}Setting target worker version in Redis: $WORKER_TAG...${NC}"
-    docker exec paas-redis redis-cli set "worker:target_version" "$WORKER_TAG" 2>/dev/null || true
+    REDIS_AUTH_PARAM=""
+    [ ! -z "$REDIS_PASSWORD" ] && REDIS_AUTH_PARAM="-a $REDIS_PASSWORD"
+    docker exec paas-redis redis-cli $REDIS_AUTH_PARAM set "worker:target_version" "$WORKER_TAG" 2>/dev/null || true
+    
+    echo -e "${YELLOW}[CLEANUP] Pruning outdated worker images...${NC}"
+    docker images "paas-worker" --format "{{.Tag}}" | grep -E '^[0-9]+$' | grep -v "^${WORKER_TAG}$" | xargs -I {} docker rmi "paas-worker:{}" 2>/dev/null || true
     
     echo -e "${GREEN}[SUCCESS] Standalone worker image built successfully (Tag: $WORKER_TAG)${NC}"
 }
