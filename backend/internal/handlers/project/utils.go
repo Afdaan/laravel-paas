@@ -394,3 +394,52 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 
 	return project, nil
 }
+
+// CancelQueueJob cancels a queued or building deployment (Admin only)
+func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
+	idVal := c.Params("id")
+	projectID, _ := strconv.Atoi(idVal)
+
+	_, err := h.projectService.GetProjectByID(uint(projectID))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	// 1. Remove from Redis Queue
+	_ = h.redisService.RemoveFromQueue(uint(projectID))
+
+	// 2. Release Redis Lock
+	_ = h.redisService.ReleaseDeploymentLock(uint(projectID))
+
+	// 3. Update project status to Failed
+	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusFailed)
+
+	return c.JSON(fiber.Map{"message": "Deployment cancelled successfully"})
+}
+
+// RequeueJob forcefully re-enqueues a stuck deployment (Admin only)
+func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
+	idVal := c.Params("id")
+	projectID, _ := strconv.Atoi(idVal)
+
+	project, err := h.projectService.GetProjectByID(uint(projectID))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	// 1. Remove from queue if duplicate
+	_ = h.redisService.RemoveFromQueue(uint(projectID))
+
+	// 2. Release Redis Lock
+	_ = h.redisService.ReleaseDeploymentLock(uint(projectID))
+
+	// 3. Update project status to Queued
+	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusQueued)
+
+	// 4. Re-enqueue
+	if err := h.redisService.EnqueueDeployment(uint(projectID), project.UserID, "redeploy"); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
+}

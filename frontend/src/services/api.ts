@@ -203,6 +203,12 @@ export const projectsAPI = {
 
   getQueueStats: () => 
     api.get('/admin/queue/stats'),
+  
+  cancelQueueJob: (id: number | string) =>
+    api.post(`/admin/queue/cancel/${id}`),
+
+  requeueJob: (id: number | string) =>
+    api.post(`/admin/queue/requeue/${id}`),
 }
 
 // ===========================================

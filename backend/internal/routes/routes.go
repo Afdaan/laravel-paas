@@ -169,6 +169,8 @@ func Setup(
 
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
+	admin.Post("/queue/cancel/:id", projectHandler.CancelQueueJob)
+	admin.Post("/queue/requeue/:id", projectHandler.RequeueJob)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
 	admin.Get("/databases", databaseHandler.AdminListAll)
 	admin.Get("/domains", domainHandler.ListGlobal)

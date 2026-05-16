@@ -275,3 +275,24 @@ func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) 
 
 	return true, nil
 }
+
+// RemoveFromQueue removes a specific project from the deployment queue
+func (r *RedisService) RemoveFromQueue(projectID uint) error {
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("failed to read queue: %w", err)
+	}
+
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil {
+			if job.ProjectID == projectID {
+				if err := r.client.LRem(r.ctx, deploymentQueueKey, 1, res).Err(); err != nil {
+					return fmt.Errorf("failed to remove from redis list: %w", err)
+				}
+				break
+			}
+		}
+	}
+	return nil
+}

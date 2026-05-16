@@ -9,7 +9,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Activity,
-  Package
+  Package,
+  XCircle,
+  PlayCircle
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -66,6 +68,30 @@ const DeploymentQueue = () => {
 
   // Poll every 5 seconds
   usePolling(fetchData, 5000)
+
+  const handleCancelJob = async (e: React.MouseEvent, id: number | string) => {
+    e.stopPropagation()
+    if (!confirm(t('admin.queue.confirmCancel') || 'Are you sure you want to cancel this deployment?')) return
+    try {
+      await projectsAPI.cancelQueueJob(id)
+      toast.success(t('admin.queue.cancelSuccess') || 'Deployment cancelled successfully')
+      fetchData()
+    } catch (error) {
+      toast.error(t('admin.queue.cancelError') || 'Failed to cancel deployment')
+    }
+  }
+
+  const handleRequeueJob = async (e: React.MouseEvent, id: number | string) => {
+    e.stopPropagation()
+    if (!confirm(t('admin.queue.confirmRequeue') || 'Are you sure you want to force re-enqueue this job?')) return
+    try {
+      await projectsAPI.requeueJob(id)
+      toast.success(t('admin.queue.requeueSuccess') || 'Job re-enqueued successfully')
+      fetchData()
+    } catch (error) {
+      toast.error(t('admin.queue.requeueError') || 'Failed to re-enqueue job')
+    }
+  }
 
   const formatPreciseTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -147,7 +173,8 @@ const DeploymentQueue = () => {
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.project')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.owner')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.started')}</TableHead>
-                    <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-right">{t('admin.queue.table.status')}</TableHead>
+                    <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-center">{t('admin.queue.table.status')}</TableHead>
+                    <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-right">{t('common.actions') || 'Actions'}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -177,11 +204,22 @@ const DeploymentQueue = () => {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="px-8 py-6 text-right">
+                      <TableCell className="px-8 py-6 text-center">
                         <Badge variant="outline" className="text-[10px] font-black uppercase tracking-[0.15em] text-blue-400 bg-blue-500/5 border-blue-500/20 gap-2.5 px-4 py-1.5 rounded-full shadow-inner animate-pulse">
                           <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] animate-ping" />
                           {t('status.building')}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="px-8 py-6 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-rose-500 hover:bg-rose-500/10 hover:text-rose-500 gap-2 h-8 px-3 rounded-lg border border-rose-500/20 font-bold tracking-tight shadow-sm transition-all hover:scale-105"
+                          onClick={(e) => handleCancelJob(e, project.id)}
+                        >
+                          <XCircle className="w-4 h-4" />
+                          {t('admin.queue.cancel') || 'Cancel'}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -215,7 +253,8 @@ const DeploymentQueue = () => {
                   <TableRow className="bg-muted/40 border-b border-border/50 hover:bg-muted/40 transition-none">
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.project')}</TableHead>
                     <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.queue.table.type')}</TableHead>
-                    <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-right">{t('admin.queue.table.enqueued')}</TableHead>
+                    <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-center">{t('admin.queue.table.enqueued')}</TableHead>
+                    <TableHead className="px-8 py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 text-right">{t('common.actions') || 'Actions'}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -232,14 +271,36 @@ const DeploymentQueue = () => {
                           {job.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="px-8 py-6 text-right">
-                        <div className="flex flex-col items-end gap-0.5">
+                      <TableCell className="px-8 py-6 text-center">
+                        <div className="flex flex-col items-center gap-0.5">
                           <span className="text-sm font-mono font-bold text-amber-500/70 tracking-tighter" title={new Date(job.enqueued_at).toLocaleString()}>
                             {formatPreciseTime(job.enqueued_at)}
                           </span>
                           <span className="text-[11px] text-muted-foreground/50 font-medium">
                             {formatDistanceToNow(new Date(job.enqueued_at), { addSuffix: true })}
                           </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-8 py-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="hover:bg-amber-500 hover:text-white border-amber-500/30 text-amber-500 gap-1.5 h-8 px-3 rounded-lg font-bold tracking-tight shadow-sm transition-all hover:scale-105"
+                            onClick={(e) => handleRequeueJob(e, job.project_id)}
+                          >
+                            <PlayCircle className="w-4 h-4" />
+                            {t('admin.queue.requeue') || 'Force Requeue'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-rose-500 hover:bg-rose-500/10 hover:text-rose-500 gap-1.5 h-8 px-3 rounded-lg font-bold tracking-tight transition-all hover:scale-105"
+                            onClick={(e) => handleCancelJob(e, job.project_id)}
+                          >
+                            <XCircle className="w-4 h-4" />
+                            {t('admin.queue.cancel') || 'Cancel'}
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
