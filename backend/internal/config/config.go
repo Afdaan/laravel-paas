@@ -127,7 +127,7 @@ func Load() *Config {
 		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
 		// Docker & Paths
-		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/infrastructure.sock"),
+		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
 		ProjectsPath:     projectsPath,
 		DataPath:         dataPath,
 		HostProjectsPath: getEnv("HOST_PROJECTS_PATH", filepath.Join(hostRoot, "storage/projects")),
