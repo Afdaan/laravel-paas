@@ -70,7 +70,9 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         xml \
         fileinfo \
     && printf "\n" | pecl install redis imagick \
-    && docker-php-ext-enable redis imagick
+    && docker-php-ext-enable redis imagick \
+    && docker-php-source delete \
+    && rm -rf /tmp/pear /tmp/* /usr/src/*
 
 # Install Composer globally
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

@@ -75,7 +75,8 @@ RUN apk add --no-cache --virtual .build-deps \
         printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
     fi \
     && apk del .build-deps \
-    && rm -rf /var/cache/apk/* /tmp/pear
+    && docker-php-source delete \
+    && rm -rf /var/cache/apk/* /tmp/pear /tmp/* /usr/src/*
 
 # PHP configuration optimization
 RUN { \

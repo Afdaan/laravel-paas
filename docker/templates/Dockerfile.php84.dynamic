@@ -79,6 +79,18 @@ RUN if [ -f public/build/.vite/manifest.json ]; then \
 # Ensure build directory exists
 RUN mkdir -p /app/public/build
 
+# Deep cleanup of build-time only artifacts before copying to production stage
+RUN rm -rf /app/node_modules \
+           /app/.npm \
+           /app/.yarn \
+           /app/.bun \
+           /app/.cache \
+           /app/detect_extensions.php \
+           /root/.npm \
+           /root/.bun \
+           /root/.cache \
+           /root/.yarn
+
 # Stage 2: Production (Optimized Runtime)
 FROM paas-runtime-php:8.4-alpine
 
@@ -103,7 +115,8 @@ RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
         && docker-php-ext-install $MISSING_EXTS \
         && apk del .build-deps; \
     fi && \
-    rm -rf /var/cache/apk/* /tmp/required_extensions.txt
+    docker-php-source delete && \
+    rm -rf /var/cache/apk/* /tmp/required_extensions.txt /tmp/* /usr/src/*
 
 # Optimized PHP configuration
 RUN { \
