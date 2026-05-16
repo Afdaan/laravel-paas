@@ -29,6 +29,7 @@ type ProjectRepository interface {
 	CountByUserID(userID uint) (int64, error)
 	CountRunning() (int64, error)
 	GetRunningWithContainers() ([]models.Project, error)
+	RecordDeploymentEvent(event *models.DeploymentEvent) error
 }
 
 type projectRepository struct {
@@ -167,4 +168,8 @@ func (r *projectRepository) GetRunningWithContainers() ([]models.Project, error)
 	var projects []models.Project
 	err := r.db.Where("status = ? AND container_id IS NOT NULL", models.StatusRunning).Find(&projects).Error
 	return projects, err
+}
+
+func (r *projectRepository) RecordDeploymentEvent(event *models.DeploymentEvent) error {
+	return r.db.Create(event).Error
 }

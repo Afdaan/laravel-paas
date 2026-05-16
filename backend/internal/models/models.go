@@ -52,14 +52,25 @@ type User struct {
 type ProjectStatus string
 
 const (
-	StatusPending  ProjectStatus = "pending"
-	StatusQueued   ProjectStatus = "queued"
-	StatusBuilding ProjectStatus = "building"
-	StatusRunning  ProjectStatus = "running"
-	StatusFailed   ProjectStatus = "failed"
-	StatusDeleting ProjectStatus = "deleting"
-	StatusStopped  ProjectStatus = "stopped"
-	StatusRestarting ProjectStatus = "restarting"
+	StatusPending        ProjectStatus = "pending"
+	StatusQueued         ProjectStatus = "queued"
+	StatusPreparing      ProjectStatus = "preparing"
+	StatusCloning        ProjectStatus = "cloning"
+	StatusBuilding       ProjectStatus = "building"
+	StatusProvisioning   ProjectStatus = "provisioning"
+	StatusStarting       ProjectStatus = "starting"
+	StatusHealthchecking ProjectStatus = "healthchecking"
+	StatusMigrating      ProjectStatus = "migrating"
+	StatusPromoting      ProjectStatus = "promoting"
+	StatusCleanup        ProjectStatus = "cleanup"
+	StatusCompleted      ProjectStatus = "completed"
+	StatusRunning        ProjectStatus = "running"
+	StatusFailed         ProjectStatus = "failed"
+	StatusCancelled      ProjectStatus = "cancelled"
+	StatusRollback       ProjectStatus = "rollback"
+	StatusDeleting       ProjectStatus = "deleting"
+	StatusStopped        ProjectStatus = "stopped"
+	StatusRestarting     ProjectStatus = "restarting"
 )
 
 // Project represents a deployed Laravel application
@@ -229,4 +240,23 @@ type CustomDomain struct {
 	Status    CustomDomainStatus `gorm:"size:20;not null;default:pending" json:"status"`
 	CreatedAt time.Time          `json:"created_at"`
 	UpdatedAt time.Time          `json:"updated_at"`
+}
+
+// ===========================================
+// DeploymentEvent Model
+// ===========================================
+
+// DeploymentEvent tracks granular lifecycle transitions and audit events
+type DeploymentEvent struct {
+	ID         uint          `gorm:"primaryKey" json:"id"`
+	ProjectID  uint          `gorm:"not null;index" json:"project_id"`
+	JobID      string        `gorm:"size:100;index" json:"job_id"`
+	WorkerID   string        `gorm:"size:100" json:"worker_id"`
+	StateFrom  ProjectStatus `gorm:"size:50" json:"state_from"`
+	StateTo    ProjectStatus `gorm:"size:50" json:"state_to"`
+	EventType  string        `gorm:"size:100;not null;index" json:"event_type"`
+	Payload    string        `gorm:"type:text" json:"payload"`
+	DurationMs int64         `json:"duration_ms"`
+	Error      string        `gorm:"type:text" json:"error,omitempty"`
+	CreatedAt  time.Time     `gorm:"index" json:"created_at"`
 }

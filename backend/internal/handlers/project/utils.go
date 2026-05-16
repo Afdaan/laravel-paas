@@ -405,13 +405,16 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
-	// 1. Remove from Redis Queue
+	// 1. Broadcast cancellation across distributed worker cluster
+	_ = h.redisService.PublishCancellation(c.Context(), uint(projectID))
+
+	// 2. Remove from Redis Queue
 	_ = h.redisService.RemoveFromQueue(uint(projectID))
 
-	// 2. Release Redis Lock
-	_ = h.redisService.ReleaseDeploymentLock(uint(projectID))
+	// 3. Release Redis Lock
+	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID))
 
-	// 3. Update project status to Failed
+	// 4. Update project status to Failed
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusFailed)
 
 	return c.JSON(fiber.Map{"message": "Deployment cancelled successfully"})
@@ -431,7 +434,7 @@ func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
 	_ = h.redisService.RemoveFromQueue(uint(projectID))
 
 	// 2. Release Redis Lock
-	_ = h.redisService.ReleaseDeploymentLock(uint(projectID))
+	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID))
 
 	// 3. Update project status to Queued
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusQueued)

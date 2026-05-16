@@ -8,6 +8,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -61,6 +62,7 @@ func (w *CentralWatchdog) Start() {
 	w.StartPruneScheduler()
 	w.StartExpiryJanitor()
 	w.StartStaleBuildWatchdog()
+	w.StartDelayedJobScheduler()
 }
 
 // Stop cleanly terminates all supervisory routines
@@ -110,8 +112,8 @@ func (w *CentralWatchdog) recoverOrphanedBuilds() {
 				slog.Error("Central watchdog: failed to update project during recovery", "id", project.ID, "error", err)
 			}
 
-			if err := w.redisService.ReleaseDeploymentLock(project.ID); err != nil {
-				slog.Warn("Central watchdog: failed to release lock during recovery", "id", project.ID, "error", err)
+			if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
+				slog.Warn("Central watchdog: failed to force release lock during recovery", "id", project.ID, "error", err)
 			}
 
 			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
@@ -144,6 +146,30 @@ func (w *CentralWatchdog) recoverOrphanedDeletions() {
 	}
 }
 
+// recordAuditEvent records a deployment event for watchdog actions
+func (w *CentralWatchdog) recordAuditEvent(projectID uint, jobID, eventType, payload string) {
+	event := &models.DeploymentEvent{
+		ProjectID:  projectID,
+		JobID:      jobID,
+		WorkerID:   "central-watchdog",
+		StateFrom:  models.StatusBuilding,
+		StateTo:    models.StatusFailed,
+		EventType:  eventType,
+		Payload:    payload,
+		CreatedAt:  time.Now(),
+	}
+
+	if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
+		slog.Warn("Central watchdog: failed to record audit event to database", "projectId", projectID, "error", err)
+	}
+
+	eventJSON, err := json.Marshal(event)
+	if err == nil {
+		_ = w.redisService.PublishDeploymentEvent(projectID, string(eventJSON))
+	}
+}
+
+// StartStaleBuildWatchdog launches a supervisory loop that detects and cleans up stalled or orphaned deployments.
 func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 	go func() {
 		time.Sleep(2 * time.Minute)
@@ -151,45 +177,96 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 		for w.running {
 			staleThreshold := 15 * time.Minute
 
-			projects, err := w.projectRepo.ListByStatus(models.StatusBuilding)
+			inProgressStatuses := []models.ProjectStatus{
+				models.StatusPreparing,
+				models.StatusCloning,
+				models.StatusBuilding,
+				models.StatusProvisioning,
+				models.StatusStarting,
+				models.StatusHealthchecking,
+				models.StatusMigrating,
+				models.StatusPromoting,
+			}
+			projects, err := w.projectRepo.ListByStatuses(inProgressStatuses)
 			if err != nil {
-				slog.Error("Central watchdog: failed to query building projects", "error", err)
+				slog.Error("Central watchdog: failed to query in-progress projects", "error", err)
 				time.Sleep(5 * time.Minute)
 				continue
 			}
 
 			for i := range projects {
 				project := projects[i]
+				jobID := "unknown"
+				var reason string
 
-				isLocked := w.redisService.IsDeploymentLocked(project.ID)
-				isStale := time.Since(project.UpdatedAt) > staleThreshold
-
-				if !isLocked || isStale {
-					reason := "stale timeout"
-					if !isLocked {
-						reason = "worker process terminated unexpectedly (lock lost)"
+				lockMeta, _ := w.redisService.GetLockMetadata(project.ID)
+				if lockMeta != nil {
+					jobID = lockMeta.DeploymentID
+					leaseMeta, _ := w.redisService.GetDeploymentLease(jobID)
+					if leaseMeta == nil {
+						reason = "deployment job lease missing (worker terminated abruptly)"
+					} else {
+						lastHeartbeat, err := time.Parse(time.RFC3339, leaseMeta.LastHeartbeat)
+						if err == nil && time.Since(lastHeartbeat) > 3*time.Minute {
+							reason = fmt.Sprintf("deployment job lease heartbeat expired (last heartbeat %s)", time.Since(lastHeartbeat).Round(time.Second))
+						}
 					}
-					slog.Warn("Central watchdog: detected failed deployment",
+				} else if time.Since(project.UpdatedAt) > staleThreshold {
+					reason = "stale deployment timeout (no active lock or lease)"
+				}
+
+				if reason != "" {
+					slog.Warn("Central watchdog: detected orphaned deployment",
 						"projectId", project.ID,
 						"subdomain", project.Subdomain,
+						"jobId", jobID,
 						"reason", reason)
 
 					errorMsg := fmt.Sprintf("Deployment failed: %s.", reason)
 					project.Status = models.StatusFailed
 					project.ErrorLog = &errorMsg
 					if err := w.projectRepo.Update(&project); err != nil {
-						slog.Error("Central watchdog: failed to reset project", "id", project.ID, "error", err)
+						slog.Error("Central watchdog: failed to update failed project", "id", project.ID, "error", err)
 					}
 
-					if isLocked {
-						if err := w.redisService.ReleaseDeploymentLock(project.ID); err != nil {
-							slog.Warn("Central watchdog: failed to release lock", "id", project.ID, "error", err)
+					w.recordAuditEvent(project.ID, jobID, "orphan_recovered", fmt.Sprintf("Recovered orphaned deployment: %s", reason))
+
+					if lockMeta != nil {
+						if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
+							slog.Warn("Central watchdog: failed to force release lock", "id", project.ID, "error", err)
 						}
+					}
+
+					if project.ContainerID != nil && *project.ContainerID != "" {
+						slog.Info("Central watchdog: removing orphaned container instance", "containerId", *project.ContainerID)
+						_ = w.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID)
 					}
 				}
 			}
 
 			time.Sleep(1 * time.Minute)
+		}
+	}()
+}
+
+// StartDelayedJobScheduler launches a background daemon that migrates ready delayed jobs into the active deployment queue.
+func (w *CentralWatchdog) StartDelayedJobScheduler() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for w.running {
+			select {
+			case <-ticker.C:
+				count, err := w.redisService.MigrateDelayedJobs()
+				if err != nil {
+					slog.Warn("Central watchdog: failed to migrate delayed jobs", "error", err)
+				} else if count > 0 {
+					slog.Info("Central watchdog: migrated ready delayed deployment jobs to active queue", "count", count)
+				}
+			case <-w.stopChan:
+				return
+			}
 		}
 	}()
 }

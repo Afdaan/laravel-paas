@@ -3,7 +3,6 @@ package docker
 import (
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -174,14 +173,14 @@ func (s *DockerService) RestartContainer(containerID string) error {
 func (s *DockerService) RemoveContainer(containerID string, workerContainerID *string) error {
 	if workerContainerID != nil && *workerContainerID != "" {
 		slog.Debug("Removing worker container", "workerID", *workerContainerID)
-		_ = exec.Command("docker", "stop", *workerContainerID).Run()
-		_ = exec.Command("docker", "rm", *workerContainerID).Run()
+		_ = utils.RunSilent(30*time.Second, "docker", "stop", *workerContainerID)
+		_ = utils.RunSilent(30*time.Second, "docker", "rm", "-f", *workerContainerID)
 	}
 
-	if err := exec.Command("docker", "stop", containerID).Run(); err != nil {
+	if err := utils.RunSilent(30*time.Second, "docker", "stop", containerID); err != nil {
 		slog.Warn("Failed to stop container during removal", "containerID", containerID, "error", err)
 	}
-	if err := exec.Command("docker", "rm", containerID).Run(); err != nil {
+	if err := utils.RunSilent(30*time.Second, "docker", "rm", "-f", containerID); err != nil {
 		slog.Warn("Failed to remove container", "containerID", containerID, "error", err)
 	}
 	return nil
