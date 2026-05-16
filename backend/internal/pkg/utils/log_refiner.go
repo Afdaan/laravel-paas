@@ -270,3 +270,23 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 
 	return len(p), nil
 }
+
+// Flush writes any remaining buffered data to the underlying writer.
+func (r *LogRefiner) Flush() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if strings.TrimSpace(r.buf) != "" {
+		cleaned := r.stripPattern.ReplaceAllString(r.buf, "")
+		cleaned = r.ansiPattern.ReplaceAllString(cleaned, "")
+		cleaned = strings.TrimSpace(cleaned)
+		if cleaned != "" {
+			_, err := r.writer.Write([]byte(cleaned + "\n"))
+			r.buf = ""
+			return err
+		}
+	}
+	r.buf = ""
+	return nil
+}
+

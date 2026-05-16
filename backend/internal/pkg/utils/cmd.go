@@ -116,14 +116,25 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 	defer logFile.Close()
 
 	var output io.Writer = logFile
+	var refiner *LogRefiner
 	if refined {
-		output = NewLogRefiner(logFile)
+		refiner = NewLogRefiner(logFile)
+		output = refiner
 	}
 
 	cmd.Stdout = io.MultiWriter(&stdoutBuf, output)
 	cmd.Stderr = io.MultiWriter(&stderrBuf, output)
 
+	startTime := time.Now()
 	err = cmd.Run()
+	duration := time.Since(startTime)
+
+	if refiner != nil {
+		_ = refiner.Flush()
+	}
+
+	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================\n", formatDuration(duration))
+	_, _ = logFile.WriteString(summaryMsg)
 
 	result := &Result{
 		Stdout: stdoutBuf.String(),
@@ -136,3 +147,16 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 
 	return result, err
 }
+
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
