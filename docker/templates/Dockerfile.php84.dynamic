@@ -60,17 +60,36 @@ RUN php detect_extensions.php > /tmp/required_extensions.txt
 
 # 1. Auto-detect package manager and build JS assets
 RUN if [ -f package.json ]; then \
-        echo "Auto-detecting package manager..." && \
-        if [ -f bun.lock ]; then bun install && bun run build; \
-        elif [ -f pnpm-lock.yaml ]; then pnpm install && pnpm build; \
-        elif [ -f yarn.lock ]; then yarn install && yarn build; \
-        elif [ -f package-lock.json ]; then npm ci && npm run build; \
-        else npm install && npm run build; fi \
+        echo "[PROGRESS] Installing JavaScript dependencies..." && \
+        if [ -f bun.lock ]; then bun install; \
+        elif [ -f pnpm-lock.yaml ]; then pnpm install; \
+        elif [ -f yarn.lock ]; then yarn install; \
+        elif [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+        else npm install --no-audit --no-fund; fi && \
+        echo "[PROGRESS] Building frontend assets..." && \
+        if grep -q '"build":' package.json; then \
+            if [ -f bun.lock ]; then bun run build; \
+            elif [ -f pnpm-lock.yaml ]; then pnpm build; \
+            elif [ -f yarn.lock ]; then yarn build; \
+            else npm run build; fi; \
+        elif grep -q '"prod":' package.json; then \
+            if [ -f bun.lock ]; then bun run prod; \
+            elif [ -f pnpm-lock.yaml ]; then pnpm prod; \
+            elif [ -f yarn.lock ]; then yarn prod; \
+            else npm run prod; fi; \
+        elif grep -q '"production":' package.json; then \
+            if [ -f bun.lock ]; then bun run production; \
+            elif [ -f pnpm-lock.yaml ]; then pnpm production; \
+            elif [ -f yarn.lock ]; then yarn production; \
+            else npm run production; fi; \
+        else \
+            echo "[PROGRESS] No build script found in package.json, skipping JS build."; \
+        fi \
     fi
 
 # 2. Execute user-defined custom build command
 RUN if [ -n "$BUILD_COMMAND" ]; then \
-        echo "Executing custom build command: $BUILD_COMMAND" && \
+        echo "[PROGRESS] Executing custom build command: $BUILD_COMMAND" && \
         eval "$BUILD_COMMAND"; \
     fi
 

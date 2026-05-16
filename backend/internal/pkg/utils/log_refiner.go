@@ -161,6 +161,9 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 }
 
 var buildTransformations = []logTransformation{
+	// Ensure custom PROGRESS echo statements pass through gracefully
+	{regexp.MustCompile(`.*\[PROGRESS\]\s+(.*)`), ">> $1"},
+
 	// Transform Railpack $ commands into clean "> command" format
 	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+(install|ci|i|add)\b.*`), "> $1 $2"},
 	{regexp.MustCompile(`^\s*\$\s*(npm|pnpm|yarn|bun)\s+run\s+(build|prod|production)\b.*`), "> $1 run $2"},
