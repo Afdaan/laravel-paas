@@ -7,6 +7,7 @@ ARG BUILD_COMMAND=""
 # Stage 1: Unified Builder
 FROM paas-builder-base:8.1-alpine AS builder
 WORKDIR /app
+ARG BUILD_COMMAND
 RUN mkdir -p public/build
 
 # Copy all files
