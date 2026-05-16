@@ -417,6 +417,8 @@ export const translations = {
         },
         noActive: "No active builds",
         noQueued: "Queue is empty",
+        requeue: "Force Requeue",
+        cancel: "Cancel",
       },
       domains: {
         title: "Global Domains Audit",
@@ -1124,6 +1126,8 @@ export const translations = {
         },
         noActive: "Tidak ada build aktif",
         noQueued: "Antrean kosong",
+        requeue: "Jalankan Ulang",
+        cancel: "Batalkan",
       },
       domains: {
         title: "Global Domains Audit",
