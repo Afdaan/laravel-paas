@@ -196,6 +196,7 @@ func (m *WorkerManager) manageWorkers() {
 				"-v", fmt.Sprintf("%s:/app/storage/projects", projectsHostPath),
 				"-v", fmt.Sprintf("%s:/app/data", dataHostPath),
 				"-v", fmt.Sprintf("%s:/app/docker/templates:ro", templatesHostPath),
+				"-v", fmt.Sprintf("%s/.env:/app/.env:ro", m.cfg.HostRootPath),
 				"-v", fmt.Sprintf("%s:%s", dockerSock, dockerSock),
 				"-e", "APP_MODE=docker",
 				"-e", "PROJECTS_PATH=/app/storage/projects",
@@ -220,6 +221,8 @@ func (m *WorkerManager) manageWorkers() {
 				"-e", fmt.Sprintf("NGINX_WEBHOOK_ENABLED=%t", m.cfg.NginxWebhookEnabled),
 				"-e", fmt.Sprintf("NGINX_WEBHOOK_URL=%s", m.cfg.NginxWebhookURL),
 				"-e", fmt.Sprintf("NGINX_WEBHOOK_KEY=%s", m.cfg.NginxWebhookKey),
+				"-e", fmt.Sprintf("INTERNAL_IP=%s", m.cfg.InternalIP),
+				"-e", fmt.Sprintf("ACME_EMAIL=%s", m.cfg.ACMEEmail),
 				"-e", fmt.Sprintf("UID_SALT=%s", m.cfg.UIDSalt),
 				fmt.Sprintf("paas-worker:%s", targetVersion),
 			}
