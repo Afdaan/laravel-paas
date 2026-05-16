@@ -221,6 +221,7 @@ func (m *WorkerManager) manageWorkers() {
 				"-e", fmt.Sprintf("MYSQL_USER=%s", m.cfg.MYSQLUser),
 				"-e", fmt.Sprintf("MYSQL_PASSWORD=%s", m.cfg.MYSQLPassword),
 				"-e", fmt.Sprintf("MYSQL_DATABASE=%s", m.cfg.MYSQLDatabase),
+				"-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", m.cfg.MYSQLRootPassword),
 				"-e", fmt.Sprintf("BASE_DOMAIN=%s", m.cfg.BaseDomain),
 				"-e", fmt.Sprintf("PROJECT_DOMAIN=%s", m.cfg.ProjectDomain),
 				"-e", fmt.Sprintf("NGINX_WEBHOOK_ENABLED=%t", m.cfg.NginxWebhookEnabled),

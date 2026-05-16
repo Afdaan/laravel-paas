@@ -27,11 +27,12 @@ type Config struct {
 	PGPassword string
 
 	// Student Database (MySQL)
-	MYSQLHost     string
-	MYSQLPort     string
-	MYSQLDatabase string
-	MYSQLUser     string
-	MYSQLPassword string
+	MYSQLHost         string
+	MYSQLPort         string
+	MYSQLDatabase     string
+	MYSQLUser         string
+	MYSQLPassword     string
+	MYSQLRootPassword string
 
 	// JWT
 	JWTSecret      string
@@ -102,11 +103,12 @@ func Load() *Config {
 		PGPassword: getEnv("PG_PASSWORD", ""),
 
 		// Student Database (MySQL)
-		MYSQLHost:     getEnv("MYSQL_HOST", "paas-mysql"),
-		MYSQLPort:     getEnv("MYSQL_PORT", "3306"),
-		MYSQLDatabase: getEnv("MYSQL_DATABASE", "paas"),
-		MYSQLUser:     getEnv("MYSQL_USER", "paas"),
-		MYSQLPassword: getEnv("MYSQL_PASSWORD", ""),
+		MYSQLHost:         getEnv("MYSQL_HOST", "paas-mysql"),
+		MYSQLPort:         getEnv("MYSQL_PORT", "3306"),
+		MYSQLDatabase:     getEnv("MYSQL_DATABASE", "paas"),
+		MYSQLUser:         getEnv("MYSQL_USER", "paas"),
+		MYSQLPassword:     getEnv("MYSQL_PASSWORD", ""),
+		MYSQLRootPassword: getEnv("MYSQL_ROOT_PASSWORD", "rootpassword"),
 
 		// JWT
 		JWTSecret:      getEnv("JWT_SECRET", "change-this-secret"),
