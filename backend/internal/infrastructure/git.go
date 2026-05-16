@@ -55,7 +55,46 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 		}
 	}
 
-	// 2. Use a truly unique temporary directory to avoid race conditions
+	// 2. Check if repository already exists and has a valid .git directory
+	gitDir := filepath.Join(projectPath, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		slog.Info("Existing repository found, performing git pull / sync to avoid conflicts", "subdomain", subdomain, "branch", safeBranch)
+
+		// Ensure remote origin URL is up to date
+		utils.Run(30*time.Second, "git", "-C", projectPath, "remote", "set-url", "origin", githubURL)
+
+		// Fetch the latest commit from the remote branch
+		fetchRes, err := utils.Run(3*time.Minute, "git", "-C", projectPath, "fetch", "--depth=1", "origin", safeBranch)
+		if err != nil {
+			slog.Warn("Git fetch failed, falling back to full fresh clone", "subdomain", subdomain, "error", fetchRes.Stderr)
+		} else {
+			// Reset hard to FETCH_HEAD to eliminate any merge conflicts
+			_, resetErr := utils.Run(1*time.Minute, "git", "-C", projectPath, "reset", "--hard", "FETCH_HEAD")
+			if resetErr == nil {
+				// Clean untracked files
+				utils.Run(1*time.Minute, "git", "-C", projectPath, "clean", "-fd")
+
+				// Get new commit hash
+				hashRes, _ := utils.Run(10*time.Second, "git", "-C", projectPath, "rev-parse", "HEAD")
+				commitHash := strings.TrimSpace(hashRes.Stdout)
+
+				// Restore .env from backup
+				if hasEnv {
+					if err := utils.RunSilent(time.Minute, "cp", envBackupPath, envPath); err != nil {
+						slog.Warn("Failed to restore .env file after sync", "subdomain", subdomain, "error", err)
+					} else {
+						slog.Info("Restored .env file after git pull", "subdomain", subdomain)
+					}
+				}
+
+				slog.Info("Successfully updated repository via git pull", "subdomain", subdomain, "commitHash", commitHash)
+				return projectPath, commitHash, nil
+			}
+			slog.Warn("Git reset failed, falling back to full fresh clone", "subdomain", subdomain)
+		}
+	}
+
+	// 3. Use a truly unique temporary directory to avoid race conditions
 	tempPath, err := os.MkdirTemp(s.cfg.ProjectsPath, subdomain+"_temp_*")
 	if err != nil {
 		return "", "", apperr.New(500, "TEMP_DIR_FAILED", "Failed to create temporary build directory: "+err.Error())
