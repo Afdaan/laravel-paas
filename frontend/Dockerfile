@@ -22,7 +22,12 @@ FROM nginx:1.27-alpine
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Frontend Dashboard"
-RUN apk add --no-cache curl
+
+ENV TZ=Asia/Jakarta
+
+RUN apk update && apk add --no-cache curl tzdata && \
+    cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && \
+    echo "Asia/Jakarta" > /etc/timezone
 
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -79,233 +79,23 @@ func (w *DeploymentWorker) Start() {
 		return
 	}
 	w.running = true
-	slog.Info("Starting deployment worker system...")
-
-	// Recover orphaned Deletions
-	w.recoverOrphanedDeletions()
-
-	// Recover orphaned jobs on startup
-	w.recoverOrphanedBuilds()
-
-	// Start threads
-	w.StartPruneScheduler()
-	w.StartExpiryJanitor()
-	w.StartStaleBuildWatchdog()
+	slog.Info("Starting deployment worker daemon...")
 
 	go w.processJobs()
 }
 
-// StartStaleBuildWatchdog periodically checks for projects stuck in "building" status
-// and resets them to "failed" so they can be redeployed. This prevents deployments
-// from appearing stuck forever when the worker hangs or crashes mid-build.
-func (w *DeploymentWorker) StartStaleBuildWatchdog() {
-	go func() {
-		time.Sleep(2 * time.Minute) // Initial delay
-
-		for w.running {
-			staleThreshold := 15 * time.Minute
-
-			projects, err := w.projectRepo.ListByStatus(models.StatusBuilding)
-			if err != nil {
-				slog.Error("Stale build watchdog: failed to query building projects", "error", err)
-				time.Sleep(5 * time.Minute)
-				continue
-			}
-
-			for i := range projects {
-				project := projects[i]
-				if time.Since(project.UpdatedAt) > staleThreshold {
-					slog.Warn("Stale build watchdog: detected stuck deployment, resetting status",
-						"projectId", project.ID,
-						"subdomain", project.Subdomain,
-						"stuckFor", time.Since(project.UpdatedAt).Round(time.Second))
-
-					errorMsg := fmt.Sprintf("Deployment timed out after %s. The build may have completed but a subsequent step (migration or configuration sync) failed silently. Please try redeploying.", time.Since(project.UpdatedAt).Round(time.Second))
-					project.Status = models.StatusFailed
-					project.ErrorLog = &errorMsg
-					if err := w.projectRepo.Update(&project); err != nil {
-						slog.Error("Stale build watchdog: failed to reset project", "id", project.ID, "error", err)
-					}
-
-					// Release the deployment lock so the project can be redeployed
-					if err := w.redisService.ReleaseDeploymentLock(project.ID); err != nil {
-						slog.Warn("Stale build watchdog: failed to release lock", "id", project.ID, "error", err)
-					}
-				}
-			}
-
-			time.Sleep(5 * time.Minute)
-		}
-	}()
-}
-
-// Stop signals the worker to shut down gracefully
+// Stop signals the worker to shut down gracefully (SIGTERM drain mode)
 func (w *DeploymentWorker) Stop() {
 	if !w.running {
 		return
 	}
-	slog.Info("Worker stopping: waiting for active jobs to finish...")
+	slog.Info("Worker draining: waiting for active jobs to finish before shutdown...")
 
-	// Signal stop and wait for all jobs in WG to finish
 	w.running = false
 	close(w.stopChan)
 	w.wg.Wait()
 
 	slog.Info("Worker stopped gracefully.")
-}
-
-// StartPruneScheduler starts a daily cron job to prune Docker images at 3 AM
-func (w *DeploymentWorker) StartPruneScheduler() {
-	go func() {
-		for {
-			now := time.Now()
-			// Calculate time until 3 AM (local time)
-			next3AM := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, now.Location())
-			if now.After(next3AM) {
-				next3AM = next3AM.Add(24 * time.Hour)
-			}
-
-			durationToWait := next3AM.Sub(now)
-			slog.Info("Scheduled next Docker cache prune", "time", next3AM.Format("15:04:05"))
-
-			time.Sleep(durationToWait)
-
-			slog.Info("Executing 3 AM scheduled Docker cache prune")
-			if err := w.dockerService.PruneImages(); err != nil {
-				slog.Error("Scheduled image prune failed", "error", err)
-			}
-
-			// Optional: Aggressive BuildKit cache cleanup for absolute zero-cache state
-			if err := exec.Command("docker", "builder", "prune", "-a", "-f").Run(); err != nil {
-				slog.Warn("Failed to prune docker builder", "error", err)
-			}
-		}
-	}()
-}
-
-// StartExpiryJanitor starts a periodic job to cleanup expired (inactive) projects
-func (w *DeploymentWorker) StartExpiryJanitor() {
-	go func() {
-		// Wait a bit before first run to let system settle
-		time.Sleep(1 * time.Minute)
-
-		for w.running {
-			slog.Info("Running project expiry janitor")
-			w.cleanupExpiredProjects()
-
-			// Run every hour
-			time.Sleep(1 * time.Hour)
-		}
-	}()
-}
-
-// cleanupExpiredProjects finds and thoroughly deletes projects that have passed their inactivity limit
-func (w *DeploymentWorker) cleanupExpiredProjects() {
-	expiredProjects, err := w.projectRepo.ListExpired()
-	if err != nil {
-		slog.Error("Failed to query expired projects", "error", err)
-		return
-	}
-
-	if len(expiredProjects) == 0 {
-		return
-	}
-
-	slog.Info("Auto-deleting expired projects", "count", len(expiredProjects))
-
-	for i := range expiredProjects {
-		project := expiredProjects[i]
-		slog.Info("Auto-deleting expired project via service", "name", project.Name, "id", project.ID)
-
-		if err := w.projectService.DeleteProject(&project); err != nil {
-			slog.Error("Failed to auto-delete expired project", "id", project.ID, "error", err)
-		}
-	}
-
-	// Global prune to cleanup any leftover layers
-	go func() {
-		if err := w.dockerService.PruneImages(); err != nil {
-			slog.Error("Background image prune failed", "error", err)
-		}
-	}()
-}
-
-// recoverOrphanedBuilds finds projects left in an inconsistent state due to unexpected shutdown
-func (w *DeploymentWorker) recoverOrphanedBuilds() {
-	statuses := []models.ProjectStatus{
-		models.StatusBuilding,
-		models.StatusQueued,
-		models.StatusPending,
-	}
-
-	for _, status := range statuses {
-		projects, err := w.projectRepo.ListByStatus(status)
-		if err != nil {
-			slog.Error("Failed to query orphaned projects for recovery", "status", status, "error", err)
-			continue
-		}
-
-		if len(projects) == 0 {
-			continue
-		}
-
-		slog.Info("Recovering orphaned projects from previous session",
-			"status", status,
-			"count", len(projects))
-
-		for i := range projects {
-			project := projects[i]
-
-			// Check if already in queue to avoid duplicates
-			isQueued, _ := w.redisService.IsProjectQueued(project.ID)
-			if isQueued {
-				slog.Info("Project is already in queue, skipping recovery", "id", project.ID)
-				continue
-			}
-
-			// Reset status to queued
-			project.Status = models.StatusQueued
-			recoveryLog := fmt.Sprintf("Recovered from unexpected shutdown (previous status: %s).", status)
-			project.ErrorLog = &recoveryLog
-			if err := w.projectRepo.Update(&project); err != nil {
-				slog.Error("Failed to update project during recovery", "id", project.ID, "error", err)
-			}
-
-			// Clear existing lock if any
-			if err := w.redisService.ReleaseDeploymentLock(project.ID); err != nil {
-				slog.Warn("Failed to release lock during recovery", "id", project.ID, "error", err)
-			}
-
-			// Re-enqueue
-			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
-				slog.Error("Failed to re-queue project during recovery", "id", project.ID, "error", err)
-			} else {
-				slog.Info("Project automatically re-queued for reliability", "id", project.ID)
-			}
-		}
-	}
-}
-
-// recoverOrphanedDeletions finds projects stuck in deleting state
-func (w *DeploymentWorker) recoverOrphanedDeletions() {
-	deletingProjects, err := w.projectRepo.ListByStatus(models.StatusDeleting)
-	if err != nil {
-		slog.Error("Failed to query orphaned deletions", "error", err)
-		return
-	}
-
-	if len(deletingProjects) > 0 {
-		slog.Info("Recovering orphaned deletions from previous session", "count", len(deletingProjects))
-		for i := range deletingProjects {
-			project := deletingProjects[i]
-			slog.Info("Re-triggering project deletion", "id", project.ID)
-			go func(p models.Project) {
-				if err := w.projectService.DeleteProject(&p); err != nil {
-					slog.Error("Failed to background delete orphaned project", "id", p.ID, "error", err)
-				}
-			}(project)
-		}
-	}
 }
 
 // processJobs continuously processes jobs from the queue
@@ -390,10 +180,8 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		"projectId", job.ProjectID,
 		"queuedDuration", time.Since(job.EnqueuedAt).Round(time.Second))
 
-	// Try to acquire lock for this project
-	// Build can take > 30m (clone + railpack build + docker run + migrations),
-	// keep lock long enough to avoid concurrent deployments of same project.
-	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 45*time.Minute)
+	// Acquire short 2-minute lock with background heartbeat renewal
+	locked, err := w.redisService.AcquireDeploymentLock(job.ProjectID, 2*time.Minute)
 	if err != nil {
 		slog.Error("Failed to acquire lock for project", "id", job.ProjectID, "error", err)
 		w.redisService.IncrementDeploymentCounter("failed")
@@ -406,8 +194,25 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		return
 	}
 
-	// Ensure lock is released after deployment
+	stopHeartbeat := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := w.redisService.RenewDeploymentLock(job.ProjectID, 2*time.Minute); err != nil {
+					slog.Warn("Failed to renew deployment lock", "projectId", job.ProjectID, "error", err)
+				}
+			case <-stopHeartbeat:
+				return
+			}
+		}
+	}()
+
+	// Ensure lock is released and heartbeat stopped after deployment
 	defer func() {
+		close(stopHeartbeat)
 		if err := w.redisService.ReleaseDeploymentLock(job.ProjectID); err != nil {
 			slog.Warn("Failed to release lock for project", "id", job.ProjectID, "error", err)
 		}
@@ -604,10 +409,11 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	memoryLimit := memoryMB + "m"
 
 	appendLog := func(msg string) {
-		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
 			_, _ = f.WriteString(msg + "\n")
 			f.Close()
 		}
+		_ = w.redisService.PublishBuildLog(project.ID, msg)
 	}
 
 	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy")

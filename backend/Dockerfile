@@ -25,38 +25,27 @@ RUN go mod tidy
 # Build binary
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
 
-# Stage 2: Production
-FROM debian:bookworm-slim
+# Stage 2: Production (Lightweight Alpine ~25MB)
+FROM alpine:3.19
 
 LABEL maintainer="Laravel PaaS"
-LABEL description="Backend API Service"
+LABEL description="Backend API Service & Watchdog"
 
-# Install dependencies and Docker CLI with Buildx
-RUN apt-get update && apt-get install -y \
+ENV TZ=Asia/Jakarta
+
+# Install minimal runtime dependencies (docker-cli for WorkerManager orchestration)
+RUN apk update && apk add --no-cache \
     ca-certificates \
-    git \
     curl \
-    tar \
-    gnupg \
-    lsb-release \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update && apt-get install -y \
-    docker-ce-cli \
-    docker-buildx-plugin \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Railpack CLI
-RUN curl -sSL https://railpack.com/install.sh | sh
+    docker-cli \
+    tzdata && \
+    cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && \
+    echo "Asia/Jakarta" > /etc/timezone
 
 WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /app/main .
-
-# Create directories for runtime mounts
-RUN mkdir -p /app/storage/projects /app/docker/templates
 
 # Health check
 HEALTHCHECK --interval=5s --timeout=3s --start-period=2s --retries=3 \

@@ -296,3 +296,52 @@ func (r *RedisService) RemoveFromQueue(projectID uint) error {
 	}
 	return nil
 }
+
+// RenewDeploymentLock resets the TTL of an active deployment lock
+func (r *RedisService) RenewDeploymentLock(projectID uint, ttl time.Duration) error {
+	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
+	return r.client.Expire(r.ctx, lockKey, ttl).Err()
+}
+
+// IsDeploymentLocked checks if a deployment lock still exists
+func (r *RedisService) IsDeploymentLocked(projectID uint) bool {
+	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
+	exists, err := r.client.Exists(r.ctx, lockKey).Result()
+	return err == nil && exists > 0
+}
+
+// PublishBuildLog streams a build log line to a Redis Pub/Sub channel
+func (r *RedisService) PublishBuildLog(projectID uint, msg string) error {
+	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
+	return r.client.Publish(r.ctx, channel, msg).Err()
+}
+
+// SubscribeBuildLogs subscribes to a build log channel and returns a Go channel of messages
+func (r *RedisService) SubscribeBuildLogs(ctx context.Context, projectID uint) (<-chan string, error) {
+	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
+	sub := r.client.Subscribe(r.ctx, channel)
+
+	msgChan := make(chan string, 100)
+	go func() {
+		defer sub.Close()
+		defer close(msgChan)
+		ch := sub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				select {
+				case msgChan <- msg.Payload:
+				default:
+					// buffer full, skip
+				}
+			}
+		}
+	}()
+	return msgChan, nil
+}
+

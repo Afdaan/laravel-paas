@@ -8,6 +8,7 @@ set -e
 echo "[STOP] Stopping Laravel PaaS..."
 
 # Stop containers (in reverse order)
+docker ps -a --format '{{.Names}}' | grep '^paas-worker-s' | xargs -r docker rm -f 2>/dev/null || true
 docker stop paas-frontend 2>/dev/null || true
 docker stop paas-backend 2>/dev/null || true
 docker stop paas-traefik 2>/dev/null || true

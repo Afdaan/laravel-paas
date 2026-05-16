@@ -21,6 +21,14 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - '!backend/cmd/worker/**'
+              - '!backend/internal/workers/**'
+              - '!backend/internal/services/worker/**'
+            worker:
+              - 'backend/cmd/worker/**'
+              - 'backend/internal/workers/**'
+              - 'backend/internal/services/worker/**'
+              - 'docker/worker/**'
             frontend:
               - 'frontend/**'
             infra:
@@ -42,12 +50,16 @@ jobs:
           chmod +x ./scripts/deploy-app.sh
           
           BACKEND="${{ steps.filter.outputs.backend }}"
+          WORKER="${{ steps.filter.outputs.worker }}"
           FRONTEND="${{ steps.filter.outputs.frontend }}"
           INFRA="${{ steps.filter.outputs.infra }}"
 
           if [ "$INFRA" == "true" ]; then
             echo "[CI/CD] Infrastructure changes detected. Deploying ALL to apply configuration."
             ./scripts/deploy-app.sh all
+          elif [ "$WORKER" == "true" ]; then
+            echo "[CI/CD] Worker changes detected. Deploying WORKER."
+            ./scripts/deploy-app.sh worker
           elif [ "$BACKEND" == "true" ] && [ "$FRONTEND" == "true" ]; then
             echo "[CI/CD] Both source components changed. Deploying ALL."
             ./scripts/deploy-app.sh all

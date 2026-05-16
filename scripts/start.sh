@@ -308,6 +308,12 @@ deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
     --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
     --label "traefik.http.services.backend.loadbalancer.server.port=8080" || true
 
+# 8.5. Platform: Standalone Worker Cluster Image
+echo -e "${YELLOW}Building standalone worker cluster image...${NC}"
+WORKER_TAG=$(get_next_service_tag "worker")
+DOCKER_BUILDKIT=1 docker build -t "paas-worker:$WORKER_TAG" -t "paas-worker:latest" -f "${PROJECT_ROOT}/docker/worker/Dockerfile" "${PROJECT_ROOT}" || true
+docker exec paas-redis redis-cli set "worker:target_version" "$WORKER_TAG" 2>/dev/null || true
+
 # 9. Platform: Frontend
 echo -e "${YELLOW}Deploying frontend with auto-increment tag...${NC}"
 if [ ! -d "${PROJECT_ROOT}/frontend" ]; then

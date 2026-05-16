@@ -25,6 +25,7 @@ import (
 	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	domainServicePkg "github.com/laravel-paas/backend/internal/services/domain"
 	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	"github.com/laravel-paas/backend/internal/services/worker"
 )
 
 func main() {
@@ -71,8 +72,6 @@ func main() {
 	// Initialize Infrastructure Services
 	storageService := infrastructure.NewStorageService(cfg)
 	dockerService := docker.NewDockerService(cfg, storageService)
-	gitService := infrastructure.NewGitService(cfg)
-	versionService := infrastructure.NewVersionService()
 	mysqlService := infrastructure.NewMySQLService()
 	
 	// Initialize Repositories
@@ -91,9 +90,12 @@ func main() {
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
 	domainHandler := domainHandlerPkg.NewDomainHandler(domainService, projectService)
 
-	// Initialize and start deployment worker
-	worker := workers.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
-	worker.Start()
+	// Initialize and start WorkerManager and CentralWatchdog
+	workerManager := worker.NewWorkerManager(cfg, dockerService, redisService, settingService)
+	workerManager.StartWatchdog()
+
+	watchdog := worker.NewCentralWatchdog(projectRepo, redisService, dockerService, projectService)
+	watchdog.Start()
 
 	// Initialize and start domain verification worker (MXToolbox-style background check)
 	domainWorker := workers.NewDomainWorker(db, domainService, projectService)
@@ -122,9 +124,10 @@ func main() {
 		// 0. Stop the Domain Worker
 		cancelDomainWorker()
 
-		// 1. Stop the Deployment Worker (Finish current deployment)
-		slog.Info("Shutting down deployment worker...")
-		worker.Stop()
+		// 1. Stop WorkerManager and CentralWatchdog
+		slog.Info("Shutting down worker manager and central watchdog...")
+		workerManager.Stop()
+		watchdog.Stop()
 
 		// 2. Stop accepting new requests (Fiber)
 		// We give it a 10s timeout to finish current requests

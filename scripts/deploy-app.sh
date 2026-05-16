@@ -209,8 +209,24 @@ deploy_frontend() {
         --label "traefik.http.services.frontend.loadbalancer.server.port=80"
 }
 
+deploy_worker() {
+    echo -e "${YELLOW}Building standalone worker cluster image...${NC}"
+    WORKER_TAG=$(get_next_service_tag "worker")
+    
+    DOCKER_BUILDKIT=1 docker build -t "paas-worker:$WORKER_TAG" -t "paas-worker:latest" -f "${PROJECT_ROOT}/docker/worker/Dockerfile" "${PROJECT_ROOT}"
+    
+    echo -e "${YELLOW}Setting target worker version in Redis: $WORKER_TAG...${NC}"
+    docker exec paas-redis redis-cli set "worker:target_version" "$WORKER_TAG" 2>/dev/null || true
+    
+    echo -e "${GREEN}[SUCCESS] Standalone worker image built successfully (Tag: $WORKER_TAG)${NC}"
+}
+
 if [[ "$TARGET" == "backend" || "$TARGET" == "all" ]]; then
     deploy_backend
+fi
+
+if [[ "$TARGET" == "worker" || "$TARGET" == "all" ]]; then
+    deploy_worker
 fi
 
 if [[ "$TARGET" == "frontend" || "$TARGET" == "all" ]]; then
