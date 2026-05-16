@@ -104,6 +104,12 @@ RUN mkdir -p /app/public/build
 
 # Deep cleanup of build-time only artifacts before copying to production stage
 RUN rm -rf /app/node_modules \
+           /app/.git \
+           /app/.github \
+           /app/.vscode \
+           /app/tests \
+           /app/scratch \
+           /app/stress-test \
            /app/.npm \
            /app/.yarn \
            /app/.bun \
@@ -112,7 +118,8 @@ RUN rm -rf /app/node_modules \
            /root/.npm \
            /root/.bun \
            /root/.cache \
-           /root/.yarn
+           /root/.yarn \
+           /root/.composer
 
 # Stage 2: Production (Optimized Runtime)
 FROM paas-runtime-php:8.2-alpine
@@ -139,6 +146,9 @@ RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
         && apk del .build-deps; \
     fi && \
     docker-php-source delete && \
+    find /usr/local/lib/php/extensions -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true && \
+    rm -rf /usr/local/lib/php/doc /usr/local/lib/php/test /usr/local/lib/php/PEAR /usr/local/lib/php/.registry && \
+    rm -rf /usr/lib/python*/test /usr/lib/python*/unittest /usr/lib/python*/ensurepip /usr/lib/python*/idlelib /usr/lib/python*/pydoc* /usr/lib/python*/lib2to3 && \
     find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + && \
     rm -rf /var/cache/apk/* /tmp/required_extensions.txt /tmp/* /usr/src/* /usr/share/man /usr/share/doc /usr/share/info /usr/local/include/* /usr/local/lib/*.a
 

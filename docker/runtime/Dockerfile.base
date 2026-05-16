@@ -8,14 +8,13 @@ ARG INSTALL_REDIS=true
 ARG INSTALL_IMAGICK=true
 
 # Install core runtime dependencies (Nginx, Supervisor, libraries)
+# Removed heavy dev/build packages like git and icu-data-full to save ~40MB
 RUN apk add --no-cache \
     nginx \
     supervisor \
     curl \
     zip \
     unzip \
-    git \
-    icu-data-full \
     libpng \
     libjpeg-turbo \
     freetype \
@@ -29,9 +28,10 @@ RUN apk add --no-cache \
     gmp \
     libpq
 
-# Build and Install Extensions
+# Build, Install, and Aggressively Optimize Extensions
 RUN apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS \
+        binutils \
         zlib-dev \
         libpng-dev \
         libjpeg-turbo-dev \
@@ -71,11 +71,14 @@ RUN apk add --no-cache --virtual .build-deps \
         printf "\n" | pecl install redis && docker-php-ext-enable redis; \
     fi \
     && if [ "$INSTALL_IMAGICK" = "true" ]; then \
-        # Use a stable version for Imagick to avoid build failures on newer PHP
         printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
     fi \
+    && find /usr/local/lib/php/extensions -name "*.so" -exec strip --strip-unneeded {} + \
+    && strip --strip-unneeded /usr/local/bin/php /usr/local/sbin/php-fpm \
     && apk del .build-deps \
     && docker-php-source delete \
+    && rm -rf /usr/local/lib/php/doc /usr/local/lib/php/test /usr/local/lib/php/PEAR /usr/local/lib/php/.registry \
+    && rm -rf /usr/lib/python*/test /usr/lib/python*/unittest /usr/lib/python*/ensurepip /usr/lib/python*/idlelib /usr/lib/python*/pydoc* /usr/lib/python*/lib2to3 \
     && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \
     && rm -rf /var/cache/apk/* /tmp/pear /tmp/* /usr/src/* /usr/share/man /usr/share/doc /usr/share/info /usr/local/include/* /usr/local/lib/*.a
 
