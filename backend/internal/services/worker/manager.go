@@ -178,17 +178,9 @@ func (m *WorkerManager) manageWorkers() {
 			_ = exec.Command("docker", "rm", "-f", containerName).Run()
 
 			projectsHostPath := m.cfg.HostProjectsPath
-			if projectsHostPath == "" {
-				projectsHostPath = "/opt/laravel-paas/storage/projects"
-			}
 			dataHostPath := m.cfg.HostDataPath
-			if dataHostPath == "" {
-				dataHostPath = "/opt/laravel-paas/storage/data"
-			}
+			templatesHostPath := m.cfg.HostTemplatesPath
 			dockerSock := m.cfg.DockerSocket
-			if dockerSock == "" {
-				dockerSock = "/var/run/docker.sock"
-			}
 
 			runArgs := []string{
 				"run", "-d",
@@ -203,6 +195,7 @@ func (m *WorkerManager) manageWorkers() {
 				"-v", fmt.Sprintf("%s:/var/www/html/storage/app", projectsHostPath),
 				"-v", fmt.Sprintf("%s:/app/storage/projects", projectsHostPath),
 				"-v", fmt.Sprintf("%s:/app/data", dataHostPath),
+				"-v", fmt.Sprintf("%s:/app/docker/templates:ro", templatesHostPath),
 				"-v", fmt.Sprintf("%s:%s", dockerSock, dockerSock),
 				"-e", "APP_MODE=docker",
 				"-e", "PROJECTS_PATH=/app/storage/projects",

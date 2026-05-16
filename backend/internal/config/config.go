@@ -56,9 +56,10 @@ type Config struct {
 	DockerSocket     string
 	ProjectsPath     string
 	DataPath         string
-	HostProjectsPath string
-	HostDataPath     string
-	TemplatesPath    string
+	HostProjectsPath  string
+	HostDataPath      string
+	HostTemplatesPath string
+	TemplatesPath     string
 	DockerNetwork    string
 
 	// Nginx Remote Webhook
@@ -132,10 +133,11 @@ func Load() *Config {
 		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
 		ProjectsPath:     projectsPath,
 		DataPath:         dataPath,
-		HostProjectsPath: getEnv("HOST_PROJECTS_PATH", filepath.Join(hostRoot, "storage/projects")),
-		HostDataPath:     getEnv("HOST_DATA_PATH", filepath.Join(hostRoot, "storage/data")),
-		TemplatesPath:    templatesPath,
-		DockerNetwork:    getEnv("DOCKER_NETWORK", "paas-network"),
+		HostProjectsPath:  getEnv("HOST_PROJECTS_PATH", filepath.Join(hostRoot, "storage/projects")),
+		HostDataPath:      getEnv("HOST_DATA_PATH", filepath.Join(hostRoot, "storage/data")),
+		HostTemplatesPath: getEnv("HOST_TEMPLATES_PATH", filepath.Join(hostRoot, "docker/templates")),
+		TemplatesPath:     templatesPath,
+		DockerNetwork:     getEnv("DOCKER_NETWORK", "paas-network"),
 
 		// Nginx Remote Webhook
 		NginxWebhookEnabled: getEnvBool("NGINX_WEBHOOK_ENABLED", false),
@@ -150,6 +152,9 @@ func Load() *Config {
 	}
 	if abs, err := filepath.Abs(cfg.HostDataPath); err == nil {
 		cfg.HostDataPath = abs
+	}
+	if abs, err := filepath.Abs(cfg.HostTemplatesPath); err == nil {
+		cfg.HostTemplatesPath = abs
 	}
 
 	return cfg
