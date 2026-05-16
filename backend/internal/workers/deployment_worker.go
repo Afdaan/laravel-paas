@@ -603,11 +603,21 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 	memoryMB := w.getSetting(models.SettingMemoryLimit, models.DefaultMemoryLimit)
 	memoryLimit := memoryMB + "m"
 
+	appendLog := func(msg string) {
+		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+			_, _ = f.WriteString(msg + "\n")
+			f.Close()
+		}
+	}
+
 	newContainerID, err := w.dockerService.BuildAndRun(project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy")
 	if err != nil {
+		appendLog("ERROR: Failed to deploy container: " + err.Error())
 		w.updateProjectError(project, "Failed to deploy container: "+err.Error())
 		return
 	}
+
+	appendLog("Starting application container and verifying health check...")
 
 	// Wait for the new container to become healthy before proceeding
 	isHealthy := false
@@ -622,6 +632,7 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 
 	if !isHealthy {
 		slog.Error("New container failed health check, rolling back", "subdomain", project.Subdomain, "id", newContainerID)
+		appendLog("ERROR: Deployment failed: new container is unhealthy or crashing. Rolling back.")
 		
 		if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy deployment", "id", newContainerID, "error", err)
@@ -633,8 +644,10 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 
 	if project.Framework == "Laravel" {
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
+		appendLog("Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
+			appendLog("ERROR: Migrations failed:\n" + output)
 			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
 			}
@@ -642,6 +655,8 @@ func (w *DeploymentWorker) deployProject(project *models.Project, job *infrastru
 			return
 		}
 	}
+
+	appendLog("Deployment completed successfully! System is now live.")
 
 	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
 		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)

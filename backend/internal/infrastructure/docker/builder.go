@@ -142,7 +142,11 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 
 	// 4.5. Append custom start command if provided
 	if project.StartCommand != "" {
-		parts := strings.Fields(project.StartCommand)
+		cmdStr := strings.TrimSpace(project.StartCommand)
+		if project.Framework == "Laravel" && !strings.HasPrefix(cmdStr, "php ") && !strings.HasPrefix(cmdStr, "/usr/bin/") && !strings.HasPrefix(cmdStr, "sh ") && !strings.HasPrefix(cmdStr, "bash ") && !strings.HasPrefix(cmdStr, "npm ") && !strings.HasPrefix(cmdStr, "bun ") {
+			cmdStr = "php artisan " + cmdStr
+		}
+		parts := strings.Fields(cmdStr)
 		runArgs = append(runArgs, parts...)
 	}
 
@@ -226,7 +230,11 @@ stdout_logfile_maxbytes=0
 		buildArgs = append(buildArgs, "--no-cache")
 	}
 	if project.BuildCommand != "" {
-		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("BUILD_COMMAND=%s", project.BuildCommand))
+		cmdStr := strings.TrimSpace(project.BuildCommand)
+		if project.Framework == "Laravel" && !strings.HasPrefix(cmdStr, "php ") && !strings.HasPrefix(cmdStr, "composer ") && !strings.HasPrefix(cmdStr, "npm ") && !strings.HasPrefix(cmdStr, "bun ") && !strings.HasPrefix(cmdStr, "yarn ") && !strings.HasPrefix(cmdStr, "pnpm ") {
+			cmdStr = "php artisan " + cmdStr
+		}
+		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("BUILD_COMMAND=%s", cmdStr))
 	}
 	if project.NodeVersion != "" {
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("NODE_VERSION=%s", project.NodeVersion))
@@ -247,17 +255,12 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 	s.injectDefaultRailpackConfig(buildPath)
 
 	// Strip strict lockfiles before Railpack runs.
-	// Railpack hardcodes --frozen-lockfile when it detects bun.lock or yarn.lock,
-	// causing builds to fail when the user's lockfile is out of sync with package.json.
-	// A pre-sync approach requires the package manager on the host, which is not guaranteed.
-	// Deleting the lockfile forces a fresh resolve bounded by package.json semver constraints.
 	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {
 		if err := os.Remove(filepath.Join(buildPath, lockfile)); err == nil {
 			slog.Info("Stripped lockfile to allow non-frozen install", "file", lockfile, "subdomain", project.Subdomain)
 		}
 	}
 
-	// Use project ID as cache key for better isolation but still allowing layer reuse
 	cacheKey := fmt.Sprintf("project-%d", project.ID)
 	if noCache {
 		cacheKey = fmt.Sprintf("project-%d-%d", project.ID, time.Now().Unix())
@@ -268,14 +271,12 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		"--name", imageName,
 		"--cache-key", cacheKey,
 	}
-	// Collect all environment variables in a map to avoid duplicates
 	envs := map[string]string{
 		"NPM_CONFIG_JOBS":             "2",
 		"NPM_CONFIG_LEGACY_PEER_DEPS": "true",
 		"PAAS_BUILD_ID":               fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
-	// Load environment variables from .env
 	projectEnvPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env")
 	if envVars, err := s.parseProjectEnv(projectEnvPath); err == nil {
 		for key, value := range envVars {
@@ -283,14 +284,16 @@ func (s *DockerService) railpackBuild(project *models.Project, buildPath, imageN
 		}
 	}
 
-	// Inject Node Version if specified
 	if project.NodeVersion != "" {
 		envs["NIXPACKS_NODE_VERSION"] = project.NodeVersion
 	}
 
-	// Inject custom Build Command if specified
 	if project.BuildCommand != "" {
 		envs["NIXPACKS_BUILD_CMD"] = project.BuildCommand
+	}
+
+	if project.StartCommand != "" {
+		envs["NIXPACKS_START_CMD"] = project.StartCommand
 	}
 
 	// Append all envs to buildArgs

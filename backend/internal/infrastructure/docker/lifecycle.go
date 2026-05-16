@@ -203,8 +203,8 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 
 	status := strings.TrimSpace(res.Stdout)
 	// Docker health status can be: starting, healthy, unhealthy
-	// We accept both "healthy" and "starting" (give it time)
-	return status == "healthy" || status == "starting"
+	// We only return true when it has fully transitioned to "healthy"
+	return status == "healthy"
 }
 
 // Helper to convert docker memory headers (GiB, MiB, kiB, B) to MB
