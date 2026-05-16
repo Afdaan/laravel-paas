@@ -26,7 +26,11 @@ RUN apk add --no-cache \
     libmemcached-libs \
     openldap \
     gmp \
-    libpq
+    libpq \
+    tzdata
+
+ENV TZ=Asia/Jakarta
+RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > /etc/timezone
 
 # Build, Install, and Aggressively Optimize Extensions
 RUN apk add --no-cache --virtual .build-deps \

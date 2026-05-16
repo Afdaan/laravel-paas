@@ -122,6 +122,7 @@ func (s *DockerService) BuildAndRun(project *models.Project, phpVersion, project
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
+		"-e", "TZ=Asia/Jakarta",
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",

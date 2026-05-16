@@ -22,6 +22,7 @@ ARG NODE_VERSION
 RUN apk add --no-cache \
     $PHPIZE_DEPS \
     linux-headers \
+    tzdata \
     git \
     unzip \
     zip \
@@ -46,6 +47,9 @@ RUN apk add --no-cache \
     gmp-dev \
     postgresql-dev \
     openldap-dev
+
+ENV TZ=Asia/Jakarta
+RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > /etc/timezone
 
 # Install required PHP extensions for Composer builds
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
