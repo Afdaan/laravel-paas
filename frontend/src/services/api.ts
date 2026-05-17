@@ -175,6 +175,9 @@ export const projectsAPI = {
   buildLogs: (id: number | string) =>
     api.get(`/projects/${id}/build-logs`),
   
+  getDeploymentEvents: (id: number | string) =>
+    api.get(`/projects/${id}/deployment-events`),
+  
   // Custom Domain endpoints
   listDomains: (id: number | string) =>
     api.get(`/projects/${id}/domains`),

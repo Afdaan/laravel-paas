@@ -22,6 +22,7 @@ import (
 	"github.com/laravel-paas/backend/internal/repositories"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/backend/internal/services/setting"
+	"github.com/laravel-paas/backend/internal/services/deployment"
 	"github.com/laravel-paas/backend/internal/workers"
 )
 
@@ -59,7 +60,8 @@ func main() {
 	settingRepo := repositories.NewSettingRepository(db)
 	settingService := setting.NewSettingService(settingRepo, redisService)
 
-	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService)
+	transitionManager := deployment.NewTransitionManager(db, redisService)
+	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService, transitionManager)
 
 	worker := workers.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
 	worker.Start()

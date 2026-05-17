@@ -150,7 +150,8 @@ function StudentProjectDetail() {
     return t('projectDetail.metrics.managedStack')
   }, [project, t])
 
-  const deployLocked = project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
+  const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+  const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
 
   const fetchProject = useCallback(async () => {
     if (!uid) return
@@ -326,6 +327,10 @@ function StudentProjectDetail() {
   
   const onActionStarted = (status: Project['status'] = 'queued') => {
     setProject(prev => prev ? ({ ...prev, status }) : null)
+  }
+
+  const onDeployStarted = () => {
+    setProject(prev => prev ? ({ ...prev, deployment_status: 'queued', deployment_progress: 0 }) : null)
   }
 
   const handleStop = async () => {
@@ -508,28 +513,28 @@ function StudentProjectDetail() {
       />
 
       {/* Building Banner */}
-      {(project.status === 'building' || project.status === 'failed') && (
+      {(isDeploying || project.deployment_status === 'failed' || project.status === 'failed') && (
         <Card className={cn(
           "border-blue-500/20 bg-blue-500/5 p-6 mb-6",
-          project.status === 'building' && "border-blue-500/30 bg-blue-500/10",
-          project.status === 'failed' && "border-rose-500/20 bg-rose-500/5"
+          isDeploying && "border-blue-500/30 bg-blue-500/10",
+          (project.deployment_status === 'failed' || project.status === 'failed') && "border-rose-500/20 bg-rose-500/5"
         )}>
           <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
             <div className={cn(
               "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-              project.status === 'building' ? "bg-blue-500/20 text-blue-500" : "bg-rose-500/20 text-rose-500"
+              isDeploying ? "bg-blue-500/20 text-blue-500" : "bg-rose-500/20 text-rose-500"
             )}>
-              {project.status === 'building' ? <Box className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+              {isDeploying ? <Box className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
             </div>
             <div className="flex-1">
               <h3 className={cn(
                 "text-lg font-bold",
-                project.status === 'failed' && "text-rose-500"
+                (project.deployment_status === 'failed' || project.status === 'failed') && "text-rose-500"
               )}>
-                {project.status === 'building' ? t('projectDetail.messages.buildTitle') : t('projectDetail.overview.deployError')}
+                {isDeploying ? t('projectDetail.messages.buildTitle') : t('projectDetail.overview.deployError')}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {project.status === 'building'
+                {isDeploying
                   ? t('projectDetail.messages.buildDesc')
                   : t('projectDetail.messages.failedDesc')}
               </p>
@@ -541,7 +546,7 @@ function StudentProjectDetail() {
                 onClick={() => setActiveTab('build')}
                 className={cn(
                   "gap-2 font-bold uppercase tracking-wider text-[10px]",
-                  project.status === 'building' ? "border-blue-500/30 hover:bg-blue-500/10" : "border-rose-500/30 hover:bg-rose-500/10"
+                  isDeploying ? "border-blue-500/30 hover:bg-blue-500/10" : "border-rose-500/30 hover:bg-rose-500/10"
                 )}
               >
                 <TerminalIcon className="w-3.5 h-3.5" />
@@ -558,6 +563,24 @@ function StudentProjectDetail() {
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
             <StatusIndicator status={project.status} />
+            {project.deployment_status && project.deployment_status !== 'completed' && (
+              <Badge variant="outline" className={cn(
+                "gap-2 py-1 px-3 flex items-center",
+                project.deployment_status === 'failed' ? "text-rose-500 bg-rose-500/10 border-rose-500/20" :
+                project.deployment_status === 'rollback' ? "text-amber-500 bg-amber-500/10 border-amber-500/20" :
+                "text-blue-500 bg-blue-500/10 border-blue-500/20 animate-pulse"
+              )}>
+                <div className={cn(
+                  "w-2 h-2 rounded-full",
+                  project.deployment_status === 'failed' ? "bg-rose-500" :
+                  project.deployment_status === 'rollback' ? "bg-amber-500" :
+                  "bg-blue-500 animate-spin"
+                )} />
+                <span className="text-[10px] uppercase font-bold tracking-wider">
+                  Deployment: {project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
+                </span>
+              </Badge>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <div className="px-3 py-1.5 rounded-lg bg-muted border flex items-center gap-2">
@@ -624,7 +647,8 @@ function StudentProjectDetail() {
           <RedeployButton
             projectId={uid || ''}
             status={project.status}
-            onStarted={() => onActionStarted('queued')}
+            deploymentStatus={project.deployment_status}
+            onStarted={onDeployStarted}
             onSuccess={fetchProject}
           />
           <Button variant="outline" size="icon" onClick={handleDelete} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30">
@@ -977,7 +1001,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} />}
+          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} project={project} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">

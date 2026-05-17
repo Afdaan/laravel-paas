@@ -62,6 +62,24 @@ export interface Project {
   framework?: string;
   language_version?: string;
   custom_domains?: CustomDomain[];
+  deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'provisioning' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
+  deployment_job_id?: string;
+  rollout_container_id?: string;
+  deployment_started_at?: string;
+  deployment_finished_at?: string;
+  deployment_heartbeat_at?: string;
+  deployment_message?: string;
+  deployment_progress?: number;
+  created_at: string;
+}
+
+export interface DeploymentEvent {
+  id: number;
+  project_id: number;
+  sequence_number: number;
+  status: string;
+  step_name: string;
+  message: string;
   created_at: string;
 }
 

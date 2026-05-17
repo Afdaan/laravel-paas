@@ -2,11 +2,17 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "**" ]
+    branches:
+      - "**"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: self-hosted
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -18,76 +24,136 @@ jobs:
         id: filter
         with:
           base: ${{ github.event.before }}
+
           filters: |
+
+            shared:
+              - 'backend/pkg/**'
+              - 'backend/internal/apperr/**'
+              - 'backend/internal/config/**'
+              - 'backend/internal/database/**'
+              - 'backend/internal/infrastructure/**'
+              - 'backend/internal/logger/**'
+              - 'backend/internal/models/**'
+              - 'backend/internal/pkg/**'
+              - 'backend/internal/repositories/**'
+              - 'backend/internal/services/**'
+              - '!backend/internal/services/worker/**'
+
             backend:
               - 'backend/**'
               - '!backend/cmd/worker/**'
               - '!backend/internal/workers/**'
               - '!backend/internal/services/worker/**'
+
             worker:
               - 'backend/cmd/worker/**'
               - 'backend/internal/workers/**'
               - 'backend/internal/services/worker/**'
               - 'docker/worker/**'
+
             frontend:
               - 'frontend/**'
+
             infra:
               - 'scripts/**'
+              - '.github/actions/**'
+
+            ci:
               - '.github/workflows/**'
 
-      - name: Sync codebase to Production
+      - name: Print Change Detection
         run: |
+          echo "shared=${{ steps.filter.outputs.shared }}"
+          echo "backend=${{ steps.filter.outputs.backend }}"
+          echo "worker=${{ steps.filter.outputs.worker }}"
+          echo "frontend=${{ steps.filter.outputs.frontend }}"
+          echo "infra=${{ steps.filter.outputs.infra }}"
+          echo "ci=${{ steps.filter.outputs.ci }}"
+
+      - name: Sync Codebase to Production
+        run: |
+          set -euo pipefail
+
           TARGET_DIR="/opt/laravel-paas"
+
           cd "$TARGET_DIR"
+
           git config --global --add safe.directory "$TARGET_DIR"
+
           git fetch origin
-          git checkout ${{ github.ref_name }}
-          git pull origin ${{ github.ref_name }}
+
+          git checkout "${{ github.ref_name }}"
+          git reset --hard "origin/${{ github.ref_name }}"
 
       - name: Conditional Deployment
         run: |
+          set -euo pipefail
+
           cd /opt/laravel-paas
+
           chmod +x ./scripts/deploy-app.sh
-          
+
+          SHARED="${{ steps.filter.outputs.shared }}"
           BACKEND="${{ steps.filter.outputs.backend }}"
           WORKER="${{ steps.filter.outputs.worker }}"
           FRONTEND="${{ steps.filter.outputs.frontend }}"
           INFRA="${{ steps.filter.outputs.infra }}"
+          CI="${{ steps.filter.outputs.ci }}"
 
-          if [ "$INFRA" == "true" ]; then
-            echo "[CI/CD] Infrastructure changes detected. Deploying ALL to apply configuration."
+          if [ "$INFRA" = "true" ]; then
+            echo "[CI/CD] Infrastructure changes detected. Deploying ALL."
             ./scripts/deploy-app.sh all
-          elif [ "$WORKER" == "true" ]; then
-            echo "[CI/CD] Worker changes detected. Deploying WORKER."
-            ./scripts/deploy-app.sh worker
-          elif [ "$BACKEND" == "true" ] && [ "$FRONTEND" == "true" ]; then
-            echo "[CI/CD] Both source components changed. Deploying ALL."
-            ./scripts/deploy-app.sh all
-          elif [ "$BACKEND" == "true" ]; then
-            echo "[CI/CD] Only Backend source changed. Deploying BACKEND."
+
+          elif [ "$SHARED" = "true" ]; then
+            echo "[CI/CD] Shared backend dependencies changed. Deploying BACKEND + WORKER."
             ./scripts/deploy-app.sh backend
-          elif [ "$FRONTEND" == "true" ]; then
-            echo "[CI/CD] Only Frontend source changed. Deploying FRONTEND."
+            ./scripts/deploy-app.sh worker
+
+          elif [ "$BACKEND" = "true" ] && [ "$WORKER" = "true" ]; then
+            echo "[CI/CD] Backend and Worker changed. Deploying ALL."
+            ./scripts/deploy-app.sh all
+
+          elif [ "$WORKER" = "true" ]; then
+            echo "[CI/CD] Worker changes detected."
+            ./scripts/deploy-app.sh worker
+
+          elif [ "$BACKEND" = "true" ]; then
+            echo "[CI/CD] Backend changes detected."
+            ./scripts/deploy-app.sh backend
+
+          elif [ "$FRONTEND" = "true" ]; then
+            echo "[CI/CD] Frontend changes detected."
             ./scripts/deploy-app.sh frontend
+
+          elif [ "$CI" = "true" ]; then
+            echo "[CI/CD] CI workflow changes only. Skipping deployment."
+
           else
-            echo "[CI/CD] No relevant changes detected. Skipping deployment."
+            echo "[CI/CD] No relevant changes detected."
           fi
 
-      - name: Notification on success
+      - name: Notification on Success
         if: success()
         run: |
           set +x
+
           if [ -f /opt/laravel-paas/.env ]; then
-            set -a; source /opt/laravel-paas/.env; set +a
+            set -a
+            source /opt/laravel-paas/.env
+            set +a
           fi
 
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
             exit 0
           fi
 
           cd /opt/laravel-paas
+
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-          LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+
+          LAST_COMMIT_MSG=$(git log -1 --pretty=format:"%s" \
+            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
 
           MSG="DEPLOY SUCCESS%0A"
           MSG="${MSG}Branch: ${{ github.ref_name }}%0A"
@@ -95,22 +161,34 @@ jobs:
           MSG="${MSG}Log: $LAST_COMMIT_MSG"
 
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+
           IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
+
           for CHAT_ID in "${CHAT_IDS[@]}"; do
-            curl -s -X POST "$TELEGRAM_API" -d chat_id="$CHAT_ID" -d text="$MSG" -d parse_mode="HTML" > /dev/null 2>&1
+            curl -fsS -X POST "$TELEGRAM_API" \
+              -d chat_id="$CHAT_ID" \
+              -d text="$MSG" \
+              -d parse_mode="HTML" \
+              > /dev/null
           done
 
-      - name: Notification on failure
+      - name: Notification on Failure
         if: failure()
         run: |
           set +x
+
           if [ -f /opt/laravel-paas/.env ]; then
-             set -a; source /opt/laravel-paas/.env; set +a
+            set -a
+            source /opt/laravel-paas/.env
+            set +a
           fi
 
-          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then exit 0; fi
-          
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            exit 0
+          fi
+
           cd /opt/laravel-paas
+
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
           MSG="DEPLOY FAILED%0A"
@@ -118,7 +196,13 @@ jobs:
           MSG="${MSG}Commit: $COMMIT_HASH"
 
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+
           IFS=',' read -ra CHAT_IDS <<< "$TELEGRAM_CHAT_ID"
+
           for CHAT_ID in "${CHAT_IDS[@]}"; do
-            curl -s -X POST "$TELEGRAM_API" -d chat_id="$CHAT_ID" -d text="$MSG" -d parse_mode="HTML" > /dev/null 2>&1
+            curl -fsS -X POST "$TELEGRAM_API" \
+              -d chat_id="$CHAT_ID" \
+              -d text="$MSG" \
+              -d parse_mode="HTML" \
+              > /dev/null
           done

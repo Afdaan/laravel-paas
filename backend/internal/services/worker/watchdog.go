@@ -8,7 +8,7 @@
 package worker
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -75,52 +75,55 @@ func (w *CentralWatchdog) Stop() {
 }
 
 func (w *CentralWatchdog) recoverOrphanedBuilds() {
-	statuses := []models.ProjectStatus{
-		models.StatusBuilding,
-		models.StatusQueued,
-		models.StatusPending,
+	statuses := []models.DeploymentStatus{
+		models.DepStatusQueued,
+		models.DepStatusPreparing,
+		models.DepStatusCloning,
+		models.DepStatusBuilding,
+		models.DepStatusProvisioning,
+		models.DepStatusStarting,
+		models.DepStatusHealthchecking,
+		models.DepStatusMigrating,
+		models.DepStatusPromoting,
 	}
 
-	for _, status := range statuses {
-		projects, err := w.projectRepo.ListByStatus(status)
-		if err != nil {
-			slog.Error("Central watchdog: failed to query orphaned projects for recovery", "status", status, "error", err)
+	projects, err := w.projectRepo.ListByDeploymentStatuses(statuses)
+	if err != nil {
+		slog.Error("Central watchdog: failed to query orphaned projects for recovery", "error", err)
+		return
+	}
+
+	if len(projects) == 0 {
+		return
+	}
+
+	slog.Info("Central watchdog: recovering orphaned projects from previous session", "count", len(projects))
+
+	for i := range projects {
+		project := projects[i]
+
+		isQueued, _ := w.redisService.IsProjectQueued(project.ID)
+		if isQueued {
+			slog.Info("Central watchdog: project is already in queue, skipping recovery", "id", project.ID)
 			continue
 		}
 
-		if len(projects) == 0 {
-			continue
+		recoveryLog := "Recovered from unexpected shutdown (re-queued)."
+		if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, "", models.DepStatusQueued, 0, "watchdog_recovery", recoveryLog); err != nil {
+			slog.Error("Central watchdog: failed to transition project deployment state during recovery", "id", project.ID, "error", err)
+		}
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"error_log": recoveryLog,
+		})
+
+		if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
+			slog.Warn("Central watchdog: failed to force release lock during recovery", "id", project.ID, "error", err)
 		}
 
-		slog.Info("Central watchdog: recovering orphaned projects from previous session",
-			"status", status,
-			"count", len(projects))
-
-		for i := range projects {
-			project := projects[i]
-
-			isQueued, _ := w.redisService.IsProjectQueued(project.ID)
-			if isQueued {
-				slog.Info("Central watchdog: project is already in queue, skipping recovery", "id", project.ID)
-				continue
-			}
-
-			project.Status = models.StatusQueued
-			recoveryLog := fmt.Sprintf("Recovered from unexpected shutdown (previous status: %s).", status)
-			project.ErrorLog = &recoveryLog
-			if err := w.projectRepo.Update(&project); err != nil {
-				slog.Error("Central watchdog: failed to update project during recovery", "id", project.ID, "error", err)
-			}
-
-			if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
-				slog.Warn("Central watchdog: failed to force release lock during recovery", "id", project.ID, "error", err)
-			}
-
-			if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
-				slog.Error("Central watchdog: failed to re-queue project during recovery", "id", project.ID, "error", err)
-			} else {
-				slog.Info("Central watchdog: project automatically re-queued for reliability", "id", project.ID)
-			}
+		if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+			slog.Error("Central watchdog: failed to re-queue project during recovery", "id", project.ID, "error", err)
+		} else {
+			slog.Info("Central watchdog: project automatically re-queued for reliability", "id", project.ID)
 		}
 	}
 }
@@ -146,29 +149,6 @@ func (w *CentralWatchdog) recoverOrphanedDeletions() {
 	}
 }
 
-// recordAuditEvent records a deployment event for watchdog actions
-func (w *CentralWatchdog) recordAuditEvent(projectID uint, jobID, eventType, payload string) {
-	event := &models.DeploymentEvent{
-		ProjectID:  projectID,
-		JobID:      jobID,
-		WorkerID:   "central-watchdog",
-		StateFrom:  models.StatusBuilding,
-		StateTo:    models.StatusFailed,
-		EventType:  eventType,
-		Payload:    payload,
-		CreatedAt:  time.Now(),
-	}
-
-	if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
-		slog.Warn("Central watchdog: failed to record audit event to database", "projectId", projectID, "error", err)
-	}
-
-	eventJSON, err := json.Marshal(event)
-	if err == nil {
-		_ = w.redisService.PublishDeploymentEvent(projectID, string(eventJSON))
-	}
-}
-
 // StartStaleBuildWatchdog launches a supervisory loop that detects and cleans up stalled or orphaned deployments.
 func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 	go func() {
@@ -177,17 +157,17 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 		for w.running {
 			staleThreshold := 15 * time.Minute
 
-			inProgressStatuses := []models.ProjectStatus{
-				models.StatusPreparing,
-				models.StatusCloning,
-				models.StatusBuilding,
-				models.StatusProvisioning,
-				models.StatusStarting,
-				models.StatusHealthchecking,
-				models.StatusMigrating,
-				models.StatusPromoting,
+			inProgressStatuses := []models.DeploymentStatus{
+				models.DepStatusPreparing,
+				models.DepStatusCloning,
+				models.DepStatusBuilding,
+				models.DepStatusProvisioning,
+				models.DepStatusStarting,
+				models.DepStatusHealthchecking,
+				models.DepStatusMigrating,
+				models.DepStatusPromoting,
 			}
-			projects, err := w.projectRepo.ListByStatuses(inProgressStatuses)
+			projects, err := w.projectRepo.ListByDeploymentStatuses(inProgressStatuses)
 			if err != nil {
 				slog.Error("Central watchdog: failed to query in-progress projects", "error", err)
 				time.Sleep(5 * time.Minute)
@@ -211,7 +191,9 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 							reason = fmt.Sprintf("deployment job lease heartbeat expired (last heartbeat %s)", time.Since(lastHeartbeat).Round(time.Second))
 						}
 					}
-				} else if time.Since(project.UpdatedAt) > staleThreshold {
+				} else if project.DeploymentHeartbeatAt != nil && time.Since(*project.DeploymentHeartbeatAt) > staleThreshold {
+					reason = fmt.Sprintf("stale deployment timeout (heartbeat %s ago)", time.Since(*project.DeploymentHeartbeatAt).Round(time.Second))
+				} else if project.DeploymentHeartbeatAt == nil && time.Since(project.UpdatedAt) > staleThreshold {
 					reason = "stale deployment timeout (no active lock or lease)"
 				}
 
@@ -223,13 +205,12 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 						"reason", reason)
 
 					errorMsg := fmt.Sprintf("Deployment failed: %s.", reason)
-					project.Status = models.StatusFailed
-					project.ErrorLog = &errorMsg
-					if err := w.projectRepo.Update(&project); err != nil {
-						slog.Error("Central watchdog: failed to update failed project", "id", project.ID, "error", err)
+					if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", errorMsg); err != nil {
+						slog.Error("Central watchdog: failed atomic state transition for failed project deployment", "id", project.ID, "error", err)
 					}
-
-					w.recordAuditEvent(project.ID, jobID, "orphan_recovered", fmt.Sprintf("Recovered orphaned deployment: %s", reason))
+					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+						"error_log": errorMsg,
+					})
 
 					if lockMeta != nil {
 						if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
@@ -237,9 +218,12 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 						}
 					}
 
-					if project.ContainerID != nil && *project.ContainerID != "" {
-						slog.Info("Central watchdog: removing orphaned container instance", "containerId", *project.ContainerID)
-						_ = w.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID)
+					if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
+						slog.Info("Central watchdog: removing orphaned rollout container instance", "containerId", *project.RolloutContainerID)
+						_ = w.dockerService.RemoveContainer(*project.RolloutContainerID, nil)
+						_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+							"rollout_container_id": nil,
+						})
 					}
 				}
 			}

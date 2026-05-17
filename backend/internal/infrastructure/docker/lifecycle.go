@@ -12,7 +12,11 @@ import (
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
-// StartWorkerContainer starts a secondary container for background tasks
+// StartWorkerContainer starts a secondary container for background tasks.
+// Architectural Note on Multi-Tenant Isolation:
+// To prevent noisy-neighbor attacks and privilege escalation across tenant containers,
+// we enforce cgroups v2 resource ceilings (--cpus, --memory), disable swap thrashing (--memory-swap equal to limit),
+// prevent SUID escalation (--security-opt=no-new-privileges:true), and restrict process table exhaustion (--pids-limit=250).
 func (s *DockerService) StartWorkerContainer(project *models.Project, imageName, cpuLimit, memoryLimit string) (string, error) {
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
 	timestamp := time.Now().Unix()
@@ -26,7 +30,17 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--restart", "unless-stopped",
 		"--cpus", cpuLimit,
 		"--memory", memoryLimit,
+		"--memory-swap", memoryLimit,
+		"--security-opt=no-new-privileges:true",
+		"--pids-limit=250",
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+
+		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
+		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
+		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
+		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
+		"--label", "paas.container_role=worker",
+
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
@@ -34,8 +48,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 	}
 
 	// Append custom worker command
-	parts := strings.Fields(project.WorkerCommand)
-	runArgs = append(runArgs, parts...)
+	runArgs = append(runArgs, "sh", "-c", project.WorkerCommand)
 
 	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
 	if err != nil {
@@ -80,6 +93,12 @@ func sanitizeBuildError(stderr string) string {
 	}
 	return strings.Join(kept, "\n")
 }
+// StartExistingImage deploys a primary web container instance for a project.
+// Architectural Note on Multi-Tenant Isolation:
+// Web instances are strictly isolated using cgroups v2 resource quotas (--cpus, --memory),
+// swap disablement (--memory-swap), process table limits (--pids-limit=250),
+// and privilege escalation prevention (--security-opt=no-new-privileges:true). Traefik routing rules
+// enforce strict network ingress isolation.
 func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 
@@ -115,6 +134,9 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
+		"--memory-swap", finalMemory,
+		"--security-opt=no-new-privileges:true",
+		"--pids-limit=250",
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
@@ -186,6 +208,12 @@ func (s *DockerService) RemoveContainer(containerID string, workerContainerID *s
 	return nil
 }
 
+// CleanupLegacyContainers finds and removes any running or stopped containers for a project that do NOT match the current active container IDs.
+// It inspects container metadata labels to enforce a 10-minute grace period protecting in-flight zero-downtime rollouts.
+func (s *DockerService) CleanupLegacyContainers(subdomain string, currentWebID string, currentWorkerID *string) {
+	s.ReconcileContainers(subdomain, currentWebID, currentWorkerID, nil)
+}
+
 // IsContainerHealthy checks if a container is running and healthy
 func (s *DockerService) IsContainerHealthy(containerID string) bool {
 	// Check container status via docker inspect
@@ -241,8 +269,37 @@ func parseMemoryBytes(memStr string) float64 {
 	}
 }
 
-// ExecLaravelCommand runs artisan commands inside container
-// ExecProjectCommand runs commands inside container (artisan for Laravel, shell for others)
+// parseArtisanMigrationCommand deterministically inspects an artisan command string.
+// If the command is an operational database migration or seed command, it enforces non-interactive and force execution flags.
+func parseArtisanMigrationCommand(cmdStr string) string {
+	fields := strings.Fields(cmdStr)
+	if len(fields) == 0 {
+		return cmdStr
+	}
+
+	cmdName := fields[0]
+	isMigration := false
+	switch cmdName {
+	case "migrate", "migrate:fresh", "migrate:refresh", "migrate:rollback", "migrate:reset", "db:seed":
+		isMigration = true
+	}
+
+	if !isMigration {
+		return cmdStr
+	}
+
+	result := cmdStr
+	if !strings.Contains(result, "--no-interaction") && !strings.Contains(result, "-n") {
+		result += " --no-interaction"
+	}
+	if !strings.Contains(result, "--force") {
+		result += " --force"
+	}
+	return result
+}
+
+// ExecProjectCommand runs commands inside container (artisan for Laravel, direct binary execution for others)
+// Tokenized arguments bypass intermediate shells (sh -c) to eliminate command injection vulnerabilities.
 func (s *DockerService) ExecProjectCommand(project *models.Project, command string) (string, error) {
 	containerID := ""
 	if project.ContainerID != nil {
@@ -251,9 +308,6 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 	if containerID == "" {
 		return "", fmt.Errorf("container not running")
 	}
-
-	// Split command string into args to avoiding shell injection
-	args := strings.Fields(command)
 
 	// Determine the best user to run the command
 	// For Laravel (legacy) it's usually www-data
@@ -267,34 +321,15 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 		}
 	}
 
+	parser := utils.NewSecureCommandParser(true)
+
 	// Prepare execution args based on framework
 	var fullArgs []string
 	if project.Framework == "Laravel" {
-		// Determine if we should add --force (for migrate/db:seed)
-		// and always add --no-interaction to prevent hanging
-		baseCmd := ""
-		if len(args) > 0 {
-			baseCmd = args[0]
-		}
-
-		hasNoInteraction := false
-		hasForce := false
-		for _, arg := range args {
-			if arg == "--no-interaction" || arg == "-n" {
-				hasNoInteraction = true
-			}
-			if arg == "--force" {
-				hasForce = true
-			}
-		}
-
-		if !hasNoInteraction {
-			args = append(args, "--no-interaction")
-		}
-
-		// Auto-add --force for commands that usually require it in production
-		if !hasForce && (baseCmd == "migrate" || baseCmd == "db:seed" || strings.HasPrefix(baseCmd, "migrate:")) {
-			args = append(args, "--force")
+		cmdStr := parseArtisanMigrationCommand(command)
+		tokens, err := parser.Tokenize(cmdStr)
+		if err != nil {
+			return "", fmt.Errorf("command security validation failed: %w", err)
 		}
 
 		// Fix permissions as root before running as www-data to avoid "Permission denied" errors in logs/cache
@@ -304,10 +339,16 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 			}
 		}
 
-		fullArgs = append([]string{"exec", "-u", user, containerID, "php", "artisan"}, args...)
+		fullArgs = []string{"exec", "-u", user, containerID, "php", "artisan"}
+		fullArgs = append(fullArgs, tokens...)
 	} else {
-		// For other frameworks (Node.js, Go, etc.), run command directly
-		fullArgs = append([]string{"exec", "-u", user, containerID}, args...)
+		// For other frameworks (Node.js, Go, etc.), tokenize and run command directly
+		tokens, err := parser.Tokenize(command)
+		if err != nil {
+			return "", fmt.Errorf("command security validation failed: %w", err)
+		}
+		fullArgs = []string{"exec", "-u", user, containerID}
+		fullArgs = append(fullArgs, tokens...)
 	}
 
 	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)

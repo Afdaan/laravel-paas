@@ -194,6 +194,7 @@ func Setup(
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
+	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
 	projects.Post("/:id/artisan", middleware.RateLimitArtisan(), projectHandler.RunArtisan)
 	projects.Get("/:id/env", projectHandler.GetEnv)

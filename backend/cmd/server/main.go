@@ -26,6 +26,7 @@ import (
 	domainServicePkg "github.com/laravel-paas/backend/internal/services/domain"
 	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 	"github.com/laravel-paas/backend/internal/services/worker"
+	"github.com/laravel-paas/backend/internal/services/deployment"
 )
 
 func main() {
@@ -83,7 +84,8 @@ func main() {
 	// Initialize Core Services
 	settingService := setting.NewSettingService(settingRepo, redisService)
 	feedbackService := services.NewFeedbackService(feedbackRepo)
-	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService)
+	transitionManager := deployment.NewTransitionManager(db, redisService)
+	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService, transitionManager)
 	userService := services.NewUserService(userRepo, projectService)
 	authService := services.NewAuthService(userRepo, cfg, redisService)
 	databaseService := services.NewDatabaseService(db, cfg)

@@ -14,6 +14,7 @@ import (
 	"github.com/laravel-paas/backend/internal/infrastructure/nginx"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/backend/internal/services/deployment"
 	"github.com/laravel-paas/backend/internal/services/setting"
 )
 
@@ -23,14 +24,15 @@ import (
 // Centralized business logic for project management
 // ===========================================
 type ProjectService struct {
-	cfg            *config.Config
-	projectRepo    repositories.ProjectRepository
-	settingService *setting.SettingService
-	dockerService  *docker.DockerService
-	storageService *infrastructure.StorageService
-	mysqlService   *infrastructure.MySQLService
-	nginxService   *nginx.NginxWebhookService
-	redisService   *infrastructure.RedisService
+	cfg               *config.Config
+	projectRepo       repositories.ProjectRepository
+	settingService    *setting.SettingService
+	dockerService     *docker.DockerService
+	storageService    *infrastructure.StorageService
+	mysqlService      *infrastructure.MySQLService
+	nginxService      *nginx.NginxWebhookService
+	redisService      *infrastructure.RedisService
+	transitionManager deployment.TransitionManager
 }
 
 func validateBaseDirectory(baseDirectory string) error {
@@ -48,6 +50,7 @@ func validateBaseDirectory(baseDirectory string) error {
 	}
 	return nil
 }
+
 func NewProjectService(
 	cfg *config.Config,
 	projectRepo repositories.ProjectRepository,
@@ -56,16 +59,18 @@ func NewProjectService(
 	storageService *infrastructure.StorageService,
 	mysqlService *infrastructure.MySQLService,
 	redisService *infrastructure.RedisService,
+	transitionManager deployment.TransitionManager,
 ) *ProjectService {
 	return &ProjectService{
-		cfg:            cfg,
-		projectRepo:    projectRepo,
-		settingService: settingService,
-		dockerService:  dockerService,
-		storageService: storageService,
-		mysqlService:   mysqlService,
-		nginxService:   nginx.NewNginxWebhookService(cfg),
-		redisService:   redisService,
+		cfg:               cfg,
+		projectRepo:       projectRepo,
+		settingService:    settingService,
+		dockerService:     dockerService,
+		storageService:    storageService,
+		mysqlService:      mysqlService,
+		nginxService:      nginx.NewNginxWebhookService(cfg),
+		redisService:      redisService,
+		transitionManager: transitionManager,
 	}
 }
 
@@ -80,21 +85,16 @@ func (s *ProjectService) UpdateActivity(projectID uint) {
 		now := time.Now()
 		expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
 
-		project, err := s.projectRepo.GetByID(projectID)
-		if err != nil {
-			slog.Error("Failed to fetch project for activity update", "id", projectID, "error", err)
-			return
+		updates := map[string]interface{}{
+			"last_accessed_at": now,
 		}
-
-		project.LastAccessedAt = &now
 		if expiryDays > 0 {
-			expire := now.AddDate(0, 0, expiryDays)
-			project.ExpiresAt = &expire
+			updates["expires_at"] = now.AddDate(0, 0, expiryDays)
 		} else {
-			project.ExpiresAt = nil
+			updates["expires_at"] = nil
 		}
 
-		if err := s.projectRepo.Update(project); err != nil {
+		if err := s.projectRepo.UpdateMetadata(projectID, updates); err != nil {
 			slog.Error("Failed to update project activity", "id", projectID, "error", err)
 		}
 	}()

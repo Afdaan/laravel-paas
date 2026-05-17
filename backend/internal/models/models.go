@@ -48,7 +48,7 @@ type User struct {
 // Project Model
 // ===========================================
 
-// ProjectStatus represents deployment state
+// ProjectStatus represents runtime deployment state
 type ProjectStatus string
 
 const (
@@ -73,6 +73,26 @@ const (
 	StatusRestarting     ProjectStatus = "restarting"
 )
 
+// DeploymentStatus represents deployment execution state
+type DeploymentStatus string
+
+const (
+	DepStatusQueued         DeploymentStatus = "queued"
+	DepStatusPreparing      DeploymentStatus = "preparing"
+	DepStatusCloning        DeploymentStatus = "cloning"
+	DepStatusBuilding       DeploymentStatus = "building"
+	DepStatusProvisioning   DeploymentStatus = "provisioning"
+	DepStatusStarting       DeploymentStatus = "starting"
+	DepStatusHealthchecking DeploymentStatus = "healthchecking"
+	DepStatusMigrating      DeploymentStatus = "migrating"
+	DepStatusPromoting      DeploymentStatus = "promoting"
+	DepStatusCleanup        DeploymentStatus = "cleanup"
+	DepStatusCompleted      DeploymentStatus = "completed"
+	DepStatusFailed         DeploymentStatus = "failed"
+	DepStatusRollback       DeploymentStatus = "rollback"
+	DepStatusCancelled      DeploymentStatus = "cancelled"
+)
+
 // Project represents a deployed Laravel application
 type Project struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
@@ -85,6 +105,14 @@ type Project struct {
 	DatabaseName     string         `gorm:"uniqueIndex;size:100;not null" json:"database_name"`
 	DatabasePassword string         `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
 	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
+	DeploymentStatus DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
+	DeploymentJobID  *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
+	RolloutContainerID *string        `gorm:"size:100" json:"rollout_container_id,omitempty"`
+	DeploymentStartedAt *time.Time    `json:"deployment_started_at,omitempty"`
+	DeploymentFinishedAt *time.Time   `json:"deployment_finished_at,omitempty"`
+	DeploymentHeartbeatAt *time.Time  `json:"deployment_heartbeat_at,omitempty"`
+	DeploymentMessage *string         `gorm:"type:text" json:"deployment_message,omitempty"`
+	DeploymentProgress int            `gorm:"default:0" json:"deployment_progress"`
 	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
 	Port         *int           `json:"port,omitempty"`
 	BaseDirectory string         `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
@@ -248,15 +276,16 @@ type CustomDomain struct {
 
 // DeploymentEvent tracks granular lifecycle transitions and audit events
 type DeploymentEvent struct {
-	ID         uint          `gorm:"primaryKey" json:"id"`
-	ProjectID  uint          `gorm:"not null;index" json:"project_id"`
-	JobID      string        `gorm:"size:100;index" json:"job_id"`
-	WorkerID   string        `gorm:"size:100" json:"worker_id"`
-	StateFrom  ProjectStatus `gorm:"size:50" json:"state_from"`
-	StateTo    ProjectStatus `gorm:"size:50" json:"state_to"`
-	EventType  string        `gorm:"size:100;not null;index" json:"event_type"`
-	Payload    string        `gorm:"type:text" json:"payload"`
-	DurationMs int64         `json:"duration_ms"`
-	Error      string        `gorm:"type:text" json:"error,omitempty"`
-	CreatedAt  time.Time     `gorm:"index" json:"created_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	ProjectID      uint      `gorm:"not null;index" json:"project_id"`
+	JobID          string    `gorm:"size:100;index" json:"job_id"`
+	SequenceNumber int       `gorm:"not null;default:0;index" json:"sequence_number"`
+	WorkerID       string    `gorm:"size:100" json:"worker_id"`
+	StateFrom      string    `gorm:"size:50" json:"state_from"`
+	StateTo        string    `gorm:"size:50" json:"state_to"`
+	EventType      string    `gorm:"size:100;not null;index" json:"event_type"`
+	Payload        string    `gorm:"type:text" json:"payload"`
+	DurationMs     int64     `json:"duration_ms"`
+	Error          string    `gorm:"type:text" json:"error,omitempty"`
+	CreatedAt      time.Time `gorm:"index" json:"created_at"`
 }

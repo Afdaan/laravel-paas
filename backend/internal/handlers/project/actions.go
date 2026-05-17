@@ -67,8 +67,8 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
-	if err := h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued); err != nil {
-		slog.Warn("Failed to update project status to queued", "id", project.ID, "error", err)
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, ""); err != nil {
+		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
 	}
 	h.projectService.UpdateActivity(project.ID)
 

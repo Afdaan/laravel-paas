@@ -43,3 +43,42 @@ func IsValidTransition(from, to ProjectStatus) bool {
 
 	return false
 }
+
+// IsValidDeploymentTransition enforces valid deterministic progressions for deployment execution status.
+func IsValidDeploymentTransition(from, to DeploymentStatus) bool {
+	if from == to {
+		return true
+	}
+
+	// Unconditional terminal or interrupt transitions
+	if to == DepStatusFailed || to == DepStatusCancelled || to == DepStatusRollback {
+		return true
+	}
+
+	switch from {
+	case DepStatusCompleted, DepStatusFailed, DepStatusCancelled, DepStatusRollback:
+		return to == DepStatusQueued || to == DepStatusPreparing
+	case DepStatusQueued:
+		return to == DepStatusPreparing
+	case DepStatusPreparing:
+		return to == DepStatusCloning || to == DepStatusBuilding
+	case DepStatusCloning:
+		return to == DepStatusBuilding
+	case DepStatusBuilding:
+		return to == DepStatusProvisioning || to == DepStatusStarting || to == DepStatusHealthchecking
+	case DepStatusProvisioning:
+		return to == DepStatusStarting || to == DepStatusHealthchecking
+	case DepStatusStarting:
+		return to == DepStatusHealthchecking
+	case DepStatusHealthchecking:
+		return to == DepStatusMigrating || to == DepStatusPromoting || to == DepStatusRollback
+	case DepStatusMigrating:
+		return to == DepStatusPromoting || to == DepStatusRollback
+	case DepStatusPromoting:
+		return to == DepStatusCleanup || to == DepStatusCompleted
+	case DepStatusCleanup:
+		return to == DepStatusCompleted
+	}
+
+	return false
+}

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -150,6 +151,10 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 		return err
 	}
 
+	_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"rollout_container_id": newID,
+	})
+
 	isHealthy := false
 	maxWait := 30
 	for i := 0; i < maxWait; i++ {
@@ -162,18 +167,22 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 
 	if !isHealthy {
 		slog.Error("New container failed health check, rolling back", "subdomain", project.Subdomain, "newID", newID)
-		
+
 		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
 		}
+		_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"rollout_container_id": nil,
+		})
 
 		return fmt.Errorf("recreation failed: new container is unhealthy")
 	}
 
-	project.ContainerID = &newID
-	if err := s.projectRepo.Update(project); err != nil {
-		slog.Warn("Failed to update container metadata", "id", project.ID, "error", err)
+	if err := s.PromoteRolloutContainer(project.ID, newID); err != nil {
+		slog.Error("Failed to promote rollout container during recreation", "id", project.ID, "error", err)
 	}
+	project.ContainerID = &newID
+	project.RolloutContainerID = nil
 
 	time.Sleep(2 * time.Second)
 
@@ -184,6 +193,8 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 	if err := s.dockerService.RemoveContainer(oldWebID, oldWorkerID); err != nil {
 		slog.Warn("Failed to remove old containers after successful swap", "error", err)
 	}
+
+	s.dockerService.CleanupLegacyContainers(project.Subdomain, newID, project.WorkerContainerID)
 
 	return nil
 }
@@ -261,7 +272,8 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 		BuildCommand:     sanitizeCommand(buildCommand),
 		StartCommand:     strings.TrimSpace(startCommand),
 		QueueEnabled:     queueEnabled,
-		Status:           models.StatusQueued,
+		Status:           models.StatusPending,
+		DeploymentStatus: models.DepStatusQueued,
 		ExpiresAt:        expiresAt,
 		UID:              utils.GenerateRandomUID(),
 	}
@@ -320,6 +332,37 @@ func (s *ProjectService) UpdateProjectStatus(id uint, status models.ProjectStatu
 	return s.projectRepo.UpdateStatus(id, status)
 }
 
+// TransitionDeploymentState delegates status updates to the centralized atomic transition manager
+func (s *ProjectService) TransitionDeploymentState(ctx context.Context, projectID uint, jobID string, nextState models.DeploymentStatus, progress int, eventType, payload string) (*models.Project, error) {
+	if s.transitionManager == nil {
+		return nil, fmt.Errorf("transition manager not initialized")
+	}
+	project, err := s.transitionManager.TransitionState(ctx, projectID, jobID, nextState, progress, eventType, payload)
+	if err == nil && project != nil {
+		if cacheErr := s.InvalidateSubdomainCache(project.Subdomain); cacheErr != nil {
+			slog.Warn("Failed to invalidate subdomain cache after atomic deployment state transition", "subdomain", project.Subdomain, "error", cacheErr)
+		}
+	}
+	return project, err
+}
+
+// UpdateDeploymentStatus updates the deployment execution status of a project and clears cache
+func (s *ProjectService) UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error {
+	_, err := s.TransitionDeploymentState(context.Background(), id, jobID, status, progress, "system_update", message)
+	return err
+}
+
+// PromoteRolloutContainer promotes the in-flight container to active and clears cache
+func (s *ProjectService) PromoteRolloutContainer(id uint, newContainerID string) error {
+	project, err := s.projectRepo.GetByID(id)
+	if err == nil {
+		if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate subdomain cache after promotion", "subdomain", project.Subdomain, "error", err)
+		}
+	}
+	return s.projectRepo.PromoteRolloutContainer(id, newContainerID)
+}
+
 // GetProjectsByStatus returns projects matching a specific status
 func (s *ProjectService) GetProjectsByStatus(status models.ProjectStatus) ([]models.Project, error) {
 	projects, err := s.projectRepo.ListByStatus(status)
@@ -353,4 +396,9 @@ func (s *ProjectService) GetRunningCount() (int64, error) {
 // GetRunningProjectsWithContainers returns projects that have containers
 func (s *ProjectService) GetRunningProjectsWithContainers() ([]models.Project, error) {
 	return s.projectRepo.GetRunningWithContainers()
+}
+
+// GetDeploymentEvents returns the timeline of deployment events for a project
+func (s *ProjectService) GetDeploymentEvents(projectID uint) ([]models.DeploymentEvent, error) {
+	return s.projectRepo.ListDeploymentEventsByProjectID(projectID)
 }

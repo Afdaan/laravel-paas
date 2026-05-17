@@ -47,6 +47,9 @@ type DeploymentWorker struct {
 	running  bool
 	stopChan chan struct{}
 	wg       sync.WaitGroup
+
+	seqMutex     sync.Mutex
+	jobSequences map[string]int
 }
 
 // NewDeploymentWorker creates a new deployment worker
@@ -74,6 +77,7 @@ func NewDeploymentWorker(
 		settingService: settingService,
 		running:        false,
 		stopChan:       make(chan struct{}),
+		jobSequences:   make(map[string]int),
 	}
 }
 
@@ -264,6 +268,8 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_acquired", fmt.Sprintf("Acquired 2m lease for job %s on worker %s", job.JobID, workerID))
 	}
 
+	defer w.cleanupJobTracking(job.JobID)
+
 	// Ensure lease is cleanly released on any exit
 	defer func() {
 		if err := w.redisService.ReleaseDeploymentLease(job.JobID, workerID); err != nil {
@@ -327,6 +333,9 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 				} else {
 					w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_renewed", fmt.Sprintf("Renewed 2m lease for job %s", job.JobID))
 				}
+				if err := w.projectRepo.UpdateDeploymentHeartbeat(job.ProjectID); err != nil {
+					slog.Warn("Failed to update deployment heartbeat in database", "projectId", job.ProjectID, "error", err)
+				}
 			case <-stopHeartbeat:
 				return
 			case <-ctx.Done():
@@ -375,9 +384,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Warn("Instant update failed, falling back to full deployment", "subdomain", project.Subdomain)
 	}
 
-	w.transitionState(project, job.JobID, models.StatusPreparing, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
 	project.ErrorLog = nil
-	_ = w.projectRepo.Update(project)
+	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"error_log": nil,
+	})
 
 	projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
 	buildLogPath := filepath.Join(projectPath, "build.log")
@@ -397,14 +408,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		checkImg, _ := exec.Command("docker", "image", "inspect", imageName).Output()
 		if len(checkImg) > 0 {
 			slog.Info("Valid image found, skipping build", "subdomain", project.Subdomain)
-			w.transitionState(project, job.JobID, models.StatusRunning, "deployment_skipped_existing_image", latestHash)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_skipped_existing_image", latestHash)
 			if err := w.redeployExistingImage(project); err == nil {
 				return
 			}
 		}
 	}
 
-	w.transitionState(project, job.JobID, models.StatusCloning, "cloning_repository", project.GithubURL)
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusCloning, 20, "cloning_repository", project.GithubURL)
 
 	var cloneHash string
 	var cloneErr error
@@ -421,7 +432,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		defer wg.Done()
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
-			if err := w.projectRepo.Update(project); err != nil {
+			if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"database_password": project.DatabasePassword,
+			}); err != nil {
 				slog.Warn("Failed to save database password", "id", project.ID, "error", err)
 			}
 		}
@@ -440,13 +453,15 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	project.LastCommitHash = cloneHash
-	if err := w.projectRepo.Update(project); err != nil {
+	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"last_commit_hash": cloneHash,
+	}); err != nil {
 		slog.Warn("Failed to update commit hash", "id", project.ID, "error", err)
 	}
 
 	_ = w.redisService.SetIdempotency(project.ID, cloneHash, project.Subdomain, job.Type)
 
-	w.transitionState(project, job.JobID, models.StatusBuilding, "building_image", fmt.Sprintf("Commit %s", cloneHash))
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusBuilding, 35, "building_image", fmt.Sprintf("Commit %s", cloneHash))
 
 	buildPath := w.dockerService.ResolveBuildPath(projectPath, project.BaseDirectory)
 
@@ -514,7 +529,22 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
-	if err := w.projectRepo.Update(project); err != nil {
+	updates := map[string]interface{}{
+		"framework": project.Framework,
+	}
+	if project.LanguageVersion != "" {
+		updates["language_version"] = project.LanguageVersion
+	}
+	if project.NodeVersion != "" {
+		updates["node_version"] = project.NodeVersion
+	}
+	if project.PHPVersion != "" {
+		updates["php_version"] = project.PHPVersion
+	}
+	if project.LaravelVersion != "" {
+		updates["laravel_version"] = project.LaravelVersion
+	}
+	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
 		slog.Warn("Failed to update project metadata", "id", project.ID, "error", err)
 	}
 
@@ -551,14 +581,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		_ = w.redisService.PublishBuildLog(project.ID, msg)
 	}
 
-	w.transitionState(project, job.JobID, models.StatusStarting, "starting_container", "Building and launching new container instance")
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Building and launching new container instance")
 
 	newContainerID, err := w.dockerService.BuildAndRun(ctx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy")
 	if err != nil {
 		docker.GetCircuitBreaker().RecordFailure()
 		if ctx.Err() == context.Canceled {
 			appendLog("ERROR: Deployment cancelled by user request.")
-			w.transitionState(project, job.JobID, models.StatusCancelled, "deployment_cancelled", "User requested cancellation")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCancelled, project.DeploymentProgress, "deployment_cancelled", "User requested cancellation")
 			w.updateProjectError(project, job.JobID, "Deployment cancelled by user.")
 			return
 		}
@@ -568,18 +598,26 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	docker.GetCircuitBreaker().RecordSuccess()
 
+	project.RolloutContainerID = &newContainerID
+	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"rollout_container_id": newContainerID,
+	})
+
 	appendLog("Starting application container and verifying advanced health check probe...")
-	w.transitionState(project, job.JobID, models.StatusHealthchecking, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
 	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Deployment failed: " + err.Error() + ". Rolling back.")
 
-		w.transitionState(project, job.JobID, models.StatusRollback, "deployment_rollback", "Healthcheck failed, keeping old version active")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Healthcheck failed, keeping old version active")
 
 		if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy deployment", "id", newContainerID, "error", err)
 		}
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"rollout_container_id": nil,
+		})
 
 		w.updateProjectError(project, job.JobID, "Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
@@ -589,27 +627,33 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if ctx.Err() == context.Canceled {
 			slog.Info("Deployment cancelled before migrations, rolling back", "subdomain", project.Subdomain)
 			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
-			w.transitionState(project, job.JobID, models.StatusRollback, "deployment_rollback", "Cancelled before migration")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
 			_ = w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID)
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id": nil,
+			})
 			w.updateProjectError(project, job.JobID, "Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
-		w.transitionState(project, job.JobID, models.StatusMigrating, "running_migrations", "Executing artisan migrate --force")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force")
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
 		appendLog("Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
 			appendLog("ERROR: Migrations failed:\n" + output)
-			w.transitionState(project, job.JobID, models.StatusRollback, "deployment_rollback", "Migrations failed")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
 			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
 			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id": nil,
+			})
 			w.updateProjectError(project, job.JobID, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
 			return
 		}
 	}
 
-	w.transitionState(project, job.JobID, models.StatusPromoting, "promoting_release", "Syncing routing traffic to new container instance")
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusPromoting, 85, "promoting_release", "Syncing routing traffic to new container instance")
 	appendLog("Deployment completed successfully! System is now live.")
 
 	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
@@ -620,13 +664,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
 	}
 
+	if err := w.projectService.PromoteRolloutContainer(project.ID, newContainerID); err != nil {
+		slog.Error("Failed to promote rollout container", "id", project.ID, "error", err)
+	}
 	project.Status = models.StatusRunning
 	project.ContainerID = &newContainerID
-	if err := w.projectRepo.Update(project); err != nil {
-		slog.Error("Failed to update project status", "id", project.ID, "error", err)
-	}
+	project.RolloutContainerID = nil
 
-	w.transitionState(project, job.JobID, models.StatusCompleted, "deployment_completed", "Release successfully promoted and live")
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live")
 
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
@@ -637,14 +682,15 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if oldContainerID != nil {
-		w.transitionState(project, job.JobID, models.StatusCleanup, "cleaning_legacy_instance", *oldContainerID)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 100, "cleaning_legacy_instance", *oldContainerID)
 		slog.Info("Cleaning up legacy instance", "subdomain", project.Subdomain)
 		time.Sleep(2 * time.Second)
 		if err := w.dockerService.RemoveContainer(*oldContainerID, oldWorkerContainerID); err != nil {
 			slog.Warn("Failed to remove legacy container", "id", *oldContainerID, "error", err)
 		}
-		w.transitionState(project, job.JobID, models.StatusRunning, "running", "Project fully active and legacy containers purged")
 	}
+
+	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
 	go func() {
 		utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
@@ -653,57 +699,44 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 }
 
 
-// transitionState validates and transitions the project status while recording a structured event audit trail
-func (w *DeploymentWorker) transitionState(project *models.Project, jobID string, nextState models.ProjectStatus, eventType, payload string) {
-	prevState := project.Status
-	if !models.IsValidTransition(prevState, nextState) {
-		slog.Warn("Invalid state transition attempted", "projectId", project.ID, "from", prevState, "to", nextState)
+// cleanupJobTracking safely removes sequence tracking state for a completed or terminated job to prevent memory leaks.
+func (w *DeploymentWorker) cleanupJobTracking(jobID string) {
+	w.seqMutex.Lock()
+	defer w.seqMutex.Unlock()
+	delete(w.jobSequences, jobID)
+}
+
+// transitionDeploymentState validates and transitions the deployment status while recording a structured event audit trail
+func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jobID string, nextState models.DeploymentStatus, progress int, eventType, payload string) {
+	updatedProject, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, nextState, progress, eventType, payload)
+	if err != nil {
+		slog.Warn("Failed atomic deployment state transition", "projectId", project.ID, "nextState", nextState, "error", err)
 		return
 	}
-
-	project.Status = nextState
-	if err := w.projectRepo.Update(project); err != nil {
-		slog.Error("Failed to update project status in state machine", "id", project.ID, "error", err)
-	}
-
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "worker-node"
-	}
-	workerID := fmt.Sprintf("worker-%s", hostname)
-
-	event := &models.DeploymentEvent{
-		ProjectID:  project.ID,
-		JobID:      jobID,
-		WorkerID:   workerID,
-		StateFrom:  prevState,
-		StateTo:    nextState,
-		EventType:  eventType,
-		Payload:    payload,
-		CreatedAt:  time.Now(),
-	}
-
-	if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
-		slog.Warn("Failed to record deployment event to database", "projectId", project.ID, "error", err)
-	}
-
-	eventJSON, err := json.Marshal(event)
-	if err == nil {
-		_ = w.redisService.PublishDeploymentEvent(project.ID, string(eventJSON))
+	if updatedProject != nil {
+		project.DeploymentStatus = updatedProject.DeploymentStatus
+		project.DeploymentProgress = updatedProject.DeploymentProgress
+		project.DeploymentMessage = updatedProject.DeploymentMessage
 	}
 }
 
 // recordAuditLog records a deployment event without altering the project status
 func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, eventType, payload string) {
+	w.seqMutex.Lock()
+	seq := w.jobSequences[jobID] + 1
+	w.jobSequences[jobID] = seq
+	w.seqMutex.Unlock()
+
 	event := &models.DeploymentEvent{
-		ProjectID:  projectID,
-		JobID:      jobID,
-		WorkerID:   workerID,
-		StateFrom:  models.StatusBuilding,
-		StateTo:    models.StatusBuilding,
-		EventType:  eventType,
-		Payload:    payload,
-		CreatedAt:  time.Now(),
+		ProjectID:      projectID,
+		JobID:          jobID,
+		SequenceNumber: seq,
+		WorkerID:       workerID,
+		StateFrom:      string(models.DepStatusBuilding),
+		StateTo:        string(models.DepStatusBuilding),
+		EventType:      eventType,
+		Payload:        payload,
+		CreatedAt:      time.Now(),
 	}
 
 	if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
@@ -716,13 +749,21 @@ func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, event
 	}
 }
 
-// updateProjectError sets project status to failed
+// updateProjectError sets project deployment status to failed
 func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID string, errorMsg string) {
-	w.transitionState(project, jobID, models.StatusFailed, "deployment_failed", errorMsg)
+	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", errorMsg)
 	msg := errorMsg
 	project.ErrorLog = &msg
-	if err := w.projectRepo.Update(project); err != nil {
-		slog.Error("Failed to update project status on error", "id", project.ID, "error", err)
+	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"error_log": msg,
+	}); err != nil {
+		slog.Error("Failed to update project error log on error", "id", project.ID, "error", err)
+	}
+	if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
+		_ = w.dockerService.RemoveContainer(*project.RolloutContainerID, nil)
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"rollout_container_id": nil,
+		})
 	}
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache on error", "subdomain", project.Subdomain, "error", err)

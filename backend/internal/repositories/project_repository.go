@@ -23,6 +23,7 @@ type ProjectRepository interface {
 	Create(project *models.Project) error
 	Update(project *models.Project) error
 	UpdateStatus(id uint, status models.ProjectStatus) error
+	UpdateMetadata(id uint, updates map[string]interface{}) error
 	Delete(id uint) error
 	UpdateActivity(id uint) error
 	CountTotal() (int64, error)
@@ -30,6 +31,11 @@ type ProjectRepository interface {
 	CountRunning() (int64, error)
 	GetRunningWithContainers() ([]models.Project, error)
 	RecordDeploymentEvent(event *models.DeploymentEvent) error
+	ListDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error)
+	ListByDeploymentStatuses(statuses []models.DeploymentStatus) ([]models.Project, error)
+	UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error
+	UpdateDeploymentHeartbeat(id uint) error
+	PromoteRolloutContainer(id uint, newContainerID string) error
 }
 
 type projectRepository struct {
@@ -67,62 +73,60 @@ func (r *projectRepository) GetBySubdomain(subdomain string) (*models.Project, e
 func (r *projectRepository) List(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
 	var projects []models.Project
 	var total int64
-	offset := (page - 1) * limit
 
-	query := r.db.Model(&models.Project{}).Preload("User").Preload("CustomDomains")
+	query := r.db.Model(&models.Project{})
 
-	if userID != 0 {
+	if userID > 0 {
 		query = query.Where("user_id = ?", userID)
 	}
-
-	if status != "" {
+	if status != "" && status != "all" {
 		query = query.Where("status = ?", status)
 	}
-
 	if search != "" {
 		query = query.Where("name LIKE ? OR subdomain LIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
 	query.Count(&total)
 
-	err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&projects).Error
+	offset := (page - 1) * limit
+	err := query.Preload("User").Preload("CustomDomains").Order("created_at DESC").Offset(offset).Limit(limit).Find(&projects).Error
+
 	return projects, total, err
 }
 
 func (r *projectRepository) ListByUserID(userID uint) ([]models.Project, error) {
 	var projects []models.Project
-	if err := r.db.Preload("CustomDomains").Where("user_id = ?", userID).Order("created_at DESC").Find(&projects).Error; err != nil {
-		return nil, err
-	}
-	return projects, nil
+	err := r.db.Preload("CustomDomains").Where("user_id = ?", userID).Order("created_at DESC").Find(&projects).Error
+	return projects, err
 }
 
 func (r *projectRepository) ListAll() ([]models.Project, error) {
 	var projects []models.Project
-	if err := r.db.Preload("User").Preload("CustomDomains").Order("created_at DESC").Find(&projects).Error; err != nil {
-		return nil, err
-	}
-	return projects, nil
+	err := r.db.Preload("User").Preload("CustomDomains").Order("created_at DESC").Find(&projects).Error
+	return projects, err
 }
 
-// ListExpired returns projects whose expiry date has passed
 func (r *projectRepository) ListExpired() ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Preload("CustomDomains").Where("expires_at IS NOT NULL AND expires_at < NOW()").Find(&projects).Error
+	err := r.db.Where("expires_at IS NOT NULL AND expires_at < NOW() AND status != ?", models.StatusStopped).Find(&projects).Error
 	return projects, err
 }
 
-// ListByStatus returns projects matching a specific status
 func (r *projectRepository) ListByStatus(status models.ProjectStatus) ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Preload("CustomDomains").Where("status = ?", status).Find(&projects).Error
+	err := r.db.Preload("CustomDomains").Where("status = ?", status).Find(&projects).Error
 	return projects, err
 }
 
-// ListByStatuses returns projects matching any of the given statuses
 func (r *projectRepository) ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Preload("CustomDomains").Where("status IN ?", statuses).Find(&projects).Error
+	err := r.db.Preload("CustomDomains").Where("status IN ?", statuses).Find(&projects).Error
+	return projects, err
+}
+
+func (r *projectRepository) ListByDeploymentStatuses(statuses []models.DeploymentStatus) ([]models.Project, error) {
+	var projects []models.Project
+	err := r.db.Preload("CustomDomains").Where("deployment_status IN ?", statuses).Find(&projects).Error
 	return projects, err
 }
 
@@ -136,6 +140,10 @@ func (r *projectRepository) Update(project *models.Project) error {
 
 func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) error {
 	return r.db.Model(&models.Project{}).Where("id = ?", id).Update("status", status).Error
+}
+
+func (r *projectRepository) UpdateMetadata(id uint, updates map[string]interface{}) error {
+	return r.db.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
 }
 
 func (r *projectRepository) Delete(id uint) error {
@@ -172,4 +180,50 @@ func (r *projectRepository) GetRunningWithContainers() ([]models.Project, error)
 
 func (r *projectRepository) RecordDeploymentEvent(event *models.DeploymentEvent) error {
 	return r.db.Create(event).Error
+}
+
+func (r *projectRepository) ListDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error) {
+	var events []models.DeploymentEvent
+	err := r.db.Where("project_id = ?", projectID).Order("sequence_number ASC, created_at ASC").Find(&events).Error
+	return events, err
+}
+
+func (r *projectRepository) UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error {
+	updates := map[string]interface{}{
+		"deployment_status": status,
+		"deployment_message": message,
+		"deployment_progress": progress,
+		"deployment_heartbeat_at": gorm.Expr("NOW()"),
+	}
+	if jobID != "" {
+		updates["deployment_job_id"] = jobID
+	}
+	if status == models.DepStatusPreparing || status == models.DepStatusQueued {
+		updates["deployment_started_at"] = gorm.Expr("NOW()")
+	}
+	if status == models.DepStatusCompleted || status == models.DepStatusFailed || status == models.DepStatusRollback || status == models.DepStatusCancelled {
+		updates["deployment_finished_at"] = gorm.Expr("NOW()")
+	}
+	return r.db.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (r *projectRepository) PromoteRolloutContainer(id uint, newContainerID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"container_id": &newContainerID,
+			"rollout_container_id": nil,
+			"status": models.StatusRunning,
+			"deployment_status": models.DepStatusCompleted,
+			"deployment_message": "Release successfully promoted and active",
+			"deployment_progress": 100,
+			"deployment_finished_at": gorm.Expr("NOW()"),
+		}
+		return tx.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
+	})
+}
+
+// UpdateDeploymentHeartbeat updates the deployment lease timestamp in the database.
+// Executing this query independently isolates the heartbeat loop from concurrent mutations on the project model.
+func (r *projectRepository) UpdateDeploymentHeartbeat(id uint) error {
+	return r.db.Model(&models.Project{}).Where("id = ?", id).Update("deployment_heartbeat_at", gorm.Expr("NOW()")).Error
 }

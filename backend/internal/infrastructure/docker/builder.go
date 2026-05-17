@@ -134,6 +134,12 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 
+		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
+		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
+		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
+		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
+		"--label", "paas.container_role=web",
+
 		// Standard Volume Mapping
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
@@ -148,8 +154,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		if project.Framework == "Laravel" && !strings.HasPrefix(cmdStr, "php ") && !strings.HasPrefix(cmdStr, "/usr/bin/") && !strings.HasPrefix(cmdStr, "sh ") && !strings.HasPrefix(cmdStr, "bash ") && !strings.HasPrefix(cmdStr, "npm ") && !strings.HasPrefix(cmdStr, "bun ") {
 			cmdStr = "php artisan " + cmdStr
 		}
-		parts := strings.Fields(cmdStr)
-		runArgs = append(runArgs, parts...)
+		runArgs = append(runArgs, "sh", "-c", cmdStr)
 	}
 
 	res, runErr := utils.RunCtx(ctx, 1*time.Minute, "docker", runArgs...)
