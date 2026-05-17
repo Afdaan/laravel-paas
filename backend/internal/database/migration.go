@@ -31,7 +31,13 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	// 2. Log startup schema state (detected indexes & constraints).
 	logStartupSchemaState(db)
 
-	// 3. Run explicit, ordered AutoMigrate for models.
+	// 3. Promote historical unique indexes to table constraints before AutoMigrate.
+	// This prevents GORM from throwing SQLSTATE 42704 ("constraint does not exist") when checking historical schemas.
+	if err := EnsureUniqueIndexesAreConstraints(db); err != nil {
+		slog.Warn("Failed during unique index promotion", "error", err)
+	}
+
+	// 4. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
 		&models.Project{},
@@ -51,7 +57,7 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		}
 	}
 
-	// 4. Post-migration Safe Schema Reconciliation using exact historical names.
+	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
 	}
@@ -105,6 +111,63 @@ func hasIndexSafe(db *gorm.DB, model interface{}, indexName string) bool {
 		return count > 0
 	}
 	return db.Migrator().HasIndex(model, indexName)
+}
+
+// EnsureUniqueIndexesAreConstraints detects if historical unique indexes exist in PostgreSQL
+// without corresponding table constraints in pg_constraint. If so, it promotes the index to a table constraint
+// (via ALTER TABLE ... ADD CONSTRAINT ... UNIQUE USING INDEX ...) before AutoMigrate runs.
+// This prevents GORM from throwing SQLSTATE 42704 ("constraint does not exist") when inspecting historical schemas.
+func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return nil
+	}
+
+	uniqueDefs := []struct {
+		table string
+		name  string
+	}{
+		{"users", "uni_users_email"},
+		{"projects", "uni_projects_subdomain"},
+		{"projects", "uni_projects_database_name"},
+		{"projects", "uni_projects_uid"},
+		{"settings", "idx_settings_key"},
+		{"custom_domains", "uni_custom_domains_domain"},
+	}
+
+	for _, def := range uniqueDefs {
+		// Check if constraint exists in pg_constraint
+		var conCount int64
+		_ = db.Raw(`
+			SELECT count(1) 
+			FROM pg_constraint c
+			JOIN pg_class t ON t.oid = c.conrelid
+			WHERE t.relname = ? AND c.conname = ?;
+		`, def.table, def.name).Scan(&conCount)
+
+		if conCount > 0 {
+			continue
+		}
+
+		// Check if index exists in pg_class/pg_index
+		var idxCount int64
+		_ = db.Raw(`
+			SELECT count(1)
+			FROM pg_class c
+			JOIN pg_index i ON i.indexrelid = c.oid
+			JOIN pg_class t ON t.oid = i.indrelid
+			WHERE t.relname = ? AND c.relname = ?;
+		`, def.table, def.name).Scan(&idxCount)
+
+		if idxCount > 0 {
+			slog.Info("Promoting existing unique index to table constraint to satisfy GORM AutoMigrate", "table", def.table, "name", def.name)
+			sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE USING INDEX %s;", def.table, def.name, def.name)
+			if err := db.Exec(sql).Error; err != nil {
+				slog.Warn("Failed to promote unique index to constraint", "table", def.table, "name", def.name, "error", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // ReconcileSchemas performs safe, non-destructive reconciliation of missing indexes and unique constraints
