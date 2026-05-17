@@ -28,7 +28,6 @@ jobs:
           filters: |
 
             shared:
-              - 'backend/pkg/**'
               - 'backend/internal/apperr/**'
               - 'backend/internal/config/**'
               - 'backend/internal/database/**'
@@ -37,14 +36,17 @@ jobs:
               - 'backend/internal/models/**'
               - 'backend/internal/pkg/**'
               - 'backend/internal/repositories/**'
-              - 'backend/internal/services/**'
-              - '!backend/internal/services/worker/**'
+              - 'backend/internal/services/*.go'
+              - 'backend/internal/services/deployment/**'
+              - 'backend/internal/services/domain/**'
+              - 'backend/internal/services/project/**'
+              - 'backend/internal/services/setting/**'
 
             backend:
-              - 'backend/**'
-              - '!backend/cmd/worker/**'
-              - '!backend/internal/workers/**'
-              - '!backend/internal/services/worker/**'
+              - 'backend/cmd/server/**'
+              - 'backend/internal/handlers/**'
+              - 'backend/internal/middleware/**'
+              - 'backend/internal/routes/**'
 
             worker:
               - 'backend/cmd/worker/**'
