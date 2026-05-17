@@ -207,9 +207,9 @@ func (r *projectRepository) ListDeploymentEventsByProjectID(projectID uint) ([]m
 
 func (r *projectRepository) UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error {
 	updates := map[string]interface{}{
-		"deployment_status": status,
-		"deployment_message": message,
-		"deployment_progress": progress,
+		"deployment_status":       status,
+		"deployment_message":      message,
+		"deployment_progress":     progress,
 		"deployment_heartbeat_at": gorm.Expr("NOW()"),
 	}
 	if jobID != "" {
@@ -227,12 +227,12 @@ func (r *projectRepository) UpdateDeploymentStatus(id uint, status models.Deploy
 func (r *projectRepository) PromoteRolloutContainer(id uint, newContainerID string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
-			"container_id": &newContainerID,
-			"rollout_container_id": nil,
-			"status": models.StatusRunning,
-			"deployment_status": models.DepStatusCompleted,
-			"deployment_message": "Release successfully promoted and active",
-			"deployment_progress": 100,
+			"container_id":           &newContainerID,
+			"rollout_container_id":   nil,
+			"status":                 models.StatusRunning,
+			"deployment_status":      models.DepStatusCompleted,
+			"deployment_message":     "Release successfully promoted and active",
+			"deployment_progress":    100,
 			"deployment_finished_at": gorm.Expr("NOW()"),
 		}
 		return tx.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error

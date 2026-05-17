@@ -31,9 +31,9 @@ type MetricsCollector struct {
 	reconciliationDriftTotal int64
 
 	// Lease / Locking
-	leaseOwnershipLossTotal     int64
-	leaseRenewalFailuresTotal   int64
-	lockContentionTotal         int64
+	leaseOwnershipLossTotal   int64
+	leaseRenewalFailuresTotal int64
+	lockContentionTotal       int64
 
 	// SSL Lifecycle
 	sslIssueDurationSeconds SumCount
@@ -48,16 +48,16 @@ type MetricsCollector struct {
 	nginxReloadDurationSeconds SumCount
 
 	// SSE / Streaming
-	sseConnectionsTotal    int64
-	sseActiveConnections   int64
-	sseReplayTotal         int64
-	sseOverflowTotal       int64
-	sseDisconnectTotal     int64
+	sseConnectionsTotal  int64
+	sseActiveConnections int64
+	sseReplayTotal       int64
+	sseOverflowTotal     int64
+	sseDisconnectTotal   int64
 
 	// Cleanup
-	cleanupRetriesTotal             int64
+	cleanupRetriesTotal            int64
 	cleanupRecoveredResourcesTotal int64
-	orphanResourcesTotal            int64
+	orphanResourcesTotal           int64
 
 	// Health
 	healthcheckFailuresTotal int64

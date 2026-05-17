@@ -46,7 +46,7 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 	// to ensure it survives os.RemoveAll(projectPath)
 	envPath := filepath.Join(projectPath, ".env")
 	envBackupPath := filepath.Join(s.cfg.ProjectsPath, subdomain+".env.bak")
-	
+
 	hasEnv := false
 	if _, err := os.Stat(envPath); err == nil {
 		if err := utils.RunSilent(time.Minute, "cp", envPath, envBackupPath); err == nil {

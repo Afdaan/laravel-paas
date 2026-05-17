@@ -19,28 +19,28 @@ type SystemStats struct {
 
 // DockerContainer represents a container running on the host
 type DockerContainer struct {
-	ID            string    `json:"id"`
-	Names         []string  `json:"names"`
-	Image         string    `json:"image"`
-	State         string    `json:"state"`
-	Status        string    `json:"status"`
-	Ports         []string  `json:"ports"`
-	IPAddress     string    `json:"ip_address"`
-	CPUPercent    float64   `json:"cpu_percent"`
-	MemoryUsage   float64   `json:"memory_usage"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Names       []string  `json:"names"`
+	Image       string    `json:"image"`
+	State       string    `json:"state"`
+	Status      string    `json:"status"`
+	Ports       []string  `json:"ports"`
+	IPAddress   string    `json:"ip_address"`
+	CPUPercent  float64   `json:"cpu_percent"`
+	MemoryUsage float64   `json:"memory_usage"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // DockerImage represents an image stored on the host
 type DockerImage struct {
-	ID          string    `json:"id"`
-	RepoTags    []string  `json:"repo_tags"`
-	Size        int64     `json:"size"`
-	Created     time.Time `json:"created"`
-	Status      string    `json:"status"` // "In Use" or "Unused"
-	Repository  string    `json:"repository"`
-	Tag         string    `json:"tag"`
-	SizeHuman   string    `json:"size_human"`
+	ID         string    `json:"id"`
+	RepoTags   []string  `json:"repo_tags"`
+	Size       int64     `json:"size"`
+	Created    time.Time `json:"created"`
+	Status     string    `json:"status"` // "In Use" or "Unused"
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	SizeHuman  string    `json:"size_human"`
 }
 
 // DockerVolume represents a docker volume

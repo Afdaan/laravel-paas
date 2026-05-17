@@ -28,13 +28,13 @@ func New(status int, code, message string) *AppError {
 
 // Standard Error Definitions
 var (
-	ErrNotFound       = New(404, "NOT_FOUND", "The requested resource was not found")
-	ErrUnauthorized   = New(401, "UNAUTHORIZED", "Unauthorized access")
-	ErrForbidden      = New(403, "FORBIDDEN", "Insufficient permissions")
-	ErrBadRequest     = New(400, "BAD_REQUEST", "Invalid request parameters")
-	ErrInternal       = New(500, "INTERNAL_ERROR", "An unexpected error occurred")
-	ErrConflict       = New(409, "CONFLICT", "A conflict occurred with existing data")
-	ErrUnprocessable  = New(422, "UNPROCESSABLE", "The request could not be processed due to validation errors")
+	ErrNotFound      = New(404, "NOT_FOUND", "The requested resource was not found")
+	ErrUnauthorized  = New(401, "UNAUTHORIZED", "Unauthorized access")
+	ErrForbidden     = New(403, "FORBIDDEN", "Insufficient permissions")
+	ErrBadRequest    = New(400, "BAD_REQUEST", "Invalid request parameters")
+	ErrInternal      = New(500, "INTERNAL_ERROR", "An unexpected error occurred")
+	ErrConflict      = New(409, "CONFLICT", "A conflict occurred with existing data")
+	ErrUnprocessable = New(422, "UNPROCESSABLE", "The request could not be processed due to validation errors")
 )
 
 // Specific Business Errors

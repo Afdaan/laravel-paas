@@ -194,9 +194,9 @@ func (w *DeploymentWorker) processJobs() {
 }
 
 const (
-	MaxRetryCount = 5
+	MaxRetryCount  = 5
 	BaseRetryDelay = 5 * time.Second
-	MaxRetryDelay = 2 * time.Minute
+	MaxRetryDelay  = 2 * time.Minute
 )
 
 func calculateBackoff(retryCount int) time.Duration {
@@ -698,7 +698,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}()
 }
 
-
 // cleanupJobTracking safely removes sequence tracking state for a completed or terminated job to prevent memory leaks.
 func (w *DeploymentWorker) cleanupJobTracking(jobID string) {
 	w.seqMutex.Lock()
@@ -831,4 +830,3 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error 
 
 	return w.projectService.RecreateProjectZeroDowntime(project)
 }
-

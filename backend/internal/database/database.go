@@ -8,7 +8,6 @@ package database
 import (
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
@@ -48,29 +47,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
 	slog.Info("Running database migrations")
-
-	err := db.AutoMigrate(
-		&models.User{},
-		&models.Project{},
-		&models.Setting{},
-		&models.ResourceLog{},
-		&models.Feedback{},
-		&models.CustomDomain{},
-		&models.DeploymentEvent{},
-		&models.DomainEvent{},
-	)
-	if err != nil {
-		return fmt.Errorf("migration failed: %w", err)
-	}
-
-	slog.Info("Migrations completed")
-
-	// Backfill UIDs for projects that don't have one
-	if err := BackfillUIDs(db, &config.Config{UIDSalt: os.Getenv("UID_SALT")}); err != nil {
-		slog.Warn("Failed to backfill UIDs", "error", err)
-	}
-
-	return nil
+	return DefensiveMigrationBootstrap(db)
 }
 
 // BackfillUIDs ensures all projects have a persistent UID.

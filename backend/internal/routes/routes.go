@@ -14,8 +14,8 @@ import (
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/handlers"
-	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
 	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
 	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/middleware"

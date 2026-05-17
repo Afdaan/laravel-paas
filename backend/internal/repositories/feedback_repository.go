@@ -33,7 +33,7 @@ func (r *feedbackRepository) Create(feedback *models.Feedback) error {
 func (r *feedbackRepository) ListAll(feedbackType string, status string) ([]models.Feedback, error) {
 	var feedback []models.Feedback
 	query := r.db.Preload("User").Order("created_at DESC")
-	
+
 	if feedbackType != "" {
 		query = query.Where("type = ?", feedbackType)
 	}

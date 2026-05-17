@@ -14,25 +14,25 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/database"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/logger"
 	"github.com/laravel-paas/backend/internal/repositories"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
-	"github.com/laravel-paas/backend/internal/services/setting"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
-	"github.com/laravel-paas/backend/internal/workers"
-	"github.com/laravel-paas/backend/internal/infrastructure"
-	"github.com/laravel-paas/backend/internal/infrastructure/docker"
-	domainServicePkg "github.com/laravel-paas/backend/internal/services/domain"
-	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
-	"github.com/laravel-paas/backend/internal/services/worker"
 	"github.com/laravel-paas/backend/internal/services/deployment"
+	domainServicePkg "github.com/laravel-paas/backend/internal/services/domain"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/backend/internal/services/setting"
+	"github.com/laravel-paas/backend/internal/services/worker"
+	"github.com/laravel-paas/backend/internal/workers"
 )
 
 func main() {
 	// Load environment variables (Local .env takes precedence over Root .env)
 	// godotenv.Load does not overwrite existing environment variables
-	_ = godotenv.Load()        // Try local backend/.env
+	_ = godotenv.Load()          // Try local backend/.env
 	_ = godotenv.Load("../.env") // Try project root .env
 
 	// Initialize configuration
@@ -74,7 +74,7 @@ func main() {
 	storageService := infrastructure.NewStorageService(cfg)
 	dockerService := docker.NewDockerService(cfg, storageService)
 	mysqlService := infrastructure.NewMySQLService()
-	
+
 	// Initialize Repositories
 	userRepo := repositories.NewUserRepository(db)
 	projectRepo := repositories.NewProjectRepository(db)

@@ -77,7 +77,7 @@ func (w *DomainWorker) Reconcile(ctx context.Context, workerID string) {
 	}
 
 	slog.Info("Reconciler Leadership confirmed. Starting reconciliation cycle.", "workerID", workerID)
-	
+
 	// Track overall health states
 	var degradedCount, unhealthyCount int64
 	_ = w.db.Model(&models.CustomDomain{}).Where("status = ?", string(models.DomainStatusDegraded)).Count(&degradedCount)
@@ -294,7 +294,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 				d.ProvisioningCheckpoint = "completed"
 				d.VerificationRetryCount = 0
 				_ = w.db.Model(d).Updates(map[string]interface{}{
-					"provisioning_checkpoint": "completed",
+					"provisioning_checkpoint":  "completed",
 					"verification_retry_count": 0,
 				})
 				slog.Info("Recovery trace: Domain successfully verified and provisioned.", "domain", d.Domain, "durationMs", time.Since(verifyStart).Milliseconds())
@@ -306,7 +306,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 
 			now := time.Now()
 			_ = w.db.Model(d).Updates(map[string]interface{}{
-				"last_reconciliation_at": now,
+				"last_reconciliation_at":   now,
 				"verification_retry_count": d.VerificationRetryCount,
 			})
 		}
@@ -474,7 +474,7 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 				_ = w.db.Model(d).Update("cleanup_checkpoint", "done")
 				_ = w.domainService.TransitionStateCtx(lockCtx, d, models.DomainStatusDisabled, models.ErrNone, "Domain cleanup finalized and routing purged")
 				metrics.GetCollector().IncrCleanupRecovered()
-				
+
 				// Soft delete / tombstone
 				_ = w.db.Delete(d).Error
 				w.redisService.ReleaseDomainLock(d.ID, token)

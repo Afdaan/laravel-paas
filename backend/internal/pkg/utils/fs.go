@@ -21,7 +21,7 @@ func IsPathWithinRoot(root, candidate string) bool {
 	if err != nil {
 		rootResolved, _ = filepath.Abs(root)
 	}
-	
+
 	canResolved, err := filepath.EvalSymlinks(candidate)
 	if err != nil {
 		canResolved, _ = filepath.Abs(candidate)
@@ -34,9 +34,9 @@ func IsPathWithinRoot(root, candidate string) bool {
 	if canResolved == rootResolved {
 		return true
 	}
-	
+
 	// ...or if it starts with the root directory as a prefix.
-	// We add a separator to the prefix to ensure we don't match partial folder names 
+	// We add a separator to the prefix to ensure we don't match partial folder names
 	// (e.g. /app-data vs /app).
 	prefix := rootResolved + string(os.PathSeparator)
 	return strings.HasPrefix(canResolved, prefix)

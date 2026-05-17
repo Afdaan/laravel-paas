@@ -53,14 +53,14 @@ type Config struct {
 	ACMEEmail     string
 
 	// Docker
-	DockerSocket     string
-	ProjectsPath     string
-	DataPath         string
+	DockerSocket      string
+	ProjectsPath      string
+	DataPath          string
 	HostProjectsPath  string
 	HostDataPath      string
 	HostTemplatesPath string
 	TemplatesPath     string
-	DockerNetwork    string
+	DockerNetwork     string
 
 	// Nginx Remote Webhook
 	NginxWebhookEnabled       bool
@@ -131,9 +131,9 @@ func Load() *Config {
 		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
 
 		// Docker & Paths
-		DockerSocket:     getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
-		ProjectsPath:     projectsPath,
-		DataPath:         dataPath,
+		DockerSocket:      getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
+		ProjectsPath:      projectsPath,
+		DataPath:          dataPath,
 		HostProjectsPath:  getEnv("HOST_PROJECTS_PATH", filepath.Join(hostRoot, "storage/projects")),
 		HostDataPath:      getEnv("HOST_DATA_PATH", filepath.Join(hostRoot, "storage/data")),
 		HostTemplatesPath: getEnv("HOST_TEMPLATES_PATH", filepath.Join(hostRoot, "docker/templates")),
@@ -141,10 +141,10 @@ func Load() *Config {
 		DockerNetwork:     getEnv("DOCKER_NETWORK", "paas-network"),
 
 		// Nginx Remote Webhook
-		NginxWebhookEnabled: getEnvBool("NGINX_WEBHOOK_ENABLED", false),
-		NginxWebhookURL:     getEnv("NGINX_WEBHOOK_URL", ""),
-		NginxWebhookKey:     getEnv("NGINX_WEBHOOK_KEY", ""),
-		InternalIP:          getEnv("INTERNAL_IP", "127.0.0.1"),
+		NginxWebhookEnabled:       getEnvBool("NGINX_WEBHOOK_ENABLED", false),
+		NginxWebhookURL:           getEnv("NGINX_WEBHOOK_URL", ""),
+		NginxWebhookKey:           getEnv("NGINX_WEBHOOK_KEY", ""),
+		InternalIP:                getEnv("INTERNAL_IP", "127.0.0.1"),
 		IntegrityValidationMarker: getEnv("INTEGRITY_VALIDATION_MARKER", "laravel-paas"),
 	}
 

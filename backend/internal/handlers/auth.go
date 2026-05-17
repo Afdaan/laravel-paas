@@ -143,10 +143,10 @@ func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 
 	// Get admin ID who initiated this action
 	adminID := c.Locals("user_id").(uint)
-	
+
 	// Optionally: Record the login attempt by the admin acting as the user
 	go h.userService.UpdateActivity(targetUser.ID, c.IP(), true)
-	
+
 	_ = adminID // to prevent unused variable if not logging
 
 	return c.JSON(fiber.Map{

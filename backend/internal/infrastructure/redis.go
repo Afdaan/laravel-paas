@@ -35,7 +35,7 @@ func NewRedisService(cfg *config.Config) (*RedisService, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:         fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
 		Password:     cfg.RedisPassword,
-		DB:           0, // use default DB
+		DB:           0,   // use default DB
 		PoolSize:     200, // optimize for ~200 real users concurrency
 		MinIdleConns: 50,
 	})
@@ -73,13 +73,13 @@ func (r *RedisService) Ping(ctx context.Context) error {
 
 // DeploymentJob represents a deployment job in the queue
 type DeploymentJob struct {
-	ProjectID   uint       `json:"project_id"`
-	UserID      uint       `json:"user_id"`
-	Type        string     `json:"type"` // "deploy" or "redeploy"
-	EnqueuedAt  time.Time  `json:"enqueued_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	JobID       string     `json:"job_id"`
-	RetryCount  int        `json:"retry_count"`
+	ProjectID  uint       `json:"project_id"`
+	UserID     uint       `json:"user_id"`
+	Type       string     `json:"type"` // "deploy" or "redeploy"
+	EnqueuedAt time.Time  `json:"enqueued_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	JobID      string     `json:"job_id"`
+	RetryCount int        `json:"retry_count"`
 }
 
 // DeploymentLeaseMetadata stores structured JSON metadata for a deployment job-scoped lease
@@ -379,11 +379,11 @@ func (r *RedisService) GetDeploymentStats() (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats: %w", err)
 	}
-	
+
 	// Add current queue length
 	queueLen, _ := r.GetQueueLength()
 	stats["queue_length"] = fmt.Sprintf("%d", queueLen)
-	
+
 	return stats, nil
 }
 
@@ -391,6 +391,7 @@ func (r *RedisService) GetDeploymentStats() (map[string]string, error) {
 func (r *RedisService) IncrementDeploymentCounter(counter string) {
 	r.client.HIncrBy(r.ctx, deploymentStatsKey, counter, 1)
 }
+
 // ListDeploymentJobs returns all jobs currently in the queue
 func (r *RedisService) ListDeploymentJobs() ([]DeploymentJob, error) {
 	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
@@ -1058,4 +1059,3 @@ func (r *RedisService) GetDomainMetrics() (map[string]interface{}, error) {
 	}
 	return res, nil
 }
-
