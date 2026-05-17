@@ -153,7 +153,9 @@ deploy_with_anti_downtime() {
         
         return 0
     else
-        echo -e "${RED}[ERROR] $service_name validation failed. Rolling back...${NC}"
+        echo -e "${RED}[ERROR] $service_name validation failed. Inspecting container logs before rollback:${NC}"
+        docker logs "$temp_container_name" --tail 50 || true
+        echo -e "${RED}[ERROR] Rolling back $temp_container_name...${NC}"
         docker stop "$temp_container_name" 2>/dev/null || true
         docker rm -f "$temp_container_name" 2>/dev/null || true
         return 1
