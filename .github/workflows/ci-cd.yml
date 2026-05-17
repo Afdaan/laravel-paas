@@ -101,36 +101,57 @@ jobs:
           INFRA="${{ steps.filter.outputs.infra }}"
           CI="${{ steps.filter.outputs.ci }}"
 
+          NEED_BACKEND=false
+          NEED_WORKER=false
+          NEED_FRONTEND=false
+
           if [ "$INFRA" = "true" ]; then
-            echo "[CI/CD] Infrastructure changes detected. Deploying ALL."
+            NEED_BACKEND=true
+            NEED_WORKER=true
+            NEED_FRONTEND=true
+          fi
+
+          if [ "$SHARED" = "true" ]; then
+            NEED_BACKEND=true
+            NEED_WORKER=true
+          fi
+
+          if [ "$BACKEND" = "true" ]; then
+            NEED_BACKEND=true
+          fi
+
+          if [ "$WORKER" = "true" ]; then
+            NEED_WORKER=true
+          fi
+
+          if [ "$FRONTEND" = "true" ]; then
+            NEED_FRONTEND=true
+          fi
+
+          if [ "$NEED_BACKEND" = "true" ] && [ "$NEED_WORKER" = "true" ] && [ "$NEED_FRONTEND" = "true" ]; then
+            echo "[CI/CD] Full stack changes detected. Deploying ALL."
             ./scripts/deploy-app.sh all
-
-          elif [ "$SHARED" = "true" ]; then
-            echo "[CI/CD] Shared backend dependencies changed. Deploying BACKEND + WORKER."
-            ./scripts/deploy-app.sh backend
-            ./scripts/deploy-app.sh worker
-
-          elif [ "$BACKEND" = "true" ] && [ "$WORKER" = "true" ]; then
-            echo "[CI/CD] Backend and Worker changed. Deploying ALL."
-            ./scripts/deploy-app.sh all
-
-          elif [ "$WORKER" = "true" ]; then
-            echo "[CI/CD] Worker changes detected."
-            ./scripts/deploy-app.sh worker
-
-          elif [ "$BACKEND" = "true" ]; then
-            echo "[CI/CD] Backend changes detected."
-            ./scripts/deploy-app.sh backend
-
-          elif [ "$FRONTEND" = "true" ]; then
-            echo "[CI/CD] Frontend changes detected."
-            ./scripts/deploy-app.sh frontend
-
-          elif [ "$CI" = "true" ]; then
-            echo "[CI/CD] CI workflow changes only. Skipping deployment."
-
           else
-            echo "[CI/CD] No relevant changes detected."
+            if [ "$NEED_BACKEND" = "true" ]; then
+              echo "[CI/CD] Deploying BACKEND."
+              ./scripts/deploy-app.sh backend
+            fi
+            if [ "$NEED_WORKER" = "true" ]; then
+              echo "[CI/CD] Deploying WORKER."
+              ./scripts/deploy-app.sh worker
+            fi
+            if [ "$NEED_FRONTEND" = "true" ]; then
+              echo "[CI/CD] Deploying FRONTEND."
+              ./scripts/deploy-app.sh frontend
+            fi
+          fi
+
+          if [ "$NEED_BACKEND" = "false" ] && [ "$NEED_WORKER" = "false" ] && [ "$NEED_FRONTEND" = "false" ]; then
+            if [ "$CI" = "true" ]; then
+              echo "[CI/CD] CI workflow changes only. Skipping deployment."
+            else
+              echo "[CI/CD] No relevant changes detected."
+            fi
           fi
 
       - name: Notification on Success

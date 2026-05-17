@@ -76,10 +76,18 @@ export interface Project {
 export interface DeploymentEvent {
   id: number;
   project_id: number;
+  job_id?: string;
   sequence_number: number;
-  status: string;
-  step_name: string;
-  message: string;
+  worker_id?: string;
+  state_from?: string;
+  state_to?: string;
+  event_type?: string;
+  payload?: string;
+  duration_ms?: number;
+  error?: string;
+  status?: string;
+  step_name?: string;
+  message?: string;
   created_at: string;
 }
 

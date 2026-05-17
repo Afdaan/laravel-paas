@@ -509,6 +509,7 @@ export const translations = {
         settings: "Settings",
         build: "Build Logs",
         domains: "Domains",
+        timeline: "Timeline",
       },
       settings: {
         phpVersion: "Select PHP version",
@@ -1224,6 +1225,7 @@ export const translations = {
         settings: "Settings",
         build: "Build Logs",
         domains: "Domains",
+        timeline: "Timeline",
       },
       settings: {
         phpVersion: "PHP Version",

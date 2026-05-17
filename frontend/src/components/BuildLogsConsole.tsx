@@ -104,7 +104,7 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
       {/* Left Column: Timeline */}
       <div className="lg:col-span-1 border-b lg:border-b-0 lg:border-r border-white/10 bg-zinc-900/40 flex flex-col h-full overflow-hidden">
         <div className="bg-zinc-900/80 px-4 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
-          <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-300 flex items-center gap-2">
+          <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-300 flex items-center gap-2 font-sans">
             <Activity className="w-3.5 h-3.5 text-blue-400" />
             {t('projectDetail.tabs.timeline') || 'Deployment Timeline'}
           </div>
@@ -121,28 +121,30 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
         </div>
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
           {events.length === 0 ? (
-            <div className="text-center py-12 text-zinc-600 text-xs italic">
+            <div className="text-center py-12 text-zinc-500 text-xs font-sans">
               No deployment events recorded yet.
             </div>
           ) : (
-            <div className="relative border-l border-zinc-800 ml-3 pl-5 space-y-6">
+            <div className="relative border-l border-zinc-800 ml-3 pl-5 space-y-6 font-sans">
               {events.map((ev, idx) => (
                 <div key={ev.id || idx} className="relative group">
                   <div className={cn(
                     "absolute -left-[25px] top-1 w-2.5 h-2.5 rounded-full border border-zinc-950 transition-transform group-hover:scale-125",
-                    ev.status === 'completed' ? "bg-emerald-500" :
-                    ev.status === 'failed' ? "bg-rose-500" :
+                    (ev.status === 'completed' || ev.state_to === 'completed') ? "bg-emerald-500" :
+                    (ev.status === 'failed' || ev.state_to === 'failed' || Boolean(ev.error)) ? "bg-rose-500" :
                     "bg-blue-500 animate-pulse"
                   )} />
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-zinc-200 capitalize tracking-wide">
-                      {ev.step_name.replace(/_/g, ' ')}
+                  <div className="flex items-center justify-between mb-1 font-sans">
+                    <span className="text-xs font-bold text-zinc-200 capitalize tracking-wide font-sans">
+                      {String(ev.step_name || ev.event_type || 'system_event').replace(/_/g, ' ')}
                     </span>
                     <span className="text-[10px] font-mono text-zinc-500">
                       {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 leading-relaxed font-sans break-words">{ev.message}</p>
+                  <p className="text-[11px] text-zinc-400 leading-relaxed font-sans break-words">
+                    {ev.message || ev.payload || ev.error || ''}
+                  </p>
                 </div>
               ))}
             </div>
