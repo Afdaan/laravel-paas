@@ -28,7 +28,7 @@ const (
 // User represents a system user (admin or student)
 type User struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
-	Email     string         `gorm:"uniqueIndex:idx_users_email;size:255;not null" json:"email"`
+	Email     string         `gorm:"uniqueIndex:uni_users_email;size:255;not null" json:"email"`
 	Password  string         `gorm:"size:255;not null" json:"-"` // Never expose password
 	Name      string         `gorm:"size:255;not null" json:"name"`
 	Role      Role           `gorm:"size:20;not null;default:student" json:"role"`
@@ -101,8 +101,8 @@ type Project struct {
 	Name         string         `gorm:"size:255;not null" json:"name"`
 	GithubURL    string         `gorm:"size:500;not null" json:"github_url"`
 	Branch       string         `gorm:"size:200;not null;default:main" json:"branch"`
-	Subdomain    string         `gorm:"uniqueIndex:idx_projects_subdomain;size:100;not null" json:"subdomain"`
-	DatabaseName     string         `gorm:"uniqueIndex:idx_projects_db_name;size:100;not null" json:"database_name"`
+	Subdomain    string         `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
+	DatabaseName     string         `gorm:"uniqueIndex:uni_projects_database_name;size:100;not null" json:"database_name"`
 	DatabasePassword string         `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
 	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	DeploymentStatus DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
@@ -146,7 +146,7 @@ type Project struct {
 
 	// Virtual field for frontend
 	URL string `gorm:"-" json:"url,omitempty"`
-	UID string `gorm:"uniqueIndex:idx_projects_uid;size:100" json:"uid"`
+	UID string `gorm:"uniqueIndex:uni_projects_uid;size:100" json:"uid"`
 
 	// Config Hashing
 	ConfigHash string `gorm:"size:64" json:"config_hash,omitempty"`
@@ -313,7 +313,7 @@ type CustomDomain struct {
 	ID        uint               `gorm:"primaryKey" json:"id"`
 	ProjectID uint               `gorm:"not null;index" json:"project_id"`
 	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
-	Domain    string             `gorm:"uniqueIndex:idx_custom_domains_domain;size:255;not null" json:"domain"`
+	Domain    string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
 	Status    CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
 
 	// SSL & Certificate Lifecycle
