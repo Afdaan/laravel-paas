@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
@@ -123,15 +124,16 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 	}
 
 	uniqueDefs := []struct {
-		table string
-		name  string
+		table   string
+		name    string
+		columns []string
 	}{
-		{"users", "uni_users_email"},
-		{"projects", "uni_projects_subdomain"},
-		{"projects", "uni_projects_database_name"},
-		{"projects", "uni_projects_uid"},
-		{"settings", "idx_settings_key"},
-		{"custom_domains", "uni_custom_domains_domain"},
+		{"users", "uni_users_email", []string{"email"}},
+		{"projects", "uni_projects_subdomain", []string{"subdomain"}},
+		{"projects", "uni_projects_database_name", []string{"database_name"}},
+		{"projects", "uni_projects_uid", []string{"uid"}},
+		{"settings", "idx_settings_key", []string{"setting_key"}},
+		{"custom_domains", "uni_custom_domains_domain", []string{"domain"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -148,6 +150,24 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 			continue
 		}
 
+		// If the column already has a UNIQUE constraint with a historical/default
+		// PostgreSQL name (for example users_email_key), rename it to the name GORM
+		// expects before AutoMigrate. Otherwise GORM may detect the column as unique
+		// and try to drop a non-existent constraint named uni_<table>_<column>.
+		if existingConstraint := findUniqueConstraintForColumns(db, def.table, def.columns); existingConstraint != "" {
+			slog.Info("Renaming existing unique constraint to expected GORM name", "table", def.table, "from", existingConstraint, "to", def.name)
+			if hasIndexName(db, def.table, def.name) {
+				if err := db.Exec(fmt.Sprintf("DROP INDEX IF EXISTS %s;", quoteIdent(def.name))).Error; err != nil {
+					slog.Warn("Failed to drop duplicate index before renaming unique constraint", "table", def.table, "index", def.name, "error", err)
+					continue
+				}
+			}
+			if err := db.Exec(fmt.Sprintf("ALTER TABLE %s RENAME CONSTRAINT %s TO %s;", quoteIdent(def.table), quoteIdent(existingConstraint), quoteIdent(def.name))).Error; err != nil {
+				slog.Warn("Failed to rename unique constraint", "table", def.table, "from", existingConstraint, "to", def.name, "error", err)
+			}
+			continue
+		}
+
 		// Check if index exists in pg_class/pg_index
 		var idxCount int64
 		_ = db.Raw(`
@@ -160,7 +180,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 
 		if idxCount > 0 {
 			slog.Info("Promoting existing unique index to table constraint to satisfy GORM AutoMigrate", "table", def.table, "name", def.name)
-			sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE USING INDEX %s;", def.table, def.name, def.name)
+			sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE USING INDEX %s;", quoteIdent(def.table), quoteIdent(def.name), quoteIdent(def.name))
 			if err := db.Exec(sql).Error; err != nil {
 				slog.Warn("Failed to promote unique index to constraint", "table", def.table, "name", def.name, "error", err)
 			}
@@ -168,6 +188,48 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func findUniqueConstraintForColumns(db *gorm.DB, table string, columns []string) string {
+	var constraintName string
+	query := `
+		SELECT c.conname
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		JOIN unnest(c.conkey) WITH ORDINALITY AS cols(attnum, ordinality) ON true
+		JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = cols.attnum
+		WHERE n.nspname = current_schema()
+			AND t.relname = ?
+			AND c.contype = 'u'
+		GROUP BY c.conname
+		HAVING string_agg(a.attname, ',' ORDER BY cols.ordinality) = ?
+		LIMIT 1;
+	`
+	if err := db.Raw(query, table, strings.Join(columns, ",")).Scan(&constraintName).Error; err != nil {
+		return ""
+	}
+	return constraintName
+}
+
+func hasIndexName(db *gorm.DB, table string, indexName string) bool {
+	var count int64
+	query := `
+		SELECT count(1)
+		FROM pg_class c
+		JOIN pg_index i ON i.indexrelid = c.oid
+		JOIN pg_class t ON t.oid = i.indrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		WHERE n.nspname = current_schema() AND t.relname = ? AND c.relname = ?;
+	`
+	if err := db.Raw(query, table, indexName).Scan(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func quoteIdent(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }
 
 // ReconcileSchemas performs safe, non-destructive reconciliation of missing indexes and unique constraints
