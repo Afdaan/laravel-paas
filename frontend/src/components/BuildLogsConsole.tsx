@@ -20,7 +20,9 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
   const [logs, setLogs] = useState<string>('')
   const [events, setEvents] = useState<DeploymentEvent[]>([])
   const [clearedLength, setClearedLength] = useState(0)
+  const [clearedEventMaxId, setClearedEventMaxId] = useState<number>(-1)
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
+  const [isTimelineConfirmOpen, setIsTimelineConfirmOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Limit to last 500 lines for performance
@@ -37,6 +39,10 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
     const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
     return lines.length > 500 ? lines.length - 500 : 0
   }, [logs, clearedLength])
+
+  const visibleEvents = useMemo(() => {
+    return events.filter(ev => (ev.id || 0) > clearedEventMaxId)
+  }, [events, clearedEventMaxId])
 
   useEffect(() => {
     let isMounted = true
@@ -99,6 +105,12 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
     toast.success(t('common.success'))
   }
 
+  const confirmTimelineClear = () => {
+    const maxId = events.length > 0 ? Math.max(...events.map(e => e.id || 0)) : -1
+    setClearedEventMaxId(maxId)
+    toast.success(t('common.success'))
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 h-[600px] bg-zinc-950 rounded-xl overflow-hidden shadow-2xl border border-white/10">
       {/* Left Column: Timeline */}
@@ -108,25 +120,39 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
             <Activity className="w-3.5 h-3.5 text-blue-400" />
             {t('projectDetail.tabs.timeline') || 'Deployment Timeline'}
           </div>
-          {project?.deployment_status && (
-            <Badge variant="outline" className={cn(
-              "text-[10px] uppercase font-mono py-0.5 px-2",
-              project.deployment_status === 'completed' ? "text-emerald-400 border-emerald-400/30 bg-emerald-500/10" :
-              project.deployment_status === 'failed' ? "text-rose-400 border-rose-400/30 bg-rose-500/10" :
-              "text-blue-400 border-blue-400/30 bg-blue-500/10 animate-pulse"
-            )}>
-              {project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {project?.deployment_status && (
+              <Badge variant="outline" className={cn(
+                "text-[10px] uppercase font-mono py-0.5 px-2",
+                project.deployment_status === 'completed' ? "text-emerald-400 border-emerald-400/30 bg-emerald-500/10" :
+                project.deployment_status === 'failed' ? "text-rose-400 border-rose-400/30 bg-rose-500/10" :
+                "text-blue-400 border-blue-400/30 bg-blue-500/10 animate-pulse"
+              )}>
+                {project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
+              </Badge>
+            )}
+            {visibleEvents.length > 0 && (
+              <>
+                <div className="w-px h-3 bg-white/10 mx-1" />
+                <button
+                  onClick={() => setIsTimelineConfirmOpen(true)}
+                  className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 px-1 cursor-pointer transition-colors font-sans"
+                  title="Clear Timeline"
+                >
+                  {t('projectDetail.actions.clear')}
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
-          {events.length === 0 ? (
+          {visibleEvents.length === 0 ? (
             <div className="text-center py-12 text-zinc-500 text-xs font-sans">
               No deployment events recorded yet.
             </div>
           ) : (
             <div className="relative border-l border-zinc-800 ml-3 pl-5 space-y-6 font-sans">
-              {events.map((ev, idx) => (
+              {visibleEvents.map((ev, idx) => (
                 <div key={ev.id || idx} className="relative group">
                   <div className={cn(
                     "absolute -left-[25px] top-1 w-2.5 h-2.5 rounded-full border border-zinc-950 transition-transform group-hover:scale-125",
@@ -228,6 +254,15 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
         onConfirm={confirmClear}
         title={t('projectDetail.actions.clear')}
         message={t('common.confirmClearLogs') || 'Confirm clearing build logs? New logs will still appear.'}
+        type="warning"
+        confirmText={t('common.confirm')}
+      />
+      <ConfirmationModal
+        isOpen={isTimelineConfirmOpen}
+        onClose={() => setIsTimelineConfirmOpen(false)}
+        onConfirm={confirmTimelineClear}
+        title={t('projectDetail.actions.clear')}
+        message={t('common.confirmClearLogs') || 'Confirm clearing timeline events? New events will still appear.'}
         type="warning"
         confirmText={t('common.confirm')}
       />
