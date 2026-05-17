@@ -27,26 +27,11 @@ jobs:
 
           filters: |
 
-            shared:
-              - 'backend/internal/apperr/**'
-              - 'backend/internal/config/**'
-              - 'backend/internal/database/**'
-              - 'backend/internal/infrastructure/**'
-              - 'backend/internal/logger/**'
-              - 'backend/internal/models/**'
-              - 'backend/internal/pkg/**'
-              - 'backend/internal/repositories/**'
-              - 'backend/internal/services/*.go'
-              - 'backend/internal/services/deployment/**'
-              - 'backend/internal/services/domain/**'
-              - 'backend/internal/services/project/**'
-              - 'backend/internal/services/setting/**'
-
             backend:
-              - 'backend/cmd/server/**'
-              - 'backend/internal/handlers/**'
-              - 'backend/internal/middleware/**'
-              - 'backend/internal/routes/**'
+              - 'backend/**'
+              - '!backend/cmd/worker/**'
+              - '!backend/internal/workers/**'
+              - '!backend/internal/services/worker/**'
 
             worker:
               - 'backend/cmd/worker/**'
@@ -57,7 +42,7 @@ jobs:
             frontend:
               - 'frontend/**'
 
-            infra:
+            deploy_scripts:
               - 'scripts/**'
               - '.github/actions/**'
 
@@ -66,11 +51,10 @@ jobs:
 
       - name: Print Change Detection
         run: |
-          echo "shared=${{ steps.filter.outputs.shared }}"
           echo "backend=${{ steps.filter.outputs.backend }}"
           echo "worker=${{ steps.filter.outputs.worker }}"
           echo "frontend=${{ steps.filter.outputs.frontend }}"
-          echo "infra=${{ steps.filter.outputs.infra }}"
+          echo "deploy_scripts=${{ steps.filter.outputs.deploy_scripts }}"
           echo "ci=${{ steps.filter.outputs.ci }}"
 
       - name: Sync Codebase to Production
@@ -96,27 +80,15 @@ jobs:
 
           chmod +x ./scripts/deploy-app.sh
 
-          SHARED="${{ steps.filter.outputs.shared }}"
           BACKEND="${{ steps.filter.outputs.backend }}"
           WORKER="${{ steps.filter.outputs.worker }}"
           FRONTEND="${{ steps.filter.outputs.frontend }}"
-          INFRA="${{ steps.filter.outputs.infra }}"
+          DEPLOY_SCRIPTS="${{ steps.filter.outputs.deploy_scripts }}"
           CI="${{ steps.filter.outputs.ci }}"
 
           NEED_BACKEND=false
           NEED_WORKER=false
           NEED_FRONTEND=false
-
-          if [ "$INFRA" = "true" ]; then
-            NEED_BACKEND=true
-            NEED_WORKER=true
-            NEED_FRONTEND=true
-          fi
-
-          if [ "$SHARED" = "true" ]; then
-            NEED_BACKEND=true
-            NEED_WORKER=true
-          fi
 
           if [ "$BACKEND" = "true" ]; then
             NEED_BACKEND=true
@@ -152,7 +124,11 @@ jobs:
             if [ "$CI" = "true" ]; then
               echo "[CI/CD] CI workflow changes only. Skipping deployment."
             else
-              echo "[CI/CD] No relevant changes detected."
+              if [ "$DEPLOY_SCRIPTS" = "true" ]; then
+                echo "[CI/CD] Deployment script changes only. Skipping app deployment."
+              else
+                echo "[CI/CD] No relevant changes detected."
+              fi
             fi
           fi
 
