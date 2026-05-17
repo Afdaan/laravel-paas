@@ -116,7 +116,7 @@ func (w *CentralWatchdog) recoverOrphanedBuilds() {
 			"error_log": recoveryLog,
 		})
 
-		if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
+		if err := w.redisService.ForceReleaseDeploymentLock(project.ID, "Watchdog recovering orphaned build from unexpected shutdown"); err != nil {
 			slog.Warn("Central watchdog: failed to force release lock during recovery", "id", project.ID, "error", err)
 		}
 
@@ -213,7 +213,7 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 					})
 
 					if lockMeta != nil {
-						if err := w.redisService.ForceReleaseDeploymentLock(project.ID); err != nil {
+						if err := w.redisService.ForceReleaseDeploymentLock(project.ID, fmt.Sprintf("Watchdog cleaning up stale deployment: %s", reason)); err != nil {
 							slog.Warn("Central watchdog: failed to force release lock", "id", project.ID, "error", err)
 						}
 					}

@@ -12,11 +12,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	mathrand "math/rand/v2"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/backend/internal/pkg/metrics"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"github.com/redis/go-redis/v9"
 )
@@ -48,6 +51,14 @@ func NewRedisService(cfg *config.Config) (*RedisService, error) {
 		client: client,
 		ctx:    ctx,
 	}, nil
+}
+
+// NewRedisServiceWithClient creates a Redis service wrapping an existing client
+func NewRedisServiceWithClient(client *redis.Client) *RedisService {
+	return &RedisService{
+		client: client,
+		ctx:    context.Background(),
+	}
 }
 
 // Close closes the Redis connection
@@ -248,6 +259,31 @@ end
 
 return #items
 `)
+
+	acquireOrRenewLeaderScript = redis.NewScript(`
+local val = redis.call("get", KEYS[1])
+if not val then
+    redis.call("set", KEYS[1], ARGV[1], "PX", ARGV[2])
+    return 1
+elseif val == ARGV[1] then
+    redis.call("pexpire", KEYS[1], ARGV[2])
+    return 1
+else
+    return 0
+end
+`)
+
+	renewDomainLockScript = redis.NewScript(`
+local val = redis.call("get", KEYS[1])
+if not val then return 0 end
+local decoded = cjson.decode(val)
+if decoded.token == ARGV[1] then
+    redis.call("pexpire", KEYS[1], ARGV[2])
+    return 1
+else
+    return 0
+end
+`)
 )
 
 func generateLockToken() string {
@@ -324,11 +360,16 @@ func (r *RedisService) GetLockMetadata(projectID uint) (*LockMetadata, error) {
 }
 
 // ForceReleaseDeploymentLock unconditionally removes the lock (used by admin and watchdog recovery)
-func (r *RedisService) ForceReleaseDeploymentLock(projectID uint) error {
+func (r *RedisService) ForceReleaseDeploymentLock(projectID uint, reason string) error {
+	if reason == "" {
+		reason = "System recovery / manual override"
+	}
 	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
+	val, _ := r.client.Get(r.ctx, lockKey).Result()
 	if err := r.client.Del(r.ctx, lockKey).Err(); err != nil {
 		return fmt.Errorf("failed to force release lock: %w", err)
 	}
+	slog.Warn("Deployment lock forcibly released", "projectID", projectID, "reason", reason, "previousToken", val)
 	return nil
 }
 
@@ -732,5 +773,289 @@ func (r *RedisService) ListActiveDeploymentLeases() ([]DeploymentLeaseMetadata, 
 		}
 	}
 	return allLeases, nil
+}
+
+// ===========================================
+// Domain Management & Locking Operations
+// ===========================================
+
+const (
+	domainLockKeyPrefix      = "domain:lock"
+	reconcilerLockKey        = "reconciler:leader:lock"
+	domainEventChannelPrefix = "channel:domain_events"
+)
+
+// DomainLockMetadata holds ownership metadata for a distributed domain lock to ensure concurrency safety during verification and SSL provisioning.
+type DomainLockMetadata struct {
+	Token     string    `json:"token"`
+	WorkerID  string    `json:"worker_id"`
+	DomainID  uint      `json:"domain_id"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+// AcquireDomainLock tries to acquire a distributed lock for a specific domain ID, returning a unique fencing token.
+func (r *RedisService) AcquireDomainLock(domainID uint, ttl time.Duration) (string, error) {
+	lockKey := fmt.Sprintf("%s:%d", domainLockKeyPrefix, domainID)
+	token := generateLockToken()
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "worker-node"
+	}
+
+	meta := DomainLockMetadata{
+		Token:     token,
+		WorkerID:  fmt.Sprintf("worker-%s", hostname),
+		DomainID:  domainID,
+		StartedAt: time.Now(),
+	}
+
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal domain lock metadata: %w", err)
+	}
+
+	ok, err := r.client.SetNX(r.ctx, lockKey, string(data), ttl).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire domain lock: %w", err)
+	}
+
+	if !ok {
+		return "", nil // Lock already held by another process
+	}
+
+	return token, nil
+}
+
+// ReleaseDomainLock securely releases a domain lock verifying the unique fencing token.
+func (r *RedisService) ReleaseDomainLock(domainID uint, token string) error {
+	lockKey := fmt.Sprintf("%s:%d", domainLockKeyPrefix, domainID)
+	_, err := releaseLockScript.Run(r.ctx, r.client, []string{lockKey}, token).Result()
+	if err != nil {
+		return fmt.Errorf("failed to release domain lock: %w", err)
+	}
+	return nil
+}
+
+// RenewDomainLock safely renews an active domain lock checking token match.
+func (r *RedisService) RenewDomainLock(domainID uint, token string, ttl time.Duration) error {
+	lockKey := fmt.Sprintf("%s:%d", domainLockKeyPrefix, domainID)
+	res, err := renewDomainLockScript.Run(r.ctx, r.client, []string{lockKey}, token, int64(ttl.Milliseconds())).Result()
+	if err != nil {
+		return fmt.Errorf("failed to renew domain lock: %w", err)
+	}
+	if val, ok := res.(int64); !ok || val == 0 {
+		return fmt.Errorf("domain lock renewal rejected: expired or token mismatch")
+	}
+	return nil
+}
+
+// ForceReleaseDomainLock unconditionally removes a domain lock (used for emergency recovery).
+func (r *RedisService) ForceReleaseDomainLock(domainID uint, reason string, operator string) error {
+	if reason == "" {
+		return fmt.Errorf("force release of domain lock rejected: mandatory reason is required")
+	}
+	if operator == "" {
+		operator = "system_watchdog"
+	}
+	lockKey := fmt.Sprintf("%s:%d", domainLockKeyPrefix, domainID)
+	val, _ := r.client.Get(r.ctx, lockKey).Result()
+	err := r.client.Del(r.ctx, lockKey).Err()
+	if err == nil {
+		slog.Warn("Domain lock forcibly released", "domainID", domainID, "operator", operator, "reason", reason, "previousToken", val)
+		r.IncrDomainMetric("lock_force_releases", 1)
+	}
+	return err
+}
+
+// AcquireReconcilerLock acquires the global leadership lease lock for the domain reconciliation worker to prevent multi-worker collisions.
+func (r *RedisService) AcquireReconcilerLock(workerID string, ttl time.Duration) (bool, error) {
+	ok, err := r.client.SetNX(r.ctx, reconcilerLockKey, workerID, ttl).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to acquire reconciler leadership lock: %w", err)
+	}
+	return ok, nil
+}
+
+// RenewReconcilerLock safely renews the reconciler leadership lease lock verifying worker ownership.
+func (r *RedisService) RenewReconcilerLock(workerID string, ttl time.Duration) (bool, error) {
+	val, err := r.client.Get(r.ctx, reconcilerLockKey).Result()
+	if err == redis.Nil {
+		return r.AcquireReconcilerLock(workerID, ttl)
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check reconciler leadership lock: %w", err)
+	}
+	if val != workerID {
+		return false, nil // Another worker is leader
+	}
+	ok, err := r.client.Expire(r.ctx, reconcilerLockKey, ttl).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to renew reconciler leadership lock: %w", err)
+	}
+	return ok, nil
+}
+
+// AcquireOrRenewReconcilerLock atomically acquires leadership if unowned, or renews if owned by current worker.
+func (r *RedisService) AcquireOrRenewReconcilerLock(workerID string, ttl time.Duration) (bool, error) {
+	res, err := acquireOrRenewLeaderScript.Run(r.ctx, r.client, []string{reconcilerLockKey}, workerID, int64(ttl.Milliseconds())).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to run leader script: %w", err)
+	}
+	if val, ok := res.(int64); ok && val == 1 {
+		return true, nil
+	}
+	return false, nil
+}
+
+// PublishDomainEvent streams a domain lifecycle audit event to a Redis Pub/Sub channel for realtime frontend delivery.
+func (r *RedisService) PublishDomainEvent(domainID uint, projectID uint, eventJSON string) error {
+	channel := fmt.Sprintf("%s:%d", domainEventChannelPrefix, domainID)
+	if projectID > 0 {
+		projChannel := fmt.Sprintf("project:domains:events:%d", projectID)
+		_ = r.client.Publish(r.ctx, projChannel, eventJSON).Err()
+	}
+	return r.client.Publish(r.ctx, channel, eventJSON).Err()
+}
+
+// runPubSubLoop handles resilient Redis Pub/Sub resubscription with exponential backoff and jitter
+func (r *RedisService) runPubSubLoop(ctx context.Context, channel string, msgChan chan string) {
+	defer close(msgChan)
+	backoff := 500 * time.Millisecond
+	maxBackoff := 10 * time.Second
+	attempts := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if attempts > 0 {
+			if err := r.client.Ping(ctx).Err(); err != nil {
+				attempts++
+				jitter := time.Duration(mathrand.Int64N(int64(backoff/4) + 1))
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff + jitter):
+				}
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+				continue
+			}
+		}
+
+		sub := r.client.Subscribe(ctx, channel)
+		ch := sub.Channel()
+		if attempts > 0 {
+			slog.Info("Redis SSE subscription successfully recovered after reconnect.", "channel", channel, "reconnectAttempts", attempts)
+			reconnectMsg := `{"event_type":"redis_reconnected","message":"Redis connection recovered"}`
+			select {
+			case msgChan <- reconnectMsg:
+			default:
+			}
+		}
+		attempts = 0
+		backoff = 500 * time.Millisecond
+
+	receiveLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				_ = sub.Close()
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					_ = sub.Close()
+					attempts++
+					slog.Warn("Redis connection lost during SSE subscription. Initiating reconnect loop with exponential backoff.", "channel", channel, "attempt", attempts)
+					break receiveLoop
+				}
+				select {
+				case msgChan <- msg.Payload:
+				default:
+					r.IncrDomainMetric("sse_subscriber_overflow", 1)
+					metrics.GetCollector().IncrSSEOverflowTotal()
+					slog.Warn("SSE subscriber buffer overflow, emitting overflow signal", "channel", channel)
+					overflowMsg := `{"event_type":"overflow","message":"Subscriber buffer overflow, forcing reconnect and replay","error_code":"overflow"}`
+					select {
+					case <-msgChan:
+					default:
+					}
+					select {
+					case msgChan <- overflowMsg:
+					default:
+					}
+				}
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+
+		slog.Info("Attempting Redis SSE subscription recovery...", "channel", channel, "backoff", backoff)
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+}
+
+// SubscribeDomainEvents subscribes to a domain audit event channel and returns a Go channel of JSON messages.
+func (r *RedisService) SubscribeDomainEvents(ctx context.Context, domainID uint) (<-chan string, error) {
+	channel := fmt.Sprintf("%s:%d", domainEventChannelPrefix, domainID)
+	msgChan := make(chan string, 100)
+	go r.runPubSubLoop(ctx, channel, msgChan)
+	return msgChan, nil
+}
+
+// SubscribeProjectEvents subscribes to all domain audit events within a specific project.
+func (r *RedisService) SubscribeProjectEvents(ctx context.Context, projectID uint) (<-chan string, error) {
+	channel := fmt.Sprintf("project:domains:events:%d", projectID)
+	msgChan := make(chan string, 100)
+	go r.runPubSubLoop(ctx, channel, msgChan)
+	return msgChan, nil
+}
+
+// IncrDomainMetric increments an operational metric counter in Redis.
+func (r *RedisService) IncrDomainMetric(field string, incr int64) {
+	_ = r.client.HIncrBy(r.ctx, "domain:metrics", field, incr).Err()
+}
+
+// RecordDomainMetricDuration records the average or total duration of an operational phase.
+func (r *RedisService) RecordDomainMetricDuration(field string, d time.Duration) {
+	_ = r.client.HIncrBy(r.ctx, "domain:metrics:duration", field, int64(d.Milliseconds())).Err()
+	_ = r.client.HIncrBy(r.ctx, "domain:metrics:count", field, 1).Err()
+}
+
+// GetDomainMetrics retrieves all operational metrics.
+func (r *RedisService) GetDomainMetrics() (map[string]interface{}, error) {
+	counts, err := r.client.HGetAll(r.ctx, "domain:metrics").Result()
+	if err != nil {
+		return nil, err
+	}
+	durations, _ := r.client.HGetAll(r.ctx, "domain:metrics:duration").Result()
+	calls, _ := r.client.HGetAll(r.ctx, "domain:metrics:count").Result()
+
+	res := make(map[string]interface{})
+	for k, v := range counts {
+		val, _ := strconv.ParseInt(v, 10, 64)
+		res[k] = val
+	}
+	for k, vD := range durations {
+		vC := calls[k]
+		totalMs, _ := strconv.ParseInt(vD, 10, 64)
+		totalCalls, _ := strconv.ParseInt(vC, 10, 64)
+		if totalCalls > 0 {
+			res[k+"_avg_ms"] = totalMs / totalCalls
+		}
+	}
+	return res, nil
 }
 

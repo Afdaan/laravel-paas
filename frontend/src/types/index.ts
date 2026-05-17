@@ -14,11 +14,31 @@ export interface User {
 export interface CustomDomain {
   id: number;
   domain: string;
-  status: 'active' | 'pending' | 'error';
+  status: string;
+  health_status?: string;
+  last_healthcheck_at?: string;
+  error_code?: string;
+  degraded_reason_code?: string;
+  error_message?: string;
+  config_hash?: string;
+  last_verification_at?: string;
+  last_renewal_attempt_at?: string;
+  ssl_expires_at?: string;
   project_id: number;
   project?: Project;
   created_at: string;
   updated_at: string;
+}
+
+export interface DomainEvent {
+  id: number;
+  domain_id: number;
+  event_type: string;
+  state_from: string;
+  state_to: string;
+  error_code?: string;
+  message: string;
+  created_at: string;
 }
 
 export interface DomainDiagnostic {

@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/backend/internal/infrastructure/nginx"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/pkg/metrics"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
@@ -125,10 +127,46 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	return nil
 }
 
-// SyncProjectNginx triggers a sync to the remote Nginx proxy
-func (s *ProjectService) SyncProjectNginx(project *models.Project) error {
+// SyncProjectNginx triggers a sync to the remote Nginx proxy and stores the resulting config hash.
+func (s *ProjectService) SyncProjectNginx(project *models.Project) (string, error) {
+	start := time.Now()
+	defer func() { metrics.GetCollector().ObserveNginxReloadDuration(time.Since(start)) }()
+
+	lockKey := fmt.Sprintf("debounce:sync:nginx:%d", project.ID)
+	allowed, _ := s.redisService.RateLimit(lockKey, 1, 5*time.Second)
+	if !allowed {
+		metrics.GetCollector().IncrNginxReloadSkippedTotal()
+		return project.ConfigHash, nil
+	}
+
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	return s.nginxService.SyncProject(project, projectDomain)
+	hash, err := s.nginxService.SyncProject(project, projectDomain)
+	if err != nil {
+		metrics.GetCollector().IncrNginxReloadFailedTotal()
+		return "", err
+	}
+	metrics.GetCollector().IncrNginxReloadTotal()
+
+	if hash != "" && hash == project.ConfigHash {
+		metrics.GetCollector().IncrNginxReloadSkippedTotal()
+	} else if hash != "" && hash != project.ConfigHash {
+		oldHash := project.ConfigHash
+		if err := s.projectRepo.UpdateConfigHash(project.ID, hash, oldHash); err != nil {
+			slog.Warn("Concurrent config hash update detected", "subdomain", project.Subdomain, "error", err)
+			if latest, err := s.projectRepo.GetByID(project.ID); err == nil {
+				project.ConfigHash = latest.ConfigHash
+			}
+			return hash, nil
+		}
+		slog.Info("Project Nginx config hash updated", "subdomain", project.Subdomain, "old", oldHash, "new", hash)
+		project.ConfigHash = hash
+	}
+	return hash, nil
+}
+
+// GetSSLStatus queries the remote Nginx VM for SSL certificate status
+func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error) {
+	return s.nginxService.GetSSLStatus(domain)
 }
 
 func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) error {

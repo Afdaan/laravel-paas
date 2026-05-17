@@ -61,6 +61,27 @@ func (s *AuthService) GenerateToken(user *models.User) (string, error) {
 	return tokenString, nil
 }
 
+// GenerateStreamToken creates a short-lived (60s) ephemeral stream JWT for SSE connections
+func (s *AuthService) GenerateStreamToken(user *models.User) (string, error) {
+	claims := models.JWTClaims{
+		UserID:     user.ID,
+		Email:      user.Email,
+		Role:       string(user.Role),
+		StreamOnly: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(60 * time.Second)),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(s.cfg.JWTSecret))
+	if err != nil {
+		return "", apperr.New(500, "TOKEN_GEN_FAILED", "Failed to generate ephemeral stream token")
+	}
+
+	return tokenString, nil
+}
+
 // Logout blacklists the token in Redis
 func (s *AuthService) Logout(token string, expiry time.Duration) error {
 	if s.redisService != nil {

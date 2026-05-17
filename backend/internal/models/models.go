@@ -148,6 +148,9 @@ type Project struct {
 	URL string `gorm:"-" json:"url,omitempty"`
 	UID string `gorm:"uniqueIndex;size:100" json:"uid"`
 
+	// Config Hashing
+	ConfigHash string `gorm:"size:64" json:"config_hash,omitempty"`
+
 	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
 }
 
@@ -250,24 +253,131 @@ type Feedback struct {
 // CustomDomain Model
 // ===========================================
 
-// CustomDomainStatus represents DNS verification state
+// CustomDomainStatus represents the deterministic lifecycle state of a custom domain.
 type CustomDomainStatus string
 
 const (
-	DomainStatusPending CustomDomainStatus = "pending"
-	DomainStatusActive  CustomDomainStatus = "active"
-	DomainStatusError   CustomDomainStatus = "error"
+	DomainStatusPending            CustomDomainStatus = "pending"             // Initial registration; awaiting DNS setup.
+	DomainStatusPendingDNS         CustomDomainStatus = "pending_dns"         // DNS verification initiated but propagation not yet observed.
+	DomainStatusDNSVerified        CustomDomainStatus = "dns_verified"        // DNS verified successfully; ready for SSL queueing.
+	DomainStatusSSLQueued          CustomDomainStatus = "ssl_queued"          // Enqueued for Let's Encrypt certificate issuance.
+	DomainStatusSSLProvisioning    CustomDomainStatus = "ssl_provisioning"    // Active HTTP-01 challenge verification in progress on edge Nginx.
+	DomainStatusSSLActive          CustomDomainStatus = "ssl_active"          // Certificate issued and verified; Nginx configured with HTTPS.
+	DomainStatusActive             CustomDomainStatus = "active"              // Full operational readiness (DNS, SSL, and Nginx edge routing verified).
+	DomainStatusPropagationPending CustomDomainStatus = "propagation_pending" // Transitioning or propagating after DNS/routing changes.
+	DomainStatusDegraded           CustomDomainStatus = "degraded"            // Partial failure (e.g., SSL near expiry or transient validation timeout).
+	DomainStatusRenewalPending     CustomDomainStatus = "renewal_pending"     // Proactively scheduled Let's Encrypt renewal in progress (<=21d remaining).
+	DomainStatusRenewalFailed      CustomDomainStatus = "renewal_failed"      // Renewal attempts exhausted without issuance; requires intervention.
+	DomainStatusSSLFailed          CustomDomainStatus = "ssl_failed"          // Initial Let's Encrypt challenge failed after exponential retries.
+	DomainStatusPendingCleanup     CustomDomainStatus = "pending_cleanup"     // Domain scheduled for removal; awaiting orphaned cert/config teardown.
+	DomainStatusDisabled           CustomDomainStatus = "disabled"            // Explicitly paused by user or admin; edge routing disabled.
+	DomainStatusError              CustomDomainStatus = "error"               // Generic or unrecoverable error state.
 )
 
-// CustomDomain represents a custom domain mapped to a project
+// DomainHealthStatus represents the derived operational health overlay.
+type DomainHealthStatus string
+
+const (
+	DomainHealthHealthy   DomainHealthStatus = "healthy"
+	DomainHealthUnhealthy DomainHealthStatus = "unhealthy"
+	DomainHealthUnknown   DomainHealthStatus = "unknown"
+)
+
+// DomainErrorCode represents deterministic, machine-readable failure classifications.
+type DomainErrorCode string
+
+const (
+	ErrNone                  DomainErrorCode = ""
+	ErrDNSConflict           DomainErrorCode = "DNS_CONFLICT"
+	ErrDomainNotResolved     DomainErrorCode = "DOMAIN_NOT_RESOLVED"
+	ErrInvalidCNAMETarget    DomainErrorCode = "INVALID_CNAME_TARGET"
+	ErrSSLRateLimit          DomainErrorCode = "SSL_RATE_LIMIT"
+	ErrSSLIssuanceFailed     DomainErrorCode = "SSL_ISSUANCE_FAILED"
+	ErrCertbotTimeout        DomainErrorCode = "CERTBOT_TIMEOUT"
+	ErrNginxValidationFailed  DomainErrorCode = "NGINX_VALIDATION_FAILED"
+	ErrRoutingHealthFailed   DomainErrorCode = "ROUTING_HEALTH_FAILED"
+	ErrLockAcquisitionFailed DomainErrorCode = "LOCK_ACQUISITION_FAILED"
+	
+	// Explicit Degraded Reason Codes
+	ErrRedisUnavailable      DomainErrorCode = "redis_unavailable"
+	ErrNginxReloadFailed     DomainErrorCode = "nginx_reload_failed"
+	ErrSSLExpired            DomainErrorCode = "ssl_expired"
+	ErrEdgeUnreachable       DomainErrorCode = "edge_unreachable"
+	ErrUpstreamTimeout       DomainErrorCode = "upstream_timeout"
+	ErrIntegrityCheckFailed  DomainErrorCode = "integrity_check_failed"
+	ErrReconciliationStalled DomainErrorCode = "reconciliation_stalled"
+)
+
+// CustomDomain represents a custom domain mapped to a project, tracking both its lifecycle state and operational health overlay.
 type CustomDomain struct {
 	ID        uint               `gorm:"primaryKey" json:"id"`
 	ProjectID uint               `gorm:"not null;index" json:"project_id"`
 	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	Domain    string             `gorm:"uniqueIndex;size:255;not null" json:"domain"`
-	Status    CustomDomainStatus `gorm:"size:20;not null;default:pending" json:"status"`
-	CreatedAt time.Time          `json:"created_at"`
-	UpdatedAt time.Time          `json:"updated_at"`
+	Status    CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
+
+	// SSL & Certificate Lifecycle
+	SSLStatus            string     `gorm:"size:50;default:'none'" json:"ssl_status"`
+	SSLIssuedAt          *time.Time `json:"ssl_issued_at,omitempty"`
+	SSLExpiresAt         *time.Time `json:"ssl_expires_at,omitempty"`
+	LastRenewalAttemptAt *time.Time `json:"last_renewal_attempt_at,omitempty"`
+	RenewalRetryCount    int        `gorm:"default:0" json:"renewal_retry_count"`
+
+	// Verification & Reconciliation
+	LastVerificationAt     *time.Time `json:"last_verification_at,omitempty"`
+	LastReconciliationAt   *time.Time `json:"last_reconciliation_at,omitempty"`
+	VerificationRetryCount int        `gorm:"default:0" json:"verification_retry_count"`
+
+	// Derived Operational Health Overlay (DOMAIN -> DNS -> EDGE -> APP HEALTH)
+	HealthStatus      DomainHealthStatus `gorm:"size:20;default:'unknown'" json:"health_status"`
+	LastHealthcheckAt *time.Time         `json:"last_healthcheck_at,omitempty"`
+	LatencyMs         int64              `json:"latency_ms"`
+	ConfigHash        string             `gorm:"size:64" json:"config_hash,omitempty"`
+	CurrentSequence   int                `gorm:"default:0" json:"current_sequence"`
+
+	// Granular Layered Health Validation
+	Layer1DNSReachable      bool `gorm:"default:false" json:"layer1_dns_reachable"`
+	Layer2EdgeReachable     bool `gorm:"default:false" json:"layer2_edge_reachable"`
+	Layer3SSLValid          bool `gorm:"default:false" json:"layer3_ssl_valid"`
+	Layer4UpstreamReachable bool `gorm:"default:false" json:"layer4_upstream_reachable"`
+	Layer5ResponseIntegrity bool `gorm:"default:false" json:"layer5_response_integrity"`
+
+	// Staged Cleanup & Tombstone Metadata
+	CleanupRetryCount int            `gorm:"default:0" json:"cleanup_retry_count"`
+	CleanupCheckpoint string         `gorm:"size:50;default:'init'" json:"cleanup_checkpoint"`
+	
+	// Resumable Checkpoint Metadata
+	ProvisioningCheckpoint string `gorm:"size:50;default:'init'" json:"provisioning_checkpoint"`
+	RenewalCheckpoint      string `gorm:"size:50;default:'init'" json:"renewal_checkpoint"`
+	
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+	// Structured Error Tracking
+	ErrorCode          DomainErrorCode `gorm:"size:50" json:"error_code,omitempty"`
+	DegradedReasonCode DomainErrorCode `gorm:"size:50" json:"degraded_reason_code,omitempty"`
+	ErrorMessage       string          `gorm:"type:text" json:"error_message,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ===========================================
+// DomainEvent Model
+// ===========================================
+
+// DomainEvent tracks granular custom domain lifecycle transitions and audit logs for observability and realtime delivery.
+type DomainEvent struct {
+	ID             uint               `gorm:"primaryKey" json:"id"`
+	DomainID       uint               `gorm:"not null;index" json:"domain_id"`
+	JobID          string             `gorm:"size:100;index" json:"job_id"`
+	SequenceNumber int                `gorm:"not null;default:0;index" json:"sequence_number"`
+	StateFrom      CustomDomainStatus `gorm:"size:50" json:"state_from"`
+	StateTo        CustomDomainStatus `gorm:"size:50" json:"state_to"`
+	EventType      string             `gorm:"size:100;not null;index" json:"event_type"` // e.g., "dns_verified", "ssl_issued", "healthcheck_failed"
+	Payload        string             `gorm:"type:text" json:"payload"`
+	DurationMs     int64              `json:"duration_ms"`
+	Error          string             `gorm:"type:text" json:"error,omitempty"`
+	CreatedAt      time.Time          `gorm:"index" json:"created_at"`
 }
 
 // ===========================================

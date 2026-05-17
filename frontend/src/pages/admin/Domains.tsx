@@ -8,7 +8,8 @@ import {
   Clock, 
   Loader2,
   ExternalLink,
-  Search
+  Search,
+  ShieldCheck
 } from 'lucide-react'
 import useTranslation from '../../lib/useTranslation'
 import { Badge } from '@/components/ui/badge'
@@ -25,22 +26,51 @@ import { Input } from '@/components/ui/input'
 import { CustomDomain } from '../../types'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 
-const StatusBadge = ({ status }: { status: CustomDomain['status'] }) => {
+const StatusBadge = ({ status }: { status?: string }) => {
   const { t } = useTranslation()
-  const configs = {
-    pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
-    active: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.active') },
-    error: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: t('status.failed') },
+  const cleanStatus = status || 'pending'
+  const label = t(`domains.status.${cleanStatus}`) || cleanStatus
+
+  let color = 'text-amber-600 border-amber-500/20 bg-amber-500/10'
+  let Icon = Clock
+
+  if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
+    color = 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10'
+    Icon = CheckCircle2
+  } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
+    color = 'text-cyan-500 border-cyan-500/20 bg-cyan-500/10'
+    Icon = Loader2
+  } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
+    color = 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+    Icon = AlertCircle
   }
 
-  const config = configs[status] || configs.pending
-  const Icon = config.icon
+  return (
+    <Badge variant="outline" className={`gap-1.5 flex w-fit text-[11px] font-semibold tracking-tight px-2.5 py-1 ${color}`}>
+      <Icon className={`w-3.5 h-3.5 ${['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus) ? 'animate-spin' : ''}`} />
+      {label}
+    </Badge>
+  )
+}
+
+const HealthBadge = ({ health, error }: { health?: string, error?: string }) => {
+  const { t } = useTranslation()
+  if (!health || health === 'unknown') return null
+
+  const isHealthy = health === 'healthy'
+  const color = isHealthy ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+  const label = t(`domains.health.${health}`) || health
 
   return (
-    <Badge variant="outline" className={`gap-1.5 flex w-fit ${config.color}`}>
-      <Icon className="w-3 h-3" />
-      {config.label}
-    </Badge>
+    <div className="flex items-center gap-2 mt-1.5">
+      <Badge variant="outline" className={`gap-1 flex w-fit text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 ${color}`}>
+        <ShieldCheck className="w-3 h-3" />
+        {label}
+      </Badge>
+      {!isHealthy && error && error !== 'none' && (
+        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">{error}</span>
+      )}
+    </div>
   )
 }
 
@@ -68,8 +98,8 @@ const AdminDomains = () => {
 
   const filteredDomains = domains.filter(d => 
     d.domain.toLowerCase().includes(search.toLowerCase()) ||
-    d.project?.name.toLowerCase().includes(search.toLowerCase()) ||
-    d.project?.user?.name.toLowerCase().includes(search.toLowerCase())
+    (d.project && d.project.name.toLowerCase().includes(search.toLowerCase())) ||
+    (d.project && d.project.user && d.project.user.name.toLowerCase().includes(search.toLowerCase()))
   )
 
   return (
@@ -127,7 +157,7 @@ const AdminDomains = () => {
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/25 text-muted-foreground">
                         <Globe className="h-3.5 w-3.5" />
                       </div>
-                      <div className="flex min-w-0 flex-col">
+                      <div className="flex min-w-0 flex-col text-left">
                         <span className="truncate text-[13px] font-semibold">{domain.domain}</span>
                         <a 
                           href={`https://${domain.domain}`} 
@@ -137,6 +167,11 @@ const AdminDomains = () => {
                         >
                           {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
                         </a>
+                        {domain.config_hash && (
+                          <span className="text-[9px] font-mono text-muted-foreground/50 mt-0.5">
+                            SHA256:{domain.config_hash.substring(0, 8)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -145,7 +180,7 @@ const AdminDomains = () => {
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
                         {domain.project?.user?.name?.substring(0, 2).toUpperCase() || 'NA'}
                       </div>
-                      <div className="flex min-w-0 flex-col">
+                      <div className="flex min-w-0 flex-col text-left">
                         <span className="truncate text-[13px] font-medium">{domain.project?.user?.name || t('common.unassigned')}</span>
                         <span className="truncate text-[9px] text-muted-foreground">{domain.project?.user?.email || '-'}</span>
                       </div>
@@ -157,7 +192,7 @@ const AdminDomains = () => {
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/20">
                           <FrameworkIcon framework={domain.project.framework} variant="plain" className="h-5 w-5" />
                         </div>
-                        <div className="flex min-w-0 flex-col">
+                        <div className="flex min-w-0 flex-col text-left">
                           <span className="truncate text-[13px] font-medium text-foreground/90">{domain.project.name}</span>
                           <span className="truncate text-[9px] text-muted-foreground">
                             {domain.project.framework || domain.project.subdomain || domain.project.uid}
@@ -168,8 +203,9 @@ const AdminDomains = () => {
                       <span className="text-xs text-destructive italic">{t('common.unassigned')}</span>
                     )}
                   </TableCell>
-                  <TableCell className="py-4 pr-6">
+                  <TableCell className="py-4 pr-6 text-left">
                     <StatusBadge status={domain.status} />
+                    <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
                   </TableCell>
                 </TableRow>
               ))}

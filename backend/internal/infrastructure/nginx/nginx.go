@@ -2,15 +2,20 @@ package nginx
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/backend/internal/pkg/utils"
 )
 
 // NginxWebhookService handles communication with the remote Nginx VM
@@ -36,10 +41,36 @@ type WebhookPayload struct {
 	UserFolder    string   `json:"user_folder"`
 }
 
-// SyncProject sends a sync request to the Nginx webhook
-func (s *NginxWebhookService) SyncProject(project *models.Project, domain string) error {
+// WebhookResponse represents the JSON response returned by the remote Nginx VM
+type WebhookResponse struct {
+	Message    string `json:"message"`
+	ConfigHash string `json:"config_hash"`
+}
+
+// signRequest generates an HMAC SHA-256 signature using timestamp, nonce, method, path, and body to prevent replay attacks and tampering.
+func (s *NginxWebhookService) signRequest(req *http.Request, bodyBytes []byte) {
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	nonce := utils.GenerateRandomUID()
+	path := req.URL.Path
+	if req.URL.RawQuery != "" {
+		path = path + "?" + req.URL.RawQuery
+	}
+	rawStr := fmt.Sprintf("%s:%s:%s:%s:%s", timestamp, nonce, req.Method, path, string(bodyBytes))
+
+	h := hmac.New(sha256.New, []byte(s.cfg.NginxWebhookKey))
+	h.Write([]byte(rawStr))
+	sig := hex.EncodeToString(h.Sum(nil))
+
+	req.Header.Set("X-Webhook-Timestamp", timestamp)
+	req.Header.Set("X-Webhook-Nonce", nonce)
+	req.Header.Set("X-Webhook-Signature", sig)
+	req.Header.Set("X-Webhook-Key", s.cfg.NginxWebhookKey)
+}
+
+// SyncProject sends a sync request to the Nginx webhook and returns the resulting SHA256 config hash.
+func (s *NginxWebhookService) SyncProject(project *models.Project, domain string) (string, error) {
 	if !s.cfg.NginxWebhookEnabled || s.cfg.NginxWebhookURL == "" {
-		return nil
+		return "", nil
 	}
 
 	port := 80
@@ -54,9 +85,13 @@ func (s *NginxWebhookService) SyncProject(project *models.Project, domain string
 
 	var customDomains []string
 	for _, cd := range project.CustomDomains {
-		// Only include custom domains that have successfully passed DNS verification (Status == Active).
-		// Including unverified (Pending/Error) domains causes Certbot HTTP-01 challenge to fail for the entire certificate.
-		if cd.Domain != "" && cd.Status == models.DomainStatusActive {
+		// Include custom domains that have passed DNS verification and are in active or provisioning states.
+		if cd.Domain != "" && (cd.Status == models.DomainStatusActive ||
+			cd.Status == models.DomainStatusSSLActive ||
+			cd.Status == models.DomainStatusSSLProvisioning ||
+			cd.Status == models.DomainStatusDNSVerified ||
+			cd.Status == models.DomainStatusSSLQueued ||
+			cd.Status == models.DomainStatusRenewalPending) {
 			customDomains = append(customDomains, cd.Domain)
 		}
 	}
@@ -89,13 +124,58 @@ func (s *NginxWebhookService) DeleteProject(project *models.Project, domain stri
 		UserFolder: userFolder,
 	}
 
-	return s.sendRequest(payload)
+	_, err := s.sendRequest(payload)
+	return err
 }
 
-func (s *NginxWebhookService) sendRequest(payload WebhookPayload) error {
+// SSLStatusResponse represents the JSON payload returned by the remote Nginx VM /ssl-status endpoint.
+type SSLStatusResponse struct {
+	Domain     string `json:"domain"`
+	Status     string `json:"status"`
+	Error      string `json:"error"`
+	IssuedAt   string `json:"issued_at"`
+	ExpiresAt  string `json:"expires_at"`
+	RetryCount int    `json:"retry_count"`
+}
+
+// GetSSLStatus queries the remote Nginx VM for Let's Encrypt certificate issuance status and valid dates.
+func (s *NginxWebhookService) GetSSLStatus(domain string) (*SSLStatusResponse, error) {
+	if !s.cfg.NginxWebhookEnabled || s.cfg.NginxWebhookURL == "" {
+		return nil, fmt.Errorf("nginx webhook not configured")
+	}
+
+	baseURL := strings.TrimSuffix(s.cfg.NginxWebhookURL, "/webhook")
+	targetURL := fmt.Sprintf("%s/ssl-status?domain=%s", baseURL, domain)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	s.signRequest(req, nil)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch ssl status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ssl status endpoint returned HTTP %d", resp.StatusCode)
+	}
+
+	var sslResp SSLStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sslResp); err != nil {
+		return nil, fmt.Errorf("failed to decode ssl status response: %w", err)
+	}
+
+	return &sslResp, nil
+}
+
+func (s *NginxWebhookService) sendRequest(payload WebhookPayload) (string, error) {
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	client := &http.Client{
@@ -104,23 +184,26 @@ func (s *NginxWebhookService) sendRequest(payload WebhookPayload) error {
 
 	req, err := http.NewRequest("POST", s.cfg.NginxWebhookURL, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Webhook-Key", s.cfg.NginxWebhookKey)
+	s.signRequest(req, jsonPayload)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("webhook request failed: %v", err)
+		return "", fmt.Errorf("webhook request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned status: %d", resp.StatusCode)
+		return "", fmt.Errorf("webhook returned status: %d", resp.StatusCode)
 	}
 
-	slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action)
-	return nil
+	var webhookResp WebhookResponse
+	_ = json.NewDecoder(resp.Body).Decode(&webhookResp)
+
+	slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action, "hash", webhookResp.ConfigHash)
+	return webhookResp.ConfigHash, nil
 }
 
 // getUserFolderName generates a predictable, POSIX-compliant directory name based on the user's email.

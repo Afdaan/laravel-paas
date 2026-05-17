@@ -90,7 +90,7 @@ func main() {
 	authService := services.NewAuthService(userRepo, cfg, redisService)
 	databaseService := services.NewDatabaseService(db, cfg)
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
-	domainHandler := domainHandlerPkg.NewDomainHandler(domainService, projectService)
+	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, domainService, projectService)
 
 	// Initialize and start WorkerManager and CentralWatchdog
 	workerManager := worker.NewWorkerManager(cfg, dockerService, redisService, settingService)
@@ -100,7 +100,7 @@ func main() {
 	watchdog.Start()
 
 	// Initialize and start domain verification worker (MXToolbox-style background check)
-	domainWorker := workers.NewDomainWorker(db, domainService, projectService)
+	domainWorker := workers.NewDomainWorker(db, domainService, projectService, redisService)
 	domainCtx, cancelDomainWorker := context.WithCancel(context.Background())
 	go domainWorker.Start(domainCtx)
 

@@ -6,6 +6,7 @@
 package repositories
 
 import (
+	"errors"
 	"github.com/laravel-paas/backend/internal/models"
 	"gorm.io/gorm"
 )
@@ -24,6 +25,7 @@ type ProjectRepository interface {
 	Update(project *models.Project) error
 	UpdateStatus(id uint, status models.ProjectStatus) error
 	UpdateMetadata(id uint, updates map[string]interface{}) error
+	UpdateConfigHash(id uint, newHash string, expectedOldHash string) error
 	Delete(id uint) error
 	UpdateActivity(id uint) error
 	CountTotal() (int64, error)
@@ -144,6 +146,21 @@ func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) e
 
 func (r *projectRepository) UpdateMetadata(id uint, updates map[string]interface{}) error {
 	return r.db.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOldHash string) error {
+	query := r.db.Model(&models.Project{}).Where("id = ?", id)
+	if expectedOldHash != "" {
+		query = query.Where("config_hash = ? OR config_hash IS NULL OR config_hash = ''", expectedOldHash)
+	}
+	res := query.Update("config_hash", newHash)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("conditional config_hash update failed: hash was modified concurrently")
+	}
+	return nil
 }
 
 func (r *projectRepository) Delete(id uint) error {

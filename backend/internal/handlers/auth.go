@@ -98,6 +98,25 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
+// GenerateStreamToken generates a short-lived (60s) ephemeral stream JWT intended exclusively for SSE endpoints
+func (h *AuthHandler) GenerateStreamToken(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+
+	user, err := h.service.GetUserByID(userID)
+	if err != nil {
+		return err
+	}
+
+	token, err := h.service.GenerateStreamToken(user)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"token": token,
+	})
+}
+
 // LoginAsUser generates a JWT token for the specified user, allowing administrators to impersonate them.
 func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 	targetUserID, err := c.ParamsInt("id")

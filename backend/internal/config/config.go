@@ -63,10 +63,11 @@ type Config struct {
 	DockerNetwork    string
 
 	// Nginx Remote Webhook
-	NginxWebhookEnabled bool
-	NginxWebhookURL     string
-	NginxWebhookKey     string
-	InternalIP          string
+	NginxWebhookEnabled       bool
+	NginxWebhookURL           string
+	NginxWebhookKey           string
+	InternalIP                string
+	IntegrityValidationMarker string
 }
 
 // Load reads configuration from environment variables
@@ -144,6 +145,7 @@ func Load() *Config {
 		NginxWebhookURL:     getEnv("NGINX_WEBHOOK_URL", ""),
 		NginxWebhookKey:     getEnv("NGINX_WEBHOOK_KEY", ""),
 		InternalIP:          getEnv("INTERNAL_IP", "127.0.0.1"),
+		IntegrityValidationMarker: getEnv("INTEGRITY_VALIDATION_MARKER", "laravel-paas"),
 	}
 
 	// Ensure host paths are absolute to prevent Docker volume naming errors

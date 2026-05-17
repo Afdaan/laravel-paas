@@ -233,7 +233,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 			slog.Error("CRITICAL PANIC during deployment execution", "jobId", job.JobID, "projectId", job.ProjectID, "workerId", workerID, "panic", r)
 			w.recordAuditLog(job.ProjectID, job.JobID, workerID, "deployment_panic", fmt.Sprintf("Worker panic recovered: %v", r))
 			_ = w.redisService.ReleaseDeploymentLease(job.JobID, workerID)
-			_ = w.redisService.ForceReleaseDeploymentLock(job.ProjectID)
+			_ = w.redisService.ForceReleaseDeploymentLock(job.ProjectID, fmt.Sprintf("Worker panic recovered: %v", r))
 			if project, err := w.projectRepo.GetByID(job.ProjectID); err == nil {
 				w.updateProjectError(project, job.JobID, fmt.Sprintf("Deployment aborted due to worker internal error (panic): %v", r))
 			}
@@ -660,7 +660,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)
 	}
 
-	if err := w.nginxService.SyncProject(project, projectDomain); err != nil {
+	if _, err := w.nginxService.SyncProject(project, projectDomain); err != nil {
 		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
 	}
 

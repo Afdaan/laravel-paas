@@ -19,6 +19,7 @@ import (
 	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/middleware"
+	"github.com/laravel-paas/backend/internal/pkg/metrics"
 	"github.com/laravel-paas/backend/internal/services"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/backend/internal/services/setting"
@@ -91,6 +92,9 @@ func Setup(
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
+	// Prometheus Metrics Endpoint
+	app.Get("/metrics", metrics.PrometheusHandler())
+
 	// API Routes
 	api := app.Group("/api")
 
@@ -132,6 +136,7 @@ func Setup(
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
+	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
 
 	// Feedback (common)
 	protected.Post("/feedback", feedbackHandler.Create)
@@ -174,6 +179,7 @@ func Setup(
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
 	admin.Get("/databases", databaseHandler.AdminListAll)
 	admin.Get("/domains", domainHandler.ListGlobal)
+	admin.Get("/domains/metrics", domainHandler.ListGlobalMetrics)
 
 	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)

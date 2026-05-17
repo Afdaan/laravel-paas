@@ -193,6 +193,9 @@ export const projectsAPI = {
   
   getDomainDiagnostic: (id: number | string, domainId: number | string) =>
     api.get(`/projects/${id}/domains/${domainId}/diagnostic`),
+
+  getDomainEvents: (id: number | string, domainId: number | string) =>
+    api.get(`/projects/${id}/domains/${domainId}/events`),
   
   // Admin endpoints
   listAll: (params: Record<string, unknown> = {}) => 

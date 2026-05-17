@@ -12,7 +12,8 @@ import {
   Loader2,
   ExternalLink,
   FolderGit2,
-  MoreVertical
+  MoreVertical,
+  ShieldCheck
 } from 'lucide-react'
 import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -50,22 +51,51 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { CustomDomain, Project } from '../../types'
 
-const StatusBadge = ({ status }: { status: CustomDomain['status'] }) => {
+const StatusBadge = ({ status }: { status?: string }) => {
   const { t } = useTranslation()
-  const configs = {
-    pending: { color: 'text-amber-600 border-amber-500/20 bg-amber-500/10', icon: Clock, label: t('status.pending') },
-    active: { color: 'text-emerald-600 border-emerald-500/20 bg-emerald-500/10', icon: CheckCircle2, label: t('status.active') },
-    error: { color: 'text-rose-600 border-rose-500/20 bg-rose-500/10', icon: AlertCircle, label: t('status.failed') },
+  const cleanStatus = status || 'pending'
+  const label = t(`domains.status.${cleanStatus}`) || cleanStatus
+
+  let color = 'text-amber-600 border-amber-500/20 bg-amber-500/10'
+  let Icon = Clock
+
+  if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
+    color = 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10'
+    Icon = CheckCircle2
+  } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
+    color = 'text-cyan-500 border-cyan-500/20 bg-cyan-500/10'
+    Icon = Loader2
+  } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
+    color = 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+    Icon = AlertCircle
   }
 
-  const config = configs[status] || configs.pending
-  const Icon = config.icon
+  return (
+    <Badge variant="outline" className={`gap-1.5 flex w-fit text-[11px] font-semibold tracking-tight px-2.5 py-1 ${color}`}>
+      <Icon className={`w-3.5 h-3.5 ${['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus) ? 'animate-spin' : ''}`} />
+      {label}
+    </Badge>
+  )
+}
+
+const HealthBadge = ({ health, error }: { health?: string, error?: string }) => {
+  const { t } = useTranslation()
+  if (!health || health === 'unknown') return null
+
+  const isHealthy = health === 'healthy'
+  const color = isHealthy ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+  const label = t(`domains.health.${health}`) || health
 
   return (
-    <Badge variant="outline" className={`gap-1.5 flex w-fit ${config.color}`}>
-      <Icon className="w-3 h-3" />
-      {config.label}
-    </Badge>
+    <div className="flex items-center gap-2 mt-1.5">
+      <Badge variant="outline" className={`gap-1 flex w-fit text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 ${color}`}>
+        <ShieldCheck className="w-3 h-3" />
+        {label}
+      </Badge>
+      {!isHealthy && error && error !== 'none' && (
+        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">{error}</span>
+      )}
+    </div>
   )
 }
 
@@ -159,16 +189,16 @@ const Domains = () => {
         <DialogContent className="p-0 sm:max-w-[460px] overflow-hidden">
           <DialogHeader>
             <div className="px-5 pt-5">
-              <DialogTitle className="flex items-center gap-2 text-base">
+              <DialogTitle className="flex items-center gap-2 text-base text-left">
                 <ArrowRightLeft className="w-4 h-4 text-primary" />
                 {t('domains.transfer')}
               </DialogTitle>
             </div>
-            <DialogDescription className="px-5 text-xs leading-relaxed">
+            <DialogDescription className="px-5 text-xs leading-relaxed text-left">
               {t('domains.transferDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="px-5 pb-5 pt-2 space-y-5">
+          <div className="px-5 pb-5 pt-2 space-y-5 text-left">
             <div className="space-y-3">
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
                 <Globe size={12} className="text-primary/50" />
@@ -201,7 +231,7 @@ const Domains = () => {
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (
                       <SelectItem key={p.id} value={p.id.toString()} className="py-2.5 pl-2 pr-8">
-                        <div className="flex min-w-0 flex-col gap-0.5">
+                        <div className="flex min-w-0 flex-col gap-0.5 text-left">
                           <span className="truncate text-sm font-medium leading-none">{p.name}</span>
                           <span className="truncate text-[10px] leading-none text-muted-foreground">{p.subdomain}</span>
                         </div>
@@ -234,7 +264,7 @@ const Domains = () => {
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
-        <div>
+        <div className="text-left">
           <h1 className="text-3xl font-bold tracking-tight mb-2">{t('student.domains.title')}</h1>
           <p className="text-muted-foreground max-w-2xl">
             {t('student.domains.desc')}
@@ -274,7 +304,7 @@ const Domains = () => {
                       <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
                         <Globe className="w-4 h-4" />
                       </div>
-                      <div className="flex flex-col">
+                      <div className="flex flex-col text-left">
                         <span>{domain.domain}</span>
                         <a 
                           href={`https://${domain.domain}`} 
@@ -284,10 +314,15 @@ const Domains = () => {
                         >
                           {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
                         </a>
+                        {domain.config_hash && (
+                          <span className="text-[9px] font-mono text-muted-foreground/50 mt-0.5">
+                            SHA256:{domain.config_hash.substring(0, 8)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-left">
                     {domain.project ? (
                       <Link 
                         to={`/projects/${domain.project.uid}`}
@@ -300,8 +335,9 @@ const Domains = () => {
                       <span className="text-xs text-destructive italic">{t('common.unassigned')}</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-left">
                     <StatusBadge status={domain.status} />
+                    <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
                   </TableCell>
                   <TableCell className="pr-6">
                     <div className="flex justify-end">

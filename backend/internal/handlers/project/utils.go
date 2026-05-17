@@ -412,7 +412,7 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 	_ = h.redisService.RemoveFromQueue(uint(projectID))
 
 	// 3. Release Redis Lock
-	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID))
+	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID), "User cancelled deployment")
 
 	// 4. Update project status to Failed
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusFailed)
@@ -434,7 +434,7 @@ func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
 	_ = h.redisService.RemoveFromQueue(uint(projectID))
 
 	// 2. Release Redis Lock
-	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID))
+	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID), "Admin manual requeue")
 
 	// 3. Update project status to Queued
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusQueued)

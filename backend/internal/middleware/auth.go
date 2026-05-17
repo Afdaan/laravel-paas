@@ -24,22 +24,32 @@ type ActivityTracker interface {
 	UpdateActivity(userID uint, ip string, forceLoginUpdate bool)
 }
 
-// JWTAuth middleware validates JWT tokens and checks against Redis blacklist
+// JWTAuth middleware validates JWT tokens and checks against Redis blacklist.
+// Security Context: Exposing long-lived primary JWTs in URL query parameters is dangerous
+// because URLs are logged in reverse proxy access logs, browser history, and analytics.
+// To prevent token leakage, standard API endpoints require Authorization header Bearer tokens.
+// Streaming endpoints (SSE) use short-lived (60s) ephemeral tokens via stream_token query param.
 func JWTAuth(secret string, redis Blacklister, tracker ActivityTracker) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Get token from Authorization header
 		authHeader := c.Get("Authorization")
-		if authHeader == "" {
+		var tokenString string
+
+		path := c.Path()
+		isStreamEndpoint := strings.HasSuffix(path, "/events/stream") || strings.HasSuffix(path, "/logs") || strings.HasSuffix(path, "/build-logs") || strings.HasSuffix(path, "/deployment-events")
+
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) != 2 || parts[0] != "Bearer" {
+				return apperr.New(401, "INVALID_AUTH", "Invalid authorization format")
+			}
+			tokenString = parts[1]
+		} else if isStreamEndpoint {
+			tokenString = c.Query("stream_token")
+		}
+
+		if tokenString == "" {
 			return apperr.ErrUnauthorized
 		}
-
-		// Extract Bearer token
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			return apperr.New(401, "INVALID_AUTH", "Invalid authorization format")
-		}
-
-		tokenString := parts[1]
 
 		// Check Blacklist
 		if redis != nil && redis.IsBlacklisted(tokenString) {
@@ -59,6 +69,15 @@ func JWTAuth(secret string, redis Blacklister, tracker ActivityTracker) fiber.Ha
 		claims, ok := token.Claims.(*models.JWTClaims)
 		if !ok {
 			return apperr.ErrUnauthorized
+		}
+
+		// Security constraint: Ephemeral stream tokens cannot be reused for standard API auth
+		if claims.StreamOnly && !isStreamEndpoint {
+			return apperr.New(403, "FORBIDDEN", "Ephemeral stream tokens are restricted exclusively to streaming endpoints")
+		}
+		// Security constraint: Standard long-lived tokens cannot be passed via query string to stream endpoints
+		if isStreamEndpoint && authHeader == "" && !claims.StreamOnly {
+			return apperr.New(403, "FORBIDDEN", "Primary tokens cannot be passed via query strings. Please use an ephemeral stream token.")
 		}
 
 		c.Locals("user_id", claims.UserID)
