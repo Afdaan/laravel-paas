@@ -132,7 +132,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"projects", "uni_projects_subdomain", []string{"subdomain"}},
 		{"projects", "uni_projects_database_name", []string{"database_name"}},
 		{"projects", "uni_projects_uid", []string{"uid"}},
-		{"settings", "idx_settings_key", []string{"setting_key"}},
+		{"settings", "uni_settings_setting_key", []string{"setting_key"}},
 		{"custom_domains", "uni_custom_domains_domain", []string{"domain"}},
 	}
 
