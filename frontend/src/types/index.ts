@@ -38,6 +38,7 @@ export interface DomainEvent {
   state_to: string;
   error_code?: string;
   message: string;
+  payload?: string;
   created_at: string;
 }
 

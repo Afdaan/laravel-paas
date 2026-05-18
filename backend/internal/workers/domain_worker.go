@@ -226,6 +226,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 					slog.Warn("Recovery trace: Edge Nginx unreachable during SSL polling", "domain", d.Domain, "error", err)
 					continue
 				}
+				slog.Info("Recovery trace: SSL polling status received", "domain", d.Domain, "sslStatus", sslStatus.Status, "retryCount", sslStatus.RetryCount)
 				if sslStatus.RetryCount > 0 {
 					metrics.GetCollector().IncrSSLRetry()
 				}
@@ -250,6 +251,9 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 						"ssl_expires_at":          d.SSLExpiresAt,
 					})
 					_ = w.domainService.TransitionState(d, models.DomainStatusActive, models.ErrNone, "Let's Encrypt SSL certificate provisioned successfully")
+					if project, err := w.projectService.GetProjectByID(d.ProjectID); err == nil {
+						go w.domainService.CheckAppHealth(d, project)
+					}
 					slog.Info("Recovery trace: SSL certificate issued successfully", "domain", d.Domain, "durationSec", time.Since(d.CreatedAt).Seconds())
 				case "ssl_failed":
 					d.VerificationRetryCount++

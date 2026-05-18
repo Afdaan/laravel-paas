@@ -324,6 +324,52 @@ def cert_covers_all(cert_name, domains):
         logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
         return False
 
+def inspect_certificate(cert_name):
+    """Returns certificate text and validity dates for a Let's Encrypt cert name."""
+    cert_file = f"/etc/letsencrypt/live/{cert_name}/fullchain.pem"
+    if not os.path.exists(cert_file):
+        return None
+    try:
+        text_cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
+        text_res = subprocess.run(text_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        if text_res.returncode != 0:
+            logging.warning(f"Failed to inspect certificate {cert_name}: {text_res.stderr.strip()}")
+            return None
+
+        dates_cmd = ["openssl", "x509", "-in", cert_file, "-enddate", "-startdate", "-noout"]
+        dates_res = subprocess.run(dates_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        issued_at = None
+        expires_at = None
+        if dates_res.returncode == 0:
+            for line in dates_res.stdout.splitlines():
+                if line.startswith("notAfter="):
+                    expires_at = line.split("=", 1)[1]
+                if line.startswith("notBefore="):
+                    issued_at = line.split("=", 1)[1]
+
+        return {
+            "cert_name": cert_name,
+            "text": text_res.stdout.lower(),
+            "issued_at": issued_at,
+            "expires_at": expires_at,
+        }
+    except Exception as e:
+        logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
+        return None
+
+def find_certificate_covering_domain(domain):
+    """Finds any Let's Encrypt certificate whose SAN list covers the requested domain."""
+    live_dir = "/etc/letsencrypt/live"
+    if not os.path.isdir(live_dir):
+        return None
+
+    requested_san = f"dns:{domain.lower()}"
+    for cert_name in os.listdir(live_dir):
+        cert_info = inspect_certificate(cert_name)
+        if cert_info and requested_san in cert_info["text"]:
+            return cert_info
+    return None
+
 def _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port, project_dir, ssl_enabled):
     """Stages configuration atomically, verifies syntax, and schedules debounced reload."""
     file_path = os.path.join(project_dir, f"project-{subdomain}.conf")
@@ -511,24 +557,16 @@ def ssl_status():
     error_msg = status_info.get("error", "")
     retry_count = status_info.get("retry_count", 0)
     
-    cert_file = f"/etc/letsencrypt/live/{domain}/fullchain.pem"
     expires_at = None
     issued_at = None
-    if os.path.exists(cert_file):
-        try:
-            cmd = ["openssl", "x509", "-in", cert_file, "-enddate", "-startdate", "-noout"]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            for line in res.stdout.splitlines():
-                if line.startswith("notAfter="):
-                    expires_at = line.split("=")[1]
-                if line.startswith("notBefore="):
-                    issued_at = line.split("=")[1]
-        except Exception as e:
-            logging.error(f"Failed to parse cert dates for {domain}: {str(e)}")
-            
-        if current_status not in ["ssl_queued", "ssl_provisioning", "ssl_failed"]:
-            current_status = "ssl_active"
-            
+    cert_info = inspect_certificate(domain) or find_certificate_covering_domain(domain)
+    if cert_info:
+        issued_at = cert_info["issued_at"]
+        expires_at = cert_info["expires_at"]
+        current_status = "ssl_active"
+        error_msg = ""
+        logging.info(f"SSL status active for {domain}; covered by certificate {cert_info['cert_name']}")
+             
     return jsonify({
         "domain": domain,
         "status": current_status,

@@ -184,12 +184,18 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                     ...d,
                     status: eventData.state_to || d.status,
                     error_code: eventData.error_code || d.error_code,
-                    error_message: eventData.message || d.error_message,
+                    error_message: eventData.message || eventData.payload || d.error_message,
                   };
                 }
                 return d;
               });
             });
+
+            if (eventData.state_to === 'active' || eventData.state_to === 'ssl_active' || String(eventData.event_type || '').startsWith('healthcheck_')) {
+              projectsAPI.listDomains(projectId).then((res) => {
+                setDomains(res.data.data || [])
+              }).catch(() => {})
+            }
 
             // If audit log modal is open for this domain, append live event
             setEventsModal(prev => {
@@ -347,7 +353,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           {new Date(event.created_at).toLocaleString()}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{event.message}</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{event.message || event.payload}</p>
                       {event.state_from && event.state_to && (
                         <div className="flex items-center gap-2 pt-2 text-[10px] font-mono text-muted-foreground/80">
                           <span className="px-2 py-0.5 rounded bg-muted/40 border">{event.state_from}</span>
