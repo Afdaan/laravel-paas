@@ -181,6 +181,10 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 			_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, errCode, fmt.Sprintf("Drift detected: SSL certificate is %s", sslStatus.Status))
 			continue
 		}
+
+		if d.HealthStatus == models.DomainHealthUnhealthy || d.LastHealthcheckAt == nil || time.Since(*d.LastHealthcheckAt) > 5*time.Minute {
+			w.domainService.CheckAppHealth(d, project)
+		}
 	}
 }
 

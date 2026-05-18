@@ -246,22 +246,19 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 	}
 	updates["layer4_upstream_reachable"] = true
 
-	// LAYER 5: Response Integrity Validation
-	// Make explicit GET request to verify actual deployment ownership against configurable marker
+	// LAYER 5: Optional response integrity validation. Enable with INTEGRITY_VALIDATION_MARKER.
 	if resp != nil {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		bodyStr := string(bodyBytes)
 		_ = resp.Body.Close()
 
-		marker := s.cfg.IntegrityValidationMarker
+		marker := strings.TrimSpace(s.cfg.IntegrityValidationMarker)
 		if marker == "" {
-			marker = "laravel-paas"
-		}
-
-		if strings.Contains(bodyStr, marker) || strings.Contains(bodyStr, `"status":"ok"`) || strings.Contains(bodyStr, `'status':'ok'`) {
+			layer5Integrity = true
+		} else if strings.Contains(bodyStr, marker) || strings.Contains(bodyStr, `"status":"ok"`) || strings.Contains(bodyStr, `'status':'ok'`) {
 			layer5Integrity = true
 		} else {
-			// Make explicit GET /up request to verify Laravel 11+ healthcheck endpoint
+			// When strict integrity is enabled, allow Laravel health endpoints to satisfy the marker check.
 			upURL := fmt.Sprintf("%s://%s/up", scheme, domain.Domain)
 			upReq, _ := http.NewRequest("GET", upURL, nil)
 			upReq.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
@@ -291,6 +288,9 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 	updates["degraded_reason_code"] = models.ErrNone
 	updates["error_message"] = ""
 	_ = s.db.Model(domain).Updates(updates)
+	if domain.HealthStatus != models.DomainHealthHealthy || domain.ErrorMessage != "" || domain.DegradedReasonCode != models.ErrNone {
+		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_recovered", "Domain health recovered", "")
+	}
 	s.redisService.IncrDomainMetric("healthcheck_success", 1)
 }
 
