@@ -52,9 +52,10 @@ function getFrameworkIcon(framework?: string): SimpleIcon | null {
 }
 
 function BrandGlyph({ icon }: { icon: SimpleIcon }) {
+  const fillColor = icon === siPython ? '#22c55e' : `#${icon.hex}`
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
-      <path fill={`#${icon.hex}`} d={icon.path} />
+      <path fill={fillColor} d={icon.path} />
     </svg>
   )
 }

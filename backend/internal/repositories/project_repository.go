@@ -220,12 +220,25 @@ func (r *projectRepository) GetRunningWithContainers() ([]models.Project, error)
 }
 
 func (r *projectRepository) RecordDeploymentEvent(event *models.DeploymentEvent) error {
-	return r.db.Create(event).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var nextSeq int
+		tx.Raw("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM deployment_events WHERE project_id = ? AND job_id = ? FOR UPDATE", event.ProjectID, event.JobID).Scan(&nextSeq)
+		event.SequenceNumber = nextSeq
+		return tx.Create(event).Error
+	})
 }
 
 func (r *projectRepository) ListDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error) {
+	var project models.Project
+	if err := r.db.Select("deployment_job_id").First(&project, projectID).Error; err != nil {
+		return nil, err
+	}
 	var events []models.DeploymentEvent
-	err := r.db.Where("project_id = ?", projectID).Order("sequence_number ASC, created_at ASC").Find(&events).Error
+	query := r.db.Where("project_id = ? AND event_type NOT IN (?, ?, ?)", projectID, "lease_acquired", "lease_renewed", "lease_released")
+	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+		query = query.Where("job_id = ?", *project.DeploymentJobID)
+	}
+	err := query.Order("sequence_number ASC, created_at ASC").Find(&events).Error
 	return events, err
 }
 
@@ -251,13 +264,9 @@ func (r *projectRepository) UpdateDeploymentStatus(id uint, status models.Deploy
 func (r *projectRepository) PromoteRolloutContainer(id uint, newContainerID string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
-			"container_id":           &newContainerID,
-			"rollout_container_id":   nil,
-			"status":                 models.StatusRunning,
-			"deployment_status":      models.DepStatusCompleted,
-			"deployment_message":     "Release successfully promoted and active",
-			"deployment_progress":    100,
-			"deployment_finished_at": gorm.Expr("NOW()"),
+			"container_id":         &newContainerID,
+			"rollout_container_id": nil,
+			"status":               models.StatusRunning,
 		}
 		return tx.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
 	})

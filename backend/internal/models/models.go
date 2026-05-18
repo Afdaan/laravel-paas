@@ -406,9 +406,9 @@ type DomainEvent struct {
 // DeploymentEvent tracks granular lifecycle transitions and audit events
 type DeploymentEvent struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
-	ProjectID      uint      `gorm:"not null;index" json:"project_id"`
-	JobID          string    `gorm:"size:100;index" json:"job_id"`
-	SequenceNumber int       `gorm:"not null;default:0;index" json:"sequence_number"`
+	ProjectID      uint      `gorm:"not null;uniqueIndex:idx_project_job_seq" json:"project_id"`
+	JobID          string    `gorm:"size:100;uniqueIndex:idx_project_job_seq" json:"job_id"`
+	SequenceNumber int       `gorm:"not null;default:0;uniqueIndex:idx_project_job_seq" json:"sequence_number"`
 	WorkerID       string    `gorm:"size:100" json:"worker_id"`
 	StateFrom      string    `gorm:"size:50" json:"state_from"`
 	StateTo        string    `gorm:"size:50" json:"state_to"`

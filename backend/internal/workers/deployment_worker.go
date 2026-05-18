@@ -46,8 +46,6 @@ type DeploymentWorker struct {
 	stopChan chan struct{}
 	wg       sync.WaitGroup
 
-	seqMutex     sync.Mutex
-	jobSequences map[string]int
 }
 
 // NewDeploymentWorker creates a new deployment worker
@@ -74,7 +72,6 @@ func NewDeploymentWorker(
 		settingService: settingService,
 		running:        false,
 		stopChan:       make(chan struct{}),
-		jobSequences:   make(map[string]int),
 	}
 }
 
@@ -580,7 +577,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Building and launching new container instance")
 
-	newContainerID, err := w.dockerService.BuildAndRun(ctx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy")
+	newContainerID, err := w.dockerService.BuildAndRun(ctx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy", appendLog)
 	if err != nil {
 		docker.GetCircuitBreaker().RecordFailure()
 		if ctx.Err() == context.Canceled {
@@ -651,7 +648,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusPromoting, 85, "promoting_release", "Syncing routing traffic to new container instance")
-	appendLog("Deployment completed successfully! System is now live.")
+	appendLog("Syncing routing traffic to new container instance...")
 
 	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
 		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)
@@ -668,8 +665,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	project.ContainerID = &newContainerID
 	project.RolloutContainerID = nil
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live")
-
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
 	}
@@ -679,13 +674,17 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if oldContainerID != nil {
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 100, "cleaning_legacy_instance", *oldContainerID)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 95, "cleaning_legacy_instance", *oldContainerID)
 		slog.Info("Cleaning up legacy instance", "subdomain", project.Subdomain)
+		appendLog("Cleaning up legacy container instance...")
 		time.Sleep(2 * time.Second)
 		if err := w.dockerService.RemoveContainer(*oldContainerID, oldWorkerContainerID); err != nil {
 			slog.Warn("Failed to remove legacy container", "id", *oldContainerID, "error", err)
 		}
 	}
+
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live")
+	appendLog("Deployment completed successfully! System is now live.")
 
 	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
@@ -697,9 +696,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 // cleanupJobTracking safely removes sequence tracking state for a completed or terminated job to prevent memory leaks.
 func (w *DeploymentWorker) cleanupJobTracking(jobID string) {
-	w.seqMutex.Lock()
-	defer w.seqMutex.Unlock()
-	delete(w.jobSequences, jobID)
 }
 
 // transitionDeploymentState validates and transitions the deployment status while recording a structured event audit trail
@@ -718,15 +714,9 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 
 // recordAuditLog records a deployment event without altering the project status
 func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, eventType, payload string) {
-	w.seqMutex.Lock()
-	seq := w.jobSequences[jobID] + 1
-	w.jobSequences[jobID] = seq
-	w.seqMutex.Unlock()
-
 	event := &models.DeploymentEvent{
 		ProjectID:      projectID,
 		JobID:          jobID,
-		SequenceNumber: seq,
 		WorkerID:       workerID,
 		StateFrom:      string(models.DepStatusBuilding),
 		StateTo:        string(models.DepStatusBuilding),

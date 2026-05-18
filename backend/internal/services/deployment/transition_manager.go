@@ -71,6 +71,13 @@ func (m *transitionManager) TransitionState(ctx context.Context, projectID uint,
 			"deployment_message":  payload,
 			"updated_at":          now,
 		}
+		activeJobID := jobID
+		if activeJobID == "" && project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+			activeJobID = *project.DeploymentJobID
+		}
+		if jobID != "" {
+			updates["deployment_job_id"] = jobID
+		}
 
 		// Track precise lifecycle boundary timestamps for operational observability
 		if nextState == models.DepStatusQueued || nextState == models.DepStatusPreparing {
@@ -86,12 +93,12 @@ func (m *transitionManager) TransitionState(ctx context.Context, projectID uint,
 
 		// Query monotonic sequence number dynamically within the atomic lock
 		var nextSeq int
-		tx.Raw("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM deployment_events WHERE project_id = ? AND job_id = ?", projectID, jobID).Scan(&nextSeq)
+		tx.Raw("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM deployment_events WHERE project_id = ? AND job_id = ? FOR UPDATE", projectID, activeJobID).Scan(&nextSeq)
 
 		workerID := fmt.Sprintf("node-%s", m.hostname)
 		event = models.DeploymentEvent{
 			ProjectID:      project.ID,
-			JobID:          jobID,
+			JobID:          activeJobID,
 			SequenceNumber: nextSeq,
 			WorkerID:       workerID,
 			StateFrom:      string(prevState),
@@ -110,6 +117,10 @@ func (m *transitionManager) TransitionState(ctx context.Context, projectID uint,
 		updatedProject.DeploymentProgress = progress
 		msg := payload
 		updatedProject.DeploymentMessage = &msg
+		if jobID != "" {
+			jID := jobID
+			updatedProject.DeploymentJobID = &jID
+		}
 
 		return nil
 	})

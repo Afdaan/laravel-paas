@@ -19,7 +19,7 @@ import (
 // Container Operations
 // ===========================================
 // BuildAndRun builds and starts a container for a project using Railpack with cancellation context
-func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool, noCache bool) (string, error) {
+func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool, noCache bool, logCallback func(string)) (string, error) {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
@@ -64,10 +64,10 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		if internalPort == "" {
 			internalPort = "80"
 		}
-		err = s.legacyLaravelBuild(ctx, project, buildPath, imageName, phpVersion, logFilePath, noCache)
+		err = s.legacyLaravelBuild(ctx, project, buildPath, imageName, phpVersion, logFilePath, noCache, logCallback)
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
-		err = s.railpackBuild(ctx, project, buildPath, imageName, logFilePath, noCache)
+		err = s.railpackBuild(ctx, project, buildPath, imageName, logFilePath, noCache, logCallback)
 	}
 
 	if err != nil {
@@ -123,6 +123,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
+		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
@@ -179,7 +180,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 }
 
 // legacyLaravelBuild handles the proven Dockerfile + Nginx approach with cancellation context
-func (s *DockerService) legacyLaravelBuild(ctx context.Context, project *models.Project, buildPath, imageName, phpVersion, logFilePath string, noCache bool) error {
+func (s *DockerService) legacyLaravelBuild(ctx context.Context, project *models.Project, buildPath, imageName, phpVersion, logFilePath string, noCache bool, logCallback func(string)) error {
 	// 1. Prepare Dockerfile
 	phpSlug := strings.ReplaceAll(phpVersion, ".", "")
 	dockerfile := fmt.Sprintf("Dockerfile.php%s.dynamic", phpSlug)
@@ -248,7 +249,7 @@ stdout_logfile_maxbytes=0
 	}
 	buildArgs = append(buildArgs, "--label", models.LabelProjectManaged, "-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
 
-	res, err := utils.RunWithRefinedLogCtx(ctx, 30*time.Minute, logFilePath, "docker", buildArgs...)
+	res, err := utils.RunWithRefinedLogCtx(ctx, 30*time.Minute, logFilePath, logCallback, "docker", buildArgs...)
 
 	if err != nil {
 		return apperr.New(500, "DOCKER_BUILD_FAILED", fmt.Sprintf("Docker build failed for %s: %s", project.Subdomain, res.Stderr))
@@ -258,7 +259,7 @@ stdout_logfile_maxbytes=0
 }
 
 // railpackBuild handles all other languages using Nixpacks-style auto-detection with cancellation context
-func (s *DockerService) railpackBuild(ctx context.Context, project *models.Project, buildPath, imageName, logFilePath string, noCache bool) error {
+func (s *DockerService) railpackBuild(ctx context.Context, project *models.Project, buildPath, imageName, logFilePath string, noCache bool, logCallback func(string)) error {
 	s.injectDefaultRailpackConfig(buildPath)
 
 	// Strip strict lockfiles before Railpack runs.
@@ -281,6 +282,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	envs := map[string]string{
 		"NPM_CONFIG_JOBS":             "2",
 		"NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+		"PYTHONUNBUFFERED":            "1",
 		"PAAS_BUILD_ID":               fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
@@ -311,7 +313,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	// Finalize build command with path
 	buildArgs = append(buildArgs, buildPath)
 
-	res, err := utils.RunWithRefinedLogCtx(ctx, 30*time.Minute, logFilePath, "railpack", buildArgs...)
+	res, err := utils.RunWithRefinedLogCtx(ctx, 30*time.Minute, logFilePath, logCallback, "railpack", buildArgs...)
 
 	if err != nil {
 		// Cleanup: Remove failed image and prune cache if it looks like a corruption issue.

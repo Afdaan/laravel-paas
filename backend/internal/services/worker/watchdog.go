@@ -109,7 +109,11 @@ func (w *CentralWatchdog) recoverOrphanedBuilds() {
 		}
 
 		recoveryLog := "Recovered from unexpected shutdown (re-queued)."
-		if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, "", models.DepStatusQueued, 0, "watchdog_recovery", recoveryLog); err != nil {
+		jobID := ""
+		if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+			jobID = *project.DeploymentJobID
+		}
+		if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, models.DepStatusQueued, 0, "watchdog_recovery", recoveryLog); err != nil {
 			slog.Error("Central watchdog: failed to transition project deployment state during recovery", "id", project.ID, "error", err)
 		}
 		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -176,7 +180,13 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 
 			for i := range projects {
 				project := projects[i]
-				jobID := "unknown"
+				jobID := ""
+				if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+					jobID = *project.DeploymentJobID
+				}
+				if jobID == "" {
+					jobID = "unknown"
+				}
 				var reason string
 
 				lockMeta, _ := w.redisService.GetLockMetadata(project.ID)

@@ -13,11 +13,58 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 )
 
+type streamWriter struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+	cb  func(string)
+}
+
+func (w *streamWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.cb == nil || len(p) == 0 {
+		return len(p), nil
+	}
+
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadString('\n')
+		if err != nil {
+			// No newline found in remaining buffer, put the partial line back
+			w.buf.Reset()
+			w.buf.WriteString(line)
+			break
+		}
+		cleanLine := strings.TrimSuffix(line, "\n")
+		cleanLine = strings.TrimSuffix(cleanLine, "\r")
+		w.cb(cleanLine)
+	}
+	return len(p), nil
+}
+
+func (w *streamWriter) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.cb != nil && w.buf.Len() > 0 {
+		cleanLine := strings.TrimSuffix(w.buf.String(), "\n")
+		cleanLine = strings.TrimSuffix(cleanLine, "\r")
+		if cleanLine != "" {
+			w.cb(cleanLine)
+		}
+		w.buf.Reset()
+	}
+}
+
 // DefaultTimeout is the standard deadline for shell commands
 const DefaultTimeout = 2 * time.Minute
+
 
 // Result holds the output of an executed command
 type Result struct {
@@ -150,11 +197,23 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 
 // RunCtx executes a command with a parent context and timeout.
 func RunCtx(parentCtx context.Context, timeout time.Duration, name string, args ...string) (*Result, error) {
-	return RunInDirWithEnvCtx(parentCtx, timeout, "", nil, name, args...)
+	return runInDirWithEnv(parentCtx, timeout, "", nil, false, name, args...)
 }
 
-// RunInDirWithEnvCtx executes a command with a parent context, directory, and env vars.
-func RunInDirWithEnvCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, name string, args ...string) (*Result, error) {
+// formatDuration formats a time.Duration into a human-readable string (e.g., "12.4s", "1m 5s")
+func formatDuration(d time.Duration) string {
+	d = d.Round(100 * time.Millisecond)
+	minutes := int(d.Minutes())
+	seconds := float64(int(d.Seconds())%60) + float64(d.Milliseconds()%1000)/1000.0
+
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %.1fs", minutes, seconds)
+	}
+	return fmt.Sprintf("%.1fs", seconds)
+}
+
+
+func runInDirWithEnv(parentCtx context.Context, timeout time.Duration, dir string, env []string, silent bool, name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
@@ -164,33 +223,31 @@ func RunInDirWithEnvCtx(parentCtx context.Context, timeout time.Duration, dir st
 		cmd.Env = append(os.Environ(), env...)
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	if !silent {
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+	}
 
 	err := cmd.Run()
-
 	result := &Result{
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
+		Stdout: stdoutBuf.String(),
+		Stderr: stderrBuf.String(),
 	}
 
 	if ctx.Err() == context.DeadlineExceeded {
 		return result, fmt.Errorf("command timed out after %s: %s %v", timeout, name, args)
-	}
-	if ctx.Err() == context.Canceled {
-		return result, fmt.Errorf("command cancelled: %s %v", name, args)
 	}
 
 	return result, err
 }
 
 // RunWithRefinedLogCtx executes a command with a parent context, timeout, and writes filtered output to a log file.
-func RunWithRefinedLogCtx(parentCtx context.Context, timeout time.Duration, logFilePath string, name string, args ...string) (*Result, error) {
-	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", nil, logFilePath, true, name, args...)
+func RunWithRefinedLogCtx(parentCtx context.Context, timeout time.Duration, logFilePath string, logCallback func(string), name string, args ...string) (*Result, error) {
+	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", nil, logFilePath, true, logCallback, name, args...)
 }
 
-func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, logFilePath string, refined bool, name string, args ...string) (*Result, error) {
+func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, logFilePath string, refined bool, logCallback func(string), name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
@@ -209,9 +266,14 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 	defer logFile.Close()
 
 	var output io.Writer = logFile
+	var sw *streamWriter
+	if logCallback != nil {
+		sw = &streamWriter{cb: logCallback}
+		output = io.MultiWriter(logFile, sw)
+	}
 	var refiner *LogRefiner
 	if refined {
-		refiner = NewLogRefiner(logFile)
+		refiner = NewLogRefiner(output)
 		output = refiner
 	}
 
@@ -224,6 +286,9 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 
 	if refiner != nil {
 		_ = refiner.Flush()
+	}
+	if sw != nil {
+		sw.Flush()
 	}
 
 	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================\n", formatDuration(duration))
@@ -242,16 +307,4 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 	}
 
 	return result, err
-}
-
-func formatDuration(d time.Duration) string {
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	m := int(d.Minutes())
-	s := int(d.Seconds()) % 60
-	if m > 0 {
-		return fmt.Sprintf("%dm %ds", m, s)
-	}
-	return fmt.Sprintf("%ds", s)
 }

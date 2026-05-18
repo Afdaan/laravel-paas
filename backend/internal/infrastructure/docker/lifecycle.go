@@ -139,6 +139,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--security-opt=no-new-privileges:true",
 		"--pids-limit=250",
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
+		"-e", "PYTHONUNBUFFERED=1",
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
 
 		"--label", "traefik.enable=true",
@@ -217,21 +218,22 @@ func (s *DockerService) CleanupLegacyContainers(subdomain string, currentWebID s
 
 // IsContainerHealthy checks if a container is running and healthy
 func (s *DockerService) IsContainerHealthy(containerID string) bool {
-	// Check container status via docker inspect
-	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Health.Status}}", containerID)
-
+	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health{{end}}", containerID)
 	if err != nil {
-		// Container doesn't have health check or not running, check if it's at least running
-		res, err = utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}", containerID)
-		if err != nil {
+		return false
+	}
+	status := strings.TrimSpace(res.Stdout)
+	if status == "no_health" || status == "" || strings.Contains(status, "no value") {
+		resRun, errRun := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}::{{.State.Restarting}}", containerID)
+		if errRun != nil {
 			return false
 		}
-		return strings.TrimSpace(res.Stdout) == "true"
+		parts := strings.Split(strings.TrimSpace(resRun.Stdout), "::")
+		if len(parts) == 2 {
+			return parts[0] == "true" && parts[1] == "false"
+		}
+		return false
 	}
-
-	status := strings.TrimSpace(res.Stdout)
-	// Docker health status can be: starting, healthy, unhealthy
-	// We only return true when it has fully transitioned to "healthy"
 	return status == "healthy"
 }
 
