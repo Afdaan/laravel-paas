@@ -88,6 +88,7 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 		{Key: models.SettingProjectDomain, Value: cfg.ProjectDomain, Description: "Dedicated domain for student projects", Type: "string"},
 		{Key: models.SettingAdminIdleTimeout, Value: models.DefaultAdminIdleTimeout, Description: "Admin inactivity logout timeout (minutes)", Type: "int"},
 		{Key: models.SettingMaxConcurrent, Value: models.DefaultMaxConcurrent, Description: "Maximum simultaneous builds", Type: "int"},
+		{Key: models.SettingBuildTimeout, Value: models.DefaultBuildTimeout, Description: "Build timeout (seconds)", Type: "int"},
 	}
 
 	for _, setting := range defaultSettings {

@@ -134,6 +134,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"projects", "uni_projects_uid", []string{"uid"}},
 		{"settings", "uni_settings_setting_key", []string{"setting_key"}},
 		{"custom_domains", "uni_custom_domains_domain", []string{"domain"}},
+		{"deployment_events", "uni_project_job_seq", []string{"project_id", "job_id", "sequence_number"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -250,6 +251,12 @@ func ReconcileSchemas(db *gorm.DB) error {
 
 	// Reconcile CustomDomain
 	_ = EnsureConstraint(db, &models.CustomDomain{}, "uni_custom_domains_domain", "UNIQUE (domain)")
+
+	// Reconcile DeploymentEvent
+	if isPostgres(db) {
+		_ = db.Exec("DROP INDEX IF EXISTS idx_project_job_seq;")
+	}
+	_ = EnsureConstraint(db, &models.DeploymentEvent{}, "uni_project_job_seq", "UNIQUE (project_id, job_id, sequence_number)")
 
 	return nil
 }

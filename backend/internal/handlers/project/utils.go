@@ -1,12 +1,17 @@
 package project
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
@@ -178,6 +183,101 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	_, _ = f.ReadAt(buf, off)
 
 	return c.JSON(fiber.Map{"logs": string(buf)})
+}
+
+// StreamLogs streams live container logs using Server-Sent Events (SSE)
+func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	if project.ContainerID == nil || *project.ContainerID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Container not running"})
+	}
+
+	containerID := *project.ContainerID
+	logType := c.Query("type", "web")
+	if logType == "worker" {
+		if project.WorkerContainerID == nil || *project.WorkerContainerID == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Worker container not running"})
+		}
+		containerID = *project.WorkerContainerID
+	}
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+
+	h.projectService.UpdateActivity(project.ID)
+
+	ctx := c.Context()
+
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		cmdCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		cmd := exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return
+		}
+		cmd.Stderr = cmd.Stdout // Merge stderr into stdout pipe
+
+		if err := cmd.Start(); err != nil {
+			return
+		}
+		defer func() {
+			// Context cancellation safely terminates the process via SIGKILL.
+			// Reap process in background to prevent zombies without blocking closure.
+			go func() {
+				_ = cmd.Wait()
+			}()
+		}()
+
+		linesChan := make(chan string, 100)
+		go func() {
+			scanner := bufio.NewScanner(stdoutPipe)
+			// Expand scanner token size to 1MB to prevent "token too long" for large logs
+			scanner.Buffer(make([]byte, 1024), 1024*1024)
+			for scanner.Scan() {
+				select {
+				case linesChan <- scanner.Text():
+				case <-cmdCtx.Done():
+					return
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				slog.Warn("Scanner error during log streaming", "error", err)
+			}
+			close(linesChan)
+		}()
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done(): // Detect client disconnect
+				return
+			case line, ok := <-linesChan:
+				if !ok {
+					return
+				}
+				dataBytes, _ := json.Marshal(line)
+				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
+				if err != nil {
+					return
+				}
+			case <-ticker.C: // Periodic flush interval
+				if err := w.Flush(); err != nil {
+					return
+				}
+			}
+		}
+	})
+
+	return nil
 }
 
 // Stats returns project resource usage

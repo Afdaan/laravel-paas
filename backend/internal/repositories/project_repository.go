@@ -221,6 +221,8 @@ func (r *projectRepository) GetRunningWithContainers() ([]models.Project, error)
 
 func (r *projectRepository) RecordDeploymentEvent(event *models.DeploymentEvent) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		var dummy uint
+		tx.Raw("SELECT id FROM projects WHERE id = ? FOR UPDATE", event.ProjectID).Scan(&dummy)
 		var nextSeq int
 		tx.Raw("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM deployment_events WHERE project_id = ? AND job_id = ? FOR UPDATE", event.ProjectID, event.JobID).Scan(&nextSeq)
 		event.SequenceNumber = nextSeq

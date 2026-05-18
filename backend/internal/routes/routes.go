@@ -59,6 +59,7 @@ func Setup(
 					path == "/api/admin/stats" ||
 					path == "/api/queue/stats" ||
 					(len(path) > 15 && path[len(path)-11:] == "/build-logs") ||
+					(len(path) > 12 && path[len(path)-12:] == "/logs/stream") ||
 					(len(path) > 10 && path[len(path)-5:] == "/logs")))
 		},
 	}))
@@ -199,6 +200,7 @@ func Setup(
 	projects.Post("/:id/restart", projectHandler.Restart)
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
+	projects.Get("/:id/logs/stream", projectHandler.StreamLogs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)

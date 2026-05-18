@@ -11,6 +11,7 @@ import (
 	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -52,7 +53,7 @@ func (m *transitionManager) TransitionState(ctx context.Context, projectID uint,
 	// Execute within an atomic database transaction to prevent split-brain state inconsistencies
 	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var project models.Project
-		if err := tx.First(&project, projectID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
 			return ErrProjectNotFound
 		}
 

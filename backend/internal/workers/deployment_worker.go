@@ -8,6 +8,7 @@ package workers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -577,13 +578,26 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Building and launching new container instance")
 
-	newContainerID, err := w.dockerService.BuildAndRun(ctx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy", appendLog)
+	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
+	if err != nil || buildTimeoutSec <= 0 {
+		buildTimeoutSec = 1800
+	}
+	buildCtx, buildCancel := context.WithTimeout(ctx, time.Duration(buildTimeoutSec)*time.Second)
+	defer buildCancel()
+
+	newContainerID, err := w.dockerService.BuildAndRun(buildCtx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy", appendLog)
 	if err != nil {
 		docker.GetCircuitBreaker().RecordFailure()
 		if ctx.Err() == context.Canceled {
 			appendLog("ERROR: Deployment cancelled by user request.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCancelled, project.DeploymentProgress, "deployment_cancelled", "User requested cancellation")
 			w.updateProjectError(project, job.JobID, "Deployment cancelled by user.")
+			return
+		}
+		if errors.Is(buildCtx.Err(), context.DeadlineExceeded) {
+			appendLog("ERROR: Deployment build phase timed out (watchdog kill).")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusFailed, project.DeploymentProgress, "watchdog_timeout", "Build log watchdog timed out build step")
+			w.updateProjectError(project, job.JobID, "Deployment failed: Build step exceeded maximum allowed time limit.")
 			return
 		}
 		appendLog("ERROR: Failed to deploy container: " + err.Error())
@@ -683,10 +697,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
+	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
+
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live")
 	appendLog("Deployment completed successfully! System is now live.")
-
-	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
 	go func() {
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")

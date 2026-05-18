@@ -44,6 +44,18 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
     return events.filter(ev => (ev.id || 0) > clearedEventMaxId)
   }, [events, clearedEventMaxId])
 
+  const currentJobId = useRef(project?.deployment_job_id)
+
+  useEffect(() => {
+    if (project?.deployment_job_id && project.deployment_job_id !== currentJobId.current) {
+      currentJobId.current = project.deployment_job_id
+      setClearedLength(0)
+      setClearedEventMaxId(-1)
+      setLogs('')
+      setEvents([])
+    }
+  }, [project?.deployment_job_id])
+
   useEffect(() => {
     let isMounted = true
     const controller = new AbortController()

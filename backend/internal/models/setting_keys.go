@@ -11,6 +11,7 @@ const (
 	SettingProjectDomain    = "project_domain"
 	SettingAdminIdleTimeout = "admin_idle_timeout"
 	SettingMaxConcurrent    = "max_concurrent_builds"
+	SettingBuildTimeout     = "build_timeout_seconds"
 )
 
 // Default Settings Values
@@ -22,4 +23,5 @@ const (
 	DefaultMemoryLimit      = "512"
 	DefaultAdminIdleTimeout = "30"
 	DefaultMaxConcurrent    = "3"
+	DefaultBuildTimeout     = "1800"
 )

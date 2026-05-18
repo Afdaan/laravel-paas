@@ -104,6 +104,7 @@ function StudentProjectDetail() {
   const [activeTab, setActiveTab] = useState('project')
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const isActionPendingRef = useRef(false)
 
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleCommand, setConsoleCommand] = useState('')
@@ -153,10 +154,14 @@ function StudentProjectDetail() {
   const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
 
-  const fetchProject = useCallback(async () => {
+  const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid) return
     try {
       const response = await projectsAPI.get(uid)
+      // Prevent stale polling overwrites during optimistic action phases unless explicitly forced
+      if (typeof forceUpdate !== 'boolean') forceUpdate = false // Handle accidental event objects
+      if (!forceUpdate && isActionPendingRef.current) return
+      
       setProject(response.data)
       setConsecutiveErrors(0)
     } catch (error: unknown) {
@@ -326,10 +331,12 @@ function StudentProjectDetail() {
   }
   
   const onActionStarted = (status: Project['status'] = 'queued') => {
+    isActionPendingRef.current = true
     setProject(prev => prev ? ({ ...prev, status }) : null)
   }
 
   const onDeployStarted = () => {
+    isActionPendingRef.current = true
     setProject(prev => prev ? ({ ...prev, deployment_status: 'queued', deployment_progress: 0 }) : null)
   }
 
@@ -344,8 +351,10 @@ function StudentProjectDetail() {
           error: t('common.error'),
         },
       )
-      fetchProject()
+      isActionPendingRef.current = false
+      fetchProject(true)
     } catch (error: unknown) {
+      isActionPendingRef.current = false
       const axiosError = error as AxiosError
       if (axiosError?.response?.status === 404) {
         toast.error(t('projectDetail.messages.stopUnavailable'))
@@ -364,8 +373,10 @@ function StudentProjectDetail() {
           error: t('common.error'),
         },
       )
-      fetchProject()
+      isActionPendingRef.current = false
+      fetchProject(true)
     } catch (error: unknown) {
+      isActionPendingRef.current = false
       const axiosError = error as AxiosError
       if (axiosError?.response?.status === 404) {
         toast.error(t('projectDetail.messages.startUnavailable'))
@@ -641,7 +652,10 @@ function StudentProjectDetail() {
             projectId={uid || ''}
             status={project.status}
             onStarted={() => onActionStarted('restarting')}
-            onSuccess={fetchProject}
+            onSuccess={() => {
+              isActionPendingRef.current = false
+              fetchProject(true)
+            }}
           />
 
           <RedeployButton
@@ -649,7 +663,14 @@ function StudentProjectDetail() {
             status={project.status}
             deploymentStatus={project.deployment_status}
             onStarted={onDeployStarted}
-            onSuccess={fetchProject}
+            onSuccess={() => {
+              isActionPendingRef.current = false
+              fetchProject(true)
+            }}
+            onError={() => {
+              isActionPendingRef.current = false
+              fetchProject(true)
+            }}
           />
           <Button variant="outline" size="icon" onClick={handleDelete} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30">
             <Trash2 className="w-4 h-4" />
