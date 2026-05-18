@@ -20,9 +20,9 @@ import (
 	"github.com/laravel-paas/backend/internal/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/logger"
 	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/backend/internal/services/deployment"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/backend/internal/services/setting"
-	"github.com/laravel-paas/backend/internal/services/deployment"
 	"github.com/laravel-paas/backend/internal/workers"
 )
 

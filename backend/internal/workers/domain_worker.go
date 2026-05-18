@@ -77,7 +77,7 @@ func (w *DomainWorker) Reconcile(ctx context.Context, workerID string) {
 	}
 
 	slog.Info("Reconciler Leadership confirmed. Starting reconciliation cycle.", "workerID", workerID)
-	
+
 	// Track overall health states
 	var degradedCount, unhealthyCount int64
 	_ = w.db.Model(&models.CustomDomain{}).Where("status = ?", string(models.DomainStatusDegraded)).Count(&degradedCount)
@@ -294,7 +294,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 				d.ProvisioningCheckpoint = "completed"
 				d.VerificationRetryCount = 0
 				_ = w.db.Model(d).Updates(map[string]interface{}{
-					"provisioning_checkpoint": "completed",
+					"provisioning_checkpoint":  "completed",
 					"verification_retry_count": 0,
 				})
 				slog.Info("Recovery trace: Domain successfully verified and provisioned.", "domain", d.Domain, "durationMs", time.Since(verifyStart).Milliseconds())
@@ -306,7 +306,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 
 			now := time.Now()
 			_ = w.db.Model(d).Updates(map[string]interface{}{
-				"last_reconciliation_at": now,
+				"last_reconciliation_at":   now,
 				"verification_retry_count": d.VerificationRetryCount,
 			})
 		}
@@ -433,11 +433,11 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 			// Checkpoint 1: Purge Nginx Configuration
 			select {
 			case <-ctx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				return
 			case <-lockCtx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				continue
 			default:
@@ -458,11 +458,11 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 
 			select {
 			case <-ctx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				return
 			case <-lockCtx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				continue
 			default:
@@ -474,10 +474,10 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 				_ = w.db.Model(d).Update("cleanup_checkpoint", "done")
 				_ = w.domainService.TransitionStateCtx(lockCtx, d, models.DomainStatusDisabled, models.ErrNone, "Domain cleanup finalized and routing purged")
 				metrics.GetCollector().IncrCleanupRecovered()
-				
+
 				// Soft delete / tombstone
 				_ = w.db.Delete(d).Error
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				slog.Info("Recovery trace: Custom domain routing completely purged and tombstoned", "domain", d.Domain)
 			}
@@ -498,7 +498,7 @@ func (w *DomainWorker) handleCleanupFailure(d *models.CustomDomain, token string
 		"cleanup_retry_count": d.CleanupRetryCount,
 	})
 	_ = w.domainService.RecordEvent(d, d.Status, d.Status, "cleanup_failed", errMsg, fmt.Sprintf("Retry count: %d", d.CleanupRetryCount))
-	w.redisService.ReleaseDomainLock(d.ID, token)
+	_ = w.redisService.ReleaseDomainLock(d.ID, token)
 	cancel()
 }
 
@@ -516,7 +516,9 @@ func (w *DomainWorker) triggerRenewal(ctx context.Context, domain *models.Custom
 	}
 	lockCtx, cancelLock := context.WithCancel(context.Background())
 	defer cancelLock()
-	defer w.redisService.ReleaseDomainLock(domain.ID, token)
+	defer func() {
+		_ = w.redisService.ReleaseDomainLock(domain.ID, token)
+	}()
 	w.domainService.StartLockHeartbeat(lockCtx, cancelLock, domain, token, 30*time.Second)
 
 	if domain.RenewalCheckpoint == "init" {

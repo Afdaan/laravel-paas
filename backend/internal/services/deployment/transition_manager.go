@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	ErrProjectNotFound  = errors.New("project not found")
+	ErrProjectNotFound   = errors.New("project not found")
 	ErrInvalidTransition = errors.New("invalid deployment state transition attempted")
 )
 

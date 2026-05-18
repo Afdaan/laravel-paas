@@ -46,7 +46,7 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 	// to ensure it survives os.RemoveAll(projectPath)
 	envPath := filepath.Join(projectPath, ".env")
 	envBackupPath := filepath.Join(s.cfg.ProjectsPath, subdomain+".env.bak")
-	
+
 	hasEnv := false
 	if _, err := os.Stat(envPath); err == nil {
 		if err := utils.RunSilent(time.Minute, "cp", envPath, envBackupPath); err == nil {
@@ -61,7 +61,7 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 		slog.Info("Existing repository found, performing git pull / sync to avoid conflicts", "subdomain", subdomain, "branch", safeBranch)
 
 		// Ensure remote origin URL is up to date
-		utils.Run(30*time.Second, "git", "-C", projectPath, "remote", "set-url", "origin", githubURL)
+		_, _ = utils.Run(30*time.Second, "git", "-C", projectPath, "remote", "set-url", "origin", githubURL)
 
 		// Fetch the latest commit from the remote branch
 		fetchRes, err := utils.Run(3*time.Minute, "git", "-C", projectPath, "fetch", "--depth=1", "origin", safeBranch)
@@ -72,7 +72,7 @@ func (s *GitService) CloneRepository(githubURL, branch, subdomain string) (strin
 			_, resetErr := utils.Run(1*time.Minute, "git", "-C", projectPath, "reset", "--hard", "FETCH_HEAD")
 			if resetErr == nil {
 				// Clean untracked files
-				utils.Run(1*time.Minute, "git", "-C", projectPath, "clean", "-fd")
+				_, _ = utils.Run(1*time.Minute, "git", "-C", projectPath, "clean", "-fd")
 
 				// Get new commit hash
 				hashRes, _ := utils.Run(10*time.Second, "git", "-C", projectPath, "rev-parse", "HEAD")

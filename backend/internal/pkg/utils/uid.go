@@ -29,11 +29,11 @@ func EncodeUID(id uint, salt string) string {
 	}
 
 	scrambled := uint64(id) ^ uint64(mask)
-	scrambled += 1000000 
+	scrambled += 1000000
 
 	var builder strings.Builder
 	base := uint64(len(customAlphabet))
-	
+
 	n := scrambled
 	for n > 0 {
 		builder.WriteByte(customAlphabet[n%base])
@@ -57,7 +57,7 @@ func DecodeUID(uid string, salt string) (uint, error) {
 
 	var scrambled uint64
 	base := uint64(len(customAlphabet))
-	
+
 	alphabetIdx := make(map[byte]uint64)
 	for i := 0; i < len(customAlphabet); i++ {
 		alphabetIdx[customAlphabet[i]] = uint64(i)
@@ -76,8 +76,8 @@ func DecodeUID(uid string, salt string) (uint, error) {
 	if scrambled < 1000000 {
 		return 0, fmt.Errorf("invalid uid (too small)")
 	}
-	
-	id := uint( (scrambled - 1000000) ^ uint64(mask) )
+
+	id := uint((scrambled - 1000000) ^ uint64(mask))
 	return id, nil
 }
 

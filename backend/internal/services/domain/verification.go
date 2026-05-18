@@ -40,7 +40,9 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		metrics.GetCollector().IncrLockContention()
 		return nil, apperr.New(423, "LOCKED", "Domain is currently locked by an active verification or provisioning operation. Please wait a few seconds.")
 	}
-	defer s.redisService.ReleaseDomainLock(domain.ID, token)
+	defer func() {
+		_ = s.redisService.ReleaseDomainLock(domain.ID, token)
+	}()
 
 	lockCtx, cancelLock := context.WithCancel(context.Background())
 	defer cancelLock()
@@ -94,7 +96,7 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 
 	if dnsVerified {
 		_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusDNSVerified, models.ErrNone, "DNS successfully verified. Queuing SSL configuration.")
-		
+
 		now := time.Now()
 		domain.LastVerificationAt = &now
 		_ = s.db.Model(&domain).Update("last_verification_at", now)
@@ -119,7 +121,7 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 	})
 
 	_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusPendingDNS, models.ErrDomainNotResolved, "DNS verification pending propagation. Please ensure your CNAME record is configured correctly.")
-	return &domain, apperr.New(400, "VERIFICATION_FAILED", "DNS propagation not detected yet. Please ensure your CNAME is correctly pointing to " + strings.TrimSuffix(expectedCNAME, "."))
+	return &domain, apperr.New(400, "VERIFICATION_FAILED", "DNS propagation not detected yet. Please ensure your CNAME is correctly pointing to "+strings.TrimSuffix(expectedCNAME, "."))
 }
 
 // CheckAppHealth verifies end-to-end edge and upstream connectivity across 5 distinct operational layers: DOMAIN -> DNS -> EDGE -> SSL -> UPSTREAM -> INTEGRITY.

@@ -234,4 +234,3 @@ func (h *UserHandler) ImportExcel(c *fiber.Ctx) error {
 		"total":   len(created),
 	})
 }
-

@@ -25,7 +25,7 @@ type DomainDiagnostic struct {
 // GetDomainDiagnostic performs a real-time DNS lookup and analysis
 func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.Project) (*DomainDiagnostic, error) {
 	domainName = strings.ToLower(strings.TrimSpace(domainName))
-	
+
 	// Determine Expected Configuration
 	projectDomain := s.cfg.ProjectDomain
 	if projectDomain == "" {

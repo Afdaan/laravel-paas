@@ -194,9 +194,9 @@ func (w *DeploymentWorker) processJobs() {
 }
 
 const (
-	MaxRetryCount = 5
+	MaxRetryCount  = 5
 	BaseRetryDelay = 5 * time.Second
-	MaxRetryDelay = 2 * time.Minute
+	MaxRetryDelay  = 2 * time.Minute
 )
 
 func calculateBackoff(retryCount int) time.Duration {
@@ -693,11 +693,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
 	go func() {
-		utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
-		utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
+		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
+		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}()
 }
-
 
 // cleanupJobTracking safely removes sequence tracking state for a completed or terminated job to prevent memory leaks.
 func (w *DeploymentWorker) cleanupJobTracking(jobID string) {
@@ -831,4 +830,3 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error 
 
 	return w.projectService.RecreateProjectZeroDowntime(project)
 }
-

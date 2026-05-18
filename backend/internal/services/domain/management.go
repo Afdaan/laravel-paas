@@ -51,7 +51,9 @@ func (s *DomainService) RemoveDomain(domainID uint, projectID uint) error {
 		metrics.GetCollector().IncrLockContention()
 		return apperr.New(423, "LOCKED", "Domain is currently locked by an active provisioning operation. Please try again in a few moments.")
 	}
-	defer s.redisService.ReleaseDomainLock(domain.ID, token)
+	defer func() {
+		_ = s.redisService.ReleaseDomainLock(domain.ID, token)
+	}()
 
 	_ = s.db.Model(&domain).Update("cleanup_checkpoint", "init")
 	_ = s.TransitionState(&domain, models.DomainStatusPendingCleanup, models.ErrNone, "Domain scheduled for deletion")
@@ -77,12 +79,12 @@ func (s *DomainService) ListDomains(projectID uint) ([]models.CustomDomain, erro
 func (s *DomainService) ListUserDomains(userID uint) ([]models.CustomDomain, error) {
 	var domains []models.CustomDomain
 	subQuery := s.db.Model(&models.Project{}).Select("id").Where("user_id = ?", userID)
-	
+
 	err := s.db.Where("project_id IN (?) AND status NOT IN (?)", subQuery, []string{string(models.DomainStatusPendingCleanup), string(models.DomainStatusDisabled)}).
 		Order("created_at DESC").
 		Preload("Project").
 		Find(&domains).Error
-		
+
 	return domains, err
 }
 

@@ -93,6 +93,7 @@ func sanitizeBuildError(stderr string) string {
 	}
 	return strings.Join(kept, "\n")
 }
+
 // StartExistingImage deploys a primary web container instance for a project.
 // Architectural Note on Multi-Tenant Isolation:
 // Web instances are strictly isolated using cgroups v2 resource quotas (--cpus, --memory),

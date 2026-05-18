@@ -55,7 +55,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// Hide Railpack step commands EXCEPT build/install commands (those get transformed below)
 			regexp.MustCompile(`^\s+\$\s+(caddy|mise|chmod|chown|cp|mv|mkdir|rm|ln|cat|echo|sed|awk|tar|curl|wget|git)\s`),
 			regexp.MustCompile(`^\s+\$\s+[a-z]+\s+(run\s+(dev|start|serve|watch|preview)|test|lint|format)\s`),
-			// Hide build steps 
+			// Hide build steps
 			regexp.MustCompile(`^\s*(↳|▸|Steps)`),
 
 			// 6. Hide final Docker metadata (Except the build time which we will transform)
@@ -75,7 +75,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(ERRO failed to solve|unrecognized image format)`), // Internal Docker errors
 
 			// 10. Hide Yarn / pnpm specific noise
-			regexp.MustCompile(`(YN\d{4}:)`),          // Yarn Berry status codes
+			regexp.MustCompile(`(YN\d{4}:)`), // Yarn Berry status codes
 			regexp.MustCompile(`(Packages: \+|Progress:|Already up to date|Lockfile is up to date)`), // pnpm progress
 
 			// 11. Hide pip / Python build noise
@@ -95,7 +95,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 
 			// 16. General infrastructure leak prevention
 			regexp.MustCompile(`^(#\d+\s+[0-9.]+\s*)?(COPY|RUN|ADD|WORKDIR|FROM|ENV|EXPOSE|CMD|ENTRYPOINT|ARG|LABEL|VOLUME|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD)\s`), // Dockerfile instructions
-			regexp.MustCompile(`(\/app\/storage\/|\/tmp\/build|\/var\/cache\/|\.docker\/|layer already exists|Pushing image|Pulling from|Build starting\.\.\.)`),      // Internal paths & Docker ops
+			regexp.MustCompile(`(\/app\/storage\/|\/tmp\/build|\/var\/cache\/|\.docker\/|layer already exists|Pushing image|Pulling from|Build starting\.\.\.)`),     // Internal paths & Docker ops
 			regexp.MustCompile(`^[a-f0-9]{12}$`), // Short container/layer IDs
 
 			// 17. Hide Dockerfile source code leaks in error output
@@ -106,28 +106,28 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(shtool|Extension .+ is missing|Installing missing extensions|Configuring extension|Configuring libtool|appending configuration tag|Generating files|configure: |config\.status:)`), // PHP extension build noise
 
 			// 18. Laravel framework output that leaks internal paths and infrastructure
-			regexp.MustCompile(`storage/app/public.*public/storage`),                                          // php artisan storage:link output
-			regexp.MustCompile(`Discovered Package:`),                                                         // php artisan package:discover internal list
-			regexp.MustCompile(`Package manifest generated`),                                                  // package:discover completion
+			regexp.MustCompile(`storage/app/public.*public/storage`), // php artisan storage:link output
+			regexp.MustCompile(`Discovered Package:`),                // php artisan package:discover internal list
+			regexp.MustCompile(`Package manifest generated`),         // package:discover completion
 			// (Removed generated optimized autoload from here to allow it)
-			regexp.MustCompile(`Configuration cache`),                                                         // php artisan config:cache
-			regexp.MustCompile(`Route cache`),                                                                 // php artisan route:cache
-			regexp.MustCompile(`(Compiled views cleared|View cache cleared|Views compiled)`),                  // php artisan view:cache/clear
-			regexp.MustCompile(`(application key|APP_KEY|key:generate)`),                                      // APP_KEY related warnings
-			regexp.MustCompile(`\/var\/www\/html`),                                                            // Internal container path
-			regexp.MustCompile(`(Writing .+ to disk|Manifest compiled|Compiling common classes)`),             // Laravel optimization internals
-			regexp.MustCompile(`(npm warn|npm WARN)`),                                                         // npm warnings (deprecated packages, peer deps)
-			regexp.MustCompile(`\d+ vulnerabilities \(`),                                                      // npm audit summary
-			regexp.MustCompile(`To address (all )?issues`),                                                    // npm audit suggestion
-			regexp.MustCompile(`(run.*npm audit|npm audit fix)`),                                              // npm audit fix suggestion
-			regexp.MustCompile(`Browserslist.*outdated`),                                                      // caniuse-lite outdated warning
-			regexp.MustCompile(`npx browserslist`),                                                            // browserslist update suggestion
-			regexp.MustCompile(`Can't resolve.*/app/resources`),                                               // webpack resolve errors exposing container paths
-			regexp.MustCompile(`in '/app`),                                                                    // webpack/node resolve context path
-			regexp.MustCompile(`(libtool: |make: |cc |install: |strip )`),                                     // Build tool noise
-			regexp.MustCompile(`(Entering directory|Leaving directory)`),                                      // Make directory noise
-			regexp.MustCompile(`(Circular .* dependency dropped)`),                                            // JIT circular dependency noise
-			regexp.MustCompile(`(Installing shared extensions|shared_alloc|ZendAccelerator)`),                 // PHP internal build noise
+			regexp.MustCompile(`Configuration cache`),                                             // php artisan config:cache
+			regexp.MustCompile(`Route cache`),                                                     // php artisan route:cache
+			regexp.MustCompile(`(Compiled views cleared|View cache cleared|Views compiled)`),      // php artisan view:cache/clear
+			regexp.MustCompile(`(application key|APP_KEY|key:generate)`),                          // APP_KEY related warnings
+			regexp.MustCompile(`\/var\/www\/html`),                                                // Internal container path
+			regexp.MustCompile(`(Writing .+ to disk|Manifest compiled|Compiling common classes)`), // Laravel optimization internals
+			regexp.MustCompile(`(npm warn|npm WARN)`),                                             // npm warnings (deprecated packages, peer deps)
+			regexp.MustCompile(`\d+ vulnerabilities \(`),                                          // npm audit summary
+			regexp.MustCompile(`To address (all )?issues`),                                        // npm audit suggestion
+			regexp.MustCompile(`(run.*npm audit|npm audit fix)`),                                  // npm audit fix suggestion
+			regexp.MustCompile(`Browserslist.*outdated`),                                          // caniuse-lite outdated warning
+			regexp.MustCompile(`npx browserslist`),                                                // browserslist update suggestion
+			regexp.MustCompile(`Can't resolve.*/app/resources`),                                   // webpack resolve errors exposing container paths
+			regexp.MustCompile(`in '/app`),                                                        // webpack/node resolve context path
+			regexp.MustCompile(`(libtool: |make: |cc |install: |strip )`),                         // Build tool noise
+			regexp.MustCompile(`(Entering directory|Leaving directory)`),                          // Make directory noise
+			regexp.MustCompile(`(Circular .* dependency dropped)`),                                // JIT circular dependency noise
+			regexp.MustCompile(`(Installing shared extensions|shared_alloc|ZendAccelerator)`),     // PHP internal build noise
 
 			// 19. Hide Railpack/Nixpacks toolchain management (mise, node, bun install noise)
 			regexp.MustCompile(`(mise\b|\[\d+/\d+\]\s+(install|download|extract|generate))`),
@@ -200,14 +200,14 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 		// Find next separator (\n or \r)
 		idxN := strings.Index(r.buf, "\n")
 		idxR := strings.Index(r.buf, "\r")
-		
+
 		var idx int
 		var sepLen int
-		
+
 		if idxN == -1 && idxR == -1 {
 			break // No more complete lines
 		}
-		
+
 		if idxN != -1 && (idxR == -1 || idxN < idxR) {
 			idx = idxN
 			sepLen = 1
@@ -215,10 +215,10 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 			idx = idxR
 			sepLen = 1
 		}
-		
+
 		line := r.buf[:idx]
 		r.buf = r.buf[idx+sepLen:]
-		
+
 		shouldHide := false
 		for _, pattern := range r.hidePatterns {
 			if pattern.MatchString(line) {
@@ -292,4 +292,3 @@ func (r *LogRefiner) Flush() error {
 	r.buf = ""
 	return nil
 }
-

@@ -237,8 +237,6 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 	return nil
 }
 
-
-
 // ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
 	projects, total, err := s.projectRepo.List(page, limit, userID, status, search)
