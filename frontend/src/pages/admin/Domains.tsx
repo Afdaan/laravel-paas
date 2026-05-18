@@ -31,22 +31,22 @@ const StatusBadge = ({ status }: { status?: string }) => {
   const cleanStatus = status || 'pending'
   const label = t(`domains.status.${cleanStatus}`) || cleanStatus
 
-  let color = 'text-amber-600 border-amber-500/20 bg-amber-500/10'
+  let color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
   let Icon = Clock
 
   if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
-    color = 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10'
+    color = 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10'
     Icon = CheckCircle2
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
-    color = 'text-cyan-500 border-cyan-500/20 bg-cyan-500/10'
+    color = 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10'
     Icon = Loader2
   } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
-    color = 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+    color = 'text-rose-500 border-rose-500/30 bg-rose-500/10'
     Icon = AlertCircle
   }
 
   return (
-    <Badge variant="outline" className={`gap-1.5 flex w-fit text-[11px] font-semibold tracking-tight px-2.5 py-1 ${color}`}>
+    <Badge variant="outline" className={`gap-1.5 flex items-center w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-md ${color}`}>
       <Icon className={`w-3.5 h-3.5 ${['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus) ? 'animate-spin' : ''}`} />
       {label}
     </Badge>
@@ -58,17 +58,17 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
   if (!health || health === 'unknown') return null
 
   const isHealthy = health === 'healthy'
-  const color = isHealthy ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+  const color = isHealthy ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10' : 'text-rose-500 border-rose-500/30 bg-rose-500/10'
   const label = t(`domains.health.${health}`) || health
 
   return (
-    <div className="flex items-center gap-2 mt-1.5">
-      <Badge variant="outline" className={`gap-1 flex w-fit text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 ${color}`}>
-        <ShieldCheck className="w-3 h-3" />
+    <div className="flex items-center gap-2">
+      <Badge variant="outline" className={`gap-1.5 flex items-center w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-md ${color}`}>
+        <ShieldCheck className="w-3.5 h-3.5" />
         {label}
       </Badge>
       {!isHealthy && error && error !== 'none' && (
-        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">{error}</span>
+        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/10 px-2.5 py-1 rounded-md border border-rose-500/20">{error}</span>
       )}
     </div>
   )
@@ -204,8 +204,10 @@ const AdminDomains = () => {
                     )}
                   </TableCell>
                   <TableCell className="py-4 pr-6 text-left">
-                    <StatusBadge status={domain.status} />
-                    <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={domain.status} />
+                      <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

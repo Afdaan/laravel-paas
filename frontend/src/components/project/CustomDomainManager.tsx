@@ -41,22 +41,22 @@ const StatusBadge = ({ status }: { status: string }) => {
   const cleanStatus = status || 'pending'
   const label = t(`domains.status.${cleanStatus}`) || cleanStatus
 
-  let color = 'text-amber-600 border-amber-500/20 bg-amber-500/10'
+  let color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
   let Icon = Clock
 
   if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
-    color = 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10'
+    color = 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10'
     Icon = CheckCircle2
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
-    color = 'text-cyan-500 border-cyan-500/20 bg-cyan-500/10'
+    color = 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10'
     Icon = Loader2
   } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
-    color = 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+    color = 'text-rose-500 border-rose-500/30 bg-rose-500/10'
     Icon = AlertCircle
   }
 
   return (
-    <Badge variant="outline" className={`gap-1.5 flex w-fit text-[11px] font-semibold tracking-tight px-3 py-1 ${color}`}>
+    <Badge variant="outline" className={`gap-1.5 flex items-center w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-md ${color}`}>
       <Icon className={`w-3.5 h-3.5 ${['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus) ? 'animate-spin' : ''}`} />
       {label}
     </Badge>
@@ -68,17 +68,17 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
   if (!health || health === 'unknown') return null
 
   const isHealthy = health === 'healthy'
-  const color = isHealthy ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+  const color = isHealthy ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10' : 'text-rose-500 border-rose-500/30 bg-rose-500/10'
   const label = t(`domains.health.${health}`) || health
 
   return (
-    <div className="flex items-center gap-2 mt-2">
-      <Badge variant="outline" className={`gap-1 flex w-fit text-[10px] uppercase font-bold tracking-widest px-2.5 py-0.5 ${color}`}>
-        <ShieldCheck className="w-3 h-3" />
+    <div className="flex items-center gap-2">
+      <Badge variant="outline" className={`gap-1.5 flex items-center w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-md ${color}`}>
+        <ShieldCheck className="w-3.5 h-3.5" />
         {label}
       </Badge>
       {!isHealthy && error && (
-        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">{error}</span>
+        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/10 px-2.5 py-1 rounded-md border border-rose-500/20">{error}</span>
       )}
     </div>
   )
@@ -306,25 +306,23 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     <div className="space-y-6">
       {/* Domain Events / Audit Log Modal */}
       <Dialog open={eventsModal.isOpen} onOpenChange={(open) => setEventsModal(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent className="sm:max-w-[650px] max-h-[80vh] flex flex-col overflow-hidden bg-card/95 backdrop-blur-xl border-border/60 p-0">
-          <DialogHeader className="p-6 pb-4 border-b bg-muted/20">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-                  <Activity className="w-5 h-5" />
-                </div>
-                <div className="space-y-1 text-left">
-                  <DialogTitle className="text-base font-bold flex items-center gap-2">
-                    {t('domains.events.title') || 'Reconciliation Audit Log'}
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground">
-                    {eventsModal.domain?.domain} • {t('domains.events.desc') || 'Chronological registry of all domain state transitions'}
-                  </DialogDescription>
-                </div>
+        <DialogContent className="sm:max-w-[680px] max-h-[85vh] flex flex-col overflow-hidden bg-card/95 backdrop-blur-xl border-border/80 p-0 shadow-2xl rounded-2xl sm:rounded-3xl">
+          <DialogHeader className="p-6 pb-5 border-b bg-muted/30 relative">
+            <div className="flex items-start gap-4 pr-10">
+              <div className="w-11 h-11 rounded-2xl bg-primary/10 flex shrink-0 items-center justify-center text-primary border border-primary/20 shadow-inner mt-0.5">
+                <Activity className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-mono bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full tracking-wider font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                LIVE STREAM
+              <div className="space-y-1.5 text-left">
+                <DialogTitle className="text-base font-bold text-foreground flex flex-wrap items-center gap-3">
+                  <span>{t('domains.events.title') || 'Reconciliation Audit Log'}</span>
+                  <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-mono bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full tracking-wider font-bold shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    LIVE STREAM
+                  </div>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground leading-normal max-w-lg">
+                  <span className="font-semibold text-foreground">{eventsModal.domain?.domain}</span> • {t('domains.events.desc') || 'Chronological registry of all domain state transitions'}
+                </DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -339,11 +337,11 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                 {t('domains.events.noEvents') || 'No audit events logged yet.'}
               </div>
             ) : (
-              <div className="relative border-l border-muted-foreground/20 ml-4 space-y-6">
+              <div className="relative border-l-2 border-muted/60 ml-4 space-y-6 py-2">
                 {eventsModal.events.map((event, i) => (
                   <div key={event.id || i} className="relative pl-6 group">
-                    <div className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full border-2 border-primary bg-background group-hover:scale-125 transition-transform" />
-                    <div className="space-y-1.5 bg-muted/20 p-4 rounded-2xl border border-border/40 hover:bg-muted/30 transition-colors text-left">
+                    <div className="absolute -left-[7px] top-2 w-3.5 h-3.5 rounded-full border-2 border-primary bg-background group-hover:scale-125 group-hover:bg-primary transition-all shadow-sm" />
+                    <div className="space-y-2 bg-muted/20 p-4 rounded-2xl border border-border/60 hover:bg-muted/30 hover:border-border transition-all text-left shadow-sm">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-bold text-foreground flex items-center gap-2">
                           <Terminal className="w-3.5 h-3.5 text-primary" />
@@ -353,17 +351,18 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           {new Date(event.created_at).toLocaleString()}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{event.message || event.payload}</p>
+                      <p className="text-xs font-mono text-muted-foreground leading-relaxed bg-background/50 p-3 rounded-xl border border-border/40">{event.message || event.payload}</p>
                       {event.state_from && event.state_to && (
-                        <div className="flex items-center gap-2 pt-2 text-[10px] font-mono text-muted-foreground/80">
-                          <span className="px-2 py-0.5 rounded bg-muted/40 border">{event.state_from}</span>
-                          <span>→</span>
-                          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{event.state_to}</span>
+                        <div className="flex items-center gap-2 pt-1 text-[10px] font-mono font-medium">
+                          <span className="text-muted-foreground">{t('domains.events.transition') || 'Transition'}:</span>
+                          <span className="px-2 py-0.5 rounded bg-muted/50 border text-muted-foreground">{event.state_from}</span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-bold">{event.state_to}</span>
                         </div>
                       )}
                       {event.error_code && event.error_code !== 'none' && (
-                        <div className="mt-2">
-                          <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 text-[10px]">
+                        <div className="pt-1">
+                          <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 text-[10px] font-mono px-2.5 py-0.5 font-bold">
                             {event.error_code}
                           </Badge>
                         </div>
@@ -377,27 +376,30 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
         </DialogContent>
       </Dialog>
 
-      <div className="space-y-2">
-        <Label className="text-xs uppercase tracking-widest text-muted-foreground font-semibold">
+      <div className="space-y-1">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-bold">
           {t('projectDetail.settings.customDomain')}
         </Label>
-        <p className="text-[10px] text-muted-foreground leading-relaxed">
+        <p className="text-xs text-muted-foreground leading-relaxed">
           {t('projectDetail.settings.customDomainDesc')}
         </p>
       </div>
 
-      <form onSubmit={handleAddDomain} className="flex gap-2">
-        <Input
-          value={newDomain}
-          onChange={(e) => setNewDomain(e.target.value)}
-          placeholder="e.g. www.my-awesome-site.com"
-          className="h-10 text-xs flex-1 bg-background/50 border-muted-foreground/20 focus:border-primary/50 transition-all"
-          disabled={isAdding}
-        />
+      <form onSubmit={handleAddDomain} className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+          <Input
+            value={newDomain}
+            onChange={(e) => setNewDomain(e.target.value)}
+            placeholder="e.g. www.my-awesome-site.com"
+            className="h-11 pl-10 text-sm bg-background/50 border-muted-foreground/20 focus:border-primary/50 transition-all rounded-xl shadow-sm"
+            disabled={isAdding}
+          />
+        </div>
         <Button 
           type="submit" 
           disabled={!newDomain.trim() || isAdding}
-          className="gap-2 h-10 px-6 shadow-lg shadow-primary/10 transition-all hover:scale-[1.02]"
+          className="gap-2 h-11 px-6 shadow-lg shadow-primary/10 transition-all hover:scale-[1.02] rounded-xl font-semibold"
         >
           {isAdding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
           {t('common.add')}
@@ -423,27 +425,28 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                 onClick={() => setSelectedDomainId(isSelected ? null : domain.id)}
               >
                 <CardContent className="p-0">
-                  <div className="p-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-3 rounded-xl transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'bg-background/50 text-muted-foreground group-hover:text-foreground'}`}>
+                  <div className="p-5 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3.5 rounded-2xl transition-all border ${isSelected ? 'bg-primary/10 text-primary border-primary/20 shadow-sm' : 'bg-background text-muted-foreground border-border group-hover:text-foreground'}`}>
                         <Globe className="w-5 h-5" />
                       </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2.5">
-                          <span className="font-bold text-sm tracking-tight">{domain.domain}</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-base tracking-tight text-foreground">{domain.domain}</span>
                           {isActive && (
                             <a 
                               href={`https://${domain.domain}`} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-primary/40 hover:text-primary hover:bg-primary/10 transition-all"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all border border-transparent hover:border-primary/20"
+                              title="Visit Domain"
                             >
-                              <ExternalLink className="w-3.5 h-3.5" />
+                              <ExternalLink className="w-4 h-4" />
                             </a>
                           )}
                           {domain.config_hash && (
-                            <span className="text-[10px] font-mono text-muted-foreground/60 bg-muted/50 px-2 py-0.5 rounded border">
+                            <span className="text-[10px] font-mono text-muted-foreground/70 bg-muted/60 px-2.5 py-0.5 rounded-md border border-border">
                               SHA256:{domain.config_hash.substring(0, 8)}
                             </span>
                           )}
@@ -495,28 +498,28 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                   >
                     <div className="p-4 space-y-6">
                       <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
+                        <div className="space-y-1">
                           <h4 className="text-xs font-bold uppercase tracking-widest text-foreground flex items-center gap-2">
-                            <AlertCircle className="w-3 h-3 text-primary" />
-                            DNS Configuration Guide
+                            <AlertCircle className="w-3.5 h-3.5 text-primary" />
+                            {t('domains.dnsGuide.title') || 'DNS Configuration Guide'}
                           </h4>
-                          <p className="text-[10px] text-muted-foreground">Add these records to your DNS provider (Cloudflare, GoDaddy, etc.)</p>
+                          <p className="text-xs text-muted-foreground">{t('domains.dnsGuide.desc') || 'Add these records to your DNS provider (Cloudflare, GoDaddy, etc.)'}</p>
                         </div>
                         {diagnosticData[domain.id] && (
-                          <div className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                            {diagnosticData[domain.id]?.is_match ? 'Configured' : 'Action Required'}
+                          <div className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+                            {diagnosticData[domain.id]?.is_match ? (t('domains.dnsGuide.configured') || 'Configured') : (t('domains.dnsGuide.actionRequired') || 'Action Required')}
                           </div>
                         )}
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-2 p-4 rounded-2xl bg-muted/20 border border-muted-foreground/5 transition-all hover:bg-muted/30">
-                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-[0.15em]">{t('common.type')}</Label>
-                          <div className="text-sm font-mono font-bold text-primary bg-primary/5 w-fit px-2 py-0.5 rounded">CNAME</div>
+                        <div className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:border-border/80 shadow-sm">
+                          <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.type')}</Label>
+                          <div className="text-sm font-mono font-bold text-primary bg-primary/10 w-fit px-2.5 py-1 rounded-md border border-primary/20">CNAME</div>
                         </div>
                         
                         <div 
-                          className="space-y-2 p-4 rounded-2xl bg-muted/20 border border-muted-foreground/5 transition-all hover:bg-primary/5 hover:border-primary/20 cursor-pointer group/box relative overflow-hidden"
+                          className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
                             const host = diagnosticData[domain.id]?.expected_host || getDNSHost(domain.domain)
@@ -525,8 +528,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           }}
                         >
                           <div className="flex items-center justify-between relative z-10">
-                            <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-[0.15em] cursor-pointer group-hover/box:text-primary transition-colors">{t('common.host')}</Label>
-                            <span className="text-[9px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
+                            <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest cursor-pointer group-hover/box:text-primary transition-colors">{t('common.host')}</Label>
+                            <span className="text-[10px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
                           </div>
                           <div className="text-sm font-mono font-bold text-foreground truncate relative z-10 pr-6">
                             {diagnosticData[domain.id]?.expected_host || getDNSHost(domain.domain)}
@@ -535,7 +538,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         </div>
 
                         <div 
-                          className="space-y-2 p-4 rounded-2xl bg-muted/20 border border-muted-foreground/5 transition-all hover:bg-primary/5 hover:border-primary/20 cursor-pointer group/box relative overflow-hidden"
+                          className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
                             const target = diagnosticData[domain.id]?.expected_value || (projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`)
@@ -544,8 +547,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           }}
                         >
                           <div className="flex items-center justify-between relative z-10">
-                            <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-[0.15em] cursor-pointer group-hover/box:text-primary transition-colors">{t('common.value')}</Label>
-                            <span className="text-[9px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
+                            <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest cursor-pointer group-hover/box:text-primary transition-colors">{t('common.value')}</Label>
+                            <span className="text-[10px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
                           </div>
                           <div className="text-sm font-mono font-bold text-foreground truncate relative z-10 pr-6">
                             {diagnosticData[domain.id]?.expected_value || (projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`)}
@@ -554,14 +557,14 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         </div>
                       </div>
 
-                      <div className="space-y-6 pt-4 border-t border-muted-foreground/5">
+                      <div className="space-y-6 pt-4 border-t border-border/60">
                         <div className="flex items-center justify-between px-1">
                           <div className="flex items-center gap-2.5">
                             <div className="relative flex h-2 w-2">
                               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDiagnosing === domain.id ? 'bg-primary' : 'bg-primary/20'}`}></span>
                               <span className={`relative inline-flex rounded-full h-2 w-2 ${isDiagnosing === domain.id ? 'bg-primary' : 'bg-primary/40'}`}></span>
                             </div>
-                            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Network Path Integrity</span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">{t('domains.dnsGuide.networkPath') || 'Network Path Integrity'}</span>
                           </div>
                           <button 
                             onClick={(e) => {
@@ -569,10 +572,10 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                               handleFetchDiagnostic(domain.id);
                             }}
                             disabled={isDiagnosing === domain.id}
-                            className="text-[10px] font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-widest disabled:opacity-50 flex items-center gap-1.5"
+                            className="text-[10px] font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-widest disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
                           >
                             <RefreshCw className={`w-3 h-3 ${isDiagnosing === domain.id ? 'animate-spin' : ''}`} />
-                            {isDiagnosing === domain.id ? 'Scanning...' : 'Re-scan'}
+                            {isDiagnosing === domain.id ? (t('domains.dnsGuide.scanning') || 'Scanning...') : (t('domains.dnsGuide.rescan') || 'Re-scan')}
                           </button>
                         </div>
 
@@ -585,7 +588,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${isDiagnosing === domain.id ? 'bg-primary/10 border-primary/30 animate-pulse' : 'bg-background border-muted-foreground/10'}`}>
                                   <Globe className={`w-5 h-5 ${isDiagnosing === domain.id ? 'text-primary' : 'text-muted-foreground'}`} />
                                 </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Domain</span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.domain') || 'Domain'}</span>
                               </div>
 
                               <div className="flex-1 px-2 relative">
@@ -604,7 +607,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                                     </span>}
                                   </div>
                                 </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">DNS OK</span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.dnsOk') || 'DNS OK'}</span>
                               </div>
 
                               <div className="flex-1 px-2">
@@ -617,13 +620,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/20 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]' : 'bg-background border-muted-foreground/10'}`}>
                                   <Server className={`w-5 h-5 ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-muted-foreground'}`} />
                                 </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">PaaS Edge</span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.edge') || 'PaaS Edge'}</span>
                               </div>
                             </div>
 
                             <div className="mt-6 text-center space-y-1">
                               <div className={`text-[10px] font-black uppercase tracking-[0.2em] ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                {diagnosticData[domain.id]?.is_match ? 'STATUS: ACTIVE' : 'STATUS: PENDING'}
+                                {diagnosticData[domain.id]?.is_match ? (t('domains.dnsGuide.statusActive') || 'STATUS: ACTIVE') : (t('domains.dnsGuide.statusPending') || 'STATUS: PENDING')}
                               </div>
                               <p className="text-[10px] text-muted-foreground/60 max-w-[200px] mx-auto leading-tight">{diagnosticData[domain.id]?.message}</p>
                             </div>
@@ -635,7 +638,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                                 <RefreshCw className={`w-6 h-6 text-muted-foreground/20 ${isDiagnosing === domain.id ? 'animate-spin' : ''}`} />
                               </div>
                             </div>
-                            <p className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-[0.25em]">Initialize System Scan</p>
+                            <p className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-[0.25em]">{t('domains.dnsGuide.initScan') || 'Initialize System Scan'}</p>
                           </div>
                         )}
                       </div>
