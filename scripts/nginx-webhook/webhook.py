@@ -314,7 +314,7 @@ def cert_covers_all(cert_name, domains):
         return False
     try:
         cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         cert_text = result.stdout.lower()
         for d in domains:
             if f"dns:{d.lower()}" not in cert_text:
@@ -517,7 +517,7 @@ def ssl_status():
     if os.path.exists(cert_file):
         try:
             cmd = ["openssl", "x509", "-in", cert_file, "-enddate", "-startdate", "-noout"]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
             for line in res.stdout.splitlines():
                 if line.startswith("notAfter="):
                     expires_at = line.split("=")[1]
