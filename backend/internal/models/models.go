@@ -27,21 +27,21 @@ const (
 
 // User represents a system user (admin or student)
 type User struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	Email     string         `gorm:"uniqueIndex:uni_users_email;size:255;not null" json:"email"`
-	Password  string         `gorm:"size:255;not null" json:"-"` // Never expose password
-	Name      string         `gorm:"size:255;not null" json:"name"`
-	Role      Role           `gorm:"size:20;not null;default:student" json:"role"`
-	CreatedBy *uint          `json:"created_by,omitempty"`
-	Creator   *User          `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
-	Projects  []Project      `gorm:"foreignKey:UserID" json:"projects,omitempty"`
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	Email        string         `gorm:"uniqueIndex:uni_users_email;size:255;not null" json:"email"`
+	Password     string         `gorm:"size:255;not null" json:"-"` // Never expose password
+	Name         string         `gorm:"size:255;not null" json:"name"`
+	Role         Role           `gorm:"size:20;not null;default:student" json:"role"`
+	CreatedBy    *uint          `json:"created_by,omitempty"`
+	Creator      *User          `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+	Projects     []Project      `gorm:"foreignKey:UserID" json:"projects,omitempty"`
 	LastLogin    *time.Time     `json:"last_login,omitempty"`
 	LastActivity *time.Time     `json:"last_activity,omitempty"`
 	LastIP       string         `gorm:"size:45" json:"last_ip,omitempty"`
 	LastLocation string         `gorm:"size:255" json:"last_location,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // ===========================================
@@ -95,54 +95,54 @@ const (
 
 // Project represents a deployed Laravel application
 type Project struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	UserID       uint           `gorm:"not null;index" json:"user_id"`
-	User         User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	Name         string         `gorm:"size:255;not null" json:"name"`
-	GithubURL    string         `gorm:"size:500;not null" json:"github_url"`
-	Branch       string         `gorm:"size:200;not null;default:main" json:"branch"`
-	Subdomain    string         `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
-	DatabaseName     string         `gorm:"uniqueIndex:uni_projects_database_name;size:100;not null" json:"database_name"`
-	DatabasePassword string         `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
-	Status           ProjectStatus  `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
-	DeploymentStatus DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
-	DeploymentJobID  *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
-	RolloutContainerID *string        `gorm:"size:100" json:"rollout_container_id,omitempty"`
-	DeploymentStartedAt *time.Time    `json:"deployment_started_at,omitempty"`
-	DeploymentFinishedAt *time.Time   `json:"deployment_finished_at,omitempty"`
-	DeploymentHeartbeatAt *time.Time  `json:"deployment_heartbeat_at,omitempty"`
-	DeploymentMessage *string         `gorm:"type:text" json:"deployment_message,omitempty"`
-	DeploymentProgress int            `gorm:"default:0" json:"deployment_progress"`
-	ContainerID  *string        `gorm:"size:100" json:"container_id,omitempty"`
-	Port         *int           `json:"port,omitempty"`
-	BaseDirectory string         `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
-	ErrorLog     *string        `gorm:"type:text" json:"error_log,omitempty"`
-	LastCommitHash string        `gorm:"size:100" json:"last_commit_hash,omitempty"`
-	
+	ID                    uint             `gorm:"primaryKey" json:"id"`
+	UserID                uint             `gorm:"not null;index" json:"user_id"`
+	User                  User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Name                  string           `gorm:"size:255;not null" json:"name"`
+	GithubURL             string           `gorm:"size:500;not null" json:"github_url"`
+	Branch                string           `gorm:"size:200;not null;default:main" json:"branch"`
+	Subdomain             string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
+	DatabaseName          string           `gorm:"uniqueIndex:uni_projects_database_name;size:100;not null" json:"database_name"`
+	DatabasePassword      string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
+	Status                ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
+	DeploymentStatus      DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
+	DeploymentJobID       *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
+	RolloutContainerID    *string          `gorm:"size:100" json:"rollout_container_id,omitempty"`
+	DeploymentStartedAt   *time.Time       `json:"deployment_started_at,omitempty"`
+	DeploymentFinishedAt  *time.Time       `json:"deployment_finished_at,omitempty"`
+	DeploymentHeartbeatAt *time.Time       `json:"deployment_heartbeat_at,omitempty"`
+	DeploymentMessage     *string          `gorm:"type:text" json:"deployment_message,omitempty"`
+	DeploymentProgress    int              `gorm:"default:0" json:"deployment_progress"`
+	ContainerID           *string          `gorm:"size:100" json:"container_id,omitempty"`
+	Port                  *int             `json:"port,omitempty"`
+	BaseDirectory         string           `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
+	ErrorLog              *string          `gorm:"type:text" json:"error_log,omitempty"`
+	LastCommitHash        string           `gorm:"size:100" json:"last_commit_hash,omitempty"`
+
 	// Detected Laravel/PHP versions
-	LaravelVersion string `gorm:"size:20" json:"laravel_version,omitempty"`
-	PHPVersion     string `gorm:"size:20" json:"php_version,omitempty"`
-	Framework      string `gorm:"size:50" json:"framework,omitempty"`
-	LanguageVersion string `gorm:"size:20" json:"language_version,omitempty"`
-	IsManualVersion bool  `gorm:"default:false" json:"is_manual_version"`
-	QueueEnabled    bool  `gorm:"default:false" json:"queue_enabled"` // Enables worker process
-	WorkerCommand   string `gorm:"size:500" json:"worker_command"`    // Custom command for background service (non-PHP)
+	LaravelVersion    string  `gorm:"size:20" json:"laravel_version,omitempty"`
+	PHPVersion        string  `gorm:"size:20" json:"php_version,omitempty"`
+	Framework         string  `gorm:"size:50" json:"framework,omitempty"`
+	LanguageVersion   string  `gorm:"size:20" json:"language_version,omitempty"`
+	IsManualVersion   bool    `gorm:"default:false" json:"is_manual_version"`
+	QueueEnabled      bool    `gorm:"default:false" json:"queue_enabled"` // Enables worker process
+	WorkerCommand     string  `gorm:"size:500" json:"worker_command"`     // Custom command for background service (non-PHP)
 	WorkerContainerID *string `gorm:"size:100" json:"worker_container_id,omitempty"`
-	
+
 	// Custom Build/Run Commands
 	BuildCommand string `gorm:"size:500" json:"build_command"` // Custom build step (e.g. npm run build)
 	StartCommand string `gorm:"size:500" json:"start_command"` // Custom start command (e.g. node dist/main.js)
 	NodeVersion  string `gorm:"size:20" json:"node_version"`   // Specific Node.js version (e.g. 18, 20)
-	
+
 	// Resource limits (override defaults)
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
 	MemoryLimit *string  `gorm:"size:20" json:"memory_limit,omitempty"`
-	
+
 	LastAccessedAt *time.Time     `json:"last_accessed_at,omitempty"`
 	ExpiresAt      *time.Time     `json:"expires_at,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`
 
 	// Virtual field for frontend
 	URL string `gorm:"-" json:"url,omitempty"`
@@ -231,7 +231,7 @@ const (
 type FeedbackStatus string
 
 const (
-	FeedbackStatusPending FeedbackStatus = "pending"
+	FeedbackStatusPending  FeedbackStatus = "pending"
 	FeedbackStatusInReview FeedbackStatus = "in_review"
 	FeedbackStatusResolved FeedbackStatus = "resolved"
 )
@@ -274,6 +274,25 @@ const (
 	DomainStatusError              CustomDomainStatus = "error"               // Generic or unrecoverable error state.
 )
 
+// IsNginxRoutableCustomDomainStatus returns true after DNS ownership has been verified.
+// Edge config must keep these domains routable while SSL and health reconciliation continue.
+func IsNginxRoutableCustomDomainStatus(status CustomDomainStatus) bool {
+	switch status {
+	case DomainStatusDNSVerified,
+		DomainStatusSSLQueued,
+		DomainStatusSSLProvisioning,
+		DomainStatusSSLActive,
+		DomainStatusActive,
+		DomainStatusPropagationPending,
+		DomainStatusDegraded,
+		DomainStatusRenewalPending,
+		DomainStatusRenewalFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // DomainHealthStatus represents the derived operational health overlay.
 type DomainHealthStatus string
 
@@ -294,10 +313,10 @@ const (
 	ErrSSLRateLimit          DomainErrorCode = "SSL_RATE_LIMIT"
 	ErrSSLIssuanceFailed     DomainErrorCode = "SSL_ISSUANCE_FAILED"
 	ErrCertbotTimeout        DomainErrorCode = "CERTBOT_TIMEOUT"
-	ErrNginxValidationFailed  DomainErrorCode = "NGINX_VALIDATION_FAILED"
+	ErrNginxValidationFailed DomainErrorCode = "NGINX_VALIDATION_FAILED"
 	ErrRoutingHealthFailed   DomainErrorCode = "ROUTING_HEALTH_FAILED"
 	ErrLockAcquisitionFailed DomainErrorCode = "LOCK_ACQUISITION_FAILED"
-	
+
 	// Explicit Degraded Reason Codes
 	ErrRedisUnavailable      DomainErrorCode = "redis_unavailable"
 	ErrNginxReloadFailed     DomainErrorCode = "nginx_reload_failed"
@@ -343,14 +362,14 @@ type CustomDomain struct {
 	Layer5ResponseIntegrity bool `gorm:"default:false" json:"layer5_response_integrity"`
 
 	// Staged Cleanup & Tombstone Metadata
-	CleanupRetryCount int            `gorm:"default:0" json:"cleanup_retry_count"`
-	CleanupCheckpoint string         `gorm:"size:50;default:'init'" json:"cleanup_checkpoint"`
-	
+	CleanupRetryCount int    `gorm:"default:0" json:"cleanup_retry_count"`
+	CleanupCheckpoint string `gorm:"size:50;default:'init'" json:"cleanup_checkpoint"`
+
 	// Resumable Checkpoint Metadata
 	ProvisioningCheckpoint string `gorm:"size:50;default:'init'" json:"provisioning_checkpoint"`
 	RenewalCheckpoint      string `gorm:"size:50;default:'init'" json:"renewal_checkpoint"`
-	
-	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 
 	// Structured Error Tracking
 	ErrorCode          DomainErrorCode `gorm:"size:50" json:"error_code,omitempty"`

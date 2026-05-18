@@ -102,7 +102,7 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		_ = s.db.Model(&domain).Update("last_verification_at", now)
 
 		// Trigger Nginx configuration sync which automatically enqueues Let's Encrypt certificate issuance
-		if _, err := s.projectService.SyncProjectNginx(project); err != nil {
+		if _, err := s.projectService.SyncProjectNginxFrom(project, "domain_verify"); err != nil {
 			_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusDegraded, models.ErrNginxReloadFailed, fmt.Sprintf("Nginx configuration sync failed: %v", err))
 		} else {
 			_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusSSLQueued, models.ErrNone, "Let's Encrypt SSL certificate issuance queued successfully")

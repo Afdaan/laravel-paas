@@ -85,16 +85,18 @@ func (s *NginxWebhookService) SyncProject(project *models.Project, domain string
 
 	var customDomains []string
 	for _, cd := range project.CustomDomains {
-		// Include custom domains that have passed DNS verification and are in active or provisioning states.
-		if cd.Domain != "" && (cd.Status == models.DomainStatusActive ||
-			cd.Status == models.DomainStatusSSLActive ||
-			cd.Status == models.DomainStatusSSLProvisioning ||
-			cd.Status == models.DomainStatusDNSVerified ||
-			cd.Status == models.DomainStatusSSLQueued ||
-			cd.Status == models.DomainStatusRenewalPending) {
+		if cd.Domain != "" && models.IsNginxRoutableCustomDomainStatus(cd.Status) {
 			customDomains = append(customDomains, cd.Domain)
 		}
 	}
+
+	serverNames := append([]string{project.GetFullDomain(domain)}, customDomains...)
+	slog.Info("Prepared Nginx render state",
+		"projectID", project.ID,
+		"subdomain", project.Subdomain,
+		"loadedCustomDomainCount", len(project.CustomDomains),
+		"verifiedCustomDomains", customDomains,
+		"serverNames", serverNames)
 
 	payload := WebhookPayload{
 		Action:        "sync",

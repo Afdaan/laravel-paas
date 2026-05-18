@@ -129,36 +129,76 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 
 // SyncProjectNginx triggers a sync to the remote Nginx proxy and stores the resulting config hash.
 func (s *ProjectService) SyncProjectNginx(project *models.Project) (string, error) {
+	return s.SyncProjectNginxFrom(project, "unspecified")
+}
+
+// SyncProjectNginxFrom renders edge config from a fresh database snapshot, never caller-held partial state.
+func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSource string) (string, error) {
 	start := time.Now()
 	defer func() { metrics.GetCollector().ObserveNginxReloadDuration(time.Since(start)) }()
 
-	lockKey := fmt.Sprintf("debounce:sync:nginx:%d", project.ID)
-	allowed, _ := s.redisService.RateLimit(lockKey, 1, 5*time.Second)
-	if !allowed {
-		metrics.GetCollector().IncrNginxReloadSkippedTotal()
-		return project.ConfigHash, nil
+	if project == nil || project.ID == 0 {
+		return "", fmt.Errorf("cannot sync nginx for empty project")
 	}
 
+	freshProject, err := s.projectRepo.GetByIDForNginx(project.ID)
+	if err != nil {
+		metrics.GetCollector().IncrNginxReloadFailedTotal()
+		return "", fmt.Errorf("failed to load authoritative nginx project state: %w", err)
+	}
+
+	loadedDomains := make([]string, 0, len(freshProject.CustomDomains))
+	verifiedDomains := make([]string, 0, len(freshProject.CustomDomains))
+	for _, cd := range freshProject.CustomDomains {
+		loadedDomains = append(loadedDomains, fmt.Sprintf("%s:%s", cd.Domain, cd.Status))
+		if cd.Domain != "" && models.IsNginxRoutableCustomDomainStatus(cd.Status) {
+			verifiedDomains = append(verifiedDomains, cd.Domain)
+		}
+	}
+
+	slog.Info("Loaded authoritative Nginx reconciliation state",
+		"triggerSource", triggerSource,
+		"projectID", freshProject.ID,
+		"subdomain", freshProject.Subdomain,
+		"activeContainerID", freshProject.ContainerID,
+		"rolloutContainerID", freshProject.RolloutContainerID,
+		"port", freshProject.Port,
+		"loadedCustomDomains", loadedDomains,
+		"verifiedCustomDomains", verifiedDomains)
+
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	hash, err := s.nginxService.SyncProject(project, projectDomain)
+	serverNames := append([]string{freshProject.GetFullDomain(projectDomain)}, verifiedDomains...)
+	if len(freshProject.CustomDomains) > 0 && len(verifiedDomains) == 0 {
+		metrics.GetCollector().IncrNginxReloadFailedTotal()
+		return "", fmt.Errorf("refusing to render nginx config without verified custom domains for project %s", freshProject.Subdomain)
+	}
+
+	slog.Info("Rendering Nginx server names",
+		"triggerSource", triggerSource,
+		"projectID", freshProject.ID,
+		"subdomain", freshProject.Subdomain,
+		"serverNames", serverNames)
+
+	// Do not debounce here: fresh DB state must always be allowed to repair stale edge config.
+	hash, err := s.nginxService.SyncProject(freshProject, projectDomain)
 	if err != nil {
 		metrics.GetCollector().IncrNginxReloadFailedTotal()
 		return "", err
 	}
 	metrics.GetCollector().IncrNginxReloadTotal()
 
-	if hash != "" && hash == project.ConfigHash {
+	if hash != "" && hash == freshProject.ConfigHash {
 		metrics.GetCollector().IncrNginxReloadSkippedTotal()
-	} else if hash != "" && hash != project.ConfigHash {
-		oldHash := project.ConfigHash
-		if err := s.projectRepo.UpdateConfigHash(project.ID, hash, oldHash); err != nil {
-			slog.Warn("Concurrent config hash update detected", "subdomain", project.Subdomain, "error", err)
-			if latest, err := s.projectRepo.GetByID(project.ID); err == nil {
+	} else if hash != "" && hash != freshProject.ConfigHash {
+		oldHash := freshProject.ConfigHash
+		if err := s.projectRepo.UpdateConfigHash(freshProject.ID, hash, oldHash); err != nil {
+			slog.Warn("Concurrent config hash update detected", "subdomain", freshProject.Subdomain, "triggerSource", triggerSource, "error", err)
+			if latest, err := s.projectRepo.GetByID(freshProject.ID); err == nil {
 				project.ConfigHash = latest.ConfigHash
 			}
 			return hash, nil
 		}
-		slog.Info("Project Nginx config hash updated", "subdomain", project.Subdomain, "old", oldHash, "new", hash)
+		slog.Info("Project Nginx config hash updated", "subdomain", freshProject.Subdomain, "triggerSource", triggerSource, "old", oldHash, "new", hash)
 		project.ConfigHash = hash
 	}
 	return hash, nil

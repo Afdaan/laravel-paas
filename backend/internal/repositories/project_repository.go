@@ -13,6 +13,7 @@ import (
 
 type ProjectRepository interface {
 	GetByID(id uint) (*models.Project, error)
+	GetByIDForNginx(id uint) (*models.Project, error)
 	GetByUID(uid string) (*models.Project, error)
 	GetBySubdomain(subdomain string) (*models.Project, error)
 	List(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error)
@@ -51,6 +52,29 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 	var project models.Project
 	if err := r.db.Preload("User").Preload("CustomDomains").First(&project, id).Error; err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (r *projectRepository) GetByIDForNginx(id uint) (*models.Project, error) {
+	var project models.Project
+	verifiedStatuses := []models.CustomDomainStatus{
+		models.DomainStatusDNSVerified,
+		models.DomainStatusSSLQueued,
+		models.DomainStatusSSLProvisioning,
+		models.DomainStatusSSLActive,
+		models.DomainStatusActive,
+		models.DomainStatusPropagationPending,
+		models.DomainStatusDegraded,
+		models.DomainStatusRenewalPending,
+		models.DomainStatusRenewalFailed,
+	}
+	err := r.db.
+		Preload("User").
+		Preload("CustomDomains", "status IN ?", verifiedStatuses).
+		First(&project, id).Error
+	if err != nil {
 		return nil, err
 	}
 	return &project, nil

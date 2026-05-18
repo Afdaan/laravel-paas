@@ -23,7 +23,6 @@ import (
 	"github.com/laravel-paas/backend/internal/config"
 	"github.com/laravel-paas/backend/internal/infrastructure"
 	"github.com/laravel-paas/backend/internal/infrastructure/docker"
-	"github.com/laravel-paas/backend/internal/infrastructure/nginx"
 	"github.com/laravel-paas/backend/internal/models"
 	"github.com/laravel-paas/backend/internal/pkg/utils"
 	"github.com/laravel-paas/backend/internal/repositories"
@@ -40,7 +39,6 @@ type DeploymentWorker struct {
 	versionService *infrastructure.VersionService
 	mysqlService   *infrastructure.MySQLService
 	redisService   *infrastructure.RedisService
-	nginxService   *nginx.NginxWebhookService
 	projectRepo    repositories.ProjectRepository
 	settingService *setting.SettingService
 
@@ -72,7 +70,6 @@ func NewDeploymentWorker(
 		versionService: versionService,
 		mysqlService:   mysqlService,
 		redisService:   redisService,
-		nginxService:   nginx.NewNginxWebhookService(cfg),
 		projectRepo:    projectRepo,
 		settingService: settingService,
 		running:        false,
@@ -660,7 +657,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)
 	}
 
-	if _, err := w.nginxService.SyncProject(project, projectDomain); err != nil {
+	if _, err := w.projectService.SyncProjectNginxFrom(project, "deployment_promote"); err != nil {
 		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
 	}
 

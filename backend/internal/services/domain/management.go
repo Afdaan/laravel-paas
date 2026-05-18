@@ -60,7 +60,7 @@ func (s *DomainService) RemoveDomain(domainID uint, projectID uint) error {
 
 	project, err := s.projectRepo.GetByID(projectID)
 	if err == nil {
-		_, _ = s.projectService.SyncProjectNginx(project)
+		_, _ = s.projectService.SyncProjectNginxFrom(project, "domain_remove")
 	}
 
 	return nil
@@ -124,9 +124,9 @@ func (s *DomainService) TransferDomain(userID uint, domainID uint, targetProject
 
 	sourceProject, err := s.projectRepo.GetByID(sourceProjectID)
 	if err == nil {
-		_, _ = s.projectService.SyncProjectNginx(sourceProject)
+		_, _ = s.projectService.SyncProjectNginxFrom(sourceProject, "domain_transfer_source")
 	}
-	_, _ = s.projectService.SyncProjectNginx(targetProject)
+	_, _ = s.projectService.SyncProjectNginxFrom(targetProject, "domain_transfer_target")
 
 	return nil
 }

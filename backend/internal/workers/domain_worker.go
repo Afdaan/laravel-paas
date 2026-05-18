@@ -446,7 +446,7 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 			if d.CleanupCheckpoint == "init" {
 				project, err := w.projectService.GetProjectByID(d.ProjectID)
 				if err == nil {
-					if _, err := w.projectService.SyncProjectNginx(project); err != nil {
+					if _, err := w.projectService.SyncProjectNginxFrom(project, "domain_cleanup_reconcile"); err != nil {
 						w.handleCleanupFailure(d, token, cancelLock, fmt.Sprintf("Nginx purge failed: %v", err))
 						continue
 					}
@@ -547,7 +547,7 @@ func (w *DomainWorker) triggerRenewal(ctx context.Context, domain *models.Custom
 	default:
 	}
 
-	_, err = w.projectService.SyncProjectNginx(project)
+	_, err = w.projectService.SyncProjectNginxFrom(project, "ssl_renewal_reconcile")
 	if err != nil {
 		metrics.GetCollector().IncrSSLRenewalFailures()
 		slog.Error("SSL renewal Nginx sync failed", "domain", domain.Domain, "error", err)
