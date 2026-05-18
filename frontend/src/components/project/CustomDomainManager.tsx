@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, RefreshCw, ExternalLink, ShieldCheck, Server, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
@@ -35,6 +35,17 @@ const getDNSHost = (domain: string): string => {
   
   return parts.length > rootPartsCount ? parts.slice(0, -rootPartsCount).join('.') : '@'
 }
+
+// Cached lightweight Date Formatter for audit logs to eliminate Intl instantiation lag in loops
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+})
 
 const StatusBadge = ({ status }: { status: string }) => {
   const { t } = useTranslation()
@@ -302,11 +313,58 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     }
   }
 
+  // Memoize rendered events with virtualized content-visibility to eliminate DOM lag
+  const renderedEvents = useMemo(() => {
+    if (!eventsModal.events?.length) return null
+
+    return eventsModal.events.map((event, i) => {
+      let formattedDate = ''
+      try {
+        formattedDate = dateFormatter.format(new Date(event.created_at))
+      } catch (e) {
+        formattedDate = String(event.created_at)
+      }
+
+      return (
+        <div key={event.id || i} className="relative pl-6 group" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 120px' }}>
+          <div className="absolute -left-[7px] top-2.5 w-3.5 h-3.5 rounded-full border-2 border-primary bg-background group-hover:scale-125 group-hover:bg-primary transition-transform duration-200 shadow-sm" />
+          <div className="space-y-2 bg-muted/20 p-4 rounded-xl border border-border/60 hover:bg-muted/30 transition-colors text-left shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-foreground flex items-center gap-2">
+                <Terminal className="w-3.5 h-3.5 text-primary" />
+                {event.event_type}
+              </span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {formattedDate}
+              </span>
+            </div>
+            <p className="text-xs font-mono text-muted-foreground leading-relaxed bg-background/60 p-3 rounded-lg border border-border/40 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{event.message || event.payload}</p>
+            {event.state_from && event.state_to && (
+              <div className="flex items-center gap-2 pt-1 text-[10px] font-mono font-medium">
+                <span className="text-muted-foreground">{t('domains.events.transition') || 'State Transition'}:</span>
+                <span className="px-2 py-0.5 rounded bg-muted/50 border text-muted-foreground">{event.state_from}</span>
+                <span className="text-muted-foreground">→</span>
+                <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-bold">{event.state_to}</span>
+              </div>
+            )}
+            {event.error_code && event.error_code !== 'none' && (
+              <div className="pt-1">
+                <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 text-[10px] font-mono px-2.5 py-0.5 font-bold">
+                  {event.error_code}
+                </Badge>
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    })
+  }, [eventsModal.events, t])
+
   return (
     <div className="space-y-6">
       {/* Domain Events / Audit Log Modal */}
       <Dialog open={eventsModal.isOpen} onOpenChange={(open) => setEventsModal(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent className="sm:max-w-[680px] max-h-[85vh] flex flex-col overflow-hidden bg-card/95 backdrop-blur-xl border-border/80 p-0 shadow-2xl rounded-2xl sm:rounded-3xl">
+        <DialogContent className="sm:max-w-[680px] max-h-[85vh] flex flex-col overflow-hidden bg-card/98 backdrop-blur-md border-border/60 p-0 shadow-2xl rounded-2xl sm:rounded-3xl">
           <DialogHeader className="p-6 pb-5 border-b bg-muted/30 relative">
             <div className="flex items-start gap-4 pr-10">
               <div className="w-11 h-11 rounded-2xl bg-primary/10 flex shrink-0 items-center justify-center text-primary border border-primary/20 shadow-inner mt-0.5">
@@ -338,38 +396,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
               </div>
             ) : (
               <div className="relative border-l-2 border-muted/60 ml-4 space-y-6 py-2">
-                {eventsModal.events.map((event, i) => (
-                  <div key={event.id || i} className="relative pl-6 group">
-                    <div className="absolute -left-[7px] top-2 w-3.5 h-3.5 rounded-full border-2 border-primary bg-background group-hover:scale-125 group-hover:bg-primary transition-all shadow-sm" />
-                    <div className="space-y-2 bg-muted/20 p-4 rounded-2xl border border-border/60 hover:bg-muted/30 hover:border-border transition-all text-left shadow-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-foreground flex items-center gap-2">
-                          <Terminal className="w-3.5 h-3.5 text-primary" />
-                          {event.event_type}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {new Date(event.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-xs font-mono text-muted-foreground leading-relaxed bg-background/50 p-3 rounded-xl border border-border/40">{event.message || event.payload}</p>
-                      {event.state_from && event.state_to && (
-                        <div className="flex items-center gap-2 pt-1 text-[10px] font-mono font-medium">
-                          <span className="text-muted-foreground">{t('domains.events.transition') || 'Transition'}:</span>
-                          <span className="px-2 py-0.5 rounded bg-muted/50 border text-muted-foreground">{event.state_from}</span>
-                          <span className="text-muted-foreground">→</span>
-                          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-bold">{event.state_to}</span>
-                        </div>
-                      )}
-                      {event.error_code && event.error_code !== 'none' && (
-                        <div className="pt-1">
-                          <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 text-[10px] font-mono px-2.5 py-0.5 font-bold">
-                            {event.error_code}
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                {renderedEvents}
               </div>
             )}
           </div>
