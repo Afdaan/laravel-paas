@@ -38,7 +38,21 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		slog.Warn("Failed during unique index promotion", "error", err)
 	}
 
-	// 4. Run explicit, ordered AutoMigrate for models.
+	// 4. Clean up duplicate deployment events before applying new unique indexes.
+	// This resolves SQLSTATE 23505 duplicate key violations during AutoMigrate.
+	slog.Info("Cleaning up duplicate deployment events...")
+	if err := db.Exec(`
+		DELETE FROM deployment_events a
+		USING deployment_events b
+		WHERE a.project_id = b.project_id
+		  AND a.job_id = b.job_id
+		  AND a.sequence_number = b.sequence_number
+		  AND a.id < b.id
+	`).Error; err != nil {
+		slog.Warn("Failed to clean duplicate deployment events", "error", err)
+	}
+
+	// 5. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
 		&models.Project{},
