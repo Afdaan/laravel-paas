@@ -40,7 +40,9 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		metrics.GetCollector().IncrLockContention()
 		return nil, apperr.New(423, "LOCKED", "Domain is currently locked by an active verification or provisioning operation. Please wait a few seconds.")
 	}
-	defer s.redisService.ReleaseDomainLock(domain.ID, token)
+	defer func() {
+		_ = s.redisService.ReleaseDomainLock(domain.ID, token)
+	}()
 
 	lockCtx, cancelLock := context.WithCancel(context.Background())
 	defer cancelLock()

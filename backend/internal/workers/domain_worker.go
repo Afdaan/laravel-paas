@@ -433,11 +433,11 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 			// Checkpoint 1: Purge Nginx Configuration
 			select {
 			case <-ctx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				return
 			case <-lockCtx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				continue
 			default:
@@ -458,11 +458,11 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 
 			select {
 			case <-ctx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				return
 			case <-lockCtx.Done():
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				continue
 			default:
@@ -477,7 +477,7 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 
 				// Soft delete / tombstone
 				_ = w.db.Delete(d).Error
-				w.redisService.ReleaseDomainLock(d.ID, token)
+				_ = w.redisService.ReleaseDomainLock(d.ID, token)
 				cancelLock()
 				slog.Info("Recovery trace: Custom domain routing completely purged and tombstoned", "domain", d.Domain)
 			}
@@ -498,7 +498,7 @@ func (w *DomainWorker) handleCleanupFailure(d *models.CustomDomain, token string
 		"cleanup_retry_count": d.CleanupRetryCount,
 	})
 	_ = w.domainService.RecordEvent(d, d.Status, d.Status, "cleanup_failed", errMsg, fmt.Sprintf("Retry count: %d", d.CleanupRetryCount))
-	w.redisService.ReleaseDomainLock(d.ID, token)
+	_ = w.redisService.ReleaseDomainLock(d.ID, token)
 	cancel()
 }
 
@@ -516,7 +516,9 @@ func (w *DomainWorker) triggerRenewal(ctx context.Context, domain *models.Custom
 	}
 	lockCtx, cancelLock := context.WithCancel(context.Background())
 	defer cancelLock()
-	defer w.redisService.ReleaseDomainLock(domain.ID, token)
+	defer func() {
+		_ = w.redisService.ReleaseDomainLock(domain.ID, token)
+	}()
 	w.domainService.StartLockHeartbeat(lockCtx, cancelLock, domain, token, 30*time.Second)
 
 	if domain.RenewalCheckpoint == "init" {

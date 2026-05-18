@@ -23,8 +23,6 @@ func (s *SummaryMetric) Observe(d time.Duration) {
 
 // MetricsCollector holds all required Prometheus recovery and observability metrics.
 type MetricsCollector struct {
-	mu sync.RWMutex
-
 	// Reconciliation
 	reconcileDurationSeconds SumCount
 	reconcileFailuresTotal   int64

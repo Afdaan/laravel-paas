@@ -178,8 +178,8 @@ func (h *DomainHandler) Remove(c *fiber.Ctx) error {
 
 	// Trigger Nginx & Traefik Sync
 	if project != nil {
-		h.projectService.SyncProjectNginx(project)
-		h.projectService.RecreateProjectZeroDowntime(project)
+		_, _ = h.projectService.SyncProjectNginx(project)
+		_ = h.projectService.RecreateProjectZeroDowntime(project)
 	}
 
 	return c.JSON(fiber.Map{"message": "Domain removed successfully"})
@@ -215,11 +215,11 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 	// Trigger Nginx & Traefik Sync upon successful verification
 	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
 	if err == nil {
-		h.projectService.SyncProjectNginx(updatedProject)
-		h.projectService.RecreateProjectZeroDowntime(updatedProject)
+		_, _ = h.projectService.SyncProjectNginx(updatedProject)
+		_ = h.projectService.RecreateProjectZeroDowntime(updatedProject)
 	} else {
-		h.projectService.SyncProjectNginx(project)
-		h.projectService.RecreateProjectZeroDowntime(project)
+		_, _ = h.projectService.SyncProjectNginx(project)
+		_ = h.projectService.RecreateProjectZeroDowntime(project)
 	}
 
 	return c.JSON(fiber.Map{

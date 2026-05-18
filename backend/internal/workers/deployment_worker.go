@@ -693,8 +693,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
 	go func() {
-		utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
-		utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
+		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
+		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}()
 }
 

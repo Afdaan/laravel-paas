@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, RefreshCw, ExternalLink, ShieldCheck, Server, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
 import { projectsAPI } from '@/services/api'
-import { CustomDomain, DomainEvent } from '@/types'
+import { CustomDomain, DomainDiagnostic, DomainEvent } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -93,7 +93,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
   const [verifyingId, setVerifyingId] = useState<number | null>(null)
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
   const [isDiagnosing, setIsDiagnosing] = useState<number | null>(null)
-  const [diagnosticData, setDiagnosticData] = useState<Record<number, any>>({})
+  const [diagnosticData, setDiagnosticData] = useState<Record<number, DomainDiagnostic>>({})
   
   const [eventsModal, setEventsModal] = useState<{
     isOpen: boolean;
@@ -128,11 +128,26 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     fetchDomains()
   }, [fetchDomains])
 
+  const handleFetchDiagnostic = useCallback(async (domainId: number) => {
+    setIsDiagnosing(domainId)
+    try {
+      const res = await projectsAPI.getDomainDiagnostic(projectId, domainId)
+      setDiagnosticData((prev: Record<number, DomainDiagnostic>) => ({
+        ...prev,
+        [domainId]: res.data.data
+      }))
+    } catch (error) {
+      console.error("Diagnostic failed", error)
+    } finally {
+      setIsDiagnosing(null)
+    }
+  }, [projectId])
+
   useEffect(() => {
     if (selectedDomainId) {
       handleFetchDiagnostic(selectedDomainId)
     }
-  }, [selectedDomainId])
+  }, [selectedDomainId, handleFetchDiagnostic])
 
   // Real-time project-wide EventSource connection for live domain list state and audit log streaming
   useEffect(() => {
@@ -215,21 +230,6 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
       if (eventSource) eventSource.close();
     };
   }, [projectId]);
-
-  const handleFetchDiagnostic = async (domainId: number) => {
-    setIsDiagnosing(domainId)
-    try {
-      const res = await projectsAPI.getDomainDiagnostic(projectId, domainId)
-      setDiagnosticData((prev: Record<number, any>) => ({
-        ...prev,
-        [domainId]: res.data.data
-      }))
-    } catch (error) {
-      console.error("Diagnostic failed", error)
-    } finally {
-      setIsDiagnosing(null)
-    }
-  }
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault()
