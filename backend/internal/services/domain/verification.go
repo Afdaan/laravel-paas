@@ -126,6 +126,10 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 
 // CheckAppHealth verifies end-to-end edge and upstream connectivity across 5 distinct operational layers: DOMAIN -> DNS -> EDGE -> SSL -> UPSTREAM -> INTEGRITY.
 func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *models.Project) {
+	prevHealth := domain.HealthStatus
+	prevErrCode := domain.DegradedReasonCode
+	prevErrMsg := domain.ErrorMessage
+
 	now := time.Now()
 	updates := map[string]interface{}{
 		"last_healthcheck_at": &now,
@@ -135,6 +139,7 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["health_status"] = models.DomainHealthUnknown
 		updates["latency_ms"] = 0
 		_ = s.db.Model(domain).Updates(updates)
+		domain.HealthStatus = models.DomainHealthUnknown
 		return
 	}
 
@@ -162,6 +167,9 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["degraded_reason_code"] = models.ErrDomainNotResolved
 		updates["error_message"] = "Layer 1: DNS resolution failed"
 		_ = s.db.Model(domain).Updates(updates)
+		domain.HealthStatus = models.DomainHealthUnhealthy
+		domain.DegradedReasonCode = models.ErrDomainNotResolved
+		domain.ErrorMessage = "Layer 1: DNS resolution failed"
 		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", "DNS lookup timed out or returned NXDOMAIN")
 		return
 	}
@@ -189,6 +197,8 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["health_status"] = models.DomainHealthUnhealthy
 		updates["error_message"] = "Failed to construct healthcheck request"
 		_ = s.db.Model(domain).Updates(updates)
+		domain.HealthStatus = models.DomainHealthUnhealthy
+		domain.ErrorMessage = "Failed to construct healthcheck request"
 		return
 	}
 	req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
@@ -221,6 +231,9 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 			updates["degraded_reason_code"] = models.ErrRoutingHealthFailed
 			updates["error_message"] = fmt.Sprintf("Layer 2: Edge routing unreachable (%s): %v", scheme, err)
 			_ = s.db.Model(domain).Updates(updates)
+			domain.HealthStatus = models.DomainHealthUnhealthy
+			domain.DegradedReasonCode = models.ErrRoutingHealthFailed
+			domain.ErrorMessage = fmt.Sprintf("Layer 2: Edge routing unreachable (%s): %v", scheme, err)
 			_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_failed", "Edge routing unreachable", err.Error())
 			return
 		}
@@ -241,6 +254,9 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["degraded_reason_code"] = models.ErrUpstreamTimeout
 		updates["error_message"] = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", resp.StatusCode)
 		_ = s.db.Model(domain).Updates(updates)
+		domain.HealthStatus = models.DomainHealthUnhealthy
+		domain.DegradedReasonCode = models.ErrUpstreamTimeout
+		domain.ErrorMessage = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", resp.StatusCode)
 		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode), "Application backend error or 502/504 Bad Gateway")
 		return
 	}
@@ -280,6 +296,9 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["degraded_reason_code"] = models.ErrIntegrityCheckFailed
 		updates["error_message"] = "Layer 5: Response integrity marker verification failed"
 		_ = s.db.Model(domain).Updates(updates)
+		domain.HealthStatus = models.DomainHealthUnhealthy
+		domain.DegradedReasonCode = models.ErrIntegrityCheckFailed
+		domain.ErrorMessage = "Layer 5: Response integrity marker verification failed"
 		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_degraded", "Layer 5 response integrity failed", "Application did not return expected verification marker")
 		return
 	}
@@ -288,8 +307,13 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 	updates["degraded_reason_code"] = models.ErrNone
 	updates["error_message"] = ""
 	_ = s.db.Model(domain).Updates(updates)
-	if domain.HealthStatus != models.DomainHealthHealthy || domain.ErrorMessage != "" || domain.DegradedReasonCode != models.ErrNone {
-		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_recovered", "Domain health recovered", "")
+
+	domain.HealthStatus = models.DomainHealthHealthy
+	domain.DegradedReasonCode = models.ErrNone
+	domain.ErrorMessage = ""
+
+	if prevHealth != models.DomainHealthHealthy || prevErrCode != models.ErrNone || prevErrMsg != "" {
+		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_recovered", "Layer 5 response integrity verified successfully", "All 5 operational layers fully verified and healthy")
 	}
 	s.redisService.IncrDomainMetric("healthcheck_success", 1)
 }

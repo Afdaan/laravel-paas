@@ -23,10 +23,7 @@ jobs:
         uses: dorny/paths-filter@v3
         id: filter
         with:
-          base: ${{ github.event.before }}
-
           filters: |
-
             backend:
               - 'backend/**'
               - '!backend/cmd/worker/**'
@@ -38,6 +35,8 @@ jobs:
               - 'backend/internal/workers/**'
               - 'backend/internal/services/worker/**'
               - 'docker/worker/**'
+              - 'backend/go.mod'
+              - 'backend/go.sum'
 
             frontend:
               - 'frontend/**'

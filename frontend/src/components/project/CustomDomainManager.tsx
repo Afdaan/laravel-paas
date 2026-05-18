@@ -327,11 +327,29 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
 
       return (
         <div key={event.id || i} className="relative pl-6 group" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 120px' }}>
-          <div className="absolute -left-[7px] top-2.5 w-3.5 h-3.5 rounded-full border-2 border-primary bg-background group-hover:scale-125 group-hover:bg-primary transition-transform duration-200 shadow-sm" />
+          <div className={`absolute -left-[7px] top-2.5 w-3.5 h-3.5 rounded-full border-2 bg-background group-hover:scale-125 transition-transform duration-200 shadow-sm ${
+            event.event_type?.includes('recovered') || event.event_type?.includes('active') || event.event_type === 'healthcheck_recovered'
+              ? 'border-emerald-500 group-hover:bg-emerald-500'
+              : event.event_type?.includes('degraded') || event.event_type?.includes('failed') || event.event_type?.includes('error')
+              ? 'border-rose-500 group-hover:bg-rose-500'
+              : 'border-primary group-hover:bg-primary'
+          }`} />
           <div className="space-y-2 bg-muted/20 p-4 rounded-xl border border-border/60 hover:bg-muted/30 transition-colors text-left shadow-sm">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold text-foreground flex items-center gap-2">
-                <Terminal className="w-3.5 h-3.5 text-primary" />
+              <span className={`text-xs font-bold flex items-center gap-2 ${
+                event.event_type?.includes('recovered') || event.event_type?.includes('active') || event.event_type === 'healthcheck_recovered'
+                  ? 'text-emerald-400'
+                  : event.event_type?.includes('degraded') || event.event_type?.includes('failed') || event.event_type?.includes('error')
+                  ? 'text-rose-400'
+                  : 'text-foreground'
+              }`}>
+                <Terminal className={`w-3.5 h-3.5 ${
+                  event.event_type?.includes('recovered') || event.event_type?.includes('active') || event.event_type === 'healthcheck_recovered'
+                    ? 'text-emerald-400'
+                    : event.event_type?.includes('degraded') || event.event_type?.includes('failed') || event.event_type?.includes('error')
+                    ? 'text-rose-400'
+                    : 'text-primary'
+                }`} />
                 {event.event_type}
               </span>
               <span className="text-[10px] text-muted-foreground font-mono">
