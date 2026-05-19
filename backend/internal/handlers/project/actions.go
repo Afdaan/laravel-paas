@@ -41,12 +41,17 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	}
 
 	// Enqueue deployment job to Redis
-	if err := h.redisService.EnqueueDeployment(project.ID, userID, "deploy"); err != nil {
+	jobID, err := h.redisService.EnqueueDeployment(project.ID, userID, "deploy")
+	if err != nil {
 		slog.Error("Failed to enqueue deployment", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"project": project,
 			"warning": "Project created but deployment queue failed. Please redeploy.",
 		})
+	}
+
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Deployment enqueued", 0, jobID); err != nil {
+		slog.Warn("Failed to update project deployment status on create", "id", project.ID, "error", err)
 	}
 
 	// Get queue position
@@ -77,18 +82,19 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, ""); err != nil {
-		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
-	}
-	h.projectService.UpdateActivity(project.ID)
-
 	// Enqueue redeployment job to Redis
-	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+	if err != nil {
 		slog.Error("Failed to enqueue redeployment", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to queue redeployment",
 		})
 	}
+
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, jobID); err != nil {
+		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
+	}
+	h.projectService.UpdateActivity(project.ID)
 
 	// Get queue position
 	queueLength, _ := h.redisService.GetQueueLength()

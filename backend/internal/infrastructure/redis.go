@@ -102,33 +102,34 @@ const (
 )
 
 // EnqueueDeployment adds a deployment job to the queue with deduplication
-func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType string) error {
+func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType string) (string, error) {
 	// Deduplicate: Remove any existing queued jobs for this project ID so latest request wins
 	_ = r.RemoveFromQueue(projectID)
 
+	jobID := utils.GenerateRandomUID()
 	job := DeploymentJob{
 		ProjectID:  projectID,
 		UserID:     userID,
 		Type:       deployType,
 		EnqueuedAt: time.Now(),
-		JobID:      utils.GenerateRandomUID(),
+		JobID:      jobID,
 		RetryCount: 0,
 	}
 
 	data, err := json.Marshal(job)
 	if err != nil {
-		return fmt.Errorf("failed to marshal job: %w", err)
+		return "", fmt.Errorf("failed to marshal job: %w", err)
 	}
 
 	// Add to the queue
 	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
-		return fmt.Errorf("failed to enqueue job: %w", err)
+		return "", fmt.Errorf("failed to enqueue job: %w", err)
 	}
 
 	// Increment enqueued counter
 	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 
-	return nil
+	return jobID, nil
 }
 
 // EnqueueDeploymentJob enqueues an existing DeploymentJob struct (used for retries)

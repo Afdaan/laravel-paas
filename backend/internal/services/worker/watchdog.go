@@ -124,10 +124,11 @@ func (w *CentralWatchdog) recoverOrphanedBuilds() {
 			slog.Warn("Central watchdog: failed to force release lock during recovery", "id", project.ID, "error", err)
 		}
 
-		if err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+		if jobID, err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
 			slog.Error("Central watchdog: failed to re-queue project during recovery", "id", project.ID, "error", err)
 		} else {
 			slog.Info("Central watchdog: project automatically re-queued for reliability", "id", project.ID)
+			_ = w.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Watchdog recovery re-queue", 0, jobID)
 		}
 	}
 }

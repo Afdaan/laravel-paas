@@ -47,14 +47,19 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
   const currentJobId = useRef(project?.deployment_job_id)
 
   useEffect(() => {
-    if (project?.deployment_job_id && project.deployment_job_id !== currentJobId.current) {
-      currentJobId.current = project.deployment_job_id
-      setClearedLength(0)
-      setClearedEventMaxId(-1)
-      setLogs('')
-      setEvents([])
+    const isNewJob = project?.deployment_job_id && project.deployment_job_id !== currentJobId.current;
+    const isQueued = project?.deployment_status === 'queued';
+    
+    if (isNewJob || isQueued) {
+      if (project?.deployment_job_id) {
+        currentJobId.current = project.deployment_job_id;
+      }
+      setClearedLength(0);
+      setClearedEventMaxId(-1);
+      setLogs('');
+      setEvents([]);
     }
-  }, [project?.deployment_job_id])
+  }, [project?.deployment_job_id, project?.deployment_status])
 
   useEffect(() => {
     let isMounted = true

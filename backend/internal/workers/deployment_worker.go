@@ -153,7 +153,7 @@ func (w *DeploymentWorker) processJobs() {
 		if !w.running {
 			// If we got a job but we're stopping, put it back in the queue
 			if job != nil {
-				if err := w.redisService.EnqueueDeployment(job.ProjectID, job.UserID, job.Type); err != nil {
+				if _, err := w.redisService.EnqueueDeployment(job.ProjectID, job.UserID, job.Type); err != nil {
 					slog.Error("Failed to re-enqueue job during shutdown", "projectId", job.ProjectID, "error", err)
 				}
 			}
@@ -575,8 +575,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		_ = w.redisService.PublishBuildLog(project.ID, msg)
 	}
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Building and launching new container instance")
-
 	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
 	if err != nil || buildTimeoutSec <= 0 {
 		buildTimeoutSec = 1800
@@ -604,6 +602,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 	docker.GetCircuitBreaker().RecordSuccess()
+
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Launching new container instance")
 
 	project.RolloutContainerID = &newContainerID
 	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{

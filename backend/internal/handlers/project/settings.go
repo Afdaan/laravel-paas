@@ -55,7 +55,8 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	// Automatically trigger a redeploy to apply changes.
 	// This is essential for frontend frameworks (Vite, Next.js) that need these
 	// variables during the build phase.
-	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
+	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+	if err != nil {
 		slog.Error("Failed to auto-enqueue redeployment after env update",
 			"project_id", project.ID,
 			"error", err)
@@ -63,6 +64,10 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"message": "Environment variables saved, but failed to queue auto-redeploy. Please redeploy manually.",
 		})
+	}
+
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Auto-redeploy triggered by environment update", 0, jobID); err != nil {
+		slog.Warn("Failed to update deployment status on env update", "id", project.ID, "error", err)
 	}
 
 	return c.JSON(fiber.Map{

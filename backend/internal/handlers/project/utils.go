@@ -153,6 +153,9 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	if project.DeploymentStatus == models.DepStatusQueued {
+		return c.JSON(fiber.Map{"logs": "Deployment is queued. Waiting for worker to start..."})
+	}
 
 	logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
 	f, err := os.Open(logPath)
@@ -540,9 +543,12 @@ func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusQueued)
 
 	// 4. Re-enqueue
-	if err := h.redisService.EnqueueDeployment(uint(projectID), project.UserID, "redeploy"); err != nil {
+	jobID, err := h.redisService.EnqueueDeployment(uint(projectID), project.UserID, "redeploy")
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
 	}
+
+	_ = h.projectService.UpdateDeploymentStatus(uint(projectID), models.DepStatusQueued, "Admin manual requeue", 0, jobID)
 
 	return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
 }
