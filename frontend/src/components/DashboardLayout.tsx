@@ -6,6 +6,7 @@ import { projectsAPI } from '../services/api'
 import { Project } from '../types'
 import { FrameworkIcon } from './FrameworkIcon'
 import { LanguageSwitcher } from './LanguageSwitcher'
+import { usePolling } from '@/lib/usePolling'
 import {
   LayoutDashboard,
   FolderGit2,
@@ -223,6 +224,38 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
       isMounted = false
     }
   }, [showProjectSwitcher, activeProjectUID, isAdminBrowsingAsAdmin, user?.id])
+
+  usePolling(() => {
+    if (!showProjectSwitcher || !activeProjectUID || isProjectsLoading) return
+
+    const refreshStatuses = async () => {
+      try {
+        const currentRes = await projectsAPI.get(activeProjectUID)
+        const updatedCurrent = currentRes.data as Project
+        setCurrentProject(updatedCurrent)
+
+        const listRes = isAdminBrowsingAsAdmin
+          ? await projectsAPI.listAll({ page: 1, limit: 100 })
+          : await projectsAPI.listOwn()
+        
+        let nextProjects = (listRes.data.data || []) as Project[]
+        if (isAdminBrowsingAsAdmin) {
+          nextProjects = nextProjects.filter((project) => project.user_id === updatedCurrent.user_id)
+        }
+
+        const hasCurrent = nextProjects.some((project) => project.uid === updatedCurrent.uid || project.id === updatedCurrent.id)
+        if (!hasCurrent) {
+          nextProjects = [updatedCurrent, ...nextProjects]
+        }
+
+        setProjects(nextProjects)
+      } catch {
+        // Silently fail during polling
+      }
+    }
+
+    refreshStatuses()
+  }, showProjectSwitcher ? 8000 : null)
   
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">

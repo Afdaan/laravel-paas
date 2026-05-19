@@ -153,7 +153,18 @@ function StudentProjectDetail() {
 
   const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
-  const displayStatus = isDeploying ? 'building' : project?.status
+  
+  const deploymentPhase = useMemo(() => {
+    if (!project?.deployment_status || !isDeploying) return null
+    const status = project.deployment_status
+    if (['queued', 'preparing', 'cloning'].includes(status)) return { label: 'Preparing', phase: 'build' }
+    if (['building', 'provisioning'].includes(status)) return { label: 'Building', phase: 'build' }
+    if (['starting', 'healthchecking', 'migrating'].includes(status)) return { label: 'Starting Container', phase: 'startup' }
+    if (['promoting', 'cleanup'].includes(status)) return { label: 'Finalizing', phase: 'finalize' }
+    return { label: 'Deploying', phase: 'build' }
+  }, [project?.deployment_status, isDeploying])
+  
+  const displayStatus = deploymentPhase ? 'building' : project?.status
 
   const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid) return
@@ -543,13 +554,27 @@ function StudentProjectDetail() {
                 "text-lg font-bold",
                 (project.deployment_status === 'failed' || project.status === 'failed') && "text-rose-500"
               )}>
-                {isDeploying ? t('projectDetail.messages.buildTitle') : t('projectDetail.overview.deployError')}
+                {isDeploying 
+                  ? (deploymentPhase ? `${deploymentPhase.label}...` : t('projectDetail.messages.buildTitle'))
+                  : t('projectDetail.overview.deployError')}
               </h3>
               <p className="text-sm text-muted-foreground">
                 {isDeploying
-                  ? t('projectDetail.messages.buildDesc')
+                  ? (deploymentPhase?.phase === 'startup' 
+                      ? 'Container is starting up and running health checks...'
+                      : deploymentPhase?.phase === 'finalize'
+                      ? 'Finalizing deployment and cleaning up old versions...'
+                      : t('projectDetail.messages.buildDesc'))
                   : t('projectDetail.messages.failedDesc')}
               </p>
+              {isDeploying && project.deployment_progress != null && (
+                <div className="mt-3 w-full bg-muted/50 rounded-full h-1.5 overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${Math.min(project.deployment_progress, 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex gap-3">
               <Button
@@ -589,7 +614,7 @@ function StudentProjectDetail() {
                   "bg-blue-500 animate-spin"
                 )} />
                 <span className="text-[10px] uppercase font-bold tracking-wider">
-                  Deployment: {project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
+                  {deploymentPhase ? deploymentPhase.label : project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
                 </span>
               </Badge>
             )}
