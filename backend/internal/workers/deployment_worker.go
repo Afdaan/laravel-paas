@@ -46,7 +46,6 @@ type DeploymentWorker struct {
 	running  bool
 	stopChan chan struct{}
 	wg       sync.WaitGroup
-
 }
 
 // NewDeploymentWorker creates a new deployment worker
@@ -699,7 +698,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live")
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live") {
+		w.forceDeploymentCompleted(project, job.JobID)
+	}
 	appendLog("Deployment completed successfully! System is now live.")
 
 	go func() {
@@ -713,30 +714,46 @@ func (w *DeploymentWorker) cleanupJobTracking(jobID string) {
 }
 
 // transitionDeploymentState validates and transitions the deployment status while recording a structured event audit trail
-func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jobID string, nextState models.DeploymentStatus, progress int, eventType, payload string) {
+func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jobID string, nextState models.DeploymentStatus, progress int, eventType, payload string) bool {
 	updatedProject, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, nextState, progress, eventType, payload)
 	if err != nil {
 		slog.Warn("Failed atomic deployment state transition", "projectId", project.ID, "nextState", nextState, "error", err)
-		return
+		return false
 	}
 	if updatedProject != nil {
 		project.DeploymentStatus = updatedProject.DeploymentStatus
 		project.DeploymentProgress = updatedProject.DeploymentProgress
 		project.DeploymentMessage = updatedProject.DeploymentMessage
 	}
+	return true
+}
+
+func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, jobID string) {
+	if err := w.projectRepo.UpdateDeploymentStatus(project.ID, models.DepStatusCompleted, "Release successfully promoted and live", 100, jobID); err != nil {
+		slog.Error("Failed to force deployment completion status", "projectId", project.ID, "error", err)
+		return
+	}
+	w.recordAuditLog(project.ID, jobID, "deployment-worker", "deployment_completed_reconciled", "Release successfully promoted and live")
+	project.DeploymentStatus = models.DepStatusCompleted
+	project.DeploymentProgress = 100
+	msg := "Release successfully promoted and live"
+	project.DeploymentMessage = &msg
+	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+		slog.Warn("Failed to invalidate cache after forced deployment completion", "subdomain", project.Subdomain, "error", err)
+	}
 }
 
 // recordAuditLog records a deployment event without altering the project status
 func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, eventType, payload string) {
 	event := &models.DeploymentEvent{
-		ProjectID:      projectID,
-		JobID:          jobID,
-		WorkerID:       workerID,
-		StateFrom:      string(models.DepStatusBuilding),
-		StateTo:        string(models.DepStatusBuilding),
-		EventType:      eventType,
-		Payload:        payload,
-		CreatedAt:      time.Now(),
+		ProjectID: projectID,
+		JobID:     jobID,
+		WorkerID:  workerID,
+		StateFrom: string(models.DepStatusBuilding),
+		StateTo:   string(models.DepStatusBuilding),
+		EventType: eventType,
+		Payload:   payload,
+		CreatedAt: time.Now(),
 	}
 
 	if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {

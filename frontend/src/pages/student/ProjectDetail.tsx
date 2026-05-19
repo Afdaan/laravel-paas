@@ -153,6 +153,7 @@ function StudentProjectDetail() {
 
   const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
+  const displayStatus = isDeploying ? 'building' : project?.status
 
   const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid) return
@@ -337,7 +338,7 @@ function StudentProjectDetail() {
 
   const onDeployStarted = () => {
     isActionPendingRef.current = true
-    setProject(prev => prev ? ({ ...prev, deployment_status: 'queued', deployment_progress: 0 }) : null)
+    setProject(prev => prev ? ({ ...prev, status: 'building', deployment_status: 'queued', deployment_progress: 0 }) : null)
   }
 
   const handleStop = async () => {
@@ -573,7 +574,7 @@ function StudentProjectDetail() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-            <StatusIndicator status={project.status} />
+            <StatusIndicator status={displayStatus || project.status} />
             {project.deployment_status && project.deployment_status !== 'completed' && (
               <Badge variant="outline" className={cn(
                 "gap-2 py-1 px-3 flex items-center",

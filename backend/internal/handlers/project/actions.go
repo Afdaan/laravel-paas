@@ -67,11 +67,6 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, ""); err != nil {
-		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
-	}
-	h.projectService.UpdateActivity(project.ID)
-
 	// Check if already in queue to avoid duplicates
 	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
 	if isQueued {
@@ -81,6 +76,11 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 			"queue_position": queueLength,
 		})
 	}
+
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, ""); err != nil {
+		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
+	}
+	h.projectService.UpdateActivity(project.ID)
 
 	// Enqueue redeployment job to Redis
 	if err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
