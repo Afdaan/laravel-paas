@@ -94,7 +94,7 @@ func (m *transitionManager) TransitionState(ctx context.Context, projectID uint,
 
 		// Query monotonic sequence number dynamically within the atomic lock
 		var nextSeq int
-		tx.Raw("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM deployment_events WHERE project_id = ? AND job_id = ? FOR UPDATE", projectID, activeJobID).Scan(&nextSeq)
+		tx.Raw("SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM deployment_events WHERE project_id = ? AND job_id = ?", projectID, activeJobID).Scan(&nextSeq)
 
 		workerID := fmt.Sprintf("node-%s", m.hostname)
 		event = models.DeploymentEvent{

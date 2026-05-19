@@ -31,12 +31,12 @@ jobs:
               - '!backend/internal/services/worker/**'
 
             worker:
-              - 'backend/cmd/worker/**'
-              - 'backend/internal/workers/**'
-              - 'backend/internal/services/worker/**'
+              - 'backend/**'
+              - '!backend/cmd/api/**'
+              - '!backend/internal/handlers/**'
+              - '!backend/internal/routes/**'
+              - '!backend/internal/middleware/**'
               - 'docker/worker/**'
-              - 'backend/go.mod'
-              - 'backend/go.sum'
 
             frontend:
               - 'frontend/**'
