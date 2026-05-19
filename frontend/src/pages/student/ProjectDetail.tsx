@@ -19,6 +19,7 @@ import {
   Box,
   AlertTriangle,
   GitBranch,
+  Settings,
   Loader2,
   Save,
   Copy,
@@ -804,12 +805,23 @@ function StudentProjectDetail() {
                   <div className="text-xs font-mono truncate">{project.github_url || project.repository_url}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-muted border">
-                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.branch')}</label>
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <GitBranch className="w-3 h-3 text-primary" />
-                      {project.branch || 'main'}
+                  <div className="p-3 rounded-lg bg-muted border flex items-center justify-between">
+                    <div>
+                      <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.branch')}</label>
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <GitBranch className="w-3 h-3 text-primary" />
+                        {project.branch || 'main'}
+                      </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-7 h-7 hover:bg-muted-foreground/10 text-muted-foreground hover:text-primary transition-colors"
+                      onClick={() => setActiveTab('settings')}
+                      title={t('projectDetail.actions.changeBranch') || 'Change Branch'}
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                   <div className="p-3 rounded-lg bg-muted border">
                     <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.settings.version')}</label>

@@ -19,17 +19,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Determine Base Commit
+        id: base-commit
+        run: |
+          BASE_SHA="HEAD~1"
+          BEFORE_SHA="${{ github.event.before }}"
+          if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            if git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
+              BASE_SHA="$BEFORE_SHA"
+              echo "Base commit $BEFORE_SHA exists locally."
+            else
+              echo "Base commit $BEFORE_SHA does not exist locally (possibly due to force-push)."
+            fi
+          else
+            echo "No valid before SHA provided (possibly a new branch)."
+          fi
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Detect Changes
         uses: dorny/paths-filter@v3
         id: filter
         with:
-          base: ${{ github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD~1' }}
+          base: ${{ steps.base-commit.outputs.base_sha }}
           filters: |
             backend:
               - 'backend/**'
               - '!backend/cmd/worker/**'
               - '!backend/internal/workers/**'
               - '!backend/internal/services/worker/**'
+              - '!frontend/**'
 
             worker:
               - 'backend/**'
