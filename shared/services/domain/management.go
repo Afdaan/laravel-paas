@@ -23,6 +23,11 @@ func (s *DomainService) AddDomain(projectID uint, domainName string) (*models.Cu
 		return nil, apperr.New(409, "DOMAIN_EXISTS", "Domain is already registered to another project")
 	}
 
+	// Safely hard-delete any legacy/soft-deleted rows with this domain to avoid Postgres unique constraint violations on create
+	if err := s.db.Unscoped().Where("domain = ?", domainName).Delete(&models.CustomDomain{}).Error; err != nil {
+		return nil, err
+	}
+
 	domain := &models.CustomDomain{
 		ProjectID:    projectID,
 		Domain:       domainName,
