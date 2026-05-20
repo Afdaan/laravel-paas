@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
-import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, ExternalLink, ShieldCheck, Server, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
+import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, ExternalLink, ShieldCheck, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
 import { projectsAPI } from '@/services/api'
-import { CustomDomain, DomainDiagnostic, DomainEvent } from '@/types'
+import { CustomDomain, DomainEvent } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -108,9 +108,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
   const [isAdding, setIsAdding] = useState(false)
   const [verifyingId, setVerifyingId] = useState<number | null>(null)
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
-  const [isDiagnosing, setIsDiagnosing] = useState<number | null>(null)
-  const [diagnosticData, setDiagnosticData] = useState<Record<number, DomainDiagnostic>>({})
-  
+
   const [eventsModal, setEventsModal] = useState<{
     isOpen: boolean;
     domain: CustomDomain | null;
@@ -162,26 +160,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     fetchDomains()
   }, [fetchDomains])
 
-  const handleFetchDiagnostic = useCallback(async (domainId: number) => {
-    setIsDiagnosing(domainId)
-    try {
-      const res = await projectsAPI.getDomainDiagnostic(projectId, domainId)
-      setDiagnosticData((prev: Record<number, DomainDiagnostic>) => ({
-        ...prev,
-        [domainId]: res.data.data
-      }))
-    } catch (error) {
-      console.error("Diagnostic failed", error)
-    } finally {
-      setIsDiagnosing(null)
-    }
-  }, [projectId])
 
-  useEffect(() => {
-    if (selectedDomainId) {
-      handleFetchDiagnostic(selectedDomainId)
-    }
-  }, [selectedDomainId, handleFetchDiagnostic])
 
   // Real-time project-wide EventSource connection for live domain list state and audit log streaming
   useEffect(() => {
@@ -589,16 +568,16 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         <FileText className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">Audit Log</span>
                       </Button>
-                      {!isActive && !isSelected && (
+                      {!isActive && (
                         <Button
-                          variant={isSelected ? "default" : "outline"}
+                          variant="outline"
                           size="sm"
                           onClick={(e) => handleVerifyDomain(e, domain.id)}
                           disabled={verifyingId === domain.id}
-                          className={`h-8 gap-2 text-xs transition-all ${isSelected ? 'shadow-lg shadow-primary/20' : ''}`}
+                          className="h-8 gap-2 text-xs transition-all text-emerald-500 border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/50"
                         >
                           <RefreshCw className={`w-3 h-3 ${verifyingId === domain.id ? 'animate-spin' : ''}`} />
-                          {t('common.verify')}
+                          {verifyingId === domain.id ? 'Verifying...' : t('common.verify')}
                         </Button>
                       )}
                       <Button
@@ -626,11 +605,6 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           </h4>
                           <p className="text-xs text-muted-foreground">{t('domains.dnsGuide.desc') || 'Add these records to your DNS provider (Cloudflare, GoDaddy, etc.)'}</p>
                         </div>
-                        {diagnosticData[domain.id] && (
-                          <div className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
-                            {diagnosticData[domain.id]?.is_match ? (t('domains.dnsGuide.configured') || 'Configured') : (t('domains.dnsGuide.actionRequired') || 'Action Required')}
-                          </div>
-                        )}
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -643,7 +617,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
-                            const host = diagnosticData[domain.id]?.expected_host || getDNSHost(domain.domain)
+                            const host = getDNSHost(domain.domain)
                             navigator.clipboard.writeText(host)
                             toast.success(t('common.copied'))
                           }}
@@ -653,7 +627,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                             <span className="text-[10px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
                           </div>
                           <div className="text-sm font-mono font-bold text-foreground truncate relative z-10 pr-6">
-                            {diagnosticData[domain.id]?.expected_host || getDNSHost(domain.domain)}
+                            {getDNSHost(domain.domain)}
                           </div>
                           <Plus className="absolute -bottom-2 -right-2 w-12 h-12 text-primary/5 group-hover/box:text-primary/10 transition-colors rotate-12" />
                         </div>
@@ -662,7 +636,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
-                            const target = diagnosticData[domain.id]?.expected_value || (projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`)
+                            const target = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`
                             navigator.clipboard.writeText(target)
                             toast.success(t('common.copied'))
                           }}
@@ -672,112 +646,10 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                             <span className="text-[10px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
                           </div>
                           <div className="text-sm font-mono font-bold text-foreground truncate relative z-10 pr-6">
-                            {diagnosticData[domain.id]?.expected_value || (projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`)}
+                            {projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`}
                           </div>
                           <RefreshCw className="absolute -bottom-2 -right-2 w-12 h-12 text-primary/5 group-hover/box:text-primary/10 transition-colors -rotate-12" />
                         </div>
-                      </div>
-
-                      <div className="space-y-6 pt-4 border-t border-border/60">
-                        <div className="flex items-center justify-between px-1">
-                          <div className="flex items-center gap-2.5">
-                            <div className="relative flex h-2 w-2">
-                              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDiagnosing === domain.id ? 'bg-primary' : 'bg-primary/20'}`}></span>
-                              <span className={`relative inline-flex rounded-full h-2 w-2 ${isDiagnosing === domain.id ? 'bg-primary' : 'bg-primary/40'}`}></span>
-                            </div>
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">{t('domains.dnsGuide.networkPath') || 'Network Path Integrity'}</span>
-                          </div>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleFetchDiagnostic(domain.id);
-                            }}
-                            disabled={isDiagnosing === domain.id}
-                            className="text-[10px] font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-widest disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${isDiagnosing === domain.id ? 'animate-spin' : ''}`} />
-                            {isDiagnosing === domain.id ? (t('domains.dnsGuide.scanning') || 'Scanning...') : (t('domains.dnsGuide.rescan') || 'Re-scan')}
-                          </button>
-                        </div>
-
-                        {diagnosticData[domain.id] ? (
-                          <div className="relative py-8 px-4 rounded-3xl bg-muted/5 border border-muted-foreground/5 overflow-hidden">
-                            <div className="absolute top-1/2 left-0 w-full h-[1px] bg-muted-foreground/10 -translate-y-1/2" />
-                            
-                            <div className="flex items-center justify-between relative z-10 max-w-sm mx-auto">
-                              <div className="flex flex-col items-center gap-3">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${isDiagnosing === domain.id ? 'bg-primary/10 border-primary/30 animate-pulse' : 'bg-background border-muted-foreground/10'}`}>
-                                  <Globe className={`w-5 h-5 ${isDiagnosing === domain.id ? 'text-primary' : 'text-muted-foreground'}`} />
-                                </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.domain') || 'Domain'}</span>
-                              </div>
-
-                              <div className="flex-1 px-2 relative">
-                                <div className={`h-[2px] w-full rounded-full overflow-hidden ${diagnosticData[domain.id]?.current_cname ? 'bg-emerald-500/20' : 'bg-muted-foreground/10'}`}>
-                                  <div className={`h-full bg-emerald-500 transition-all duration-[2000ms] ${diagnosticData[domain.id]?.current_cname ? 'w-full' : 'w-0'}`} />
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col items-center gap-3">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${diagnosticData[domain.id]?.current_cname ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-background border-muted-foreground/10'}`}>
-                                  <div className="relative">
-                                    <ShieldCheck className={`w-5 h-5 ${diagnosticData[domain.id]?.current_cname ? 'text-emerald-500' : 'text-muted-foreground'}`} />
-                                    {diagnosticData[domain.id]?.current_cname && <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                    </span>}
-                                  </div>
-                                </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.dnsOk') || 'DNS OK'}</span>
-                              </div>
-
-                              <div className="flex-1 px-2">
-                                <div className={`h-[2px] w-full rounded-full overflow-hidden ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/20' : 'bg-muted-foreground/10'}`}>
-                                  <div className={`h-full bg-emerald-500 transition-all duration-[2000ms] delay-500 ${diagnosticData[domain.id]?.is_match ? 'w-full' : 'w-0'}`} />
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col items-center gap-3">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/20 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]' : 'bg-background border-muted-foreground/10'}`}>
-                                  <Server className={`w-5 h-5 ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-muted-foreground'}`} />
-                                </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.edge') || 'Public Access'}</span>
-                              </div>
-                            </div>
-
-                            <div className="mt-6 text-center space-y-1">
-                              <div className={`text-[10px] font-black uppercase tracking-[0.2em] ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                {diagnosticData[domain.id]?.is_match ? (t('domains.dnsGuide.statusActive') || 'STATUS: ACTIVE') : (t('domains.dnsGuide.statusPending') || 'STATUS: PENDING')}
-                              </div>
-                              <p className="text-[10px] text-muted-foreground/60 max-w-[200px] mx-auto leading-tight">{diagnosticData[domain.id]?.message}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-12 bg-muted/5 rounded-[2rem] border border-dashed border-muted-foreground/10 text-center group/empty hover:bg-muted/10 transition-all">
-                            <div className="relative mb-4">
-                              <div className="p-4 bg-muted/10 rounded-2xl group-hover/empty:scale-110 transition-transform">
-                                <RefreshCw className={`w-6 h-6 text-muted-foreground/20 ${isDiagnosing === domain.id ? 'animate-spin' : ''}`} />
-                              </div>
-                            </div>
-                            <p className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-[0.25em]">{t('domains.dnsGuide.initScan') || 'Initialize System Scan'}</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex justify-center pt-2">
-                        <Button
-                          variant="outline"
-                          className="w-fit h-auto py-3 px-10 bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-500 transition-all duration-500 rounded-xl group overflow-hidden relative"
-                          onClick={(e) => handleVerifyDomain(e, domain.id)}
-                          disabled={verifyingId === domain.id}
-                        >
-                          <div className="relative z-10 flex items-center gap-3">
-                            <div className={`p-1 rounded-full bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors ${verifyingId === domain.id ? 'animate-spin' : ''}`}>
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </div>
-                            <span className="text-[11px] font-black uppercase tracking-[0.3em]">{t('common.verify')}</span>
-                          </div>
-                        </Button>
                       </div>
                     </div>
                   </div>
