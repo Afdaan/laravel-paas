@@ -188,6 +188,71 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"logs": string(buf)})
 }
 
+// StreamBuildLogs streams live build log output using Server-Sent Events (SSE)
+func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+
+	h.projectService.UpdateActivity(project.ID)
+
+	ctx := c.Context()
+
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// 1. Read existing log file if it exists and write it as a single initial_logs event
+		logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
+		if logBytes, err := os.ReadFile(logPath); err == nil && len(logBytes) > 0 {
+			// Limit to a reasonable size to avoid giant SSE messages, e.g. last 1MB
+			const maxInitialBytes = 1 * 1024 * 1024
+			if len(logBytes) > maxInitialBytes {
+				logBytes = logBytes[len(logBytes)-maxInitialBytes:]
+			}
+			dataBytes, _ := json.Marshal(string(logBytes))
+			_, err = w.WriteString(fmt.Sprintf("event: initial_logs\ndata: %s\n\n", string(dataBytes)))
+			if err != nil {
+				return
+			}
+			_ = w.Flush()
+		}
+
+		// 2. Subscribe to Redis build logs Pub/Sub for new logs
+		msgChan, err := h.redisService.SubscribeBuildLogs(ctx, project.ID)
+		if err != nil {
+			return
+		}
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case line, ok := <-msgChan:
+				if !ok {
+					return
+				}
+				dataBytes, _ := json.Marshal(line)
+				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
+				if err != nil {
+					return
+				}
+			case <-ticker.C:
+				if err := w.Flush(); err != nil {
+					return
+				}
+			}
+		}
+	})
+
+	return nil
+}
+
 // StreamLogs streams live container logs using Server-Sent Events (SSE)
 func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	project, err := h.getProject(c)

@@ -123,7 +123,7 @@ function StudentProjectDetail() {
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
-  const [logsClearedLength, setLogsClearedLength] = useState(0)
+  const [clearedLogs, setClearedLogs] = useState('')
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -202,6 +202,10 @@ function StudentProjectDetail() {
     }
   }, [uid, navigate, t, consecutiveErrors])
 
+  const handleDeploymentEvent = useCallback(() => {
+    fetchProject(true)
+  }, [fetchProject])
+
   const fetchLogs = useCallback(async () => {
     if (!uid) return
     try {
@@ -255,7 +259,7 @@ function StudentProjectDetail() {
   useEffect(() => {
     if (activeTab === 'logs' && project?.container_id) {
       setLogs('')
-      setLogsClearedLength(0)
+      setClearedLogs('')
       fetchLogs()
     }
   }, [logType, activeTab, project?.container_id, fetchLogs])
@@ -266,19 +270,38 @@ function StudentProjectDetail() {
     }
   }, [activeTab, uid, fetchCredentials])
 
-  const logLines = useMemo(() => {
-    if (!logs) return []
-    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
-    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.slice(-500) : lines
-  }, [logs, logsClearedLength])
+  const { visibleLogLines, logOffset } = useMemo(() => {
+    if (!logs) return { visibleLogLines: [], logOffset: 0 }
+    
+    let visibleLogs = logs
+    if (clearedLogs) {
+      const clearedLines = clearedLogs.split('\n')
+      const currentLines = logs.split('\n')
+      let overlapLines = 0
+      const maxCheck = Math.min(clearedLines.length, currentLines.length)
+      
+      for (let k = maxCheck; k > 0; k--) {
+        let match = true
+        for (let i = 0; i < k; i++) {
+          if (clearedLines[clearedLines.length - k + i] !== currentLines[i]) {
+            match = false
+            break
+          }
+        }
+        if (match) {
+          overlapLines = k
+          break
+        }
+      }
+      visibleLogs = currentLines.slice(overlapLines).join('\n')
+    }
 
-  const logOffset = useMemo(() => {
-    if (!logs) return 0
-    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
     const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.length - 500 : 0
-  }, [logs, logsClearedLength])
+    const slicedLines = lines.length > 500 ? lines.slice(-500) : lines
+    const offset = lines.length > 500 ? lines.length - 500 : 0
+    
+    return { visibleLogLines: slicedLines, logOffset: offset }
+  }, [logs, clearedLogs])
 
   const consoleLines = useMemo(() => {
     if (!consoleOutput) return []
@@ -317,7 +340,7 @@ function StudentProjectDetail() {
       confirmText: t('common.confirm'),
       isOpen: true,
       onConfirm: () => {
-        setLogsClearedLength(logs.length)
+        setClearedLogs(logs)
         toast.success(t('common.success'))
       }
     })
@@ -1033,7 +1056,7 @@ function StudentProjectDetail() {
               </div>
             </CardHeader>
             <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950">
-              {logLines.length > 0 ? logLines.map((line: string, i: number) => {
+              {visibleLogLines.length > 0 ? visibleLogLines.map((line: string, i: number) => {
                 const isTimestamp = /^\d{4}-\d{2}-\d{2}/.test(line) || /^\[\d{2}-\w{3}-\d{4}/.test(line)
                 return (
                   <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
@@ -1060,7 +1083,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} project={project} />}
+          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} project={project} onDeploymentEvent={handleDeploymentEvent} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">

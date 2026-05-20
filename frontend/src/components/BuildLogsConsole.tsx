@@ -13,9 +13,10 @@ interface BuildLogsConsoleProps {
   projectId: string | number
   status?: string
   project?: Project
+  onDeploymentEvent?: (event: DeploymentEvent) => void
 }
 
-const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps) => {
+const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: BuildLogsConsoleProps) => {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<string>('')
   const [events, setEvents] = useState<DeploymentEvent[]>([])
@@ -63,37 +64,139 @@ const BuildLogsConsole = ({ projectId, status, project }: BuildLogsConsoleProps)
 
   useEffect(() => {
     let isMounted = true
-    const controller = new AbortController()
+    let logsEventSource: EventSource | null = null
+    let eventsEventSource: EventSource | null = null
+    let pollingInterval: NodeJS.Timeout | null = null
 
-    const fetchData = async () => {
-      try {
-        const [logsRes, eventsRes] = await Promise.all([
-          projectsAPI.buildLogs(projectId).catch(() => ({ data: { logs: '' } })),
-          projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
-        ])
-        if (isMounted) {
+    // Fallback: standard API polling
+    const startPollingFallback = () => {
+      if (pollingInterval) clearInterval(pollingInterval)
+      
+      const fetchData = async () => {
+        try {
+          const [logsRes, eventsRes] = await Promise.all([
+            projectsAPI.buildLogs(projectId).catch(() => ({ data: { logs: '' } })),
+            projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
+          ])
+          if (!isMounted) return
           if (logsRes.data?.logs) setLogs(logsRes.data.logs)
           if (Array.isArray(eventsRes.data)) setEvents(eventsRes.data)
+        } catch (error) {
+          console.error('Failed to fetch build data during polling:', error)
         }
-      } catch (error) {
+      }
+
+      fetchData()
+      pollingInterval = setInterval(fetchData, 3000)
+    }
+
+    const connectSSE = async () => {
+      try {
+        const token = localStorage.getItem('token') || ''
+        const res = await fetch('/api/auth/stream-token', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (!res.ok) {
+          throw new Error('Failed to get stream token')
+        }
+        if (!isMounted) return
+        const data = await res.json()
+        const streamToken = data.token
+
+        // 1. Build logs connection
+        const logsUrl = `/api/projects/${projectId}/build-logs/stream?stream_token=${encodeURIComponent(streamToken)}`
+        logsEventSource = new EventSource(logsUrl)
+
+        logsEventSource.addEventListener('initial_logs', (e) => {
+          if (!isMounted) return
+          try {
+            const initialLogs = JSON.parse(e.data)
+            setLogs(initialLogs)
+          } catch (err) {
+            console.error('Failed to parse initial logs:', err)
+          }
+        })
+
+        logsEventSource.addEventListener('log', (e) => {
+          if (!isMounted) return
+          try {
+            const newLogLine = JSON.parse(e.data)
+            setLogs(prev => prev ? prev + '\n' + newLogLine : newLogLine)
+          } catch (err) {
+            console.error('Failed to parse log line:', err)
+          }
+        })
+
+        logsEventSource.onerror = (err) => {
+          console.warn('Logs SSE connection error, falling back to polling:', err)
+          if (isMounted) {
+            startPollingFallback()
+          }
+        }
+
+        // 2. Deployment events connection
+        const eventsUrl = `/api/projects/${projectId}/deployment-events/stream?stream_token=${encodeURIComponent(streamToken)}`
+        eventsEventSource = new EventSource(eventsUrl)
+
+        eventsEventSource.addEventListener('initial_events', (e) => {
+          if (!isMounted) return
+          try {
+            const initialEvents = JSON.parse(e.data)
+            setEvents(initialEvents)
+            // Notify parent of the latest event if any exists
+            if (initialEvents.length > 0 && onDeploymentEvent) {
+              const sorted = [...initialEvents].sort((a, b) => (b.id || 0) - (a.id || 0))
+              onDeploymentEvent(sorted[0])
+            }
+          } catch (err) {
+            console.error('Failed to parse initial events:', err)
+          }
+        })
+
+        eventsEventSource.addEventListener('deployment_event', (e) => {
+          if (!isMounted) return
+          try {
+            const newEvent = JSON.parse(e.data) as DeploymentEvent
+            setEvents(prev => {
+              if (prev.some(ev => ev.id === newEvent.id && newEvent.id !== 0)) {
+                return prev
+              }
+              const updated = [...prev, newEvent]
+              if (onDeploymentEvent) {
+                onDeploymentEvent(newEvent)
+              }
+              return updated
+            })
+          } catch (err) {
+            console.error('Failed to parse deployment event:', err)
+          }
+        })
+
+        eventsEventSource.onerror = (err) => {
+          console.warn('Events SSE connection error, falling back to polling:', err)
+          if (isMounted) {
+            startPollingFallback()
+          }
+        }
+
+      } catch (err) {
+        console.warn('Failed to initialize SSE, falling back to polling:', err)
         if (isMounted) {
-          console.error('Failed to fetch build data:', error)
+          startPollingFallback()
         }
       }
     }
 
-    // Initial fetch
-    fetchData()
-
-    // Poll every 3 seconds (slightly slower to save CPU) while active
-    const interval = setInterval(fetchData, 3000)
+    connectSSE()
 
     return () => {
       isMounted = false
-      controller.abort()
-      clearInterval(interval)
+      if (logsEventSource) logsEventSource.close()
+      if (eventsEventSource) eventsEventSource.close()
+      if (pollingInterval) clearInterval(pollingInterval)
     }
-  }, [projectId])
+  }, [projectId, onDeploymentEvent])
 
   useEffect(() => {
     // Auto scroll to bottom when logs update

@@ -598,6 +598,35 @@ func (r *RedisService) SubscribeBuildLogs(ctx context.Context, projectID uint) (
 	return msgChan, nil
 }
 
+// SubscribeDeploymentEvents subscribes to a deployment lifecycle events channel and returns a Go channel of messages
+func (r *RedisService) SubscribeDeploymentEvents(ctx context.Context, projectID uint) (<-chan string, error) {
+	channel := fmt.Sprintf("channel:deployment_events:%d", projectID)
+	sub := r.client.Subscribe(r.ctx, channel)
+
+	msgChan := make(chan string, 100)
+	go func() {
+		defer sub.Close()
+		defer close(msgChan)
+		ch := sub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				select {
+				case msgChan <- msg.Payload:
+				default:
+					// buffer full, skip
+				}
+			}
+		}
+	}()
+	return msgChan, nil
+}
+
 // PublishCancellation broadcasts a cancellation signal for a specific project
 func (r *RedisService) PublishCancellation(ctx context.Context, projectID uint) error {
 	channel := fmt.Sprintf("channel:cancel_deployment:%d", projectID)

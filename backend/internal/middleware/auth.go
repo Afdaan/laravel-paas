@@ -35,7 +35,7 @@ func JWTAuth(secret string, redis Blacklister, tracker ActivityTracker) fiber.Ha
 		var tokenString string
 
 		path := c.Path()
-		isStreamEndpoint := strings.HasSuffix(path, "/events/stream") || strings.HasSuffix(path, "/logs") || strings.HasSuffix(path, "/build-logs") || strings.HasSuffix(path, "/deployment-events")
+		isStreamEndpoint := strings.HasSuffix(path, "/stream") || strings.HasSuffix(path, "/logs") || strings.HasSuffix(path, "/build-logs") || strings.HasSuffix(path, "/deployment-events")
 
 		if authHeader != "" {
 			parts := strings.Split(authHeader, " ")

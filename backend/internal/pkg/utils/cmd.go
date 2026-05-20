@@ -269,7 +269,7 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 	var sw *streamWriter
 	if logCallback != nil {
 		sw = &streamWriter{cb: logCallback}
-		output = io.MultiWriter(logFile, sw)
+		output = sw
 	}
 	var refiner *LogRefiner
 	if refined {
