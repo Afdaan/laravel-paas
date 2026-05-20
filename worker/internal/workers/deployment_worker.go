@@ -403,6 +403,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
+	appendLog := func(msg string) {
+		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
+			_, _ = f.WriteString(msg + "\n")
+			f.Close()
+		}
+		_ = w.redisService.PublishBuildLog(project.ID, msg)
+	}
+
 	w.checkDiskSpace()
 
 	latestHash, hashErr := w.gitService.GetRemoteCommitHash(project.GithubURL, project.Branch)
@@ -466,7 +474,30 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	_ = w.redisService.SetIdempotency(project.ID, cloneHash, project.Subdomain, job.Type)
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusBuilding, 35, "building_image", fmt.Sprintf("Commit %s", cloneHash))
+	shortHash := cloneHash
+	if len(shortHash) > 7 {
+		shortHash = shortHash[:7]
+	}
+
+	commitMessage := ""
+	if msgRes, err := utils.Run(10*time.Second, "git", "-C", projectPath, "log", "-1", "--format=%s"); err == nil {
+		commitMessage = strings.TrimSpace(msgRes.Stdout)
+	}
+
+	commitDetail := fmt.Sprintf("Commit %s", shortHash)
+	if commitMessage != "" {
+		commitDetail = fmt.Sprintf("Commit %s: %s", shortHash, commitMessage)
+	}
+
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusBuilding, 35, "building_image", commitDetail)
+
+	var logMsg string
+	if commitMessage != "" {
+		logMsg = fmt.Sprintf(">> Building image for commit %s (%s)...", shortHash, commitMessage)
+	} else {
+		logMsg = fmt.Sprintf(">> Building image for commit %s...", shortHash)
+	}
+	appendLog(logMsg)
 
 	buildPath := w.dockerService.ResolveBuildPath(projectPath, project.BaseDirectory)
 
@@ -578,13 +609,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	memoryMB := w.getSetting(models.SettingMemoryLimit, models.DefaultMemoryLimit)
 	memoryLimit := memoryMB + "m"
 
-	appendLog := func(msg string) {
-		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
-			_, _ = f.WriteString(msg + "\n")
-			f.Close()
-		}
-		_ = w.redisService.PublishBuildLog(project.ID, msg)
-	}
 
 	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
 	if err != nil || buildTimeoutSec <= 0 {
@@ -621,12 +645,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"rollout_container_id": newContainerID,
 	})
 
-	appendLog("Starting application container and verifying advanced health check probe...")
+	appendLog(">> Running health checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
 	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
-		appendLog("ERROR: Deployment failed: " + err.Error() + ". Rolling back.")
+		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
 
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Healthcheck failed, keeping old version active")
 
@@ -640,7 +664,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.updateProjectError(project, job.JobID, "Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
 	} else {
-		appendLog("Container health check passed successfully.")
+		appendLog("✓ Health check passed.")
 	}
 
 	if project.Framework == "Laravel" {
@@ -657,7 +681,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force")
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
-		appendLog("Running database migrations...")
+		appendLog(">> Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
 			appendLog("ERROR: Migrations failed:\n" + output)
@@ -672,15 +696,15 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
-				appendLog("Migrations output:\n" + output)
+				appendLog(strings.TrimRight(output, "\r\n"))
 			} else {
-				appendLog("Database migrations ran successfully with no pending changes.")
+				appendLog("✓ Database migrations ran successfully (nothing to migrate).")
 			}
 		}
 	}
 
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusPromoting, 85, "promoting_release", "Syncing routing traffic to new container instance")
-	appendLog("Syncing routing traffic to new container instance...")
+	appendLog(">> Promoting deployment...")
 
 	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
 		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)
@@ -692,9 +716,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	if err := w.projectService.PromoteRolloutContainer(project.ID, newContainerID); err != nil {
 		slog.Error("Failed to promote rollout container", "id", project.ID, "error", err)
-		appendLog("ERROR: Failed to promote rollout container: " + err.Error())
+		appendLog("ERROR: Failed to promote deployment: " + err.Error())
 	} else {
-		appendLog("Routing traffic synced successfully. New release promoted.")
+		appendLog("✓ Release promoted successfully.")
 	}
 	project.Status = models.StatusRunning
 	project.ContainerID = &newContainerID
@@ -715,13 +739,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 95, "cleaning_legacy_instance", fmt.Sprintf("Removing previous container instance (%s)", shortContainerID))
 		slog.Info("Cleaning up legacy instance", "subdomain", project.Subdomain)
-		appendLog("Cleaning up legacy container instance...")
-		time.Sleep(2 * time.Second)
+		// Perform container cleanup silently to hide infrastructure secrets from developer logs
 		if err := w.dockerService.RemoveContainer(*oldContainerID, oldWorkerContainerID); err != nil {
 			slog.Warn("Failed to remove legacy container", "id", *oldContainerID, "error", err)
-			appendLog("Warning: Failed to remove legacy container: " + err.Error())
-		} else {
-			appendLog("Legacy container cleaned up successfully.")
 		}
 	}
 
@@ -730,7 +750,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live") {
 		w.forceDeploymentCompleted(project, job.JobID)
 	}
-	appendLog("Deployment completed successfully! System is now live.")
+	
+	appendLog("")
+	appendLog("========================================================================")
+	appendLog("✓ Deployment completed successfully! Application is live.")
+	appendLog("========================================================================")
 
 	go func() {
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")

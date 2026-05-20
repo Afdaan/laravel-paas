@@ -291,8 +291,16 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		sw.Flush()
 	}
 
-	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================\n", formatDuration(duration))
-	_, _ = logFile.WriteString(summaryMsg)
+	summaryMsg := fmt.Sprintf("========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================", formatDuration(duration))
+	if logCallback != nil {
+		logCallback("")
+		for _, line := range strings.Split(summaryMsg, "\n") {
+			logCallback(line)
+		}
+		logCallback("")
+	} else {
+		_, _ = logFile.WriteString("\n" + summaryMsg + "\n")
+	}
 
 	result := &Result{
 		Stdout: stdoutBuf.String(),

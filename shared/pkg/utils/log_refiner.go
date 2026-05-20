@@ -142,8 +142,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^([#=O\-\s]+|\s*\d+\.\d+%|[#=O\-\s]+\d+\.\d+%)$`),
 			regexp.MustCompile(`(Executing bash-|bun was installed successfully|Manually add the directory|export BUN_INSTALL|export PATH=.*BUN_INSTALL|To get started, run:|bun --help)`),
 
-			// 22. Hide verbose Composer/NPM dependency download and install lines
-			regexp.MustCompile(`^-\s*(Downloading|Installing)\s+([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)`),
+			// 22. Hide verbose Composer/NPM dependency download, install, and lock lines
+			regexp.MustCompile(`^(#\d+\s+[0-9.]+\s*)?-\s*(Downloading|Installing|Locking)\s+`),
 			regexp.MustCompile(`(Verifying lock file contents|Package operations: \d+ installs)`),
 
 			// 21. Hide Vite/Rollup internal progress noise but ALLOW asset table, version, and build timing
@@ -258,7 +258,7 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 				}
 
 				if !r.started {
-					if _, err := r.writer.Write([]byte("Running build container...\nInitializing build environment...\n")); err != nil {
+					if _, err := r.writer.Write([]byte(">> Running build container...\n>> Initializing build environment...\n")); err != nil {
 						return len(p), err
 					}
 					r.started = true
