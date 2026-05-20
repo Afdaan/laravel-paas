@@ -2,6 +2,8 @@ package project
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
@@ -90,6 +92,12 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 			"error": "Failed to queue redeployment",
 		})
 	}
+
+	// Truncate the build log immediately to prevent old logs from displaying
+	projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+	buildLogPath := filepath.Join(projectPath, "build.log")
+	_ = os.MkdirAll(projectPath, 0755)
+	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
 
 	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, jobID); err != nil {
 		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)

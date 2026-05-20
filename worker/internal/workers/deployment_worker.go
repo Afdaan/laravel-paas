@@ -639,6 +639,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 		w.updateProjectError(project, job.JobID, "Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
+	} else {
+		appendLog("Container health check passed successfully.")
 	}
 
 	if project.Framework == "Laravel" {
@@ -668,6 +670,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			})
 			w.updateProjectError(project, job.JobID, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
 			return
+		} else {
+			if strings.TrimSpace(output) != "" {
+				appendLog("Migrations output:\n" + output)
+			} else {
+				appendLog("Database migrations ran successfully with no pending changes.")
+			}
 		}
 	}
 
@@ -684,6 +692,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	if err := w.projectService.PromoteRolloutContainer(project.ID, newContainerID); err != nil {
 		slog.Error("Failed to promote rollout container", "id", project.ID, "error", err)
+		appendLog("ERROR: Failed to promote rollout container: " + err.Error())
+	} else {
+		appendLog("Routing traffic synced successfully. New release promoted.")
 	}
 	project.Status = models.StatusRunning
 	project.ContainerID = &newContainerID
@@ -708,6 +719,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		time.Sleep(2 * time.Second)
 		if err := w.dockerService.RemoveContainer(*oldContainerID, oldWorkerContainerID); err != nil {
 			slog.Warn("Failed to remove legacy container", "id", *oldContainerID, "error", err)
+			appendLog("Warning: Failed to remove legacy container: " + err.Error())
+		} else {
+			appendLog("Legacy container cleaned up successfully.")
 		}
 	}
 

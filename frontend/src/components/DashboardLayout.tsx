@@ -83,13 +83,32 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [sidebarWidth, setSidebarWidth] = useState(256)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('paas-sidebar-collapsed') === 'true'
+  })
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('paas-sidebar-width')
+    if (saved) {
+      const parsed = parseInt(saved, 10)
+      if (!isNaN(parsed) && parsed >= 150 && parsed <= 320) {
+        return parsed
+      }
+    }
+    return 256
+  })
   const [isDragging, setIsDragging] = useState(false)
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [isProjectsLoading, setIsProjectsLoading] = useState(false)
-  
+
+  useEffect(() => {
+    localStorage.setItem('paas-sidebar-collapsed', String(isSidebarCollapsed))
+  }, [isSidebarCollapsed])
+
+  useEffect(() => {
+    localStorage.setItem('paas-sidebar-width', String(sidebarWidth))
+  }, [sidebarWidth])
+
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const activeProjectUID = projectRouteMatch?.[1]

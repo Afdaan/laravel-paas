@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -93,6 +94,15 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 			case payload, ok := <-msgChan:
 				if !ok {
 					return
+				}
+				// Filter out lease-related events to keep the timeline clean
+				var ev struct {
+					EventType string `json:"event_type"`
+				}
+				if err := json.Unmarshal([]byte(payload), &ev); err == nil {
+					if strings.Contains(strings.ToLower(ev.EventType), "lease") {
+						continue
+					}
 				}
 				_, err := w.WriteString(fmt.Sprintf("event: deployment_event\ndata: %s\n\n", payload))
 				if err != nil {

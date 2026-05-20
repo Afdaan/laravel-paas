@@ -18,9 +18,9 @@ interface BuildLogsConsoleProps {
 
 const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: BuildLogsConsoleProps) => {
   const { t } = useTranslation()
-  const [logs, setLogs] = useState<string>('')
+  const [logs, setLogs] = useState<string[]>([])
   const [events, setEvents] = useState<DeploymentEvent[]>([])
-  const [clearedLength, setClearedLength] = useState(0)
+  const [clearedCount, setClearedCount] = useState(0)
   const [clearedEventMaxId, setClearedEventMaxId] = useState<number>(-1)
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isTimelineConfirmOpen, setIsTimelineConfirmOpen] = useState(false)
@@ -28,21 +28,24 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
   // Limit to last 500 lines for performance
   const logLines = useMemo(() => {
-    if (!logs) return []
-    const visibleLogs = clearedLength > 0 ? logs.substring(clearedLength) : logs
-    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.slice(-500) : lines
-  }, [logs, clearedLength])
+    const visibleLogs = clearedCount > 0 ? logs.slice(clearedCount) : logs
+    return visibleLogs.length > 500 ? visibleLogs.slice(-500) : visibleLogs
+  }, [logs, clearedCount])
 
   const lineOffset = useMemo(() => {
-    if (!logs) return 0
-    const visibleLogs = clearedLength > 0 ? logs.substring(clearedLength) : logs
-    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.length - 500 : 0
-  }, [logs, clearedLength])
+    const visibleLogs = clearedCount > 0 ? logs.slice(clearedCount) : logs
+    return visibleLogs.length > 500 ? visibleLogs.length - 500 : 0
+  }, [logs, clearedCount])
 
   const visibleEvents = useMemo(() => {
-    return events.filter(ev => (ev.id || 0) > clearedEventMaxId)
+    return events.filter(ev => {
+      const type = (ev.event_type || '').toLowerCase();
+      const stepName = (ev.step_name || '').toLowerCase();
+      if (type.includes('lease') || stepName.includes('lease')) {
+        return false;
+      }
+      return (ev.id || 0) > clearedEventMaxId;
+    });
   }, [events, clearedEventMaxId])
 
   const currentJobId = useRef(project?.deployment_job_id)
@@ -55,9 +58,9 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
       if (project?.deployment_job_id) {
         currentJobId.current = project.deployment_job_id;
       }
-      setClearedLength(0);
+      setClearedCount(0);
       setClearedEventMaxId(-1);
-      setLogs('');
+      setLogs([]);
       setEvents([]);
     }
   }, [project?.deployment_job_id, project?.deployment_status])
@@ -79,7 +82,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
           ])
           if (!isMounted) return
-          if (logsRes.data?.logs) setLogs(logsRes.data.logs)
+          if (logsRes.data?.logs) {
+            const lines = logsRes.data.logs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
+            setLogs(lines)
+          }
           if (Array.isArray(eventsRes.data)) setEvents(eventsRes.data)
         } catch (error) {
           console.error('Failed to fetch build data during polling:', error)
@@ -112,7 +118,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
           if (!isMounted) return
           try {
             const initialLogs = JSON.parse(e.data)
-            setLogs(initialLogs)
+            const lines = typeof initialLogs === 'string'
+              ? initialLogs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
+              : []
+            setLogs(lines)
           } catch (err) {
             console.error('Failed to parse initial logs:', err)
           }
@@ -122,7 +131,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
           if (!isMounted) return
           try {
             const newLogLine = JSON.parse(e.data)
-            setLogs(prev => prev ? prev + '\n' + newLogLine : newLogLine)
+            const lines = typeof newLogLine === 'string'
+              ? newLogLine.split('\n')
+              : [newLogLine]
+            setLogs(prev => [...prev, ...lines])
           } catch (err) {
             console.error('Failed to parse log line:', err)
           }
@@ -196,7 +208,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
       if (eventsEventSource) eventsEventSource.close()
       if (pollingInterval) clearInterval(pollingInterval)
     }
-  }, [projectId, onDeploymentEvent])
+  }, [projectId, onDeploymentEvent, project?.deployment_job_id])
 
   useEffect(() => {
     // Auto scroll to bottom when logs update
@@ -206,7 +218,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }, [logLines])
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(logs)
+    const visibleLogs = clearedCount > 0 ? logs.slice(clearedCount) : logs
+    navigator.clipboard.writeText(visibleLogs.join('\n'))
     toast.success(t('common.copySuccess'))
   }
 
@@ -221,7 +234,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }
 
   const confirmClear = () => {
-    setClearedLength(logs.length)
+    setClearedCount(logs.length)
     toast.success(t('common.success'))
   }
 
