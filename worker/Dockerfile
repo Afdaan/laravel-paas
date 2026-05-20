@@ -7,10 +7,9 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /src
 
-# Copy go.work, shared module, and worker module
+# Copy shared module and worker module
 COPY shared/ ./shared/
 COPY worker/ ./worker/
-COPY go.work ./
 
 WORKDIR /src/worker
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /app/worker ./cmd/worker

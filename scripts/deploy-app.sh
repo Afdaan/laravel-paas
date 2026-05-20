@@ -97,7 +97,7 @@ deploy_with_anti_downtime() {
                 break
             fi
         elif [ "$service_name" = "worker" ]; then
-            if DOCKER_BUILDKIT=1 docker build -t "$image_name" -f "${PROJECT_ROOT}/docker/worker/Dockerfile" "${PROJECT_ROOT}"; then
+            if DOCKER_BUILDKIT=1 docker build -t "$image_name" -f "${PROJECT_ROOT}/worker/Dockerfile" "${PROJECT_ROOT}"; then
                 success=true
                 break
             fi

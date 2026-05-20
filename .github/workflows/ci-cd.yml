@@ -50,7 +50,6 @@ jobs:
             worker:
               - 'worker/**'
               - 'shared/**'
-              - 'docker/worker/**'
               - 'go.work'
 
             frontend:
