@@ -196,10 +196,12 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	project, _, err := h.validateAccess(c, uint(projectID), uint(domainID))
+	project, domain, err := h.validateAccess(c, uint(projectID), uint(domainID))
 	if err != nil {
 		return err
 	}
+
+	wasAlreadyActive := domain != nil && domain.Status == models.DomainStatusActive
 
 	domainData, err := h.domainService.VerifyDomain(c.UserContext(), uint(domainID), uint(projectID), project)
 	if err != nil {
@@ -212,14 +214,16 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 		})
 	}
 
-	// Trigger Nginx & Traefik Sync upon successful verification
-	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
-	if err == nil {
-		_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_verify_handler")
-		_ = h.projectService.RestartProject(updatedProject)
-	} else {
-		_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_verify_handler_fallback")
-		_ = h.projectService.RestartProject(project)
+	// Trigger Nginx & Traefik Sync only if the domain wasn't already active to avoid redundant downtime/restarts
+	if !wasAlreadyActive {
+		updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
+		if err == nil {
+			_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_verify_handler")
+			_ = h.projectService.RestartProject(updatedProject)
+		} else {
+			_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_verify_handler_fallback")
+			_ = h.projectService.RestartProject(project)
+		}
 	}
 
 	return c.JSON(fiber.Map{

@@ -58,7 +58,11 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, project
 		return nil, apperr.New(429, "RATE_LIMIT_EXCEEDED", "Verification rate limit exceeded. Please try again later.")
 	}
 
-	_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusPendingDNS, models.ErrNone, "Initiating DNS verification check")
+	isAlreadyActive := domain.Status == models.DomainStatusActive
+
+	if !isAlreadyActive {
+		_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusPendingDNS, models.ErrNone, "Initiating DNS verification check")
+	}
 
 	projectDomain := s.cfg.ProjectDomain
 	if projectDomain == "" {
@@ -125,11 +129,21 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, project
 	}
 
 	if dnsVerified {
-		_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusDNSVerified, models.ErrNone, "DNS successfully verified. Queuing SSL configuration.")
-
 		now := time.Now()
 		domain.LastVerificationAt = &now
 		_ = s.db.Model(&domain).Update("last_verification_at", now)
+
+		if isAlreadyActive {
+			// Passive health/status check only. Since it is already active and healthy,
+			// avoid redundant state transition, Nginx re-generation, or server reload.
+			s.SafeGo(ctx, domain.ID, project.ID, "CheckAppHealth", func(ctx context.Context) error {
+				s.CheckAppHealth(ctx, domain.ID, project.ID)
+				return nil
+			})
+			return &domain, nil
+		}
+
+		_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusDNSVerified, models.ErrNone, "DNS successfully verified. Queuing SSL configuration.")
 
 		// Trigger Nginx configuration sync which automatically enqueues Let's Encrypt certificate issuance
 		if _, err := s.projectService.SyncProjectNginxFrom(project, "domain_verify"); err != nil {
