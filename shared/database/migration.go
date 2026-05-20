@@ -153,6 +153,8 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"settings", "uni_settings_setting_key", []string{"setting_key"}},
 		{"custom_domains", "uni_custom_domains_domain", []string{"domain"}},
 		{"deployment_events", "uni_project_job_seq", []string{"project_id", "job_id", "sequence_number"}},
+		{"idempotent_operations", "uni_idempotent_operations_key", []string{"key"}},
+		{"pending_reconciles", "uni_pending_reconciles_domain_id", []string{"domain_id"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -276,11 +278,11 @@ func ReconcileSchemas(db *gorm.DB) error {
 	}
 	_ = EnsureConstraint(db, &models.DeploymentEvent{}, "uni_project_job_seq", "UNIQUE (project_id, job_id, sequence_number)")
 
-	// Reconcile IdempotentOperation
-	_ = EnsureConstraint(db, &models.IdempotentOperation{}, "uni_idempotent_key", "UNIQUE (key)")
+	// Reconcile IdempotentOperation — constraint name must match GORM's uni_<table>_<column> convention
+	_ = EnsureConstraint(db, &models.IdempotentOperation{}, "uni_idempotent_operations_key", "UNIQUE (key)")
 
-	// Reconcile PendingReconcile
-	_ = EnsureConstraint(db, &models.PendingReconcile{}, "uni_pending_reconcile_domain", "UNIQUE (domain_id)")
+	// Reconcile PendingReconcile — constraint name must match GORM's uni_<table>_<column> convention
+	_ = EnsureConstraint(db, &models.PendingReconcile{}, "uni_pending_reconciles_domain_id", "UNIQUE (domain_id)")
 
 	return nil
 }
