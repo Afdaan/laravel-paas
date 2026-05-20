@@ -207,7 +207,7 @@ func (p *Project) GetTraefikHostRule(projectDomain string) string {
 
 	// Append active custom domains
 	for _, cd := range p.CustomDomains {
-		if cd.Status == DomainStatusActive {
+		if IsNginxRoutableCustomDomainStatus(cd.Status) {
 			rule += fmt.Sprintf(" || Host(`%s`)", cd.Domain)
 		}
 	}
