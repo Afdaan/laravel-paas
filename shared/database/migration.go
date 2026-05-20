@@ -271,6 +271,11 @@ func ReconcileSchemas(db *gorm.DB) error {
 
 	// Reconcile CustomDomain
 	_ = EnsureConstraint(db, &models.CustomDomain{}, "uni_custom_domains_domain", "UNIQUE (domain)")
+	if isPostgres(db) {
+		_ = db.Exec("UPDATE custom_domains SET current_sequence = 0 WHERE current_sequence IS NULL;").Error
+		_ = db.Exec("ALTER TABLE custom_domains ALTER COLUMN current_sequence SET DEFAULT 0;").Error
+		_ = db.Exec("ALTER TABLE custom_domains ALTER COLUMN current_sequence SET NOT NULL;").Error
+	}
 
 	// Reconcile DeploymentEvent
 	if isPostgres(db) {

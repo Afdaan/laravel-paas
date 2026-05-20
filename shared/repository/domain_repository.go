@@ -62,7 +62,7 @@ func (r *gormDomainRepository) Delete(ctx context.Context, id uint) error {
 func (r *gormDomainRepository) IncrementSequenceAtomic(ctx context.Context, id uint) (int, error) {
 	var nextSeq int
 	err := r.db.WithContext(ctx).Raw(
-		"UPDATE custom_domains SET current_sequence = current_sequence + 1 WHERE id = ? RETURNING current_sequence",
+		"UPDATE custom_domains SET current_sequence = COALESCE(current_sequence, 0) + 1 WHERE id = ? RETURNING current_sequence",
 		id,
 	).Scan(&nextSeq).Error
 	if err != nil {

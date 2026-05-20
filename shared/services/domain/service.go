@@ -87,7 +87,7 @@ func (s *DomainService) RecordEvent(domain *models.CustomDomain, stateFrom, stat
 // RecordEventTx executes event persistence inside an active database transaction.
 func (s *DomainService) RecordEventTx(tx *gorm.DB, domain *models.CustomDomain, stateFrom, stateTo models.CustomDomainStatus, eventType, payload, errMsg string) (*models.DomainEvent, error) {
 	var nextSeq int
-	err := tx.Raw("UPDATE custom_domains SET current_sequence = current_sequence + 1 WHERE id = ? RETURNING current_sequence", domain.ID).Scan(&nextSeq).Error
+	err := tx.Raw("UPDATE custom_domains SET current_sequence = COALESCE(current_sequence, 0) + 1 WHERE id = ? RETURNING current_sequence", domain.ID).Scan(&nextSeq).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed atomic sequence increment: %w", err)
 	}
