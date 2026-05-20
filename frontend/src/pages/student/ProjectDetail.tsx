@@ -123,7 +123,7 @@ function StudentProjectDetail() {
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
-  const [clearedLogs, setClearedLogs] = useState('')
+  const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -259,7 +259,6 @@ function StudentProjectDetail() {
   useEffect(() => {
     if (activeTab === 'logs' && project?.container_id) {
       setLogs('')
-      setClearedLogs('')
       fetchLogs()
     }
   }, [logType, activeTab, project?.container_id, fetchLogs])
@@ -273,10 +272,11 @@ function StudentProjectDetail() {
   const { visibleLogLines, logOffset } = useMemo(() => {
     if (!logs) return { visibleLogLines: [], logOffset: 0 }
     
+    const clearedForType = clearedLogsMap[logType] || ''
     let visibleLogs = logs
-    if (clearedLogs) {
-      const clearedLines = clearedLogs.split('\n')
-      const currentLines = logs.split('\n')
+    if (clearedForType) {
+      const clearedLines = clearedForType.trimEnd().split('\n')
+      const currentLines = logs.trimEnd().split('\n')
       let overlapLines = 0
       const maxCheck = Math.min(clearedLines.length, currentLines.length)
       
@@ -301,7 +301,7 @@ function StudentProjectDetail() {
     const offset = lines.length > 500 ? lines.length - 500 : 0
     
     return { visibleLogLines: slicedLines, logOffset: offset }
-  }, [logs, clearedLogs])
+  }, [logs, clearedLogsMap, logType])
 
   const consoleLines = useMemo(() => {
     if (!consoleOutput) return []
@@ -340,7 +340,7 @@ function StudentProjectDetail() {
       confirmText: t('common.confirm'),
       isOpen: true,
       onConfirm: () => {
-        setClearedLogs(logs)
+        setClearedLogsMap(prev => ({ ...prev, [logType]: logs }))
         toast.success(t('common.success'))
       }
     })
