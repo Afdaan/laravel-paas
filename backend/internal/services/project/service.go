@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/infrastructure"
-	"github.com/laravel-paas/backend/internal/infrastructure/docker"
-	"github.com/laravel-paas/backend/internal/infrastructure/nginx"
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/repositories"
-	"github.com/laravel-paas/backend/internal/services/deployment"
-	"github.com/laravel-paas/backend/internal/services/setting"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/infrastructure/nginx"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/deployment"
+	"github.com/laravel-paas/shared/services/setting"
 )
 
 // ===========================================

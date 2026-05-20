@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/backend/internal/services"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 )

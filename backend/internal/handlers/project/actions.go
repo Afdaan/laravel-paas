@@ -4,9 +4,9 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/utils"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 )
 
 // Create handles project creation

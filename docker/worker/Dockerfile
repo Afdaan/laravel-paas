@@ -1,22 +1,19 @@
 # ===========================================================
 # Standalone Worker Dockerfile
 # ===========================================================
-# Containerized worker cluster node for building/deploying apps.
-# ===========================================================
 
 # Stage 1: Build
 FROM golang:1.22-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-ENV GOPROXY=https://proxy.golang.org,direct
+# Copy go.work, shared module, and worker module
+COPY shared/ ./shared/
+COPY worker/ ./worker/
+COPY go.work ./
 
-COPY backend/go.mod backend/go.sum ./
-RUN go mod download
-
-COPY backend/ .
-
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o worker ./cmd/worker
+WORKDIR /src/worker
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /app/worker ./cmd/worker
 
 # Stage 2: Production
 FROM debian:bookworm-slim

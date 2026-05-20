@@ -4,7 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/models"
 )
 
 // GetEnv returns the .env file content

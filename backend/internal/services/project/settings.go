@@ -1,7 +1,7 @@
 package project
 
 import (
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/models"
 )
 
 // ExecCommand executes a command in the container (automatically handles artisan for Laravel)
@@ -11,10 +11,11 @@ func (s *ProjectService) ExecCommand(project *models.Project, command string) (s
 
 // GetEnv reads the .env file from the project storage
 func (s *ProjectService) GetEnv(subdomain string) (string, error) {
-	return s.dockerService.GetEnvFile(subdomain)
+	return s.storageService.GetEnvFile(subdomain)
 }
 
 // SaveEnv saves the .env file to the project storage
 func (s *ProjectService) SaveEnv(subdomain string, content string) error {
-	return s.dockerService.SaveEnvFile(subdomain, content)
+	return s.storageService.SaveEnvFile(subdomain, content)
 }
+

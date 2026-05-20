@@ -1,39 +1,29 @@
 # ===========================================================
-# Backend Dockerfile
-# ===========================================================
-# Multi-stage build for Go backend
+# Backend Dockerfile (Isolated API Runtime)
 # ===========================================================
 
 # Stage 1: Build
 FROM golang:1.22-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-# Enable Go Proxy for better connectivity in restricted networks
-ENV GOPROXY=https://proxy.golang.org,direct
+# Copy go.work if present, shared module, and backend module
+COPY shared/ ./shared/
+COPY backend/ ./backend/
+COPY go.work ./
 
-# Copy only dependency files first to leverage Docker cache
-COPY go.mod go.sum ./
-RUN go mod download
+WORKDIR /src/backend
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /app/main ./cmd/server
 
-# Copy the rest of the source code
-COPY . .
-
-# Run tidy to ensure everything is clean
-RUN go mod tidy
-
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
-
-# Stage 2: Production (Lightweight Alpine ~25MB)
+# Stage 2: Production
 FROM alpine:3.19
 
 LABEL maintainer="Laravel PaaS"
-LABEL description="Backend API Service & Watchdog"
+LABEL description="Backend API Service"
 
 ENV TZ=Asia/Jakarta
 
-# Install minimal runtime dependencies (docker-cli for WorkerManager orchestration)
+# Install minimal runtime dependencies (docker-cli for logs/stats)
 RUN apk update && apk add --no-cache \
     ca-certificates \
     curl \

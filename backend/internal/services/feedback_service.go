@@ -6,8 +6,8 @@
 package services
 
 import (
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/repositories"
 )
 
 type FeedbackService struct {

@@ -4,7 +4,6 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -12,21 +11,19 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/database"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/database"
 	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
-	"github.com/laravel-paas/backend/internal/infrastructure"
-	"github.com/laravel-paas/backend/internal/infrastructure/docker"
-	"github.com/laravel-paas/backend/internal/logger"
-	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/logger"
+	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
-	"github.com/laravel-paas/backend/internal/services/deployment"
-	domainServicePkg "github.com/laravel-paas/backend/internal/services/domain"
+	"github.com/laravel-paas/shared/services/deployment"
+	domainServicePkg "github.com/laravel-paas/shared/services/domain"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
-	"github.com/laravel-paas/backend/internal/services/setting"
-	"github.com/laravel-paas/backend/internal/services/worker"
-	"github.com/laravel-paas/backend/internal/workers"
+	"github.com/laravel-paas/shared/services/setting"
 )
 
 func main() {
@@ -92,18 +89,6 @@ func main() {
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
 	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, domainService, projectService)
 
-	// Initialize and start WorkerManager and CentralWatchdog
-	workerManager := worker.NewWorkerManager(cfg, dockerService, redisService, settingService)
-	workerManager.StartWatchdog()
-
-	watchdog := worker.NewCentralWatchdog(projectRepo, redisService, dockerService, projectService)
-	watchdog.Start()
-
-	// Initialize and start domain verification worker (MXToolbox-style background check)
-	domainWorker := workers.NewDomainWorker(db, domainService, projectService, redisService)
-	domainCtx, cancelDomainWorker := context.WithCancel(context.Background())
-	go domainWorker.Start(domainCtx)
-
 	// Initialize server
 	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)
 
@@ -122,14 +107,6 @@ func main() {
 		<-sigint
 
 		slog.Warn("Graceful shutdown initiated...")
-
-		// 0. Stop the Domain Worker
-		cancelDomainWorker()
-
-		// 1. Stop WorkerManager and CentralWatchdog
-		slog.Info("Shutting down worker manager and central watchdog...")
-		workerManager.Stop()
-		watchdog.Stop()
 
 		// 2. Stop accepting new requests (Fiber)
 		// We give it a 10s timeout to finish current requests

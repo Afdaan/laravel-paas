@@ -14,6 +14,7 @@ require (
 	golang.org/x/net v0.21.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.30.0
+	github.com/laravel-paas/shared v0.0.0
 )
 
 require (
@@ -51,3 +52,6 @@ require (
 	modernc.org/memory v1.5.0 // indirect
 	modernc.org/sqlite v1.23.1 // indirect
 )
+
+replace github.com/laravel-paas/shared => ../shared
+

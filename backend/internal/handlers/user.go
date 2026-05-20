@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/backend/internal/services"
 	"github.com/xuri/excelize/v2"
 )

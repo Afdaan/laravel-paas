@@ -43,19 +43,15 @@ jobs:
           base: ${{ steps.base-commit.outputs.base_sha }}
           filters: |
             backend:
-              - 'backend/cmd/server/**'
-              - 'backend/internal/!(workers|services)/**'
-              - 'backend/internal/services/!(worker)/**'
-              - 'backend/*'
+              - 'backend/**'
+              - 'shared/**'
+              - 'go.work'
 
             worker:
-              - 'backend/cmd/worker/**'
-              - 'backend/internal/workers/**'
-              - 'backend/internal/services/worker/**'
-              - 'backend/internal/!(handlers|routes|middleware|services)/**'
-              - 'backend/internal/services/**'
+              - 'worker/**'
+              - 'shared/**'
               - 'docker/worker/**'
-              - 'backend/*'
+              - 'go.work'
 
             frontend:
               - 'frontend/**'

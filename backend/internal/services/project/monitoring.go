@@ -3,8 +3,8 @@ package project
 import (
 	"fmt"
 
-	"github.com/laravel-paas/backend/internal/infrastructure/docker"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/models"
 )
 
 // GetLogs returns container logs (either web or worker)

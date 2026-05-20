@@ -15,10 +15,10 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/proxy"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/infrastructure"
-	"github.com/laravel-paas/backend/internal/infrastructure/docker"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/models"
 )
 
 // CreateProjectRequest represents project creation payload

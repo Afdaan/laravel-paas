@@ -10,8 +10,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/models"
 )
 
 // Blacklister abstraction to avoid circular dependencies with services package

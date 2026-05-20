@@ -9,7 +9,7 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/shared/apperr"
 )
 
 // ErrorHandler is the global error handler for the Fiber application

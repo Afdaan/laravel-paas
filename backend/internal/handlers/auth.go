@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/backend/internal/services"
 )
 

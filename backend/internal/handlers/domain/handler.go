@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/metrics"
-	"github.com/laravel-paas/backend/internal/services/domain"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/services/domain"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 )
 
@@ -179,7 +179,7 @@ func (h *DomainHandler) Remove(c *fiber.Ctx) error {
 	// Trigger Nginx & Traefik Sync
 	if project != nil {
 		_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_remove_handler")
-		_ = h.projectService.RecreateProjectZeroDowntime(project)
+		_ = h.projectService.RestartProject(project)
 	}
 
 	return c.JSON(fiber.Map{"message": "Domain removed successfully"})
@@ -216,10 +216,10 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
 	if err == nil {
 		_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_verify_handler")
-		_ = h.projectService.RecreateProjectZeroDowntime(updatedProject)
+		_ = h.projectService.RestartProject(updatedProject)
 	} else {
 		_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_verify_handler_fallback")
-		_ = h.projectService.RecreateProjectZeroDowntime(project)
+		_ = h.projectService.RestartProject(project)
 	}
 
 	return c.JSON(fiber.Map{

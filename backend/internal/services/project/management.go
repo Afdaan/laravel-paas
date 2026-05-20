@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/infrastructure/nginx"
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/pkg/metrics"
-	"github.com/laravel-paas/backend/internal/pkg/utils"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/infrastructure/nginx"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/utils"
 )
 
 func sanitizeCommand(cmd string) string {
@@ -72,59 +72,18 @@ func (s *ProjectService) GetBySubdomain(subdomain string) (*models.Project, erro
 }
 
 func (s *ProjectService) DeleteProject(project *models.Project) error {
-	slog.Info("Executing thorough project deletion",
+	slog.Info("Enqueueing project deletion job",
 		"id", project.ID,
 		"name", project.Name,
 		"subdomain", project.Subdomain)
 
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	if err := s.nginxService.DeleteProject(project, projectDomain); err != nil {
-		slog.Warn("Failed to delete project from Nginx proxy", "subdomain", project.Subdomain, "error", err)
-	}
-
-	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
-		slog.Warn("Failed to invalidate subdomain cache", "subdomain", project.Subdomain, "error", err)
-	}
-
-	if project.ContainerID != nil {
-		slog.Debug("Removing containers", "mainID", *project.ContainerID, "workerID", project.WorkerContainerID)
-		if err := s.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to remove container", "id", *project.ContainerID, "error", err)
-		}
-	}
-	if err := s.dockerService.RemoveImage(project.Subdomain); err != nil {
-		slog.Warn("Failed to remove docker image", "subdomain", project.Subdomain, "error", err)
-	}
-
-	// 3. Drop Student Database
-	if project.DatabaseName != "" {
-		slog.Debug("Dropping database", "db", project.DatabaseName)
-		if err := s.mysqlService.DropDatabase(project.DatabaseName); err != nil {
-			slog.Warn("Failed to drop database, might be already gone", "db", project.DatabaseName, "error", err)
-		}
-	}
-
-	// 4. Cleanup Filesystem (Source Code & Persistent Data)
-	if err := s.dockerService.CleanupProject(project.Subdomain); err != nil {
-		slog.Warn("Failed to cleanup project filesystem", "subdomain", project.Subdomain, "error", err)
-	}
-	s.storageService.CleanupPersistentData(project)
-
-	// 5. Hard Delete from Database
-	if err := s.projectRepo.Delete(project.ID); err != nil {
-		slog.Error("CRITICAL: Failed to delete project record", "id", project.ID, "error", err)
+	project.Status = models.StatusDeleting
+	if err := s.projectRepo.UpdateStatus(project.ID, project.Status); err != nil {
 		return err
 	}
 
-	// 7. Cleanup dangling images after deletion
-	go func() {
-		if err := s.dockerService.PruneImages(); err != nil {
-			slog.Error("Failed to prune images after project deletion", "error", err)
-		}
-	}()
-
-	slog.Info("Project thoroughly purged from system", "name", project.Name)
-	return nil
+	_, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "delete")
+	return err
 }
 
 // SyncProjectNginx triggers a sync to the remote Nginx proxy and stores the resulting config hash.
@@ -209,73 +168,7 @@ func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, 
 	return s.nginxService.GetSSLStatus(domain)
 }
 
-func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) error {
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 
-	if project.ContainerID == nil || *project.ContainerID == "" {
-		return nil
-	}
-
-	slog.Info("Executing zero-downtime container recreation with health guard",
-		"subdomain", project.Subdomain,
-		"projectId", project.ID)
-
-	oldWebID := *project.ContainerID
-	oldWorkerID := project.WorkerContainerID
-
-	newID, err := s.dockerService.StartExistingImage(project, projectDomain)
-	if err != nil {
-		slog.Error("Failed to start new container during recreation", "subdomain", project.Subdomain, "error", err)
-		return err
-	}
-
-	_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"rollout_container_id": newID,
-	})
-
-	isHealthy := false
-	maxWait := 30
-	for i := 0; i < maxWait; i++ {
-		if s.dockerService.IsContainerHealthy(newID) {
-			isHealthy = true
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
-
-	if !isHealthy {
-		slog.Error("New container failed health check, rolling back", "subdomain", project.Subdomain, "newID", newID)
-
-		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
-		}
-		_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"rollout_container_id": nil,
-		})
-
-		return fmt.Errorf("recreation failed: new container is unhealthy")
-	}
-
-	if err := s.PromoteRolloutContainer(project.ID, newID); err != nil {
-		slog.Error("Failed to promote rollout container during recreation", "id", project.ID, "error", err)
-	}
-	project.ContainerID = &newID
-	project.RolloutContainerID = nil
-
-	time.Sleep(2 * time.Second)
-
-	slog.Info("Cleaning up legacy containers",
-		"subdomain", project.Subdomain,
-		"oldWebID", oldWebID)
-
-	if err := s.dockerService.RemoveContainer(oldWebID, oldWorkerID); err != nil {
-		slog.Warn("Failed to remove old containers after successful swap", "error", err)
-	}
-
-	s.dockerService.CleanupLegacyContainers(project.Subdomain, newID, project.WorkerContainerID)
-
-	return nil
-}
 
 // ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {

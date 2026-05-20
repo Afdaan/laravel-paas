@@ -52,9 +52,16 @@ deploy_with_anti_downtime() {
 
     # 1. Build new image
     echo -e "${YELLOW}[BUILD] Building $image_name...${NC}"
-    if ! docker build -t "$image_name" "$context_dir"; then
-        echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
-        return 1
+    if [ "$service_name" = "backend" ]; then
+        if ! DOCKER_BUILDKIT=1 docker build -t "$image_name" -f "${PROJECT_ROOT}/backend/Dockerfile" "${PROJECT_ROOT}"; then
+            echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+            return 1
+        fi
+    else
+        if ! docker build -t "$image_name" "$context_dir"; then
+            echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+            return 1
+        fi
     fi
     echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
 
@@ -321,6 +328,42 @@ docker exec paas-redis redis-cli $REDIS_AUTH_PARAM set "worker:target_version" "
 
 echo -e "${YELLOW}[CLEANUP] Pruning outdated worker images...${NC}"
 docker images "paas-worker" --format "{{.Tag}}" | grep -E '^[0-9]+$' | grep -v "^${WORKER_TAG}$" | xargs -I {} docker rmi "paas-worker:{}" 2>/dev/null || true
+
+# 8.7. Platform: Standalone Worker Manager Container
+echo -e "${YELLOW}Deploying standalone worker manager...${NC}"
+docker rm -f paas-worker-manager 2>/dev/null || true
+docker run -d \
+    --name paas-worker-manager \
+    --network paas-network \
+    --restart unless-stopped \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${PROJECTS_PATH}:/app/storage/projects" \
+    -v "${DATA_PATH}:/app/data" \
+    -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+    -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
+    -e APP_MODE=docker \
+    -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
+    -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
+    -e HOST_DATA_PATH="$DATA_PATH" \
+    -e HOST_TEMPLATES_PATH="${PROJECT_ROOT}/docker/templates" \
+    -e DOCKER_SOCKET=/var/run/docker.sock \
+    -e PG_HOST=paas-postgres \
+    -e PG_PORT=5432 \
+    -e PG_USER="$PG_USER" \
+    -e PG_PASSWORD="$PG_PASSWORD" \
+    -e PG_DATABASE="$PG_DATABASE" \
+    -e REDIS_HOST=paas-redis \
+    -e REDIS_PORT="${REDIS_PORT:-6379}" \
+    -e REDIS_PASSWORD="$REDIS_PASSWORD" \
+    -e JWT_SECRET="$JWT_SECRET" \
+    -e BASE_DOMAIN="$BASE_DOMAIN" \
+    -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+    -e DOCKER_NETWORK=paas-network \
+    -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
+    -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
+    -e NGINX_WEBHOOK_KEY="$NGINX_WEBHOOK_KEY" \
+    -e INTERNAL_IP="${INTERNAL_IP:-127.0.0.1}" \
+    paas-worker:latest || true
 
 # 9. Platform: Frontend
 echo -e "${YELLOW}Deploying frontend with auto-increment tag...${NC}"

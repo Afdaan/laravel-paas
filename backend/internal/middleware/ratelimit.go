@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
+	"github.com/laravel-paas/shared/apperr"
 )
 
 // RateLimiter implements a sliding window rate limiter

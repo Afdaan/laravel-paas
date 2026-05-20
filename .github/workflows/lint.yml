@@ -5,13 +5,12 @@ on:
     branches: [ "**" ]
 
 jobs:
-  lint-backend:
+  lint-go:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Lint backend
+      - name: Lint Go codebase
         run: |
-          cd backend
           docker run --rm \
             --user $(id -u):$(id -g) \
             -e GOLANGCI_LINT_CACHE=/tmp/golangci-lint-cache \
