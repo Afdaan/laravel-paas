@@ -176,9 +176,13 @@ func (h *DomainHandler) Remove(c *fiber.Ctx) error {
 		return err
 	}
 
-	// Trigger Nginx & Traefik Sync
-	if project != nil {
-		_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_remove_handler")
+	// Trigger Nginx & Traefik Sync using a fresh, authoritative database snapshot (without the removed domain)
+	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
+	if err == nil {
+		_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_remove_handler")
+		_ = h.projectService.RestartProject(updatedProject)
+	} else if project != nil {
+		_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_remove_handler_fallback")
 		_ = h.projectService.RestartProject(project)
 	}
 

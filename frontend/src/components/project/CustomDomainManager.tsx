@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AxiosError } from 'axios'
+import ConfirmationModal from '@/components/ConfirmationModal'
 
 interface CustomDomainManagerProps {
   projectId: number | string
@@ -27,7 +28,8 @@ interface CustomDomainManagerProps {
 // Helper to calculate DNS Host (Dynamic & Supports Multi-part TLDs)
 const getDNSHost = (domain: string): string => {
   const parts = domain.split('.')
-  if (parts.length <= 2) return '@'
+  if (parts.length === 1) return domain
+  if (parts.length === 2) return '@'
   
   const multiPartTLDs = ['co.id', 'my.id', 'ac.id', 'sch.id', 'biz.id', 'or.id', 'go.id', 'net.id', 'co.uk', 'org.uk', 'com.au']
   const lastTwo = parts.slice(-2).join('.')
@@ -119,6 +121,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     domain: null,
     events: [],
     isLoading: false,
+  })
+
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
   })
 
   const fetchDomains = useCallback(async () => {
@@ -327,16 +336,23 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     }
   }
 
-  const handleRemoveDomain = async (e: React.MouseEvent, domainId: number) => {
+  const handleRemoveDomain = (e: React.MouseEvent, domain: CustomDomain) => {
     e.stopPropagation()
-    try {
-      await projectsAPI.removeDomain(projectId, domainId)
-      fetchDomains()
-      if (selectedDomainId === domainId) setSelectedDomainId(null)
-      toast.success(t('common.success'))
-    } catch (error) {
-      toast.error(t('common.error'))
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: t('domains.confirmDelete'),
+      message: domain.domain,
+      onConfirm: async () => {
+        try {
+          await projectsAPI.removeDomain(projectId, domain.id)
+          fetchDomains()
+          if (selectedDomainId === domain.id) setSelectedDomainId(null)
+          toast.success(t('common.success'))
+        } catch (error) {
+          toast.error(t('common.error'))
+        }
+      }
+    })
   }
 
   const handleVerifyDomain = async (e: React.MouseEvent, domainId: number) => {
@@ -588,7 +604,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={(e) => handleRemoveDomain(e, domain.id)}
+                        onClick={(e) => handleRemoveDomain(e, domain)}
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -781,6 +797,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
           </div>
         </div>
       )}
+
+      <ConfirmationModal 
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        {...confirmModal}
+        type="danger"
+        confirmText={t('common.delete') || 'Delete'}
+      />
     </div>
   )
 }

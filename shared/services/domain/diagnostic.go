@@ -40,6 +40,14 @@ func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.P
 		if domainName != registeredDomain {
 			expectedHost = strings.TrimSuffix(domainName, "."+registeredDomain)
 		}
+	} else {
+		// Fallback for custom, local, or single-word domains when public suffix lookup fails
+		parts := strings.Split(domainName, ".")
+		if len(parts) == 1 {
+			expectedHost = domainName
+		} else if len(parts) > 2 {
+			expectedHost = strings.Join(parts[:len(parts)-2], ".")
+		}
 	}
 
 	diagnostic := &DomainDiagnostic{

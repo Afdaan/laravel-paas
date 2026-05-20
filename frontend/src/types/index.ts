@@ -26,6 +26,7 @@ export interface CustomDomain {
   ssl_expires_at?: string;
   project_id: number;
   project?: Project;
+  current_sequence?: number;
   created_at: string;
   updated_at: string;
 }
