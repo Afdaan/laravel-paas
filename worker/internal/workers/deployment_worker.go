@@ -698,7 +698,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if oldContainerID != nil {
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 95, "cleaning_legacy_instance", *oldContainerID)
+		shortContainerID := *oldContainerID
+		if len(shortContainerID) > 12 {
+			shortContainerID = shortContainerID[:12]
+		}
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 95, "cleaning_legacy_instance", fmt.Sprintf("Removing previous container instance (%s)", shortContainerID))
 		slog.Info("Cleaning up legacy instance", "subdomain", project.Subdomain)
 		appendLog("Cleaning up legacy container instance...")
 		time.Sleep(2 * time.Second)
