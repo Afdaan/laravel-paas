@@ -65,7 +65,50 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     }
   }, [project?.deployment_job_id, project?.deployment_status])
 
+  const isDeploying = useMemo(() => {
+    return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+  }, [project?.deployment_status])
+
+  // 1. Fetch static logs immediately on mount, tab switch, or when deployment completes
   useEffect(() => {
+    let isMounted = true
+    
+    const fetchStaticLogs = async () => {
+      try {
+        const [logsRes, eventsRes] = await Promise.all([
+          projectsAPI.buildLogs(projectId).catch(() => ({ data: { logs: '' } })),
+          projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
+        ])
+        
+        if (!isMounted) return
+        
+        if (logsRes.data?.logs) {
+          const lines = logsRes.data.logs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
+          setLogs(lines)
+        }
+        if (Array.isArray(eventsRes.data)) {
+          setEvents(eventsRes.data)
+          if (eventsRes.data.length > 0 && onDeploymentEvent) {
+            const sorted = [...eventsRes.data].sort((a, b) => (b.id || 0) - (a.id || 0))
+            onDeploymentEvent(sorted[0])
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial build logs:', err)
+      }
+    }
+
+    fetchStaticLogs()
+
+    return () => {
+      isMounted = false
+    }
+  }, [projectId, project?.deployment_job_id, isDeploying, onDeploymentEvent])
+
+  // 2. Stream logs/events if deployment is active
+  useEffect(() => {
+    if (!isDeploying) return
+
     let isMounted = true
     let logsEventSource: EventSource | null = null
     let eventsEventSource: EventSource | null = null
@@ -109,6 +152,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         if (!isMounted) return
         const data = await res.json()
         const streamToken = data.token
+
+        if (!isMounted) return
 
         // 1. Build logs connection
         const logsUrl = `/api/projects/${projectId}/build-logs/stream?stream_token=${encodeURIComponent(streamToken)}`
@@ -156,7 +201,6 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
           try {
             const initialEvents = JSON.parse(e.data)
             setEvents(initialEvents)
-            // Notify parent of the latest event if any exists
             if (initialEvents.length > 0 && onDeploymentEvent) {
               const sorted = [...initialEvents].sort((a, b) => (b.id || 0) - (a.id || 0))
               onDeploymentEvent(sorted[0])
@@ -204,11 +248,17 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
     return () => {
       isMounted = false
-      if (logsEventSource) logsEventSource.close()
-      if (eventsEventSource) eventsEventSource.close()
-      if (pollingInterval) clearInterval(pollingInterval)
+      if (logsEventSource) {
+        logsEventSource.close()
+      }
+      if (eventsEventSource) {
+        eventsEventSource.close()
+      }
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
+      }
     }
-  }, [projectId, onDeploymentEvent, project?.deployment_job_id])
+  }, [projectId, onDeploymentEvent, project?.deployment_job_id, isDeploying])
 
   useEffect(() => {
     // Auto scroll to bottom when logs update
