@@ -222,6 +222,16 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	}
 	workerID := fmt.Sprintf("worker-%s", hostname)
 
+	jobName := "deployment task"
+	if job.Type != "" {
+		jobName = fmt.Sprintf("%s task", job.Type)
+	}
+
+	workerName := "Worker Manager"
+	if slotNum := os.Getenv("SLOT"); slotNum != "" {
+		workerName = fmt.Sprintf("Worker Slot %s", slotNum)
+	}
+
 	// Wrap deployment execution in panic recovery
 	defer func() {
 		if r := recover(); r != nil {
@@ -260,7 +270,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	if err := w.redisService.AcquireDeploymentLease(job.JobID, leaseMeta, 2*time.Minute); err != nil {
 		slog.Warn("Failed to acquire deployment job lease", "jobId", job.JobID, "workerId", workerID, "error", err)
 	} else {
-		w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_acquired", fmt.Sprintf("Acquired 2m lease for job %s on worker %s", job.JobID, workerID))
+		w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_acquired", fmt.Sprintf("Acquired lease for %s on %s", jobName, workerName))
 	}
 
 	defer w.cleanupJobTracking(job.JobID)
@@ -270,7 +280,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		if err := w.redisService.ReleaseDeploymentLease(job.JobID, workerID); err != nil {
 			slog.Warn("Failed to release deployment job lease", "jobId", job.JobID, "workerId", workerID, "error", err)
 		} else {
-			w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_released", fmt.Sprintf("Released lease for job %s on worker %s", job.JobID, workerID))
+			w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_released", fmt.Sprintf("Released lease for %s on %s", jobName, workerName))
 		}
 	}()
 
@@ -326,7 +336,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 				if err := w.redisService.RenewDeploymentLease(job.JobID, workerID, 2*time.Minute); err != nil {
 					slog.Warn("Failed to renew deployment job lease", "jobId", job.JobID, "workerId", workerID, "error", err)
 				} else {
-					w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_renewed", fmt.Sprintf("Renewed 2m lease for job %s", job.JobID))
+					w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_renewed", fmt.Sprintf("Renewed lease for %s", jobName))
 				}
 				if err := w.projectRepo.UpdateDeploymentHeartbeat(job.ProjectID); err != nil {
 					slog.Warn("Failed to update deployment heartbeat in database", "projectId", job.ProjectID, "error", err)
