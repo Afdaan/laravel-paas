@@ -799,19 +799,96 @@ function StudentProjectDetail() {
                   {t('projectDetail.overview.connectionInfo')}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-muted/50 rounded-xl border gap-4">
+              <CardContent className="space-y-3">
+                {/* Production / Subdomain URL */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-muted/50 rounded-xl border gap-4 group hover:border-primary/20 transition-colors">
                   <div className="flex items-center gap-4">
                     <div className="p-2.5 bg-emerald-500/10 rounded-lg text-emerald-600 border border-emerald-500/20">
                       <Globe className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="font-bold text-sm">{t('projectDetail.overview.productionUrl')}</div>
-                      <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.overview.webAccess')}</div>
+                      <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.overview.webAccess')} · SSL Enabled</div>
                     </div>
                   </div>
-                  <a href={projectUrl} target="_blank" className="text-primary hover:underline text-sm font-mono truncate max-w-xs">{projectUrl}</a>
+                  <a
+                    href={projectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
+                  >
+                    {projectUrl}
+                    <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                  </a>
                 </div>
+
+                {/* Custom Domains */}
+                {project.custom_domains && project.custom_domains.length > 0 && (
+                  <div className="space-y-2">
+                    {project.custom_domains
+                      .filter((d) => ['active', 'ssl_active', 'dns_verified'].includes(d.status))
+                      .map((d) => (
+                        <div
+                          key={d.id}
+                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/15 gap-4 group hover:border-primary/30 hover:bg-primary/10 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="p-2.5 bg-primary/10 rounded-lg text-primary border border-primary/20">
+                              <Globe className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm">{d.domain}</span>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0 h-4 text-primary border-primary/30 bg-primary/10"
+                                >
+                                  Custom Domain
+                                </Badge>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
+                                {d.status === 'ssl_active' ? 'SSL Active' : 'Active'} · Verified
+                              </div>
+                            </div>
+                          </div>
+                          <a
+                            href={`https://${d.domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
+                          >
+                            https://{d.domain}
+                            <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                          </a>
+                        </div>
+                      ))}
+
+                    {/* Pending domains hint */}
+                    {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 0 && (
+                      <button
+                        onClick={() => setActiveTab('domains')}
+                        className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30 transition-colors cursor-pointer group"
+                      >
+                        <span className="text-[11px] font-semibold">
+                          {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length} domain
+                          {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 1 ? 's' : ''} pending verification
+                        </span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Empty state: invite to add domains */}
+                {(!project.custom_domains || project.custom_domains.length === 0) && (
+                  <button
+                    onClick={() => setActiveTab('domains')}
+                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-muted-foreground/15 bg-muted/20 text-muted-foreground hover:border-primary/20 hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer group"
+                  >
+                    <span className="text-[11px] font-medium">Add a custom domain</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-40 group-hover:opacity-80 transition-opacity" />
+                  </button>
+                )}
               </CardContent>
             </Card>
 
