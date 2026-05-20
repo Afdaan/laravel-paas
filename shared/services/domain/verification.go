@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -29,7 +30,7 @@ func getRealtimeResolver() *net.Resolver {
 }
 
 // VerifyDomain verifies if the domain's CNAME or A record points to our platform and initiates SSL provisioning.
-func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *models.Project) (*models.CustomDomain, error) {
+func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, projectID uint, project *models.Project) (*models.CustomDomain, error) {
 	var domain models.CustomDomain
 	if err := s.db.Where("id = ? AND project_id = ?", domainID, projectID).First(&domain).Error; err != nil {
 		return nil, apperr.New(404, "NOT_FOUND", "Domain not found")
@@ -44,7 +45,7 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		_ = s.redisService.ReleaseDomainLock(domain.ID, token)
 	}()
 
-	lockCtx, cancelLock := context.WithCancel(context.Background())
+	lockCtx, cancelLock := context.WithCancel(ctx)
 	defer cancelLock()
 	s.StartLockHeartbeat(lockCtx, cancelLock, &domain, token, 30*time.Second)
 
@@ -70,22 +71,51 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 
 	dnsVerified := false
 
-	cname, err := resolver.LookupCNAME(ctx, domain.Domain)
-	if err == nil {
-		cname = strings.ToLower(strings.TrimSuffix(cname, "."))
-		expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
+	isLocalEnv := s.cfg.AppMode == "local"
+	isTestDomain := strings.HasSuffix(domain.Domain, ".localhost") || strings.HasSuffix(domain.Domain, ".local") || strings.HasSuffix(domain.Domain, ".test")
 
-		if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
-			dnsVerified = true
-		}
-	}
+	if isLocalEnv || isTestDomain {
+		dnsVerified = true
+	} else {
+		cname, err := resolver.LookupCNAME(ctx, domain.Domain)
+		if err == nil {
+			cname = strings.ToLower(strings.TrimSuffix(cname, "."))
+			expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
 
-	if !dnsVerified {
-		ips, err := resolver.LookupHost(ctx, domain.Domain)
-		if err == nil && len(ips) > 0 {
-			platformIPs, _ := resolver.LookupHost(ctx, fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
-			if len(platformIPs) > 0 && containsAny(ips, platformIPs) {
+			if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
 				dnsVerified = true
+			}
+		}
+
+		if !dnsVerified {
+			ips, err := resolver.LookupHost(ctx, domain.Domain)
+			if err == nil && len(ips) > 0 {
+				platformIPs, _ := resolver.LookupHost(ctx, fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
+				if len(platformIPs) > 0 && containsAny(ips, platformIPs) {
+					dnsVerified = true
+				}
+			}
+		}
+
+		// Fallback to system default resolver (e.g. /etc/hosts) if public DNS fails
+		if !dnsVerified {
+			cname, err := net.DefaultResolver.LookupCNAME(ctx, domain.Domain)
+			if err == nil {
+				cname = strings.ToLower(strings.TrimSuffix(cname, "."))
+				expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
+				if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
+					dnsVerified = true
+				}
+			}
+		}
+
+		if !dnsVerified {
+			ips, err := net.DefaultResolver.LookupHost(ctx, domain.Domain)
+			if err == nil && len(ips) > 0 {
+				platformIPs, err2 := net.DefaultResolver.LookupHost(ctx, fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
+				if err2 == nil && len(platformIPs) > 0 && containsAny(ips, platformIPs) {
+					dnsVerified = true
+				}
 			}
 		}
 	}
@@ -105,10 +135,33 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 		if _, err := s.projectService.SyncProjectNginxFrom(project, "domain_verify"); err != nil {
 			_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusDegraded, models.ErrNginxReloadFailed, fmt.Sprintf("Nginx configuration sync failed: %v", err))
 		} else {
-			_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusSSLQueued, models.ErrNone, "Let's Encrypt SSL certificate issuance queued successfully")
+			if isLocalEnv || isTestDomain {
+				domain.ProvisioningCheckpoint = "completed"
+				domain.SSLStatus = "active"
+				now := time.Now()
+				domain.SSLIssuedAt = &now
+				expires := now.AddDate(0, 3, 0)
+				domain.SSLExpiresAt = &expires
+				_ = s.db.Model(&domain).Updates(map[string]interface{}{
+					"provisioning_checkpoint": "completed",
+					"ssl_status":              "active",
+					"ssl_issued_at":           domain.SSLIssuedAt,
+					"ssl_expires_at":          domain.SSLExpiresAt,
+				})
+				_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusActive, models.ErrNone, `{"verification_mode":"local"}`)
+			} else {
+				_ = s.TransitionStateCtx(lockCtx, &domain, models.DomainStatusSSLQueued, models.ErrNone, "Let's Encrypt SSL certificate issuance queued successfully")
+				s.SafeGo(ctx, domain.ID, project.ID, "pollSSLStatusRealtime", func(ctx context.Context) error {
+					s.pollSSLStatusRealtime(ctx, domain.ID, project.ID)
+					return nil
+				})
+			}
 		}
 
-		go s.CheckAppHealth(&domain, project)
+		s.SafeGo(ctx, domain.ID, project.ID, "CheckAppHealth", func(ctx context.Context) error {
+			s.CheckAppHealth(ctx, domain.ID, project.ID)
+			return nil
+		})
 		return &domain, nil
 	}
 
@@ -124,8 +177,25 @@ func (s *DomainService) VerifyDomain(domainID uint, projectID uint, project *mod
 	return &domain, apperr.New(400, "VERIFICATION_FAILED", "DNS propagation not detected yet. Please ensure your CNAME is correctly pointing to "+strings.TrimSuffix(expectedCNAME, "."))
 }
 
-// CheckAppHealth verifies end-to-end edge and upstream connectivity across 5 distinct operational layers: DOMAIN -> DNS -> EDGE -> SSL -> UPSTREAM -> INTEGRITY.
-func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *models.Project) {
+// CheckAppHealth verifies end-to-end public access and upstream connectivity across 5 distinct operational layers: DOMAIN -> DNS -> PUBLIC ACCESS -> SSL -> UPSTREAM -> INTEGRITY.
+func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID uint) {
+	if ctx != nil && ctx.Err() != nil {
+		slog.Warn("Domain healthcheck aborted: parent context cancelled", "domainID", domainID)
+		return
+	}
+
+	var domain models.CustomDomain
+	if err := s.db.Select("id, project_id, domain, status, current_sequence, health_status, degraded_reason_code, error_message").Where("id = ? AND project_id = ?", domainID, projectID).First(&domain).Error; err != nil {
+		slog.Warn("Domain healthcheck aborted: domain not found", "domainID", domainID)
+		return
+	}
+
+	var exists bool
+	if err := s.db.Model(&models.Project{}).Select("1").Where("id = ?", projectID).Limit(1).Scan(&exists).Error; err != nil || !exists {
+		slog.Warn("Domain healthcheck aborted: project not found", "projectID", projectID)
+		return
+	}
+
 	prevHealth := domain.HealthStatus
 	prevErrCode := domain.DegradedReasonCode
 	prevErrMsg := domain.ErrorMessage
@@ -138,23 +208,29 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 	if domain.Status != models.DomainStatusActive && domain.Status != models.DomainStatusSSLActive && domain.Status != models.DomainStatusSSLQueued {
 		updates["health_status"] = models.DomainHealthUnknown
 		updates["latency_ms"] = 0
-		_ = s.db.Model(domain).Updates(updates)
+		_ = s.db.Model(&domain).Updates(updates)
 		domain.HealthStatus = models.DomainHealthUnknown
 		return
 	}
 
 	start := time.Now()
 	resolver := getRealtimeResolver()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// LAYER 1: DNS Reachable
 	layer1DNS := false
-	cname, err := resolver.LookupCNAME(ctx, domain.Domain)
+	cname, err := resolver.LookupCNAME(checkCtx, domain.Domain)
+	if err != nil {
+		cname, err = net.DefaultResolver.LookupCNAME(checkCtx, domain.Domain)
+	}
 	if err == nil && cname != "" {
 		layer1DNS = true
 	} else {
-		ips, err := resolver.LookupHost(ctx, domain.Domain)
+		ips, err := resolver.LookupHost(checkCtx, domain.Domain)
+		if err != nil {
+			ips, err = net.DefaultResolver.LookupHost(checkCtx, domain.Domain)
+		}
 		if err == nil && len(ips) > 0 {
 			layer1DNS = true
 		}
@@ -166,15 +242,15 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["health_status"] = models.DomainHealthUnhealthy
 		updates["degraded_reason_code"] = models.ErrDomainNotResolved
 		updates["error_message"] = "Layer 1: DNS resolution failed"
-		_ = s.db.Model(domain).Updates(updates)
+		_ = s.db.Model(&domain).Updates(updates)
 		domain.HealthStatus = models.DomainHealthUnhealthy
 		domain.DegradedReasonCode = models.ErrDomainNotResolved
 		domain.ErrorMessage = "Layer 1: DNS resolution failed"
-		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", "DNS lookup timed out or returned NXDOMAIN")
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", "DNS lookup timed out or returned NXDOMAIN")
 		return
 	}
 
-	// LAYER 2: Edge Reachable & LAYER 3: SSL Valid & LAYER 4: Upstream Reachable & LAYER 5: Response Integrity
+	// LAYER 2: Public Access Reachable & LAYER 3: SSL Valid & LAYER 4: Upstream Reachable & LAYER 5: Response Integrity
 	scheme := "https"
 	if domain.Status != models.DomainStatusActive && domain.Status != models.DomainStatusSSLActive {
 		scheme = "http"
@@ -182,6 +258,7 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 	targetURL := fmt.Sprintf("%s://%s", scheme, domain.Domain)
 
 	client := &http.Client{
+		Transport: GetHTTPClient().Transport,
 		Timeout: 7 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
@@ -191,12 +268,12 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		},
 	}
 
-	req, err := http.NewRequest("GET", targetURL, nil)
+	req, err := http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
 	if err != nil {
 		metrics.GetCollector().IncrHealthcheckFailures()
 		updates["health_status"] = models.DomainHealthUnhealthy
 		updates["error_message"] = "Failed to construct healthcheck request"
-		_ = s.db.Model(domain).Updates(updates)
+		_ = s.db.Model(&domain).Updates(updates)
 		domain.HealthStatus = models.DomainHealthUnhealthy
 		domain.ErrorMessage = "Failed to construct healthcheck request"
 		return
@@ -216,25 +293,27 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 			// HTTPS failed, check if HTTP works
 			scheme = "http"
 			targetURL = fmt.Sprintf("http://%s", domain.Domain)
-			req, _ = http.NewRequest("GET", targetURL, nil)
-			req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
-			startHTTP := time.Now()
-			resp, err = client.Do(req)
-			latency = time.Since(startHTTP).Milliseconds()
-			updates["latency_ms"] = latency
+			req, _ = http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
+			if req != nil {
+				req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+				startHTTP := time.Now()
+				resp, err = client.Do(req)
+				latency = time.Since(startHTTP).Milliseconds()
+				updates["latency_ms"] = latency
+			}
 		}
 
 		if err != nil {
 			metrics.GetCollector().IncrHealthcheckFailures()
-			updates["layer2_edge_reachable"] = false
+			updates["layer2_public_access_reachable"] = false
 			updates["health_status"] = models.DomainHealthUnhealthy
 			updates["degraded_reason_code"] = models.ErrRoutingHealthFailed
-			updates["error_message"] = fmt.Sprintf("Layer 2: Edge routing unreachable (%s): %v", scheme, err)
-			_ = s.db.Model(domain).Updates(updates)
+			updates["error_message"] = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
+			_ = s.db.Model(&domain).Updates(updates)
 			domain.HealthStatus = models.DomainHealthUnhealthy
 			domain.DegradedReasonCode = models.ErrRoutingHealthFailed
-			domain.ErrorMessage = fmt.Sprintf("Layer 2: Edge routing unreachable (%s): %v", scheme, err)
-			_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_failed", "Edge routing unreachable", err.Error())
+			domain.ErrorMessage = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
+			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Public routing unreachable", err.Error())
 			return
 		}
 	}
@@ -243,7 +322,7 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		layer3SSL = true
 	}
 
-	updates["layer2_edge_reachable"] = true
+	updates["layer2_public_access_reachable"] = true
 	updates["layer3_ssl_valid"] = layer3SSL
 
 	if resp != nil && resp.StatusCode >= 500 {
@@ -253,11 +332,11 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["health_status"] = models.DomainHealthUnhealthy
 		updates["degraded_reason_code"] = models.ErrUpstreamTimeout
 		updates["error_message"] = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", resp.StatusCode)
-		_ = s.db.Model(domain).Updates(updates)
+		_ = s.db.Model(&domain).Updates(updates)
 		domain.HealthStatus = models.DomainHealthUnhealthy
 		domain.DegradedReasonCode = models.ErrUpstreamTimeout
 		domain.ErrorMessage = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", resp.StatusCode)
-		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode), "Application backend error or 502/504 Bad Gateway")
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode), "Application backend error or 502/504 Bad Gateway")
 		return
 	}
 	updates["layer4_upstream_reachable"] = true
@@ -276,14 +355,16 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		} else {
 			// When strict integrity is enabled, allow Laravel health endpoints to satisfy the marker check.
 			upURL := fmt.Sprintf("%s://%s/up", scheme, domain.Domain)
-			upReq, _ := http.NewRequest("GET", upURL, nil)
-			upReq.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
-			if upResp, err := client.Do(upReq); err == nil && upResp != nil {
-				upBytes, _ := io.ReadAll(upResp.Body)
-				upStr := string(upBytes)
-				_ = upResp.Body.Close()
-				if strings.Contains(upStr, marker) || strings.Contains(upStr, `"status":"ok"`) || strings.Contains(upStr, `'status':'ok'`) {
-					layer5Integrity = true
+			upReq, _ := http.NewRequestWithContext(checkCtx, "GET", upURL, nil)
+			if upReq != nil {
+				upReq.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+				if upResp, err := client.Do(upReq); err == nil && upResp != nil {
+					upBytes, _ := io.ReadAll(upResp.Body)
+					upStr := string(upBytes)
+					_ = upResp.Body.Close()
+					if strings.Contains(upStr, marker) || strings.Contains(upStr, `"status":"ok"`) || strings.Contains(upStr, `'status':'ok'`) {
+						layer5Integrity = true
+					}
 				}
 			}
 		}
@@ -295,25 +376,25 @@ func (s *DomainService) CheckAppHealth(domain *models.CustomDomain, project *mod
 		updates["health_status"] = models.DomainHealthUnhealthy
 		updates["degraded_reason_code"] = models.ErrIntegrityCheckFailed
 		updates["error_message"] = "Layer 5: Response integrity marker verification failed"
-		_ = s.db.Model(domain).Updates(updates)
+		_ = s.db.Model(&domain).Updates(updates)
 		domain.HealthStatus = models.DomainHealthUnhealthy
 		domain.DegradedReasonCode = models.ErrIntegrityCheckFailed
 		domain.ErrorMessage = "Layer 5: Response integrity marker verification failed"
-		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_degraded", "Layer 5 response integrity failed", "Application did not return expected verification marker")
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_degraded", "Layer 5 response integrity failed", "Application did not return expected verification marker")
 		return
 	}
 
 	updates["health_status"] = models.DomainHealthHealthy
 	updates["degraded_reason_code"] = models.ErrNone
 	updates["error_message"] = ""
-	_ = s.db.Model(domain).Updates(updates)
+	_ = s.db.Model(&domain).Updates(updates)
 
 	domain.HealthStatus = models.DomainHealthHealthy
 	domain.DegradedReasonCode = models.ErrNone
 	domain.ErrorMessage = ""
 
 	if prevHealth != models.DomainHealthHealthy || prevErrCode != models.ErrNone || prevErrMsg != "" {
-		_ = s.RecordEvent(domain, domain.Status, domain.Status, "healthcheck_recovered", "Layer 5 response integrity verified successfully", "All 5 operational layers fully verified and healthy")
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_recovered", "Layer 5 response integrity verified successfully", "All 5 operational layers fully verified and healthy")
 	}
 	s.redisService.IncrDomainMetric("healthcheck_success", 1)
 }
@@ -328,4 +409,127 @@ func containsAny(a, b []string) bool {
 		}
 	}
 	return false
+}
+
+func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint, projectID uint) {
+	now := time.Now()
+	if val, loaded := s.activePollers.LoadOrStore(domainID, PollerState{StartedAt: now}); loaded {
+		state := val.(PollerState)
+		if now.Sub(state.StartedAt) > 10*time.Minute {
+			slog.Warn("Stale SSL status poller detected, replacing it", "domainID", domainID, "age", now.Sub(state.StartedAt))
+			s.activePollers.Store(domainID, PollerState{StartedAt: now})
+			metrics.GetCollector().IncrDomainPollerStopped()
+			_ = s.RecordEvent(&models.CustomDomain{ID: domainID}, models.DomainStatusSSLQueued, models.DomainStatusSSLQueued, "poller_cleanup", `{"reason":"stale_ttl_timeout"}`, "")
+		} else {
+			slog.Info("SSL status poller already active for domain, skipping new goroutine spawn", "domainID", domainID)
+			return
+		}
+	}
+	metrics.GetCollector().IncrDomainPollerStarted()
+	defer func() {
+		s.activePollers.Delete(domainID)
+		metrics.GetCollector().IncrDomainPollerStopped()
+	}()
+
+	slog.Info("Starting real-time SSL status polling", "domainID", domainID)
+	pollCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	backoffSteps := []time.Duration{
+		2 * time.Second,
+		3 * time.Second,
+		5 * time.Second,
+		8 * time.Second,
+		13 * time.Second,
+		21 * time.Second,
+		30 * time.Second,
+	}
+	stepIdx := 0
+
+	getDelay := func() time.Duration {
+		if stepIdx < len(backoffSteps) {
+			d := backoffSteps[stepIdx]
+			stepIdx++
+			return d
+		}
+		return 30 * time.Second
+	}
+
+	delay := getDelay()
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-pollCtx.Done():
+			slog.Info("Real-time SSL status polling timed out or cancelled", "domainID", domainID)
+			return
+		case <-timer.C:
+			var d models.CustomDomain
+			if err := s.db.First(&d, domainID).Error; err != nil {
+				slog.Error("Failed to find domain during real-time SSL polling", "domainID", domainID, "error", err)
+				return
+			}
+
+			if d.Status != models.DomainStatusSSLQueued && d.Status != models.DomainStatusSSLProvisioning {
+				slog.Info("Stopping real-time SSL polling: domain status has changed", "domainID", domainID, "status", d.Status)
+				return
+			}
+
+			sslStatus, err := s.projectService.GetSSLStatus(d.Domain)
+			if err != nil {
+				slog.Warn("Failed to query SSL status in real-time polling", "domain", d.Domain, "error", err)
+				delay = getDelay()
+				timer.Reset(delay)
+				continue
+			}
+
+			slog.Info("Real-time SSL polling check result", "domain", d.Domain, "sslStatus", sslStatus.Status)
+
+			switch sslStatus.Status {
+			case "ssl_active":
+				d.ProvisioningCheckpoint = "completed"
+				d.SSLStatus = "active"
+				now := time.Now()
+				d.SSLIssuedAt = &now
+				expires := now.AddDate(0, 3, 0)
+				if sslStatus.ExpiresAt != "" {
+					if parsed, err := time.Parse("Jan 2 15:04:05 2006 MST", sslStatus.ExpiresAt); err == nil {
+						expires = parsed
+					}
+				}
+				d.SSLExpiresAt = &expires
+				_ = s.db.Model(&d).Updates(map[string]interface{}{
+					"provisioning_checkpoint": "completed",
+					"ssl_status":              "active",
+					"ssl_issued_at":           d.SSLIssuedAt,
+					"ssl_expires_at":          d.SSLExpiresAt,
+				})
+				_ = s.TransitionState(&d, models.DomainStatusActive, models.ErrNone, "Let's Encrypt SSL certificate provisioned successfully")
+				s.SafeGo(ctx, d.ID, projectID, "CheckAppHealth", func(ctx context.Context) error {
+					s.CheckAppHealth(ctx, d.ID, projectID)
+					return nil
+				})
+				return
+
+			case "ssl_failed":
+				d.VerificationRetryCount++
+				_ = s.db.Model(&d).Update("verification_retry_count", d.VerificationRetryCount)
+				if d.VerificationRetryCount >= 5 {
+					_ = s.TransitionState(&d, models.DomainStatusSSLFailed, models.ErrSSLIssuanceFailed, fmt.Sprintf("SSL issuance failed after 5 retries: %s", sslStatus.Error))
+					return
+				}
+
+			case "ssl_provisioning":
+				if d.Status != models.DomainStatusSSLProvisioning {
+					d.ProvisioningCheckpoint = "ssl_provisioning"
+					_ = s.db.Model(&d).Update("provisioning_checkpoint", "ssl_provisioning")
+					_ = s.TransitionState(&d, models.DomainStatusSSLProvisioning, models.ErrNone, "Active Let's Encrypt challenge verification in progress")
+				}
+			}
+
+			delay = getDelay()
+			timer.Reset(delay)
+		}
+	}
 }

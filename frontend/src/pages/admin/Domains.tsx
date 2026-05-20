@@ -5,6 +5,7 @@ import {
   Globe, 
   CheckCircle2, 
   AlertCircle, 
+  AlertTriangle,
   Clock, 
   Loader2,
   ExternalLink,
@@ -40,7 +41,10 @@ const StatusBadge = ({ status }: { status?: string }) => {
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
     color = 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10'
     Icon = Loader2
-  } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
+  } else if (['degraded'].includes(cleanStatus)) {
+    color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
+    Icon = AlertTriangle
+  } else if (['error', 'renewal_failed', 'ssl_failed'].includes(cleanStatus)) {
     color = 'text-rose-500 border-rose-500/30 bg-rose-500/10'
     Icon = AlertCircle
   }
@@ -206,7 +210,9 @@ const AdminDomains = () => {
                   <TableCell className="py-4 pr-6 text-left">
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge status={domain.status} />
-                      <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                      {['active', 'ssl_active', 'degraded'].includes(domain.status) && (
+                        <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

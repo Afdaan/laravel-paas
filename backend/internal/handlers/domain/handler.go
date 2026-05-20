@@ -201,7 +201,7 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 		return err
 	}
 
-	domainData, err := h.domainService.VerifyDomain(uint(domainID), uint(projectID), project)
+	domainData, err := h.domainService.VerifyDomain(c.UserContext(), uint(domainID), uint(projectID), project)
 	if err != nil {
 		return c.JSON(fiber.Map{
 			"error": fiber.Map{

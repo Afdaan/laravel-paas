@@ -61,6 +61,13 @@ type MetricsCollector struct {
 	healthcheckFailuresTotal int64
 	degradedDomainsTotal     int64
 	unhealthyDomainsTotal    int64
+
+	// Domain Hardening
+	domainPanicRecoveryTotal       int64
+	domainPollerStartedTotal       int64
+	domainPollerStoppedTotal       int64
+	domainTransitionRejectedTotal  int64
+	domainStaleWriteRejectedTotal  int64
 }
 
 type SumCount struct {
@@ -185,6 +192,26 @@ func (m *MetricsCollector) SetUnhealthyDomains(val int64) {
 	atomic.StoreInt64(&m.unhealthyDomainsTotal, val)
 }
 
+func (m *MetricsCollector) IncrDomainPanicRecovery() {
+	atomic.AddInt64(&m.domainPanicRecoveryTotal, 1)
+}
+
+func (m *MetricsCollector) IncrDomainPollerStarted() {
+	atomic.AddInt64(&m.domainPollerStartedTotal, 1)
+}
+
+func (m *MetricsCollector) IncrDomainPollerStopped() {
+	atomic.AddInt64(&m.domainPollerStoppedTotal, 1)
+}
+
+func (m *MetricsCollector) IncrDomainTransitionRejected() {
+	atomic.AddInt64(&m.domainTransitionRejectedTotal, 1)
+}
+
+func (m *MetricsCollector) IncrDomainStaleWriteRejected() {
+	atomic.AddInt64(&m.domainStaleWriteRejectedTotal, 1)
+}
+
 // PrometheusHandler exposes the recorded metrics in standard Prometheus / OpenMetrics text format.
 func PrometheusHandler() fiber.Handler {
 	return func(c *fiber.Ctx) error {
@@ -222,6 +249,12 @@ func PrometheusHandler() fiber.Handler {
 		writeCounterMetric(&buf, "healthcheck_failures_total", "Total failed domain healthcheck probing executions", atomic.LoadInt64(&col.healthcheckFailuresTotal))
 		writeGaugeMetric(&buf, "degraded_domains_total", "Total custom domains currently in degraded health state", atomic.LoadInt64(&col.degradedDomainsTotal))
 		writeGaugeMetric(&buf, "unhealthy_domains_total", "Total custom domains currently in unhealthy operational state", atomic.LoadInt64(&col.unhealthyDomainsTotal))
+
+		writeCounterMetric(&buf, "domain_panic_recovery_total", "Total times a background domain goroutine panic was recovered", atomic.LoadInt64(&col.domainPanicRecoveryTotal))
+		writeCounterMetric(&buf, "domain_poller_started_total", "Total started SSL status pollers", atomic.LoadInt64(&col.domainPollerStartedTotal))
+		writeCounterMetric(&buf, "domain_poller_stopped_total", "Total stopped SSL status pollers", atomic.LoadInt64(&col.domainPollerStoppedTotal))
+		writeCounterMetric(&buf, "domain_transition_rejected_total", "Total rejected domain state transitions due to illegal state path", atomic.LoadInt64(&col.domainTransitionRejectedTotal))
+		writeCounterMetric(&buf, "domain_stale_write_rejected_total", "Total rejected domain state updates due to stale sequence version", atomic.LoadInt64(&col.domainStaleWriteRejectedTotal))
 
 		c.Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		return c.Send(buf.Bytes())

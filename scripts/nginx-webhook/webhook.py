@@ -6,9 +6,21 @@ import hashlib
 import queue
 import hmac
 import time
+import email.utils
 from logging.handlers import TimedRotatingFileHandler
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+
+def format_openssl_date(date_str):
+    if not date_str:
+        return None
+    try:
+        dt = email.utils.parsedate_to_datetime(date_str)
+        return dt.isoformat()
+    except Exception as e:
+        logging.error(f"Failed to parse openssl date '{date_str}': {str(e)}")
+        return date_str
+
 
 # Initialize environment and app
 load_dotenv()
@@ -343,9 +355,11 @@ def inspect_certificate(cert_name):
         if dates_res.returncode == 0:
             for line in dates_res.stdout.splitlines():
                 if line.startswith("notAfter="):
-                    expires_at = line.split("=", 1)[1]
+                    raw_val = line.split("=", 1)[1]
+                    expires_at = format_openssl_date(raw_val)
                 if line.startswith("notBefore="):
-                    issued_at = line.split("=", 1)[1]
+                    raw_val = line.split("=", 1)[1]
+                    issued_at = format_openssl_date(raw_val)
 
         return {
             "cert_name": cert_name,

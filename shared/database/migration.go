@@ -62,6 +62,10 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.CustomDomain{},
 		&models.DeploymentEvent{},
 		&models.DomainEvent{},
+		&models.OutboxEvent{},
+		&models.IdempotentOperation{},
+		&models.PendingReconcile{},
+		&models.AuditLog{},
 	}
 
 	for _, m := range modelsList {
@@ -271,6 +275,12 @@ func ReconcileSchemas(db *gorm.DB) error {
 		_ = db.Exec("DROP INDEX IF EXISTS idx_project_job_seq;")
 	}
 	_ = EnsureConstraint(db, &models.DeploymentEvent{}, "uni_project_job_seq", "UNIQUE (project_id, job_id, sequence_number)")
+
+	// Reconcile IdempotentOperation
+	_ = EnsureConstraint(db, &models.IdempotentOperation{}, "uni_idempotent_key", "UNIQUE (key)")
+
+	// Reconcile PendingReconcile
+	_ = EnsureConstraint(db, &models.PendingReconcile{}, "uni_pending_reconcile_domain", "UNIQUE (domain_id)")
 
 	return nil
 }

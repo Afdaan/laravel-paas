@@ -321,7 +321,7 @@ const (
 	ErrRedisUnavailable      DomainErrorCode = "redis_unavailable"
 	ErrNginxReloadFailed     DomainErrorCode = "nginx_reload_failed"
 	ErrSSLExpired            DomainErrorCode = "ssl_expired"
-	ErrEdgeUnreachable       DomainErrorCode = "edge_unreachable"
+	ErrPublicRouteUnreachable DomainErrorCode = "public_route_unreachable"
 	ErrUpstreamTimeout       DomainErrorCode = "upstream_timeout"
 	ErrIntegrityCheckFailed  DomainErrorCode = "integrity_check_failed"
 	ErrReconciliationStalled DomainErrorCode = "reconciliation_stalled"
@@ -334,6 +334,7 @@ type CustomDomain struct {
 	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	Domain    string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
 	Status    CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
+	DesiredStatus CustomDomainStatus `gorm:"size:30;not null;default:active" json:"desired_status"`
 
 	// SSL & Certificate Lifecycle
 	SSLStatus            string     `gorm:"size:50;default:'none'" json:"ssl_status"`
@@ -347,19 +348,20 @@ type CustomDomain struct {
 	LastReconciliationAt   *time.Time `json:"last_reconciliation_at,omitempty"`
 	VerificationRetryCount int        `gorm:"default:0" json:"verification_retry_count"`
 
-	// Derived Operational Health Overlay (DOMAIN -> DNS -> EDGE -> APP HEALTH)
+	// Derived Operational Health Overlay (DOMAIN -> DNS -> PUBLIC ACCESS -> APP HEALTH)
 	HealthStatus      DomainHealthStatus `gorm:"size:20;default:'unknown'" json:"health_status"`
 	LastHealthcheckAt *time.Time         `json:"last_healthcheck_at,omitempty"`
 	LatencyMs         int64              `json:"latency_ms"`
 	ConfigHash        string             `gorm:"size:64" json:"config_hash,omitempty"`
 	CurrentSequence   int                `gorm:"default:0" json:"current_sequence"`
+	SnapshotVersion   int                `gorm:"default:0" json:"snapshot_version"`
 
 	// Granular Layered Health Validation
-	Layer1DNSReachable      bool `gorm:"default:false" json:"layer1_dns_reachable"`
-	Layer2EdgeReachable     bool `gorm:"default:false" json:"layer2_edge_reachable"`
-	Layer3SSLValid          bool `gorm:"default:false" json:"layer3_ssl_valid"`
-	Layer4UpstreamReachable bool `gorm:"default:false" json:"layer4_upstream_reachable"`
-	Layer5ResponseIntegrity bool `gorm:"default:false" json:"layer5_response_integrity"`
+	Layer1DNSReachable           bool `gorm:"default:false" json:"layer1_dns_reachable"`
+	Layer2PublicAccessReachable  bool `gorm:"default:false" json:"layer2_public_access_reachable"`
+	Layer3SSLValid               bool `gorm:"default:false" json:"layer3_ssl_valid"`
+	Layer4UpstreamReachable      bool `gorm:"default:false" json:"layer4_upstream_reachable"`
+	Layer5ResponseIntegrity      bool `gorm:"default:false" json:"layer5_response_integrity"`
 
 	// Staged Cleanup & Tombstone Metadata
 	CleanupRetryCount int    `gorm:"default:0" json:"cleanup_retry_count"`
@@ -396,6 +398,7 @@ type DomainEvent struct {
 	Payload        string             `gorm:"type:text" json:"payload"`
 	DurationMs     int64              `json:"duration_ms"`
 	Error          string             `gorm:"type:text" json:"error,omitempty"`
+	EventVersion   int                `gorm:"default:1" json:"event_version"`
 	CreatedAt      time.Time          `gorm:"index" json:"created_at"`
 }
 
@@ -417,4 +420,72 @@ type DeploymentEvent struct {
 	DurationMs     int64     `json:"duration_ms"`
 	Error          string    `gorm:"type:text" json:"error,omitempty"`
 	CreatedAt      time.Time `gorm:"index" json:"created_at"`
+}
+
+// ===========================================
+// OutboxEvent Model
+// ===========================================
+
+// OutboxEvent tracks transactional outbox messages to ensure clean at-least-once pub/sub delivery.
+type OutboxEvent struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	EventType  string    `gorm:"size:100;not null;index" json:"event_type"`
+	DomainID   uint      `gorm:"not null;index" json:"domain_id"`
+	ProjectID  uint      `gorm:"not null" json:"project_id"`
+	Sequence   int       `gorm:"not null" json:"sequence"`
+	Payload    []byte    `gorm:"type:text;not null" json:"payload"`
+	Published  bool      `gorm:"default:false;index" json:"published"`
+	RetryCount int       `gorm:"default:0" json:"retry_count"`
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+}
+
+// ===========================================
+// IdempotentOperation Model
+// ===========================================
+
+// IdempotentOperation represents a request tracking entry to guarantee idempotency across restarts and retries.
+type IdempotentOperation struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	Key        string    `gorm:"size:255;uniqueIndex;not null" json:"key"`
+	Operation  string    `gorm:"size:100;index;not null" json:"operation"`
+	ResourceID uint      `gorm:"index;not null" json:"resource_id"`
+	Status     string    `gorm:"size:50;index;not null" json:"status"`
+	Response   []byte    `gorm:"type:text" json:"response"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// ===========================================
+// PendingReconcile Model
+// ===========================================
+
+// PendingReconcile tracks scheduled or enqueued domain reconciliation items durably in the database.
+type PendingReconcile struct {
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	DomainID   uint       `gorm:"not null;uniqueIndex" json:"domain_id"`
+	RetryCount int        `gorm:"default:0" json:"retry_count"`
+	RunAfter   time.Time  `gorm:"index" json:"run_after"`
+	Priority   int        `gorm:"default:0;index" json:"priority"`
+	Cause      string     `gorm:"size:100" json:"cause"`
+	Partition  int        `gorm:"default:0;index" json:"partition"`
+	LockedBy   *string    `gorm:"size:100" json:"locked_by"`
+	LockedAt   *time.Time `json:"locked_at"`
+}
+
+// ===========================================
+// AuditLog Model
+// ===========================================
+
+// AuditLog tracks granular, append-only domain state transitions and background verification traces.
+type AuditLog struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	DomainID     uint      `gorm:"index;not null" json:"domain_id"`
+	Operation    string    `gorm:"size:100;index;not null" json:"operation"`
+	StateFrom    string    `gorm:"size:50" json:"state_from"`
+	StateTo      string    `gorm:"size:50" json:"state_to"`
+	Status       string    `gorm:"size:50;not null" json:"status"`
+	ErrorMessage string    `gorm:"type:text" json:"error_message,omitempty"`
+	DurationMs   int64     `json:"duration_ms"`
+	TraceID      string    `gorm:"size:100;index" json:"trace_id"`
+	CreatedAt    time.Time `gorm:"index" json:"created_at"`
 }

@@ -7,6 +7,7 @@ import {
   Trash2, 
   CheckCircle2, 
   AlertCircle, 
+  AlertTriangle,
   Clock, 
   ArrowRightLeft,
   Loader2,
@@ -65,7 +66,10 @@ const StatusBadge = ({ status }: { status?: string }) => {
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
     color = 'text-cyan-500 border-cyan-500/20 bg-cyan-500/10'
     Icon = Loader2
-  } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
+  } else if (['degraded'].includes(cleanStatus)) {
+    color = 'text-amber-500 border-amber-500/20 bg-amber-500/10'
+    Icon = AlertTriangle
+  } else if (['error', 'renewal_failed', 'ssl_failed'].includes(cleanStatus)) {
     color = 'text-rose-500 border-rose-500/20 bg-rose-500/10'
     Icon = AlertCircle
   }
@@ -337,7 +341,9 @@ const Domains = () => {
                   </TableCell>
                   <TableCell className="text-left">
                     <StatusBadge status={domain.status} />
-                    <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                    {['active', 'ssl_active', 'degraded'].includes(domain.status) && (
+                      <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                    )}
                   </TableCell>
                   <TableCell className="pr-6">
                     <div className="flex justify-end">

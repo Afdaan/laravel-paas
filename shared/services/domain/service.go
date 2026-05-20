@@ -5,49 +5,75 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime"
+	"sync"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/nginx"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/repository"
 	"gorm.io/gorm"
 )
 
 type NginxReloader interface {
 	SyncProjectNginxFrom(project *models.Project, triggerSource string) (string, error)
+	GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error)
 }
 
-// DomainService handles custom domain management and verification
+// PollerState tracks starting time of each domain's SSL status poller
+type PollerState struct {
+	StartedAt time.Time
+}
+
+// DomainService handles custom domain management and verification, wrapping new decoupled orchestration layers
 type DomainService struct {
 	cfg            *config.Config
 	db             *gorm.DB
 	redisService   *infrastructure.RedisService
 	projectService NginxReloader
 	projectRepo    repositories.ProjectRepository
+	activePollers  sync.Map
+	wg             sync.WaitGroup
+
+	// Decoupled Orchestration Layers
+	repo         repository.DomainRepository
+	stateMachine *DomainStateMachine
+	reconciler   *Reconciler
+	queue        ReconcileQueue
 }
 
 func NewDomainService(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, projectService NginxReloader, projectRepo repositories.ProjectRepository) *DomainService {
+	repo := repository.NewDomainRepository(db)
+	outbox := NewOutboxService(db, redisService)
+	audit := NewAuditService(db)
+	stateMachine := NewDomainStateMachine(repo, outbox, audit)
+	leaseProvider := NewRedisLeaseProvider(redisService)
+	queue := NewReconcileQueue(db)
+	reconciler := NewReconciler(repo, queue, leaseProvider, stateMachine)
+
 	return &DomainService{
 		cfg:            cfg,
 		db:             db,
 		redisService:   redisService,
 		projectService: projectService,
 		projectRepo:    projectRepo,
+		repo:           repo,
+		stateMachine:   stateMachine,
+		reconciler:     reconciler,
+		queue:          queue,
 	}
 }
 
 // GetDomainByID retrieves a custom domain by its ID
 func (s *DomainService) GetDomainByID(domainID uint) (*models.CustomDomain, error) {
-	var domain models.CustomDomain
-	if err := s.db.First(&domain, domainID).Error; err != nil {
-		return nil, err
-	}
-	return &domain, nil
+	return s.repo.GetByID(context.Background(), domainID)
 }
 
-// RecordEvent appends a lifecycle transition or audit event to the append-only DomainEvent table and broadcasts it via Redis Pub/Sub immediately (non-transactional).
+// RecordEvent appends a lifecycle transition event (durable transactional outbox fallback)
 func (s *DomainService) RecordEvent(domain *models.CustomDomain, stateFrom, stateTo models.CustomDomainStatus, eventType, payload, errMsg string) error {
 	event, err := s.RecordEventTx(s.db, domain, stateFrom, stateTo, eventType, payload, errMsg)
 	if err != nil {
@@ -59,7 +85,6 @@ func (s *DomainService) RecordEvent(domain *models.CustomDomain, stateFrom, stat
 }
 
 // RecordEventTx executes event persistence inside an active database transaction.
-// To guarantee consistency and prevent phantom events on rollback, the caller MUST publish the returned DomainEvent to Redis only after the enclosing transaction successfully commits.
 func (s *DomainService) RecordEventTx(tx *gorm.DB, domain *models.CustomDomain, stateFrom, stateTo models.CustomDomainStatus, eventType, payload, errMsg string) (*models.DomainEvent, error) {
 	var nextSeq int
 	err := tx.Raw("UPDATE custom_domains SET current_sequence = current_sequence + 1 WHERE id = ? RETURNING current_sequence", domain.ID).Scan(&nextSeq).Error
@@ -77,6 +102,7 @@ func (s *DomainService) RecordEventTx(tx *gorm.DB, domain *models.CustomDomain, 
 		EventType:      eventType,
 		Payload:        payload,
 		Error:          errMsg,
+		EventVersion:   1,
 		CreatedAt:      time.Now(),
 	}
 
@@ -88,48 +114,26 @@ func (s *DomainService) RecordEventTx(tx *gorm.DB, domain *models.CustomDomain, 
 	return event, nil
 }
 
-// TransitionState deterministically mutates domain status and error codes with full transaction audit observability.
+// TransitionState deterministically mutates domain status via DomainStateMachine.
+// Centralizing state mutations through the StateMachine guarantees that business aggregates,
+// transaction locking, outbox streaming, and audit trails are always atomically executed.
 func (s *DomainService) TransitionState(domain *models.CustomDomain, nextState models.CustomDomainStatus, errCode models.DomainErrorCode, errMsg string) error {
-	if domain.Status == nextState && domain.ErrorCode == errCode && domain.ErrorMessage == errMsg {
-		// Suppress duplicate identical state transition to prevent database write amplification and event flood
-		return nil
+	ctx := context.Background()
+	err := s.stateMachine.Transition(ctx, domain.ID, nextState, string(errCode))
+	if err != nil {
+		return err
 	}
 
-	stateFrom := domain.Status
-	var publishedEvent *models.DomainEvent
-
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		updates := map[string]interface{}{
-			"status":        nextState,
-			"error_code":    errCode,
-			"error_message": errMsg,
-			"updated_at":    time.Now(),
-		}
-		if err := tx.Model(domain).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to save domain state transition: %w", err)
-		}
-		domain.Status = nextState
-		domain.ErrorCode = errCode
-		domain.ErrorMessage = errMsg
-		domain.UpdatedAt = time.Now()
-
-		eventType := fmt.Sprintf("transition_%s", string(nextState))
-		event, err := s.RecordEventTx(tx, domain, stateFrom, nextState, eventType, fmt.Sprintf("Transitioned from %s to %s", string(stateFrom), string(nextState)), errMsg)
-		if err != nil {
-			return err
-		}
-		publishedEvent = event
-		return nil
-	})
-
-	if err == nil && publishedEvent != nil {
-		eventBytes, _ := json.Marshal(publishedEvent)
-		_ = s.redisService.PublishDomainEvent(domain.ID, domain.ProjectID, string(eventBytes))
-	}
-	return err
+	// Update local struct state to match state machine results for backward compatibility.
+	domain.Status = nextState
+	domain.ErrorCode = errCode
+	domain.ErrorMessage = errMsg
+	return nil
 }
 
-// TransitionStateCtx deterministically mutates domain status with lock-scoped context awareness.
+// TransitionStateCtx deterministically mutates domain status with context safety.
+// It explicitly inspects context state first to block actions if context is cancelled,
+// preventing stale actions from updating the state machine after lease or signal loss.
 func (s *DomainService) TransitionStateCtx(ctx context.Context, domain *models.CustomDomain, nextState models.CustomDomainStatus, errCode models.DomainErrorCode, errMsg string) error {
 	if ctx != nil && ctx.Err() != nil {
 		slog.Warn("Operation aborted due to context cancellation or lock lease loss", "domainID", domain.ID, "nextState", nextState, "error", ctx.Err())
@@ -148,14 +152,14 @@ func (s *DomainService) SubscribeProjectEvents(ctx context.Context, projectID ui
 	return s.redisService.SubscribeProjectEvents(ctx, projectID)
 }
 
-// ListEventsAfterSequence fetches missed events after a specific monotonic sequence number (bounded in memory).
+// ListEventsAfterSequence fetches missed events after a specific sequence number.
 func (s *DomainService) ListEventsAfterSequence(domainID uint, afterSeq int) ([]models.DomainEvent, error) {
 	var events []models.DomainEvent
 	err := s.db.Where("domain_id = ? AND sequence_number > ?", domainID, afterSeq).Order("sequence_number ASC").Limit(100).Find(&events).Error
 	return events, err
 }
 
-// ListProjectEventsAfterSequence fetches missed events for all domains within a project after a specific sequence number (bounded in memory).
+// ListProjectEventsAfterSequence fetches missed project-wide events.
 func (s *DomainService) ListProjectEventsAfterSequence(projectID uint, afterSeq int) ([]models.DomainEvent, error) {
 	var events []models.DomainEvent
 	subQuery := s.db.Model(&models.CustomDomain{}).Select("id").Where("project_id = ?", projectID)
@@ -163,8 +167,7 @@ func (s *DomainService) ListProjectEventsAfterSequence(projectID uint, afterSeq 
 	return events, err
 }
 
-// StartLockHeartbeat starts a background watchdog goroutine to periodically extend domain lock lease TTL during long-running operations.
-// If lock renewal fails (e.g. lease expired or token mismatch), it triggers cancel() to abort the operation immediately.
+// StartLockHeartbeat starts a background watchdog goroutine extending lock TTL.
 func (s *DomainService) StartLockHeartbeat(ctx context.Context, cancel context.CancelFunc, domain *models.CustomDomain, token string, ttl time.Duration) {
 	ticker := time.NewTicker(ttl / 2)
 	go func() {
@@ -188,7 +191,45 @@ func (s *DomainService) StartLockHeartbeat(ctx context.Context, cancel context.C
 	}()
 }
 
-// GetMetrics retrieves operational observability metrics.
+// GetMetrics retrieves operational metrics.
 func (s *DomainService) GetMetrics() (map[string]interface{}, error) {
 	return s.redisService.GetDomainMetrics()
+}
+
+// SafeGo starts a goroutine under a recovery barrier.
+func (s *DomainService) SafeGo(ctx context.Context, domainID, projectID uint, operation string, fn func(ctx context.Context) error) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				metrics.GetCollector().IncrDomainPanicRecovery()
+				buf := make([]byte, 2048)
+				n := runtime.Stack(buf, false)
+				slog.Error("Panic recovered in domain SafeGo",
+					"domainID", domainID,
+					"projectID", projectID,
+					"operation", operation,
+					"recover", r,
+					"stack", string(buf[:n]),
+				)
+			}
+		}()
+
+		if err := fn(ctx); err != nil {
+			slog.Error("Domain async operation failed",
+				"domainID", domainID,
+				"projectID", projectID,
+				"operation", operation,
+				"error", err,
+			)
+		}
+	}()
+}
+
+// Shutdown blocks until background operations complete.
+func (s *DomainService) Shutdown() {
+	slog.Info("Waiting for DomainService background operations to complete...")
+	s.wg.Wait()
+	slog.Info("DomainService shutdown complete.")
 }

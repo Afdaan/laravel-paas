@@ -166,8 +166,8 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 		sslStatus, err := w.projectService.GetSSLStatus(d.Domain)
 		if err != nil {
 			metrics.GetCollector().IncrReconciliationDrift()
-			slog.Warn("Reconciliation drift detected: Edge Nginx webhook unreachable or SSL check failed", "domain", d.Domain, "error", err)
-			_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrEdgeUnreachable, fmt.Sprintf("Drift detected: edge Nginx verification failed: %v", err))
+			slog.Warn("Reconciliation drift detected: Public routing Nginx webhook unreachable or SSL check failed", "domain", d.Domain, "error", err)
+			_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrPublicRouteUnreachable, fmt.Sprintf("Drift detected: public routing Nginx verification failed: %v", err))
 			continue
 		}
 
@@ -183,7 +183,10 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 		}
 
 		if d.HealthStatus == models.DomainHealthUnhealthy || d.LastHealthcheckAt == nil || time.Since(*d.LastHealthcheckAt) > 5*time.Minute {
-			w.domainService.CheckAppHealth(d, project)
+			w.domainService.SafeGo(ctx, d.ID, d.ProjectID, "CheckAppHealth", func(ctx context.Context) error {
+				w.domainService.CheckAppHealth(ctx, d.ID, d.ProjectID)
+				return nil
+			})
 		}
 	}
 }
@@ -227,7 +230,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 			if d.Status == models.DomainStatusSSLQueued || d.Status == models.DomainStatusSSLProvisioning {
 				sslStatus, err := w.projectService.GetSSLStatus(d.Domain)
 				if err != nil {
-					slog.Warn("Recovery trace: Edge Nginx unreachable during SSL polling", "domain", d.Domain, "error", err)
+					slog.Warn("Recovery trace: Public routing Nginx unreachable during SSL polling", "domain", d.Domain, "error", err)
 					continue
 				}
 				slog.Info("Recovery trace: SSL polling status received", "domain", d.Domain, "sslStatus", sslStatus.Status, "retryCount", sslStatus.RetryCount)
@@ -255,9 +258,10 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 						"ssl_expires_at":          d.SSLExpiresAt,
 					})
 					_ = w.domainService.TransitionState(d, models.DomainStatusActive, models.ErrNone, "Let's Encrypt SSL certificate provisioned successfully")
-					if project, err := w.projectService.GetProjectByID(d.ProjectID); err == nil {
-						go w.domainService.CheckAppHealth(d, project)
-					}
+					w.domainService.SafeGo(ctx, d.ID, d.ProjectID, "CheckAppHealth", func(ctx context.Context) error {
+						w.domainService.CheckAppHealth(ctx, d.ID, d.ProjectID)
+						return nil
+					})
 					slog.Info("Recovery trace: SSL certificate issued successfully", "domain", d.Domain, "durationSec", time.Since(d.CreatedAt).Seconds())
 				case "ssl_failed":
 					d.VerificationRetryCount++
@@ -297,7 +301,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 				_ = w.db.Model(d).Update("provisioning_checkpoint", "verifying_dns")
 			}
 
-			_, verifyErr := w.domainService.VerifyDomain(d.ID, d.ProjectID, project)
+			_, verifyErr := w.domainService.VerifyDomain(ctx, d.ID, d.ProjectID, project)
 			if verifyErr == nil {
 				d.ProvisioningCheckpoint = "completed"
 				d.VerificationRetryCount = 0

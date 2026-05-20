@@ -101,6 +101,7 @@ func main() {
 		workerManager.Stop()
 		watchdog.Stop()
 		cancelManager()
+		domainService.Shutdown()
 		slog.Info("Manager shutdown complete. Exiting.")
 	}
 }

@@ -114,6 +114,9 @@ func main() {
 			slog.Error("Fiber shutdown error", "error", err)
 		}
 
+		// Shutdown DomainService background pollers/checks
+		domainService.Shutdown()
+
 		slog.Info("All systems stopped. Goodbye!")
 		close(idleConnsClosed)
 	}()

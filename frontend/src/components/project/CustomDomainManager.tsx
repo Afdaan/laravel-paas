@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
-import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, RefreshCw, ExternalLink, ShieldCheck, Server, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
+import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, ExternalLink, ShieldCheck, Server, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
 import { projectsAPI } from '@/services/api'
 import { CustomDomain, DomainDiagnostic, DomainEvent } from '@/types'
@@ -61,7 +61,10 @@ const StatusBadge = ({ status }: { status: string }) => {
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
     color = 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10'
     Icon = Loader2
-  } else if (['error', 'degraded', 'renewal_failed'].includes(cleanStatus)) {
+  } else if (['degraded'].includes(cleanStatus)) {
+    color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
+    Icon = AlertTriangle
+  } else if (['error', 'renewal_failed', 'ssl_failed'].includes(cleanStatus)) {
     color = 'text-rose-500 border-rose-500/30 bg-rose-500/10'
     Icon = AlertCircle
   }
@@ -122,7 +125,18 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
     try {
       const res = await projectsAPI.listDomains(projectId)
       const domainList = res.data.data || []
-      setDomains(domainList)
+      setDomains(prev => {
+        return domainList.map((newD: CustomDomain) => {
+          const existing = prev.find(d => d.id === newD.id)
+          if (existing && existing.current_sequence != null && newD.current_sequence != null && newD.current_sequence < existing.current_sequence) {
+            if (process.env.NODE_ENV === 'development') {
+              console.log("Ignoring stale domain list fetch for", newD.id, newD.current_sequence, "vs existing", existing.current_sequence)
+            }
+            return existing
+          }
+          return newD
+        })
+      })
       
       if (!selectedDomainId && domainList.length > 0) {
         const firstPending = domainList.find((d: CustomDomain) => d.status !== 'active')
@@ -166,6 +180,21 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
 
     let eventSource: EventSource | null = null;
     let isSubscribed = true;
+    let reconnectDelay = 1000;
+    const maxReconnectDelay = 30000;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+
+    const scheduleReconnect = () => {
+      if (!isSubscribed) return;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      // Add randomized jitter to prevent herd effects on server restarts
+      const jitter = Math.random() * 1000;
+      reconnectTimer = setTimeout(() => {
+        connectSSE();
+        // Exponential backoff
+        reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+      }, reconnectDelay + jitter);
+    };
 
     const connectSSE = async () => {
       try {
@@ -174,12 +203,20 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (!res.ok || !isSubscribed) return;
+        if (!res.ok || !isSubscribed) {
+          scheduleReconnect();
+          return;
+        }
         const data = await res.json();
         const streamToken = data.token;
 
         const sseUrl = `/api/projects/${projectId}/domains/events/stream?stream_token=${encodeURIComponent(streamToken)}`;
         eventSource = new EventSource(sseUrl);
+
+        eventSource.onopen = () => {
+          // Reset reconnect delay on successful connection
+          reconnectDelay = 1000;
+        };
 
         eventSource.addEventListener('domain_event', (e) => {
           try {
@@ -191,11 +228,18 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
             setDomains(prevDomains => {
               return prevDomains.map(d => {
                 if (d.id === updatedDomainId) {
+                  if (eventData.sequence_number != null && d.current_sequence != null && eventData.sequence_number < d.current_sequence) {
+                    if (process.env.NODE_ENV === 'development') {
+                      console.log("Ignoring stale SSE domain event for", d.id, eventData.sequence_number, "vs existing", d.current_sequence);
+                    }
+                    return d;
+                  }
                   return {
                     ...d,
                     status: eventData.state_to || d.status,
                     error_code: eventData.error_code || d.error_code,
                     error_message: eventData.message || eventData.payload || d.error_message,
+                    current_sequence: eventData.sequence_number != null ? eventData.sequence_number : d.current_sequence,
                   };
                 }
                 return d;
@@ -204,7 +248,16 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
 
             if (eventData.state_to === 'active' || eventData.state_to === 'ssl_active' || String(eventData.event_type || '').startsWith('healthcheck_')) {
               projectsAPI.listDomains(projectId).then((res) => {
-                setDomains(res.data.data || [])
+                const domainList = res.data.data || []
+                setDomains(prev => {
+                  return domainList.map((newD: CustomDomain) => {
+                    const existing = prev.find(d => d.id === newD.id)
+                    if (existing && existing.current_sequence != null && newD.current_sequence != null && newD.current_sequence < existing.current_sequence) {
+                      return existing
+                    }
+                    return newD
+                  })
+                })
               }).catch(() => {})
             }
 
@@ -225,18 +278,22 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
         });
 
         eventSource.addEventListener('overflow', () => {
-          console.warn("Subscriber buffer overflow detected, initiating SSE reconnection");
+          if (process.env.NODE_ENV === 'development') {
+            console.warn("Subscriber buffer overflow detected, initiating SSE reconnection");
+          }
           eventSource?.close();
-          if (isSubscribed) setTimeout(connectSSE, 2000);
+          scheduleReconnect();
         });
 
         eventSource.onerror = (err) => {
-          console.error("Project SSE connection error", err);
+          if (process.env.NODE_ENV === 'development') {
+            console.error("Project SSE connection error", err);
+          }
           eventSource?.close();
-          if (isSubscribed) setTimeout(connectSSE, 5000);
+          scheduleReconnect();
         };
       } catch (err) {
-        if (isSubscribed) setTimeout(connectSSE, 5000);
+        scheduleReconnect();
       }
     };
 
@@ -244,6 +301,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
 
     return () => {
       isSubscribed = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (eventSource) eventSource.close();
     };
   }, [projectId]);
@@ -498,7 +556,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <StatusBadge status={domain.status} />
-                          <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                          {['active', 'ssl_active', 'degraded'].includes(domain.status) && (
+                            <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -513,7 +573,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                         <FileText className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">Audit Log</span>
                       </Button>
-                      {!isActive && (
+                      {!isActive && !isSelected && (
                         <Button
                           variant={isSelected ? "default" : "outline"}
                           size="sm"
@@ -665,7 +725,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${diagnosticData[domain.id]?.is_match ? 'bg-emerald-500/20 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.2)]' : 'bg-background border-muted-foreground/10'}`}>
                                   <Server className={`w-5 h-5 ${diagnosticData[domain.id]?.is_match ? 'text-emerald-500' : 'text-muted-foreground'}`} />
                                 </div>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.edge') || 'PaaS Edge'}</span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{t('domains.dnsGuide.edge') || 'Public Access'}</span>
                               </div>
                             </div>
 
