@@ -103,6 +103,17 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
 export function CustomDomainManager({ projectId, subdomain, projectUrl }: CustomDomainManagerProps) {
   const { t } = useTranslation()
   const [domains, setDomains] = useState<CustomDomain[]>([])
+
+  // Helper to extract base domain and compute centralized CNAME target
+  const getCentralCNAME = () => {
+    const host = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`;
+    const prefix = `${subdomain}.`;
+    if (host.startsWith(prefix)) {
+      return `cname.${host.substring(prefix.length)}`;
+    }
+    return `cname.${host}`;
+  };
+
   const [isLoading, setIsLoading] = useState(true)
   const [newDomain, setNewDomain] = useState('')
   const [isAdding, setIsAdding] = useState(false)
@@ -643,7 +654,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
-                            const target = projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`
+                            const target = getCentralCNAME()
                             navigator.clipboard.writeText(target)
                             toast.success(t('common.copied'))
                           }}
@@ -653,7 +664,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                             <span className="text-[10px] text-primary font-bold opacity-0 group-hover/box:opacity-100 transition-all uppercase tracking-wider">{t('common.copy')}</span>
                           </div>
                           <div className="text-sm font-mono font-bold text-foreground truncate relative z-10 pr-6">
-                            {projectUrl ? projectUrl.replace('https://', '').replace('http://', '') : `${subdomain}.${window.location.hostname}`}
+                            {getCentralCNAME()}
                           </div>
                           <RefreshCw className="absolute -bottom-2 -right-2 w-12 h-12 text-primary/5 group-hover/box:text-primary/10 transition-colors -rotate-12" />
                         </div>

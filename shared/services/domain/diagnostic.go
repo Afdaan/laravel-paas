@@ -26,12 +26,12 @@ type DomainDiagnostic struct {
 func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.Project) (*DomainDiagnostic, error) {
 	domainName = strings.ToLower(strings.TrimSpace(domainName))
 
-	// Determine Expected Configuration
+	// Determine Expected Configuration (Centralized CNAME Ingress Target)
 	projectDomain := s.cfg.ProjectDomain
 	if projectDomain == "" {
 		projectDomain = s.cfg.BaseDomain
 	}
-	expectedValue := fmt.Sprintf("%s.%s", project.Subdomain, projectDomain)
+	expectedValue := fmt.Sprintf("cname.%s", projectDomain)
 
 	// DYNAMIC HOST DETECTION using Public Suffix List
 	expectedHost := "@"
@@ -76,9 +76,10 @@ func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.P
 	ips, _ := resolver.LookupHost(ctx, domainName)
 	diagnostic.CurrentIPs = ips
 
-	// Logic for Match
+	// Logic for Match (Accepts both centralized CNAME and legacy project-specific CNAME)
 	expectedValueLower := strings.ToLower(expectedValue)
-	if diagnostic.CurrentCNAME == expectedValueLower || strings.HasSuffix(diagnostic.CurrentCNAME, projectDomain) {
+	legacyValueLower := strings.ToLower(fmt.Sprintf("%s.%s", project.Subdomain, projectDomain))
+	if diagnostic.CurrentCNAME == expectedValueLower || diagnostic.CurrentCNAME == legacyValueLower || strings.HasSuffix(diagnostic.CurrentCNAME, projectDomain) {
 		diagnostic.IsMatch = true
 		diagnostic.Message = "Valid configuration detected."
 	} else if len(ips) > 0 {

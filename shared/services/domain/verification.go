@@ -85,8 +85,9 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, project
 		if err == nil {
 			cname = strings.ToLower(strings.TrimSuffix(cname, "."))
 			expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
+			centralCNAME := "cname." + strings.ToLower(strings.TrimSuffix(projectDomain, "."))
 
-			if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
+			if cname == expectedTrimmed || cname == centralCNAME || strings.HasSuffix(cname, projectDomain) {
 				dnsVerified = true
 			}
 		}
@@ -107,7 +108,8 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, project
 			if err == nil {
 				cname = strings.ToLower(strings.TrimSuffix(cname, "."))
 				expectedTrimmed := strings.ToLower(strings.TrimSuffix(expectedCNAME, "."))
-				if cname == expectedTrimmed || strings.HasSuffix(cname, projectDomain) {
+				centralCNAME := "cname." + strings.ToLower(strings.TrimSuffix(projectDomain, "."))
+				if cname == expectedTrimmed || cname == centralCNAME || strings.HasSuffix(cname, projectDomain) {
 					dnsVerified = true
 				}
 			}
