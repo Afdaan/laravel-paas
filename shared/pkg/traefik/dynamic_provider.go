@@ -57,8 +57,6 @@ func WriteProjectDynamicFile(cfg *config.Config, project *models.Project, domain
     project-%s-custom:
       rule: "%s"
       service: "project-%s-custom"
-      tls:
-        certResolver: "letsencrypt"
   services:
     project-%s-custom:
       loadBalancer:
