@@ -10,9 +10,9 @@ import (
 	"github.com/laravel-paas/shared/models"
 )
 
-// GetProjectDynamicFilePath returns the path to the dynamic configuration file for a given subdomain
-func GetProjectDynamicFilePath(cfg *config.Config, subdomain string) string {
-	return filepath.Join(cfg.TraefikDynamicDir, fmt.Sprintf("project-%s.yml", subdomain))
+// GetProjectDynamicFilePath returns the path to the dynamic configuration file for a given project
+func GetProjectDynamicFilePath(cfg *config.Config, userID uint, projectID uint, subdomain string) string {
+	return filepath.Join(cfg.TraefikDynamicDir, fmt.Sprintf("user-%d-project-%d-%s.yml", userID, projectID, subdomain))
 }
 
 // WriteProjectDynamicFile writes an atomic YAML configuration file to Traefik's dynamic directory for a project
@@ -21,7 +21,7 @@ func WriteProjectDynamicFile(cfg *config.Config, project *models.Project, domain
 		return fmt.Errorf("traefik dynamic directory config is empty")
 	}
 
-	filePath := GetProjectDynamicFilePath(cfg, project.Subdomain)
+	filePath := GetProjectDynamicFilePath(cfg, project.UserID, project.ID, project.Subdomain)
 
 	// Filter active routable custom domains
 	var activeDomains []string
@@ -33,7 +33,7 @@ func WriteProjectDynamicFile(cfg *config.Config, project *models.Project, domain
 
 	// If no active custom domains, clean up and remove the dynamic file
 	if len(activeDomains) == 0 {
-		return DeleteProjectDynamicFile(cfg, project.Subdomain)
+		return DeleteProjectDynamicFile(cfg, project.UserID, project.ID, project.Subdomain)
 	}
 
 	// Determine target backend URL port
@@ -85,8 +85,8 @@ func WriteProjectDynamicFile(cfg *config.Config, project *models.Project, domain
 }
 
 // DeleteProjectDynamicFile deletes the project's dynamic configuration file if it exists
-func DeleteProjectDynamicFile(cfg *config.Config, subdomain string) error {
-	filePath := GetProjectDynamicFilePath(cfg, subdomain)
+func DeleteProjectDynamicFile(cfg *config.Config, userID uint, projectID uint, subdomain string) error {
+	filePath := GetProjectDynamicFilePath(cfg, userID, projectID, subdomain)
 	if _, err := os.Stat(filePath); err == nil {
 		if err := os.Remove(filePath); err != nil {
 			return fmt.Errorf("failed to remove dynamic routing file: %w", err)

@@ -14,6 +14,7 @@ import (
 	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/services/deployment"
 	"github.com/laravel-paas/shared/services/setting"
+	"github.com/laravel-paas/shared/pkg/traefik"
 	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 )
 
@@ -86,6 +87,11 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	if err := s.nginxService.DeleteProject(project, projectDomain); err != nil {
 		slog.Warn("Failed to delete project from Nginx proxy", "subdomain", project.Subdomain, "error", err)
+	}
+
+	// Clean up Traefik dynamic routing file
+	if err := traefik.DeleteProjectDynamicFile(s.cfg, project.UserID, project.ID, project.Subdomain); err != nil {
+		slog.Warn("Failed to delete project Traefik config", "id", project.ID, "error", err)
 	}
 
 	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
