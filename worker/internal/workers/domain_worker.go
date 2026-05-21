@@ -135,7 +135,12 @@ func (w *DomainWorker) detectStalledReconciliation(ctx context.Context) {
 
 func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 	var domains []models.CustomDomain
-	err := w.db.Where("status = ?", string(models.DomainStatusActive)).Find(&domains).Error
+	// Fetch active domains, plus degraded domains that have already completed initial provisioning.
+	err := w.db.Where("status = ? OR (status = ? AND provisioning_checkpoint = ?)",
+		string(models.DomainStatusActive),
+		string(models.DomainStatusDegraded),
+		"completed",
+	).Find(&domains).Error
 	if err != nil || len(domains) == 0 {
 		return
 	}
@@ -153,40 +158,80 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 			continue
 		}
 
+		isLocalOrTest := w.domainService.IsLocalOrTestDomain(d.Domain)
+
 		// 1. Check DNS Drift
-		diag, err := w.domainService.GetDomainDiagnostic(d.Domain, project)
-		if err == nil && !diag.IsMatch {
-			metrics.GetCollector().IncrReconciliationDrift()
-			slog.Warn("Reconciliation drift detected: DNS resolution mismatch on active domain", "domain", d.Domain, "currentIPs", diag.CurrentIPs, "expectedValue", diag.ExpectedValue)
-			_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrDomainNotResolved, fmt.Sprintf("Drift detected: domain resolves to %v instead of %s", diag.CurrentIPs, diag.ExpectedValue))
-			continue
+		var dnsDrift bool
+		var diag *domain.DomainDiagnostic
+		if isLocalOrTest {
+			dnsDrift = false
+		} else {
+			var err error
+			diag, err = w.domainService.GetDomainDiagnostic(d.Domain, project)
+			dnsDrift = err != nil || !diag.IsMatch
 		}
 
 		// 2. Check SSL / Nginx Drift
-		sslStatus, err := w.projectService.GetSSLStatus(d.Domain)
-		if err != nil {
-			metrics.GetCollector().IncrReconciliationDrift()
-			slog.Warn("Reconciliation drift detected: Public routing Nginx webhook unreachable or SSL check failed", "domain", d.Domain, "error", err)
-			_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrPublicRouteUnreachable, fmt.Sprintf("Drift detected: public routing Nginx verification failed: %v", err))
-			continue
-		}
+		var sslDrift bool
+		var errCode models.DomainErrorCode = models.ErrNone
+		var sslErrStr string
 
-		if sslStatus.Status == "failed" || sslStatus.Status == "expired" {
-			metrics.GetCollector().IncrReconciliationDrift()
-			slog.Warn("Reconciliation drift detected: SSL status is failed or expired on active domain", "domain", d.Domain, "sslStatus", sslStatus.Status)
-			errCode := models.ErrSSLIssuanceFailed
-			if sslStatus.Status == "expired" {
-				errCode = models.ErrSSLExpired
+		if isLocalOrTest {
+			sslDrift = false
+		} else {
+			sslStatus, err := w.projectService.GetSSLStatus(d.Domain)
+			if err != nil {
+				sslDrift = true
+				errCode = models.ErrPublicRouteUnreachable
+				sslErrStr = fmt.Sprintf("public routing Nginx verification failed: %v", err)
+			} else if sslStatus.Status == "failed" || sslStatus.Status == "expired" {
+				sslDrift = true
+				errCode = models.ErrSSLIssuanceFailed
+				if sslStatus.Status == "expired" {
+					errCode = models.ErrSSLExpired
+				}
+				sslErrStr = fmt.Sprintf("SSL certificate is %s", sslStatus.Status)
 			}
-			_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, errCode, fmt.Sprintf("Drift detected: SSL certificate is %s", sslStatus.Status))
-			continue
 		}
 
-		if d.HealthStatus == models.DomainHealthUnhealthy || d.LastHealthcheckAt == nil || time.Since(*d.LastHealthcheckAt) > 5*time.Minute {
-			w.domainService.SafeGo(ctx, d.ID, d.ProjectID, "CheckAppHealth", func(ctx context.Context) error {
-				w.domainService.CheckAppHealth(ctx, d.ID, d.ProjectID)
-				return nil
-			})
+		if d.Status == models.DomainStatusActive {
+			if dnsDrift {
+				metrics.GetCollector().IncrReconciliationDrift()
+				var msg string
+				if diag != nil {
+					msg = fmt.Sprintf("Drift detected: domain resolves to %v instead of %s", diag.CurrentIPs, diag.ExpectedValue)
+				} else {
+					msg = "Drift detected: DNS lookup failed"
+				}
+				slog.Warn("Reconciliation drift detected: DNS resolution mismatch on active domain", "domain", d.Domain)
+				_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrDomainNotResolved, msg)
+				continue
+			}
+
+			if sslDrift {
+				metrics.GetCollector().IncrReconciliationDrift()
+				slog.Warn("Reconciliation drift detected on active domain", "domain", d.Domain, "error", sslErrStr)
+				_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, errCode, fmt.Sprintf("Drift detected: %s", sslErrStr))
+				continue
+			}
+
+			// Active and healthy: perform health check if needed
+			if d.HealthStatus == models.DomainHealthUnhealthy || d.LastHealthcheckAt == nil || time.Since(*d.LastHealthcheckAt) > 5*time.Minute {
+				w.domainService.SafeGo(ctx, d.ID, d.ProjectID, "CheckAppHealth", func(ctx context.Context) error {
+					w.domainService.CheckAppHealth(ctx, d.ID, d.ProjectID)
+					return nil
+				})
+			}
+		} else if d.Status == models.DomainStatusDegraded {
+			// If both DNS and SSL are now healthy, recover to active status!
+			if !dnsDrift && !sslDrift {
+				slog.Info("Operational integrity recovered for degraded domain", "domain", d.Domain)
+				_ = w.domainService.TransitionState(d, models.DomainStatusActive, models.ErrNone, "Operational integrity recovered: DNS and SSL/routing successfully re-verified")
+				w.domainService.SafeGo(ctx, d.ID, d.ProjectID, "CheckAppHealth", func(ctx context.Context) error {
+					w.domainService.CheckAppHealth(ctx, d.ID, d.ProjectID)
+					return nil
+				})
+			}
 		}
 	}
 }
@@ -270,6 +315,9 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 						_ = w.domainService.TransitionState(d, models.DomainStatusSSLFailed, models.ErrSSLIssuanceFailed, fmt.Sprintf("SSL issuance failed after %d retries: %s", d.VerificationRetryCount, sslStatus.Error))
 					} else {
 						slog.Warn("Recovery trace: SSL provisioning retry in progress", "domain", d.Domain, "attempt", d.VerificationRetryCount, "error", sslStatus.Error)
+						if proj, err := w.projectService.GetProjectByID(d.ProjectID); err == nil {
+							_, _ = w.projectService.SyncProjectNginxFrom(proj, "ssl_retry")
+						}
 					}
 				case "ssl_provisioning":
 					if d.Status != models.DomainStatusSSLProvisioning {
@@ -364,6 +412,9 @@ func (w *DomainWorker) reconcileSSLRenewals(ctx context.Context) {
 			}
 
 			d := &domains[i]
+			if w.domainService.IsLocalOrTestDomain(d.Domain) {
+				continue
+			}
 			if d.SSLExpiresAt == nil {
 				continue
 			}

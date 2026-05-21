@@ -57,6 +57,12 @@ func (s *DomainService) GetDomainDiagnostic(domainName string, project *models.P
 		ExpectedValue: expectedValue,
 	}
 
+	if s.IsLocalOrTestDomain(domainName) {
+		diagnostic.IsMatch = true
+		diagnostic.Message = "Local environment DNS bypass."
+		return diagnostic, nil
+	}
+
 	resolver := getRealtimeResolver()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

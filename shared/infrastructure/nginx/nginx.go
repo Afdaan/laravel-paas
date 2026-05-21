@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,7 +145,7 @@ type SSLStatusResponse struct {
 // GetSSLStatus queries the remote Nginx VM for Let's Encrypt certificate issuance status and valid dates.
 func (s *NginxWebhookService) GetSSLStatus(domain string) (*SSLStatusResponse, error) {
 	if !s.cfg.NginxWebhookEnabled || s.cfg.NginxWebhookURL == "" {
-		return nil, fmt.Errorf("nginx webhook not configured")
+		return s.GetSSLStatusFromTLS(domain)
 	}
 
 	baseURL := strings.TrimSuffix(s.cfg.NginxWebhookURL, "/webhook")
@@ -172,6 +174,47 @@ func (s *NginxWebhookService) GetSSLStatus(domain string) (*SSLStatusResponse, e
 	}
 
 	return &sslResp, nil
+}
+
+// GetSSLStatusFromTLS attempts to establish a real TLS connection to the domain and parse its certificate dates.
+func (s *NginxWebhookService) GetSSLStatusFromTLS(domain string) (*SSLStatusResponse, error) {
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", domain+":443", &tls.Config{
+		ServerName: domain,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial tls: %w", err)
+	}
+	defer conn.Close()
+
+	certs := conn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificates found")
+	}
+
+	leaf := certs[0]
+	now := time.Now()
+	if now.Before(leaf.NotBefore) {
+		return &SSLStatusResponse{
+			Domain: domain,
+			Status: "failed",
+			Error:  "certificate is not valid yet",
+		}, nil
+	}
+	if now.After(leaf.NotAfter) {
+		return &SSLStatusResponse{
+			Domain: domain,
+			Status: "expired",
+			Error:  "certificate has expired",
+		}, nil
+	}
+
+	const timeLayout = "Jan 2 15:04:05 2006 MST"
+	return &SSLStatusResponse{
+		Domain:    domain,
+		Status:    "ssl_active",
+		IssuedAt:  leaf.NotBefore.Format(timeLayout),
+		ExpiresAt: leaf.NotAfter.Format(timeLayout),
+	}, nil
 }
 
 func (s *NginxWebhookService) sendRequest(payload WebhookPayload) (string, error) {

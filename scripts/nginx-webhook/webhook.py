@@ -336,12 +336,19 @@ def cert_covers_all(cert_name, domains):
         logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
         return False
 
+INSPECT_CACHE = {}
+
 def inspect_certificate(cert_name):
-    """Returns certificate text and validity dates for a Let's Encrypt cert name."""
+    """Returns certificate text and validity dates for a Let's Encrypt cert name with caching."""
     cert_file = f"/etc/letsencrypt/live/{cert_name}/fullchain.pem"
     if not os.path.exists(cert_file):
         return None
     try:
+        stat = os.stat(cert_file)
+        cached = INSPECT_CACHE.get(cert_name)
+        if cached and cached["mtime"] == stat.st_mtime and cached["size"] == stat.st_size:
+            return cached["data"]
+
         text_cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
         text_res = subprocess.run(text_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         if text_res.returncode != 0:
@@ -361,12 +368,18 @@ def inspect_certificate(cert_name):
                     raw_val = line.split("=", 1)[1]
                     issued_at = format_openssl_date(raw_val)
 
-        return {
+        data = {
             "cert_name": cert_name,
             "text": text_res.stdout.lower(),
             "issued_at": issued_at,
             "expires_at": expires_at,
         }
+        INSPECT_CACHE[cert_name] = {
+            "mtime": stat.st_mtime,
+            "size": stat.st_size,
+            "data": data
+        }
+        return data
     except Exception as e:
         logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
         return None

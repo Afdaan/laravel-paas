@@ -227,6 +227,24 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 		return
 	}
 
+	if s.IsLocalOrTestDomain(domain.Domain) {
+		updates["health_status"] = models.DomainHealthHealthy
+		updates["latency_ms"] = int64(0)
+		updates["layer1_dns_reachable"] = true
+		updates["layer2_public_access_reachable"] = true
+		updates["layer3_ssl_valid"] = true
+		updates["layer4_upstream_reachable"] = true
+		updates["layer5_response_integrity"] = true
+		updates["degraded_reason_code"] = models.ErrNone
+		updates["error_message"] = ""
+		_ = s.db.Model(&domain).Updates(updates)
+
+		if prevHealth != models.DomainHealthHealthy || prevErrCode != models.ErrNone || prevErrMsg != "" {
+			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_recovered", "Local environment bypass", "")
+		}
+		return
+	}
+
 	start := time.Now()
 	resolver := getRealtimeResolver()
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -546,4 +564,11 @@ func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint
 			timer.Reset(delay)
 		}
 	}
+}
+
+// IsLocalOrTestDomain returns true if the environment is configured as local or if the domain is a local test domain.
+func (s *DomainService) IsLocalOrTestDomain(domainName string) bool {
+	isLocalEnv := s.cfg.AppMode == "local"
+	isTestDomain := strings.HasSuffix(domainName, ".localhost") || strings.HasSuffix(domainName, ".local") || strings.HasSuffix(domainName, ".test")
+	return isLocalEnv || isTestDomain
 }
