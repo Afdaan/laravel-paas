@@ -23,6 +23,7 @@ interface CustomDomainManagerProps {
   projectId: number | string
   subdomain: string
   projectUrl?: string
+  onDomainsChanged?: () => void
 }
 
 // Helper to calculate DNS Host (Dynamic & Supports Multi-part TLDs)
@@ -100,7 +101,7 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
   )
 }
 
-export function CustomDomainManager({ projectId, subdomain, projectUrl }: CustomDomainManagerProps) {
+export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomainsChanged }: CustomDomainManagerProps) {
   const { t } = useTranslation()
   const [domains, setDomains] = useState<CustomDomain[]>([])
 
@@ -244,6 +245,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                 return d;
               });
             });
+            onDomainsChanged?.();
 
             if (eventData.state_to === 'active' || eventData.state_to === 'ssl_active' || String(eventData.event_type || '').startsWith('healthcheck_')) {
               projectsAPI.listDomains(projectId).then((res) => {
@@ -257,6 +259,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
                     return newD
                   })
                 })
+                onDomainsChanged?.()
               }).catch(() => {})
             }
 
@@ -314,6 +317,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
       const res = await projectsAPI.addDomain(projectId, newDomain.trim())
       setNewDomain('')
       fetchDomains()
+      onDomainsChanged?.()
       if (res.data?.data?.id) {
         setSelectedDomainId(res.data.data.id)
       }
@@ -343,6 +347,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
         try {
           await projectsAPI.removeDomain(projectId, domain.id)
           fetchDomains()
+          onDomainsChanged?.()
           if (selectedDomainId === domain.id) setSelectedDomainId(null)
           toast.success(t('common.success'))
         } catch (error) {
@@ -363,10 +368,12 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
         toast.success(t('common.success'))
       }
       fetchDomains()
+      onDomainsChanged?.()
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: { message: string } }>
       toast.error(axiosError.response?.data?.error?.message || t('common.error'))
       fetchDomains()
+      onDomainsChanged?.()
     } finally {
       setVerifyingId(null)
     }
