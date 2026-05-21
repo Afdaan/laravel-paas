@@ -151,6 +151,9 @@ type Project struct {
 	// Config Hashing
 	ConfigHash string `gorm:"size:64" json:"config_hash,omitempty"`
 
+	// Health Check Configuration
+	HealthCheckPath string `gorm:"size:255" json:"health_check_path"` // Custom health check path (default: "/" for most, "/health" for Laravel)
+
 	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
 }
 
@@ -163,6 +166,17 @@ func (p *Project) GetInternalPort() string {
 		return "80"
 	}
 	return "8080"
+}
+
+// GetHealthCheckPath returns the configured health check path, or "/" for most frameworks ("/health" for Laravel).
+func (p *Project) GetHealthCheckPath() string {
+	if p.HealthCheckPath != "" {
+		return p.HealthCheckPath
+	}
+	if p.Framework == "Laravel" {
+		return "/health"
+	}
+	return "/"
 }
 
 

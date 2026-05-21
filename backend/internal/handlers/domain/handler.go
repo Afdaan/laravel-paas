@@ -607,16 +607,26 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 
 	// 4. Build Traefik routing configuration response
 	type TraefikRouter struct {
-		Rule    string `json:"rule"`
-		Service string `json:"service"`
+		Rule        string   `json:"rule"`
+		Service     string   `json:"service"`
+		EntryPoints []string `json:"entryPoints"`
+		Priority    int      `json:"priority"`
+		Middlewares []string `json:"middlewares,omitempty"`
 	}
 
 	type TraefikServer struct {
 		URL string `json:"url"`
 	}
 
+	type TraefikHealthCheck struct {
+		Path     string `json:"path"`
+		Interval string `json:"interval"`
+		Timeout  string `json:"timeout"`
+	}
+
 	type TraefikLoadBalancer struct {
-		Servers []TraefikServer `json:"servers"`
+		Servers     []TraefikServer     `json:"servers"`
+		HealthCheck *TraefikHealthCheck `json:"healthCheck,omitempty"`
 	}
 
 	type TraefikService struct {
@@ -639,6 +649,15 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		},
 	}
 
+	// Sanitize domain to prevent Traefik rule injection via backticks/pipes.
+	sanitizeDomain := func(domain string) string {
+		cleaned := strings.ReplaceAll(domain, "`", "")
+		cleaned = strings.ReplaceAll(cleaned, "|", "")
+		cleaned = strings.ReplaceAll(cleaned, "(", "")
+		cleaned = strings.ReplaceAll(cleaned, ")", "")
+		return strings.TrimSpace(cleaned)
+	}
+
 	for _, cds := range projectDomains {
 		if len(cds) == 0 {
 			continue
@@ -648,7 +667,14 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		// Generate rules for all custom domains mapped to this project
 		var rules []string
 		for _, cd := range cds {
-			rules = append(rules, fmt.Sprintf("Host(`%s`)", cd.Domain))
+			safeDomain := sanitizeDomain(cd.Domain)
+			if safeDomain == "" {
+				continue
+			}
+			rules = append(rules, fmt.Sprintf("Host(`%s`)", safeDomain))
+		}
+		if len(rules) == 0 {
+			continue
 		}
 		ruleStr := strings.Join(rules, " || ")
 
@@ -657,9 +683,13 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		routerName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
 		serviceName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
 
+		// Priority 300 > student-projects wildcard (200) to match custom domains first.
 		resp.HTTP.Routers[routerName] = TraefikRouter{
-			Rule:    ruleStr,
-			Service: serviceName,
+			Rule:        ruleStr,
+			Service:     serviceName,
+			EntryPoints: []string{"web"},
+			Priority:    300,
+			Middlewares: []string{"security-headers@file"},
 		}
 
 		resp.HTTP.Services[serviceName] = TraefikService{
@@ -668,6 +698,11 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 					{
 						URL: fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort),
 					},
+				},
+				HealthCheck: &TraefikHealthCheck{
+					Path:     proj.GetHealthCheckPath(),
+					Interval: "10s",
+					Timeout:  "3s",
 				},
 			},
 		}

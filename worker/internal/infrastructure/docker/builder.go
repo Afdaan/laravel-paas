@@ -102,6 +102,13 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		finalMemory = memoryLimit
 	}
 
+	// Web-facing = has an exposed port (auto-detected or user-set) or is Laravel.
+	// Non-web projects (bots, workers) skip Traefik routing entirely.
+	isWebFacing := project.Port != nil || project.Framework == "Laravel"
+	if !isWebFacing {
+		slog.Info("Project classified as non-web", "subdomain", project.Subdomain, "framework", project.Framework)
+	}
+
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
@@ -114,16 +121,26 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
 		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+	}
 
-		"--label", "traefik.enable=true",
-		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
-			routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
-		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
+	if isWebFacing {
+		runArgs = append(runArgs,
+			"--label", "traefik.enable=true",
+			"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
+				routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
+			"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
+			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
+			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=%s", serviceName, project.GetHealthCheckPath()),
+			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=10s", serviceName),
+		)
+	} else {
+		runArgs = append(runArgs,
+			"--label", "traefik.enable=false",
+		)
+	}
 
-		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
+	runArgs = append(runArgs,
+		// PaaS metadata labels
 		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
@@ -135,7 +152,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
 
 		imageName,
-	}
+	)
 
 	// 4.5. Append custom start command if provided
 	if project.StartCommand != "" {
