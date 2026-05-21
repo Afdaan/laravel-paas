@@ -34,6 +34,7 @@ interface PlatformSettings {
   memory_limit_mb?: number;
   admin_idle_timeout?: number;
   max_concurrent_builds?: number;
+  max_domains_per_project?: number;
 }
 
 const AdminSettings = () => {
@@ -173,7 +174,7 @@ const AdminSettings = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Layout size={14} className="text-emerald-500 shrink-0 mt-0.5" />
@@ -232,6 +233,22 @@ const AdminSettings = () => {
                     value={settings.max_concurrent_builds || 3}
                     onChange={(val) => handleChange('max_concurrent_builds', val)}
                     unit={t('admin.settings.workers')}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <Globe size={14} className="text-teal-500 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.domainLimit')}</span>
+                </Label>
+                <div className="mt-4">
+                  <NumberStepper
+                    min={1}
+                    max={20}
+                    value={settings.max_domains_per_project || 3}
+                    onChange={(val) => handleChange('max_domains_per_project', val)}
+                    unit={t('common.domains')}
                   />
                 </div>
               </div>

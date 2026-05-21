@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,22 @@ func (s *DomainService) AddDomain(projectID uint, domainName string) (*models.Cu
 	domainName = strings.ToLower(strings.TrimSpace(domainName))
 	if domainName == "" || strings.Contains(domainName, "/") || strings.Contains(domainName, " ") {
 		return nil, apperr.New(400, "INVALID_DOMAIN", "Invalid domain format")
+	}
+
+	// Enforce custom domains limit per project
+	var currentDomainsCount int64
+	s.db.Model(&models.CustomDomain{}).Where("project_id = ? AND status NOT IN (?)", projectID, []string{string(models.DomainStatusPendingCleanup), string(models.DomainStatusDisabled)}).Count(&currentDomainsCount)
+
+	maxDomains := 3
+	var setting models.Setting
+	if err := s.db.Where("setting_key = ?", models.SettingMaxDomainsPerProject).First(&setting).Error; err == nil {
+		if val, err := strconv.Atoi(setting.Value); err == nil {
+			maxDomains = val
+		}
+	}
+
+	if currentDomainsCount >= int64(maxDomains) {
+		return nil, apperr.New(400, "DOMAIN_LIMIT_REACHED", fmt.Sprintf("You have reached the maximum limit of %d domains for this project", maxDomains))
 	}
 
 	var count int64

@@ -89,6 +89,7 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 		{Key: models.SettingAdminIdleTimeout, Value: models.DefaultAdminIdleTimeout, Description: "Admin inactivity logout timeout (minutes)", Type: "int"},
 		{Key: models.SettingMaxConcurrent, Value: models.DefaultMaxConcurrent, Description: "Maximum simultaneous builds", Type: "int"},
 		{Key: models.SettingBuildTimeout, Value: models.DefaultBuildTimeout, Description: "Build timeout (seconds)", Type: "int"},
+		{Key: models.SettingMaxDomainsPerProject, Value: models.DefaultMaxDomainsPerProject, Description: "Maximum custom domains per project", Type: "int"},
 	}
 
 	for _, setting := range defaultSettings {

@@ -12,6 +12,7 @@ const (
 	SettingAdminIdleTimeout = "admin_idle_timeout"
 	SettingMaxConcurrent    = "max_concurrent_builds"
 	SettingBuildTimeout     = "build_timeout_seconds"
+	SettingMaxDomainsPerProject = "max_domains_per_project"
 )
 
 // Default Settings Values
@@ -24,4 +25,5 @@ const (
 	DefaultAdminIdleTimeout = "30"
 	DefaultMaxConcurrent    = "3"
 	DefaultBuildTimeout     = "1800"
+	DefaultMaxDomainsPerProject = "3"
 )
