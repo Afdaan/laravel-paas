@@ -308,8 +308,15 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl }: Custom
       }
       toast.success(t('common.success'))
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<{ message: string }>
-      toast.error(axiosError.response?.data?.message || t('common.error'))
+      const axiosError = error as AxiosError<{ error: string; code: string }>
+      const errCode = axiosError.response?.data?.code
+      let errorMsg = t('common.error')
+      if (errCode && t(`domains.errors.${errCode}`) !== `domains.errors.${errCode}`) {
+        errorMsg = t(`domains.errors.${errCode}`)
+      } else if (axiosError.response?.data?.error) {
+        errorMsg = axiosError.response.data.error
+      }
+      toast.error(errorMsg)
     } finally {
       setIsAdding(false)
     }

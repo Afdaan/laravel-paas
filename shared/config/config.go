@@ -69,6 +69,7 @@ type Config struct {
 	NginxWebhookKey           string
 	InternalIP                string
 	IntegrityValidationMarker string
+	TraefikHTTPPort           int
 }
 
 // Load reads configuration from environment variables
@@ -150,6 +151,7 @@ func Load() *Config {
 		NginxWebhookKey:           getEnv("NGINX_WEBHOOK_KEY", ""),
 		InternalIP:                getEnv("INTERNAL_IP", "127.0.0.1"),
 		IntegrityValidationMarker: getEnv("INTEGRITY_VALIDATION_MARKER", ""),
+		TraefikHTTPPort:           getEnvInt("HTTP_PORT", 80),
 	}
 
 	// Ensure host paths are absolute to prevent Docker volume naming errors

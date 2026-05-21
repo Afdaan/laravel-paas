@@ -55,6 +55,7 @@ func Setup(
 			// Skip logging for high-frequency polling endpoints to keep console clean
 			path := c.Path()
 			return path == "/health" ||
+				path == "/api/internal/traefik/config" ||
 				(c.Method() == "GET" && (path == "/api/projects/stats" ||
 					path == "/api/admin/stats" ||
 					path == "/api/queue/stats" ||
@@ -128,6 +129,12 @@ func Setup(
 	systemInit := api.Group("/system", middleware.RateLimitLogin())
 	systemInit.Get("/init-status", systemHandler.GetInitStatus)
 	systemInit.Post("/initialize", systemHandler.InitializeSystem)
+
+	// -----------------------------
+	// Internal System Routes (Publicly accessible but meant for internal mesh network)
+	// -----------------------------
+	internal := api.Group("/internal")
+	internal.Get("/traefik/config", domainHandler.GetTraefikConfig)
 
 	// -----------------------------
 	// Protected Routes

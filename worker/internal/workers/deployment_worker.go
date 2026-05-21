@@ -643,6 +643,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	project.RolloutContainerID = &newContainerID
 	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"rollout_container_id": newContainerID,
+		"port":                 project.Port,
 	})
 
 	appendLog(">> Running health checks...")

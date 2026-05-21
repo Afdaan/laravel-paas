@@ -6,27 +6,34 @@ import (
 	"fmt"
 	mathrand "math/rand/v2"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/services/domain"
 	"github.com/laravel-paas/shared/pkg/traefik"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"gorm.io/gorm"
 )
 
 type DomainHandler struct {
 	cfg            *config.Config
+	db             *gorm.DB
+	redisService   *infrastructure.RedisService
 	domainService  *domain.DomainService
 	projectService *projectServicePkg.ProjectService
 }
 
-func NewDomainHandler(cfg *config.Config, domainService *domain.DomainService, projectService *projectServicePkg.ProjectService) *DomainHandler {
+func NewDomainHandler(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, domainService *domain.DomainService, projectService *projectServicePkg.ProjectService) *DomainHandler {
 	return &DomainHandler{
 		cfg:            cfg,
+		db:             db,
+		redisService:   redisService,
 		domainService:  domainService,
 		projectService: projectService,
 	}
@@ -557,4 +564,125 @@ func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
 	})
 
 	return nil
+}
+
+func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
+	// 1. Try to get cached config from Redis
+	var cachedJSON string
+	cacheKey := "traefik:dynamic_config"
+	err := h.redisService.GetCache(cacheKey, &cachedJSON)
+	if err == nil && cachedJSON != "" {
+		c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+		return c.SendString(cachedJSON)
+	}
+
+	// 2. Cache miss: Query verified/routable custom domains from Postgres
+	var domains []models.CustomDomain
+	err = h.db.
+		Preload("Project").
+		Where("status IN (?)", []string{
+			string(models.DomainStatusDNSVerified),
+			string(models.DomainStatusSSLQueued),
+			string(models.DomainStatusSSLProvisioning),
+			string(models.DomainStatusSSLActive),
+			string(models.DomainStatusActive),
+			string(models.DomainStatusPropagationPending),
+			string(models.DomainStatusDegraded),
+			string(models.DomainStatusRenewalPending),
+			string(models.DomainStatusRenewalFailed),
+		}).
+		Find(&domains).Error
+
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "database_error", "details": err.Error()})
+	}
+
+	// 3. Group domains by ProjectID
+	projectDomains := make(map[uint][]models.CustomDomain)
+	for _, d := range domains {
+		if d.Project.ID != 0 {
+			projectDomains[d.ProjectID] = append(projectDomains[d.ProjectID], d)
+		}
+	}
+
+	// 4. Build Traefik routing configuration response
+	type TraefikRouter struct {
+		Rule    string `json:"rule"`
+		Service string `json:"service"`
+	}
+
+	type TraefikServer struct {
+		URL string `json:"url"`
+	}
+
+	type TraefikLoadBalancer struct {
+		Servers []TraefikServer `json:"servers"`
+	}
+
+	type TraefikService struct {
+		LoadBalancer TraefikLoadBalancer `json:"loadBalancer"`
+	}
+
+	type TraefikHTTP struct {
+		Routers  map[string]TraefikRouter  `json:"routers"`
+		Services map[string]TraefikService `json:"services"`
+	}
+
+	type TraefikConfigResponse struct {
+		HTTP TraefikHTTP `json:"http"`
+	}
+
+	resp := TraefikConfigResponse{
+		HTTP: TraefikHTTP{
+			Routers:  make(map[string]TraefikRouter),
+			Services: make(map[string]TraefikService),
+		},
+	}
+
+	for _, cds := range projectDomains {
+		if len(cds) == 0 {
+			continue
+		}
+		proj := cds[0].Project
+
+		// Generate rules for all custom domains mapped to this project
+		var rules []string
+		for _, cd := range cds {
+			rules = append(rules, fmt.Sprintf("Host(`%s`)", cd.Domain))
+		}
+		ruleStr := strings.Join(rules, " || ")
+
+		internalPort := proj.GetInternalPort()
+
+		routerName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
+		serviceName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
+
+		resp.HTTP.Routers[routerName] = TraefikRouter{
+			Rule:    ruleStr,
+			Service: serviceName,
+		}
+
+		resp.HTTP.Services[serviceName] = TraefikService{
+			LoadBalancer: TraefikLoadBalancer{
+				Servers: []TraefikServer{
+					{
+						URL: fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort),
+					},
+				},
+			},
+		}
+	}
+
+	// 5. Serialize to JSON, cache in Redis, and return response
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "serialization_error", "details": err.Error()})
+	}
+
+	cachedJSON = string(respBytes)
+	// Cache it for 24 hours, but we will explicitly invalidate it upon domain updates
+	_ = h.redisService.SetCache(cacheKey, cachedJSON, 24*time.Hour)
+
+	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	return c.SendString(cachedJSON)
 }

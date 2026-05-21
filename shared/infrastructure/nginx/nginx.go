@@ -75,12 +75,9 @@ func (s *NginxWebhookService) SyncProject(project *models.Project, domain string
 		return "", nil
 	}
 
-	port := 80
-	if project.Port != nil {
-		port = *project.Port
-	} else {
-		slog.Warn("Project has no port assigned, defaulting to 80 for Nginx sync", "subdomain", project.Subdomain)
-	}
+	// Since project containers are on a private Docker network and not exposed directly,
+	// Nginx must always proxy incoming requests to the Traefik reverse proxy running on the host.
+	port := s.cfg.TraefikHTTPPort
 
 	// Determine target configuration directory using a sanitized, traceable identifier.
 	userFolder := s.getUserFolderName(project)

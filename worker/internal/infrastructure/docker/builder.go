@@ -60,10 +60,6 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	// 3. Branching Build Strategy
 	if project.Framework == "Laravel" {
 		slog.Info("Using legacy Laravel build strategy", "subdomain", project.Subdomain)
-		// Default Laravel port is 80 (nginx)
-		if internalPort == "" {
-			internalPort = "80"
-		}
 		err = s.legacyLaravelBuild(ctx, project, buildPath, imageName, phpVersion, logFilePath, noCache, logCallback)
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
@@ -85,16 +81,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	}
 
 	// 4. Determine Final Internal Port for Traefik
-	if project.Port != nil {
-		internalPort = fmt.Sprintf("%d", *project.Port)
-	} else if internalPort == "" {
-		// Fallback defaults if everything else fails
-		if project.Framework == "Laravel" {
-			internalPort = "80"
-		} else {
-			internalPort = "8080" // Safety default
-		}
-	}
+	internalPort = project.GetInternalPort()
 
 	// 5. Start Web Container
 	s.storage.EnsurePersistentPath(project)

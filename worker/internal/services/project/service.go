@@ -62,7 +62,7 @@ func (s *ProjectService) GetConfig() *config.Config {
 }
 
 func (s *ProjectService) CacheSubdomainMapping(project *models.Project) error {
-	if project.Port == nil {
+	if project.Subdomain == "" || project.ContainerID == nil {
 		return nil
 	}
 	key := fmt.Sprintf("proxy:subdomain:%s", project.Subdomain)

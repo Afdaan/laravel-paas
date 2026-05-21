@@ -87,7 +87,7 @@ func main() {
 	authService := services.NewAuthService(userRepo, cfg, redisService)
 	databaseService := services.NewDatabaseService(db, cfg)
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
-	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, domainService, projectService)
+	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, db, redisService, domainService, projectService)
 
 	// Initialize server
 	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)

@@ -111,12 +111,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
 	serviceName := project.Subdomain
 
-	internalPort := "8080"
-	if project.Port != nil {
-		internalPort = fmt.Sprintf("%d", *project.Port)
-	} else if project.Framework == "Laravel" {
-		internalPort = "80"
-	}
+	internalPort := project.GetInternalPort()
 
 	finalCPUs := models.DefaultDockerCPULimit
 	if project.CPULimit != nil {

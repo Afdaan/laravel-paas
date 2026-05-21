@@ -474,6 +474,8 @@ export const translations = {
         NGINX_VALIDATION_FAILED: "Nginx routing syntax validation failed during reload.",
         ROUTING_HEALTH_FAILED: "Upstream container healthcheck probe failed HTTP verification.",
         LOCKED: "Domain is currently locked by an ongoing reconciliation cycle.",
+        DOMAIN_LIMIT_REACHED: "You have reached the maximum domain limit for this project.",
+        SAME_PROJECT: "Domain is already assigned to this project.",
       },
       events: {
         title: "Reconciliation Audit Log",
@@ -1247,6 +1249,8 @@ export const translations = {
         NGINX_VALIDATION_FAILED: "Nginx Validation Failed: Validasi sintaks routing Nginx gagal saat proses reload.",
         ROUTING_HEALTH_FAILED: "Routing Healthcheck Failed: Probe healthcheck HTTP ke upstream container backend gagal.",
         LOCKED: "Domain Locked: Operasi domain terkunci sementara karena siklus rekonsiliasi background sedang berjalan.",
+        DOMAIN_LIMIT_REACHED: "Limit Domain: Batas maksimum domain untuk project ini telah tercapai.",
+        SAME_PROJECT: "Domain Duplikat: Domain ini sudah terhubung ke project ini.",
       },
       events: {
         title: "Reconciliation Audit Log",

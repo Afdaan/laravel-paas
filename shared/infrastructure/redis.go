@@ -204,6 +204,16 @@ else
 end
 `)
 
+	releasePlainLockScript = redis.NewScript(`
+local val = redis.call("get", KEYS[1])
+if not val then return 0 end
+if val == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+`)
+
 	renewLockScript = redis.NewScript(`
 local val = redis.call("get", KEYS[1])
 if not val then return 0 end
@@ -857,12 +867,36 @@ func (r *RedisService) AcquireDomainLock(domainID uint, ttl time.Duration) (stri
 	return token, nil
 }
 
-// ReleaseDomainLock securely releases a domain lock verifying the unique fencing token.
+// ReleaseDomainLock securely releases the domain lock verifying the unique fencing token.
 func (r *RedisService) ReleaseDomainLock(domainID uint, token string) error {
 	lockKey := fmt.Sprintf("%s:%d", domainLockKeyPrefix, domainID)
 	_, err := releaseLockScript.Run(r.ctx, r.client, []string{lockKey}, token).Result()
 	if err != nil {
 		return fmt.Errorf("failed to release domain lock: %w", err)
+	}
+	return nil
+}
+
+// AcquireProjectDomainLock tries to acquire a distributed lock for project domain registration, returning a unique token.
+func (r *RedisService) AcquireProjectDomainLock(projectID uint, ttl time.Duration) (string, error) {
+	lockKey := fmt.Sprintf("project:%d:domain_lock", projectID)
+	token := generateLockToken()
+	ok, err := r.client.SetNX(r.ctx, lockKey, token, ttl).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire project domain lock: %w", err)
+	}
+	if !ok {
+		return "", nil // Lock already held
+	}
+	return token, nil
+}
+
+// ReleaseProjectDomainLock securely releases the project domain lock verifying the unique token.
+func (r *RedisService) ReleaseProjectDomainLock(projectID uint, token string) error {
+	lockKey := fmt.Sprintf("project:%d:domain_lock", projectID)
+	_, err := releasePlainLockScript.Run(r.ctx, r.client, []string{lockKey}, token).Result()
+	if err != nil {
+		return fmt.Errorf("failed to release project domain lock: %w", err)
 	}
 	return nil
 }

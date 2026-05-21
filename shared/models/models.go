@@ -154,6 +154,18 @@ type Project struct {
 	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
 }
 
+// GetInternalPort returns the target port for Traefik routing
+func (p *Project) GetInternalPort() string {
+	if p.Port != nil {
+		return fmt.Sprintf("%d", *p.Port)
+	}
+	if p.Framework == "Laravel" {
+		return "80"
+	}
+	return "8080"
+}
+
+
 // ===========================================
 // Setting Model
 // ===========================================

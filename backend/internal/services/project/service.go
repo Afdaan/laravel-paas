@@ -116,7 +116,7 @@ func (s *ProjectService) PopulateURLs(projects []models.Project) {
 
 // CacheSubdomainMapping syncs project lookup data to Redis
 func (s *ProjectService) CacheSubdomainMapping(project *models.Project) error {
-	if project.Port == nil {
+	if project.Subdomain == "" || project.ContainerID == nil {
 		return nil
 	}
 	key := fmt.Sprintf("proxy:subdomain:%s", project.Subdomain)

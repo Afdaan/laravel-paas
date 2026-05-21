@@ -1,13 +1,14 @@
 package traefik
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"github.com/redis/go-redis/v9"
 )
 
 // GetProjectDynamicFilePath returns the path to the dynamic configuration file for a given project
@@ -15,80 +16,40 @@ func GetProjectDynamicFilePath(cfg *config.Config, userID uint, projectID uint, 
 	return filepath.Join(cfg.TraefikDynamicDir, fmt.Sprintf("user-%d-project-%d-%s.yml", userID, projectID, subdomain))
 }
 
-// WriteProjectDynamicFile writes an atomic YAML configuration file to Traefik's dynamic directory for a project
-func WriteProjectDynamicFile(cfg *config.Config, project *models.Project, domains []models.CustomDomain) error {
-	if cfg.TraefikDynamicDir == "" {
-		return fmt.Errorf("traefik dynamic directory config is empty")
-	}
+// InvalidateTraefikConfigCache deletes the cached Traefik config from Redis
+func InvalidateTraefikConfigCache(cfg *config.Config) error {
+	client := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       0,
+	})
+	defer client.Close()
 
-	filePath := GetProjectDynamicFilePath(cfg, project.UserID, project.ID, project.Subdomain)
-
-	// Filter active routable custom domains
-	var activeDomains []string
-	for _, d := range domains {
-		if models.IsNginxRoutableCustomDomainStatus(d.Status) {
-			activeDomains = append(activeDomains, d.Domain)
-		}
-	}
-
-	// If no active custom domains, clean up and remove the dynamic file
-	if len(activeDomains) == 0 {
-		return DeleteProjectDynamicFile(cfg, project.UserID, project.ID, project.Subdomain)
-	}
-
-	// Determine target backend URL port
-	internalPort := "8080"
-	if project.Port != nil {
-		internalPort = fmt.Sprintf("%d", *project.Port)
-	} else if project.Framework == "Laravel" {
-		internalPort = "80"
-	}
-
-	// Generate rule: Host(`domain1`) || Host(`domain2`)
-	var rules []string
-	for _, d := range activeDomains {
-		rules = append(rules, fmt.Sprintf("Host(`%s`)", d))
-	}
-	ruleStr := strings.Join(rules, " || ")
-
-	// Build dynamic routing config
-	yamlContent := fmt.Sprintf(`http:
-  routers:
-    project-%s-custom:
-      rule: "%s"
-      service: "project-%s-custom"
-  services:
-    project-%s-custom:
-      loadBalancer:
-        servers:
-          - url: "http://project-%s:%s"
-`, project.Subdomain, ruleStr, project.Subdomain, project.Subdomain, project.Subdomain, internalPort)
-
-	// Write atomically using a temporary file
-	tmpPath := filePath + ".tmp"
-	if err := os.MkdirAll(cfg.TraefikDynamicDir, 0777); err != nil {
-		return fmt.Errorf("failed to create traefik dynamic directory: %w", err)
-	}
-
-	if err := os.WriteFile(tmpPath, []byte(yamlContent), 0666); err != nil {
-		return fmt.Errorf("failed to write temporary dynamic routing file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		_ = os.Remove(tmpPath) // cleanup
-		return fmt.Errorf("failed to atomically apply dynamic routing config: %w", err)
-	}
-
-	return nil
+	ctx := context.Background()
+	cacheKey := "traefik:dynamic_config"
+	return client.Del(ctx, cacheKey).Err()
 }
 
-// DeleteProjectDynamicFile deletes the project's dynamic configuration file if it exists
-func DeleteProjectDynamicFile(cfg *config.Config, userID uint, projectID uint, subdomain string) error {
-	filePath := GetProjectDynamicFilePath(cfg, userID, projectID, subdomain)
-	if _, err := os.Stat(filePath); err == nil {
-		if err := os.Remove(filePath); err != nil {
-			return fmt.Errorf("failed to remove dynamic routing file: %w", err)
+// WriteProjectDynamicFile invalidates the Redis cache for Traefik config and removes legacy flat files if present
+func WriteProjectDynamicFile(cfg *config.Config, project *models.Project, domains []models.CustomDomain) error {
+	if cfg.TraefikDynamicDir != "" {
+		filePath := GetProjectDynamicFilePath(cfg, project.UserID, project.ID, project.Subdomain)
+		if _, err := os.Stat(filePath); err == nil {
+			_ = os.Remove(filePath)
 		}
 	}
-	return nil
+
+	return InvalidateTraefikConfigCache(cfg)
+}
+
+// DeleteProjectDynamicFile invalidates the Redis cache for Traefik config and removes legacy flat files if present
+func DeleteProjectDynamicFile(cfg *config.Config, userID uint, projectID uint, subdomain string) error {
+	if cfg.TraefikDynamicDir != "" {
+		filePath := GetProjectDynamicFilePath(cfg, userID, projectID, subdomain)
+		if _, err := os.Stat(filePath); err == nil {
+			_ = os.Remove(filePath)
+		}
+	}
+
+	return InvalidateTraefikConfigCache(cfg)
 }
