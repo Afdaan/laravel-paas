@@ -186,13 +186,15 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool) (*models.Project, error) {
-	// Enforce per-user project limit
-	maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
-	count, _ := s.projectRepo.CountByUserID(userID)
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool) (*models.Project, error) {
+	// Enforce per-user project limit (bypass for admins and superadmins)
+	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
+		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
+		count, _ := s.projectRepo.CountByUserID(userID)
 
-	if int(count) >= maxProjects {
-		return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
+		if int(count) >= maxProjects {
+			return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
+		}
 	}
 
 	if err := validateBaseDirectory(baseDirectory); err != nil {
