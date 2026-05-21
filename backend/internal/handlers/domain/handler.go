@@ -14,6 +14,7 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/services/domain"
+	"github.com/laravel-paas/shared/pkg/traefik"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 )
 
@@ -180,10 +181,10 @@ func (h *DomainHandler) Remove(c *fiber.Ctx) error {
 	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
 	if err == nil {
 		_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_remove_handler")
-		_ = h.projectService.RestartProject(updatedProject)
+		_ = traefik.WriteProjectDynamicFile(h.cfg, updatedProject, updatedProject.CustomDomains)
 	} else if project != nil {
 		_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_remove_handler_fallback")
-		_ = h.projectService.RestartProject(project)
+		_ = traefik.WriteProjectDynamicFile(h.cfg, project, project.CustomDomains)
 	}
 
 	return c.JSON(fiber.Map{"message": "Domain removed successfully"})
@@ -223,10 +224,10 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 		updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
 		if err == nil {
 			_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_verify_handler")
-			_ = h.projectService.RestartProject(updatedProject)
+			_ = traefik.WriteProjectDynamicFile(h.cfg, updatedProject, updatedProject.CustomDomains)
 		} else {
 			_, _ = h.projectService.SyncProjectNginxFrom(project, "domain_verify_handler_fallback")
-			_ = h.projectService.RestartProject(project)
+			_ = traefik.WriteProjectDynamicFile(h.cfg, project, project.CustomDomains)
 		}
 	}
 

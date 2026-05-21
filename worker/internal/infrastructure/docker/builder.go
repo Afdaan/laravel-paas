@@ -119,6 +119,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"run", "-d",
 		"--name", containerName,
 		"--network", models.NetworkName,
+		"--network-alias", "project-" + project.Subdomain,
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
@@ -129,7 +130,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
-			routerName, project.GetTraefikHostRule(projectDomain)),
+			routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
 		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),

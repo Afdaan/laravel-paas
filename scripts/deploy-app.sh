@@ -52,11 +52,12 @@ HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
 # Path initialization for host-side volume mounting
 PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
 DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
+TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
 
 # Ensure directories exist and have correct permissions
-mkdir -p "$PROJECTS_PATH" "$DATA_PATH"
+mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 sudo mkdir -p /nix /var/cache/nixpacks
-chmod 777 "$DATA_PATH"
+chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 sudo chmod 777 /nix /var/cache/nixpacks
 
 # Helper to get next numeric tag for a service
@@ -190,6 +191,8 @@ deploy_backend() {
         -v "$PROJECTS_PATH:/app/storage/projects" \
         -v "$DATA_PATH:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+        -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
+        -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE="$APP_MODE" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
@@ -245,6 +248,8 @@ deploy_worker() {
         -v "${DATA_PATH}:/app/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
+        -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
+        -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE=docker \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \

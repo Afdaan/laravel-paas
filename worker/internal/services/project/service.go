@@ -56,6 +56,10 @@ func (s *ProjectService) GetSetting(key, defaultValue string) string {
 	return s.settingService.Get(key, defaultValue)
 }
 
+func (s *ProjectService) GetConfig() *config.Config {
+	return s.cfg
+}
+
 func (s *ProjectService) CacheSubdomainMapping(project *models.Project) error {
 	if project.Port == nil {
 		return nil

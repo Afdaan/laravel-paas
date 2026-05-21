@@ -61,6 +61,7 @@ type Config struct {
 	HostTemplatesPath string
 	TemplatesPath     string
 	DockerNetwork     string
+	TraefikDynamicDir string
 
 	// Nginx Remote Webhook
 	NginxWebhookEnabled       bool
@@ -79,15 +80,17 @@ func Load() *Config {
 	}
 
 	// Determine internal paths based on mode
-	var projectsPath, dataPath, templatesPath string
+	var projectsPath, dataPath, templatesPath, traefikDynamicDir string
 	if appMode == "docker" {
 		projectsPath = getEnv("PROJECTS_PATH", "/app/storage/projects")
 		dataPath = getEnv("DATA_PATH", "/app/storage/data")
 		templatesPath = getEnv("TEMPLATES_PATH", "/app/docker/templates")
+		traefikDynamicDir = getEnv("TRAEFIK_DYNAMIC_DIR", "/etc/traefik/dynamic")
 	} else {
 		projectsPath = getEnv("PROJECTS_PATH", "./storage/projects")
 		dataPath = getEnv("DATA_PATH", "./storage/data")
 		templatesPath = getEnv("TEMPLATES_PATH", "./docker/templates")
+		traefikDynamicDir = getEnv("TRAEFIK_DYNAMIC_DIR", "./docker/traefik/dynamic")
 	}
 
 	cfg := &Config{
@@ -139,6 +142,7 @@ func Load() *Config {
 		HostTemplatesPath: getEnv("HOST_TEMPLATES_PATH", filepath.Join(hostRoot, "docker/templates")),
 		TemplatesPath:     templatesPath,
 		DockerNetwork:     getEnv("DOCKER_NETWORK", "paas-network"),
+		TraefikDynamicDir: traefikDynamicDir,
 
 		// Nginx Remote Webhook
 		NginxWebhookEnabled:       getEnvBool("NGINX_WEBHOOK_ENABLED", false),
@@ -157,6 +161,9 @@ func Load() *Config {
 	}
 	if abs, err := filepath.Abs(cfg.HostTemplatesPath); err == nil {
 		cfg.HostTemplatesPath = abs
+	}
+	if abs, err := filepath.Abs(cfg.TraefikDynamicDir); err == nil {
+		cfg.TraefikDynamicDir = abs
 	}
 
 	return cfg

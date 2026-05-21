@@ -14,6 +14,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure/nginx"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/traefik"
 	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/repository"
 	"gorm.io/gorm"
@@ -128,6 +129,11 @@ func (s *DomainService) TransitionState(domain *models.CustomDomain, nextState m
 	domain.Status = nextState
 	domain.ErrorCode = errCode
 	domain.ErrorMessage = errMsg
+
+	// Update dynamic Traefik routing configuration to reflect the state change
+	if project, err := s.projectRepo.GetByID(domain.ProjectID); err == nil {
+		_ = traefik.WriteProjectDynamicFile(s.cfg, project, project.CustomDomains)
+	}
 	return nil
 }
 

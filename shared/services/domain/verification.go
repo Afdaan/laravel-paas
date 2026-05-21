@@ -245,26 +245,39 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 		return
 	}
 
-	start := time.Now()
 	resolver := getRealtimeResolver()
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// LAYER 1: DNS Reachable
+	// LAYER 1: DNS Reachable (with up to 3 retries to handle transient UDP drop / network latency)
 	layer1DNS := false
-	cname, err := resolver.LookupCNAME(checkCtx, domain.Domain)
-	if err != nil {
-		cname, err = net.DefaultResolver.LookupCNAME(checkCtx, domain.Domain)
-	}
-	if err == nil && cname != "" {
-		layer1DNS = true
-	} else {
-		ips, err := resolver.LookupHost(checkCtx, domain.Domain)
+	var dnsErr error
+dnsLoop:
+	for attempt := 1; attempt <= 3; attempt++ {
+		cname, err := resolver.LookupCNAME(checkCtx, domain.Domain)
+		if err != nil {
+			cname, err = net.DefaultResolver.LookupCNAME(checkCtx, domain.Domain)
+		}
+		if err == nil && cname != "" {
+			layer1DNS = true
+			break dnsLoop
+		}
+
+		var ips []string
+		ips, err = resolver.LookupHost(checkCtx, domain.Domain)
 		if err != nil {
 			ips, err = net.DefaultResolver.LookupHost(checkCtx, domain.Domain)
 		}
 		if err == nil && len(ips) > 0 {
 			layer1DNS = true
+			break dnsLoop
+		}
+
+		dnsErr = err
+		select {
+		case <-checkCtx.Done():
+			break dnsLoop
+		case <-time.After(200 * time.Millisecond):
 		}
 	}
 	updates["layer1_dns_reachable"] = layer1DNS
@@ -278,16 +291,23 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 		domain.HealthStatus = models.DomainHealthUnhealthy
 		domain.DegradedReasonCode = models.ErrDomainNotResolved
 		domain.ErrorMessage = "Layer 1: DNS resolution failed"
-		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", "DNS lookup timed out or returned NXDOMAIN")
+		errMsg := "DNS lookup timed out or returned NXDOMAIN"
+		if dnsErr != nil {
+			errMsg = dnsErr.Error()
+		}
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", errMsg)
 		return
 	}
 
 	// LAYER 2: Public Access Reachable & LAYER 3: SSL Valid & LAYER 4: Upstream Reachable & LAYER 5: Response Integrity
+	// We run up to 3 attempts with a backoff to survive transient HTTP errors, cold starts, and zero-downtime container swaps.
+	var resp *http.Response
+	var latency int64
+	var err error
+	layer3SSL := false
+	layer5Integrity := false
+	layer4Upstream := false
 	scheme := "https"
-	if domain.Status != models.DomainStatusActive && domain.Status != models.DomainStatusSSLActive {
-		scheme = "http"
-	}
-	targetURL := fmt.Sprintf("%s://%s", scheme, domain.Domain)
 
 	client := &http.Client{
 		Transport: GetHTTPClient().Transport,
@@ -300,107 +320,134 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 		},
 	}
 
-	req, err := http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
-	if err != nil {
-		metrics.GetCollector().IncrHealthcheckFailures()
-		updates["health_status"] = models.DomainHealthUnhealthy
-		updates["error_message"] = "Failed to construct healthcheck request"
-		_ = s.db.Model(&domain).Updates(updates)
-		domain.HealthStatus = models.DomainHealthUnhealthy
-		domain.ErrorMessage = "Failed to construct healthcheck request"
-		return
-	}
-	req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
-
-	resp, err := client.Do(req)
-	latency := time.Since(start).Milliseconds()
-	updates["latency_ms"] = latency
-	s.redisService.RecordDomainMetricDuration("healthcheck_latency", time.Since(start))
-
-	layer3SSL := false
-	layer5Integrity := false
-
-	if err != nil {
-		if scheme == "https" {
-			// HTTPS failed, check if HTTP works
+httpLoop:
+	for attempt := 1; attempt <= 3; attempt++ {
+		scheme = "https"
+		if domain.Status != models.DomainStatusActive && domain.Status != models.DomainStatusSSLActive {
 			scheme = "http"
-			targetURL = fmt.Sprintf("http://%s", domain.Domain)
-			req, _ = http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
-			if req != nil {
-				req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
-				startHTTP := time.Now()
-				resp, err = client.Do(req)
-				latency = time.Since(startHTTP).Milliseconds()
-				updates["latency_ms"] = latency
+		}
+		targetURL := fmt.Sprintf("%s://%s", scheme, domain.Domain)
+
+		req, errReq := http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
+		if errReq != nil {
+			err = errReq
+			break httpLoop
+		}
+		req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+
+		startHTTP := time.Now()
+		resp, err = client.Do(req)
+		latency = time.Since(startHTTP).Milliseconds()
+
+		layer3SSL = false
+		layer4Upstream = false
+		layer5Integrity = false
+
+		if err != nil {
+			if scheme == "https" {
+				// HTTPS failed, check if HTTP works
+				scheme = "http"
+				targetURL = fmt.Sprintf("http://%s", domain.Domain)
+				req, _ = http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
+				if req != nil {
+					req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+					startHTTP = time.Now()
+					resp, err = client.Do(req)
+					latency = time.Since(startHTTP).Milliseconds()
+				}
 			}
 		}
 
-		if err != nil {
-			metrics.GetCollector().IncrHealthcheckFailures()
-			updates["layer2_public_access_reachable"] = false
-			updates["health_status"] = models.DomainHealthUnhealthy
-			updates["degraded_reason_code"] = models.ErrRoutingHealthFailed
-			updates["error_message"] = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
-			_ = s.db.Model(&domain).Updates(updates)
-			domain.HealthStatus = models.DomainHealthUnhealthy
-			domain.DegradedReasonCode = models.ErrRoutingHealthFailed
-			domain.ErrorMessage = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
-			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Public routing unreachable", err.Error())
-			return
+		if err == nil && resp != nil {
+			if scheme == "https" && resp.TLS != nil {
+				layer3SSL = true
+			}
+
+			if resp.StatusCode < 500 {
+				layer4Upstream = true
+
+				// LAYER 5: Response Integrity
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				bodyStr := string(bodyBytes)
+				_ = resp.Body.Close()
+
+				marker := strings.TrimSpace(s.cfg.IntegrityValidationMarker)
+				if marker == "" {
+					layer5Integrity = true
+				} else if strings.Contains(bodyStr, marker) || strings.Contains(bodyStr, `"status":"ok"`) || strings.Contains(bodyStr, `'status':'ok'`) {
+					layer5Integrity = true
+				} else {
+					// Fallback to Laravel's health check endpoint
+					upURL := fmt.Sprintf("%s://%s/up", scheme, domain.Domain)
+					upReq, _ := http.NewRequestWithContext(checkCtx, "GET", upURL, nil)
+					if upReq != nil {
+						upReq.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+						if upResp, upErr := client.Do(upReq); upErr == nil && upResp != nil {
+							upBytes, _ := io.ReadAll(upResp.Body)
+							upStr := string(upBytes)
+							_ = upResp.Body.Close()
+							if strings.Contains(upStr, marker) || strings.Contains(upStr, `"status":"ok"`) || strings.Contains(upStr, `'status':'ok'`) {
+								layer5Integrity = true
+							}
+						}
+					}
+				}
+
+				// If the response is fully healthy (including response integrity check), break out of retry loop.
+				if layer5Integrity {
+					break httpLoop
+				}
+			} else {
+				_ = resp.Body.Close()
+			}
+		}
+
+		// Wait before retrying (exponential-like backoff: 500ms, 1000ms)
+		select {
+		case <-checkCtx.Done():
+			break httpLoop
+		case <-time.After(time.Duration(attempt*500) * time.Millisecond):
 		}
 	}
 
-	if scheme == "https" && resp != nil && resp.TLS != nil {
-		layer3SSL = true
+	updates["latency_ms"] = latency
+	s.redisService.RecordDomainMetricDuration("healthcheck_latency", time.Duration(latency)*time.Millisecond)
+
+	if err != nil {
+		metrics.GetCollector().IncrHealthcheckFailures()
+		updates["layer2_public_access_reachable"] = false
+		updates["health_status"] = models.DomainHealthUnhealthy
+		updates["degraded_reason_code"] = models.ErrRoutingHealthFailed
+		updates["error_message"] = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
+		_ = s.db.Model(&domain).Updates(updates)
+		domain.HealthStatus = models.DomainHealthUnhealthy
+		domain.DegradedReasonCode = models.ErrRoutingHealthFailed
+		domain.ErrorMessage = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Public routing unreachable", err.Error())
+		return
 	}
 
 	updates["layer2_public_access_reachable"] = true
 	updates["layer3_ssl_valid"] = layer3SSL
 
-	if resp != nil && resp.StatusCode >= 500 {
-		_ = resp.Body.Close()
+	if !layer4Upstream {
 		metrics.GetCollector().IncrHealthcheckFailures()
 		updates["layer4_upstream_reachable"] = false
 		updates["health_status"] = models.DomainHealthUnhealthy
 		updates["degraded_reason_code"] = models.ErrUpstreamTimeout
-		updates["error_message"] = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", resp.StatusCode)
+		statusCode := 0
+		if resp != nil {
+			statusCode = resp.StatusCode
+		}
+		updates["error_message"] = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", statusCode)
 		_ = s.db.Model(&domain).Updates(updates)
 		domain.HealthStatus = models.DomainHealthUnhealthy
 		domain.DegradedReasonCode = models.ErrUpstreamTimeout
-		domain.ErrorMessage = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", resp.StatusCode)
-		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode), "Application backend error or 502/504 Bad Gateway")
+		domain.ErrorMessage = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", statusCode)
+		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", statusCode), "Application backend error or 502/504 Bad Gateway")
 		return
 	}
 	updates["layer4_upstream_reachable"] = true
-
-	// LAYER 5: Optional response integrity validation. Enable with INTEGRITY_VALIDATION_MARKER.
-	if resp != nil {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		bodyStr := string(bodyBytes)
-		_ = resp.Body.Close()
-
-		marker := strings.TrimSpace(s.cfg.IntegrityValidationMarker)
-		if marker == "" {
-			layer5Integrity = true
-		} else if strings.Contains(bodyStr, marker) || strings.Contains(bodyStr, `"status":"ok"`) || strings.Contains(bodyStr, `'status':'ok'`) {
-			layer5Integrity = true
-		} else {
-			// When strict integrity is enabled, allow Laravel health endpoints to satisfy the marker check.
-			upURL := fmt.Sprintf("%s://%s/up", scheme, domain.Domain)
-			upReq, _ := http.NewRequestWithContext(checkCtx, "GET", upURL, nil)
-			if upReq != nil {
-				upReq.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
-				if upResp, err := client.Do(upReq); err == nil && upResp != nil {
-					upBytes, _ := io.ReadAll(upResp.Body)
-					upStr := string(upBytes)
-					_ = upResp.Body.Close()
-					if strings.Contains(upStr, marker) || strings.Contains(upStr, `"status":"ok"`) || strings.Contains(upStr, `'status':'ok'`) {
-						layer5Integrity = true
-					}
-				}
-			}
-		}
-	}
 	updates["layer5_response_integrity"] = layer5Integrity
 
 	if !layer5Integrity {

@@ -10,6 +10,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/traefik"
 	"github.com/laravel-paas/shared/services/domain"
 	"github.com/laravel-paas/worker/internal/services/project"
 	"gorm.io/gorm"
@@ -134,6 +135,32 @@ func (w *DomainWorker) detectStalledReconciliation(ctx context.Context) {
 }
 
 func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
+	var allRoutableDomains []models.CustomDomain
+	// Sync/heal dynamic Traefik routing configuration files on disk with authoritative DB state
+	if err := w.db.Where("status IN (?)", []string{
+		string(models.DomainStatusDNSVerified),
+		string(models.DomainStatusSSLQueued),
+		string(models.DomainStatusSSLProvisioning),
+		string(models.DomainStatusSSLActive),
+		string(models.DomainStatusActive),
+		string(models.DomainStatusPropagationPending),
+		string(models.DomainStatusDegraded),
+		string(models.DomainStatusRenewalPending),
+		string(models.DomainStatusRenewalFailed),
+	}).Find(&allRoutableDomains).Error; err == nil {
+		projectDomainsMap := make(map[uint][]models.CustomDomain)
+		for _, d := range allRoutableDomains {
+			projectDomainsMap[d.ProjectID] = append(projectDomainsMap[d.ProjectID], d)
+		}
+		for projID, cds := range projectDomainsMap {
+			if proj, err := w.projectService.GetProjectByID(projID); err == nil {
+				if err := traefik.WriteProjectDynamicFile(w.projectService.GetConfig(), proj, cds); err != nil {
+					slog.Error("Failed to heal dynamic Traefik routing configuration", "projectID", projID, "error", err)
+				}
+			}
+		}
+	}
+
 	var domains []models.CustomDomain
 	// Fetch active domains, plus degraded domains that have already completed initial provisioning.
 	err := w.db.Where("status = ? OR (status = ? AND provisioning_checkpoint = ?)",

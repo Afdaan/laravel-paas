@@ -158,13 +158,16 @@ HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
 # Path initialization for host-side volume mounting
 PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
 DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
+TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
+
 
 # 3. Preparation
 echo -e "${YELLOW}Preparing environment...${NC}"
 docker network create paas-network 2>/dev/null || true
-sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
-sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH"
-chmod 777 "$DATA_PATH" 
+sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+
 
 # 4. Smart Backup Logic (Logical or Physical)
 LAST_BACKUP_TS="${PROJECT_ROOT}/storage/.last_backup_ts"
@@ -250,7 +253,7 @@ docker rm -f paas-traefik 2>/dev/null || true
 
 TRAEFIK_CONF="${PROJECT_ROOT}/docker/traefik/traefik.yml"
 DYNAMIC_TEMPLATE="${PROJECT_ROOT}/docker/traefik/dynamic.yml.template"
-DYNAMIC_CONF="${PROJECT_ROOT}/docker/traefik/dynamic.yml"
+DYNAMIC_CONF="${TRAEFIK_DYNAMIC_DIR}/dynamic.yml"
 
 if [ ! -f "$TRAEFIK_CONF" ]; then
     echo -e "${RED}Error: traefik.yml not found${NC}"
@@ -273,7 +276,7 @@ docker run -d \
     -p ${HTTPS_PORT}:443 \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "${TRAEFIK_CONF}:/traefik.yml:ro" \
-    -v "${DYNAMIC_CONF}:/etc/traefik/dynamic/dynamic.yml:ro" \
+    -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
     -v paas-letsencrypt:/letsencrypt \
     traefik:v3.6
 
@@ -293,6 +296,8 @@ deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
     -v "${PROJECTS_PATH}:/app/storage/projects" \
     -v "${DATA_PATH}:/app/storage/data" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+    -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
+    -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
     -e APP_MODE="$APP_MODE" \
     -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
     -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
@@ -341,6 +346,8 @@ docker run -d \
     -v "${DATA_PATH}:/app/data" \
     -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
     -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
+    -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
+    -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
     -e APP_MODE=docker \
     -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
     -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
