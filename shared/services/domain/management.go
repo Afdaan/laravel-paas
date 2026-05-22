@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -205,11 +206,16 @@ func (s *DomainService) TransferDomain(userID uint, domainID uint, targetProject
 
 	// 4. Update project ID of custom domain
 	domain.ProjectID = targetProjectID
-	if err := s.db.Model(&domain).Update("project_id", targetProjectID).Error; err != nil {
+	if err := s.db.Model(&models.CustomDomain{}).Where("id = ?", domain.ID).Update("project_id", targetProjectID).Error; err != nil {
 		return err
 	}
 
-	_ = s.RecordEvent(&domain, domain.Status, domain.Status, "domain_transferred", fmt.Sprintf("Domain transferred from project %d to project %d", sourceProjectID, targetProjectID), "")
+	event, err := s.RecordEventTx(s.db, &domain, domain.Status, domain.Status, "domain_transferred", fmt.Sprintf("Domain transferred from project %d to project %d", sourceProjectID, targetProjectID), "")
+	if err == nil {
+		eventBytes, _ := json.Marshal(event)
+		_ = s.redisService.PublishDomainEvent(domain.ID, sourceProjectID, string(eventBytes))
+		_ = s.redisService.PublishDomainEvent(domain.ID, targetProjectID, string(eventBytes))
+	}
 
 	sourceProject, err := s.projectRepo.GetByID(sourceProjectID)
 	if err == nil {

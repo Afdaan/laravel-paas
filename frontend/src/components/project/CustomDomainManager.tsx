@@ -239,6 +239,14 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             const updatedDomainId = eventData.domain_id;
             if (!updatedDomainId) return;
 
+            if (eventData.event_type === 'domain_transferred') {
+              projectsAPI.listDomains(projectId).then((res) => {
+                setDomains(res.data.data || [])
+                onDomainsChanged?.()
+              }).catch(() => {})
+              return;
+            }
+
             // Update real-time domain status in the list
             setDomains(prevDomains => {
               return prevDomains.map(d => {
