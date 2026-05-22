@@ -297,7 +297,7 @@ export const domainsAPI = {
     api.get('/admin/domains'),
 
   transfer: (projectId: number | string, domainId: number | string, targetProjectId: number | string) =>
-    api.post(`/projects/${projectId}/domains/${domainId}/transfer`, { target_project_id: targetProjectId }),
+    api.post(`/projects/${projectId}/domains/${domainId}/transfer`, { target_project_id: Number(targetProjectId) }),
 }
 
 export const systemAPI = {
