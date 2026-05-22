@@ -333,13 +333,13 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
                 <span className="text-xs font-bold tracking-tighter">LP</span>
               </div>
-              <div className={`min-w-0 text-left transition-all duration-300 ease-in-out ${
+              <div className={`min-w-0 text-left transition-all ease-in-out ${
                 isVisualExpanded 
-                  ? 'opacity-100 max-w-[150px] ml-3' 
-                  : 'opacity-0 max-w-0 overflow-hidden ml-0'
+                  ? 'opacity-100 max-w-[150px] ml-3 duration-300 delay-100' 
+                  : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
               }`}>
-                <h1 className="truncate text-base font-semibold tracking-tight">PaaS</h1>
-                <p className="truncate text-[10px] font-medium text-muted-foreground">
+                <h1 className="truncate text-base font-semibold tracking-tight whitespace-nowrap">PaaS</h1>
+                <p className="truncate text-[10px] font-medium text-muted-foreground whitespace-nowrap">
                   {isAdmin ? t('common.globalAdmin') : t('common.student')}
                 </p>
               </div>
@@ -372,10 +372,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 size="sm"
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span className={`truncate transition-all duration-300 ease-in-out ${
+                <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                   isVisualExpanded 
-                    ? 'opacity-100 max-w-[150px]' 
-                    : 'opacity-0 max-w-0 overflow-hidden'
+                    ? 'opacity-100 max-w-[150px] duration-300 delay-100' 
+                    : 'opacity-0 max-w-0 overflow-hidden duration-100'
                 }`}>
                   {t('common.newProject')}
                 </span>
@@ -384,7 +384,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           )}
 
           {/* Navigation Registry */}
-          <nav className={`flex-1 overflow-y-auto ${!isVisualExpanded ? 'px-3 py-2' : 'px-3 py-3'} space-y-5`}>
+          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
             {/* Main Group */}
             <div className="space-y-1">
               <h4 className={`px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider transition-all duration-300 ${
@@ -411,10 +411,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 >
                   <div className={`flex items-center w-full transition-all duration-300 ${!isVisualExpanded ? 'justify-center' : 'gap-2.5'}`}>
                     <item.icon className="h-4 w-4 shrink-0" />
-                    <span className={`truncate transition-all duration-300 ease-in-out ${
+                    <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                       isVisualExpanded 
-                        ? 'opacity-100 max-w-[180px] ml-2.5' 
-                        : 'opacity-0 max-w-0 overflow-hidden ml-0'
+                        ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100' 
+                        : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
                     }`}>
                       {item.label}
                     </span>
@@ -450,10 +450,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   >
                     <div className={`flex items-center w-full transition-all duration-300 ${!isVisualExpanded ? 'justify-center' : 'gap-2.5'}`}>
                       <item.icon className="h-4 w-4 shrink-0" />
-                      <span className={`truncate transition-all duration-300 ease-in-out ${
+                      <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                         isVisualExpanded 
-                          ? 'opacity-100 max-w-[180px] ml-2.5' 
-                          : 'opacity-0 max-w-0 overflow-hidden ml-0'
+                          ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100' 
+                          : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
                       }`}>
                         {item.label}
                       </span>
@@ -465,17 +465,17 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           </nav>
           
           <div className="p-3 border-t">
-            <div className={`mb-2 flex items-center rounded-md transition-all duration-300 hover:bg-muted ${!isVisualExpanded ? 'justify-center p-1.5' : 'gap-3 p-2'}`}>
+            <div className={`mb-2 flex items-center rounded-md transition-all duration-300 hover:bg-muted ${!isVisualExpanded ? 'justify-center p-2' : 'gap-3 p-2'}`}>
               <Avatar className="h-9 w-9 shrink-0">
                 <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
               </Avatar>
-              <div className={`flex-1 min-w-0 text-left transition-all duration-300 ease-in-out ${
+              <div className={`flex-1 min-w-0 text-left transition-all ease-in-out ${
                 isVisualExpanded 
-                  ? 'opacity-100 max-w-[180px]' 
-                  : 'opacity-0 max-w-0 overflow-hidden'
+                  ? 'opacity-100 max-w-[180px] duration-300 delay-100' 
+                  : 'opacity-0 max-w-0 overflow-hidden duration-100'
               }`}>
-                <p className="text-sm font-medium leading-none truncate">{user?.name}</p>
-                <p className="text-xs text-muted-foreground truncate mt-1">{user?.email}</p>
+                <p className="text-sm font-medium leading-none truncate whitespace-nowrap">{user?.name}</p>
+                <p className="text-xs text-muted-foreground truncate mt-1 whitespace-nowrap">{user?.email}</p>
               </div>
             </div>
             
@@ -487,10 +487,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   render={<NavLink to="/admin" title={t('common.adminPanel')} />}
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
-                  <span className={`truncate transition-all duration-300 ease-in-out ${
+                  <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                     isVisualExpanded 
-                      ? 'opacity-100 max-w-[150px] ml-2' 
-                      : 'opacity-0 max-w-0 overflow-hidden ml-0'
+                      ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
+                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
                   }`}>
                     {t('common.adminPanel')}
                   </span>
@@ -504,10 +504,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   render={<NavLink to="/dashboard" title={t('common.studentView')} />}
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
-                  <span className={`truncate transition-all duration-300 ease-in-out ${
+                  <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                     isVisualExpanded 
-                      ? 'opacity-100 max-w-[150px] ml-2' 
-                      : 'opacity-0 max-w-0 overflow-hidden ml-0'
+                      ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
+                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
                   }`}>
                     {t('common.studentView')}
                   </span>
@@ -521,10 +521,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                  title={t('common.logout')}
               >
                 <LogOut className="h-3.5 w-3.5 shrink-0" />
-                <span className={`truncate transition-all duration-300 ease-in-out ${
+                <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                   isVisualExpanded 
-                    ? 'opacity-100 max-w-[150px] ml-2' 
-                    : 'opacity-0 max-w-0 overflow-hidden ml-0'
+                    ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
+                    : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
                 }`}>
                   {t('common.logout')}
                 </span>
