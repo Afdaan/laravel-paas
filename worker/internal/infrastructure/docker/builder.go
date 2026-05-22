@@ -102,9 +102,8 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		finalMemory = memoryLimit
 	}
 
-	// Web-facing = has an exposed port (auto-detected or user-set) or is Laravel.
-	// Non-web projects (bots, workers) skip Traefik routing entirely.
-	isWebFacing := project.Port != nil || project.Framework == "Laravel"
+	// Web-facing by default unless port is explicitly set to <= 0.
+	isWebFacing := project.Port == nil || *project.Port > 0
 	if !isWebFacing {
 		slog.Info("Project classified as non-web", "subdomain", project.Subdomain, "framework", project.Framework)
 	}
