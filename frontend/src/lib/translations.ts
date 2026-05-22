@@ -494,6 +494,54 @@ export const translations = {
         timestamp: "Timestamp",
         noEvents: "No audit events logged yet.",
         configHash: "Active Nginx Config Hash",
+        types: {
+          registered: {
+            title: "Domain Registered Successfully",
+            desc: "The custom domain has been successfully registered in the PaaS platform routing engine."
+          },
+          transferred: {
+            title: "Domain Ownership Transferred",
+            desc: "Domain access rights and traffic routes were successfully migrated to the target project with zero-downtime."
+          },
+          healthcheck_recovered: {
+            title: "Health Check Succeeded (Healthy)",
+            desc: "The system verified that your domain is publicly accessible and securely connected to your upstream backend container."
+          },
+          healthcheck_failed: {
+            title: "Connectivity Issue Detected",
+            genericDesc: "Domain health checks detected a routing or network path discrepancy. Detail: {{error}}.",
+            httpDesc: "Your application backend returned an HTTP error response ({{error}}). This is typical when the app is rebuilding, restarting, or experiencing container boot delay.",
+            dnsDesc: "Global DNS resolution failed. Please verify that your CNAME record is correctly pointed to the cluster endpoint and allow time for DNS propagation."
+          },
+          healthcheck_degraded: {
+            title: "Routing Service Degraded",
+            desc: "Your domain is reachable, but the response header did not pass the expected application health integrity verification."
+          },
+          poller_cleanup: {
+            title: "Scheduled Route Sync",
+            desc: "The system carried out a scheduled routing sync to clean up stale domain allocation records and optimize network memory."
+          },
+          cleanup_step: {
+            title: "Nginx Gateway Configured",
+            desc: "Proxy configuration and custom domain route bindings have been successfully updated and reloaded with zero-downtime."
+          },
+          cleanup_failed: {
+            title: "Routing Purge Delayed",
+            desc: "An error occurred while automatically purging old routing configs. The system scheduler will retry on the next cycle."
+          },
+          ssl_queued: {
+            title: "SSL Provisioning Queued",
+            desc: "A secure SSL certificate (HTTPS) request has been registered and is currently waiting in Let's Encrypt's validation queue."
+          },
+          ssl_active: {
+            title: "SSL Certificate Active (HTTPS)",
+            desc: "Free TLS/SSL security certificate successfully issued by Let's Encrypt and applied. Encrypted HTTPS access is now fully active."
+          },
+          ssl_issuance_failed: {
+            title: "SSL Provisioning Delayed",
+            desc: "Automated SSL issuance is temporarily delayed due to ACME challenge validation propagation. The platform will retry validation automatically."
+          }
+        }
       },
       dnsGuide: {
         title: "DNS Configuration Guide",
@@ -1278,6 +1326,54 @@ export const translations = {
         timestamp: "Timestamp",
         noEvents: "Belum ada audit event yang tercatat untuk domain ini.",
         configHash: "Active Nginx Config Hash",
+        types: {
+          registered: {
+            title: "Custom Domain Terhubung",
+            desc: "Domain berhasil ditambahkan dan telah aktif."
+          },
+          transferred: {
+            title: "Domain Dipindahkan",
+            desc: "Domain berhasil dipindahkan ke project tujuan."
+          },
+          healthcheck_recovered: {
+            title: "Layanan Normal",
+            desc: "Domain dan aplikasi merespons dengan normal."
+          },
+          healthcheck_failed: {
+            title: "Gangguan Koneksi Domain",
+            genericDesc: "Platform mendeteksi gangguan koneksi antara domain dan aplikasi. Detail error: {{error}}.",
+            httpDesc: "Aplikasi mengembalikan status {{error}}. Kondisi ini umum terjadi saat deploy, restart service, atau startup container.",
+            dnsDesc: "DNS domain belum mengarah ke platform. Pastikan konfigurasi DNS sudah benar dan propagasi telah selesai."
+          },
+          healthcheck_degraded: {
+            title: "Koneksi Domain Tidak Stabil",
+            desc: "Domain sudah terhubung, namun aplikasi atau SSL belum merespons dengan sempurna."
+          },
+          poller_cleanup: {
+            title: "Pembersihan Cache",
+            desc: "Sistem membersihkan cache domain."
+          },
+          cleanup_step: {
+            title: "Sinkronisasi Konfigurasi",
+            desc: "Perubahan konfigurasi domain berhasil diterapkan."
+          },
+          cleanup_failed: {
+            title: "Sinkronisasi Gagal",
+            desc: "Sistem gagal membersihkan cache domain. Coba lagi dalam beberapa saat."
+          },
+          ssl_queued: {
+            title: "Verifikasi SSL Dimulai",
+            desc: "Permintaan sertifikat SSL sedang diproses dan menunggu verifikasi domain."
+          },
+          ssl_active: {
+            title: "SSL Aktif",
+            desc: "Sertifikat SSL berhasil aktif dan HTTPS sudah aktif."
+          },
+          ssl_issuance_failed: {
+            title: "Verifikasi SSL Gagal",
+            desc: "Platform gagal memverifikasi domain untuk penerbitan SSL. Pastikan DNS domain sudah benar dan domain dapat diakses publik."
+          }
+        }
       },
       dnsGuide: {
         title: "DNS Configuration Guide",

@@ -116,8 +116,39 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
   )
 }
 
+// Helper to translate raw database domain event types and technical messages into elegant, highly understandable, but technically sound explanations.
+const getRefinedEvent = (eventType: string, rawMessage: string, t: (key: string, data?: any) => string) => {
+  const type = (eventType || '').toLowerCase()
+  const msg = (rawMessage || '').toLowerCase()
+
+  // Default values
+  let title = t(`domains.events.types.${type}.title`)
+  let desc = t(`domains.events.types.${type}.desc`)
+
+  // Fallback to auto-formatted event type if translation missing
+  if (title === `domains.events.types.${type}.title`) {
+    title = eventType.replace(/_/g, ' ')
+  }
+  if (desc === `domains.events.types.${type}.desc`) {
+    desc = rawMessage
+  }
+
+  // Handle special healthcheck_failed nested messages with dynamic interpolation
+  if (type === 'healthcheck_failed') {
+    if (msg.includes('503') || msg.includes('502') || msg.includes('504')) {
+      desc = t('domains.events.types.healthcheck_failed.httpDesc', { error: rawMessage })
+    } else if (msg.includes('dns') || msg.includes('resolve') || msg.includes('layer 1')) {
+      desc = t('domains.events.types.healthcheck_failed.dnsDesc')
+    } else {
+      desc = t('domains.events.types.healthcheck_failed.genericDesc', { error: rawMessage })
+    }
+  }
+
+  return { title, desc }
+}
+
 export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomainsChanged }: CustomDomainManagerProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [domains, setDomains] = useState<CustomDomain[]>([])
 
   // Helper to extract base domain and compute centralized CNAME target
@@ -460,8 +491,11 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         formattedDate = String(event.created_at)
       }
 
+      const refined = getRefinedEvent(event.event_type, event.message || event.payload || '', t)
+
       return (
         <div key={event.id || i} className="relative pl-6 group" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 120px' }}>
+          {/* Timeline Dot */}
           <div className={`absolute -left-[7px] top-2.5 w-3.5 h-3.5 rounded-full border-2 bg-background group-hover:scale-125 transition-transform duration-200 shadow-sm ${
             event.event_type?.includes('recovered') || event.event_type?.includes('active') || event.event_type === 'healthcheck_recovered'
               ? 'border-emerald-500 group-hover:bg-emerald-500'
@@ -469,7 +503,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
               ? 'border-rose-500 group-hover:bg-rose-500'
               : 'border-primary group-hover:bg-primary'
           }`} />
-          <div className="space-y-2 bg-muted/20 p-4 rounded-xl border border-border/60 hover:bg-muted/30 transition-colors text-left shadow-sm">
+          
+          <div className="space-y-2.5 bg-muted/20 p-4 rounded-xl border border-border/60 hover:bg-muted/30 transition-colors text-left shadow-sm">
+            {/* Header: Title and Timestamp */}
             <div className="flex items-center justify-between gap-2">
               <span className={`text-xs font-bold flex items-center gap-2 ${
                 event.event_type?.includes('recovered') || event.event_type?.includes('active') || event.event_type === 'healthcheck_recovered'
@@ -485,33 +521,51 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                     ? 'text-rose-400'
                     : 'text-primary'
                 }`} />
-                {event.event_type}
+                {refined.title}
               </span>
               <span className="text-[10px] text-muted-foreground font-mono">
                 {formattedDate}
               </span>
             </div>
-            <p className="text-xs font-mono text-muted-foreground leading-relaxed bg-background/60 p-3 rounded-lg border border-border/40 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{event.message || event.payload}</p>
-            {event.state_from && event.state_to && (
-              <div className="flex items-center gap-2 pt-1 text-[10px] font-mono font-medium">
-                <span className="text-muted-foreground">{t('domains.events.transition') || 'State Transition'}:</span>
-                <span className="px-2 py-0.5 rounded bg-muted/50 border text-muted-foreground">{event.state_from}</span>
-                <span className="text-muted-foreground">→</span>
-                <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-bold">{event.state_to}</span>
+
+            {/* Clear, refined description for general users */}
+            <p className="text-xs text-foreground/90 leading-relaxed font-sans font-medium">
+              {refined.desc}
+            </p>
+
+            {/* Technical logs collapsed/shown in a structured, professional small monospace block */}
+            {(event.message || event.payload) && (
+              <div className="mt-2.5 space-y-1">
+                <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground/60 block font-mono">
+                  {language === 'id' ? 'LOG TEKNIS ASLI' : 'RAW TECHNICAL LOG'}
+                </span>
+                <p className="text-[10px] font-mono text-muted-foreground leading-normal bg-background/50 p-2.5 rounded-lg border border-border/30 overflow-x-auto whitespace-pre-wrap break-words max-h-24 select-all">
+                  {event.message || event.payload}
+                </p>
               </div>
             )}
-            {event.error_code && event.error_code !== 'none' && (
-              <div className="pt-1">
-                <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 text-[10px] font-mono px-2.5 py-0.5 font-bold">
+
+            {/* State Transition and errors */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
+              {event.state_from && event.state_to && (
+                <div className="flex items-center gap-2 text-[10px] font-mono font-medium">
+                  <span className="text-muted-foreground">{t('domains.events.transition') || 'State Transition'}:</span>
+                  <span className="px-1.5 py-0.5 rounded bg-muted border text-muted-foreground/80">{event.state_from}</span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-bold">{event.state_to}</span>
+                </div>
+              )}
+              {event.error_code && event.error_code !== 'none' && (
+                <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10 text-[9px] font-mono px-2 py-0.2 font-bold">
                   {event.error_code}
                 </Badge>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )
     })
-  }, [eventsModal.events, t])
+  }, [eventsModal.events, t, language])
 
   return (
     <div className="space-y-6">
