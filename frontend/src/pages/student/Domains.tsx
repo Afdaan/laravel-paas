@@ -236,7 +236,7 @@ const Domains = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 text-left">
+          <div className="space-y-5 text-left">
             {/* Domain being transferred */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
@@ -264,7 +264,7 @@ const Domains = () => {
                   {projects
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (
-                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5 pl-3">
+                      <SelectItem key={p.id} value={p.id.toString()} label={p.name} className="py-2.5 pl-3">
                         <div className="flex min-w-0 flex-col gap-0.5 text-left">
                           <span className="truncate text-sm font-medium leading-none">{p.name}</span>
                           <span className="truncate text-[10px] leading-none text-muted-foreground">{p.subdomain}</span>
