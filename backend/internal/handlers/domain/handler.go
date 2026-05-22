@@ -275,6 +275,17 @@ func (h *DomainHandler) Transfer(c *fiber.Ctx) error {
 		return err
 	}
 
+	// Trigger Traefik Sync using fresh, authoritative database snapshots for both source and target projects
+	sourceProject, errSource := h.projectService.GetProjectByID(uint(projectID))
+	if errSource == nil {
+		_ = traefik.WriteProjectDynamicFile(h.cfg, sourceProject, sourceProject.CustomDomains)
+	}
+
+	targetProject, errTarget := h.projectService.GetProjectByID(uint(req.TargetProjectID))
+	if errTarget == nil {
+		_ = traefik.WriteProjectDynamicFile(h.cfg, targetProject, targetProject.CustomDomains)
+	}
+
 	return c.JSON(fiber.Map{"message": "Domain transferred successfully"})
 }
 

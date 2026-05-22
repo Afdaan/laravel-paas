@@ -143,36 +143,36 @@ const AdminDomains = () => {
           <h2 className="text-2xl font-bold tracking-tight mb-2">{t('domains.noDomains')}</h2>
         </Card>
       ) : (
-        <div className="bg-card border rounded-lg overflow-hidden">
+        <div className="bg-card border border-border/50 rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-[34%] pl-6 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
-                <TableHead className="w-[26%] text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.owner')}</TableHead>
-                <TableHead className="w-[26%] text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('domains.linkedProject')}</TableHead>
-                <TableHead className="w-[14%] pr-6 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
+              <TableRow className="bg-muted/15 hover:bg-muted/15 border-b border-border/40">
+                <TableHead className="w-[34%] pl-6 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">{t('domains.domainName')}</TableHead>
+                <TableHead className="w-[26%] text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">{t('domains.owner')}</TableHead>
+                <TableHead className="w-[26%] text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">{t('domains.linkedProject')}</TableHead>
+                <TableHead className="w-[14%] pr-6 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">{t('common.status')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredDomains.map((domain) => (
-                <TableRow key={domain.id} className="hover:bg-muted/25 transition-colors">
+                <TableRow key={domain.id} className="group hover:bg-muted/20 border-b border-border/30 last:border-b-0 transition-colors">
                   <TableCell className="py-4 pl-6 font-medium">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/25 text-muted-foreground">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-muted/20 text-muted-foreground/80 shadow-sm transition-all group-hover:border-primary/15 group-hover:bg-primary/5 group-hover:text-primary">
                         <Globe className="h-3.5 w-3.5" />
                       </div>
                       <div className="flex min-w-0 flex-col text-left">
-                        <span className="truncate text-[13px] font-semibold">{domain.domain}</span>
+                        <span className="truncate text-[13px] font-semibold text-foreground/90">{domain.domain}</span>
                         <a 
                           href={`https://${domain.domain}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="flex w-fit items-center gap-1 text-[9px] text-muted-foreground hover:text-primary"
+                          className="flex w-fit items-center gap-1 text-[9px] text-muted-foreground hover:text-primary hover:underline underline-offset-2 mt-0.5"
                         >
                           {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
                         </a>
                         {domain.config_hash && (
-                          <span className="text-[9px] font-mono text-muted-foreground/50 mt-0.5">
+                          <span className="text-[9px] font-mono text-muted-foreground/40 mt-0.5">
                             SHA256:{domain.config_hash.substring(0, 8)}
                           </span>
                         )}
@@ -181,11 +181,11 @@ const AdminDomains = () => {
                   </TableCell>
                   <TableCell className="py-4">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-muted/30 text-[9px] font-bold text-muted-foreground transition-colors group-hover:border-primary/10">
                         {domain.project?.user?.name?.substring(0, 2).toUpperCase() || 'NA'}
                       </div>
                       <div className="flex min-w-0 flex-col text-left">
-                        <span className="truncate text-[13px] font-medium">{domain.project?.user?.name || t('common.unassigned')}</span>
+                        <span className="truncate text-[13px] font-medium text-foreground/90">{domain.project?.user?.name || t('common.unassigned')}</span>
                         <span className="truncate text-[9px] text-muted-foreground">{domain.project?.user?.email || '-'}</span>
                       </div>
                     </div>
@@ -193,13 +193,13 @@ const AdminDomains = () => {
                   <TableCell className="py-4">
                     {domain.project ? (
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/20">
-                          <FrameworkIcon framework={domain.project.framework} variant="plain" className="h-5 w-5" />
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-muted/20 transition-colors group-hover:border-primary/10">
+                          <FrameworkIcon framework={domain.project.framework} variant="plain" className="h-4 w-4" />
                         </div>
                         <div className="flex min-w-0 flex-col text-left">
-                          <span className="truncate text-[13px] font-medium text-foreground/90">{domain.project.name}</span>
+                          <span className="truncate text-xs font-semibold text-foreground/95">{domain.project.name}</span>
                           <span className="truncate text-[9px] text-muted-foreground">
-                            {domain.project.framework || domain.project.subdomain || domain.project.uid}
+                            {domain.project.framework || domain.project.subdomain}
                           </span>
                         </div>
                       </div>

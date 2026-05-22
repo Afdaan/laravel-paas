@@ -8,7 +8,6 @@ import {
   ArrowRightLeft,
   Loader2,
   ExternalLink,
-  FolderGit2,
   MoreVertical
 } from 'lucide-react'
 import useTranslation from '../../lib/useTranslation'
@@ -46,6 +45,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { CustomDomain, Project } from '../../types'
+import { FrameworkIcon } from '../../components/FrameworkIcon'
 
 const StatusBadge = ({ status }: { status?: string }) => {
   const { t } = useTranslation()
@@ -335,62 +335,67 @@ const Domains = () => {
           <p className="text-sm text-muted-foreground max-w-xs">{t('domains.noDomainsDesc')}</p>
         </Card>
       ) : (
-        <div className="bg-card border rounded-lg overflow-hidden">
+        <div className="bg-card border border-border/50 rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/30 hover:bg-muted/30 border-b-0">
-                <TableHead className="w-[42%] pl-6 font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.domainName')}</TableHead>
-                <TableHead className="w-[30%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('domains.linkedProject')}</TableHead>
-                <TableHead className="w-[16%] font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.status')}</TableHead>
-                <TableHead className="w-[12%] pr-6 text-right font-bold text-[10px] uppercase tracking-widest text-muted-foreground/70">{t('common.actions')}</TableHead>
+              <TableRow className="bg-muted/15 hover:bg-muted/15 border-b border-border/40">
+                <TableHead className="w-[36%] pl-6 font-bold text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('domains.domainName')}</TableHead>
+                <TableHead className="w-[30%] font-bold text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('domains.linkedProject')}</TableHead>
+                <TableHead className="w-[22%] font-bold text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('common.status')}</TableHead>
+                <TableHead className="w-[12%] pr-6 text-right font-bold text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {domains.map((domain) => (
-                <TableRow key={domain.id} className="group transition-colors">
-                  <TableCell className="font-medium py-4 pl-6">
+                <TableRow key={domain.id} className="group hover:bg-muted/20 border-b border-border/30 last:border-b-0 transition-colors">
+                  <TableCell className="py-4 pl-6 font-medium">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
-                        <Globe className="w-4 h-4" />
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-muted/20 text-muted-foreground/80 shadow-sm transition-all group-hover:border-primary/15 group-hover:bg-primary/5 group-hover:text-primary">
+                        <Globe className="w-3.5 h-3.5" />
                       </div>
                       <div className="flex flex-col text-left">
-                        <span>{domain.domain}</span>
+                        <span className="text-[13px] font-semibold text-foreground/90">{domain.domain}</span>
                         <a 
                           href={`https://${domain.domain}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-[10px] text-muted-foreground hover:text-primary flex items-center gap-1 w-fit"
+                          className="text-[9px] text-muted-foreground hover:text-primary hover:underline underline-offset-2 flex items-center gap-1 w-fit mt-0.5"
                         >
                           {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
                         </a>
                         {domain.config_hash && (
-                          <span className="text-[9px] font-mono text-muted-foreground/50 mt-0.5">
+                          <span className="text-[9px] font-mono text-muted-foreground/40 mt-0.5">
                             SHA256:{domain.config_hash.substring(0, 8)}
                           </span>
                         )}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-left">
+                  <TableCell className="text-left py-4">
                     {domain.project ? (
                       <Link 
                         to={`/projects/${domain.project.uid}`}
-                        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                        className="flex items-center gap-2.5 text-sm text-muted-foreground hover:text-primary transition-colors group/link"
                       >
-                        <FolderGit2 className="w-4 h-4" />
-                        {domain.project.name}
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-muted/20 group-hover/link:border-primary/20 group-hover/link:bg-primary/5 transition-all">
+                          <FrameworkIcon framework={domain.project.framework} variant="plain" className="h-4 w-4" />
+                        </div>
+                        <div className="flex flex-col text-left">
+                          <span className="truncate text-xs font-semibold text-foreground/95 group-hover/link:text-primary transition-colors">{domain.project.name}</span>
+                          <span className="truncate text-[9px] text-muted-foreground">{domain.project.subdomain}</span>
+                        </div>
                       </Link>
                     ) : (
                       <span className="text-xs text-destructive italic">{t('common.unassigned')}</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-left">
+                  <TableCell className="text-left py-4">
                     <StatusBadge status={domain.status} />
                     {['active', 'ssl_active', 'degraded'].includes(domain.status) && (
                       <HealthBadge health={domain.health_status} error={domain.error_message || (domain.error_code !== 'none' ? domain.error_code : undefined)} />
                     )}
                   </TableCell>
-                  <TableCell className="pr-6">
+                  <TableCell className="pr-6 py-4">
                     <div className="flex justify-end">
                       <DropdownMenu>
                         <DropdownMenuTrigger className="flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-muted-foreground opacity-70 transition-colors hover:border-border hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary/20">
