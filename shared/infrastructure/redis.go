@@ -520,6 +520,48 @@ func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) 
 	return true, nil
 }
 
+// IncrDriftFailure increments the consecutive drift check failure count for a domain and returns the current count.
+// Keeps track of failures across distributed workers to enforce a grace period before marking a domain degraded.
+func (r *RedisService) IncrDriftFailure(domainID uint) (int, error) {
+	key := fmt.Sprintf("drift:failures:%d", domainID)
+	count, err := r.client.Incr(r.ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if count == 1 {
+		// Set 1-hour expiration so stale failure counters are eventually cleaned up automatically
+		r.client.Expire(r.ctx, key, 1*time.Hour)
+	}
+	return int(count), nil
+}
+
+// ClearDriftFailure resets the consecutive drift check failure count when the check succeeds.
+func (r *RedisService) ClearDriftFailure(domainID uint) error {
+	key := fmt.Sprintf("drift:failures:%d", domainID)
+	return r.client.Del(r.ctx, key).Err()
+}
+
+// IncrHealthFailure increments the consecutive health check failure count for a domain and returns the current count.
+// Shared across workers to enforce a grace period before marking a domain unhealthy.
+func (r *RedisService) IncrHealthFailure(domainID uint) (int, error) {
+	key := fmt.Sprintf("health:failures:%d", domainID)
+	count, err := r.client.Incr(r.ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if count == 1 {
+		// Set 1-hour expiration to prevent stale metrics leaks
+		r.client.Expire(r.ctx, key, 1*time.Hour)
+	}
+	return int(count), nil
+}
+
+// ClearHealthFailure resets the consecutive health check failure count when the check succeeds.
+func (r *RedisService) ClearHealthFailure(domainID uint) error {
+	key := fmt.Sprintf("health:failures:%d", domainID)
+	return r.client.Del(r.ctx, key).Err()
+}
+
 // RemoveFromQueue removes all queued instances of a specific project from the deployment queue and delayed queue
 func (r *RedisService) RemoveFromQueue(projectID uint) error {
 	// 1. Remove from active queue

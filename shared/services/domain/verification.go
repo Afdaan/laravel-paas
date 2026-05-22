@@ -29,6 +29,46 @@ func getRealtimeResolver() *net.Resolver {
 	}
 }
 
+// HasOutboundConnectivity performs a quick DNS query to a public service to verify if the worker node has outbound internet access.
+// This acts as a circuit breaker, preventing local gateway or internet drops from triggering false-alarm status changes.
+func (s *DomainService) HasOutboundConnectivity(ctx context.Context) bool {
+	resolver := getRealtimeResolver()
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Query standard public IP resolver
+	_, err := resolver.LookupHost(checkCtx, "one.one.one.one")
+	if err == nil {
+		return true
+	}
+	// Fallback to default resolver
+	_, err = net.DefaultResolver.LookupHost(checkCtx, "google.com")
+	return err == nil
+}
+
+// handleHealthFailure handles consecutive health failure threshold logic before marking a domain unhealthy.
+// Returns the updated health status, error code, error message, and a boolean indicating if the failure should be published.
+func (s *DomainService) handleHealthFailure(domainID uint, updates map[string]interface{}, errCode models.DomainErrorCode, errMsg string, prevHealth models.DomainHealthStatus, prevErrCode models.DomainErrorCode, prevErrMsg string) (models.DomainHealthStatus, models.DomainErrorCode, string, bool) {
+	count, err := s.redisService.IncrHealthFailure(domainID)
+	if err != nil {
+		slog.Error("Failed to increment health failure counter in Redis", "domainID", domainID, "error", err)
+	}
+
+	if count < 3 {
+		slog.Warn("Transient health check failure detected, suppressing state transition", "domainID", domainID, "attempt", count, "error", errMsg)
+		updates["health_status"] = prevHealth
+		updates["degraded_reason_code"] = prevErrCode
+		updates["error_message"] = prevErrMsg
+		return prevHealth, prevErrCode, prevErrMsg, false
+	}
+
+	// 3 consecutive failures reached
+	updates["health_status"] = models.DomainHealthUnhealthy
+	updates["degraded_reason_code"] = errCode
+	updates["error_message"] = errMsg
+	return models.DomainHealthUnhealthy, errCode, errMsg, true
+}
+
 // VerifyDomain verifies if the domain's CNAME or A record points to our platform and initiates SSL provisioning.
 func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, projectID uint, project *models.Project) (*models.CustomDomain, error) {
 	var domain models.CustomDomain
@@ -216,6 +256,12 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 	prevErrCode := domain.DegradedReasonCode
 	prevErrMsg := domain.ErrorMessage
 
+	// Verify outbound connectivity to prevent false outages during local network drops
+	if !s.HasOutboundConnectivity(ctx) {
+		slog.Warn("Outbound internet connectivity lost. Skipping domain healthcheck to prevent false positives.", "domain", domain.Domain, "domainID", domain.ID)
+		return
+	}
+
 	now := time.Now()
 	updates := map[string]interface{}{
 		"last_healthcheck_at": &now,
@@ -241,6 +287,8 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 		updates["error_message"] = ""
 		_ = s.db.Model(&domain).Updates(updates)
 
+		_ = s.redisService.ClearHealthFailure(domain.ID)
+
 		if prevHealth != models.DomainHealthHealthy || prevErrCode != models.ErrNone || prevErrMsg != "" {
 			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_recovered", "Local environment bypass", "")
 		}
@@ -248,7 +296,7 @@ func (s *DomainService) CheckAppHealth(ctx context.Context, domainID, projectID 
 	}
 
 	resolver := getRealtimeResolver()
-	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// LAYER 1: DNS Reachable (with up to 3 retries to handle transient UDP drop / network latency)
@@ -286,18 +334,21 @@ dnsLoop:
 
 	if !layer1DNS {
 		metrics.GetCollector().IncrHealthcheckFailures()
-		updates["health_status"] = models.DomainHealthUnhealthy
-		updates["degraded_reason_code"] = models.ErrDomainNotResolved
-		updates["error_message"] = "Layer 1: DNS resolution failed"
+
+		var failedReal bool
+		updates["layer1_dns_reachable"] = false
+		updates["latency_ms"] = int64(0)
+		domain.HealthStatus, domain.DegradedReasonCode, domain.ErrorMessage, failedReal = s.handleHealthFailure(domain.ID, updates, models.ErrDomainNotResolved, "Layer 1: DNS resolution failed", prevHealth, prevErrCode, prevErrMsg)
+
 		_ = s.db.Model(&domain).Updates(updates)
-		domain.HealthStatus = models.DomainHealthUnhealthy
-		domain.DegradedReasonCode = models.ErrDomainNotResolved
-		domain.ErrorMessage = "Layer 1: DNS resolution failed"
-		errMsg := "DNS lookup timed out or returned NXDOMAIN"
-		if dnsErr != nil {
-			errMsg = dnsErr.Error()
+
+		if failedReal {
+			errMsg := "DNS lookup timed out or returned NXDOMAIN"
+			if dnsErr != nil {
+				errMsg = dnsErr.Error()
+			}
+			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", errMsg)
 		}
-		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Layer 1 DNS resolution failed", errMsg)
 		return
 	}
 
@@ -417,15 +468,21 @@ httpLoop:
 
 	if err != nil {
 		metrics.GetCollector().IncrHealthcheckFailures()
+
+		var failedReal bool
 		updates["layer2_public_access_reachable"] = false
-		updates["health_status"] = models.DomainHealthUnhealthy
-		updates["degraded_reason_code"] = models.ErrRoutingHealthFailed
-		updates["error_message"] = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
+		updates["layer3_ssl_valid"] = false
+		updates["layer4_upstream_reachable"] = false
+		updates["layer5_response_integrity"] = false
+
+		errMsgStr := fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
+		domain.HealthStatus, domain.DegradedReasonCode, domain.ErrorMessage, failedReal = s.handleHealthFailure(domain.ID, updates, models.ErrRoutingHealthFailed, errMsgStr, prevHealth, prevErrCode, prevErrMsg)
+
 		_ = s.db.Model(&domain).Updates(updates)
-		domain.HealthStatus = models.DomainHealthUnhealthy
-		domain.DegradedReasonCode = models.ErrRoutingHealthFailed
-		domain.ErrorMessage = fmt.Sprintf("Layer 2: Public routing unreachable (%s): %v", scheme, err)
-		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Public routing unreachable", err.Error())
+
+		if failedReal {
+			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", "Public routing unreachable", err.Error())
+		}
 		return
 	}
 
@@ -434,19 +491,23 @@ httpLoop:
 
 	if !layer4Upstream {
 		metrics.GetCollector().IncrHealthcheckFailures()
+
+		var failedReal bool
 		updates["layer4_upstream_reachable"] = false
-		updates["health_status"] = models.DomainHealthUnhealthy
-		updates["degraded_reason_code"] = models.ErrUpstreamTimeout
+		updates["layer5_response_integrity"] = false
+
 		statusCode := 0
 		if resp != nil {
 			statusCode = resp.StatusCode
 		}
-		updates["error_message"] = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", statusCode)
+		errMsgStr := fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", statusCode)
+		domain.HealthStatus, domain.DegradedReasonCode, domain.ErrorMessage, failedReal = s.handleHealthFailure(domain.ID, updates, models.ErrUpstreamTimeout, errMsgStr, prevHealth, prevErrCode, prevErrMsg)
+
 		_ = s.db.Model(&domain).Updates(updates)
-		domain.HealthStatus = models.DomainHealthUnhealthy
-		domain.DegradedReasonCode = models.ErrUpstreamTimeout
-		domain.ErrorMessage = fmt.Sprintf("Layer 4: Upstream application returned HTTP %d", statusCode)
-		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", statusCode), "Application backend error or 502/504 Bad Gateway")
+
+		if failedReal {
+			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_failed", fmt.Sprintf("Upstream returned HTTP %d", statusCode), "Application backend error or 502/504 Bad Gateway")
+		}
 		return
 	}
 	updates["layer4_upstream_reachable"] = true
@@ -454,14 +515,18 @@ httpLoop:
 
 	if !layer5Integrity {
 		metrics.GetCollector().IncrHealthcheckFailures()
-		updates["health_status"] = models.DomainHealthUnhealthy
-		updates["degraded_reason_code"] = models.ErrIntegrityCheckFailed
-		updates["error_message"] = "Layer 5: Response integrity marker verification failed"
+
+		var failedReal bool
+		updates["layer5_response_integrity"] = false
+
+		errMsgStr := "Layer 5: Response integrity marker verification failed"
+		domain.HealthStatus, domain.DegradedReasonCode, domain.ErrorMessage, failedReal = s.handleHealthFailure(domain.ID, updates, models.ErrIntegrityCheckFailed, errMsgStr, prevHealth, prevErrCode, prevErrMsg)
+
 		_ = s.db.Model(&domain).Updates(updates)
-		domain.HealthStatus = models.DomainHealthUnhealthy
-		domain.DegradedReasonCode = models.ErrIntegrityCheckFailed
-		domain.ErrorMessage = "Layer 5: Response integrity marker verification failed"
-		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_degraded", "Layer 5 response integrity failed", "Application did not return expected verification marker")
+
+		if failedReal {
+			_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_degraded", "Layer 5 response integrity failed", "Application did not return expected verification marker")
+		}
 		return
 	}
 
@@ -473,6 +538,8 @@ httpLoop:
 	domain.HealthStatus = models.DomainHealthHealthy
 	domain.DegradedReasonCode = models.ErrNone
 	domain.ErrorMessage = ""
+
+	_ = s.redisService.ClearHealthFailure(domain.ID)
 
 	if prevHealth != models.DomainHealthHealthy || prevErrCode != models.ErrNone || prevErrMsg != "" {
 		_ = s.RecordEvent(&domain, domain.Status, domain.Status, "healthcheck_recovered", "Layer 5 response integrity verified successfully", "All 5 operational layers fully verified and healthy")

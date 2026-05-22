@@ -161,6 +161,12 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 		}
 	}
 
+	// Verify outbound connectivity to prevent false-positives during local network drops
+	if !w.domainService.HasOutboundConnectivity(ctx) {
+		slog.Warn("Outbound internet connectivity lost. Skipping DNS and SSL drift checks to prevent false positives.")
+		return
+	}
+
 	var domains []models.CustomDomain
 	// Fetch active domains, plus degraded domains that have already completed initial provisioning.
 	err := w.db.Where("status = ? OR (status = ? AND provisioning_checkpoint = ?)",
@@ -222,25 +228,37 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 		}
 
 		if d.Status == models.DomainStatusActive {
-			if dnsDrift {
+			if dnsDrift || sslDrift {
 				metrics.GetCollector().IncrReconciliationDrift()
-				var msg string
-				if diag != nil {
-					msg = fmt.Sprintf("Drift detected: domain resolves to %v instead of %s", diag.CurrentIPs, diag.ExpectedValue)
-				} else {
-					msg = "Drift detected: DNS lookup failed"
+
+				count, err := w.redisService.IncrDriftFailure(d.ID)
+				if err != nil {
+					slog.Error("Failed to increment drift failure counter in Redis", "domainID", d.ID, "error", err)
 				}
-				slog.Warn("Reconciliation drift detected: DNS resolution mismatch on active domain", "domain", d.Domain)
-				_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrDomainNotResolved, msg)
+
+				if count < 3 {
+					slog.Warn("Reconciliation drift detected, suppressing state transition", "domain", d.Domain, "attempt", count, "dnsDrift", dnsDrift, "sslDrift", sslDrift)
+					continue
+				}
+
+				if dnsDrift {
+					var msg string
+					if diag != nil {
+						msg = fmt.Sprintf("Drift detected: domain resolves to %v instead of %s", diag.CurrentIPs, diag.ExpectedValue)
+					} else {
+						msg = "Drift detected: DNS lookup failed"
+					}
+					slog.Warn("Reconciliation drift detected: DNS resolution mismatch on active domain", "domain", d.Domain)
+					_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, models.ErrDomainNotResolved, msg)
+				} else if sslDrift {
+					slog.Warn("Reconciliation drift detected on active domain", "domain", d.Domain, "error", sslErrStr)
+					_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, errCode, fmt.Sprintf("Drift detected: %s", sslErrStr))
+				}
 				continue
 			}
 
-			if sslDrift {
-				metrics.GetCollector().IncrReconciliationDrift()
-				slog.Warn("Reconciliation drift detected on active domain", "domain", d.Domain, "error", sslErrStr)
-				_ = w.domainService.TransitionState(d, models.DomainStatusDegraded, errCode, fmt.Sprintf("Drift detected: %s", sslErrStr))
-				continue
-			}
+			// Clear consecutive drift failures upon success
+			_ = w.redisService.ClearDriftFailure(d.ID)
 
 			// Active and healthy: perform health check if needed
 			if d.HealthStatus == models.DomainHealthUnhealthy || d.LastHealthcheckAt == nil || time.Since(*d.LastHealthcheckAt) > 5*time.Minute {
@@ -252,6 +270,7 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 		} else if d.Status == models.DomainStatusDegraded {
 			// If both DNS and SSL are now healthy, recover to active status!
 			if !dnsDrift && !sslDrift {
+				_ = w.redisService.ClearDriftFailure(d.ID)
 				slog.Info("Operational integrity recovered for degraded domain", "domain", d.Domain)
 				_ = w.domainService.TransitionState(d, models.DomainStatusActive, models.ErrNone, "Operational integrity recovered: DNS and SSL/routing successfully re-verified")
 				w.domainService.SafeGo(ctx, d.ID, d.ProjectID, "CheckAppHealth", func(ctx context.Context) error {
