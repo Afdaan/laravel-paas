@@ -15,7 +15,7 @@ import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -225,51 +225,48 @@ const Domains = () => {
 
       {/* Transfer Modal */}
       <Dialog open={transferModal.isOpen} onOpenChange={(open) => setTransferModal(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent className="sm:max-w-[460px] overflow-hidden bg-card/98 backdrop-blur-md border-border/60 p-0 shadow-2xl rounded-2xl sm:rounded-3xl">
-          <DialogHeader>
-            <div className="px-5 pt-5">
-              <DialogTitle className="flex items-center gap-2 text-base text-left">
-                <ArrowRightLeft className="w-4 h-4 text-primary" />
-                {t('domains.transfer')}
-              </DialogTitle>
-            </div>
-            <DialogDescription className="px-5 text-xs leading-relaxed text-left">
+        <DialogContent className="sm:max-w-[440px] p-0">
+          <DialogHeader className="px-6 pt-6 pb-0">
+            <DialogTitle className="flex items-center gap-2 text-base text-left">
+              <ArrowRightLeft className="w-4 h-4 text-primary" />
+              {t('domains.transfer')}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed text-left">
               {t('domains.transferDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="px-5 pb-5 pt-2 space-y-5 text-left">
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
-                <Globe size={12} className="text-primary/50" />
+
+          <div className="px-6 py-4 space-y-4 text-left">
+            {/* Domain being transferred */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">
                 {t('domains.domainName')}
               </label>
-              <Card className="border-border/70 bg-muted/20 shadow-none">
-                <CardContent className="flex items-center justify-between gap-3 p-3">
-                  <span className="truncate font-mono text-sm text-foreground/90">{transferModal.domain?.domain}</span>
-                  <Globe className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-                </CardContent>
-              </Card>
+              <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2.5">
+                <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="truncate font-mono text-sm">{transferModal.domain?.domain}</span>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 flex items-center gap-2">
-                <FolderGit2 size={12} className="text-primary/50" />
+            {/* Target project selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">
                 {t('domains.selectTarget')}
               </label>
               <Select 
                 value={transferModal.targetProjectId} 
                 onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
               >
-                <SelectTrigger className="h-11 w-full border-border/70 bg-background px-3 hover:bg-muted/30 transition-colors">
+                <SelectTrigger className="h-10 w-full">
                   <SelectValue placeholder={t('domains.selectTarget')}>
                     {projects.find(p => p.id.toString() === transferModal.targetProjectId)?.name}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)] p-1">
+                <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)]">
                   {projects
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (
-                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5 pl-2 pr-8">
+                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5">
                         <div className="flex min-w-0 flex-col gap-0.5 text-left">
                           <span className="truncate text-sm font-medium leading-none">{p.name}</span>
                           <span className="truncate text-[10px] leading-none text-muted-foreground">{p.subdomain}</span>
@@ -279,14 +276,15 @@ const Domains = () => {
                   }
                   {projects.filter(p => p.id !== transferModal.domain?.project_id).length === 0 && (
                     <div className="p-4 text-center text-xs text-muted-foreground">
-                      No other projects available
+                      {t('domains.noOtherProjects')}
                     </div>
                   )}
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <DialogFooter className="mt-0 px-5 pb-5 pt-4">
+
+          <DialogFooter className="px-6 pb-6 pt-2">
             <Button variant="outline" onClick={() => setTransferModal(prev => ({ ...prev, isOpen: false }))}>
               {t('common.cancel')}
             </Button>
@@ -312,17 +310,25 @@ const Domains = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-40 gap-6">
-          <Loader2 className="w-12 h-12 text-primary animate-spin" />
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground animate-pulse">{t('common.loading')}</p>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="flex items-center gap-4 rounded-lg border bg-card p-4 animate-pulse">
+              <div className="h-8 w-8 rounded bg-muted" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-48 rounded bg-muted" />
+                <div className="h-3 w-24 rounded bg-muted" />
+              </div>
+              <div className="h-5 w-16 rounded-full bg-muted" />
+            </div>
+          ))}
         </div>
       ) : domains.length === 0 ? (
-        <Card className="p-24 text-center flex flex-col items-center max-w-xl mx-auto border-dashed">
-          <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-6">
-            <Globe className="w-10 h-10 text-muted-foreground opacity-50" />
+        <Card className="py-16 px-8 text-center flex flex-col items-center max-w-md mx-auto border-dashed">
+          <div className="w-14 h-14 bg-muted rounded-full flex items-center justify-center mb-4">
+            <Globe className="w-7 h-7 text-muted-foreground" />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight mb-2">{t('domains.noDomains')}</h2>
-          <p className="text-muted-foreground mb-8 max-w-sm">{t('domains.noDomainsDesc')}</p>
+          <h2 className="text-lg font-semibold tracking-tight mb-1">{t('domains.noDomains')}</h2>
+          <p className="text-sm text-muted-foreground max-w-xs">{t('domains.noDomainsDesc')}</p>
         </Card>
       ) : (
         <div className="bg-card border rounded-lg overflow-hidden">
