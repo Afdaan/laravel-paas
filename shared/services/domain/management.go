@@ -43,12 +43,12 @@ func (s *DomainService) AddDomain(projectID uint, domainName string) (*models.Cu
 	}
 
 	var count int64
-	s.db.Model(&models.CustomDomain{}).Where("domain = ?", domainName).Count(&count)
+	s.db.Model(&models.CustomDomain{}).Where("domain = ? AND status != ?", domainName, string(models.DomainStatusPendingCleanup)).Count(&count)
 	if count > 0 {
 		return nil, apperr.New(409, "DNS_CONFLICT", "Domain is already registered to another project")
 	}
 
-	// Safely hard-delete any legacy/soft-deleted rows with this domain to avoid Postgres unique constraint violations on create
+	// Safely hard-delete any legacy/soft-deleted or pending_cleanup rows with this domain to avoid Postgres unique constraint violations on create
 	if err := s.db.Unscoped().Where("domain = ?", domainName).Delete(&models.CustomDomain{}).Error; err != nil {
 		return nil, err
 	}

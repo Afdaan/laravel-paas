@@ -559,9 +559,11 @@ func (w *DomainWorker) reconcileCleanupDomains(ctx context.Context) {
 			}
 
 			// Checkpoint 2: Finalize Teardown & Soft Delete / Tombstone
-			if d.CleanupCheckpoint == "nginx_purged" {
-				d.CleanupCheckpoint = "done"
-				_ = w.db.Model(d).Update("cleanup_checkpoint", "done")
+			if d.CleanupCheckpoint == "nginx_purged" || d.CleanupCheckpoint == "done" {
+				if d.CleanupCheckpoint == "nginx_purged" {
+					d.CleanupCheckpoint = "done"
+					_ = w.db.Model(d).Update("cleanup_checkpoint", "done")
+				}
 				_ = w.domainService.TransitionStateCtx(lockCtx, d, models.DomainStatusDisabled, models.ErrNone, "Domain cleanup finalized and routing purged")
 				metrics.GetCollector().IncrCleanupRecovered()
 

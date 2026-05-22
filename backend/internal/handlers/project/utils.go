@@ -198,6 +198,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
 
 	h.projectService.UpdateActivity(project.ID)
 
@@ -229,6 +230,9 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
+		keepAliveTicker := time.NewTicker(15 * time.Second)
+		defer keepAliveTicker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -242,6 +246,12 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 				if err != nil {
 					return
 				}
+			case <-keepAliveTicker.C:
+				_, err := w.WriteString(":\n\n")
+				if err != nil {
+					return
+				}
+				_ = w.Flush()
 			case <-ticker.C:
 				if err := w.Flush(); err != nil {
 					return
@@ -276,6 +286,7 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
 
 	h.projectService.UpdateActivity(project.ID)
 
@@ -324,6 +335,9 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
+		keepAliveTicker := time.NewTicker(15 * time.Second)
+		defer keepAliveTicker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done(): // Detect client disconnect
@@ -337,6 +351,12 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 				if err != nil {
 					return
 				}
+			case <-keepAliveTicker.C:
+				_, err := w.WriteString(":\n\n")
+				if err != nil {
+					return
+				}
+				_ = w.Flush()
 			case <-ticker.C: // Periodic flush interval
 				if err := w.Flush(); err != nil {
 					return

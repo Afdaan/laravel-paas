@@ -85,6 +85,7 @@ var allowedTransitions = map[models.CustomDomainStatus]map[models.CustomDomainSt
 		models.DomainStatusPending:        true,
 		models.DomainStatusPendingDNS:     true,
 		models.DomainStatusActive:         true,
+		models.DomainStatusDisabled:       true,
 	},
 }
 
