@@ -5,16 +5,11 @@ import { domainsAPI, projectsAPI } from '../../services/api'
 import { 
   Globe, 
   Trash2, 
-  CheckCircle2, 
-  AlertCircle, 
-  AlertTriangle,
-  Clock, 
   ArrowRightLeft,
   Loader2,
   ExternalLink,
   FolderGit2,
-  MoreVertical,
-  ShieldCheck
+  MoreVertical
 } from 'lucide-react'
 import useTranslation from '../../lib/useTranslation'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -57,27 +52,37 @@ const StatusBadge = ({ status }: { status?: string }) => {
   const cleanStatus = status || 'pending'
   const label = t(`domains.status.${cleanStatus}`) || cleanStatus
 
-  let color = 'text-amber-600 border-amber-500/20 bg-amber-500/10'
-  let Icon = Clock
+  let dotColor = 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+  let textColor = 'text-amber-500/90'
+  let bgColor = 'bg-amber-500/5 border-amber-500/15'
 
   if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
-    color = 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10'
-    Icon = CheckCircle2
+    dotColor = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+    textColor = 'text-emerald-500/90'
+    bgColor = 'bg-emerald-500/5 border-emerald-500/15'
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
-    color = 'text-cyan-500 border-cyan-500/20 bg-cyan-500/10'
-    Icon = Loader2
+    dotColor = 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+    textColor = 'text-cyan-500/90'
+    bgColor = 'bg-cyan-500/5 border-cyan-500/15'
   } else if (['degraded'].includes(cleanStatus)) {
-    color = 'text-amber-500 border-amber-500/20 bg-amber-500/10'
-    Icon = AlertTriangle
+    dotColor = 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+    textColor = 'text-amber-500/90'
+    bgColor = 'bg-amber-500/5 border-amber-500/15'
   } else if (['error', 'renewal_failed', 'ssl_failed'].includes(cleanStatus)) {
-    color = 'text-rose-500 border-rose-500/20 bg-rose-500/10'
-    Icon = AlertCircle
+    dotColor = 'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+    textColor = 'text-rose-500/90'
+    bgColor = 'bg-rose-500/5 border-rose-500/15'
   }
 
+  const isSpinning = ['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
+
   return (
-    <Badge variant="outline" className={`gap-1.5 flex w-fit text-[11px] font-semibold tracking-tight px-2.5 py-1 ${color}`}>
-      <Icon className={`w-3.5 h-3.5 ${['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus) ? 'animate-spin' : ''}`} />
-      {label}
+    <Badge 
+      variant="outline" 
+      className={`gap-2 items-center flex w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border ${bgColor} ${textColor} transition-all duration-300`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${isSpinning ? 'animate-pulse' : ''}`} />
+      <span>{label}</span>
     </Badge>
   )
 }
@@ -87,13 +92,18 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
   if (!health || health === 'unknown') return null
 
   const isHealthy = health === 'healthy'
-  const color = isHealthy ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-rose-500 border-rose-500/20 bg-rose-500/10'
+  const dotColor = isHealthy ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+  const textColor = isHealthy ? 'text-emerald-500/90' : 'text-rose-500/90'
+  const bgColor = isHealthy ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-rose-500/5 border-rose-500/15'
   const label = t(`domains.health.${health}`) || health
 
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <Badge variant="outline" className={`gap-1 flex w-fit text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 ${color}`}>
-        <ShieldCheck className="w-3 h-3" />
+      <Badge 
+        variant="outline" 
+        className={`gap-2 items-center flex w-fit text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${bgColor} ${textColor}`}
+      >
+        <span className={`w-1 h-1 rounded-full ${dotColor}`} />
         {label}
       </Badge>
       {!isHealthy && error && error !== 'none' && (
@@ -144,6 +154,25 @@ const Domains = () => {
 
   useEffect(() => {
     fetchData()
+
+    // Poll every 4 seconds to sync domain status and routing states silently
+    const interval = setInterval(() => {
+      const quietFetch = async () => {
+        try {
+          const [domainsRes, projectsRes] = await Promise.all([
+            domainsAPI.listOwn(),
+            projectsAPI.listOwn()
+          ])
+          setDomains(domainsRes.data.data || [])
+          setProjects(projectsRes.data.data || [])
+        } catch (error) {
+          // Silent catch to keep UI experience clean and uninterrupted
+        }
+      }
+      quietFetch()
+    }, 4000)
+
+    return () => clearInterval(interval)
   }, [fetchData])
 
   const handleRemove = (domain: CustomDomain) => {
@@ -168,12 +197,18 @@ const Domains = () => {
     
     setIsTransferring(true)
     try {
-      await domainsAPI.transfer(transferModal.domain.id, transferModal.targetProjectId)
+      await domainsAPI.transfer(
+        transferModal.domain.project_id,
+        transferModal.domain.id,
+        transferModal.targetProjectId
+      )
       toast.success(t('domains.transferSuccess'))
       setTransferModal(prev => ({ ...prev, isOpen: false }))
       fetchData()
-    } catch (error) {
-      toast.error(t('common.error'))
+    } catch (error: any) {
+      const errCode = error.response?.data?.code
+      const errMsg = errCode ? t(`domains.errors.${errCode}`) : error.response?.data?.message
+      toast.error(errMsg || t('common.error'))
     } finally {
       setIsTransferring(false)
     }
@@ -190,7 +225,7 @@ const Domains = () => {
 
       {/* Transfer Modal */}
       <Dialog open={transferModal.isOpen} onOpenChange={(open) => setTransferModal(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent className="p-0 sm:max-w-[460px] overflow-hidden">
+        <DialogContent className="sm:max-w-[460px] overflow-hidden bg-card/98 backdrop-blur-md border-border/60 p-0 shadow-2xl rounded-2xl sm:rounded-3xl">
           <DialogHeader>
             <div className="px-5 pt-5">
               <DialogTitle className="flex items-center gap-2 text-base text-left">

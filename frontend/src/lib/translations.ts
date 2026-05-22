@@ -478,7 +478,7 @@ export const translations = {
         SAME_PROJECT: "Domain is already assigned to this project.",
       },
       events: {
-        title: "Reconciliation Audit Log",
+        title: "Domain Connection & SSL Setup Log",
         desc: "Chronological registry of all domain state transitions and Let's Encrypt challenge events.",
         event: "Event",
         transition: "State Transition",
@@ -1253,7 +1253,7 @@ export const translations = {
         SAME_PROJECT: "Domain Duplikat: Domain ini sudah terhubung ke project ini.",
       },
       events: {
-        title: "Reconciliation Audit Log",
+        title: "Log Setup Koneksi & SSL Domain",
         desc: "Riwayat kronologis transisi status domain dan Let's Encrypt challenge events.",
         event: "Event",
         transition: "State Transition",

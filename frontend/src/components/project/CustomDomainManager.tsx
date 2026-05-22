@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
-import { Globe, Plus, Trash2, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, ExternalLink, ShieldCheck, Clock, Loader2, Activity, Terminal, FileText } from 'lucide-react'
+import { Globe, Plus, Trash2, AlertCircle, RefreshCw, ExternalLink, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
 import { projectsAPI } from '@/services/api'
 import { CustomDomain, DomainEvent } from '@/types'
@@ -55,27 +55,37 @@ const StatusBadge = ({ status }: { status: string }) => {
   const cleanStatus = status || 'pending'
   const label = t(`domains.status.${cleanStatus}`) || cleanStatus
 
-  let color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
-  let Icon = Clock
+  let dotColor = 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+  let textColor = 'text-amber-500/90'
+  let bgColor = 'bg-amber-500/5 border-amber-500/15'
 
   if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
-    color = 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10'
-    Icon = CheckCircle2
+    dotColor = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+    textColor = 'text-emerald-500/90'
+    bgColor = 'bg-emerald-500/5 border-emerald-500/15'
   } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
-    color = 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10'
-    Icon = Loader2
+    dotColor = 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+    textColor = 'text-cyan-500/90'
+    bgColor = 'bg-cyan-500/5 border-cyan-500/15'
   } else if (['degraded'].includes(cleanStatus)) {
-    color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
-    Icon = AlertTriangle
+    dotColor = 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+    textColor = 'text-amber-500/90'
+    bgColor = 'bg-amber-500/5 border-amber-500/15'
   } else if (['error', 'renewal_failed', 'ssl_failed'].includes(cleanStatus)) {
-    color = 'text-rose-500 border-rose-500/30 bg-rose-500/10'
-    Icon = AlertCircle
+    dotColor = 'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+    textColor = 'text-rose-500/90'
+    bgColor = 'bg-rose-500/5 border-rose-500/15'
   }
 
+  const isSpinning = ['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
+
   return (
-    <Badge variant="outline" className={`gap-1.5 flex items-center w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-md ${color}`}>
-      <Icon className={`w-3.5 h-3.5 ${['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus) ? 'animate-spin' : ''}`} />
-      {label}
+    <Badge 
+      variant="outline" 
+      className={`gap-2 items-center flex w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border ${bgColor} ${textColor} transition-all duration-300`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${isSpinning ? 'animate-pulse' : ''}`} />
+      <span>{label}</span>
     </Badge>
   )
 }
@@ -85,17 +95,22 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
   if (!health || health === 'unknown') return null
 
   const isHealthy = health === 'healthy'
-  const color = isHealthy ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10' : 'text-rose-500 border-rose-500/30 bg-rose-500/10'
+  const dotColor = isHealthy ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+  const textColor = isHealthy ? 'text-emerald-500/90' : 'text-rose-500/90'
+  const bgColor = isHealthy ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-rose-500/5 border-rose-500/15'
   const label = t(`domains.health.${health}`) || health
 
   return (
     <div className="flex items-center gap-2">
-      <Badge variant="outline" className={`gap-1.5 flex items-center w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-md ${color}`}>
-        <ShieldCheck className="w-3.5 h-3.5" />
+      <Badge 
+        variant="outline" 
+        className={`gap-2 items-center flex w-fit text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${bgColor} ${textColor}`}
+      >
+        <span className={`w-1 h-1 rounded-full ${dotColor}`} />
         {label}
       </Badge>
       {!isHealthy && error && (
-        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/10 px-2.5 py-1 rounded-md border border-rose-500/20">{error}</span>
+        <span className="text-[10px] text-rose-500 font-medium truncate max-w-xs bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">{error}</span>
       )}
     </div>
   )
@@ -468,7 +483,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
               </div>
               <div className="space-y-1.5 text-left">
                 <DialogTitle className="text-base font-bold text-foreground flex flex-wrap items-center gap-3">
-                  <span>{t('domains.events.title') || 'Reconciliation Audit Log'}</span>
+                  <span>{t('domains.events.title') || 'Domain Connection & SSL Setup Log'}</span>
                   <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-mono bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full tracking-wider font-bold shadow-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     LIVE STREAM
