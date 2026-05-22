@@ -319,7 +319,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           <div className="relative px-3 py-4 flex items-center h-[72px]">
             <button
               type="button"
-              className="flex min-w-0 items-center rounded-lg p-1.5 text-left transition-all duration-300 hover:bg-muted"
+              className="flex min-w-0 items-center rounded-lg p-2 text-left transition-all duration-300 hover:bg-muted justify-start"
               onClick={() => {
                 if (!isVisualExpanded) {
                   setIsSidebarCollapsed(false);
@@ -336,7 +336,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               <div className={`min-w-0 text-left transition-all ease-in-out ${
                 isVisualExpanded 
                   ? 'opacity-100 max-w-[150px] ml-3 duration-300 delay-100' 
-                  : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
+                  : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
               }`}>
                 <h1 className="truncate text-base font-semibold tracking-tight whitespace-nowrap">PaaS</h1>
                 <p className="truncate text-[10px] font-medium text-muted-foreground whitespace-nowrap">
@@ -368,14 +368,14 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
             <div className="px-3 pb-3">
               <Button 
                 render={<NavLink to="/projects/new" title={t('common.newProject')} />} 
-                className={`h-9 w-full transition-all duration-300 ${!isVisualExpanded ? 'px-0 justify-center' : 'justify-start gap-2 px-3'}`} 
+                className="h-9 w-full transition-all duration-300 justify-start pl-4 pr-2" 
                 size="sm"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                   isVisualExpanded 
-                    ? 'opacity-100 max-w-[150px] duration-300 delay-100' 
-                    : 'opacity-0 max-w-0 overflow-hidden duration-100'
+                    ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
+                    : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                 }`}>
                   {t('common.newProject')}
                 </span>
@@ -400,21 +400,19 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   to={item.to}
                   title={item.label}
                   className={({ isActive }) =>
-                    `flex h-9 items-center rounded-md text-sm font-medium transition-all duration-300 ${
-                      !isVisualExpanded ? 'justify-center px-0' : 'px-2.5'
-                    } ${
+                    `flex h-9 items-center rounded-md text-sm font-medium transition-all duration-300 justify-start pl-4 pr-2 ${
                       isActive
                          ? 'bg-secondary text-secondary-foreground shadow-sm'
                          : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
                     }`
                   }
                 >
-                  <div className={`flex items-center w-full transition-all duration-300 ${!isVisualExpanded ? 'justify-center' : 'gap-2.5'}`}>
+                  <div className="flex items-center w-full gap-2.5">
                     <item.icon className="h-4 w-4 shrink-0" />
                     <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                       isVisualExpanded 
                         ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100' 
-                        : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
+                        : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                     }`}>
                       {item.label}
                     </span>
@@ -439,21 +437,19 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                     to={item.to}
                     title={item.label}
                     className={({ isActive }) =>
-                      `flex h-9 items-center rounded-md text-sm font-medium transition-all duration-300 ${
-                        !isVisualExpanded ? 'justify-center px-0' : 'px-2.5'
-                      } ${
+                      `flex h-9 items-center rounded-md text-sm font-medium transition-all duration-300 justify-start pl-4 pr-2 ${
                         isActive
                            ? 'bg-secondary text-secondary-foreground shadow-sm'
                            : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
                       }`
                     }
                   >
-                    <div className={`flex items-center w-full transition-all duration-300 ${!isVisualExpanded ? 'justify-center' : 'gap-2.5'}`}>
+                    <div className="flex items-center w-full gap-2.5">
                       <item.icon className="h-4 w-4 shrink-0" />
                       <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                         isVisualExpanded 
                           ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100' 
-                          : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
+                          : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                       }`}>
                         {item.label}
                       </span>
@@ -465,14 +461,14 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           </nav>
           
           <div className="p-3 border-t">
-            <div className={`mb-2 flex items-center rounded-md transition-all duration-300 hover:bg-muted ${!isVisualExpanded ? 'justify-center p-2' : 'gap-3 p-2'}`}>
+            <div className="mb-2 flex items-center rounded-md transition-all duration-300 hover:bg-muted p-1.5 gap-3">
               <Avatar className="h-9 w-9 shrink-0">
                 <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
               </Avatar>
               <div className={`flex-1 min-w-0 text-left transition-all ease-in-out ${
                 isVisualExpanded 
                   ? 'opacity-100 max-w-[180px] duration-300 delay-100' 
-                  : 'opacity-0 max-w-0 overflow-hidden duration-100'
+                  : 'opacity-0 max-w-0 overflow-hidden duration-75'
               }`}>
                 <p className="text-sm font-medium leading-none truncate whitespace-nowrap">{user?.name}</p>
                 <p className="text-xs text-muted-foreground truncate mt-1 whitespace-nowrap">{user?.email}</p>
@@ -483,14 +479,14 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
                 <Button 
                   variant="ghost" 
-                  className={`h-8 w-full text-xs transition-all duration-300 ${!isVisualExpanded ? 'justify-center px-0' : 'justify-start px-2'}`} 
+                  className="h-8 w-full text-xs transition-all duration-300 justify-start pl-4 pr-2" 
                   render={<NavLink to="/admin" title={t('common.adminPanel')} />}
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
                   <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                     isVisualExpanded 
                       ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
-                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
+                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                   }`}>
                     {t('common.adminPanel')}
                   </span>
@@ -500,14 +496,14 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               {isAdmin && (
                 <Button 
                   variant="ghost" 
-                  className={`h-8 w-full text-xs transition-all duration-300 ${!isVisualExpanded ? 'justify-center px-0' : 'justify-start px-2'}`} 
+                  className="h-8 w-full text-xs transition-all duration-300 justify-start pl-4 pr-2" 
                   render={<NavLink to="/dashboard" title={t('common.studentView')} />}
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
                   <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                     isVisualExpanded 
                       ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
-                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
+                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                   }`}>
                     {t('common.studentView')}
                   </span>
@@ -516,7 +512,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               
               <Button 
                  variant="ghost" 
-                 className={`h-8 w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 transition-all duration-300 ${!isVisualExpanded ? 'justify-center px-0' : 'justify-start px-2'}`}
+                 className="h-8 w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 transition-all duration-300 justify-start pl-4 pr-2"
                  onClick={handleLogout}
                  title={t('common.logout')}
               >
@@ -524,7 +520,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
                   isVisualExpanded 
                     ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
-                    : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-100'
+                    : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                 }`}>
                   {t('common.logout')}
                 </span>
