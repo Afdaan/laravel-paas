@@ -244,12 +244,12 @@ const Domains = () => {
               </label>
               <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2.5">
                 <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="truncate font-mono text-sm">{transferModal.domain?.domain}</span>
+                <span className="truncate font-mono text-sm leading-none flex items-center">{transferModal.domain?.domain}</span>
               </div>
             </div>
 
             {/* Target project selector */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 pb-3">
               <label className="text-xs font-medium text-muted-foreground">
                 {t('domains.selectTarget')}
               </label>
@@ -258,7 +258,13 @@ const Domains = () => {
                 onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
               >
                 <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder={t('domains.selectTarget')} />
+                  <SelectValue placeholder={t('domains.selectTarget')}>
+                    {(value) => {
+                      if (!value) return null
+                      const selectedProject = projects.find(p => p.id.toString() === value)
+                      return selectedProject ? selectedProject.name : value
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1">
                   {projects
