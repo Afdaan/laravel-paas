@@ -258,15 +258,13 @@ const Domains = () => {
                 onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
               >
                 <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder={t('domains.selectTarget')}>
-                    {projects.find(p => p.id.toString() === transferModal.targetProjectId)?.name}
-                  </SelectValue>
+                  <SelectValue placeholder={t('domains.selectTarget')} />
                 </SelectTrigger>
-                <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)] p-1">
+                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1">
                   {projects
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (
-                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5">
+                      <SelectItem key={p.id} value={p.id.toString()} className="py-2.5 pl-3">
                         <div className="flex min-w-0 flex-col gap-0.5 text-left">
                           <span className="truncate text-sm font-medium leading-none">{p.name}</span>
                           <span className="truncate text-[10px] leading-none text-muted-foreground">{p.subdomain}</span>
