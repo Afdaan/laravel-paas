@@ -225,8 +225,8 @@ const Domains = () => {
 
       {/* Transfer Modal */}
       <Dialog open={transferModal.isOpen} onOpenChange={(open) => setTransferModal(prev => ({ ...prev, isOpen: open }))}>
-        <DialogContent className="sm:max-w-[440px] p-0">
-          <DialogHeader className="px-6 pt-6 pb-0">
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base text-left">
               <ArrowRightLeft className="w-4 h-4 text-primary" />
               {t('domains.transfer')}
@@ -236,9 +236,9 @@ const Domains = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="px-6 py-4 space-y-4 text-left">
+          <div className="space-y-4 text-left">
             {/* Domain being transferred */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
                 {t('domains.domainName')}
               </label>
@@ -249,7 +249,7 @@ const Domains = () => {
             </div>
 
             {/* Target project selector */}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
                 {t('domains.selectTarget')}
               </label>
@@ -284,7 +284,7 @@ const Domains = () => {
             </div>
           </div>
 
-          <DialogFooter className="px-6 pb-6 pt-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setTransferModal(prev => ({ ...prev, isOpen: false }))}>
               {t('common.cancel')}
             </Button>
