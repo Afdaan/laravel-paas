@@ -97,6 +97,15 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     return 256
   })
   const [isDragging, setIsDragging] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const isVisualExpanded = !isSidebarCollapsed || isHovered
+
+  useEffect(() => {
+    if (!isSidebarCollapsed) {
+      setIsHovered(false)
+    }
+  }, [isSidebarCollapsed])
+
   const [projects, setProjects] = useState<Project[]>([])
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [isProjectsLoading, setIsProjectsLoading] = useState(false)
@@ -280,9 +289,17 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
       <aside 
-        style={{ width: isSidebarCollapsed ? 72 : sidebarWidth }}
+        style={{ width: !isVisualExpanded ? 72 : sidebarWidth }}
+        onMouseEnter={() => {
+          if (isSidebarCollapsed) {
+            setIsHovered(true)
+          }
+        }}
+        onMouseLeave={() => {
+          setIsHovered(false)
+        }}
         className={`relative border-r bg-card flex flex-col z-50 select-none shrink-0 ${
-          isDragging ? '' : 'transition-[width] duration-200 ease-out'
+          isDragging ? '' : 'transition-[width] duration-300 ease-in-out'
         }`}
       >
         {/* Resize Handle */}
@@ -296,18 +313,18 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
         {/* Logo Branding */}
         <div className="px-3 py-4">
-          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
+          <div className={`flex items-center ${!isVisualExpanded ? 'justify-center' : 'justify-between'} gap-2`}>
             <button
               type="button"
-              className={`flex min-w-0 items-center gap-3 rounded-lg p-1.5 text-left transition-colors hover:bg-muted ${isSidebarCollapsed ? 'justify-center' : 'flex-1'}`}
+              className={`flex min-w-0 items-center gap-3 rounded-lg p-1.5 text-left transition-colors hover:bg-muted ${!isVisualExpanded ? 'justify-center' : 'flex-1'}`}
               onClick={() => navigate(isAdmin ? '/admin/dashboard' : '/dashboard')}
               title="PaaS"
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
                 <span className="text-xs font-bold tracking-tighter">LP</span>
               </div>
-              {!isSidebarCollapsed && (
-                <div className="min-w-0">
+              {isVisualExpanded && (
+                <div className="min-w-0 text-left animate-in fade-in duration-300">
                   <h1 className="truncate text-base font-semibold tracking-tight">PaaS</h1>
                   <p className="truncate text-[10px] font-medium text-muted-foreground">
                     {isAdmin ? t('common.globalAdmin') : t('common.student')}
@@ -322,35 +339,49 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 size="icon-sm"
                 onClick={() => setIsSidebarCollapsed(true)}
                 title="Collapse sidebar"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
+                className="shrink-0 text-muted-foreground hover:text-foreground animate-in fade-in duration-300"
               >
                 <PanelLeftClose className="h-4 w-4" />
               </Button>
             )}
+            {isSidebarCollapsed && isHovered && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => {
+                  setIsSidebarCollapsed(false);
+                  setIsHovered(false);
+                }}
+                title="Pin sidebar"
+                className="shrink-0 text-muted-foreground hover:text-foreground animate-in fade-in duration-300"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </Button>
+            )}
           </div>
 
-          {isSidebarCollapsed && (
+          {isSidebarCollapsed && !isHovered && (
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={() => setIsSidebarCollapsed(false)}
               title="Expand sidebar"
-              className="mx-auto mt-2 flex text-muted-foreground hover:text-foreground"
+              className="mx-auto mt-2 flex text-muted-foreground hover:text-foreground animate-in scale-in duration-200"
             >
               <PanelLeftOpen className="h-4 w-4" />
             </Button>
           )}
         </div>
 
-        {!isSidebarCollapsed && !isAdmin && (
-          <div className="px-3 pb-3">
+        {isVisualExpanded && !isAdmin && (
+          <div className="px-3 pb-3 animate-in fade-in duration-300">
             <Button render={<NavLink to="/projects/new" />} className="h-9 w-full justify-start gap-2" size="sm">
               <Plus className="h-4 w-4" />
-              {t('common.newProject')}
+              <span className="truncate">{t('common.newProject')}</span>
             </Button>
           </div>
         )}
-        {isSidebarCollapsed && !isAdmin && (
+        {!isVisualExpanded && !isAdmin && (
           <div className="px-3 pb-3">
             <Button
               render={<NavLink to="/projects/new" title={t('common.newProject')} />}
@@ -363,11 +394,11 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         )}
 
         {/* Navigation Registry */}
-        <nav className={`flex-1 overflow-y-auto ${isSidebarCollapsed ? 'px-3 py-2' : 'px-3 py-3'} space-y-5`}>
+        <nav className={`flex-1 overflow-y-auto ${!isVisualExpanded ? 'px-3 py-2' : 'px-3 py-3'} space-y-5`}>
           {/* Main Group */}
           <div className="space-y-1">
-            {!isSidebarCollapsed && (
-              <h4 className="px-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t('common.main')}</h4>
+            {isVisualExpanded && (
+              <h4 className="px-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider animate-in fade-in duration-300">{t('common.main')}</h4>
             )}
             {navItems.management.map((item) => (
               <NavLink
@@ -376,7 +407,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 title={item.label}
                 className={({ isActive }) =>
                   `flex h-9 items-center rounded-md text-sm font-medium transition-colors ${
-                    isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
+                    !isVisualExpanded ? 'justify-center px-0' : 'justify-between px-2.5'
                   } ${
                     isActive
                        ? 'bg-secondary text-secondary-foreground shadow-sm'
@@ -384,9 +415,9 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   }`
                 }
               >
-                <div className={`flex min-w-0 items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+                <div className={`flex min-w-0 items-center ${!isVisualExpanded ? 'justify-center' : 'gap-2.5'}`}>
                   <item.icon className="h-4 w-4 shrink-0" />
-                  {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                  {isVisualExpanded && <span className="truncate animate-in fade-in duration-300">{item.label}</span>}
                 </div>
               </NavLink>
             ))}
@@ -395,8 +426,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           {/* Infrastructure Group (Admin Only) */}
           {isAdmin && navItems.resources && (
             <div className="space-y-1 pt-2">
-              {!isSidebarCollapsed && (
-                <h4 className="px-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t('common.infrastructure')}</h4>
+              {isVisualExpanded && (
+                <h4 className="px-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider animate-in fade-in duration-300">{t('common.infrastructure')}</h4>
               )}
               {navItems.resources.map((item) => (
                 <NavLink
@@ -405,7 +436,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   title={item.label}
                   className={({ isActive }) =>
                     `flex h-9 items-center rounded-md text-sm font-medium transition-colors ${
-                      isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
+                      !isVisualExpanded ? 'justify-center px-0' : 'justify-between px-2.5'
                     } ${
                       isActive
                          ? 'bg-secondary text-secondary-foreground shadow-sm'
@@ -413,9 +444,9 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                     }`
                   }
                 >
-                  <div className={`flex min-w-0 items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+                  <div className={`flex min-w-0 items-center ${!isVisualExpanded ? 'justify-center' : 'gap-2.5'}`}>
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                    {isVisualExpanded && <span className="truncate animate-in fade-in duration-300">{item.label}</span>}
                   </div>
                 </NavLink>
               ))}
@@ -423,13 +454,13 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           )}
         </nav>
         
-        <div className={`${isSidebarCollapsed ? 'p-3' : 'p-3'} border-t`}>
-          <div className={`mb-2 flex items-center rounded-md transition-colors hover:bg-muted ${isSidebarCollapsed ? 'justify-center p-1.5' : 'gap-3 p-2'}`}>
+        <div className="p-3 border-t">
+          <div className={`mb-2 flex items-center rounded-md transition-colors hover:bg-muted ${!isVisualExpanded ? 'justify-center p-1.5' : 'gap-3 p-2'}`}>
             <Avatar className="h-9 w-9">
               <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
             </Avatar>
-            {!isSidebarCollapsed && (
-              <div className="flex-1 min-w-0">
+            {isVisualExpanded && (
+              <div className="flex-1 min-w-0 animate-in fade-in duration-300">
                 <p className="text-sm font-medium leading-none truncate">{user?.name}</p>
                 <p className="text-xs text-muted-foreground truncate mt-1">{user?.email}</p>
               </div>
@@ -438,27 +469,27 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           
           <div className="space-y-1">
             {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
-              <Button variant="ghost" className={`h-8 w-full text-xs ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/admin" title={t('common.adminPanel')} />}>
-                <ArrowRightLeft className={`h-3.5 w-3.5 shrink-0 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
-                {!isSidebarCollapsed && <span className="truncate">{t('common.adminPanel')}</span>}
+              <Button variant="ghost" className={`h-8 w-full text-xs ${!isVisualExpanded ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/admin" title={t('common.adminPanel')} />}>
+                <ArrowRightLeft className={`h-3.5 w-3.5 shrink-0 ${!isVisualExpanded ? '' : 'mr-2'}`} />
+                {isVisualExpanded && <span className="truncate animate-in fade-in duration-300">{t('common.adminPanel')}</span>}
               </Button>
             )}
             
             {isAdmin && (
-              <Button variant="ghost" className={`h-8 w-full text-xs ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/dashboard" title={t('common.studentView')} />}>
-                <ArrowRightLeft className={`h-3.5 w-3.5 shrink-0 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
-                {!isSidebarCollapsed && <span className="truncate">{t('common.studentView')}</span>}
+              <Button variant="ghost" className={`h-8 w-full text-xs ${!isVisualExpanded ? 'justify-center px-0' : 'justify-start'}`} render={<NavLink to="/dashboard" title={t('common.studentView')} />}>
+                <ArrowRightLeft className={`h-3.5 w-3.5 shrink-0 ${!isVisualExpanded ? '' : 'mr-2'}`} />
+                {isVisualExpanded && <span className="truncate animate-in fade-in duration-300">{t('common.studentView')}</span>}
               </Button>
             )}
             
             <Button 
                variant="ghost" 
-               className={`h-8 w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start'}`}
+               className={`h-8 w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 ${!isVisualExpanded ? 'justify-center px-0' : 'justify-start'}`}
                onClick={handleLogout}
                title={t('common.logout')}
             >
-              <LogOut className={`h-3.5 w-3.5 shrink-0 ${isSidebarCollapsed ? '' : 'mr-2'}`} />
-              {!isSidebarCollapsed && <span className="truncate">{t('common.logout')}</span>}
+              <LogOut className={`h-3.5 w-3.5 shrink-0 ${!isVisualExpanded ? '' : 'mr-2'}`} />
+              {isVisualExpanded && <span className="truncate animate-in fade-in duration-300">{t('common.logout')}</span>}
             </Button>
           </div>
         </div>
