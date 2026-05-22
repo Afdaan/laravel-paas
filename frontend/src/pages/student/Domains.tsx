@@ -262,7 +262,7 @@ const Domains = () => {
                     {projects.find(p => p.id.toString() === transferModal.targetProjectId)?.name}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)]">
+                <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)] p-1">
                   {projects
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (
