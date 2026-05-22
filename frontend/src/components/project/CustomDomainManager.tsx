@@ -331,6 +331,30 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     };
   }, [projectId]);
 
+  // Helper to format and display error toasts with premium Title/Description layout
+  const showErrorToast = useCallback((rawMessage: string) => {
+    // Matches e.g. "[VERIFICATION_FAILED] DNS propagation..." -> group 1: "VERIFICATION_FAILED", group 2: "DNS propagation..."
+    const match = rawMessage.match(/^\[([A-Z0-9_]+)\]\s*(.*)$/)
+    if (match) {
+      const code = match[1]
+      const content = match[2]
+      
+      const title = code
+        .toLowerCase()
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+        
+      toast.error(title, {
+        description: content
+      })
+    } else {
+      toast.error(t('common.error'), {
+        description: rawMessage
+      })
+    }
+  }, [t])
+
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newDomain.trim()) return
@@ -344,7 +368,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       if (res.data?.data?.id) {
         setSelectedDomainId(res.data.data.id)
       }
-      toast.success(t('common.success'))
+      toast.success(t('domains.added') || 'Domain Added', {
+        description: t('domains.addedDesc') || 'Your custom domain has been successfully registered.'
+      })
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: string; code: string }>
       const errCode = axiosError.response?.data?.code
@@ -354,7 +380,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       } else if (axiosError.response?.data?.error) {
         errorMsg = axiosError.response.data.error
       }
-      toast.error(errorMsg)
+      showErrorToast(errorMsg)
     } finally {
       setIsAdding(false)
     }
@@ -372,9 +398,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
           fetchDomains()
           onDomainsChanged?.()
           if (selectedDomainId === domain.id) setSelectedDomainId(null)
-          toast.success(t('common.success'))
+          toast.success(t('domains.removed') || 'Domain Removed', {
+            description: t('domains.removedDesc') || 'The custom domain has been successfully detached.'
+          })
         } catch (error) {
-          toast.error(t('common.error'))
+          toast.error(t('common.error'), {
+            description: t('domains.errors.removeFailed') || 'Failed to remove custom domain.'
+          })
         }
       }
     })
@@ -386,15 +416,17 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     try {
       const res = await projectsAPI.verifyDomain(projectId, domainId)
       if (res.data?.error) {
-        toast.error(res.data.error.message || t('common.error'))
+        showErrorToast(res.data.error.message || t('common.error'))
       } else {
-        toast.success(t('common.success'))
+        toast.success(t('domains.verified') || 'Domain Verified', {
+          description: t('domains.verifiedDesc') || 'DNS configuration verified successfully.'
+        })
       }
       fetchDomains()
       onDomainsChanged?.()
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: { message: string } }>
-      toast.error(axiosError.response?.data?.error?.message || t('common.error'))
+      showErrorToast(axiosError.response?.data?.error?.message || t('common.error'))
       fetchDomains()
       onDomainsChanged?.()
     } finally {
@@ -409,7 +441,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       const res = await projectsAPI.getDomainEvents(projectId, domain.id)
       setEventsModal(prev => ({ ...prev, events: res.data.data || [], isLoading: false }))
     } catch (error) {
-      toast.error(t('common.error'))
+      toast.error(t('common.error'), {
+        description: t('domains.errors.eventsFailed') || 'Failed to fetch domain event logs.'
+      })
       setEventsModal(prev => ({ ...prev, isLoading: false }))
     }
   }
