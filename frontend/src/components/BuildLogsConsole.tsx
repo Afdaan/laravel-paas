@@ -394,7 +394,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                 "text-[10px] uppercase font-mono py-0.5 px-2",
                 project.deployment_status === 'completed' ? "text-emerald-400 border-emerald-400/30 bg-emerald-500/10" :
                 project.deployment_status === 'failed' ? "text-rose-400 border-rose-400/30 bg-rose-500/10" :
-                "text-blue-400 border-blue-400/30 bg-blue-500/10 animate-pulse"
+                "text-blue-400 border-blue-400/30 bg-blue-500/10"
               )}>
                 {project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
               </Badge>

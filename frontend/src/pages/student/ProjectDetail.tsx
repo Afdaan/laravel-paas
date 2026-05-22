@@ -623,13 +623,13 @@ function StudentProjectDetail() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-            <StatusIndicator status={displayStatus || project.status} />
+            {!isDeploying && <StatusIndicator status={displayStatus || project.status} />}
             {project.deployment_status && project.deployment_status !== 'completed' && (
               <Badge variant="outline" className={cn(
                 "gap-2 py-1 px-3 flex items-center",
                 project.deployment_status === 'failed' ? "text-rose-500 bg-rose-500/10 border-rose-500/20" :
                 project.deployment_status === 'rollback' ? "text-amber-500 bg-amber-500/10 border-amber-500/20" :
-                "text-blue-500 bg-blue-500/10 border-blue-500/20 animate-pulse"
+                "text-blue-500 bg-blue-500/10 border-blue-500/20"
               )}>
                 <div className={cn(
                   "w-2 h-2 rounded-full",
