@@ -117,7 +117,7 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
 }
 
 // Helper to translate raw database domain event types and technical messages into elegant, highly understandable, but technically sound explanations.
-const getRefinedEvent = (eventType: string, rawMessage: string, t: (key: string, data?: any) => string) => {
+const getRefinedEvent = (eventType: string, rawMessage: string, t: (key: string, data?: Record<string, string | number>) => string) => {
   const type = (eventType || '').toLowerCase()
   const msg = (rawMessage || '').toLowerCase()
 

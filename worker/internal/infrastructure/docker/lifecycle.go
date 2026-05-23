@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -233,40 +232,7 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 	return status == "healthy"
 }
 
-// Helper to convert docker memory headers (GiB, MiB, kiB, B) to MB
-func parseMemoryBytes(memStr string) float64 {
-	// Remove non-alphanumeric chars (except .)
-	input := strings.TrimSpace(memStr)
-	valueStr := ""
-	unit := ""
-	// Separate number and unit
-	for i, r := range input {
-		if (r < '0' || r > '9') && r != '.' {
-			valueStr = input[:i]
-			unit = strings.TrimSpace(input[i:])
-			break
-		}
-	}
-	if valueStr == "" {
-		return 0
-	}
-	val, err := strconv.ParseFloat(valueStr, 64)
-	if err != nil {
-		return 0
-	}
-	switch strings.ToLower(unit) {
-	case "gib", "gb":
-		return val * 1024
-	case "mib", "mb":
-		return val
-	case "kib", "kb":
-		return val / 1024
-	case "b":
-		return val / 1024 / 1024
-	default:
-		return val // Assume already MB or unknown
-	}
-}
+
 
 // parseArtisanMigrationCommand deterministically inspects an artisan command string.
 // If the command is an operational database migration or seed command, it enforces non-interactive and force execution flags.

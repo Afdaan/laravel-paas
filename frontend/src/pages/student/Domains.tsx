@@ -205,9 +205,10 @@ const Domains = () => {
       toast.success(t('domains.transferSuccess'))
       setTransferModal(prev => ({ ...prev, isOpen: false }))
       fetchData()
-    } catch (error: any) {
-      const errCode = error.response?.data?.code
-      const errMsg = errCode ? t(`domains.errors.${errCode}`) : error.response?.data?.message
+    } catch (error) {
+      const err = error as { response?: { data?: { code?: string; message?: string } } }
+      const errCode = err.response?.data?.code
+      const errMsg = errCode ? t(`domains.errors.${errCode}`) : err.response?.data?.message
       toast.error(errMsg || t('common.error'))
     } finally {
       setIsTransferring(false)

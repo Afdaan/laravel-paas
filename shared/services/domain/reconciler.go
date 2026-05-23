@@ -62,7 +62,9 @@ func (r *Reconciler) ReconcileOne(ctx context.Context, domainID uint, cause stri
 		return fmt.Errorf("failed to acquire distributed lease: %w", err)
 	}
 	// Use context.Background() to ensure lease release executes successfully even if the parent ctx cancels.
-	defer r.leaseProvider.Release(context.Background(), domainID, token)
+	defer func() {
+		_ = r.leaseProvider.Release(context.Background(), domainID, token)
+	}()
 
 	// 4. Setup heartbeat lease renewal loop. Long-running tasks (like DNS/Let's Encrypt validations) 
 	// can outlive leaseTTL. Periodic renewals prevent premature lease expiration.
