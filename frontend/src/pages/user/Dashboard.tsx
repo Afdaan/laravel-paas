@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../../services/api'
 import useAuthStore from '../../stores/authStore'
 import useTranslation from '../../lib/useTranslation'
+import { toast } from 'sonner'
 import {
   Rocket,
   Activity,
@@ -35,6 +36,7 @@ interface ProjectData {
   subdomain: string;
   url: string;
   framework: string;
+  database_name?: string;
   created_at: string;
 }
 
@@ -65,26 +67,12 @@ function UserDashboard() {
   const { user } = useAuthStore()
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [stats, setStats] = useState<SystemStats | null>(null)
 
   const fetchDashboardData = useCallback(async () => {
     setIsLoading(true)
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
-
-      // Get stats
-      const statsRes = await systemAPI.getInitStatus()
-      if (statsRes.data) {
-        // Just general counts
-        const running = (response.data.data || []).filter((p: ProjectData) => p.status === 'running').length
-        setStats({
-          projects_count: (response.data.data || []).length,
-          users_count: 0,
-          active_containers: running,
-          total_databases: (response.data.data || []).filter((p: ProjectData) => p.database_name).length,
-        })
-      }
     } catch (error) {
       toast.error(t('common.loadError'))
     } finally {
