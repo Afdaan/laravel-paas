@@ -57,6 +57,14 @@ func (sm *DomainStateMachine) Transition(ctx context.Context, id uint, nextStatu
 		d.Status = nextStatus
 		d.CurrentSequence = nextSeq
 
+		// Force health to unhealthy on degraded or failed status transitions to prevent UI mismatch.
+		if nextStatus == models.DomainStatusDegraded ||
+			nextStatus == models.DomainStatusSSLFailed ||
+			nextStatus == models.DomainStatusRenewalFailed ||
+			nextStatus == models.DomainStatusError {
+			d.HealthStatus = models.DomainHealthUnhealthy
+		}
+
 		if err := txRepo.Save(ctx, d); err != nil {
 			return fmt.Errorf("failed to save domain state: %w", err)
 		}

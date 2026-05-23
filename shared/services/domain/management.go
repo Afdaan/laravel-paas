@@ -69,7 +69,15 @@ func (s *DomainService) AddDomain(projectID uint, domainName string) (*models.Cu
 		return nil, err
 	}
 
-	_ = s.RecordEvent(domain, models.DomainStatusPending, models.DomainStatusPending, "domain_registered", fmt.Sprintf("Custom domain %s registered to project %d", domainName, projectID), "")
+	var projectName string
+	project, err := s.projectRepo.GetByID(projectID)
+	if err == nil && project != nil {
+		projectName = project.Name
+	} else {
+		projectName = fmt.Sprintf("%d", projectID)
+	}
+
+	_ = s.RecordEvent(domain, models.DomainStatusPending, models.DomainStatusPending, "domain_registered", fmt.Sprintf("Custom domain %s registered to project %s", domainName, projectName), "")
 
 	return domain, nil
 }
@@ -210,7 +218,16 @@ func (s *DomainService) TransferDomain(userID uint, domainID uint, targetProject
 		return err
 	}
 
-	event, err := s.RecordEventTx(s.db, &domain, domain.Status, domain.Status, "domain_transferred", fmt.Sprintf("Domain transferred from project %d to project %d", sourceProjectID, targetProjectID), "")
+	sourceProjectName := fmt.Sprintf("%d", sourceProjectID)
+	if domain.Project.Name != "" {
+		sourceProjectName = domain.Project.Name
+	}
+	targetProjectName := fmt.Sprintf("%d", targetProjectID)
+	if targetProject != nil && targetProject.Name != "" {
+		targetProjectName = targetProject.Name
+	}
+
+	event, err := s.RecordEventTx(s.db, &domain, domain.Status, domain.Status, "domain_transferred", fmt.Sprintf("Domain transferred from project %s to project %s", sourceProjectName, targetProjectName), "")
 	if err == nil {
 		eventBytes, _ := json.Marshal(event)
 		_ = s.redisService.PublishDomainEvent(domain.ID, sourceProjectID, string(eventBytes))
