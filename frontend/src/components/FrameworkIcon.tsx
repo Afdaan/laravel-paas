@@ -52,9 +52,10 @@ function getFrameworkIcon(framework?: string): SimpleIcon | null {
 }
 
 function BrandGlyph({ icon }: { icon: SimpleIcon }) {
+  const fillColor = icon === siPython ? '#22c55e' : `#${icon.hex}`
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
-      <path fill={`#${icon.hex}`} d={icon.path} />
+      <path fill={fillColor} d={icon.path} />
     </svg>
   )
 }
@@ -84,7 +85,7 @@ export function FrameworkIcon({ framework, className, variant = 'tile' }: Framew
   const icon = getFrameworkIcon(framework)
 
   const variants: Record<NonNullable<FrameworkIconProps['variant']>, string> = {
-    tile: 'rounded-2xl bg-muted/60 dark:bg-zinc-950/80 p-1.5 ring-1 ring-border dark:ring-white/10 shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
+    tile: 'rounded-xl bg-muted/50 p-2.5 ring-1 ring-border/70 shadow-sm dark:bg-muted/20 dark:ring-white/10 [&>svg]:h-full [&>svg]:w-full',
     compact: 'rounded-lg bg-muted/40 p-1 ring-1 ring-border/60',
     plain: 'rounded-none bg-transparent p-0 ring-0 shadow-none',
   }

@@ -10,6 +10,7 @@ export const translations = {
       networks: "Networks",
       volumes: "Volumes",
       databases: "Databases",
+      domains: "Domains",
       feedback: "Feedback",
       logout: "Logout",
       newProject: "New Project",
@@ -27,6 +28,13 @@ export const translations = {
       save: "Save",
       cancel: "Cancel",
       delete: "Delete",
+      add: "Add",
+      verify: "Verify",
+      type: "Type",
+      host: "Host",
+      value: "Value",
+      copy: "Copy",
+      copied: "Copied!",
       edit: "Edit",
       create: "Create",
       loading: "Loading...",
@@ -82,6 +90,7 @@ export const translations = {
       size: "Size",
       justNow: "Just now",
       confirmClearLogs: "Are you sure you want to clear the logs? New logs will still appear.",
+      dragToResize: "Drag to resize navbar (collapse if dragged left)",
     },
     system: {
       updating: "System Update in Progress",
@@ -333,6 +342,7 @@ export const translations = {
         securityLimits: "Security Limits",
         resourceQuota: "Resource Quota Enforcement",
         identityQuota: "Identity Quota",
+        domainLimit: "Domain Limit",
         projects: "Projects",
         expiryCycle: "Cluster Expiry Cycle",
         days: "Days",
@@ -408,6 +418,146 @@ export const translations = {
         },
         noActive: "No active builds",
         noQueued: "Queue is empty",
+        requeue: "Force Requeue",
+        cancel: "Cancel",
+        confirmCancel: "Are you sure you want to cancel this deployment?",
+        cancelSuccess: "Deployment cancelled successfully",
+        cancelError: "Failed to cancel deployment",
+        confirmRequeue: "Are you sure you want to force re-enqueue this job?",
+        requeueSuccess: "Job re-enqueued successfully",
+        requeueError: "Failed to re-enqueue job",
+      },
+      domains: {
+        title: "Global Domains Audit",
+        desc: "Monitor and audit all custom domains registered across the entire platform.",
+      },
+    },
+    domains: {
+      added: "Domain Added",
+      addedDesc: "Your custom domain has been successfully registered.",
+      removed: "Domain Removed",
+      removedDesc: "The custom domain has been successfully detached.",
+      verified: "Domain Verified",
+      verifiedDesc: "DNS configuration verified successfully.",
+      transfer: "Transfer Domain",
+      transferDesc: "Move this domain to another project. All traffic will be redirected to the target project immediately.",
+      selectTarget: "Select Target Project",
+      transferAction: "Initiate Transfer",
+      transferSuccess: "Domain successfully migrated to target project",
+      confirmDelete: "Are you sure you want to remove this domain?",
+      noDomains: "No custom domains found",
+      noDomainsDesc: "You haven't added any custom domains yet. Add them in your project settings.",
+      noOtherProjects: "No other projects available",
+      domainName: "Domain Name",
+      linkedProject: "Linked Project",
+      owner: "Owner",
+      health: {
+        healthy: "Healthy",
+        unhealthy: "Unhealthy",
+        unknown: "Unknown",
+        lastCheck: "Last Checked",
+        reason: "Reason",
+      },
+      status: {
+        pending: "Registration Pending",
+        pending_dns: "DNS Pending Propagation",
+        dns_verified: "DNS Verified",
+        ssl_queued: "SSL Provisioning Queued",
+        ssl_provisioning: "Issuing Certificate",
+        ssl_active: "SSL Certificate Active",
+        active: "Operational",
+        degraded: "DNS Config Error",
+        error: "Configuration Error",
+        renewal_pending: "Renewal Scheduled",
+        renewal_failed: "Renewal Failed",
+      },
+      errors: {
+        DNS_CONFLICT: "Domain is already assigned to another resource.",
+        DOMAIN_NOT_RESOLVED: "DNS CNAME or A records do not match expected cluster endpoint.",
+        INVALID_CNAME_TARGET: "CNAME record points to an unauthorized external target.",
+        SSL_RATE_LIMIT: "Let's Encrypt rate limit reached. Retrying automatically.",
+        SSL_ISSUANCE_FAILED: "Certificate issuance failed. Check Let's Encrypt validation requirements.",
+        CERTBOT_TIMEOUT: "Certbot challenge timed out during verification.",
+        NGINX_VALIDATION_FAILED: "Nginx routing syntax validation failed during reload.",
+        ROUTING_HEALTH_FAILED: "Upstream container healthcheck probe failed HTTP verification.",
+        LOCKED: "Domain is currently locked by an ongoing reconciliation cycle.",
+        DOMAIN_LIMIT_REACHED: "You have reached the maximum domain limit for this project.",
+        SAME_PROJECT: "Domain is already assigned to this project.",
+        removeFailed: "Failed to remove custom domain.",
+        eventsFailed: "Failed to fetch domain event logs.",
+      },
+      events: {
+        title: "Domain Connection & SSL Setup Log",
+        desc: "Chronological registry of all domain state transitions and Let's Encrypt challenge events.",
+        event: "Event",
+        transition: "State Transition",
+        timestamp: "Timestamp",
+        noEvents: "No audit events logged yet.",
+        configHash: "Active Nginx Config Hash",
+        types: {
+          registered: {
+            title: "Domain Registered Successfully",
+            desc: "The custom domain has been successfully registered in the PaaS platform routing engine."
+          },
+          transferred: {
+            title: "Domain Ownership Transferred",
+            desc: "Domain access rights and traffic routes were successfully migrated to the target project with zero-downtime."
+          },
+          healthcheck_recovered: {
+            title: "Health Check Succeeded (Healthy)",
+            desc: "The system verified that your domain is publicly accessible and securely connected to your upstream backend container."
+          },
+          healthcheck_failed: {
+            title: "Connectivity Issue Detected",
+            genericDesc: "Domain health checks detected a routing or network path discrepancy. Detail: {{error}}.",
+            httpDesc: "Your application backend returned an HTTP error response ({{error}}). This is typical when the app is rebuilding, restarting, or experiencing container boot delay.",
+            dnsDesc: "Global DNS resolution failed. Please verify that your CNAME record is correctly pointed to the cluster endpoint and allow time for DNS propagation."
+          },
+          healthcheck_degraded: {
+            title: "Routing Service Degraded",
+            desc: "Your domain is reachable, but the response header did not pass the expected application health integrity verification."
+          },
+          poller_cleanup: {
+            title: "Scheduled Route Sync",
+            desc: "The system carried out a scheduled routing sync to clean up stale domain allocation records and optimize network memory."
+          },
+          cleanup_step: {
+            title: "Nginx Gateway Configured",
+            desc: "Proxy configuration and custom domain route bindings have been successfully updated and reloaded with zero-downtime."
+          },
+          cleanup_failed: {
+            title: "Routing Purge Delayed",
+            desc: "An error occurred while automatically purging old routing configs. The system scheduler will retry on the next cycle."
+          },
+          ssl_queued: {
+            title: "SSL Provisioning Queued",
+            desc: "A secure SSL certificate (HTTPS) request has been registered and is currently waiting in Let's Encrypt's validation queue."
+          },
+          ssl_active: {
+            title: "SSL Certificate Active (HTTPS)",
+            desc: "Free TLS/SSL security certificate successfully issued by Let's Encrypt and applied. Encrypted HTTPS access is now fully active."
+          },
+          ssl_issuance_failed: {
+            title: "SSL Provisioning Delayed",
+            desc: "Automated SSL issuance is temporarily delayed due to ACME challenge validation propagation. The platform will retry validation automatically."
+          }
+        }
+      },
+      dnsGuide: {
+        title: "DNS Configuration Guide",
+        desc: "Add these records to your DNS provider (Cloudflare, GoDaddy, etc.)",
+        configured: "Configured",
+        actionRequired: "Action Required",
+        networkPath: "Network Path Integrity",
+        scanning: "Scanning...",
+        rescan: "Re-scan",
+        domain: "Domain",
+        dnsOk: "DNS OK",
+        edge: "PaaS Edge",
+        statusActive: "STATUS: ACTIVE",
+        statusPending: "STATUS: PENDING",
+        initScan: "Initialize System Scan",
+        auditLog: "Audit Log",
       },
     },
     projectDetail: {
@@ -474,6 +624,8 @@ export const translations = {
         logs: "Logs",
         settings: "Settings",
         build: "Build Logs",
+        domains: "Domains",
+        timeline: "Timeline",
       },
       settings: {
         phpVersion: "Select PHP version",
@@ -497,6 +649,11 @@ export const translations = {
         buildCommandDesc: "Executed during the build phase. Leave empty for default detection.",
         startCommand: "Custom Start Command",
         startCommandDesc: "Executed to start your application. Leave empty for default behavior.",
+        customDomain: "Custom Domain",
+        customDomainDesc: "Point your own domain to the cluster endpoint using a CNAME record.",
+        dnsPropagationDesc: "DNS changes can take up to 24 hours to propagate worldwide.",
+        noCustomDomain: "No custom domains added yet",
+        addDomainPrompt: "Add a domain to access your project via a custom URL.",
       },
       overview: {
         connectionInfo: "Connection Info",
@@ -551,6 +708,10 @@ export const translations = {
         title: "Database Manager",
         desc: "Manage data structures, export SQL, and run queries directly.",
       },
+      domains: {
+        title: "Custom Domains",
+        desc: "Manage all your custom domains across your projects in one place.",
+      },
     },
     status: {
       pending: "Pending",
@@ -563,6 +724,7 @@ export const translations = {
       inactive: "Inactive",
       inUse: "In Use",
       ready: "Ready",
+      active: "Active",
     },
     feedback: {
       title: "Support Hub",
@@ -680,6 +842,7 @@ export const translations = {
       networks: "Networks",
       volumes: "Volumes",
       databases: "Databases",
+      domains: "Domains",
       feedback: "Feedback",
       logout: "Logout",
       newProject: "New Project",
@@ -694,9 +857,16 @@ export const translations = {
       light: "Terang",
       search: "Search",
       actions: "Actions",
-      save: "Save",
-      cancel: "Cancel",
-      delete: "Delete",
+      save: "Simpan",
+      cancel: "Batal",
+      delete: "Hapus",
+      add: "Tambah",
+      verify: "Verifikasi",
+      type: "Tipe",
+      host: "Host / Nama",
+      value: "Target / Nilai",
+      copy: "Salin",
+      copied: "Berhasil disalin",
       edit: "Edit",
       create: "Create",
       loading: "Memuat...",
@@ -752,6 +922,7 @@ export const translations = {
       size: "Ukuran",
       justNow: "Baru saja",
       confirmClearLogs: "Konfirmasi pembersihan log? Log baru akan tetap muncul.",
+      dragToResize: "Seret untuk mengubah ukuran navbar (sembunyikan jika mentok kiri)",
     },
     system: {
       updating: "System Update sedang berjalan",
@@ -1003,6 +1174,7 @@ export const translations = {
         securityLimits: "Limit Keamanan",
         resourceQuota: "Manajemen Resource",
         identityQuota: "Limit Project",
+        domainLimit: "Domain Limit",
         projects: "Project",
         expiryCycle: "Expiry Cycle",
         days: "Hari",
@@ -1078,6 +1250,146 @@ export const translations = {
         },
         noActive: "Tidak ada build aktif",
         noQueued: "Antrean kosong",
+        requeue: "Jalankan Ulang",
+        cancel: "Batalkan",
+        confirmCancel: "Batalkan proses deployment ini?",
+        cancelSuccess: "Deployment berhasil dibatalkan",
+        cancelError: "Gagal membatalkan deployment",
+        confirmRequeue: "Masukkan ulang job ini ke antrean?",
+        requeueSuccess: "Job berhasil dimasukkan ulang ke antrean",
+        requeueError: "Gagal memasukkan ulang job ke antrean",
+      },
+      domains: {
+        title: "Global Domains Audit",
+        desc: "Pantau dan audit semua custom domain yang terdaftar di seluruh platform.",
+      },
+    },
+    domains: {
+      added: "Domain Ditambahkan",
+      addedDesc: "Custom domain berhasil didaftarkan.",
+      removed: "Domain Dihapus",
+      removedDesc: "Custom domain berhasil dilepas dari sistem.",
+      verified: "Domain Terverifikasi",
+      verifiedDesc: "Konfigurasi DNS terverifikasi sepenuhnya.",
+      transfer: "Transfer Domain",
+      transferDesc: "Pindahkan domain ke project lain. Seluruh traffic akan dialihkan ke project tujuan secara instan.",
+      selectTarget: "Pilih Project Tujuan",
+      transferAction: "Mulai Transfer",
+      transferSuccess: "Domain berhasil dialihkan ke project tujuan.",
+      confirmDelete: "Hapus domain ini?",
+      noDomains: "Custom domain tidak ditemukan",
+      noDomainsDesc: "Belum ada custom domain terhubung. Hubungkan custom domain melalui pengaturan project.",
+      noOtherProjects: "Tidak ada project lain yang tersedia",
+      domainName: "Nama Domain",
+      linkedProject: "Linked Project",
+      owner: "Pemilik",
+      health: {
+        healthy: "Healthy",
+        unhealthy: "Unhealthy",
+        unknown: "Unknown",
+        lastCheck: "Pengecekan Terakhir",
+        reason: "Catatan Diagnostik",
+      },
+      status: {
+        pending: "Menunggu Pendaftaran",
+        pending_dns: "Menunggu Propagasi DNS",
+        dns_verified: "DNS Terverifikasi",
+        ssl_queued: "Antrean Provisioning SSL",
+        ssl_provisioning: "Penerbitan Sertifikat SSL",
+        ssl_active: "Sertifikat SSL Aktif",
+        active: "Operasional",
+        degraded: "Pointing Bermasalah",
+        error: "Error Konfigurasi",
+        renewal_pending: "Jadwal Perpanjangan SSL",
+        renewal_failed: "Perpanjangan SSL Gagal",
+      },
+      errors: {
+        DNS_CONFLICT: "DNS Conflict: Domain ini telah terdaftar pada resource atau project lain dalam sistem.",
+        DOMAIN_NOT_RESOLVED: "DNS Not Resolved: Record CNAME atau A belum mengarah ke endpoint cluster platform yang sesuai.",
+        INVALID_CNAME_TARGET: "Invalid CNAME Target: Record CNAME mengarah ke eksternal target yang tidak diizinkan.",
+        SSL_RATE_LIMIT: "SSL Rate Limit: Batas request Let's Encrypt telah tercapai. Sistem akan mencoba ulang secara otomatis.",
+        SSL_ISSUANCE_FAILED: "SSL Issuance Failed: Penerbitan sertifikat gagal. Periksa kembali persyaratan validasi Let's Encrypt dan konfigurasi DNS.",
+        CERTBOT_TIMEOUT: "Certbot Timeout: Waktu verifikasi challenge ACME Certbot telah habis.",
+        NGINX_VALIDATION_FAILED: "Nginx Validation Failed: Validasi sintaks routing Nginx gagal saat proses reload.",
+        ROUTING_HEALTH_FAILED: "Routing Healthcheck Failed: Probe healthcheck HTTP ke upstream container backend gagal.",
+        LOCKED: "Domain Locked: Operasi domain terkunci sementara karena siklus rekonsiliasi background sedang berjalan.",
+        DOMAIN_LIMIT_REACHED: "Limit Domain: Batas maksimum domain untuk project ini telah tercapai.",
+        SAME_PROJECT: "Domain Duplikat: Domain ini sudah terhubung ke project ini.",
+        removeFailed: "Gagal menghapus custom domain.",
+        eventsFailed: "Gagal memuat log audit event domain.",
+      },
+      events: {
+        title: "Log Setup Koneksi & SSL Domain",
+        desc: "Riwayat kronologis transisi status domain dan Let's Encrypt challenge events.",
+        event: "Event",
+        transition: "State Transition",
+        timestamp: "Timestamp",
+        noEvents: "Belum ada audit event yang tercatat untuk domain ini.",
+        configHash: "Active Nginx Config Hash",
+        types: {
+          registered: {
+            title: "Custom Domain Terhubung",
+            desc: "Domain berhasil ditambahkan dan telah aktif."
+          },
+          transferred: {
+            title: "Domain Dipindahkan",
+            desc: "Domain berhasil dipindahkan ke project tujuan."
+          },
+          healthcheck_recovered: {
+            title: "Layanan Normal",
+            desc: "Domain dan aplikasi merespons dengan normal."
+          },
+          healthcheck_failed: {
+            title: "Gangguan Koneksi Domain",
+            genericDesc: "Platform mendeteksi gangguan koneksi antara domain dan aplikasi. Detail error: {{error}}.",
+            httpDesc: "Aplikasi mengembalikan status {{error}}. Kondisi ini umum terjadi saat deploy, restart service, atau startup container.",
+            dnsDesc: "DNS domain belum mengarah ke platform. Pastikan konfigurasi DNS sudah benar dan propagasi telah selesai."
+          },
+          healthcheck_degraded: {
+            title: "Koneksi Domain Tidak Stabil",
+            desc: "Domain sudah terhubung, namun aplikasi atau SSL belum merespons dengan sempurna."
+          },
+          poller_cleanup: {
+            title: "Pembersihan Cache",
+            desc: "Sistem membersihkan cache domain."
+          },
+          cleanup_step: {
+            title: "Sinkronisasi Konfigurasi",
+            desc: "Perubahan konfigurasi domain berhasil diterapkan."
+          },
+          cleanup_failed: {
+            title: "Sinkronisasi Gagal",
+            desc: "Sistem gagal membersihkan cache domain. Coba lagi dalam beberapa saat."
+          },
+          ssl_queued: {
+            title: "Verifikasi SSL Dimulai",
+            desc: "Permintaan sertifikat SSL sedang diproses dan menunggu verifikasi domain."
+          },
+          ssl_active: {
+            title: "SSL Aktif",
+            desc: "Sertifikat SSL berhasil aktif dan HTTPS sudah aktif."
+          },
+          ssl_issuance_failed: {
+            title: "Verifikasi SSL Gagal",
+            desc: "Platform gagal memverifikasi domain untuk penerbitan SSL. Pastikan DNS domain sudah benar dan domain dapat diakses publik."
+          }
+        }
+      },
+      dnsGuide: {
+        title: "DNS Configuration Guide",
+        desc: "Tambahkan record berikut ke panel DNS provider (Cloudflare, GoDaddy, dll.)",
+        configured: "Configured",
+        actionRequired: "Action Required",
+        networkPath: "Network Path Integrity",
+        scanning: "Scanning...",
+        rescan: "Re-scan",
+        domain: "Domain",
+        dnsOk: "DNS OK",
+        edge: "PaaS Edge",
+        statusActive: "STATUS: ACTIVE",
+        statusPending: "STATUS: PENDING",
+        initScan: "Initialize System Scan",
+        auditLog: "Audit Log",
       },
     },
     projectDetail: {
@@ -1144,6 +1456,8 @@ export const translations = {
         logs: "Logs",
         settings: "Settings",
         build: "Build Logs",
+        domains: "Domains",
+        timeline: "Timeline",
       },
       settings: {
         phpVersion: "PHP Version",
@@ -1167,6 +1481,11 @@ export const translations = {
         buildCommandDesc: "Dijalankan selama fase build. Kosongkan untuk deteksi otomatis.",
         startCommand: "Custom Start Command",
         startCommandDesc: "Perintah untuk menjalankan aplikasi. Kosongkan untuk konfigurasi default.",
+        customDomain: "Custom Domain",
+        customDomainDesc: "Arahkan domain ke endpoint cluster menggunakan CNAME record.",
+        dnsPropagationDesc: "Perubahan DNS memerlukan waktu hingga 24 jam untuk propagasi secara global. Harap tunggu beberapa saat jika domain masih dalam proses verifikasi.",
+        noCustomDomain: "Custom domain tidak ditemukan",
+        addDomainPrompt: "Tambahkan custom domain untuk mengakses project melalui alamat URL publik.",
       },
       overview: {
         connectionInfo: "informasi Koneksi",
@@ -1221,6 +1540,10 @@ export const translations = {
         title: "Database Manager",
         desc: "Kelola struktur data, ekspor SQL, dan jalankan query.",
       },
+      domains: {
+        title: "Custom Domains",
+        desc: "Kelola semua custom domain di seluruh project dalam satu tempat.",
+      },
     },
     status: {
       pending: "Pending",
@@ -1233,6 +1556,7 @@ export const translations = {
       inactive: "Inactive",
       inUse: "In Use",
       ready: "Ready",
+      active: "Active",
     },
     feedback: {
       title: "Support Hub",
@@ -1335,7 +1659,7 @@ export const translations = {
       searchSchema: "Cari schema...",
       activeInstances: "Instance Aktif",
       noClusters: "Tidak ada cluster terisolasi",
-      selectTarget: "Pilih Target Cluster"
-    }
-  }
+      selectTarget: "Pilih Target Cluster",
+    },
+  },
 }

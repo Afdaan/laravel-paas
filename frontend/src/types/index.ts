@@ -11,6 +11,49 @@ export interface User {
   created_at?: string;
 }
 
+export interface CustomDomain {
+  id: number;
+  domain: string;
+  status: string;
+  health_status?: string;
+  last_healthcheck_at?: string;
+  error_code?: string;
+  degraded_reason_code?: string;
+  error_message?: string;
+  config_hash?: string;
+  last_verification_at?: string;
+  last_renewal_attempt_at?: string;
+  ssl_expires_at?: string;
+  project_id: number;
+  project?: Project;
+  current_sequence?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DomainEvent {
+  id: number;
+  domain_id: number;
+  event_type: string;
+  state_from: string;
+  state_to: string;
+  error_code?: string;
+  message: string;
+  payload?: string;
+  created_at: string;
+}
+
+export interface DomainDiagnostic {
+  domain: string;
+  expected_type: string;
+  expected_host: string;
+  expected_value: string;
+  current_cname: string;
+  current_ips: string[];
+  is_match: boolean;
+  message: string;
+}
+
 export interface Project {
   id: number;
   uid: string;
@@ -40,6 +83,33 @@ export interface Project {
   node_version?: string;
   framework?: string;
   language_version?: string;
+  custom_domains?: CustomDomain[];
+  deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'provisioning' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
+  deployment_job_id?: string;
+  rollout_container_id?: string;
+  deployment_started_at?: string;
+  deployment_finished_at?: string;
+  deployment_heartbeat_at?: string;
+  deployment_message?: string;
+  deployment_progress?: number;
+  created_at: string;
+}
+
+export interface DeploymentEvent {
+  id: number;
+  project_id: number;
+  job_id?: string;
+  sequence_number: number;
+  worker_id?: string;
+  state_from?: string;
+  state_to?: string;
+  event_type?: string;
+  payload?: string;
+  duration_ms?: number;
+  error?: string;
+  status?: string;
+  step_name?: string;
+  message?: string;
   created_at: string;
 }
 

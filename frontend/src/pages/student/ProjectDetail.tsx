@@ -19,6 +19,7 @@ import {
   Box,
   AlertTriangle,
   GitBranch,
+  Settings,
   Loader2,
   Save,
   Copy,
@@ -35,6 +36,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePolling } from '@/lib/usePolling'
@@ -45,6 +47,7 @@ import BuildLogsConsole from '@/components/BuildLogsConsole'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
+import { CustomDomainManager } from '../../components/project/CustomDomainManager'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -102,6 +105,7 @@ function StudentProjectDetail() {
   const [activeTab, setActiveTab] = useState('project')
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const isActionPendingRef = useRef(false)
 
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleCommand, setConsoleCommand] = useState('')
@@ -119,7 +123,7 @@ function StudentProjectDetail() {
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
-  const [logsClearedLength, setLogsClearedLength] = useState(0)
+  const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -148,12 +152,29 @@ function StudentProjectDetail() {
     return t('projectDetail.metrics.managedStack')
   }, [project, t])
 
-  const deployLocked = project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
+  const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+  const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
+  
+  const deploymentPhase = useMemo(() => {
+    if (!project?.deployment_status || !isDeploying) return null
+    const status = project.deployment_status
+    if (['queued', 'preparing', 'cloning'].includes(status)) return { label: 'Preparing', phase: 'build' }
+    if (['building', 'provisioning'].includes(status)) return { label: 'Building', phase: 'build' }
+    if (['starting', 'healthchecking', 'migrating'].includes(status)) return { label: 'Starting Container', phase: 'startup' }
+    if (['promoting', 'cleanup'].includes(status)) return { label: 'Finalizing', phase: 'finalize' }
+    return { label: 'Deploying', phase: 'build' }
+  }, [project?.deployment_status, isDeploying])
+  
+  const displayStatus = deploymentPhase ? 'building' : project?.status
 
-  const fetchProject = useCallback(async () => {
+  const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid) return
     try {
       const response = await projectsAPI.get(uid)
+      // Prevent stale polling overwrites during optimistic action phases unless explicitly forced
+      if (typeof forceUpdate !== 'boolean') forceUpdate = false // Handle accidental event objects
+      if (!forceUpdate && isActionPendingRef.current) return
+      
       setProject(response.data)
       setConsecutiveErrors(0)
     } catch (error: unknown) {
@@ -180,6 +201,10 @@ function StudentProjectDetail() {
       setIsLoading(false)
     }
   }, [uid, navigate, t, consecutiveErrors])
+
+  const handleDeploymentEvent = useCallback(() => {
+    fetchProject(true)
+  }, [fetchProject])
 
   const fetchLogs = useCallback(async () => {
     if (!uid) return
@@ -234,7 +259,6 @@ function StudentProjectDetail() {
   useEffect(() => {
     if (activeTab === 'logs' && project?.container_id) {
       setLogs('')
-      setLogsClearedLength(0)
       fetchLogs()
     }
   }, [logType, activeTab, project?.container_id, fetchLogs])
@@ -245,19 +269,39 @@ function StudentProjectDetail() {
     }
   }, [activeTab, uid, fetchCredentials])
 
-  const logLines = useMemo(() => {
-    if (!logs) return []
-    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
-    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.slice(-500) : lines
-  }, [logs, logsClearedLength])
+  const { visibleLogLines, logOffset } = useMemo(() => {
+    if (!logs) return { visibleLogLines: [], logOffset: 0 }
+    
+    const clearedForType = clearedLogsMap[logType] || ''
+    let visibleLogs = logs
+    if (clearedForType) {
+      const clearedLines = clearedForType.trimEnd().split('\n')
+      const currentLines = logs.trimEnd().split('\n')
+      let overlapLines = 0
+      const maxCheck = Math.min(clearedLines.length, currentLines.length)
+      
+      for (let k = maxCheck; k > 0; k--) {
+        let match = true
+        for (let i = 0; i < k; i++) {
+          if (clearedLines[clearedLines.length - k + i] !== currentLines[i]) {
+            match = false
+            break
+          }
+        }
+        if (match) {
+          overlapLines = k
+          break
+        }
+      }
+      visibleLogs = currentLines.slice(overlapLines).join('\n')
+    }
 
-  const logOffset = useMemo(() => {
-    if (!logs) return 0
-    const visibleLogs = logsClearedLength > 0 ? logs.substring(logsClearedLength) : logs
     const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.length - 500 : 0
-  }, [logs, logsClearedLength])
+    const slicedLines = lines.length > 500 ? lines.slice(-500) : lines
+    const offset = lines.length > 500 ? lines.length - 500 : 0
+    
+    return { visibleLogLines: slicedLines, logOffset: offset }
+  }, [logs, clearedLogsMap, logType])
 
   const consoleLines = useMemo(() => {
     if (!consoleOutput) return []
@@ -296,7 +340,7 @@ function StudentProjectDetail() {
       confirmText: t('common.confirm'),
       isOpen: true,
       onConfirm: () => {
-        setLogsClearedLength(logs.length)
+        setClearedLogsMap(prev => ({ ...prev, [logType]: logs }))
         toast.success(t('common.success'))
       }
     })
@@ -323,7 +367,13 @@ function StudentProjectDetail() {
   }
   
   const onActionStarted = (status: Project['status'] = 'queued') => {
+    isActionPendingRef.current = true
     setProject(prev => prev ? ({ ...prev, status }) : null)
+  }
+
+  const onDeployStarted = () => {
+    isActionPendingRef.current = true
+    setProject(prev => prev ? ({ ...prev, status: 'building', deployment_status: 'queued', deployment_progress: 0 }) : null)
   }
 
   const handleStop = async () => {
@@ -337,8 +387,10 @@ function StudentProjectDetail() {
           error: t('common.error'),
         },
       )
-      fetchProject()
+      isActionPendingRef.current = false
+      fetchProject(true)
     } catch (error: unknown) {
+      isActionPendingRef.current = false
       const axiosError = error as AxiosError
       if (axiosError?.response?.status === 404) {
         toast.error(t('projectDetail.messages.stopUnavailable'))
@@ -357,8 +409,10 @@ function StudentProjectDetail() {
           error: t('common.error'),
         },
       )
-      fetchProject()
+      isActionPendingRef.current = false
+      fetchProject(true)
     } catch (error: unknown) {
+      isActionPendingRef.current = false
       const axiosError = error as AxiosError
       if (axiosError?.response?.status === 404) {
         toast.error(t('projectDetail.messages.startUnavailable'))
@@ -430,8 +484,25 @@ function StudentProjectDetail() {
     })
   }
 
+  const settingsInitialized = useRef(false)
+
   useEffect(() => {
-    if (project && !isSettingsDirty) {
+    if (project && !settingsInitialized.current) {
+      setBranchInput(project.branch || '')
+      setBaseDirInput(project.base_directory || '')
+      setBuildCommandInput(project.build_command || '')
+      setStartCommandInput(project.start_command || '')
+      setNodeVersionInput(project.node_version || '20')
+      setPhpVersionInput(project.php_version || '8.2')
+      setWorkerCommandInput(project.worker_command || '')
+      setQueueEnabledInput(project.queue_enabled || false)
+      setLanguageVersionInput(project.language_version || '')
+      settingsInitialized.current = true
+    }
+  }, [project])
+
+  useEffect(() => {
+    if (project && !isSettingsDirty && settingsInitialized.current) {
       setBranchInput(project.branch || '')
       setBaseDirInput(project.base_directory || '')
       setBuildCommandInput(project.build_command || '')
@@ -489,31 +560,45 @@ function StudentProjectDetail() {
       />
 
       {/* Building Banner */}
-      {(project.status === 'building' || project.status === 'failed') && (
+      {(isDeploying || project.deployment_status === 'failed' || project.status === 'failed') && (
         <Card className={cn(
           "border-blue-500/20 bg-blue-500/5 p-6 mb-6",
-          project.status === 'building' && "border-blue-500/30 bg-blue-500/10",
-          project.status === 'failed' && "border-rose-500/20 bg-rose-500/5"
+          isDeploying && "border-blue-500/30 bg-blue-500/10",
+          (project.deployment_status === 'failed' || project.status === 'failed') && "border-rose-500/20 bg-rose-500/5"
         )}>
           <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
             <div className={cn(
               "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-              project.status === 'building' ? "bg-blue-500/20 text-blue-500" : "bg-rose-500/20 text-rose-500"
+              isDeploying ? "bg-blue-500/20 text-blue-500" : "bg-rose-500/20 text-rose-500"
             )}>
-              {project.status === 'building' ? <Box className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+              {isDeploying ? <Box className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
             </div>
             <div className="flex-1">
               <h3 className={cn(
                 "text-lg font-bold",
-                project.status === 'failed' && "text-rose-500"
+                (project.deployment_status === 'failed' || project.status === 'failed') && "text-rose-500"
               )}>
-                {project.status === 'building' ? t('projectDetail.messages.buildTitle') : t('projectDetail.overview.deployError')}
+                {isDeploying 
+                  ? (deploymentPhase ? `${deploymentPhase.label}...` : t('projectDetail.messages.buildTitle'))
+                  : t('projectDetail.overview.deployError')}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {project.status === 'building'
-                  ? t('projectDetail.messages.buildDesc')
+                {isDeploying
+                  ? (deploymentPhase?.phase === 'startup' 
+                      ? 'Container is starting up and running health checks...'
+                      : deploymentPhase?.phase === 'finalize'
+                      ? 'Finalizing deployment and cleaning up old versions...'
+                      : t('projectDetail.messages.buildDesc'))
                   : t('projectDetail.messages.failedDesc')}
               </p>
+              {isDeploying && project.deployment_progress != null && (
+                <div className="mt-3 w-full bg-muted/50 rounded-full h-1.5 overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${Math.min(project.deployment_progress, 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex gap-3">
               <Button
@@ -522,7 +607,7 @@ function StudentProjectDetail() {
                 onClick={() => setActiveTab('build')}
                 className={cn(
                   "gap-2 font-bold uppercase tracking-wider text-[10px]",
-                  project.status === 'building' ? "border-blue-500/30 hover:bg-blue-500/10" : "border-rose-500/30 hover:bg-rose-500/10"
+                  isDeploying ? "border-blue-500/30 hover:bg-blue-500/10" : "border-rose-500/30 hover:bg-rose-500/10"
                 )}
               >
                 <TerminalIcon className="w-3.5 h-3.5" />
@@ -538,7 +623,25 @@ function StudentProjectDetail() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-            <StatusIndicator status={project.status} />
+            {!isDeploying && <StatusIndicator status={displayStatus || project.status} />}
+            {project.deployment_status && project.deployment_status !== 'completed' && (
+              <Badge variant="outline" className={cn(
+                "gap-2 py-1 px-3 flex items-center",
+                project.deployment_status === 'failed' ? "text-rose-500 bg-rose-500/10 border-rose-500/20" :
+                project.deployment_status === 'rollback' ? "text-amber-500 bg-amber-500/10 border-amber-500/20" :
+                "text-blue-500 bg-blue-500/10 border-blue-500/20"
+              )}>
+                <div className={cn(
+                  "w-2 h-2 rounded-full",
+                  project.deployment_status === 'failed' ? "bg-rose-500" :
+                  project.deployment_status === 'rollback' ? "bg-amber-500" :
+                  "bg-blue-500 animate-spin"
+                )} />
+                <span className="text-[10px] uppercase font-bold tracking-wider">
+                  {deploymentPhase ? deploymentPhase.label : project.deployment_status} {project.deployment_progress != null ? `(${project.deployment_progress}%)` : ''}
+                </span>
+              </Badge>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <div className="px-3 py-1.5 rounded-lg bg-muted border flex items-center gap-2">
@@ -555,10 +658,21 @@ function StudentProjectDetail() {
                 </a>
               )}
             </div>
-            <Badge variant="outline" className="gap-1.5 bg-muted/50 border-border/50">
-              <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
-              {frameworkLabel}
-            </Badge>
+            {project.custom_domains && project.custom_domains.length > 0 && (
+              <a 
+                href={`https://${project.custom_domains[0].domain}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="group/domain"
+              >
+                <Badge variant="outline" className="gap-1.5 bg-primary/10 text-primary border-primary/20 cursor-pointer hover:bg-primary/20 transition-colors">
+                  <Globe className="w-3.5 h-3.5" />
+                  {project.custom_domains[0].domain}
+                  {project.custom_domains.length > 1 && ` (+${project.custom_domains.length - 1})`}
+                  <ExternalLink className="w-2.5 h-2.5 opacity-40 group-hover/domain:opacity-100 transition-opacity" />
+                </Badge>
+              </a>
+            )}
           </div>
         </div>
 
@@ -588,14 +702,25 @@ function StudentProjectDetail() {
             projectId={uid || ''}
             status={project.status}
             onStarted={() => onActionStarted('restarting')}
-            onSuccess={fetchProject}
+            onSuccess={() => {
+              isActionPendingRef.current = false
+              fetchProject(true)
+            }}
           />
 
           <RedeployButton
             projectId={uid || ''}
             status={project.status}
-            onStarted={() => onActionStarted('queued')}
-            onSuccess={fetchProject}
+            deploymentStatus={project.deployment_status}
+            onStarted={onDeployStarted}
+            onSuccess={() => {
+              isActionPendingRef.current = false
+              fetchProject(true)
+            }}
+            onError={() => {
+              isActionPendingRef.current = false
+              fetchProject(true)
+            }}
           />
           <Button variant="outline" size="icon" onClick={handleDelete} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30">
             <Trash2 className="w-4 h-4" />
@@ -661,6 +786,7 @@ function StudentProjectDetail() {
           <TabsTrigger value="database">{t('projectDetail.tabs.database')}</TabsTrigger>
           <TabsTrigger value="logs">{t('projectDetail.tabs.logs')}</TabsTrigger>
           <TabsTrigger value="build">{t('projectDetail.tabs.build')}</TabsTrigger>
+          <TabsTrigger value="domains">{t('projectDetail.tabs.domains')}</TabsTrigger>
           <TabsTrigger value="settings">{t('projectDetail.tabs.settings')}</TabsTrigger>
         </TabsList>
 
@@ -673,19 +799,96 @@ function StudentProjectDetail() {
                   {t('projectDetail.overview.connectionInfo')}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-muted/50 rounded-xl border gap-4">
+              <CardContent className="space-y-3">
+                {/* Production / Subdomain URL */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-muted/50 rounded-xl border gap-4 group hover:border-primary/20 transition-colors">
                   <div className="flex items-center gap-4">
                     <div className="p-2.5 bg-emerald-500/10 rounded-lg text-emerald-600 border border-emerald-500/20">
                       <Globe className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="font-bold text-sm">{t('projectDetail.overview.productionUrl')}</div>
-                      <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.overview.webAccess')}</div>
+                      <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.overview.webAccess')} · SSL Enabled</div>
                     </div>
                   </div>
-                  <a href={projectUrl} target="_blank" className="text-primary hover:underline text-sm font-mono truncate max-w-xs">{projectUrl}</a>
+                  <a
+                    href={projectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
+                  >
+                    {projectUrl}
+                    <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                  </a>
                 </div>
+
+                {/* Custom Domains */}
+                {project.custom_domains && project.custom_domains.length > 0 && (
+                  <div className="space-y-2">
+                    {project.custom_domains
+                      .filter((d) => ['active', 'ssl_active', 'dns_verified'].includes(d.status))
+                      .map((d) => (
+                        <div
+                          key={d.id}
+                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/15 gap-4 group hover:border-primary/30 hover:bg-primary/10 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="p-2.5 bg-primary/10 rounded-lg text-primary border border-primary/20">
+                              <Globe className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm">{d.domain}</span>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0 h-4 text-primary border-primary/30 bg-primary/10"
+                                >
+                                  Custom Domain
+                                </Badge>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
+                                {d.status === 'ssl_active' ? 'SSL Active' : 'Active'} · Verified
+                              </div>
+                            </div>
+                          </div>
+                          <a
+                            href={`https://${d.domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
+                          >
+                            https://{d.domain}
+                            <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                          </a>
+                        </div>
+                      ))}
+
+                    {/* Pending domains hint */}
+                    {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 0 && (
+                      <button
+                        onClick={() => setActiveTab('domains')}
+                        className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30 transition-colors cursor-pointer group"
+                      >
+                        <span className="text-[11px] font-semibold">
+                          {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length} domain
+                          {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 1 ? 's' : ''} pending verification
+                        </span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Empty state: invite to add domains */}
+                {(!project.custom_domains || project.custom_domains.length === 0) && (
+                  <button
+                    onClick={() => setActiveTab('domains')}
+                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-muted-foreground/15 bg-muted/20 text-muted-foreground hover:border-primary/20 hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer group"
+                  >
+                    <span className="text-[11px] font-medium">Add a custom domain</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-40 group-hover:opacity-80 transition-opacity" />
+                  </button>
+                )}
               </CardContent>
             </Card>
 
@@ -702,12 +905,23 @@ function StudentProjectDetail() {
                   <div className="text-xs font-mono truncate">{project.github_url || project.repository_url}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-muted border">
-                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.branch')}</label>
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <GitBranch className="w-3 h-3 text-primary" />
-                      {project.branch || 'main'}
+                  <div className="p-3 rounded-lg bg-muted border flex items-center justify-between">
+                    <div>
+                      <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.branch')}</label>
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <GitBranch className="w-3 h-3 text-primary" />
+                        {project.branch || 'main'}
+                      </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-7 h-7 hover:bg-muted-foreground/10 text-muted-foreground hover:text-primary transition-colors"
+                      onClick={() => setActiveTab('settings')}
+                      title={t('projectDetail.actions.changeBranch') || 'Change Branch'}
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                   <div className="p-3 rounded-lg bg-muted border">
                     <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.settings.version')}</label>
@@ -919,7 +1133,7 @@ function StudentProjectDetail() {
               </div>
             </CardHeader>
             <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950">
-              {logLines.length > 0 ? logLines.map((line: string, i: number) => {
+              {visibleLogLines.length > 0 ? visibleLogLines.map((line: string, i: number) => {
                 const isTimestamp = /^\d{4}-\d{2}-\d{2}/.test(line) || /^\[\d{2}-\w{3}-\d{4}/.test(line)
                 return (
                   <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
@@ -946,7 +1160,7 @@ function StudentProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} />}
+          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} project={project} onDeploymentEvent={handleDeploymentEvent} />}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
@@ -1092,37 +1306,40 @@ function StudentProjectDetail() {
                       )}
                     </div>
 
-                    {isNodeRelated && (
-                      <div className="space-y-4 pt-2 border-t">
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.buildCommand')}</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              value={buildCommandInput}
-                              onChange={(e) => setBuildCommandInput(e.target.value)}
-                              placeholder="e.g. npm run build"
-                              className="h-10 text-xs font-mono"
-                            />
-                          </div>
-                          <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
-                        </div>
 
-                        <div className="space-y-2">
-                          <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.startCommand')}</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              value={startCommandInput}
-                              onChange={(e) => setStartCommandInput(e.target.value)}
-                              placeholder="e.g. node dist/main.js"
-                              className="h-10 text-xs font-mono"
-                            />
-                          </div>
-                          <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
+
+                {/* Common Custom Commands Area */}
+                <div className="space-y-4 pt-6 mt-6 border-t border-dashed">
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Code2 size={14} className="text-primary" />
+                      {t('projectDetail.settings.buildCommand')}
+                    </Label>
+                    <Textarea
+                      value={buildCommandInput}
+                      onChange={(e) => setBuildCommandInput(e.target.value)}
+                      placeholder="e.g. npm install && npm run build"
+                      className="min-h-[80px] text-xs font-mono border-muted-foreground/20"
+                    />
+                    <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Play size={14} className="text-primary" />
+                      {t('projectDetail.settings.startCommand')}
+                    </Label>
+                    <Input
+                      value={startCommandInput}
+                      onChange={(e) => setStartCommandInput(e.target.value)}
+                      placeholder={project.framework === 'Laravel' ? 'Leave empty for default PHP-FPM' : 'e.g. node dist/main.js'}
+                      className="h-10 text-xs font-mono border-muted-foreground/20"
+                    />
+                    <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
+                  </div>
+                </div>
 
                 <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
                   <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
@@ -1130,65 +1347,67 @@ function StudentProjectDetail() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
-                    <RefreshCw className="w-5 h-5" />
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
+                      <RefreshCw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
+                      <CardDescription>{t('projectDetail.settings.branchDesc')}</CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
-                    <CardDescription>{t('projectDetail.settings.branchDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.branchTitle')}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={branchInput}
+                        onChange={(e) => setBranchInput(e.target.value)}
+                        placeholder={t('projectDetail.settings.branchPlaceholder')}
+                        className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
+                      />
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
+                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
+                    </p>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.branchTitle')}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={branchInput}
-                      onChange={(e) => setBranchInput(e.target.value)}
-                      placeholder={t('projectDetail.settings.branchPlaceholder')}
-                      className="h-10"
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                    <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-muted/50 rounded-lg flex items-center justify-center text-muted-foreground">
-                    <Layout className="w-5 h-5" />
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-muted/50 rounded-lg flex items-center justify-center text-muted-foreground">
+                      <Layout className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{t('newProject.baseDir')}</CardTitle>
+                      <CardDescription>{t('newProject.baseDirDesc')}</CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-lg">{t('newProject.baseDir')}</CardTitle>
-                    <CardDescription>{t('newProject.baseDirDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('newProject.baseDir')}</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={baseDirInput}
+                        onChange={(e) => setBaseDirInput(e.target.value)}
+                        placeholder={t('newProject.baseDirPlaceholder')}
+                        className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
+                      />
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
+                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
+                    </p>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('newProject.baseDir')}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={baseDirInput}
-                      onChange={(e) => setBaseDirInput(e.target.value)}
-                      placeholder={t('newProject.baseDirPlaceholder')}
-                      className="h-10"
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                    <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
 
           {/* Floating Save Action Bar for Settings */}
@@ -1244,6 +1463,25 @@ function StudentProjectDetail() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="domains" className="pt-0">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">{t('projectDetail.settings.customDomain') || 'Custom Domain'}</CardTitle>
+                  <CardDescription>{t('projectDetail.settings.customDomainDesc') || 'Manage custom domains for your project'}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {project && <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} projectUrl={project.url} onDomainsChanged={fetchProject} />}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

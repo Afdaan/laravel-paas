@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/models"
-	"github.com/laravel-paas/backend/internal/repositories"
-	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/repositories"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -56,6 +56,27 @@ func (s *AuthService) GenerateToken(user *models.User) (string, error) {
 	tokenString, err := token.SignedString([]byte(s.cfg.JWTSecret))
 	if err != nil {
 		return "", apperr.New(500, "TOKEN_GEN_FAILED", "Failed to generate security token")
+	}
+
+	return tokenString, nil
+}
+
+// GenerateStreamToken creates a short-lived (60s) ephemeral stream JWT for SSE connections
+func (s *AuthService) GenerateStreamToken(user *models.User) (string, error) {
+	claims := models.JWTClaims{
+		UserID:     user.ID,
+		Email:      user.Email,
+		Role:       string(user.Role),
+		StreamOnly: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(60 * time.Second)),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(s.cfg.JWTSecret))
+	if err != nil {
+		return "", apperr.New(500, "TOKEN_GEN_FAILED", "Failed to generate ephemeral stream token")
 	}
 
 	return tokenString, nil

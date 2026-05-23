@@ -10,6 +10,7 @@ import ConfirmationModal from '../ConfirmationModal'
 interface RedeployButtonProps {
   projectId: string
   status: string
+  deploymentStatus?: string
   onStarted?: () => void
   onSuccess?: () => void
   onError?: (error: unknown) => void
@@ -21,6 +22,7 @@ interface RedeployButtonProps {
 export function RedeployButton({
   projectId,
   status,
+  deploymentStatus,
   onStarted,
   onSuccess,
   onError,
@@ -31,7 +33,8 @@ export function RedeployButton({
   const { t } = useTranslation()
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   
-  const deployLocked = status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
+  const isCurrentlyDeploying = Boolean(deploymentStatus && !['completed', 'failed', 'rollback', 'cancelled'].includes(deploymentStatus))
+  const deployLocked = isCurrentlyDeploying || status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
   const handleRedeploy = async (e: React.MouseEvent) => {
     e.preventDefault()

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
 	"gorm.io/gorm"
 
 	_ "github.com/go-sql-driver/mysql"

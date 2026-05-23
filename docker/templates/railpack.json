@@ -13,7 +13,8 @@
     "build": {
       "cmds": [
         "npm run build --if-present || yarn build || pnpm run build || bun run build || true",
-        "npm prune --omit=dev || yarn workspaces focus --production || pnpm prune --prod || bun pm untrust || true"
+        "npm prune --omit=dev || yarn workspaces focus --production || pnpm prune --prod || bun pm untrust || true",
+        "rm -rf /root/.npm /root/.yarn /root/.cache /root/.bun /tmp/* /var/cache/apt/* /var/lib/apt/lists/* || true"
       ]
     }
   },

@@ -12,11 +12,17 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"gorm.io/gorm"
 
-	"github.com/laravel-paas/backend/internal/config"
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/backend/internal/handlers"
-	"github.com/laravel-paas/backend/internal/infrastructure"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/middleware"
+	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/shared/services/setting"
 )
 
 // Setup initializes the Fiber app with all routes
@@ -24,14 +30,15 @@ func Setup(
 	db *gorm.DB,
 	cfg *config.Config,
 	redisService *infrastructure.RedisService,
-	dockerService *infrastructure.DockerService,
+	dockerService *docker.DockerService,
 	storageService *infrastructure.StorageService,
-	projectService *services.ProjectService,
+	projectService *projectServicePkg.ProjectService,
 	userService *services.UserService,
-	settingService *services.SettingService,
+	settingService *setting.SettingService,
 	authService *services.AuthService,
 	databaseService *services.DatabaseService,
 	feedbackService *services.FeedbackService,
+	domainHandler *domainHandlerPkg.DomainHandler,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
@@ -48,10 +55,12 @@ func Setup(
 			// Skip logging for high-frequency polling endpoints to keep console clean
 			path := c.Path()
 			return path == "/health" ||
+				path == "/api/internal/traefik/config" ||
 				(c.Method() == "GET" && (path == "/api/projects/stats" ||
 					path == "/api/admin/stats" ||
 					path == "/api/queue/stats" ||
 					(len(path) > 15 && path[len(path)-11:] == "/build-logs") ||
+					(len(path) > 12 && path[len(path)-12:] == "/logs/stream") ||
 					(len(path) > 10 && path[len(path)-5:] == "/logs")))
 		},
 	}))
@@ -85,13 +94,16 @@ func Setup(
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
+	// Prometheus Metrics Endpoint
+	app.Get("/metrics", metrics.PrometheusHandler())
+
 	// API Routes
 	api := app.Group("/api")
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
 	userHandler := handlers.NewUserHandler(userService)
-	projectHandler := handlers.NewProjectHandler(cfg, redisService, projectService, userService)
+	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, redisService, projectService, userService)
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
@@ -119,6 +131,12 @@ func Setup(
 	systemInit.Post("/initialize", systemHandler.InitializeSystem)
 
 	// -----------------------------
+	// Internal System Routes (Publicly accessible but meant for internal mesh network)
+	// -----------------------------
+	internal := api.Group("/internal")
+	internal.Get("/traefik/config", domainHandler.GetTraefikConfig)
+
+	// -----------------------------
 	// Protected Routes
 	// -----------------------------
 	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService))
@@ -126,10 +144,14 @@ func Setup(
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
+	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
 
 	// Feedback (common)
 	protected.Post("/feedback", feedbackHandler.Create)
 	protected.Get("/feedback", feedbackHandler.ListOwn)
+
+	// Domains (Centralized Student view)
+	protected.Get("/domains", domainHandler.ListAll)
 
 	// -----------------------------
 	// Admin Routes
@@ -160,8 +182,12 @@ func Setup(
 
 	// Queue statistics (admin only)
 	admin.Get("/queue/stats", projectHandler.GetQueueStats)
+	admin.Post("/queue/cancel/:id", projectHandler.CancelQueueJob)
+	admin.Post("/queue/requeue/:id", projectHandler.RequeueJob)
 	admin.Get("/projects/stats", projectHandler.GetProjectsStats)
 	admin.Get("/databases", databaseHandler.AdminListAll)
+	admin.Get("/domains", domainHandler.ListGlobal)
+	admin.Get("/domains/metrics", domainHandler.ListGlobalMetrics)
 
 	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)
@@ -181,11 +207,18 @@ func Setup(
 	projects.Post("/:id/restart", projectHandler.Restart)
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
+	projects.Get("/:id/logs/stream", projectHandler.StreamLogs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
+	projects.Get("/:id/build-logs/stream", projectHandler.StreamBuildLogs)
+	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
+	projects.Get("/:id/deployment-events/stream", projectHandler.StreamDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
 	projects.Post("/:id/artisan", middleware.RateLimitArtisan(), projectHandler.RunArtisan)
 	projects.Get("/:id/env", projectHandler.GetEnv)
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
+
+	// Domain Management Routes
+	domainHandler.RegisterRoutes(projects.Group("/:id/domains"))
 
 	// -----------------------------
 	// Database Management Routes

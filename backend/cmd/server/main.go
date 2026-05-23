@@ -11,20 +11,25 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/database"
-	"github.com/laravel-paas/backend/internal/logger"
-	"github.com/laravel-paas/backend/internal/repositories"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/database"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/logger"
+	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
-	"github.com/laravel-paas/backend/internal/workers"
-	"github.com/laravel-paas/backend/internal/infrastructure"
+	"github.com/laravel-paas/shared/services/deployment"
+	domainServicePkg "github.com/laravel-paas/shared/services/domain"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/shared/services/setting"
 )
 
 func main() {
 	// Load environment variables (Local .env takes precedence over Root .env)
 	// godotenv.Load does not overwrite existing environment variables
-	_ = godotenv.Load()        // Try local backend/.env
+	_ = godotenv.Load()          // Try local backend/.env
 	_ = godotenv.Load("../.env") // Try project root .env
 
 	// Initialize configuration
@@ -64,11 +69,9 @@ func main() {
 
 	// Initialize Infrastructure Services
 	storageService := infrastructure.NewStorageService(cfg)
-	dockerService := infrastructure.NewDockerService(cfg, storageService)
-	gitService := infrastructure.NewGitService(cfg)
-	versionService := infrastructure.NewVersionService()
+	dockerService := docker.NewDockerService(cfg, storageService)
 	mysqlService := infrastructure.NewMySQLService()
-	
+
 	// Initialize Repositories
 	userRepo := repositories.NewUserRepository(db)
 	projectRepo := repositories.NewProjectRepository(db)
@@ -76,19 +79,18 @@ func main() {
 	feedbackRepo := repositories.NewFeedbackRepository(db)
 
 	// Initialize Core Services
-	settingService := services.NewSettingService(settingRepo, redisService)
+	settingService := setting.NewSettingService(settingRepo, redisService)
 	feedbackService := services.NewFeedbackService(feedbackRepo)
-	projectService := services.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService)
+	transitionManager := deployment.NewTransitionManager(db, redisService)
+	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService, transitionManager)
 	userService := services.NewUserService(userRepo, projectService)
 	authService := services.NewAuthService(userRepo, cfg, redisService)
 	databaseService := services.NewDatabaseService(db, cfg)
-
-	// Initialize and start deployment worker
-	worker := workers.NewDeploymentWorker(cfg, projectRepo, settingService, redisService, dockerService, gitService, versionService, mysqlService, projectService)
-	worker.Start()
+	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
+	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, db, redisService, domainService, projectService)
 
 	// Initialize server
-	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService)
+	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -106,15 +108,14 @@ func main() {
 
 		slog.Warn("Graceful shutdown initiated...")
 
-		// 1. Stop the Worker (Finish current deployment)
-		slog.Info("Shutting down worker...")
-		worker.Stop()
-
 		// 2. Stop accepting new requests (Fiber)
 		// We give it a 10s timeout to finish current requests
 		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
 			slog.Error("Fiber shutdown error", "error", err)
 		}
+
+		// Shutdown DomainService background pollers/checks
+		domainService.Shutdown()
 
 		slog.Info("All systems stopped. Goodbye!")
 		close(idleConnsClosed)

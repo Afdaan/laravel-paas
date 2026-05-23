@@ -7,17 +7,17 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/services/setting"
 )
 
 // SettingHandler handles settings endpoints
 type SettingHandler struct {
-	service *services.SettingService
+	service *setting.SettingService
 }
 
 // NewSettingHandler creates a new setting handler
-func NewSettingHandler(service *services.SettingService) *SettingHandler {
+func NewSettingHandler(service *setting.SettingService) *SettingHandler {
 	return &SettingHandler{
 		service: service,
 	}

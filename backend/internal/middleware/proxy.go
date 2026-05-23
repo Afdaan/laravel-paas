@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/models"
 )
 
 // ValidateProxyTarget sanitizes and validates proxy destination

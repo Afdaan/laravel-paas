@@ -1,62 +1,40 @@
 # ===========================================================
-# Backend Dockerfile
-# ===========================================================
-# Multi-stage build for Go backend
+# Backend Dockerfile (Isolated API Runtime)
 # ===========================================================
 
 # Stage 1: Build
 FROM golang:1.22-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-# Enable Go Proxy for better connectivity in restricted networks
-ENV GOPROXY=https://proxy.golang.org,direct
+# Copy shared module and backend module
+COPY shared/ ./shared/
+COPY backend/ ./backend/
 
-# Copy only dependency files first to leverage Docker cache
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy the rest of the source code
-COPY . .
-
-# Run tidy to ensure everything is clean
-RUN go mod tidy
-
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
+WORKDIR /src/backend
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /app/main ./cmd/server
 
 # Stage 2: Production
-FROM debian:bookworm-slim
+FROM alpine:3.19
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Backend API Service"
 
-# Install dependencies and Docker CLI with Buildx
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    git \
-    curl \
-    tar \
-    gnupg \
-    lsb-release \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update && apt-get install -y \
-    docker-ce-cli \
-    docker-buildx-plugin \
-    && rm -rf /var/lib/apt/lists/*
+ENV TZ=Asia/Jakarta
 
-# Install Railpack CLI
-RUN curl -sSL https://railpack.com/install.sh | sh
+# Install minimal runtime dependencies (docker-cli for logs/stats)
+RUN apk update && apk add --no-cache \
+    ca-certificates \
+    curl \
+    docker-cli \
+    tzdata && \
+    cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && \
+    echo "Asia/Jakarta" > /etc/timezone
 
 WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /app/main .
-
-# Create directories for runtime mounts
-RUN mkdir -p /app/storage/projects /app/docker/templates
 
 # Health check
 HEALTHCHECK --interval=5s --timeout=3s --start-period=2s --retries=3 \

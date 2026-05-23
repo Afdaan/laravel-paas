@@ -20,6 +20,8 @@ frontend/build/
 
 # Backend
 backend/paas-backend
+backend/server
+backend/worker
 backend/*.exe
 backend/storage/
 
@@ -54,3 +56,9 @@ Thumbs.db
 .agent/
 .agents/
 .opencode
+
+# Python / Scripts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so

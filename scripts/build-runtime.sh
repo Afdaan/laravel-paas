@@ -2,9 +2,12 @@
 # ==============================================================================
 # Laravel PaaS Runtime Builder
 # This script builds the optimized Docker images for PHP runtime versions 8.0 to 8.4.
-# Having these images pre-built on the server makes project creation and redeploy 
-# lightning-fast (seconds instead of minutes) because it avoids repeating the installation 
-# and compilation of PHP extensions.
+# Usage: ./build-runtime.sh [target] [--force]
+# Targets:
+#   all      - Build all images (default)
+#   runtime  - Build only PHP runtime images
+#   builder  - Build only Unified Builder images
+#   [target]:[version] - Build specific version (e.g. runtime:8.2 or builder:8.4)
 # ==============================================================================
 
 set -e
@@ -13,30 +16,81 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DOCKER_BASE="${PROJECT_ROOT}/docker/runtime/Dockerfile.base"
+DOCKER_BUILDER="${PROJECT_ROOT}/docker/runtime/Dockerfile.builder"
 
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${BLUE}Building Laravel PaaS Runtime Images...${NC}"
+# Parse arguments
+TARGET_ARG="all"
+FORCE_REBUILD=false
 
-# Versions to build
-VERSIONS=("8.0" "8.1" "8.2" "8.3" "8.4")
-
-for VERSION in "${VERSIONS[@]}"; do
-    TAG="paas-runtime-php:${VERSION}-alpine"
-    echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG)${NC}"
-
-    docker build \
-        --build-arg PHP_VERSION="${VERSION}" \
-        -f "${DOCKER_BASE}" \
-        -t "${TAG}" \
-        "${PROJECT_ROOT}/docker/runtime"
-
-    echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime built successfully.${NC}"
+for arg in "$@"; do
+    if [[ "$arg" == "--force" ]]; then
+        FORCE_REBUILD=true
+    else
+        TARGET_ARG="$arg"
+    fi
 done
 
-echo -e "${BLUE}[INFO] All runtime images are ready! Now project builds will be instant.${NC}"
-echo -e "${BLUE}Project Dockerfiles can now use: FROM paas-runtime-php:8.x-alpine${NC}"
+if [ "$FORCE_REBUILD" = true ]; then
+    echo -e "${YELLOW}Force rebuild enabled.${NC}"
+fi
+
+# Split target and version
+IFS=':' read -r TARGET VERSION_FILTER <<< "$TARGET_ARG"
+TARGET=${TARGET:-"all"}
+
+echo -e "${BLUE}Building Laravel PaaS Runtime Images (Target: ${TARGET_ARG})...${NC}"
+
+# Versions to build
+ALL_VERSIONS=("8.0" "8.1" "8.2" "8.3" "8.4")
+VERSIONS=()
+
+if [ -n "$VERSION_FILTER" ]; then
+    VERSIONS=("$VERSION_FILTER")
+else
+    VERSIONS=("${ALL_VERSIONS[@]}")
+fi
+
+for VERSION in "${VERSIONS[@]}"; do
+    # 1. Build Base Runtime
+    if [[ "$TARGET" == "all" || "$TARGET" == "runtime" ]]; then
+        TAG_RUNTIME="paas-runtime-php:${VERSION}-alpine"
+        
+        if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_RUNTIME" >/dev/null 2>&1; then
+            echo -e "${GREEN}[SKIP] PHP ${VERSION} runtime already exists. Use --force to rebuild.${NC}"
+        else
+            echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG_RUNTIME)${NC}"
+            docker build \
+                --build-arg PHP_VERSION="${VERSION}" \
+                -f "${DOCKER_BASE}" \
+                -t "${TAG_RUNTIME}" \
+                "${PROJECT_ROOT}/docker/runtime"
+            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime built successfully.${NC}"
+        fi
+    fi
+
+    # 2. Build Unified Builder
+    if [[ "$TARGET" == "all" || "$TARGET" == "builder" ]]; then
+        TAG_BUILDER="paas-builder-base:${VERSION}-alpine"
+        
+        if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_BUILDER" >/dev/null 2>&1; then
+            echo -e "${GREEN}[SKIP] PHP ${VERSION} Unified Builder already exists. Use --force to rebuild.${NC}"
+        else
+            echo -e "${YELLOW}Building PHP ${VERSION} Unified Builder... ($TAG_BUILDER)${NC}"
+            docker build \
+                --build-arg PHP_VERSION="${VERSION}" \
+                -f "${DOCKER_BUILDER}" \
+                -t "${TAG_BUILDER}" \
+                "${PROJECT_ROOT}/docker/runtime"
+            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} builder built successfully.${NC}"
+        fi
+    fi
+done
+
+echo -e "${BLUE}[INFO] All selected images are ready!${NC}"

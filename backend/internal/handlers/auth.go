@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/laravel-paas/backend/internal/apperr"
-	"github.com/laravel-paas/backend/internal/config"
-	"github.com/laravel-paas/backend/internal/models"
+	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/backend/internal/services"
 )
 
@@ -98,6 +98,25 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
+// GenerateStreamToken generates a short-lived (60s) ephemeral stream JWT intended exclusively for SSE endpoints
+func (h *AuthHandler) GenerateStreamToken(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+
+	user, err := h.service.GetUserByID(userID)
+	if err != nil {
+		return err
+	}
+
+	token, err := h.service.GenerateStreamToken(user)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"token": token,
+	})
+}
+
 // LoginAsUser generates a JWT token for the specified user, allowing administrators to impersonate them.
 func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 	targetUserID, err := c.ParamsInt("id")
@@ -124,10 +143,10 @@ func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 
 	// Get admin ID who initiated this action
 	adminID := c.Locals("user_id").(uint)
-	
+
 	// Optionally: Record the login attempt by the admin acting as the user
 	go h.userService.UpdateActivity(targetUser.ID, c.IP(), true)
-	
+
 	_ = adminID // to prevent unused variable if not logging
 
 	return c.JSON(fiber.Map{

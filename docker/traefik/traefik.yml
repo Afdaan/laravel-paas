@@ -23,6 +23,11 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+  http:
+    endpoint: "http://paas-backend:8080/api/internal/traefik/config"
+    pollInterval: "2s"
+    pollTimeout: "5s"
+
 
 log:
   level: INFO
