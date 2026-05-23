@@ -60,37 +60,46 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function StudentDashboard() {
+function UserDashboard() {
   const { t } = useTranslation()
   const { user } = useAuthStore()
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const isFirstLoad = useRef(true)
+  const [stats, setStats] = useState<SystemStats | null>(null)
 
-  const fetchProjects = async () => {
-    if (isFirstLoad.current) {
-      setIsLoading(true)
-    }
-
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoading(true)
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
+
+      // Get stats
+      const statsRes = await systemAPI.getInitStatus()
+      if (statsRes.data) {
+        // Just general counts
+        const running = (response.data.data || []).filter((p: ProjectData) => p.status === 'running').length
+        setStats({
+          projects_count: (response.data.data || []).length,
+          users_count: 0,
+          active_containers: running,
+          total_databases: (response.data.data || []).filter((p: ProjectData) => p.database_name).length,
+        })
+      }
     } catch (error) {
-      console.error('Failed to fetch projects:', error)
+      toast.error(t('common.loadError'))
     } finally {
       setIsLoading(false)
-      isFirstLoad.current = false
     }
-  }
+  }, [t])
 
   useEffect(() => {
-    fetchProjects()
-  }, [])
+    fetchDashboardData()
+  }, [fetchDashboardData])
 
   // Poll for updates every 10 seconds
-  usePolling(fetchProjects, 10000)
+  usePolling(fetchDashboardData, 10000)
 
-  const runningProjects = (projects || []).filter(p => p.status === 'running').length
+  const runningProjects = projects.filter(p => p.status === 'running').length
   const totalProjects = projects?.length || 0
 
   return (
@@ -98,9 +107,11 @@ function StudentDashboard() {
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('common.dashboard')}</h1>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">
+            {t('dashboard.welcome')}, {user?.name}
+          </h1>
           <p className="text-muted-foreground">
-            {t('dashboard.welcomeUser', { name: user?.name?.split(' ')[0] || t('common.student') })}. {t('dashboard.projectStats', { count: runningProjects })}.
+            {t('dashboard.welcomeUser', { name: user?.name?.split(' ')[0] || t('common.user') })}. {t('dashboard.projectStats', { count: runningProjects })}.
           </p>
         </div>
         <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }))}>
@@ -270,4 +281,4 @@ function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: 
   )
 }
 
-export default StudentDashboard
+export default UserDashboard

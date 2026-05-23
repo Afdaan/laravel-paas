@@ -23,11 +23,11 @@ import Setup from './pages/Setup'
 // Lazy loaded pages for performance
 const Landing = lazy(() => import('./pages/Landing'))
 const Login = lazy(() => import('./pages/Login'))
-const StudentDashboard = lazy(() => import('./pages/student/Dashboard'))
-const StudentProjects = lazy(() => import('./pages/student/Projects'))
-const StudentNewProject = lazy(() => import('./pages/student/NewProject'))
-const StudentProjectDetail = lazy(() => import('./pages/student/ProjectDetail'))
-const DatabaseManager = lazy(() => import('./pages/student/DatabaseManager'))
+const UserDashboard = lazy(() => import('./pages/user/Dashboard'))
+const UserProjects = lazy(() => import('./pages/user/Projects'))
+const UserNewProject = lazy(() => import('./pages/user/NewProject'))
+const UserProjectDetail = lazy(() => import('./pages/user/ProjectDetail'))
+const DatabaseManager = lazy(() => import('./pages/user/DatabaseManager'))
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
 const AdminUsers = lazy(() => import('./pages/admin/Users'))
 const AdminProjects = lazy(() => import('./pages/admin/Projects'))
@@ -36,12 +36,12 @@ const AdminContainers = lazy(() => import('./pages/admin/Containers'))
 const AdminImages = lazy(() => import('./pages/admin/Images'))
 const AdminNetworks = lazy(() => import('./pages/admin/Networks'))
 const AdminVolumes = lazy(() => import('./pages/admin/Volumes'))
-const StudentDatabases = lazy(() => import('./pages/student/Databases'))
-const StudentFeedback = lazy(() => import('./pages/student/Feedback'))
+const UserDatabases = lazy(() => import('./pages/user/Databases'))
+const UserFeedback = lazy(() => import('./pages/user/Feedback'))
 const AdminFeedback = lazy(() => import('./pages/admin/Feedback'))
 const AdminDatabases = lazy(() => import('./pages/admin/Databases'))
 const AdminDeploymentQueue = lazy(() => import('./pages/admin/DeploymentQueue'))
-const StudentDomains = lazy(() => import('./pages/student/Domains'))
+const UserDomains = lazy(() => import('./pages/user/Domains'))
 const AdminDomains = lazy(() => import('./pages/admin/Domains'))
 
 // Protected Route Component
@@ -202,20 +202,20 @@ function App() {
           } 
         />
 
-        {/* Student Routes */}
+        {/* User Routes */}
         <Route element={
           <ProtectedRoute>
             <DashboardLayout />
           </ProtectedRoute>
         }>
-          <Route path="/dashboard" element={<StudentDashboard />} />
-          <Route path="/projects" element={<StudentProjects />} />
-          <Route path="/projects/new" element={<StudentNewProject />} />
-          <Route path="/projects/:uid" element={<StudentProjectDetail />} />
-          <Route path="/databases" element={<StudentDatabases />} />
-          <Route path="/domains" element={<StudentDomains />} />
+          <Route path="/dashboard" element={<UserDashboard />} />
+          <Route path="/projects" element={<UserProjects />} />
+          <Route path="/projects/new" element={<UserNewProject />} />
+          <Route path="/projects/:uid" element={<UserProjectDetail />} />
+          <Route path="/databases" element={<UserDatabases />} />
+          <Route path="/domains" element={<UserDomains />} />
           <Route path="/projects/:uid/database" element={<DatabaseManager />} />
-          <Route path="/feedback" element={<StudentFeedback />} />
+          <Route path="/feedback" element={<UserFeedback />} />
         </Route>
 
         {/* Admin Routes */}

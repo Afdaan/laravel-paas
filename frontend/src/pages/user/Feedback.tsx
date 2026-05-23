@@ -41,7 +41,7 @@ interface FeedbackForm {
   type: string;
 }
 
-const StudentFeedback = () => {
+const UserFeedback = () => {
   const { t } = useTranslation()
   const [feedback, setFeedback] = useState<FeedbackItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -262,4 +262,4 @@ const StudentFeedback = () => {
   )
 }
 
-export default StudentFeedback
+export default UserFeedback

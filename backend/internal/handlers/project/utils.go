@@ -393,12 +393,12 @@ func (h *ProjectHandler) Stats(c *fiber.Ctx) error {
 func (h *ProjectHandler) AdminStats(c *fiber.Ctx) error {
 	totalProjects, _ := h.projectService.GetTotalCount()
 	runningProjects, _ := h.projectService.GetRunningCount()
-	totalStudents, _ := h.userService.GetStudentCount()
+	totalUsers, _ := h.userService.GetRegularUserCount()
 
 	return c.JSON(fiber.Map{
 		"total_projects":   totalProjects,
 		"running_projects": runningProjects,
-		"total_students":   totalStudents,
+		"total_users":      totalUsers,
 	})
 }
 

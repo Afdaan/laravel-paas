@@ -23,7 +23,7 @@ import (
 type DatabaseService struct {
 	db   *gorm.DB
 	cfg  *config.Config
-	pool sync.Map // map[dbName]*sql.DB — cached connections per student database
+	pool sync.Map // map[dbName]*sql.DB — cached connections per user database
 }
 
 func NewDatabaseService(db *gorm.DB, cfg *config.Config) *DatabaseService {
@@ -57,14 +57,14 @@ type QueryResult struct {
 type AdminDatabaseInfo struct {
 	ProjectID    uint   `json:"project_id"`
 	ProjectName  string `json:"project_name"`
-	StudentName  string `json:"student_name"`
+	UserName     string `json:"user_name"`
 	DatabaseName string `json:"database_name"`
 	TableCount   int    `json:"table_count"`
 	Size         string `json:"size"`
 	Status       string `json:"status"`
 }
 
-// ConnectToProjectDB returns a pooled connection to a student's MySQL database.
+// ConnectToProjectDB returns a pooled connection to a user's MySQL database.
 // Connections are cached and reused across requests to avoid connection storms.
 func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, error) {
 	// Return cached connection if available and healthy
@@ -87,7 +87,7 @@ func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, 
 		return nil, err
 	}
 
-	// Conservative pool limits per student database
+	// Conservative pool limits per user database
 	db.SetMaxOpenConns(5)
 	db.SetMaxIdleConns(2)
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -541,7 +541,7 @@ func (s *DatabaseService) escapeSQLString(val string) string {
 	return val
 }
 
-// AdminListAllDatabases returns a summary of all student databases
+// AdminListAllDatabases returns a summary of all user databases
 func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 	var projects []struct {
 		ID               uint
@@ -567,7 +567,7 @@ func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 		info := AdminDatabaseInfo{
 			ProjectID:    p.ID,
 			ProjectName:  p.Name,
-			StudentName:  p.UserName,
+			UserName:     p.UserName,
 			DatabaseName: p.DatabaseName,
 			Status:       p.Status,
 			TableCount:   0,

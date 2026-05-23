@@ -147,8 +147,8 @@ func (s *UserService) DeleteUser(id uint) error {
 	return s.userRepo.Delete(id)
 }
 
-func (s *UserService) GetStudentCount() (int64, error) {
-	return s.userRepo.CountStudents()
+func (s *UserService) GetRegularUserCount() (int64, error) {
+	return s.userRepo.CountRegularUsers()
 }
 
 func (s *UserService) IsInitialized() (bool, error) {

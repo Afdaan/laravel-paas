@@ -57,7 +57,7 @@ const StatusBadge = ({ status }: { status: Project['status'] }) => {
   )
 }
 
-const StudentProjects = () => {
+const UserProjects = () => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[]>([])
@@ -132,9 +132,9 @@ const StudentProjects = () => {
       {/* Header Container */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('student.projects.title')}</h1>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('user.projects.title')}</h1>
           <p className="text-muted-foreground max-w-2xl">
-            {t('student.projects.desc')}
+            {t('user.projects.desc')}
           </p>
         </div>
         <Link to="/projects/new" className={cn(buttonVariants({ variant: "default", size: "lg" }), "w-full md:w-auto font-semibold")}>
@@ -270,4 +270,4 @@ const StudentProjects = () => {
   )
 }
 
-export default StudentProjects
+export default UserProjects

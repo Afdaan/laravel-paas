@@ -15,7 +15,7 @@ export const translations = {
       logout: "Logout",
       newProject: "New Project",
       adminPanel: "Admin Panel",
-      studentView: "Student View",
+      userView: "User View",
       main: "Main",
       infrastructure: "Infrastructure",
       authenticatedHub: "Authenticated Hub",
@@ -86,7 +86,7 @@ export const translations = {
       validation: {
         required: "{{field}} is required",
       },
-      student: "Student",
+      user: "User",
       size: "Size",
       justNow: "Just now",
       confirmClearLogs: "Are you sure you want to clear the logs? New logs will still appear.",
@@ -123,7 +123,7 @@ export const translations = {
     login: {
       signIn: "Authenticate",
       email: "Email",
-      emailPlaceholder: "student@paas.id",
+      emailPlaceholder: "user@paas.id",
       password: "Security Passphrase",
       passwordPlaceholder: "Enter password...",
       loggingIn: "Verifying credentials...",
@@ -142,8 +142,8 @@ export const translations = {
       infrastructure: "Infrastructure",
       signIn: "Sign In",
       dashboard: "Dashboard",
-      heroBadge: "Next Gen Hosting for Students",
-      heroTitle: "Laravel deployment, reimagined for students.",
+      heroBadge: "Next Gen Hosting for Users",
+      heroTitle: "Laravel deployment, reimagined for users.",
       heroSubtitle: "A minimalist cloud platform that automates your repository orchestration, database provisioning, and SSL routing. Focus on code, not infrastructure.",
       goDashboard: "Go to Dashboard",
       deployFirst: "Deploy your first project",
@@ -151,7 +151,7 @@ export const translations = {
       builtPrecision: "Built for precision.",
       precisionDesc: "Every technical hurdle between your repository and a live URL has been automated by our engineering core.",
       stopConfiguring: "Stop configuring. Start building.",
-      finalCTA: "Join hundreds of students currently shipping their Laravel projects on the fastest platform in the cluster.",
+      finalCTA: "Join hundreds of users currently shipping their Laravel projects on the fastest platform in the cluster.",
       readyDeploy: "Ready to deploy?",
       returnDashboard: "Return to Dashboard",
       terminal: {
@@ -172,7 +172,7 @@ export const translations = {
       ],
       featureList: {
         atomic: { title: "Atomic Redundancy", desc: "Automatic container migration if a node in the cluster fails." },
-        db: { title: "Database Provisioning", desc: "One-click MySQL isolated schema creation for each student project." },
+        db: { title: "Database Provisioning", desc: "One-click MySQL isolated schema creation for each user project." },
         edge: { title: "Global Edge Routing", desc: "Immediate SSL/TLS termination on our global infrastructure." },
         php: { title: "Runtime Isolation", desc: "Run multiple PHP versions (8.0 - 8.4) in isolated namespaces." },
         access: { title: "Integrated Console", desc: "Direct artisan commands and shell access from the dashboard." },
@@ -195,15 +195,15 @@ export const translations = {
     },
     admin: {
       platformDashboard: "Platform Dashboard",
-      adminDesc: "Monitoring global infrastructure state and resource orchestration across the student cluster.",
+      adminDesc: "Monitoring global infrastructure state and resource orchestration across the user cluster.",
       users: {
         title: "Users Management",
-        desc: "Manage all student and admin accounts across the platform.",
+        desc: "Manage all user and admin accounts across the platform.",
         newUser: "New User",
         importData: "Import CSV/Excel",
         searchPlaceholder: "Search users...",
         allAccess: "All Access Roles",
-        level1: "Level 1: Students",
+        level1: "Level 1: Users",
         level2: "Level 2: Internal Admin",
         level3: "Level 3: Root",
         roleLabel: "Role / Access",
@@ -237,7 +237,7 @@ export const translations = {
       },
       databases: {
         title: "Databases Management",
-        desc: "Managing all student database instances across the cluster.",
+        desc: "Managing all user database instances across the cluster.",
         provisioned: "provisioned",
         tables: "Tables",
         identity: "Database Identity",
@@ -248,12 +248,12 @@ export const translations = {
       },
       projects: {
         title: "Projects Management",
-        desc: "Monitor and manage all Laravel projects deployed by students.",
+        desc: "Monitor and manage all Laravel projects deployed by users.",
         loadError: "Failed to index projects",
       },
       feedback: {
         title: "Feedback Hub",
-        desc: "Manage and respond to student feedback and bug reports.",
+        desc: "Manage and respond to user feedback and bug reports.",
         loadError: "Could not load feedback registry",
         updateSuccess: "Registry state updated",
         updateError: "State update failed",
@@ -691,9 +691,9 @@ export const translations = {
         worker: "Worker Logs",
       }
     },
-    student: {
+    user: {
       dashboard: {
-        title: "Student Dashboard",
+        title: "User Dashboard",
         desc: "Overview of your projects and current resource usage.",
       },
       projects: {
@@ -847,7 +847,7 @@ export const translations = {
       logout: "Logout",
       newProject: "New Project",
       adminPanel: "Admin Panel",
-      studentView: "Student View",
+      userView: "User View",
       main: "Main",
       infrastructure: "Infrastructure",
       authenticatedHub: "Authenticated Hub",
@@ -918,7 +918,7 @@ export const translations = {
       validation: {
         required: "{{field}} wajib diisi",
       },
-      student: "Siswa",
+      user: "User",
       size: "Ukuran",
       justNow: "Baru saja",
       confirmClearLogs: "Konfirmasi pembersihan log? Log baru akan tetap muncul.",
@@ -955,7 +955,7 @@ export const translations = {
     login: {
       signIn: "Authenticate",
       email: "Email",
-      emailPlaceholder: "student@paas.id",
+      emailPlaceholder: "user@paas.id",
       password: "Security Passphrase",
       passwordPlaceholder: "Masukkan password...",
       loggingIn: "Memverifikasi...",
@@ -974,7 +974,7 @@ export const translations = {
       infrastructure: "Infrastructure",
       signIn: "Sign In",
       dashboard: "Dashboard",
-      heroBadge: "Modern Cloud Hosting untuk Student",
+      heroBadge: "Modern Cloud Hosting untuk User",
       heroTitle: "Laravel deployment\njadi lebih instan.",
       heroSubtitle: "Otomatisasi repository orchestration, database provisioning, dan SSL routing. Fokus pada code, bukan infrastruktur.",
       goDashboard: "Buka Dashboard",
@@ -983,7 +983,7 @@ export const translations = {
       builtPrecision: "Dibuat untuk skalabilitas.",
       precisionDesc: "Seluruh hambatan teknis dari repository hingga live URL telah diotomatisasi oleh engineering core.",
       stopConfiguring: "Berhenti konfigurasi. Mulai coding.",
-      finalCTA: "Bergabung dengan student lain yang telah melakukan deployment project Laravel.",
+      finalCTA: "Bergabung dengan user lain yang telah melakukan deployment project Laravel.",
       readyDeploy: "Siap untuk deploy?",
       returnDashboard: "Ke Dashboard",
       terminal: {
@@ -1030,12 +1030,12 @@ export const translations = {
       adminDesc: "Pantau status infrastruktur global dan orkestrasi resource cluster.",
       users: {
         title: "User Management",
-        desc: "Kelola semua akun siswa dan admin di seluruh platform.",
+        desc: "Kelola semua akun user dan admin di seluruh platform.",
         newUser: "New User",
         importData: "Import CSV/Excel",
         searchPlaceholder: "Cari user...",
         allAccess: "Semua Level Akses",
-        level1: "Level 1: Siswa",
+        level1: "Level 1: User",
         level2: "Level 2: Internal Admin",
         level3: "Level 3: Root",
         roleLabel: "Role / Akses",
@@ -1069,7 +1069,7 @@ export const translations = {
       },
       databases: {
         title: "Database Management",
-        desc: "Kelola semua instans database siswa di seluruh cluster.",
+        desc: "Kelola semua instans database user di seluruh cluster.",
         provisioned: "diaktifkan",
         tables: "Tabel",
         identity: "Identitas Database",
@@ -1080,12 +1080,12 @@ export const translations = {
       },
       projects: {
         title: "Project Management",
-        desc: "Monitoring dan kelola semua project Laravel yang dideploy oleh siswa.",
+        desc: "Monitoring dan kelola semua project Laravel yang dideploy oleh user.",
         loadError: "Gagal mengindeks project",
       },
       feedback: {
         title: "Feedback Hub",
-        desc: "Kelola dan respon masukan siswa serta laporan bug.",
+        desc: "Kelola dan respon masukan user serta laporan bug.",
         loadError: "Gagal memuat registri masukan",
         updateSuccess: "Status registri diperbarui",
         updateError: "Gagal memperbarui status",
@@ -1523,7 +1523,7 @@ export const translations = {
         worker: "Worker Logs",
       }
     },
-    student: {
+    user: {
       dashboard: {
         title: "Dashboard",
         desc: "Ikhtisar project dan penggunaan resource saat ini.",

@@ -340,7 +340,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               }`}>
                 <h1 className="truncate text-base font-semibold tracking-tight whitespace-nowrap">PaaS</h1>
                 <p className="truncate text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-                  {isAdmin ? t('common.globalAdmin') : t('common.student')}
+                  {isAdmin ? t('common.globalAdmin') : t('common.user')}
                 </p>
               </div>
             </button>
@@ -497,7 +497,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 <Button 
                   variant="ghost" 
                   className="h-8 w-full text-xs transition-all duration-300 justify-start pl-4 pr-2" 
-                  render={<NavLink to="/dashboard" title={t('common.studentView')} />}
+                  render={<NavLink to="/dashboard" title={t('common.userView')} />}
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
                   <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
@@ -505,7 +505,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                       ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
                       : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                   }`}>
-                    {t('common.studentView')}
+                    {t('common.userView')}
                   </span>
                 </Button>
               )}

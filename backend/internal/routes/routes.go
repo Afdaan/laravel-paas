@@ -110,7 +110,7 @@ func Setup(
 	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
 
 	// ===========================================
-	// Subdomain Proxy for Student Projects (protected + rate limited)
+	// Subdomain Proxy for User Projects (protected + rate limited)
 	// ===========================================
 	proxyGroup := app.Group("/proxy", middleware.ProxyAuth(cfg.JWTSecret, redisService, userService))
 	proxyGroup.Use(middleware.RateLimitProxy())
@@ -150,7 +150,7 @@ func Setup(
 	protected.Post("/feedback", feedbackHandler.Create)
 	protected.Get("/feedback", feedbackHandler.ListOwn)
 
-	// Domains (Centralized Student view)
+	// Domains (Centralized User view)
 	protected.Get("/domains", domainHandler.ListAll)
 
 	// -----------------------------
@@ -194,7 +194,7 @@ func Setup(
 	admin.Post("/system/prune", systemHandler.PruneSystem)
 
 	// -----------------------------
-	// Project Routes (Students)
+	// Project Routes (Users)
 	// -----------------------------
 	projects := protected.Group("/projects")
 	projects.Get("/", projectHandler.ListOwn)

@@ -1,7 +1,7 @@
 // ===========================================
 // Database Manager Handler
 // ===========================================
-// Allows students to manage their project databases
+// Allows users to manage their project databases
 // ===========================================
 package handlers
 
@@ -314,7 +314,7 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 	})
 }
 
-// AdminListAll returns all student databases (Admin only)
+// AdminListAll returns all user databases (Admin only)
 func (h *DatabaseHandler) AdminListAll(c *fiber.Ctx) error {
 	databases, err := h.databaseService.AdminListAllDatabases()
 	if err != nil {

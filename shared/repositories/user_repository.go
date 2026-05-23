@@ -18,7 +18,7 @@ type UserRepository interface {
 	Update(user *models.User) error
 	Delete(id uint) error
 	CountByRole(role models.Role) (int64, error)
-	CountStudents() (int64, error)
+	CountRegularUsers() (int64, error)
 }
 
 type userRepository struct {
@@ -84,6 +84,6 @@ func (r *userRepository) CountByRole(role models.Role) (int64, error) {
 	return count, err
 }
 
-func (r *userRepository) CountStudents() (int64, error) {
-	return r.CountByRole(models.RoleStudent)
+func (r *userRepository) CountRegularUsers() (int64, error) {
+	return r.CountByRole(models.RoleUser)
 }

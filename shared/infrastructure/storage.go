@@ -35,7 +35,7 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 
 	if _, err := os.Stat(projectSourceStorage); err == nil {
 		slog.Info("Syncing source assets to persistent storage", "subdomain", project.Subdomain)
-		// We use -n (no-clobber) to avoid overwriting files the student/app has already created.
+		// We use -n (no-clobber) to avoid overwriting files the user/app has already created.
 		// We use -d to ensure symlinks are copied as symlinks and not followed.
 		// This prevents users from symlinking /etc/shadow into their storage and having us copy it.
 		if err := exec.Command("cp", "-and", projectSourceStorage+"/.", path).Run(); err != nil {

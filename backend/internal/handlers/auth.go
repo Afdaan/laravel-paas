@@ -131,7 +131,7 @@ func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 	}
 
 	// Make sure an admin is not trying to target another admin/superadmin to escalate privileges
-	if targetUser.Role != models.RoleStudent {
+	if targetUser.Role != models.RoleUser {
 		return apperr.New(403, "FORBIDDEN", "Cannot impersonate administrator accounts")
 	}
 

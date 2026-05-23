@@ -94,7 +94,7 @@ function MetricCard({ title, value, subtext, icon: Icon, renderIcon, colorClass 
 
 
 
-function StudentProjectDetail() {
+function UserProjectDetail() {
   const { t } = useTranslation()
   const { uid } = useParams<{ uid: string }>()
   const navigate = useNavigate()
@@ -1510,4 +1510,4 @@ function CredentialRow({ label, value, isSecret = false }: { label: string, valu
   )
 }
 
-export default StudentProjectDetail
+export default UserProjectDetail
