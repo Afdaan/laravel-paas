@@ -33,7 +33,7 @@ import {
 interface AdminDatabaseInfo {
   project_id: number;
   project_name: string;
-  student_name: string;
+  user_name: string;
   database_name: string;
   table_count: number;
   size: string;
@@ -85,7 +85,7 @@ const AdminDatabases = () => {
   const filteredDatabases = databases.filter(db => 
     db.project_name.toLowerCase().includes(search.toLowerCase()) ||
     db.database_name.toLowerCase().includes(search.toLowerCase()) ||
-    db.student_name.toLowerCase().includes(search.toLowerCase())
+    db.user_name.toLowerCase().includes(search.toLowerCase())
   )
 
   const total = filteredDatabases.length
@@ -144,7 +144,7 @@ const AdminDatabases = () => {
             <TableHeader>
               <TableRow className="bg-muted/40 border-b border-border/50 hover:bg-muted/40 transition-none">
                 <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.identity')}</TableHead>
-                <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.student')}</TableHead>
+                <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.user')}</TableHead>
                 <TableHead className="h-12 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.connection')}</TableHead>
                 <TableHead className="h-12 px-6 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('admin.databases.tables')}</TableHead>
                 <TableHead className="h-12 px-6 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{t('common.size')}</TableHead>
@@ -194,8 +194,8 @@ const AdminDatabases = () => {
                         <User className="w-4 h-4" />
                       </div>
                       <div className="flex flex-col justify-center min-w-0">
-                        <span className="text-xs font-black uppercase tracking-tight truncate max-w-[160px] text-foreground/90">{db.student_name}</span>
-                        <span className="text-[10px] text-muted-foreground/50 uppercase font-bold">{t('common.student')}</span>
+                        <span className="text-xs font-black uppercase tracking-tight truncate max-w-[160px] text-foreground/90">{db.user_name}</span>
+                        <span className="text-[10px] text-muted-foreground/50 uppercase font-bold">{t('common.user')}</span>
                       </div>
                     </div>
                   </TableCell>

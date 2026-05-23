@@ -86,7 +86,7 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	// Set default role
 	role := req.Role
 	if role == "" {
-		role = models.RoleStudent
+		role = models.RoleUser
 	}
 
 	// Only superadmin can create admins
@@ -214,7 +214,7 @@ func (h *UserHandler) ImportExcel(c *fiber.Ctx) error {
 		name := row[0]
 		email := row[1]
 
-		user, plainPassword, err := h.userService.CreateUser(name, email, "", models.RoleStudent, &creatorID)
+		user, plainPassword, err := h.userService.CreateUser(name, email, "", models.RoleUser, &creatorID)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("Row %d: %s", i+2, err.Error()))
 			continue

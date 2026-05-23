@@ -22,16 +22,16 @@ type Role string
 const (
 	RoleSuperAdmin Role = "superadmin"
 	RoleAdmin      Role = "admin"
-	RoleStudent    Role = "student"
+	RoleUser       Role = "user"
 )
 
-// User represents a system user (admin or student)
+// User represents a system user (admin or regular user)
 type User struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Email        string         `gorm:"uniqueIndex:uni_users_email;size:255;not null" json:"email"`
 	Password     string         `gorm:"size:255;not null" json:"-"` // Never expose password
 	Name         string         `gorm:"size:255;not null" json:"name"`
-	Role         Role           `gorm:"size:20;not null;default:student" json:"role"`
+	Role         Role           `gorm:"size:20;not null;default:user" json:"role"`
 	CreatedBy    *uint          `json:"created_by,omitempty"`
 	Creator      *User          `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
 	Projects     []Project      `gorm:"foreignKey:UserID" json:"projects,omitempty"`

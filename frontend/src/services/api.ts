@@ -129,7 +129,7 @@ export const settingsAPI = {
 
 
 export const projectsAPI = {
-  // Student endpoints
+  // User endpoints
   listOwn: () => 
     api.get('/projects'),
   
@@ -218,7 +218,7 @@ export const projectsAPI = {
 }
 
 // ===========================================
-// Database API (Student Database Management)
+// Database API (User Database Management)
 // ===========================================
 
 export const databaseAPI = {

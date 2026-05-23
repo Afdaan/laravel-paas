@@ -39,7 +39,7 @@ interface ValidationErrors {
   database_name?: string;
 }
 
-function StudentNewProject() {
+function UserNewProject() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
@@ -331,4 +331,4 @@ function StudentNewProject() {
 
 
 
-export default StudentNewProject
+export default UserNewProject

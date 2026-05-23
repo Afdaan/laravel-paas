@@ -43,8 +43,8 @@ http:
 
   # Routers for PaaS platform
   routers:
-    # Student projects (highest priority - subdomain matching)
-    student-projects:
+    # User projects (highest priority - subdomain matching)
+    user-projects:
       rule: "Host(`*.{{BASE_DOMAIN}}`)"
       service: dynamic-projects
       entryPoints:
@@ -87,7 +87,7 @@ http:
         servers:
           - url: "http://paas-backend:8080"
     
-    # Dynamic service - will route to student containers
+    # Dynamic service - will route to user containers
     dynamic-projects:
       loadBalancer:
         servers:

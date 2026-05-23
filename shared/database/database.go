@@ -80,12 +80,12 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 
 	// Create default settings if not exists
 	defaultSettings := []models.Setting{
-		{Key: models.SettingMaxProjects, Value: models.DefaultMaxProjects, Description: "Maximum projects per student", Type: "int"},
+		{Key: models.SettingMaxProjects, Value: models.DefaultMaxProjects, Description: "Maximum projects per user", Type: "int"},
 		{Key: models.SettingProjectExpiry, Value: models.DefaultProjectExpiry, Description: "Days until project auto-delete (0=never)", Type: "int"},
 		{Key: models.SettingCPULimit, Value: models.DefaultCPULimit, Description: "CPU limit per container (%)", Type: "int"},
 		{Key: models.SettingMemoryLimit, Value: models.DefaultMemoryLimit, Description: "Memory limit per container (MB)", Type: "int"},
 		{Key: models.SettingBaseDomain, Value: cfg.BaseDomain, Description: "Base domain for subdomains", Type: "string"},
-		{Key: models.SettingProjectDomain, Value: cfg.ProjectDomain, Description: "Dedicated domain for student projects", Type: "string"},
+		{Key: models.SettingProjectDomain, Value: cfg.ProjectDomain, Description: "Dedicated domain for user projects", Type: "string"},
 		{Key: models.SettingAdminIdleTimeout, Value: models.DefaultAdminIdleTimeout, Description: "Admin inactivity logout timeout (minutes)", Type: "int"},
 		{Key: models.SettingMaxConcurrent, Value: models.DefaultMaxConcurrent, Description: "Maximum simultaneous builds", Type: "int"},
 		{Key: models.SettingBuildTimeout, Value: models.DefaultBuildTimeout, Description: "Build timeout (seconds)", Type: "int"},

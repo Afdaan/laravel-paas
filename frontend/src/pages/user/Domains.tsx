@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { domainsAPI, projectsAPI } from '../../services/api'
-import { 
-  Globe, 
-  Trash2, 
+import {
+  Globe,
+  Trash2,
   ArrowRightLeft,
   Loader2,
   ExternalLink,
@@ -77,8 +77,8 @@ const StatusBadge = ({ status }: { status?: string }) => {
   const isSpinning = ['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
 
   return (
-    <Badge 
-      variant="outline" 
+    <Badge
+      variant="outline"
       className={`gap-2 items-center flex w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border ${bgColor} ${textColor} transition-all duration-300`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${isSpinning ? 'animate-pulse' : ''}`} />
@@ -99,8 +99,8 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
 
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <Badge 
-        variant="outline" 
+      <Badge
+        variant="outline"
         className={`gap-2 items-center flex w-fit text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${bgColor} ${textColor}`}
       >
         <span className={`w-1 h-1 rounded-full ${dotColor}`} />
@@ -119,7 +119,7 @@ const Domains = () => {
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isTransferring, setIsTransferring] = useState(false)
-  
+
   const [transferModal, setTransferModal] = useState<{
     isOpen: boolean;
     domain?: CustomDomain;
@@ -133,7 +133,7 @@ const Domains = () => {
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   })
 
   const fetchData = useCallback(async () => {
@@ -194,7 +194,7 @@ const Domains = () => {
 
   const handleTransfer = async () => {
     if (!transferModal.domain || !transferModal.targetProjectId) return
-    
+
     setIsTransferring(true)
     try {
       await domainsAPI.transfer(
@@ -217,7 +217,7 @@ const Domains = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <ConfirmationModal 
+      <ConfirmationModal
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
         type="danger"
@@ -254,8 +254,8 @@ const Domains = () => {
               <label className="text-xs font-medium text-muted-foreground">
                 {t('domains.selectTarget')}
               </label>
-              <Select 
-                value={transferModal.targetProjectId} 
+              <Select
+                value={transferModal.targetProjectId}
                 onValueChange={(val) => setTransferModal(prev => ({ ...prev, targetProjectId: val || '' }))}
               >
                 <SelectTrigger className="h-10 w-full">
@@ -293,8 +293,8 @@ const Domains = () => {
             <Button variant="outline" onClick={() => setTransferModal(prev => ({ ...prev, isOpen: false }))}>
               {t('common.cancel')}
             </Button>
-            <Button 
-              onClick={handleTransfer} 
+            <Button
+              onClick={handleTransfer}
               disabled={!transferModal.targetProjectId || isTransferring}
             >
               {isTransferring && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -307,9 +307,9 @@ const Domains = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
         <div className="text-left">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('student.domains.title')}</h1>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('user.domains.title')}</h1>
           <p className="text-muted-foreground max-w-2xl">
-            {t('student.domains.desc')}
+            {t('user.domains.desc')}
           </p>
         </div>
       </div>
@@ -356,9 +356,9 @@ const Domains = () => {
                       </div>
                       <div className="flex flex-col text-left">
                         <span className="text-[13px] font-semibold text-foreground/90">{domain.domain}</span>
-                        <a 
-                          href={`https://${domain.domain}`} 
-                          target="_blank" 
+                        <a
+                          href={`https://${domain.domain}`}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-[9px] text-muted-foreground hover:text-primary hover:underline underline-offset-2 flex items-center gap-1 w-fit mt-0.5"
                         >
@@ -374,7 +374,7 @@ const Domains = () => {
                   </TableCell>
                   <TableCell className="text-left py-4">
                     {domain.project ? (
-                      <Link 
+                      <Link
                         to={`/projects/${domain.project.uid}`}
                         className="flex items-center gap-2.5 text-sm text-muted-foreground hover:text-primary transition-colors group/link"
                       >
@@ -403,14 +403,14 @@ const Domains = () => {
                           <MoreVertical className="w-4 h-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48 p-1.5">
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="gap-3 py-2 cursor-pointer focus:bg-primary/5 focus:text-primary transition-colors"
                             onClick={() => setTransferModal({ isOpen: true, domain, targetProjectId: '' })}
                           >
                             <ArrowRightLeft className="w-4 h-4" />
                             <span className="font-medium text-xs">{t('domains.transfer')}</span>
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="gap-3 py-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 transition-colors"
                             onClick={() => handleRemove(domain)}
                           >

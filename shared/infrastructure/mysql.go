@@ -2,7 +2,7 @@
 // MySQL Provisioning Service
 // ===========================================
 // Handles MySQL database lifecycle for
-// student projects (create, drop)
+// user projects (create, drop)
 // ===========================================
 package infrastructure
 
@@ -15,7 +15,7 @@ import (
 	"github.com/laravel-paas/shared/pkg/utils"
 )
 
-// MySQLService handles MySQL database provisioning for student projects
+// MySQLService handles MySQL database provisioning for user projects
 type MySQLService struct{}
 
 // NewMySQLService creates a new MySQL provisioning service
@@ -23,7 +23,7 @@ func NewMySQLService() *MySQLService {
 	return &MySQLService{}
 }
 
-// CreateDatabase creates a MySQL database and matching user for a student project
+// CreateDatabase creates a MySQL database and matching user for a user project
 func (s *MySQLService) CreateDatabase(dbName, password string) error {
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
 

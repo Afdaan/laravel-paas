@@ -694,7 +694,7 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		routerName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
 		serviceName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
 
-		// Priority 300 > student-projects wildcard (200) to match custom domains first.
+		// Priority 300 > user-projects wildcard (200) to match custom domains first.
 		resp.HTTP.Routers[routerName] = TraefikRouter{
 			Rule:        ruleStr,
 			Service:     serviceName,

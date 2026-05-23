@@ -91,7 +91,7 @@ const AdminFeedback = () => {
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Client Intelligence</h1>
-          <p className="text-muted-foreground">Reviewing bug reports, architecture suggestions, and student sentiment analysis.</p>
+          <p className="text-muted-foreground">Reviewing bug reports, architecture suggestions, and user sentiment analysis.</p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -117,7 +117,7 @@ const AdminFeedback = () => {
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Filter intel by keyword or student identity..."
+              placeholder="Filter intel by keyword or user identity..."
               className="pl-9 w-full"
             />
           </div>

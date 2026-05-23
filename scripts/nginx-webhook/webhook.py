@@ -541,7 +541,7 @@ def webhook():
     subdomain = data.get("subdomain")
     domain = data.get("domain")
     custom_domains = data.get("custom_domains", [])
-    user_folder = data.get("user_folder", "project-student")
+    user_folder = data.get("user_folder", "project-user")
 
     if not all([action, subdomain, domain]):
         return jsonify({"error": "Missing required fields"}), 400

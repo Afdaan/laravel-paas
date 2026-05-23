@@ -2,7 +2,7 @@
 // Git Service
 // ===========================================
 // Handles repository cloning and source code
-// management for student projects
+// management for user projects
 // ===========================================
 package infrastructure
 

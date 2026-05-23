@@ -96,7 +96,7 @@ const AdminUsers = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'student',
+    role: 'user',
     password: '',
   })
 
@@ -130,7 +130,7 @@ const AdminUsers = () => {
       }
       setShowModal(false)
       setEditingUser(null)
-      setFormData({ name: '', email: '', role: 'student', password: '' })
+      setFormData({ name: '', email: '', role: 'user', password: '' })
       fetchUsers()
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: string }>
@@ -216,7 +216,7 @@ const AdminUsers = () => {
           <Button
             onClick={() => {
               setEditingUser(null)
-              setFormData({ name: '', email: '', role: 'student', password: '' })
+              setFormData({ name: '', email: '', role: 'user', password: '' })
               setShowModal(true)
             }}
           >
@@ -306,7 +306,7 @@ const AdminUsers = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('admin.users.allAccess')}</SelectItem>
-                <SelectItem value="student">{t('admin.users.level1')}</SelectItem>
+                <SelectItem value="user">{t('admin.users.level1')}</SelectItem>
                 <SelectItem value="admin">{t('admin.users.level2')}</SelectItem>
                 <SelectItem value="superadmin">{t('admin.users.level3')}</SelectItem>
               </SelectContent>
@@ -412,7 +412,7 @@ const AdminUsers = () => {
                   </TableCell>
                   <TableCell className="pl-4 pr-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {user.role === 'student' && (
+                      {user.role === 'user' && (
                         <Button variant="outline" size="sm" className="h-8 text-xs font-medium" onClick={() => handleLoginAs(user.id)}>
                           <UserCheck className="w-3.5 h-3.5 mr-1.5" />
                           {t('admin.users.loginAs')}
@@ -555,12 +555,12 @@ const AdminUsers = () => {
               <Label>{t('admin.users.privilege')}</Label>
               <div className="grid grid-cols-2 gap-4">
                 <div
-                  className={`p-4 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors ${formData.role === 'student' ? 'border-primary ring-1 ring-primary' : ''}`}
-                  onClick={() => setFormData(f => ({ ...f, role: 'student' }))}
+                  className={`p-4 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors ${formData.role === 'user' ? 'border-primary ring-1 ring-primary' : ''}`}
+                  onClick={() => setFormData(f => ({ ...f, role: 'user' }))}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <Users className="w-5 h-5 text-muted-foreground" />
-                    {formData.role === 'student' && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                    {formData.role === 'user' && <CheckCircle2 className="w-4 h-4 text-primary" />}
                   </div>
                   <p className="font-semibold text-sm">{t('admin.users.level1')}</p>
                 </div>

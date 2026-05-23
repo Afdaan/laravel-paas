@@ -26,7 +26,7 @@ type Config struct {
 	PGUser     string
 	PGPassword string
 
-	// Student Database (MySQL)
+	// User Database (MySQL)
 	MYSQLHost         string
 	MYSQLPort         string
 	MYSQLDatabase     string
@@ -108,7 +108,7 @@ func Load() *Config {
 		PGUser:     getEnv("PG_USER", "paas"),
 		PGPassword: getEnv("PG_PASSWORD", ""),
 
-		// Student Database (MySQL)
+		// User Database (MySQL)
 		MYSQLHost:         getEnv("MYSQL_HOST", "paas-mysql"),
 		MYSQLPort:         getEnv("MYSQL_PORT", "3306"),
 		MYSQLDatabase:     getEnv("MYSQL_DATABASE", "paas"),

@@ -108,7 +108,7 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		slog.Warn("Failed to remove docker image", "subdomain", project.Subdomain, "error", err)
 	}
 
-	// Drop Student Database
+	// Drop User Database
 	if project.DatabaseName != "" {
 		slog.Debug("Dropping database", "db", project.DatabaseName)
 		if err := s.mysqlService.DropDatabase(project.DatabaseName); err != nil {

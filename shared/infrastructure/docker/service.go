@@ -14,7 +14,7 @@ import (
 // ===========================================
 // Docker Service
 // ===========================================
-// Manages Docker containers for student projects
+// Manages Docker containers for user projects
 // ===========================================
 // DockerService handles all Docker operations
 type DockerService struct {
