@@ -360,6 +360,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (eventSource) eventSource.close();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // Helper to format and display error toasts with premium Title/Description layout
