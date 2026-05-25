@@ -67,6 +67,9 @@ func (s *GithubService) getPrivateKey() (*rsa.PrivateKey, error) {
 		if cleanPath == "." || strings.HasPrefix(cleanPath, ".."+string(os.PathSeparator)) || cleanPath == ".." {
 			return nil, fmt.Errorf("invalid GITHUB_APP_PRIVATE_KEY_PATH: relative path must stay within DATA_PATH")
 		}
+		if strings.HasPrefix(cleanPath, "storage/data"+string(os.PathSeparator)) {
+			cleanPath = strings.TrimPrefix(cleanPath, "storage/data"+string(os.PathSeparator))
+		}
 		candidatePaths = append(candidatePaths,
 			filepath.Join(s.cfg.DataPath, cleanPath),
 			filepath.Join("/app/data", cleanPath),
