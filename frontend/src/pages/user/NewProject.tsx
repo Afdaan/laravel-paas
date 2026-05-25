@@ -117,7 +117,14 @@ function UserNewProject() {
     } catch (err) {
       if (currentSeq === repoQuerySeq.current) {
         console.error(err)
-        toast.error('Failed to load repositories')
+        const axiosError = err as AxiosError<{ error: string, code?: string }>
+        const errorMsg = axiosError.response?.data?.error || 'Failed to load repositories'
+        toast.error(errorMsg)
+        
+        // If the installation was uninstalled/revoked on GitHub's side, auto-refresh to sync UI
+        if (axiosError.response?.status === 404 || axiosError.response?.data?.code === 'INSTALLATION_REVOKED') {
+          loadInstallations()
+        }
       }
     } finally {
       if (currentSeq === repoQuerySeq.current) {
@@ -452,7 +459,7 @@ function UserNewProject() {
                                   )}
                                 </div>
                               </SelectTrigger>
-                              <SelectContent className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                              <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                                 {installations.map(inst => (
                                   <SelectItem key={inst.installation_id} value={String(inst.installation_id)} className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
                                     <div className="flex items-center gap-3">
@@ -522,7 +529,7 @@ function UserNewProject() {
                                   )}
                                 </div>
                               </SelectTrigger>
-                              <SelectContent className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                              <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                                 {repositories.map(repo => (
                                   <SelectItem key={repo.id} value={repo.full_name} className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
                                     <div className="flex items-center justify-between w-full gap-4">
@@ -580,7 +587,7 @@ function UserNewProject() {
                                   )}
                                 </div>
                               </SelectTrigger>
-                              <SelectContent className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                              <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                                 {branches.map(b => (
                                   <SelectItem key={b.name} value={b.name} className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
                                     <div className="flex items-center gap-3">
