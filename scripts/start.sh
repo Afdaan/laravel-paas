@@ -252,7 +252,7 @@ start_buildkit() {
         --memory="3g" \
         -v paas-buildkit-cache:/var/lib/buildkit \
         -v "${config_path}:/etc/buildkit/buildkitd.toml:ro" \
-        moby/buildkit:rootless --addr tcp://0.0.0.0:1234
+        moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
 }
 
 

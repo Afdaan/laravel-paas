@@ -5,7 +5,7 @@
 ARG BUILD_COMMAND=""
 
 # Stage 1: Unified Builder
-FROM paas-builder-base:8.3-alpine AS builder
+FROM paas-registry:5000/library/paas-builder-base:8.3-alpine AS builder
 WORKDIR /app
 ARG BUILD_COMMAND
 RUN mkdir -p public/build
@@ -127,7 +127,7 @@ RUN rm -rf /app/node_modules \
            /root/.composer
 
 # Stage 2: Production (Optimized Runtime)
-FROM paas-runtime-php:8.3-alpine
+FROM paas-registry:5000/library/paas-runtime-php:8.3-alpine
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Laravel with PHP 8.3 (Dynamic & Fast)"

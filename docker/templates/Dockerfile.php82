@@ -23,7 +23,7 @@ COPY vite.config.js* webpack.mix.js* tailwind.config.js* postcss.config.js* ./
 RUN npm run build || true
 
 # Stage 3: Production (Laravel Runtime)
-FROM paas-runtime-php:8.2-alpine
+FROM paas-registry:5000/library/paas-runtime-php:8.2-alpine
 WORKDIR /var/www/html
 COPY . .
 COPY --from=composer /app/vendor /tmp/vendor
