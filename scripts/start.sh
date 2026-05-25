@@ -93,12 +93,24 @@ deploy_with_anti_downtime() {
         fi
     else
         if [ "$service_name" = "frontend" ]; then
-            if ! docker build \
+            # Capture and disable execution tracing to safeguard build arguments from leaking.
+            [[ $- == *x* ]] && was_tracing=true || was_tracing=false
+            { set +x; } 2>/dev/null
+            
+            local success=false
+            if docker build \
                 --build-arg VITE_ZITADEL_AUTHORITY="$VITE_ZITADEL_AUTHORITY" \
                 --build-arg VITE_ZITADEL_CLIENT_ID="$VITE_ZITADEL_CLIENT_ID" \
                 --build-arg VITE_ZITADEL_REDIRECT_URI="$VITE_ZITADEL_REDIRECT_URI" \
                 --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
                 -t "$image_name" "$context_dir"; then
+                success=true
+            fi
+            
+            # Restore execution tracing if it was active
+            if [ "$was_tracing" = true ]; then set -x; fi
+            
+            if [ "$success" = false ]; then
                 echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
                 return 1
             fi

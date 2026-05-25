@@ -103,9 +103,31 @@ deploy_with_anti_downtime() {
                 break
             fi
         else
-            if DOCKER_BUILDKIT=1 docker build -t "$image_name" "$context_dir"; then
-                success=true
-                break
+            if [ "$service_name" = "frontend" ]; then
+                # Capture and disable execution tracing to safeguard build arguments from leaking in public CI/CD logs.
+                [[ $- == *x* ]] && was_tracing=true || was_tracing=false
+                { set +x; } 2>/dev/null
+                
+                if DOCKER_BUILDKIT=1 docker build \
+                    --build-arg VITE_ZITADEL_AUTHORITY="$VITE_ZITADEL_AUTHORITY" \
+                    --build-arg VITE_ZITADEL_CLIENT_ID="$VITE_ZITADEL_CLIENT_ID" \
+                    --build-arg VITE_ZITADEL_REDIRECT_URI="$VITE_ZITADEL_REDIRECT_URI" \
+                    --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
+                    -t "$image_name" "$context_dir"; then
+                    success=true
+                fi
+                
+                # Restore execution tracing if it was active
+                if [ "$was_tracing" = true ]; then set -x; fi
+                
+                if [ "$success" = true ]; then
+                    break
+                fi
+            else
+                if DOCKER_BUILDKIT=1 docker build -t "$image_name" "$context_dir"; then
+                    success=true
+                    break
+                fi
             fi
         fi
         echo -e "${YELLOW}[WARN] Build attempt $attempt failed. Retrying in 5s...${NC}"

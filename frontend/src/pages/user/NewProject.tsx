@@ -17,14 +17,14 @@ import {
   Terminal,
   Play,
   GitBranch,
-  ExternalLink,
-  RefreshCw
+  ExternalLink
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -87,16 +87,42 @@ function UserNewProject() {
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
 
+  const repoQuerySeq = React.useRef(0)
+  const branchQuerySeq = React.useRef(0)
+  const isLinkingRef = React.useRef(false)
+
+  const currentInst = React.useMemo(() => 
+    installations.find(inst => String(inst.installation_id) === selectedInstallationId),
+    [installations, selectedInstallationId]
+  )
+
+  const currentRepo = React.useMemo(() => 
+    repositories.find(r => r.full_name === selectedRepoFullName),
+    [repositories, selectedRepoFullName]
+  )
+
+  const currentBranch = React.useMemo(() => 
+    branches.find(b => b.name === formData.branch),
+    [branches, formData.branch]
+  )
+
   const loadRepositories = async (installationId: string) => {
+    const currentSeq = ++repoQuerySeq.current
     setIsGithubLoading(true)
     try {
       const response = await githubAPI.listRepositories(installationId)
-      setRepositories(response.data.data || [])
+      if (currentSeq === repoQuerySeq.current) {
+        setRepositories(response.data.data || [])
+      }
     } catch (err) {
-      console.error(err)
-      toast.error('Failed to load repositories')
+      if (currentSeq === repoQuerySeq.current) {
+        console.error(err)
+        toast.error('Failed to load repositories')
+      }
     } finally {
-      setIsGithubLoading(false)
+      if (currentSeq === repoQuerySeq.current) {
+        setIsGithubLoading(false)
+      }
     }
   }
 
@@ -122,6 +148,9 @@ function UserNewProject() {
     const params = new URLSearchParams(window.location.search)
     const installationId = params.get('installation_id')
     if (installationId) {
+      if (isLinkingRef.current) return
+      isLinkingRef.current = true
+
       const linkGithub = async () => {
         setIsGithubLoading(true)
         try {
@@ -144,23 +173,29 @@ function UserNewProject() {
   }, [])
 
   const loadBranches = async (owner: string, repo: string, currentReposList = repositories) => {
+    const currentSeq = ++branchQuerySeq.current
     setIsGithubLoading(true)
     try {
       const response = await githubAPI.listBranches(owner, repo)
-      setBranches(response.data.data || [])
-      const repoDetails = currentReposList.find(r => r.full_name === `${owner}/${repo}`)
-      const defaultBranch = repoDetails?.default_branch || 'main'
-      setFormData(prev => ({ ...prev, branch: defaultBranch }))
+      if (currentSeq === branchQuerySeq.current) {
+        setBranches(response.data.data || [])
+        const repoDetails = currentReposList.find(r => r.full_name === `${owner}/${repo}`)
+        const defaultBranch = repoDetails?.default_branch || 'main'
+        setFormData(prev => ({ ...prev, branch: defaultBranch }))
+      }
     } catch (err) {
-      console.error(err)
-      toast.error('Failed to load branches')
+      if (currentSeq === branchQuerySeq.current) {
+        console.error(err)
+        toast.error('Failed to load branches')
+      }
     } finally {
-      setIsGithubLoading(false)
+      if (currentSeq === branchQuerySeq.current) {
+        setIsGithubLoading(false)
+      }
     }
   }
 
-  const handleRepoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const fullName = e.target.value
+  const handleRepoValueChange = (fullName: string) => {
     setSelectedRepoFullName(fullName)
     if (!fullName) {
       setFormData(prev => ({
@@ -231,6 +266,7 @@ function UserNewProject() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isLoading) return // Block duplicate concurrent submits
 
     if (!validateForm()) return
 
@@ -391,24 +427,46 @@ function UserNewProject() {
                             GitHub Account
                           </Label>
                           <div className="relative">
-                            <select
-                              id="installation_id"
+                            <Select
                               value={selectedInstallationId}
-                              onChange={(e) => {
-                                setSelectedInstallationId(e.target.value)
-                                loadRepositories(e.target.value)
+                              onValueChange={(val) => {
+                                if (val) {
+                                  setSelectedInstallationId(val)
+                                  loadRepositories(val)
+                                }
                               }}
-                              className="w-full h-11 px-4 rounded-xl border border-border bg-background text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                             >
-                              {installations.map(inst => (
-                                <option key={inst.installation_id} value={inst.installation_id}>
-                                  {inst.account_name}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-muted-foreground">
-                              <RefreshCw className="w-4 h-4 animate-pulse" />
-                            </div>
+                              <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/60 hover:border-border dark:hover:border-foreground/20 bg-background/50 hover:bg-background/80 text-sm font-medium transition-all duration-200 outline-none focus:outline-none focus:ring-1 focus:ring-primary/20 focus:border-primary cursor-pointer flex items-center justify-between data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
+                                <div className="flex items-center gap-2.5 text-left flex-1 min-w-0 pr-4">
+                                  {currentInst ? (
+                                    <>
+                                      {currentInst.avatar_url ? (
+                                        <img src={currentInst.avatar_url} alt={currentInst.account_name} className="w-5.5 h-5.5 rounded-full border border-border/40 shrink-0" />
+                                      ) : (
+                                        <GithubIcon className="w-4.5 h-4.5 text-muted-foreground shrink-0" />
+                                      )}
+                                      <span className="truncate text-foreground/90 font-medium">{currentInst.account_name}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground/60">Select an account</span>
+                                  )}
+                                </div>
+                              </SelectTrigger>
+                              <SelectContent className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                                {installations.map(inst => (
+                                  <SelectItem key={inst.installation_id} value={String(inst.installation_id)} className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
+                                    <div className="flex items-center gap-3">
+                                      {inst.avatar_url ? (
+                                        <img src={inst.avatar_url} alt={inst.account_name} className="w-6 h-6 rounded-full border border-border/40 shrink-0" />
+                                      ) : (
+                                        <GithubIcon className="w-5 h-5 text-muted-foreground shrink-0" />
+                                      )}
+                                      <span className="font-medium text-foreground/90 text-sm">{inst.account_name}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
 
@@ -436,21 +494,59 @@ function UserNewProject() {
                           Repository
                         </Label>
                         <div className="relative">
-                          <select
-                            id="repo_select"
-                            value={selectedRepoFullName}
-                            onChange={handleRepoChange}
-                            className="w-full h-11 px-4 rounded-xl border border-border bg-background text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                          >
-                            <option value="">Select a repository to import</option>
-                            {repositories.map(repo => (
-                              <option key={repo.id} value={repo.full_name}>
-                                {repo.full_name} {repo.private ? '(Private)' : '(Public)'}
-                              </option>
-                            ))}
-                          </select>
+                            <Select
+                              value={selectedRepoFullName}
+                              onValueChange={(val) => handleRepoValueChange(val || '')}
+                            >
+                              <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/60 hover:border-border dark:hover:border-foreground/20 bg-background/50 hover:bg-background/80 text-sm font-medium transition-all duration-200 outline-none focus:outline-none focus:ring-1 focus:ring-primary/20 focus:border-primary cursor-pointer flex items-center justify-between data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
+                                <div className="flex items-center gap-2.5 text-left flex-1 min-w-0 pr-4">
+                                  {currentRepo ? (
+                                    <div className="flex items-center justify-between w-full">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-5 h-5 rounded-md bg-primary/10 flex items-center justify-center text-primary shrink-0 border border-primary/20">
+                                          <GithubIcon className="w-3.5 h-3.5" />
+                                        </div>
+                                        <span className="truncate font-semibold text-foreground/90 text-sm">{currentRepo.full_name}</span>
+                                      </div>
+                                      <span className={cn(
+                                        "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 border ml-2 transition-all duration-200",
+                                        currentRepo.private 
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+                                          : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                      )}>
+                                        {currentRepo.private ? 'Private' : 'Public'}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground/60">Select a repository to import</span>
+                                  )}
+                                </div>
+                              </SelectTrigger>
+                              <SelectContent className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                                {repositories.map(repo => (
+                                  <SelectItem key={repo.id} value={repo.full_name} className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
+                                    <div className="flex items-center justify-between w-full gap-4">
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-primary shrink-0 border border-primary/10">
+                                          <GithubIcon className="w-3.75 h-3.75" />
+                                        </div>
+                                        <span className="font-medium text-foreground/90 text-sm truncate">{repo.full_name}</span>
+                                      </div>
+                                      <span className={cn(
+                                        "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 border",
+                                        repo.private 
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+                                          : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                      )}>
+                                        {repo.private ? 'Private' : 'Public'}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           {isGithubLoading && (
-                            <div className="absolute inset-y-0 right-0 flex items-center px-4">
+                            <div className="absolute inset-y-0 right-0 flex items-center px-10 pointer-events-none">
                               <Loader2 className="w-4 h-4 animate-spin text-primary" />
                             </div>
                           )}
@@ -468,19 +564,33 @@ function UserNewProject() {
                               Target Branch
                             </Label>
                           </div>
-                          <select
-                            id="branch_select"
-                            value={formData.branch}
-                            onChange={(e) => setFormData(prev => ({ ...prev, branch: e.target.value }))}
-                            className="w-full h-11 px-4 rounded-xl border border-border bg-background text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer"
-                          >
-                            <option value="">Select a branch</option>
-                            {branches.map(b => (
-                              <option key={b.name} value={b.name}>
-                                {b.name}
-                              </option>
-                            ))}
-                          </select>
+                            <Select
+                              value={formData.branch}
+                              onValueChange={(val) => setFormData(prev => ({ ...prev, branch: val || '' }))}
+                            >
+                              <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/60 hover:border-border dark:hover:border-foreground/20 bg-background/50 hover:bg-background/80 text-sm font-medium transition-all duration-200 outline-none focus:outline-none focus:ring-1 focus:ring-primary/20 focus:border-primary cursor-pointer flex items-center justify-between data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
+                                <div className="flex items-center gap-2.5 text-left flex-1 min-w-0 pr-4">
+                                  {currentBranch ? (
+                                    <>
+                                      <GitBranch className="w-4 h-4 text-primary shrink-0" />
+                                      <span className="font-mono text-xs text-foreground/90 font-medium">{currentBranch.name}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground/60">Select a branch</span>
+                                  )}
+                                </div>
+                              </SelectTrigger>
+                              <SelectContent className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                                {branches.map(b => (
+                                  <SelectItem key={b.name} value={b.name} className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
+                                    <div className="flex items-center gap-3">
+                                      <GitBranch className="w-4 h-4 text-muted-foreground shrink-0" />
+                                      <span className="font-mono text-xs text-foreground/90">{b.name}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           <p className="text-[10px] text-muted-foreground italic pl-1">
                             Commits pushed to this branch will trigger automated CI/CD deployments.
                           </p>
