@@ -384,6 +384,13 @@ func (w *CentralWatchdog) scaleToZeroCheck() {
 
 	for i := range runningProjects {
 		project := runningProjects[i]
+
+		// Skip scale-to-zero if explicitly disabled for this project,
+		// or if running background services or queue workers (since they don't receive HTTP traffic).
+		if project.DisableScaleToZero || project.QueueEnabled || project.WorkerCommand != "" {
+			continue
+		}
+
 		if project.LastAccessedAt == nil {
 			continue
 		}

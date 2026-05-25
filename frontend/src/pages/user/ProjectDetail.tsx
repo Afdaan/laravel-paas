@@ -120,6 +120,7 @@ function UserProjectDetail() {
   const [phpVersionInput, setPhpVersionInput] = useState('')
   const [workerCommandInput, setWorkerCommandInput] = useState('')
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
+  const [disableScaleToZeroInput, setDisableScaleToZeroInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   
@@ -503,8 +504,9 @@ function UserProjectDetail() {
       phpVersionInput !== (project.php_version || '8.2') ||
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
+      disableScaleToZeroInput !== (project.disable_scale_to_zero || false) ||
       languageVersionInput !== (project.language_version || '')
-  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, languageVersionInput])
+  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, disableScaleToZeroInput, languageVersionInput])
 
   const handleResetSettings = () => {
     if (!project) return
@@ -516,6 +518,7 @@ function UserProjectDetail() {
     setPhpVersionInput(project.php_version || '8.2')
     setWorkerCommandInput(project.worker_command || '')
     setQueueEnabledInput(project.queue_enabled || false)
+    setDisableScaleToZeroInput(project.disable_scale_to_zero || false)
     setLanguageVersionInput(project.language_version || '')
     toast.info(t('common.resetSuccess') || 'Settings reset to original values')
   }
@@ -541,6 +544,7 @@ function UserProjectDetail() {
             php_version: phpVersionInput,
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput,
+            disable_scale_to_zero: disableScaleToZeroInput,
             language_version: languageVersionInput
           }
           await projectsAPI.update(uid, payload)
@@ -568,6 +572,7 @@ function UserProjectDetail() {
       setPhpVersionInput(project.php_version || '8.2')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
+      setDisableScaleToZeroInput(project.disable_scale_to_zero || false)
       setLanguageVersionInput(project.language_version || '')
       settingsInitialized.current = true
     }
@@ -583,6 +588,7 @@ function UserProjectDetail() {
       setPhpVersionInput(project.php_version || '8.2')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
+      setDisableScaleToZeroInput(project.disable_scale_to_zero || false)
       setLanguageVersionInput(project.language_version || '')
     }
   }, [project, isSettingsDirty])
@@ -1382,6 +1388,24 @@ function UserProjectDetail() {
 
                   </div>
                 )}
+
+                {/* Scale to Zero / Sleeping Option */}
+                <div className="p-4 rounded-xl border bg-muted/20 space-y-4 mt-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label className="text-sm font-bold">
+                        {t('projectDetail.settings.disableScaleToZero') || 'Disable Scale to Zero (Keep Alive)'}
+                      </Label>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        {t('projectDetail.settings.disableScaleToZeroDesc') || 'Prevent this project from going to sleep automatically when inactive (highly recommended for bots or background processes).'}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={disableScaleToZeroInput}
+                      onCheckedChange={setDisableScaleToZeroInput}
+                    />
+                  </div>
+                </div>
 
                 {/* Common Custom Commands Area */}
                 <div className="space-y-4 pt-6 mt-6 border-t border-dashed">

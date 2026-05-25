@@ -72,6 +72,7 @@ export interface Project {
   github_url?: string;
   error_log?: string;
   queue_enabled?: boolean;
+  disable_scale_to_zero?: boolean;
   is_manual_version?: boolean;
   container_id?: string;
   database_name?: string;

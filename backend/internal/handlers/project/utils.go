@@ -94,16 +94,17 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 // UpdateRequest represents project update payload
 type UpdateRequest struct {
-	Name            string `json:"name"`
-	Branch          string `json:"branch"`
-	PHPVersion      string `json:"php_version"`
-	BaseDirectory   string `json:"base_directory"`
-	QueueEnabled    bool   `json:"queue_enabled"`
-	WorkerCommand   string `json:"worker_command"`
-	BuildCommand    string `json:"build_command"`
-	StartCommand    string `json:"start_command"`
-	NodeVersion     string `json:"node_version"`
-	LanguageVersion string `json:"language_version"`
+	Name               string `json:"name"`
+	Branch             string `json:"branch"`
+	PHPVersion         string `json:"php_version"`
+	BaseDirectory      string `json:"base_directory"`
+	QueueEnabled       bool   `json:"queue_enabled"`
+	WorkerCommand      string `json:"worker_command"`
+	BuildCommand       string `json:"build_command"`
+	StartCommand       string `json:"start_command"`
+	NodeVersion        string `json:"node_version"`
+	LanguageVersion    string `json:"language_version"`
+	DisableScaleToZero bool   `json:"disable_scale_to_zero"`
 }
 
 // Update updates project details
@@ -118,7 +119,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion, req.LanguageVersion)
+	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion, req.LanguageVersion, req.DisableScaleToZero)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
 	}

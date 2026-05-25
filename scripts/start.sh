@@ -232,6 +232,7 @@ start_buildkit() {
     docker run -d \
         --name paas-buildkit \
         --network paas-network \
+        -p 127.0.0.1:1234:1234 \
         --security-opt seccomp=unconfined \
         --security-opt apparmor=unconfined \
         --restart unless-stopped \

@@ -57,6 +57,23 @@ else
     VERSIONS=("${ALL_VERSIONS[@]}")
 fi
 
+# Initialize builder if remote BuildKit is running and builder not created yet
+if docker ps --format '{{.Names}}' | grep -q "^paas-buildkit$"; then
+    if ! docker buildx inspect paas-builder >/dev/null 2>&1; then
+        echo -e "${YELLOW}Creating paas-builder buildx remote driver targeting BuildKit...${NC}"
+        docker buildx create --name paas-builder --driver remote tcp://127.0.0.1:1234 --use || true
+    fi
+fi
+
+# Detect if we should use buildx remote builder
+BUILD_CMD="docker build"
+if docker buildx inspect paas-builder >/dev/null 2>&1; then
+    echo -e "${GREEN}[INFO] BuildKit remote builder (paas-builder) detected. Building inside BuildKit and loading to host...${NC}"
+    BUILD_CMD="docker buildx build --builder paas-builder --load"
+else
+    echo -e "${YELLOW}[INFO] BuildKit remote builder (paas-builder) not found. Building locally on host daemon...${NC}"
+fi
+
 for VERSION in "${VERSIONS[@]}"; do
     # 1. Build Base Runtime
     if [[ "$TARGET" == "all" || "$TARGET" == "runtime" ]]; then
@@ -66,7 +83,7 @@ for VERSION in "${VERSIONS[@]}"; do
             echo -e "${GREEN}[SKIP] PHP ${VERSION} runtime already exists. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG_RUNTIME)${NC}"
-            docker build \
+            $BUILD_CMD \
                 --build-arg PHP_VERSION="${VERSION}" \
                 -f "${DOCKER_BASE}" \
                 -t "${TAG_RUNTIME}" \
@@ -83,7 +100,7 @@ for VERSION in "${VERSIONS[@]}"; do
             echo -e "${GREEN}[SKIP] PHP ${VERSION} Unified Builder already exists. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} Unified Builder... ($TAG_BUILDER)${NC}"
-            docker build \
+            $BUILD_CMD \
                 --build-arg PHP_VERSION="${VERSION}" \
                 -f "${DOCKER_BUILDER}" \
                 -t "${TAG_BUILDER}" \

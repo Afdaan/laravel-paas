@@ -139,6 +139,8 @@ type Project struct {
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
 	MemoryLimit *string  `gorm:"size:20" json:"memory_limit,omitempty"`
 
+	DisableScaleToZero bool `gorm:"default:false" json:"disable_scale_to_zero"`
+
 	LastAccessedAt *time.Time     `json:"last_accessed_at,omitempty"`
 	ExpiresAt      *time.Time     `json:"expires_at,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
