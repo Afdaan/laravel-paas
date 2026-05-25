@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/config"
@@ -208,29 +207,30 @@ func (h *GithubAppHandler) ListRepositories(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid installation ID"})
 	}
 
+	// Verify the installation belongs to the authenticated user before touching GitHub
+	userID := c.Locals("user_id").(uint)
+	var localInst models.GithubAppInstallation
+	if err := h.db.Where("installation_id = ? AND user_id = ?", instID, userID).First(&localInst).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "No GitHub App installation found"})
+	}
+
 	repos, err := h.githubService.ListRepositories(instID)
+	if err != nil && isGitHubAuthError(err) {
+		// Stale cached token is the most likely cause — bust it and retry once
+		slog.Warn("GitHub API auth error, retrying with fresh token", "installation_id", instID)
+		h.githubService.InvalidateInstallationToken(instID)
+		repos, err = h.githubService.ListRepositories(instID)
+	}
 	if err != nil {
-		if strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401") {
-			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side.", "installation_id", instID, "error", err.Error())
-			var localInst models.GithubAppInstallation
-			if dbErr := h.db.Where("installation_id = ?", instID).First(&localInst).Error; dbErr == nil {
-				if time.Since(localInst.CreatedAt) > 60*time.Second {
-					slog.Info("Self-healing: GitHub installation is older than 60s and revoked on GitHub. Auto-purging...", "installation_id", instID)
-					h.db.Delete(&localInst)
-					h.db.Model(&models.Project{}).Where("github_installation_id = ?", instID).
-						Updates(map[string]interface{}{
-							"github_installation_id": nil,
-							"github_repo_owner":      "",
-							"github_repo_name":       "",
-						})
-				}
-			}
+		if isGitHubAuthError(err) {
+			slog.Warn("GitHub installation confirmed revoked after retry", "installation_id", instID)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": "This GitHub installation is unauthorized or has been uninstalled. Please check your GitHub App configuration or reconnect it.",
+				"error": "This GitHub installation is unauthorized or has been uninstalled. Please reconnect your GitHub App.",
 				"code":  "INSTALLATION_REVOKED",
 			})
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Error("Failed to list repositories", "installation_id", instID, "error", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch repositories from GitHub"})
 	}
 
 	return c.JSON(fiber.Map{"data": repos})
@@ -249,26 +249,28 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	}
 
 	branches, err := h.githubService.ListBranches(inst.InstallationID, owner, repo)
+	if err != nil && isGitHubAuthError(err) {
+		slog.Warn("GitHub API auth error on branch fetch, retrying with fresh token", "installation_id", inst.InstallationID)
+		h.githubService.InvalidateInstallationToken(inst.InstallationID)
+		branches, err = h.githubService.ListBranches(inst.InstallationID, owner, repo)
+	}
 	if err != nil {
-		if strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401") {
-			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side during branch fetch.", "installation_id", inst.InstallationID, "error", err.Error())
-			if time.Since(inst.CreatedAt) > 60*time.Second {
-				slog.Info("Self-healing: GitHub installation is older than 60s and revoked on GitHub during branch fetch. Auto-purging...", "installation_id", inst.InstallationID)
-				h.db.Delete(&inst)
-				h.db.Model(&models.Project{}).Where("github_installation_id = ?", inst.InstallationID).
-					Updates(map[string]interface{}{
-						"github_installation_id": nil,
-						"github_repo_owner":      "",
-						"github_repo_name":       "",
-					})
-			}
+		if isGitHubAuthError(err) {
+			slog.Warn("GitHub installation confirmed revoked after retry (branches)", "installation_id", inst.InstallationID)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "This GitHub installation is unauthorized or has been uninstalled.",
 				"code":  "INSTALLATION_REVOKED",
 			})
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		slog.Error("Failed to list branches", "installation_id", inst.InstallationID, "owner", owner, "repo", repo, "error", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch branches from GitHub"})
 	}
 
 	return c.JSON(fiber.Map{"data": branches})
+}
+
+// isGitHubAuthError checks whether a GitHub API error indicates a stale/revoked credential.
+func isGitHubAuthError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "status=404") || strings.Contains(msg, "status=401")
 }

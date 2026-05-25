@@ -90,6 +90,13 @@ function UserNewProject() {
   const repoQuerySeq = React.useRef(0)
   const branchQuerySeq = React.useRef(0)
   const isLinkingRef = React.useRef(false)
+  const revokedToastShown = React.useRef(false)
+  const selectedInstallationIdRef = React.useRef('')
+
+  // Keep ref in sync with state to prevent stale closures in async and focus callbacks
+  React.useEffect(() => {
+    selectedInstallationIdRef.current = selectedInstallationId
+  }, [selectedInstallationId])
 
   const currentInst = React.useMemo(() => 
     installations.find(inst => String(inst.installation_id) === selectedInstallationId),
@@ -113,18 +120,22 @@ function UserNewProject() {
       const response = await githubAPI.listRepositories(installationId)
       if (currentSeq === repoQuerySeq.current) {
         setRepositories(response.data.data || [])
+        revokedToastShown.current = false
       }
     } catch (err) {
       if (currentSeq === repoQuerySeq.current) {
         const axiosError = err as AxiosError<{ error: string, code?: string }>
         const errorCode = axiosError.response?.data?.code
         const isRevoked = axiosError.response?.status === 404 || errorCode === 'INSTALLATION_REVOKED'
-        
-        console.error('Failed to load repositories:', axiosError.message)
-        
+
         setRepositories([])
         if (isRevoked) {
-          toast.error(t('newProject.errors.installationRevoked'))
+          // Deselect the revoked installation to prevent retry loops
+          setSelectedInstallationId('')
+          if (!revokedToastShown.current) {
+            revokedToastShown.current = true
+            toast.error(t('newProject.errors.installationRevoked'))
+          }
           loadInstallations(false)
         } else {
           toast.error(t('newProject.errors.failedToLoadRepos'))
@@ -143,18 +154,29 @@ function UserNewProject() {
       const response = await githubAPI.listInstallations()
       const insts = response.data.data || []
       setInstallations(insts)
+      
       if (insts.length > 0) {
-        const firstInstId = String(insts[0].installation_id)
-        setSelectedInstallationId(firstInstId)
-        if (triggerRepoLoad) {
-          loadRepositories(firstInstId)
+        const currentId = selectedInstallationIdRef.current
+        const isStillValid = insts.some(inst => String(inst.installation_id) === currentId)
+        
+        if (currentId && isStillValid) {
+          if (triggerRepoLoad) {
+            loadRepositories(currentId)
+          }
+        } else {
+          // Select first installation by default if none selected or the previous was uninstalled
+          const firstInstId = String(insts[0].installation_id)
+          setSelectedInstallationId(firstInstId)
+          if (triggerRepoLoad) {
+            loadRepositories(firstInstId)
+          }
         }
       } else {
         setSelectedInstallationId('')
         setRepositories([])
       }
-    } catch (err) {
-      console.error('Failed to load installations:', err instanceof Error ? err.message : String(err))
+    } catch {
+      // Installation list fetch failed — silently degrade, user can retry via UI
     } finally {
       setIsGithubLoading(false)
     }
@@ -176,7 +198,7 @@ function UserNewProject() {
           window.history.replaceState({}, document.title, cleanUrl)
           await loadInstallations(true)
         } catch (err) {
-          console.error('Failed to link GitHub installation:', err instanceof Error ? err.message : String(err))
+          // Link failed — toast already shown, no raw error exposure
           toast.error(t('newProject.errors.failedToLink'))
         } finally {
           setIsGithubLoading(false)
@@ -185,6 +207,18 @@ function UserNewProject() {
       linkGithub()
     } else {
       loadInstallations(true)
+    }
+  }, [])
+
+  // Real-time tab-focus sync for GitHub App installations list.
+  // This automatically syncs local state when users return from configuring installations on GitHub.
+  useEffect(() => {
+    const handleFocus = () => {
+      loadInstallations(false)
+    }
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
     }
   }, [])
 
@@ -201,8 +235,20 @@ function UserNewProject() {
       }
     } catch (err) {
       if (currentSeq === branchQuerySeq.current) {
-        console.error('Failed to load branches:', err instanceof Error ? err.message : String(err))
-        toast.error(t('newProject.errors.failedToLoadBranches'))
+        const axiosError = err as AxiosError<{ error: string, code?: string }>
+        const errorCode = axiosError.response?.data?.code
+        const isRevoked = axiosError.response?.status === 404 || errorCode === 'INSTALLATION_REVOKED'
+        if (isRevoked) {
+          setSelectedInstallationId('')
+          setBranches([])
+          if (!revokedToastShown.current) {
+            revokedToastShown.current = true
+            toast.error(t('newProject.errors.installationRevoked'))
+          }
+          loadInstallations(false)
+        } else {
+          toast.error(t('newProject.errors.failedToLoadBranches'))
+        }
       }
     } finally {
       if (currentSeq === branchQuerySeq.current) {
@@ -350,7 +396,7 @@ function UserNewProject() {
                     <GithubIcon className="w-4 h-4" />
                   </div>
                   <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    Git Source
+                    {t('newProject.gitSource')}
                   </Label>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -376,7 +422,7 @@ function UserNewProject() {
                     )}
                   >
                     <GithubIcon className="w-5 h-5" />
-                    GitHub App
+                    {t('newProject.githubApp')}
                   </button>
                   <button
                     type="button"
@@ -397,7 +443,7 @@ function UserNewProject() {
                     )}
                   >
                     <Terminal className="w-5 h-5" />
-                    Manual Git URL
+                    {t('newProject.manualGitUrl')}
                   </button>
                 </div>
               </div>
@@ -408,7 +454,7 @@ function UserNewProject() {
                   {isGithubLoading && installations.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
                       <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                      <p className="text-sm">Accessing GitHub configurations...</p>
+                      <p className="text-sm">{ t('newProject.accessingGithub')}</p>
                     </div>
                   ) : installations.length === 0 ? (
                     <div className="border border-dashed border-border rounded-xl p-8 text-center space-y-4 bg-muted/5">
@@ -416,9 +462,9 @@ function UserNewProject() {
                         <GithubIcon className="w-6 h-6" />
                       </div>
                       <div className="space-y-1">
-                        <h4 className="font-bold text-base">Connect your GitHub Account</h4>
+                        <h4 className="font-bold text-base">{t('newProject.connectGithub')}</h4>
                         <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                          Install our GitHub App to easily import your repositories and enable automatic deployments on git push.
+                          {t('newProject.connectGithubDesc')}
                         </p>
                       </div>
                       <Button
@@ -430,7 +476,7 @@ function UserNewProject() {
                         className="gap-2 mx-auto"
                       >
                         <GithubIcon className="w-4 h-4" />
-                        Configure GitHub App
+                        {t('newProject.configureGithubApp')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -440,7 +486,7 @@ function UserNewProject() {
                         {/* GitHub Account Selector */}
                         <div className="space-y-2">
                           <Label htmlFor="installation_id" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            GitHub Account
+                            {t('newProject.githubAccount')}
                           </Label>
                           <div className="relative">
                             <Select
@@ -464,7 +510,7 @@ function UserNewProject() {
                                       <span className="truncate text-foreground/90 font-medium">{currentInst.account_name}</span>
                                     </>
                                   ) : (
-                                    <span className="text-muted-foreground/60">Select an account</span>
+                                    <span className="text-muted-foreground/60">{t('newProject.selectAccount')}</span>
                                   )}
                                 </div>
                               </SelectTrigger>
@@ -498,7 +544,7 @@ function UserNewProject() {
                             className="w-full h-11 gap-2 rounded-xl"
                           >
                             <Settings className="w-4 h-4" />
-                            Configure Installations
+                            {t('newProject.configureInstallations')}
                             <ExternalLink className="w-3.5 h-3.5" />
                           </Button>
                         </div>
@@ -507,7 +553,7 @@ function UserNewProject() {
                       {/* Repository Selector */}
                       <div className="space-y-2">
                         <Label htmlFor="repo_select" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                          Repository
+                          {t('newProject.repository')}
                         </Label>
                         <div className="relative">
                             <Select
@@ -530,11 +576,11 @@ function UserNewProject() {
                                           ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
                                           : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                       )}>
-                                        {currentRepo.private ? 'Private' : 'Public'}
+                                        {currentRepo.private ? t('newProject.privateBadge') : t('newProject.publicBadge')}
                                       </span>
                                     </div>
                                   ) : (
-                                    <span className="text-muted-foreground/60">Select a repository to import</span>
+                                    <span className="text-muted-foreground/60">{t('newProject.selectRepo')}</span>
                                   )}
                                 </div>
                               </SelectTrigger>
@@ -554,7 +600,7 @@ function UserNewProject() {
                                           ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
                                           : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                       )}>
-                                        {repo.private ? 'Private' : 'Public'}
+                                        {repo.private ? t('newProject.privateBadge') : t('newProject.publicBadge')}
                                       </span>
                                     </div>
                                   </SelectItem>
@@ -577,7 +623,7 @@ function UserNewProject() {
                               <GitBranch className="w-3.5 h-3.5" />
                             </div>
                             <Label htmlFor="branch_select" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                              Target Branch
+                              {t('newProject.targetBranch')}
                             </Label>
                           </div>
                             <Select
@@ -592,7 +638,7 @@ function UserNewProject() {
                                       <span className="font-mono text-xs text-foreground/90 font-medium">{currentBranch.name}</span>
                                     </>
                                   ) : (
-                                    <span className="text-muted-foreground/60">Select a branch</span>
+                                    <span className="text-muted-foreground/60">{t('newProject.selectBranch')}</span>
                                   )}
                                 </div>
                               </SelectTrigger>
@@ -608,7 +654,7 @@ function UserNewProject() {
                               </SelectContent>
                             </Select>
                           <p className="text-[10px] text-muted-foreground italic pl-1">
-                            Commits pushed to this branch will trigger automated CI/CD deployments.
+                            {t('newProject.branchCiCdDesc')}
                           </p>
                         </div>
                       )}

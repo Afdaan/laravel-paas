@@ -149,6 +149,10 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 
 	if resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
+		// Evict any stale cached token so the next call forces a fresh exchange
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized {
+			_ = s.redisService.DeleteCache(cacheKey)
+		}
 		return "", fmt.Errorf("failed to exchange installation token, status=%d, response=%s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -169,6 +173,13 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 	}
 
 	return tokenResp.Token, nil
+}
+
+// InvalidateInstallationToken evicts the cached token for an installation.
+// Used by handlers to bust a stale cache before retrying API calls.
+func (s *GithubService) InvalidateInstallationToken(installationID int64) {
+	cacheKey := fmt.Sprintf("github:token:%d", installationID)
+	_ = s.redisService.DeleteCache(cacheKey)
 }
 
 type GithubRepository struct {
