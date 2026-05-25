@@ -11,3 +11,14 @@
   [[worker.oci.gcpolicy]]
     all = true
     keepBytes = "35GB"
+
+[registry."127.0.0.1:5000"]
+  http = true
+  insecure = true
+
+[registry."paas-registry:5000"]
+  http = true
+  insecure = true
+
+[registry."docker.io"]
+  mirrors = ["paas-registry:5000"]

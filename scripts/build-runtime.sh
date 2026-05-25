@@ -15,6 +15,11 @@ set -e
 # Path logic
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Load environment variables if .env exists
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    export $(grep -v '^#' "${PROJECT_ROOT}/.env" | xargs -d '\n')
+fi
 DOCKER_BASE="${PROJECT_ROOT}/docker/runtime/Dockerfile.base"
 DOCKER_BUILDER="${PROJECT_ROOT}/docker/runtime/Dockerfile.builder"
 
@@ -88,7 +93,15 @@ for VERSION in "${VERSIONS[@]}"; do
                 -f "${DOCKER_BASE}" \
                 -t "${TAG_RUNTIME}" \
                 "${PROJECT_ROOT}/docker/runtime"
-            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime built successfully.${NC}"
+            
+            # Tag and push to local registry for remote BuildKit mirror resolution
+            local reg_port=${REGISTRY_PORT:-"5000"}
+            local reg_host=${REGISTRY_HOST:-"127.0.0.1"}
+            echo -e "${YELLOW}Pushing PHP ${VERSION} runtime to local registry at ${reg_host}:${reg_port}...${NC}"
+            docker tag "${TAG_RUNTIME}" "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
+            docker push "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
+            
+            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime built and registered successfully.${NC}"
         fi
     fi
 
@@ -105,7 +118,15 @@ for VERSION in "${VERSIONS[@]}"; do
                 -f "${DOCKER_BUILDER}" \
                 -t "${TAG_BUILDER}" \
                 "${PROJECT_ROOT}/docker/runtime"
-            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} builder built successfully.${NC}"
+            
+            # Tag and push to local registry for remote BuildKit mirror resolution
+            local reg_port=${REGISTRY_PORT:-"5000"}
+            local reg_host=${REGISTRY_HOST:-"127.0.0.1"}
+            echo -e "${YELLOW}Pushing PHP ${VERSION} Unified Builder to local registry at ${reg_host}:${reg_port}...${NC}"
+            docker tag "${TAG_BUILDER}" "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
+            docker push "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
+            
+            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} builder built and registered successfully.${NC}"
         fi
     fi
 done

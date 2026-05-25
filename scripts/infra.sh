@@ -16,7 +16,7 @@ MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 
 # 2. Bersihkan kontainer lama
 echo "[INFO] Cleaning old infrastructure..."
-docker rm -f paas-mysql paas-postgres paas-redis paas-traefik paas-buildkit 2>/dev/null || true
+docker rm -f paas-mysql paas-postgres paas-redis paas-traefik paas-buildkit paas-registry 2>/dev/null || true
 
 # 3. Siapkan Network & Folder (Pakai sudo untuk folder agar aman dari Permission Denied)
 echo "[INFO] Preparing storage folders..."
@@ -71,6 +71,19 @@ docker run -d \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "$(pwd)/docker/traefik/traefik.yml:/traefik.yml:ro" \
     traefik:v3.6
+
+# 7.5. Jalankan Registry
+echo "[INFO] Starting Local Registry..."
+REGISTRY_PORT=${REGISTRY_PORT:-"5000"}
+REGISTRY_HOST=${REGISTRY_HOST:-"127.0.0.1"}
+REGISTRY_IMAGE=${REGISTRY_IMAGE:-"registry:2"}
+
+docker run -d \
+    --name paas-registry \
+    --network paas-network \
+    -p "${REGISTRY_HOST}:${REGISTRY_PORT}:5000" \
+    --restart unless-stopped \
+    "${REGISTRY_IMAGE}"
 
 # 8. Jalankan BuildKit
 echo "[INFO] Starting BuildKit..."

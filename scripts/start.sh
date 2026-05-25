@@ -225,6 +225,19 @@ start_redis() {
 }
 
 start_buildkit() {
+    local reg_port=${REGISTRY_PORT:-"5000"}
+    local reg_host=${REGISTRY_HOST:-"127.0.0.1"}
+    local reg_image=${REGISTRY_IMAGE:-"registry:2"}
+
+    echo -e "${YELLOW}Starting Local Registry...${NC}"
+    docker rm -f paas-registry 2>/dev/null || true
+    docker run -d \
+        --name paas-registry \
+        --network paas-network \
+        -p "${reg_host}:${reg_port}:5000" \
+        --restart unless-stopped \
+        "${reg_image}"
+
     echo -e "${YELLOW}Starting BuildKit (Rootless)...${NC}"
     docker rm -f paas-buildkit 2>/dev/null || true
     docker volume create paas-buildkit-cache 2>/dev/null || true
