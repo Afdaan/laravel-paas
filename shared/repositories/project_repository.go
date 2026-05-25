@@ -7,6 +7,7 @@ package repositories
 
 import (
 	"errors"
+	"strings"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 )
@@ -40,6 +41,7 @@ type ProjectRepository interface {
 	UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error
 	UpdateDeploymentHeartbeat(id uint) error
 	PromoteRolloutContainer(id uint, newContainerID string) error
+	ResolveInstallationID(userID uint, owner string) (int64, error)
 }
 
 type projectRepository struct {
@@ -286,4 +288,24 @@ func (r *projectRepository) PromoteRolloutContainer(id uint, newContainerID stri
 // Executing this query independently isolates the heartbeat loop from concurrent mutations on the project model.
 func (r *projectRepository) UpdateDeploymentHeartbeat(id uint) error {
 	return r.db.Model(&models.Project{}).Where("id = ?", id).Update("deployment_heartbeat_at", gorm.Expr("NOW()")).Error
+}
+
+func (r *projectRepository) ResolveInstallationID(userID uint, owner string) (int64, error) {
+	var inst models.GithubAppInstallation
+	if owner != "" {
+		err := r.db.Where("user_id = ? AND LOWER(account_name) = ?", userID, strings.ToLower(owner)).First(&inst).Error
+		if err == nil && inst.InstallationID != 0 {
+			return inst.InstallationID, nil
+		}
+	}
+	// Fallback to the sole installation if they only have one
+	var count int64
+	r.db.Model(&models.GithubAppInstallation{}).Where("user_id = ?", userID).Count(&count)
+	if count == 1 {
+		err := r.db.Where("user_id = ?", userID).First(&inst).Error
+		if err == nil && inst.InstallationID != 0 {
+			return inst.InstallationID, nil
+		}
+	}
+	return 0, errors.New("installation not found")
 }

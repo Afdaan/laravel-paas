@@ -428,8 +428,34 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	// Obtain GitHub App installation token for authenticating private repositories
 	authURL := project.GithubURL
+	var installationID int64
 	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
-		token, err := w.githubService.GetInstallationToken(*project.GithubInstallationID)
+		installationID = *project.GithubInstallationID
+	} else {
+		// Dynamic Self-Healing: Attempt to resolve missing installation ID from owner or user's account
+		owner := ""
+		trimmed := strings.TrimPrefix(authURL, "https://github.com/")
+		trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
+		trimmed = strings.TrimSuffix(trimmed, "/")
+		parts := strings.Split(trimmed, "/")
+		if len(parts) > 0 {
+			owner = parts[0]
+		}
+		
+		if resolvedID, err := w.projectRepo.ResolveInstallationID(project.UserID, owner); err == nil && resolvedID != 0 {
+			installationID = resolvedID
+			slog.Info("Self-healed and dynamically resolved GitHub Installation ID for project", "projectId", project.ID, "owner", owner, "resolvedID", resolvedID)
+			
+			// Persist the resolved installation ID to prevent future slow resolution runs
+			project.GithubInstallationID = &resolvedID
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"github_installation_id": resolvedID,
+			})
+		}
+	}
+
+	if installationID != 0 {
+		token, err := w.githubService.GetInstallationToken(installationID)
 		if err != nil {
 			slog.Error("Failed to get GitHub installation token for deployment", "projectId", project.ID, "error", err)
 			w.updateProjectError(project, job.JobID, "Failed to authenticate with GitHub App: "+err.Error())
