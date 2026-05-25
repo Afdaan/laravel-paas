@@ -72,11 +72,11 @@ export const RuntimeEvents: React.FC<RuntimeEventsProps> = ({ runtimeEvents, t }
                 >
                   {isExpanded ? (
                     <>
-                      {t('common.showLess') || 'Show Less'} <ChevronUp size={14} />
+                      {t('common.showLess') === 'common.showLess' ? 'Show Less' : t('common.showLess')} <ChevronUp size={14} />
                     </>
                   ) : (
                     <>
-                      {t('common.showMore') || 'Show All Events'} ({runtimeEvents.length}) <ChevronDown size={14} />
+                      {t('common.showMore') === 'common.showMore' ? 'Show All Events' : t('common.showMore')} ({runtimeEvents.length}) <ChevronDown size={14} />
                     </>
                   )}
                 </Button>
