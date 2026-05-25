@@ -240,7 +240,7 @@ start_buildkit() {
         -v paas-registry-data:/var/lib/registry \
         "${reg_image}"
 
-    echo -e "${YELLOW}Starting BuildKit (Rootless)...${NC}"
+    echo -e "${YELLOW}Starting BuildKit...${NC}"
     docker rm -f paas-buildkit 2>/dev/null || true
     docker volume create paas-buildkit-cache 2>/dev/null || true
     local config_path="${PROJECT_ROOT}/docker/templates/buildkitd.toml"
@@ -254,7 +254,7 @@ start_buildkit() {
         --memory="3g" \
         -v paas-buildkit-cache:/var/lib/buildkit \
         -v "${config_path}:/etc/buildkit/buildkitd.toml:ro" \
-        moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
+        moby/buildkit --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
 }
 
 

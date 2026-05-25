@@ -1,22 +1,28 @@
 [worker.oci]
   enabled = true
   gc = true
-  gckeepstorage = "35GB"
+  gckeepstorage = "30GB"
 
+  # Keep computed RUN layers (composer, npm) for 14 days — most expensive to rebuild.
   [[worker.oci.gcpolicy]]
     keepBytes = "10GB"
-    keepDuration = 1209600 # 14 days in seconds
-    filters = ["type==source.local", "type==exec.cachemount", "type==regular"]
+    keepDuration = 1209600 # 14 days
+    filters = ["type==exec.cachemount", "type==regular"]
 
+  # Build context uploads are cheap to re-upload; evict aggressively.
+  [[worker.oci.gcpolicy]]
+    keepBytes = "2GB"
+    keepDuration = 259200 # 3 days
+    filters = ["type==source.local"]
+
+  # Hard cap — evict oldest entries beyond 30GB total.
   [[worker.oci.gcpolicy]]
     all = true
-    keepBytes = "35GB"
+    keepBytes = "30GB"
 
+# Trust local registry over plain HTTP so BuildKit does not reject base image pulls.
 [registry."127.0.0.1:5000"]
   http = true
 
 [registry."paas-registry:5000"]
   http = true
-
-[registry."docker.io"]
-  mirrors = ["paas-registry:5000"]

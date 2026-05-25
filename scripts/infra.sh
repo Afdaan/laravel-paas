@@ -88,6 +88,8 @@ docker run -d \
     "${REGISTRY_IMAGE}"
 
 # 8. Jalankan BuildKit
+# Root mode: --privileged voids rootless security guarantees, and rootless writes
+# cache to user-space paths that are not covered by the volume mount.
 echo "[INFO] Starting BuildKit..."
 docker volume create paas-buildkit-cache 2>/dev/null || true
 docker run -d \
@@ -100,6 +102,6 @@ docker run -d \
     --memory="3g" \
     -v paas-buildkit-cache:/var/lib/buildkit \
     -v "$(pwd)/docker/templates/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro" \
-    moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
+    moby/buildkit --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
 
 echo "[SUCCESS] Infrastructure is up! Cek status dengan: docker ps"
