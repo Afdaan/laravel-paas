@@ -62,3 +62,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Custom Remote MCP SSH Tunnel
+.mcp-ssh/

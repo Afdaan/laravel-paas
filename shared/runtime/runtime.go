@@ -28,7 +28,7 @@ func (r *Runtime) Context() context.Context {
 
 func (r *Runtime) Stop() {
 	r.cancel()
-	r.wg.Wait()
+	r.wg.Wait()i
 }
 
 func (r *Runtime) Go(fn func(ctx context.Context)) {
