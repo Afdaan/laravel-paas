@@ -180,7 +180,7 @@ WORKDIR /var/www/html
 # Copy project files from unified builder
 COPY --from=builder --chown=www-data:www-data /app /var/www/html
 
-# Set up directories and permissions
+# Set up directories and permissions, then remove build-time only artifacts to minimize final image size
 RUN mkdir -p storage/app/public \
              storage/framework/cache/data \
              storage/framework/sessions \
@@ -191,7 +191,27 @@ RUN mkdir -p storage/app/public \
     && rm -rf public/storage \
     && php artisan storage:link --ansi \
     && php artisan package:discover --ansi \
-    && chmod -R 775 storage bootstrap/cache
+    && chmod -R 775 storage bootstrap/cache \
+    && rm -rf /var/www/html/docker \
+              /var/www/html/tests \
+              /var/www/html/.git \
+              /var/www/html/.github \
+              /var/www/html/.vscode \
+              /var/www/html/package.json \
+              /var/www/html/package-lock.json \
+              /var/www/html/yarn.lock \
+              /var/www/html/bun.lock \
+              /var/www/html/pnpm-lock.yaml \
+              /var/www/html/vite.config.js \
+              /var/www/html/webpack.mix.js \
+              /var/www/html/tailwind.config.js \
+              /var/www/html/postcss.config.js \
+              /var/www/html/composer.json \
+              /var/www/html/composer.lock \
+              /var/www/html/README.md \
+              /var/www/html/Dockerfile \
+              /var/www/html/.dockerignore \
+              /var/www/html/detect_extensions.php
 
 # Copy configuration
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
