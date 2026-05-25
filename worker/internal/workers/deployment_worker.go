@@ -493,6 +493,22 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	go func() {
 		defer wg.Done()
 		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(authURL, project.Branch, project.Subdomain)
+		if cloneErr != nil && installationID != 0 && (strings.Contains(cloneErr.Error(), "Authentication failed") || strings.Contains(cloneErr.Error(), "Invalid username or token") || strings.Contains(cloneErr.Error(), "could not read Username")) {
+			slog.Warn("Git clone failed due to authentication issue, invalidating cached token and retrying...", "projectId", project.ID, "installationId", installationID)
+			w.githubService.InvalidateInstallationToken(installationID)
+			
+			// Fetch a fresh token
+			newToken, err := w.githubService.GetInstallationToken(installationID)
+			if err == nil && newToken != "" {
+				// Reconstruct authURL with fresh token
+				retryURL := project.GithubURL
+				if strings.HasPrefix(retryURL, "https://github.com/") {
+					retryURL = "https://x-access-token:" + newToken + "@" + strings.TrimPrefix(retryURL, "https://")
+				}
+				slog.Info("Retrying Git clone with a fresh token...", "projectId", project.ID)
+				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(retryURL, project.Branch, project.Subdomain)
+			}
+		}
 	}()
 
 	go func() {
