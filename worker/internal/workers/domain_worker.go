@@ -217,7 +217,7 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 				sslDrift = true
 				errCode = models.ErrPublicRouteUnreachable
 				sslErrStr = fmt.Sprintf("public routing Nginx verification failed: %v", err)
-			} else if sslStatus.Status == "failed" || sslStatus.Status == "expired" {
+			} else if sslStatus.Status == "failed" || sslStatus.Status == "expired" || sslStatus.Status == "ssl_failed" {
 				sslDrift = true
 				errCode = models.ErrSSLIssuanceFailed
 				if sslStatus.Status == "expired" {
