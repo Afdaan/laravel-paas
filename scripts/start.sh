@@ -56,7 +56,7 @@ prepare_env() {
     docker network create paas-network 2>/dev/null || true
     sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+    sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 }
 
 # Helper to get next numeric tag for a service
