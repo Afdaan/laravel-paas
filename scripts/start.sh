@@ -232,6 +232,8 @@ start_buildkit() {
     docker run -d \
         --name paas-buildkit \
         --network paas-network \
+        --security-opt seccomp=unconfined \
+        --security-opt apparmor=unconfined \
         --restart unless-stopped \
         --cpus="2.0" \
         --memory="3g" \
