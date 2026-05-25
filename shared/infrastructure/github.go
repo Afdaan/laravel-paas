@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +36,10 @@ func NewGithubService(cfg *config.Config, redisService *RedisService) *GithubSer
 }
 
 func (s *GithubService) getAppID() (int64, error) {
-	appIDStr := os.Getenv("GITHUB_APP_ID")
+	appIDStr := strings.TrimSpace(s.cfg.GithubAppID)
+	if appIDStr == "" {
+		appIDStr = strings.TrimSpace(os.Getenv("GITHUB_APP_ID"))
+	}
 	if appIDStr == "" {
 		return 0, fmt.Errorf("GITHUB_APP_ID environment variable is not set")
 	}
@@ -47,20 +51,47 @@ func (s *GithubService) getAppID() (int64, error) {
 }
 
 func (s *GithubService) getPrivateKey() (*rsa.PrivateKey, error) {
-	pemPath := os.Getenv("GITHUB_APP_PRIVATE_KEY_PATH")
+	pemPath := strings.TrimSpace(s.cfg.GithubAppPrivateKeyPath)
 	if pemPath == "" {
-		pemPath = "/app/data/keys/github-app.pem" // recommended default
+		pemPath = strings.TrimSpace(os.Getenv("GITHUB_APP_PRIVATE_KEY_PATH"))
+	}
+	if pemPath == "" {
+		pemPath = "keys/github-app.pem"
 	}
 
-	pemBytes, err := os.ReadFile(pemPath)
-	if err != nil {
-		// Fallback to absolute path on user workspace (storage/data/keys/github-app.pem)
-		if _, statErr := os.Stat("storage/data/keys/github-app.pem"); statErr == nil {
-			pemBytes, err = os.ReadFile("storage/data/keys/github-app.pem")
+	var candidatePaths []string
+	if filepath.IsAbs(pemPath) {
+		candidatePaths = append(candidatePaths, pemPath)
+	} else {
+		cleanPath := filepath.Clean(pemPath)
+		if cleanPath == "." || strings.HasPrefix(cleanPath, ".."+string(os.PathSeparator)) || cleanPath == ".." {
+			return nil, fmt.Errorf("invalid GITHUB_APP_PRIVATE_KEY_PATH: relative path must stay within DATA_PATH")
 		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to read private key PEM file: %w", err)
+		candidatePaths = append(candidatePaths,
+			filepath.Join(s.cfg.DataPath, cleanPath),
+			filepath.Join("/app/data", cleanPath),
+			filepath.Join("/app/storage/data", cleanPath),
+		)
+	}
+
+	var pemBytes []byte
+	var lastErr error
+	for _, candidatePath := range candidatePaths {
+		if candidatePath == "" {
+			continue
 		}
+		bytes, err := os.ReadFile(candidatePath)
+		if err == nil {
+			pemBytes = bytes
+			break
+		}
+		lastErr = err
+	}
+	if len(pemBytes) == 0 {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to read private key PEM file: %w", lastErr)
+		}
+		return nil, fmt.Errorf("failed to read private key PEM file")
 	}
 
 	block, _ := pem.Decode(pemBytes)
@@ -99,7 +130,7 @@ func (s *GithubService) GenerateAppJWT() (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iat": now.Add(-60 * time.Second).Unix(), // account for clock drift
-		"exp": now.Add(10 * time.Minute).Unix(),   // max 10 mins
+		"exp": now.Add(10 * time.Minute).Unix(),  // max 10 mins
 		"iss": strconv.FormatInt(appID, 10),
 	}
 
@@ -362,4 +393,3 @@ func (s *GithubService) GetInstallationDetails(installationID int64) (*GithubIns
 
 	return &info, nil
 }
-

@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +38,10 @@ func NewGithubAppHandler(db *gorm.DB, cfg *config.Config, githubService *infrast
 }
 
 func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
-	secret := os.Getenv("GITHUB_APP_WEBHOOK_SECRET")
+	secret := h.cfg.GithubAppWebhookSecret
+	if secret == "" {
+		secret = os.Getenv("GITHUB_APP_WEBHOOK_SECRET")
+	}
 	body := c.Body()
 
 	if secret == "" && h.cfg.AppEnv == "production" {
