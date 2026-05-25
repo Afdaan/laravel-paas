@@ -40,6 +40,11 @@ http:
           - "*"
         accessControlMaxAge: 100
         addVaryHeader: true
+    
+    # Add /proxy prefix for dynamic project routing
+    project-prefix:
+      addPrefix:
+        prefix: "/proxy"
 
   # Routers for PaaS platform
   routers:
@@ -50,6 +55,17 @@ http:
       entryPoints:
         - web
       priority: 200
+      middlewares:
+        - security-headers
+        - project-prefix
+    
+    # Wakeup endpoint (high priority - must match before user projects wildcard)
+    wakeup:
+      rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/proxy/wakeup`)"
+      service: backend
+      entryPoints:
+        - web
+      priority: 150
       middlewares:
         - security-headers
     
@@ -91,4 +107,4 @@ http:
     dynamic-projects:
       loadBalancer:
         servers:
-          - url: "http://paas-backend:8080/proxy"
+          - url: "http://paas-backend:8080"

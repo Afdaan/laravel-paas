@@ -645,8 +645,9 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 	}
 
 	type TraefikHTTP struct {
-		Routers  map[string]TraefikRouter  `json:"routers"`
-		Services map[string]TraefikService `json:"services"`
+		Routers     map[string]TraefikRouter     `json:"routers"`
+		Middlewares map[string]interface{}        `json:"middlewares,omitempty"`
+		Services    map[string]TraefikService    `json:"services"`
 	}
 
 	type TraefikConfigResponse struct {
@@ -655,8 +656,9 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 
 	resp := TraefikConfigResponse{
 		HTTP: TraefikHTTP{
-			Routers:  make(map[string]TraefikRouter),
-			Services: make(map[string]TraefikService),
+			Routers:     make(map[string]TraefikRouter),
+			Middlewares: make(map[string]interface{}),
+			Services:    make(map[string]TraefikService),
 		},
 	}
 
@@ -705,7 +707,18 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 
 		targetURL := fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort)
 		if proj.Status == models.StatusSleeping {
-			targetURL = fmt.Sprintf("http://paas-backend:8080/proxy/wakeup?subdomain=%s", proj.Subdomain)
+			middlewareName := fmt.Sprintf("project-%s-wakeup-redirect", proj.Subdomain)
+			resp.HTTP.Middlewares[middlewareName] = map[string]interface{}{
+				"redirectRegex": map[string]interface{}{
+					"regex":       "^(https?)://([^/]+)(.*)$",
+					"replacement": fmt.Sprintf("http://%s/proxy/wakeup?subdomain=%s&redirect_url=${1}://${2}${3}", h.cfg.BaseDomain, proj.Subdomain),
+				},
+			}
+			targetURL = "http://paas-backend:8080"
+
+			router := resp.HTTP.Routers[routerName]
+			router.Middlewares = []string{"security-headers@file", middlewareName}
+			resp.HTTP.Routers[routerName] = router
 		}
 
 		resp.HTTP.Services[serviceName] = TraefikService{

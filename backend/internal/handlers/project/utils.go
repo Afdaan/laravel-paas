@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -417,7 +418,9 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
 	if err == nil && project.Status == models.StatusSleeping {
-		return c.Redirect("/proxy/wakeup?subdomain=" + subdomain)
+		originalURL := c.OriginalURL()
+		redirectURL := fmt.Sprintf("http://%s%s", host, originalURL)
+		return c.Redirect(fmt.Sprintf("http://%s/proxy/wakeup?subdomain=%s&redirect_url=%s", h.cfg.BaseDomain, subdomain, url.QueryEscape(redirectURL)))
 	}
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
 		targetURL := fmt.Sprintf("http://%s:%s", *project.ContainerID, project.GetInternalPort())
@@ -444,7 +447,9 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 	if project_db.Status == models.StatusSleeping {
-		return c.Redirect("/proxy/wakeup?subdomain=" + subdomain)
+		originalURL := c.OriginalURL()
+		redirectURL := fmt.Sprintf("http://%s%s", host, originalURL)
+		return c.Redirect(fmt.Sprintf("http://%s/proxy/wakeup?subdomain=%s&redirect_url=%s", h.cfg.BaseDomain, subdomain, url.QueryEscape(redirectURL)))
 	}
 	if project_db.Status != models.StatusRunning {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})

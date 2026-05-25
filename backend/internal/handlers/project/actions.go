@@ -260,7 +260,26 @@ func (h *ProjectHandler) Wakeup(c *fiber.Ctx) error {
 	}
 
 	if project.Status != models.StatusSleeping {
-		// Already awake, redirect to project home page
+		// Already awake, redirect to target redirect URL or default project home page
+		redirectURL := c.Query("redirect_url")
+		if redirectURL != "" {
+			// Reconstruct any additional query parameters that were passed to the wakeup page
+			var queries []string
+			c.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+				k := string(key)
+				if k != "subdomain" && k != "redirect_url" && k != "perform_wakeup" {
+					queries = append(queries, fmt.Sprintf("%s=%s", k, string(value)))
+				}
+			})
+			if len(queries) > 0 {
+				if strings.Contains(redirectURL, "?") {
+					redirectURL += "&" + strings.Join(queries, "&")
+				} else {
+					redirectURL += "?" + strings.Join(queries, "&")
+				}
+			}
+			return c.Redirect(redirectURL)
+		}
 		return c.Redirect("http://" + project.GetFullDomain(h.cfg.ProjectDomain))
 	}
 
