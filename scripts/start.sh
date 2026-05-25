@@ -504,7 +504,7 @@ case "$1" in
     all)
         start_all
         ;;
-    mysql|postgres|psql|redis|traefik|backend|worker|frontend)
+    mysql|postgres|psql|redis|traefik|buildkit|backend|worker|frontend)
         start_service "$1"
         ;;
     status)
