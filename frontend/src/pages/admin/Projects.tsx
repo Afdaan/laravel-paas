@@ -319,7 +319,7 @@ const AdminProjects = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-8 border-rose-500/20 text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 px-2.5 flex items-center gap-1.5"
+                            className="h-8 border-rose-500/10 text-rose-500/70 hover:border-rose-500/30 hover:bg-rose-500/5 hover:text-rose-500 px-2.5 flex items-center gap-1.5 transition-colors"
                             onClick={() => handleAction(project.id, project.uid, 'stop')}
                             disabled={actionLoading[`${project.id}-stop`]}
                             title={t('projectDetail.actions.stop')}
@@ -327,7 +327,7 @@ const AdminProjects = () => {
                             {actionLoading[`${project.id}-stop`] ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             ) : (
-                              <Square className="w-3.5 h-3.5 fill-current" />
+                              <Square className="w-3.5 h-3.5" />
                             )}
                             <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Stop</span>
                           </Button>
@@ -335,7 +335,7 @@ const AdminProjects = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-8 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-600 px-2.5 flex items-center gap-1.5"
+                            className="h-8 border-emerald-500/10 text-emerald-500/70 hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-500 px-2.5 flex items-center gap-1.5 transition-colors"
                             onClick={() => handleAction(project.id, project.uid, 'start')}
                             disabled={
                               actionLoading[`${project.id}-start`] ||
@@ -347,7 +347,7 @@ const AdminProjects = () => {
                             {actionLoading[`${project.id}-start`] ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             ) : (
-                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <Play className="w-3.5 h-3.5" />
                             )}
                             <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Start</span>
                           </Button>
@@ -357,7 +357,7 @@ const AdminProjects = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 text-muted-foreground hover:text-foreground px-2.5 flex items-center gap-1.5"
+                          className="h-8 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 px-2.5 flex items-center gap-1.5 transition-colors"
                           onClick={() => handleAction(project.id, project.uid, 'restart')}
                           disabled={
                             actionLoading[`${project.id}-restart`] ||
@@ -377,7 +377,7 @@ const AdminProjects = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 text-muted-foreground hover:text-primary hover:border-primary/30 px-2.5 flex items-center gap-1.5"
+                          className="h-8 border-border/50 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 px-2.5 flex items-center gap-1.5 transition-colors"
                           onClick={() => handleAction(project.id, project.uid, 'redeploy')}
                           disabled={
                             actionLoading[`${project.id}-redeploy`] ||
@@ -389,7 +389,7 @@ const AdminProjects = () => {
                           {actionLoading[`${project.id}-redeploy`] ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
-                            <Zap className="w-3.5 h-3.5 fill-current text-yellow-500" />
+                            <Zap className="w-3.5 h-3.5" />
                           )}
                           <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Redeploy</span>
                         </Button>
