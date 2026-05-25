@@ -270,7 +270,7 @@ start_traefik() {
         return 1
     fi
     if [ -f "$dynamic_template" ]; then
-        sed "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" "$dynamic_template" > "$dynamic_conf"
+        sed -e "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" -e "s/{{PROJECT_DOMAIN}}/${PROJECT_DOMAIN:-$BASE_DOMAIN}/g" "$dynamic_template" > "$dynamic_conf"
     else
         echo -e "${RED}Error: dynamic.yml.template not found${NC}"
         return 1

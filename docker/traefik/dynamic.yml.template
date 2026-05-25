@@ -45,7 +45,7 @@ http:
   routers:
     # User projects (highest priority - subdomain matching)
     user-projects:
-      rule: "Host(`*.{{BASE_DOMAIN}}`)"
+      rule: "Host(`*.{{PROJECT_DOMAIN}}`) || Host(`*.{{BASE_DOMAIN}}`)"
       service: dynamic-projects
       entryPoints:
         - web
