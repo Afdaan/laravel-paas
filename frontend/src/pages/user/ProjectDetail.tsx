@@ -48,7 +48,7 @@ import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 import { CustomDomainManager } from '../../components/project/CustomDomainManager'
-import { RuntimeEvents } from '../../components/project/RuntimeEvents'
+import { RuntimeTab } from '../../components/project/RuntimeTab'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -190,15 +190,29 @@ function UserProjectDetail() {
     const seen = new Set<string>()
     const list: { sha: string, time: string, message: string }[] = []
     
+    // Create a map of jobId -> commitMessage from "building_image" events
+    const commitMsgMap = new Map<string, string>()
+    runtimeEvents.forEach(evt => {
+      if (evt.event_type === 'building_image' && evt.job_id) {
+        // evt.payload looks like: "Commit abcd123: Add custom domain setup"
+        // Let's extract everything after the colon
+        const parts = evt.payload ? evt.payload.split(':') : []
+        if (parts.length > 1) {
+          commitMsgMap.set(evt.job_id, parts.slice(1).join(':').trim())
+        }
+      }
+    })
+    
     runtimeEvents.forEach(evt => {
       if (evt.event_type === 'deployment_completed' || evt.event_type === 'rollback_completed' || evt.event_type === 'deployment_skipped_existing_image') {
-        const sha = evt.message
+        const sha = evt.payload || evt.message
         if (sha && sha.length === 40 && !seen.has(sha)) {
           seen.add(sha)
+          const commitMsg = commitMsgMap.get(evt.job_id) || evt.deployment_message || `Deployment version ${sha.substring(0, 7)}`
           list.push({
             sha,
             time: new Date(evt.created_at).toLocaleString(),
-            message: evt.deployment_message || `Deployment version ${sha.substring(0, 7)}`
+            message: commitMsg
           })
         }
       }
@@ -1006,6 +1020,23 @@ function UserProjectDetail() {
                     </div>
                   </div>
                 </div>
+                {project.last_commit_hash && (
+                  <div className="p-3 rounded-lg bg-muted border">
+                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Active Commit</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <code className="font-mono font-bold text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20">
+                        {project.last_commit_hash.substring(0, 7)}
+                      </code>
+                      {checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message ? (
+                        <span className="text-[11px] text-foreground/80 font-medium truncate max-w-[280px]" title={checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message}>
+                          — {checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground italic">No commit message found</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -1540,170 +1571,18 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="runtime" className="pt-0">
-          <div className="space-y-6">
-            <div className="flex flex-col gap-1 border-b border-border/40 pb-4 mb-6">
-              <h2 className="text-xl font-bold tracking-tight text-foreground/90">{t('projectDetail.runtime.title')}</h2>
-              <p className="text-xs text-muted-foreground">{t('projectDetail.runtime.subtitle')}</p>
-            </div>
-
-            {project && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/80 flex items-center gap-2">
-                      <Box className="w-4 h-4 text-primary" />
-                      {t('projectDetail.runtime.containers')}
-                    </h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-card/45 border-border/40 backdrop-blur-md relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-black tracking-widest text-primary uppercase">web</span>
-                            <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.webRole')}</CardTitle>
-                          </div>
-                          <StatusIndicator status={project.status} />
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3.5 pt-0 text-xs">
-                        <div className="flex justify-between items-center border-b border-border/30 pb-2">
-                          <span className="text-muted-foreground">{t('projectDetail.runtime.cpuLimit')}</span>
-                          <span className="font-bold text-foreground/90">{project.cpu_limit ? `${project.cpu_limit} Cores` : '0.5 Cores'}</span>
-                        </div>
-                        <div className="flex justify-between items-center border-b border-border/30 pb-2">
-                          <span className="text-muted-foreground">{t('projectDetail.runtime.memoryLimit')}</span>
-                          <span className="font-bold text-foreground/90">{project.memory_limit ? project.memory_limit : '512 MB'}</span>
-                        </div>
-                        <div className="flex justify-between items-center border-b border-border/30 pb-2">
-                          <span className="text-muted-foreground">{t('projectDetail.runtime.port')}</span>
-                          <span className="font-bold text-foreground/90">{project.internal_port ? project.internal_port : 'Auto (8000)'}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Container ID</span>
-                          <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[10px] text-foreground/80">
-                            {project.container_id ? project.container_id.substring(0, 12) : '-'}
-                          </code>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {(project.framework === 'Laravel' ? project.queue_enabled : !!project.worker_command) && (
-                      <Card className="bg-card/45 border-border/40 backdrop-blur-md relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-black tracking-widest text-indigo-400 uppercase">worker</span>
-                              <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.workerRole')}</CardTitle>
-                            </div>
-                            <StatusIndicator status={project.worker_container_id ? 'running' : 'stopped'} />
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3.5 pt-0 text-xs">
-                          <div className="flex justify-between items-center border-b border-border/30 pb-2">
-                            <span className="text-muted-foreground">{t('projectDetail.runtime.cpuLimit')}</span>
-                            <span className="font-bold text-foreground/90">{project.cpu_limit ? `${project.cpu_limit} Cores` : '0.5 Cores'}</span>
-                          </div>
-                          <div className="flex justify-between items-center border-b border-border/30 pb-2">
-                            <span className="text-muted-foreground">{t('projectDetail.runtime.memoryLimit')}</span>
-                            <span className="font-bold text-foreground/90">{project.memory_limit ? project.memory_limit : '512 MB'}</span>
-                          </div>
-                          <div className="flex justify-between items-center border-b border-border/30 pb-2">
-                            <span className="text-muted-foreground">Command</span>
-                            <span className="font-mono text-[10px] text-foreground/90 truncate max-w-[120px]" title={project.worker_command || 'queue:work'}>
-                              {project.worker_command || 'queue:work'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Container ID</span>
-                            <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[10px] text-foreground/80">
-                              {project.worker_container_id ? project.worker_container_id.substring(0, 12) : '-'}
-                            </code>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-
-                  <Card className="bg-card/40 border-border/40 backdrop-blur-md">
-                    <CardHeader className="pb-3 border-b border-border/40">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-indigo-500/10 rounded-lg flex items-center justify-center text-indigo-400">
-                          <GitBranch className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.rollbacks')}</CardTitle>
-                          <CardDescription className="text-[10px]">Select any successfully completed build checkpoint to instantly rollback the container hot-swap.</CardDescription>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-0 text-xs">
-                      <div className="divide-y divide-border/30 max-h-[300px] overflow-y-auto">
-                        {checkpoints.length === 0 ? (
-                          <div className="p-6 text-center text-muted-foreground">{t('projectDetail.runtime.noEvents')}</div>
-                        ) : (
-                          checkpoints.map((cp, idx) => (
-                            <div key={idx} className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors group/row">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <code className="font-mono font-bold text-foreground text-[10px] bg-muted px-1.5 py-0.5 rounded">
-                                    {cp.sha.substring(0, 7)}
-                                  </code>
-                                  {project.last_commit_hash === cp.sha && (
-                                    <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-emerald-500/30 bg-emerald-500/10 text-emerald-500 font-bold uppercase tracking-wider">
-                                      Active Version
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-foreground/80 font-medium max-w-[320px] truncate" title={cp.message}>
-                                  {cp.message}
-                                </p>
-                                <span className="text-[9px] text-muted-foreground/60">{cp.time}</span>
-                              </div>
-
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={project.last_commit_hash === cp.sha || isRollingBack}
-                                onClick={() => triggerRollbackConfirm(cp.sha)}
-                                className="h-8 rounded-full text-[10px] font-bold uppercase tracking-wider border-border/50 hover:bg-primary hover:text-white transition-all opacity-80 group-hover/row:opacity-100"
-                              >
-                                {t('projectDetail.runtime.rollbackBtn')}
-                              </Button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      <div className="p-4 border-t border-border/40 flex gap-3 bg-muted/20">
-                        <Input
-                          placeholder="Or enter any custom Commit SHA..."
-                          value={rollbackCommitSHA}
-                          onChange={(e) => setRollbackCommitSHA(e.target.value)}
-                          className="h-9 text-xs rounded-lg"
-                        />
-                        <Button
-                          size="sm"
-                          disabled={rollbackCommitSHA.length < 7 || isRollingBack}
-                          onClick={() => triggerRollbackConfirm(rollbackCommitSHA)}
-                          className="h-9 px-4 rounded-lg font-bold text-xs uppercase tracking-wider bg-primary text-primary-foreground hover:bg-primary/95"
-                        >
-                          {isRollingBack ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            t('projectDetail.runtime.rollbackBtn')
-                          )}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <RuntimeEvents runtimeEvents={runtimeEvents} t={t} />
-              </div>
-            )}
-          </div>
+          {project && (
+            <RuntimeTab
+              project={project}
+              checkpoints={checkpoints}
+              isRollingBack={isRollingBack}
+              rollbackCommitSHA={rollbackCommitSHA}
+              setRollbackCommitSHA={setRollbackCommitSHA}
+              triggerRollbackConfirm={triggerRollbackConfirm}
+              runtimeEvents={runtimeEvents}
+              t={t}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="domains" className="pt-0">

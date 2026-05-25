@@ -426,7 +426,22 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	w.checkDiskSpace()
 
-	latestHash, hashErr := w.gitService.GetRemoteCommitHash(project.GithubURL, project.Branch)
+	// Obtain GitHub App installation token for authenticating private repositories
+	authURL := project.GithubURL
+	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
+		token, err := w.githubService.GetInstallationToken(*project.GithubInstallationID)
+		if err != nil {
+			slog.Error("Failed to get GitHub installation token for deployment", "projectId", project.ID, "error", err)
+			w.updateProjectError(project, job.JobID, "Failed to authenticate with GitHub App: "+err.Error())
+			return
+		}
+		// Inject token into git URL: https://x-access-token:<token>@github.com/owner/repo
+		if strings.HasPrefix(authURL, "https://github.com/") {
+			authURL = "https://x-access-token:" + token + "@" + strings.TrimPrefix(authURL, "https://")
+		}
+	}
+
+	latestHash, hashErr := w.gitService.GetRemoteCommitHash(authURL, project.Branch)
 	if job.Type == "deploy" && hashErr == nil && latestHash != "" && project.LastCommitHash == latestHash && project.ContainerID != nil {
 		slog.Info("Commit hash unchanged, checking for existing image", "subdomain", project.Subdomain, "hash", latestHash)
 
@@ -451,7 +466,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
+		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(authURL, project.Branch, project.Subdomain)
 	}()
 
 	go func() {
@@ -769,7 +784,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live") {
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
 		w.forceDeploymentCompleted(project, job.JobID)
 	}
 	
