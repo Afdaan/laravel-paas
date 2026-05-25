@@ -231,11 +231,13 @@ start_buildkit() {
 
     echo -e "${YELLOW}Starting Local Registry...${NC}"
     docker rm -f paas-registry 2>/dev/null || true
+    docker volume create paas-registry-data 2>/dev/null || true
     docker run -d \
         --name paas-registry \
         --network paas-network \
         -p "${reg_host}:${reg_port}:5000" \
         --restart unless-stopped \
+        -v paas-registry-data:/var/lib/registry \
         "${reg_image}"
 
     echo -e "${YELLOW}Starting BuildKit (Rootless)...${NC}"

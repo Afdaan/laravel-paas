@@ -78,11 +78,13 @@ REGISTRY_PORT=${REGISTRY_PORT:-"5000"}
 REGISTRY_HOST=${REGISTRY_HOST:-"127.0.0.1"}
 REGISTRY_IMAGE=${REGISTRY_IMAGE:-"registry:2"}
 
+docker volume create paas-registry-data 2>/dev/null || true
 docker run -d \
     --name paas-registry \
     --network paas-network \
     -p "${REGISTRY_HOST}:${REGISTRY_PORT}:5000" \
     --restart unless-stopped \
+    -v paas-registry-data:/var/lib/registry \
     "${REGISTRY_IMAGE}"
 
 # 8. Jalankan BuildKit
