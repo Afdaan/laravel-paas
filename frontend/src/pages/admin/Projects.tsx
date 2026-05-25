@@ -41,13 +41,25 @@ interface ProjectStats {
   memory_max_mb: number;
 }
 
-const StatusBadge = ({ status, t }: { status: Project['status'], t: (key: string) => string }) => {
+const StatusBadge = ({ status, t }: { status: Project['status'] | string, t: (key: string) => string }) => {
   switch (status) {
     case 'running':
       return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
     case 'building':
+    case 'deploying':
       return <Badge variant="outline" className="text-indigo-600 border-indigo-500/40 bg-indigo-500/10"><div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5 animate-pulse" /> {t('status.building')}</Badge>
+    case 'starting':
+    case 'restarting':
+      return <Badge variant="outline" className="text-blue-600 border-blue-500/40 bg-blue-500/10"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 animate-pulse" /> {t('status.restarting') || 'Restarting'}</Badge>
     case 'pending':
+    case 'queued':
+    case 'provisioning':
+    case 'healthchecking':
+    case 'migrating':
+    case 'promoting':
+    case 'cleanup':
+    case 'rollback':
+    case 'deleting':
       return <Badge variant="outline" className="text-amber-600 border-amber-500/40 bg-amber-500/10"><div className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" /> {t('status.pending')}</Badge>
     case 'failed':
       return <Badge variant="destructive" className="bg-destructive/10 text-destructive hover:bg-destructive/20"><div className="w-1.5 h-1.5 rounded-full bg-destructive mr-1.5" /> {t('status.failed')}</Badge>

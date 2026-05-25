@@ -95,8 +95,8 @@ for VERSION in "${VERSIONS[@]}"; do
                 "${PROJECT_ROOT}/docker/runtime"
             
             # Tag and push to local registry for remote BuildKit mirror resolution
-            local reg_port=${REGISTRY_PORT:-"5000"}
-            local reg_host=${REGISTRY_HOST:-"127.0.0.1"}
+            reg_port=${REGISTRY_PORT:-"5000"}
+            reg_host=${REGISTRY_HOST:-"127.0.0.1"}
             echo -e "${YELLOW}Pushing PHP ${VERSION} runtime to local registry at ${reg_host}:${reg_port}...${NC}"
             docker tag "${TAG_RUNTIME}" "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
             docker push "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
@@ -120,8 +120,8 @@ for VERSION in "${VERSIONS[@]}"; do
                 "${PROJECT_ROOT}/docker/runtime"
             
             # Tag and push to local registry for remote BuildKit mirror resolution
-            local reg_port=${REGISTRY_PORT:-"5000"}
-            local reg_host=${REGISTRY_HOST:-"127.0.0.1"}
+            reg_port=${REGISTRY_PORT:-"5000"}
+            reg_host=${REGISTRY_HOST:-"127.0.0.1"}
             echo -e "${YELLOW}Pushing PHP ${VERSION} Unified Builder to local registry at ${reg_host}:${reg_port}...${NC}"
             docker tag "${TAG_BUILDER}" "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
             docker push "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
