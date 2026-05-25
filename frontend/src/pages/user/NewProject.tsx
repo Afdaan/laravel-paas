@@ -152,7 +152,7 @@ function UserNewProject() {
     setIsGithubLoading(true)
     try {
       const response = await githubAPI.listInstallations()
-      const insts = response.data.data || []
+      const insts: GithubAppInstallation[] = response.data.data || []
       setInstallations(insts)
       
       if (insts.length > 0) {
