@@ -59,13 +59,13 @@ http:
         - security-headers
         - project-prefix
     
-    # Wakeup endpoint (high priority - must match before user projects wildcard)
+    # Wakeup endpoint (highest priority - must match before user projects wildcard)
     wakeup:
-      rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/proxy/wakeup`)"
+      rule: "(Host(`*.{{PROJECT_DOMAIN}}`) || Host(`*.{{BASE_DOMAIN}}`)) && PathPrefix(`/proxy/wakeup`)"
       service: backend
       entryPoints:
         - web
-      priority: 150
+      priority: 250
       middlewares:
         - security-headers
     

@@ -711,7 +711,7 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			resp.HTTP.Middlewares[middlewareName] = map[string]interface{}{
 				"redirectRegex": map[string]interface{}{
 					"regex":       "^(https?)://([^/]+)(.*)$",
-					"replacement": fmt.Sprintf("http://%s/proxy/wakeup?subdomain=%s&redirect_url=${1}://${2}${3}", h.cfg.BaseDomain, proj.Subdomain),
+					"replacement": fmt.Sprintf("http://%s/proxy/wakeup?subdomain=%s&redirect_url=${1}://${2}${3}", proj.GetFullDomain(h.cfg.ProjectDomain), proj.Subdomain),
 				},
 			}
 			targetURL = "http://paas-backend:8080"
