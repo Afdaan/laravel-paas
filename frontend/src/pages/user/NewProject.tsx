@@ -122,9 +122,10 @@ function UserNewProject() {
         
         console.error('Failed to load repositories:', axiosError.message)
         
+        setRepositories([])
         if (isRevoked) {
           toast.error(t('newProject.errors.installationRevoked'))
-          loadInstallations()
+          loadInstallations(false)
         } else {
           toast.error(t('newProject.errors.failedToLoadRepos'))
         }
@@ -136,7 +137,7 @@ function UserNewProject() {
     }
   }
 
-  const loadInstallations = async () => {
+  const loadInstallations = async (triggerRepoLoad = false) => {
     setIsGithubLoading(true)
     try {
       const response = await githubAPI.listInstallations()
@@ -145,7 +146,12 @@ function UserNewProject() {
       if (insts.length > 0) {
         const firstInstId = String(insts[0].installation_id)
         setSelectedInstallationId(firstInstId)
-        loadRepositories(firstInstId)
+        if (triggerRepoLoad) {
+          loadRepositories(firstInstId)
+        }
+      } else {
+        setSelectedInstallationId('')
+        setRepositories([])
       }
     } catch (err) {
       console.error('Failed to load installations:', err instanceof Error ? err.message : String(err))
@@ -168,7 +174,7 @@ function UserNewProject() {
           toast.success(t('newProject.githubConnected') || 'GitHub App connected successfully')
           const cleanUrl = window.location.pathname
           window.history.replaceState({}, document.title, cleanUrl)
-          await loadInstallations()
+          await loadInstallations(true)
         } catch (err) {
           console.error('Failed to link GitHub installation:', err instanceof Error ? err.message : String(err))
           toast.error(t('newProject.errors.failedToLink'))
@@ -178,7 +184,7 @@ function UserNewProject() {
       }
       linkGithub()
     } else {
-      loadInstallations()
+      loadInstallations(true)
     }
   }, [])
 

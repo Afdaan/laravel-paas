@@ -109,9 +109,6 @@ deploy_with_anti_downtime() {
                 { set +x; } 2>/dev/null
                 
                 if DOCKER_BUILDKIT=1 docker build \
-                    --build-arg VITE_ZITADEL_AUTHORITY="$VITE_ZITADEL_AUTHORITY" \
-                    --build-arg VITE_ZITADEL_CLIENT_ID="$VITE_ZITADEL_CLIENT_ID" \
-                    --build-arg VITE_ZITADEL_REDIRECT_URI="$VITE_ZITADEL_REDIRECT_URI" \
                     --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
                     -t "$image_name" "$context_dir"; then
                     success=true

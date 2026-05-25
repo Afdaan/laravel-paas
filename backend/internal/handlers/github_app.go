@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/config"
@@ -211,6 +212,19 @@ func (h *GithubAppHandler) ListRepositories(c *fiber.Ctx) error {
 	if err != nil {
 		if strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401") {
 			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side.", "installation_id", instID, "error", err.Error())
+			var localInst models.GithubAppInstallation
+			if dbErr := h.db.Where("installation_id = ?", instID).First(&localInst).Error; dbErr == nil {
+				if time.Since(localInst.CreatedAt) > 60*time.Second {
+					slog.Info("Self-healing: GitHub installation is older than 60s and revoked on GitHub. Auto-purging...", "installation_id", instID)
+					h.db.Delete(&localInst)
+					h.db.Model(&models.Project{}).Where("github_installation_id = ?", instID).
+						Updates(map[string]interface{}{
+							"github_installation_id": nil,
+							"github_repo_owner":      "",
+							"github_repo_name":       "",
+						})
+				}
+			}
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "This GitHub installation is unauthorized or has been uninstalled. Please check your GitHub App configuration or reconnect it.",
 				"code":  "INSTALLATION_REVOKED",
@@ -238,6 +252,16 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	if err != nil {
 		if strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401") {
 			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side during branch fetch.", "installation_id", inst.InstallationID, "error", err.Error())
+			if time.Since(inst.CreatedAt) > 60*time.Second {
+				slog.Info("Self-healing: GitHub installation is older than 60s and revoked on GitHub during branch fetch. Auto-purging...", "installation_id", inst.InstallationID)
+				h.db.Delete(&inst)
+				h.db.Model(&models.Project{}).Where("github_installation_id = ?", inst.InstallationID).
+					Updates(map[string]interface{}{
+						"github_installation_id": nil,
+						"github_repo_owner":      "",
+						"github_repo_name":       "",
+					})
+			}
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "This GitHub installation is unauthorized or has been uninstalled.",
 				"code":  "INSTALLATION_REVOKED",
