@@ -69,7 +69,6 @@ func (w *CentralWatchdog) Start() {
 	w.StartExpiryJanitor()
 	w.StartStaleBuildWatchdog()
 	w.StartDelayedJobScheduler()
-	w.StartScaleToZeroJanitor()
 	w.StartAutoHealingWatchdog()
 }
 
@@ -348,104 +347,6 @@ func (w *CentralWatchdog) cleanupExpiredProjects() {
 			slog.Error("Central watchdog: background image prune failed", "error", err)
 		}
 	}()
-}
-
-// StartScaleToZeroJanitor launches the scale-to-zero supervision loop.
-func (w *CentralWatchdog) StartScaleToZeroJanitor() {
-	go func() {
-		time.Sleep(30 * time.Second)
-		for w.running {
-			w.scaleToZeroCheck()
-			select {
-			case <-w.stopChan:
-				return
-			case <-time.After(1 * time.Minute):
-			}
-		}
-	}()
-}
-
-func (w *CentralWatchdog) scaleToZeroCheck() {
-	idleMinStr := w.settingService.Get(models.SettingScaleToZeroIdleMin, models.DefaultScaleToZeroIdleMin)
-	var idleMin int
-	if _, err := fmt.Sscanf(idleMinStr, "%d", &idleMin); err != nil {
-		idleMin = 1440 // fallback to 24h
-	}
-
-	if idleMin <= 0 {
-		return
-	}
-
-	runningProjects, err := w.projectRepo.GetRunningWithContainers()
-	if err != nil {
-		slog.Error("Central watchdog: failed to fetch running projects for scale-to-zero check", "error", err)
-		return
-	}
-
-	for i := range runningProjects {
-		project := runningProjects[i]
-
-		// Skip scale-to-zero if explicitly disabled for this project,
-		// or if running background services or queue workers (since they don't receive HTTP traffic).
-		if project.DisableScaleToZero || project.QueueEnabled || project.WorkerCommand != "" {
-			continue
-		}
-
-		if project.LastAccessedAt == nil {
-			continue
-		}
-
-		if time.Since(*project.LastAccessedAt) > time.Duration(idleMin)*time.Minute {
-			slog.Info("Central watchdog: scaling project to zero due to inactivity", "projectId", project.ID, "subdomain", project.Subdomain, "lastAccessed", project.LastAccessedAt)
-
-			if project.ContainerID != nil && *project.ContainerID != "" {
-				slog.Info("Central watchdog: scale-to-zero: stopping main container", "containerId", *project.ContainerID)
-				if err := w.dockerService.StopContainer(*project.ContainerID); err != nil {
-					slog.Warn("Central watchdog: scale-to-zero: failed to stop web container", "projectId", project.ID, "error", err)
-				}
-			}
-
-			if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
-				slog.Info("Central watchdog: scale-to-zero: stopping worker container", "containerId", *project.WorkerContainerID)
-				if err := w.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
-					slog.Warn("Central watchdog: scale-to-zero: failed to stop worker container", "projectId", project.ID, "error", err)
-				}
-			}
-
-			if err := w.projectRepo.UpdateStatus(project.ID, models.StatusSleeping); err != nil {
-				slog.Error("Central watchdog: scale-to-zero: failed to update status to sleeping", "projectId", project.ID, "error", err)
-				continue
-			}
-
-			if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
-				slog.Warn("Central watchdog: scale-to-zero: failed to invalidate subdomain cache", "subdomain", project.Subdomain, "error", err)
-			}
-
-			jobID := "system"
-			if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
-				jobID = *project.DeploymentJobID
-			}
-
-			event := &models.DeploymentEvent{
-				ProjectID: project.ID,
-				JobID:     jobID,
-				WorkerID:  "watchdog",
-				StateFrom: string(models.StatusRunning),
-				StateTo:   string(models.StatusSleeping),
-				EventType: "scale_to_zero",
-				Payload:   "Scale to Zero: Project went idle, sleeping container",
-				CreatedAt: time.Now(),
-			}
-
-			if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
-				slog.Error("Central watchdog: scale-to-zero: failed to record event", "projectId", project.ID, "error", err)
-			}
-
-			if eventJSON, err := json.Marshal(event); err == nil {
-				_ = w.redisService.PublishDeploymentEvent(project.ID, string(eventJSON))
-			}
-		}
-	}
 }
 
 // StartAutoHealingWatchdog launches the container health auto-healing checker loop.

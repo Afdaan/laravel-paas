@@ -111,9 +111,6 @@ func Setup(
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 
-	// Wakeup proxy route (public)
-	app.Get("/proxy/wakeup", projectHandler.Wakeup)
-
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
 	// ===========================================

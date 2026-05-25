@@ -34,7 +34,7 @@ export const RuntimeEvents: React.FC<RuntimeEventsProps> = ({ runtimeEvents, t }
               <div className="relative pl-4 border-l border-border/50 space-y-5 py-1 transition-all duration-300">
                 {visibleEvents.map((evt, idx) => {
                   const isError = ['oom_killed', 'crashed', 'deployment_failed'].includes(evt.event_type)
-                  const isWarning = ['auto_healing_restart', 'scale_to_zero', 'sleeping'].includes(evt.event_type)
+                  const isWarning = ['auto_healing_restart'].includes(evt.event_type)
                   const bulletColor = isError 
                     ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]' 
                     : isWarning 

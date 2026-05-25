@@ -1,8 +1,6 @@
 package project
 
 import (
-	"context"
-	_ "embed"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,9 +13,6 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 )
-
-//go:embed templates/wakeup.html
-var wakeupHTML string
 
 // Create handles project creation
 func (h *ProjectHandler) Create(c *fiber.Ctx) error {
@@ -245,128 +240,6 @@ func (h *ProjectHandler) Restart(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "Project restarted successfully"})
-}
-
-// Wakeup starts a sleeping project and holds the request until it is healthy
-func (h *ProjectHandler) Wakeup(c *fiber.Ctx) error {
-	subdomain := c.Query("subdomain")
-	if subdomain == "" {
-		return c.Status(fiber.StatusBadRequest).SendString("Missing subdomain")
-	}
-
-	project, err := h.projectService.GetBySubdomain(subdomain)
-	if err != nil {
-		return c.Status(fiber.StatusNotFound).SendString("Project not found")
-	}
-
-	if project.Status != models.StatusSleeping {
-		// Already awake, redirect to target redirect URL or default project home page
-		redirectURL := c.Query("redirect_url")
-		if redirectURL != "" {
-			// Reconstruct any additional query parameters that were passed to the wakeup page
-			var queries []string
-			c.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
-				k := string(key)
-				if k != "subdomain" && k != "redirect_url" && k != "perform_wakeup" {
-					queries = append(queries, fmt.Sprintf("%s=%s", k, string(value)))
-				}
-			})
-			if len(queries) > 0 {
-				if strings.Contains(redirectURL, "?") {
-					redirectURL += "&" + strings.Join(queries, "&")
-				} else {
-					redirectURL += "?" + strings.Join(queries, "&")
-				}
-			}
-			return c.Redirect(redirectURL)
-		}
-		return c.Redirect("http://" + project.GetFullDomain(h.cfg.ProjectDomain))
-	}
-
-	performWakeup := c.Query("perform_wakeup")
-	if performWakeup == "true" {
-		if project.ContainerID == nil || *project.ContainerID == "" {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "No container ID found"})
-		}
-
-		slog.Info("Wakeup request: starting project container", "subdomain", subdomain, "container_id", *project.ContainerID)
-		
-		_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusStarting)
-		
-		if _, startErr := utils.Run(30*time.Second, "docker", "start", *project.ContainerID); startErr != nil {
-			slog.Error("Failed to start container during wakeup", "subdomain", subdomain, "error", startErr)
-			_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusFailed)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to start container"})
-		}
-
-		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
-			_, _ = utils.Run(30*time.Second, "docker", "start", *project.WorkerContainerID)
-		}
-
-		// Local container health check helper using docker inspect
-		isContainerHealthy := func(containerID string) bool {
-			res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health{{end}}", containerID)
-			if err != nil {
-				return false
-			}
-			status := strings.TrimSpace(res.Stdout)
-			if status == "no_health" || status == "" || strings.Contains(status, "no value") {
-				resRun, errRun := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}::{{.State.Restarting}}", containerID)
-				if errRun != nil {
-					return false
-				}
-				parts := strings.Split(strings.TrimSpace(resRun.Stdout), "::")
-				if len(parts) == 2 {
-					return parts[0] == "true" && parts[1] == "false"
-				}
-				return false
-			}
-			return status == "healthy"
-		}
-
-		// Poll health for up to 20 seconds
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-
-		healthy := false
-	pollLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				break pollLoop
-			case <-ticker.C:
-				if isContainerHealthy(*project.ContainerID) {
-					healthy = true
-					break pollLoop
-				}
-			}
-		}
-
-		if healthy {
-			slog.Info("Wakeup success: container is healthy", "subdomain", subdomain)
-			_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusRunning)
-			_ = h.projectService.CacheSubdomainMapping(project)
-			
-			now := time.Now()
-			h.db.Model(project).Update("last_accessed_at", &now)
-			_ = h.redisService.DeleteCache("traefik:dynamic_config")
-
-			return c.JSON(fiber.Map{"status": "ready"})
-		}
-
-		_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusFailed)
-		return c.Status(fiber.StatusGatewayTimeout).JSON(fiber.Map{"error": "Container health check timed out"})
-	}
-
-	// Serve wakeup loading screen (smooth dark mode styling, no emojis)
-	c.Set("Content-Type", "text/html")
-	html := strings.ReplaceAll(wakeupHTML, "{{.ProjectName}}", project.Name)
-	html = strings.ReplaceAll(html, "{{.Subdomain}}", subdomain)
-
-	return c.SendString(html)
 }
 
 // Rollback restores a previous deployment instantly if cached locally or falls back to rebuild

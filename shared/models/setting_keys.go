@@ -14,7 +14,6 @@ const (
 	SettingBuildTimeout     = "build_timeout_seconds"
 	SettingMaxDomainsPerProject = "max_domains_per_project"
 	SettingMaxImageRetention   = "max_image_retention"
-	SettingScaleToZeroIdleMin  = "scale_to_zero_idle_minutes"
 )
 
 // Default Settings Values
@@ -29,5 +28,4 @@ const (
 	DefaultBuildTimeout     = "1800"
 	DefaultMaxDomainsPerProject = "3"
 	DefaultMaxImageRetention   = "2"
-	DefaultScaleToZeroIdleMin  = "1440"
 )

@@ -706,20 +706,6 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		}
 
 		targetURL := fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort)
-		if proj.Status == models.StatusSleeping {
-			middlewareName := fmt.Sprintf("project-%s-wakeup-redirect", proj.Subdomain)
-			resp.HTTP.Middlewares[middlewareName] = map[string]interface{}{
-				"redirectRegex": map[string]interface{}{
-					"regex":       "^(https?)://([^/]+)(.*)$",
-					"replacement": fmt.Sprintf("http://%s/proxy/wakeup?subdomain=%s&redirect_url=${1}://${2}${3}", proj.GetFullDomain(h.cfg.ProjectDomain), proj.Subdomain),
-				},
-			}
-			targetURL = "http://paas-backend:8080"
-
-			router := resp.HTTP.Routers[routerName]
-			router.Middlewares = []string{"security-headers@file", middlewareName}
-			resp.HTTP.Routers[routerName] = router
-		}
 
 		resp.HTTP.Services[serviceName] = TraefikService{
 			LoadBalancer: TraefikLoadBalancer{

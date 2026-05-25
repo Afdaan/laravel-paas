@@ -259,7 +259,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	return project, nil
 }
 
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string, disableScaleToZero bool) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -282,7 +282,6 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	project.StartCommand = strings.TrimSpace(startCommand)
 	project.NodeVersion = nodeVersion
 	project.LanguageVersion = languageVersion
-	project.DisableScaleToZero = disableScaleToZero
 
 	if err := s.projectRepo.Update(project); err != nil {
 		return nil, err

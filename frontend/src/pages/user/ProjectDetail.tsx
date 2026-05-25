@@ -61,7 +61,6 @@ function StatusIndicator({ status }: { status: string }) {
     pending: { color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', label: t('status.pending') },
     stopped: { color: 'text-slate-500 bg-slate-500/10 border-slate-500/20 dark:text-slate-400', label: t('status.stopped') },
     restarting: { color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20', label: t('status.restarting'), pulse: true },
-    sleeping: { color: 'text-sky-500 bg-sky-500/10 border-sky-500/20', label: t('projectDetail.runtime.scaleToZeroActive') || 'Sleeping' },
   }
 
   const current = styles[status] || styles.pending
@@ -121,7 +120,6 @@ function UserProjectDetail() {
   const [phpVersionInput, setPhpVersionInput] = useState('')
   const [workerCommandInput, setWorkerCommandInput] = useState('')
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
-  const [disableScaleToZeroInput, setDisableScaleToZeroInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   
@@ -505,9 +503,8 @@ function UserProjectDetail() {
       phpVersionInput !== (project.php_version || '8.2') ||
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
-      disableScaleToZeroInput !== (project.disable_scale_to_zero || false) ||
       languageVersionInput !== (project.language_version || '')
-  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, disableScaleToZeroInput, languageVersionInput])
+  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, languageVersionInput])
 
   const handleResetSettings = () => {
     if (!project) return
@@ -519,7 +516,6 @@ function UserProjectDetail() {
     setPhpVersionInput(project.php_version || '8.2')
     setWorkerCommandInput(project.worker_command || '')
     setQueueEnabledInput(project.queue_enabled || false)
-    setDisableScaleToZeroInput(project.disable_scale_to_zero || false)
     setLanguageVersionInput(project.language_version || '')
     toast.info(t('common.resetSuccess') || 'Settings reset to original values')
   }
@@ -545,7 +541,6 @@ function UserProjectDetail() {
             php_version: phpVersionInput,
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput,
-            disable_scale_to_zero: disableScaleToZeroInput,
             language_version: languageVersionInput
           }
           await projectsAPI.update(uid, payload)
@@ -573,7 +568,6 @@ function UserProjectDetail() {
       setPhpVersionInput(project.php_version || '8.2')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
-      setDisableScaleToZeroInput(project.disable_scale_to_zero || false)
       setLanguageVersionInput(project.language_version || '')
       settingsInitialized.current = true
     }
@@ -589,7 +583,6 @@ function UserProjectDetail() {
       setPhpVersionInput(project.php_version || '8.2')
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
-      setDisableScaleToZeroInput(project.disable_scale_to_zero || false)
       setLanguageVersionInput(project.language_version || '')
     }
   }, [project, isSettingsDirty])
@@ -1390,23 +1383,6 @@ function UserProjectDetail() {
                   </div>
                 )}
 
-                {/* Scale to Zero / Sleeping Option */}
-                <div className="p-4 rounded-xl border bg-muted/20 space-y-4 mt-6">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label className="text-sm font-bold">
-                        {t('projectDetail.settings.disableScaleToZero') || 'Disable Scale to Zero (Keep Alive)'}
-                      </Label>
-                      <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        {t('projectDetail.settings.disableScaleToZeroDesc') || 'Prevent this project from going to sleep automatically when inactive (highly recommended for bots or background processes).'}
-                      </p>
-                    </div>
-                    <Switch
-                      checked={disableScaleToZeroInput}
-                      onCheckedChange={setDisableScaleToZeroInput}
-                    />
-                  </div>
-                </div>
 
                 {/* Common Custom Commands Area */}
                 <div className="space-y-4 pt-6 mt-6 border-t border-dashed">
@@ -1621,7 +1597,7 @@ function UserProjectDetail() {
                               <span className="text-[10px] font-black tracking-widest text-indigo-400 uppercase">worker</span>
                               <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.workerRole')}</CardTitle>
                             </div>
-                            <StatusIndicator status={project.status === 'sleeping' ? 'sleeping' : (project.worker_container_id ? 'running' : 'stopped')} />
+                            <StatusIndicator status={project.worker_container_id ? 'running' : 'stopped'} />
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-3.5 pt-0 text-xs">
