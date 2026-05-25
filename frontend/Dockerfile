@@ -15,6 +15,12 @@ COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
+# Declare build-time arguments for Vite to inject
+ARG VITE_ZITADEL_AUTHORITY
+ARG VITE_ZITADEL_CLIENT_ID
+ARG VITE_ZITADEL_REDIRECT_URI
+ARG VITE_GITHUB_APP_URL
+
 # Copy source and build
 COPY . .
 RUN npm run build

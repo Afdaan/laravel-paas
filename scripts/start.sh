@@ -92,9 +92,21 @@ deploy_with_anti_downtime() {
             return 1
         fi
     else
-        if ! docker build -t "$image_name" "$context_dir"; then
-            echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
-            return 1
+        if [ "$service_name" = "frontend" ]; then
+            if ! docker build \
+                --build-arg VITE_ZITADEL_AUTHORITY="$VITE_ZITADEL_AUTHORITY" \
+                --build-arg VITE_ZITADEL_CLIENT_ID="$VITE_ZITADEL_CLIENT_ID" \
+                --build-arg VITE_ZITADEL_REDIRECT_URI="$VITE_ZITADEL_REDIRECT_URI" \
+                --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
+                -t "$image_name" "$context_dir"; then
+                echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+                return 1
+            fi
+        else
+            if ! docker build -t "$image_name" "$context_dir"; then
+                echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+                return 1
+            fi
         fi
     fi
     echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
