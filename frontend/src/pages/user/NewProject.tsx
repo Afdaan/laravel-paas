@@ -116,14 +116,17 @@ function UserNewProject() {
       }
     } catch (err) {
       if (currentSeq === repoQuerySeq.current) {
-        console.error(err)
         const axiosError = err as AxiosError<{ error: string, code?: string }>
-        const errorMsg = axiosError.response?.data?.error || 'Failed to load repositories'
-        toast.error(errorMsg)
+        const errorCode = axiosError.response?.data?.code
+        const isRevoked = axiosError.response?.status === 404 || errorCode === 'INSTALLATION_REVOKED'
         
-        // If the installation was uninstalled/revoked on GitHub's side, auto-refresh to sync UI
-        if (axiosError.response?.status === 404 || axiosError.response?.data?.code === 'INSTALLATION_REVOKED') {
+        console.error('Failed to load repositories:', axiosError.message)
+        
+        if (isRevoked) {
+          toast.error(t('newProject.errors.installationRevoked'))
           loadInstallations()
+        } else {
+          toast.error(t('newProject.errors.failedToLoadRepos'))
         }
       }
     } finally {
@@ -145,7 +148,7 @@ function UserNewProject() {
         loadRepositories(firstInstId)
       }
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load installations:', err instanceof Error ? err.message : String(err))
     } finally {
       setIsGithubLoading(false)
     }
@@ -167,8 +170,8 @@ function UserNewProject() {
           window.history.replaceState({}, document.title, cleanUrl)
           await loadInstallations()
         } catch (err) {
-          console.error(err)
-          toast.error('Failed to link GitHub installation')
+          console.error('Failed to link GitHub installation:', err instanceof Error ? err.message : String(err))
+          toast.error(t('newProject.errors.failedToLink'))
         } finally {
           setIsGithubLoading(false)
         }
@@ -192,8 +195,8 @@ function UserNewProject() {
       }
     } catch (err) {
       if (currentSeq === branchQuerySeq.current) {
-        console.error(err)
-        toast.error('Failed to load branches')
+        console.error('Failed to load branches:', err instanceof Error ? err.message : String(err))
+        toast.error(t('newProject.errors.failedToLoadBranches'))
       }
     } finally {
       if (currentSeq === branchQuerySeq.current) {

@@ -815,7 +815,14 @@ export const translations = {
         network: { title: "Network Mesh", desc: "SSL termination and subdomain routing." },
         compute: { title: "Compute Allocation", desc: "Isolated container resource mapping." },
       },
-      footerInfo: "Your application will be served over encrypted TLS (HTTPS) on our global edge network."
+      footerInfo: "Your application will be served over encrypted TLS (HTTPS) on our global edge network.",
+      githubConnected: "GitHub App connected successfully",
+      errors: {
+        installationRevoked: "This GitHub installation is unauthorized or has been uninstalled. Please check your GitHub App configuration or reconnect it.",
+        failedToLink: "Failed to link GitHub installation",
+        failedToLoadBranches: "Failed to load branches",
+        failedToLoadRepos: "Failed to load repositories"
+      }
     },
     databaseManager: {
       title: "Database Manager",
@@ -1680,7 +1687,14 @@ export const translations = {
         network: { title: "Network Mesh", desc: "Terminasi SSL dan routing subdomain." },
         compute: { title: "Compute Allocation", desc: "Pemetaan resource container terisolasi." },
       },
-      footerInfo: "Aplikasi akan dilayani melalui TLS (HTTPS) terenkripsi pada jaringan global."
+      footerInfo: "Aplikasi akan dilayani melalui TLS (HTTPS) terenkripsi pada jaringan global.",
+      githubConnected: "Koneksi GitHub App berhasil",
+      errors: {
+        installationRevoked: "Instalasi GitHub ini tidak sah atau telah dihapus. Harap periksa konfigurasi GitHub App Anda atau hubungkan kembali.",
+        failedToLink: "Gagal menghubungkan instalasi GitHub",
+        failedToLoadBranches: "Gagal memuat daftar branch",
+        failedToLoadRepos: "Gagal memuat daftar repository"
+      }
     },
     databaseManager: {
       title: "Database Manager",

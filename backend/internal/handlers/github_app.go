@@ -210,16 +210,9 @@ func (h *GithubAppHandler) ListRepositories(c *fiber.Ctx) error {
 	repos, err := h.githubService.ListRepositories(instID)
 	if err != nil {
 		if strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401") {
-			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side. Purging locally...", "installation_id", instID)
-			h.db.Where("installation_id = ?", instID).Delete(&models.GithubAppInstallation{})
-			h.db.Model(&models.Project{}).Where("github_installation_id = ?", instID).
-				Updates(map[string]interface{}{
-					"github_installation_id": nil,
-					"github_repo_owner":      "",
-					"github_repo_name":       "",
-				})
+			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side.", "installation_id", instID, "error", err.Error())
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": "This GitHub installation has been uninstalled or revoked. It has been unlinked from your account.",
+				"error": "This GitHub installation is unauthorized or has been uninstalled. Please check your GitHub App configuration or reconnect it.",
 				"code":  "INSTALLATION_REVOKED",
 			})
 		}
@@ -244,16 +237,9 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	branches, err := h.githubService.ListBranches(inst.InstallationID, owner, repo)
 	if err != nil {
 		if strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401") {
-			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side during branch fetch. Purging locally...", "installation_id", inst.InstallationID)
-			h.db.Where("installation_id = ?", inst.InstallationID).Delete(&models.GithubAppInstallation{})
-			h.db.Model(&models.Project{}).Where("github_installation_id = ?", inst.InstallationID).
-				Updates(map[string]interface{}{
-					"github_installation_id": nil,
-					"github_repo_owner":      "",
-					"github_repo_name":       "",
-				})
+			slog.Warn("GitHub installation was uninstalled or revoked on GitHub's side during branch fetch.", "installation_id", inst.InstallationID, "error", err.Error())
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": "This GitHub installation has been uninstalled or revoked.",
+				"error": "This GitHub installation is unauthorized or has been uninstalled.",
 				"code":  "INSTALLATION_REVOKED",
 			})
 		}
