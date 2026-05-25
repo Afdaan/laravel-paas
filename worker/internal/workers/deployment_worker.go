@@ -896,6 +896,19 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", errorMsg)
 	msg := errorMsg
 	project.ErrorLog = &msg
+	
+	// Determine the correct project status after a failure
+	statusUpdate := models.StatusFailed
+	if project.ContainerID != nil && *project.ContainerID != "" {
+		// If an existing container is already running, keep the status as running
+		statusUpdate = models.StatusRunning
+	}
+	project.Status = statusUpdate
+	
+	if err := w.projectRepo.UpdateStatus(project.ID, statusUpdate); err != nil {
+		slog.Error("Failed to update project runtime status on error", "id", project.ID, "status", statusUpdate, "error", err)
+	}
+
 	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"error_log": msg,
 	}); err != nil {
