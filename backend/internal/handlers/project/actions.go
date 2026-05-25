@@ -1,15 +1,23 @@
 package project
 
 import (
+	"context"
+	_ "embed"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 )
+
+//go:embed templates/wakeup.html
+var wakeupHTML string
 
 // Create handles project creation
 func (h *ProjectHandler) Create(c *fiber.Ctx) error {
@@ -38,7 +46,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled)
+	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
 	if err != nil {
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -238,3 +246,171 @@ func (h *ProjectHandler) Restart(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"message": "Project restarted successfully"})
 }
+
+// Wakeup starts a sleeping project and holds the request until it is healthy
+func (h *ProjectHandler) Wakeup(c *fiber.Ctx) error {
+	subdomain := c.Query("subdomain")
+	if subdomain == "" {
+		return c.Status(fiber.StatusBadRequest).SendString("Missing subdomain")
+	}
+
+	project, err := h.projectService.GetBySubdomain(subdomain)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).SendString("Project not found")
+	}
+
+	if project.Status != models.StatusSleeping {
+		// Already awake, redirect to project home page
+		return c.Redirect("http://" + project.GetFullDomain(h.cfg.ProjectDomain))
+	}
+
+	performWakeup := c.Query("perform_wakeup")
+	if performWakeup == "true" {
+		if project.ContainerID == nil || *project.ContainerID == "" {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "No container ID found"})
+		}
+
+		slog.Info("Wakeup request: starting project container", "subdomain", subdomain, "container_id", *project.ContainerID)
+		
+		_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusStarting)
+		
+		if _, startErr := utils.Run(30*time.Second, "docker", "start", *project.ContainerID); startErr != nil {
+			slog.Error("Failed to start container during wakeup", "subdomain", subdomain, "error", startErr)
+			_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusFailed)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to start container"})
+		}
+
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			_, _ = utils.Run(30*time.Second, "docker", "start", *project.WorkerContainerID)
+		}
+
+		// Local container health check helper using docker inspect
+		isContainerHealthy := func(containerID string) bool {
+			res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health{{end}}", containerID)
+			if err != nil {
+				return false
+			}
+			status := strings.TrimSpace(res.Stdout)
+			if status == "no_health" || status == "" || strings.Contains(status, "no value") {
+				resRun, errRun := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}::{{.State.Restarting}}", containerID)
+				if errRun != nil {
+					return false
+				}
+				parts := strings.Split(strings.TrimSpace(resRun.Stdout), "::")
+				if len(parts) == 2 {
+					return parts[0] == "true" && parts[1] == "false"
+				}
+				return false
+			}
+			return status == "healthy"
+		}
+
+		// Poll health for up to 20 seconds
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		healthy := false
+	pollLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				break pollLoop
+			case <-ticker.C:
+				if isContainerHealthy(*project.ContainerID) {
+					healthy = true
+					break pollLoop
+				}
+			}
+		}
+
+		if healthy {
+			slog.Info("Wakeup success: container is healthy", "subdomain", subdomain)
+			_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusRunning)
+			_ = h.projectService.CacheSubdomainMapping(project)
+			
+			now := time.Now()
+			h.db.Model(project).Update("last_accessed_at", &now)
+			_ = h.redisService.DeleteCache("traefik:dynamic_config")
+
+			return c.JSON(fiber.Map{"status": "ready"})
+		}
+
+		_ = h.projectService.UpdateProjectStatus(project.ID, models.StatusFailed)
+		return c.Status(fiber.StatusGatewayTimeout).JSON(fiber.Map{"error": "Container health check timed out"})
+	}
+
+	// Serve wakeup loading screen (smooth dark mode styling, no emojis)
+	c.Set("Content-Type", "text/html")
+	html := strings.ReplaceAll(wakeupHTML, "{{.ProjectName}}", project.Name)
+	html = strings.ReplaceAll(html, "{{.Subdomain}}", subdomain)
+
+	return c.SendString(html)
+}
+
+// Rollback restores a previous deployment instantly if cached locally or falls back to rebuild
+func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	var req struct {
+		CommitSHA string `json:"commit_sha"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.ErrBadRequest
+	}
+
+	if req.CommitSHA == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "commit_sha is required"})
+	}
+
+	imageTag := fmt.Sprintf("paas-%s:%s", project.Subdomain, req.CommitSHA)
+	inspectRes, inspectErr := utils.Run(10*time.Second, "docker", "image", "inspect", imageTag)
+	imageExists := inspectErr == nil && strings.TrimSpace(inspectRes.Stdout) != ""
+
+	if imageExists {
+		slog.Info("Performing instant rollback using existing local image", "project", project.Subdomain, "commit", req.CommitSHA)
+		
+		project.LastCommitHash = req.CommitSHA
+		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
+
+		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "rollback")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue rollback"})
+		}
+
+		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Instant rollback to "+req.CommitSHA, 0, jobID)
+		
+		return c.JSON(fiber.Map{
+			"message": "Instant rollback initiated successfully",
+			"type": "instant",
+		})
+	} else {
+		slog.Info("Image not found locally, performing rebuild/redeploy fallback", "project", project.Subdomain, "commit", req.CommitSHA)
+		
+		project.LastCommitHash = req.CommitSHA
+		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
+
+		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue redeploy fallback"})
+		}
+
+		projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Rebuild fallback for rollback to "+req.CommitSHA, 0, jobID)
+
+		return c.JSON(fiber.Map{
+			"message": "Rebuild rollback initiated successfully",
+			"type": "rebuild",
+		})
+	}
+}
+

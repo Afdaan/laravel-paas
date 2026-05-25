@@ -16,7 +16,7 @@ MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 
 # 2. Bersihkan kontainer lama
 echo "[INFO] Cleaning old infrastructure..."
-docker rm -f paas-mysql paas-postgres paas-redis paas-traefik 2>/dev/null || true
+docker rm -f paas-mysql paas-postgres paas-redis paas-traefik paas-buildkit 2>/dev/null || true
 
 # 3. Siapkan Network & Folder (Pakai sudo untuk folder agar aman dari Permission Denied)
 echo "[INFO] Preparing storage folders..."
@@ -71,5 +71,18 @@ docker run -d \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "$(pwd)/docker/traefik/traefik.yml:/traefik.yml:ro" \
     traefik:v3.6
+
+# 8. Jalankan BuildKit
+echo "[INFO] Starting BuildKit..."
+docker volume create paas-buildkit-cache 2>/dev/null || true
+docker run -d \
+    --name paas-buildkit \
+    --network paas-network \
+    --restart unless-stopped \
+    --cpus="2.0" \
+    --memory="3g" \
+    -v paas-buildkit-cache:/var/lib/buildkit \
+    -v "$(pwd)/docker/templates/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro" \
+    moby/buildkit:rootless --addr tcp://0.0.0.0:1234
 
 echo "[SUCCESS] Infrastructure is up! Cek status dengan: docker ps"

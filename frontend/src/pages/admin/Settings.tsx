@@ -35,6 +35,8 @@ interface PlatformSettings {
   admin_idle_timeout?: number;
   max_concurrent_builds?: number;
   max_domains_per_project?: number;
+  max_image_retention?: number;
+  scale_to_zero_idle_minutes?: number;
 }
 
 const AdminSettings = () => {
@@ -249,6 +251,38 @@ const AdminSettings = () => {
                     value={settings.max_domains_per_project || 3}
                     onChange={(val) => handleChange('max_domains_per_project', val)}
                     unit={t('common.domains')}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <Server size={14} className="text-indigo-400 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.maxImageRetention')}</span>
+                </Label>
+                <div className="mt-4">
+                  <NumberStepper
+                    min={1}
+                    max={20}
+                    value={settings.max_image_retention || 5}
+                    onChange={(val) => handleChange('max_image_retention', val)}
+                    unit={t('admin.settings.images')}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
+                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
+                  <Zap size={14} className="text-yellow-400 shrink-0 mt-0.5" />
+                  <span>{t('admin.settings.scaleToZeroIdleMin')}</span>
+                </Label>
+                <div className="mt-4">
+                  <NumberStepper
+                    min={0}
+                    max={180}
+                    value={settings.scale_to_zero_idle_minutes || 0}
+                    onChange={(val) => handleChange('scale_to_zero_idle_minutes', val)}
+                    unit={t('admin.settings.minutes')}
                   />
                 </div>
               </div>

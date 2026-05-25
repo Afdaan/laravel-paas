@@ -66,6 +66,7 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.IdempotentOperation{},
 		&models.PendingReconcile{},
 		&models.AuditLog{},
+		&models.GithubAppInstallation{},
 	}
 
 	for _, m := range modelsList {

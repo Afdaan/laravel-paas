@@ -23,14 +23,17 @@ import (
 
 // CreateProjectRequest represents project creation payload
 type CreateProjectRequest struct {
-	Name          string `json:"name"`
-	GithubURL     string `json:"github_url"`
-	Branch        string `json:"branch"`
-	DatabaseName  string `json:"database_name"`
-	BaseDirectory string `json:"base_directory"`
-	BuildCommand  string `json:"build_command"`
-	StartCommand  string `json:"start_command"`
-	QueueEnabled  bool   `json:"queue_enabled"`
+	Name                 string `json:"name"`
+	GithubURL            string `json:"github_url"`
+	Branch               string `json:"branch"`
+	DatabaseName         string `json:"database_name"`
+	BaseDirectory        string `json:"base_directory"`
+	BuildCommand         string `json:"build_command"`
+	StartCommand         string `json:"start_command"`
+	QueueEnabled         bool   `json:"queue_enabled"`
+	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
+	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
+	GithubRepoName       string `json:"github_repo_name,omitempty"`
 }
 
 // ListOwn returns user's own projects
@@ -412,15 +415,23 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
+	if err == nil && project.Status == models.StatusSleeping {
+		return c.Redirect("/proxy/wakeup?subdomain=" + subdomain)
+	}
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
-		// Cache hit! Forward with internal Docker routing
-		// We use the container ID as the hostname because they are in the same paas-network
 		targetURL := fmt.Sprintf("http://%s:%s", *project.ContainerID, project.GetInternalPort())
-
-		// Map the path correctly by stripping the /proxy prefix
-		// Fiber's wildcard parameter (*) holds the rest of the path
 		path := c.Params("*")
 		target := targetURL + "/" + path
+
+		// Throttled update of LastAccessedAt to once per minute to preserve DB performance
+		now := time.Now()
+		if project.LastAccessedAt == nil || now.Sub(*project.LastAccessedAt) > 1*time.Minute {
+			go func(pid uint, t time.Time) {
+				h.db.Model(&models.Project{}).Where("id = ?", pid).Update("last_accessed_at", &t)
+			}(project.ID, now)
+			project.LastAccessedAt = &now
+			_ = h.redisService.SetCache(cacheKey, project, 24*time.Hour)
+		}
 
 		h.projectService.UpdateActivity(project.ID)
 		return proxy.Forward(target)(c)
@@ -428,9 +439,20 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 
 	// 2. Cache Miss: Fallback to Database
 	project_db, err := h.projectService.GetBySubdomain(subdomain)
-	if err != nil || project_db.Status != models.StatusRunning {
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+	if project_db.Status == models.StatusSleeping {
+		return c.Redirect("/proxy/wakeup?subdomain=" + subdomain)
+	}
+	if project_db.Status != models.StatusRunning {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})
 	}
+
+	// Update LastAccessedAt on cache miss
+	now := time.Now()
+	project_db.LastAccessedAt = &now
+	h.db.Model(&models.Project{}).Where("id = ?", project_db.ID).Update("last_accessed_at", &now)
 
 	// 3. Populate Cache for the next request
 	if err := h.projectService.CacheSubdomainMapping(project_db); err != nil {

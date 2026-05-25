@@ -43,6 +43,7 @@ type DeploymentWorker struct {
 	redisService   *infrastructure.RedisService
 	projectRepo    repositories.ProjectRepository
 	settingService *setting.SettingService
+	githubService  *infrastructure.GithubService
 
 	running  bool
 	stopChan chan struct{}
@@ -71,6 +72,7 @@ func NewDeploymentWorker(
 		redisService:   redisService,
 		projectRepo:    projectRepo,
 		settingService: settingService,
+		githubService:  infrastructure.NewGithubService(cfg, redisService),
 		running:        false,
 		stopChan:       make(chan struct{}),
 	}
@@ -387,6 +389,17 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			return
 		}
 		slog.Warn("Instant update failed, falling back to full deployment", "subdomain", project.Subdomain)
+	}
+
+	if job.Type == "rollback" {
+		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
+		if err := w.redeployExistingImage(project); err == nil {
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
+			return
+		}
+		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
 	}
 
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
@@ -748,6 +761,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
+	// Prune old project image builds according to retention policy
+	maxRetentionStr := w.getSetting(models.SettingMaxImageRetention, models.DefaultMaxImageRetention)
+	maxRetention, _ := strconv.Atoi(maxRetentionStr)
+	if maxRetention <= 0 {
+		maxRetention, _ = strconv.Atoi(models.DefaultMaxImageRetention)
+	}
+	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
+
 	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live") {
 		w.forceDeploymentCompleted(project, job.JobID)
 	}
@@ -778,8 +799,42 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 		project.DeploymentStatus = updatedProject.DeploymentStatus
 		project.DeploymentProgress = updatedProject.DeploymentProgress
 		project.DeploymentMessage = updatedProject.DeploymentMessage
+		w.updateGitHubCommitStatus(project, nextState, payload)
 	}
 	return true
+}
+
+func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
+	if project.GithubInstallationID == nil || *project.GithubInstallationID == 0 || project.GithubRepoOwner == "" || project.GithubRepoName == "" || project.LastCommitHash == "" {
+		return
+	}
+
+	ghState := "pending"
+	switch state {
+	case models.DepStatusCompleted:
+		ghState = "success"
+	case models.DepStatusFailed, models.DepStatusRollback:
+		ghState = "failure"
+	case models.DepStatusCancelled:
+		ghState = "error"
+	}
+
+	targetURL := fmt.Sprintf("%s/projects/%d/deployments", w.cfg.FrontendURL, project.ID)
+	desc := description
+	if len(desc) > 140 {
+		desc = desc[:137] + "..."
+	}
+	if desc == "" {
+		desc = string(state)
+	}
+
+	slog.Info("Updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
+	go func() {
+		err := w.githubService.UpdateCommitStatus(*project.GithubInstallationID, project.GithubRepoOwner, project.GithubRepoName, project.LastCommitHash, ghState, targetURL, desc)
+		if err != nil {
+			slog.Warn("Failed to update GitHub commit status", "project_id", project.ID, "error", err)
+		}
+	}()
 }
 
 func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, jobID string) {
@@ -792,6 +847,7 @@ func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, job
 	project.DeploymentProgress = 100
 	msg := "Release successfully promoted and live"
 	project.DeploymentMessage = &msg
+	w.updateGitHubCommitStatus(project, models.DepStatusCompleted, msg)
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache after forced deployment completion", "subdomain", project.Subdomain, "error", err)
 	}
@@ -867,18 +923,12 @@ func (w *DeploymentWorker) checkDiskSpace() {
 	usageStr := strings.TrimSuffix(fields[4], "%")
 	usage, _ := strconv.Atoi(usageStr)
 
-	if usage > 90 {
-		slog.Warn("Disk space critical, performing emergency prune", "usage", usage)
-		// Immediate cleanup
-		if err := w.dockerService.PruneImages(); err != nil {
-			slog.Warn("Emergency image prune failed", "error", err)
-		}
-		if err := utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-a", "-f"); err != nil {
-			slog.Warn("Emergency builder prune failed", "error", err)
-		}
-		if err := utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f"); err != nil {
-			slog.Warn("Emergency volume prune failed", "error", err)
-		}
+	if usage > 85 {
+		slog.Warn("Disk space usage exceeds 85%, performing smart cleanup", "usage", usage)
+		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", "until=24h")
+		_ = utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-f")
+		_ = utils.RunSilent(5*time.Minute, "docker", "buildx", "prune", "-f", "--builder", "paas-builder")
+		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}
 }
 

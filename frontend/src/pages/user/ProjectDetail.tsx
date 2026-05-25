@@ -60,6 +60,7 @@ function StatusIndicator({ status }: { status: string }) {
     pending: { color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', label: t('status.pending') },
     stopped: { color: 'text-slate-500 bg-slate-500/10 border-slate-500/20 dark:text-slate-400', label: t('status.stopped') },
     restarting: { color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20', label: t('status.restarting'), pulse: true },
+    sleeping: { color: 'text-sky-500 bg-sky-500/10 border-sky-500/20', label: t('projectDetail.runtime.scaleToZeroActive') || 'Sleeping' },
   }
 
   const current = styles[status] || styles.pending
@@ -125,6 +126,44 @@ function UserProjectDetail() {
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
   const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
+  const [runtimeEvents, setRuntimeEvents] = useState<any[]>([])
+  const [isRollingBack, setIsRollingBack] = useState(false)
+  const [rollbackCommitSHA, setRollbackCommitSHA] = useState('')
+
+  const fetchRuntimeEvents = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await projectsAPI.getDeploymentEvents(uid, true)
+      setRuntimeEvents(response.data)
+    } catch (err) {
+      setRuntimeEvents([])
+    }
+  }, [uid])
+
+  useEffect(() => {
+    if (activeTab === 'runtime') {
+      fetchRuntimeEvents()
+      const interval = setInterval(fetchRuntimeEvents, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [activeTab, fetchRuntimeEvents])
+
+  const handleRollback = async (commitSHA: string) => {
+    if (!uid) return
+    setIsRollingBack(true)
+    try {
+      const response = await projectsAPI.rollback(uid, commitSHA)
+      toast.success(t('projectDetail.runtime.rollbackSuccess', { type: response.data.type }) || `Rollback initiated successfully (${response.data.type})`)
+      fetchProject(true)
+      fetchRuntimeEvents()
+    } catch (error: any) {
+      const errMsg = error.response?.data?.error || error.message || 'Unknown error'
+      toast.error(t('projectDetail.runtime.rollbackFailed', { error: errMsg }) || `Failed to initiate rollback: ${errMsg}`)
+    } finally {
+      setIsRollingBack(false)
+    }
+  }
+
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -133,6 +172,39 @@ function UserProjectDetail() {
     onConfirm: () => { },
     confirmText: t('common.confirm')
   })
+
+  const triggerRollbackConfirm = (commitSHA: string) => {
+    setConfirmModal({
+      title: t('projectDetail.runtime.confirmRollback') || 'Confirm Rollback',
+      message: t('projectDetail.runtime.confirmRollbackMsg') || 'Are you sure you want to rollback to this commit? If the image is cached locally, it will perform a zero-downtime hot-swap. Otherwise, it will trigger an automated rebuild.',
+      type: 'warning',
+      confirmText: t('projectDetail.runtime.rollbackBtn') || 'Rollback',
+      isOpen: true,
+      onConfirm: () => {
+        handleRollback(commitSHA)
+      }
+    })
+  }
+
+  const checkpoints = useMemo(() => {
+    const seen = new Set<string>()
+    const list: { sha: string, time: string, message: string }[] = []
+    
+    runtimeEvents.forEach(evt => {
+      if (evt.event_type === 'deployment_completed' || evt.event_type === 'rollback_completed' || evt.event_type === 'deployment_skipped_existing_image') {
+        const sha = evt.message
+        if (sha && sha.length === 40 && !seen.has(sha)) {
+          seen.add(sha)
+          list.push({
+            sha,
+            time: new Date(evt.created_at).toLocaleString(),
+            message: evt.deployment_message || `Deployment version ${sha.substring(0, 7)}`
+          })
+        }
+      }
+    })
+    return list
+  }, [runtimeEvents])
 
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
@@ -781,6 +853,7 @@ function UserProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-muted p-1 rounded-lg w-fit overflow-x-auto">
           <TabsTrigger value="project">{t('projectDetail.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="runtime">{t('projectDetail.tabs.runtime')}</TabsTrigger>
           <TabsTrigger value="console">{t('projectDetail.tabs.console')}</TabsTrigger>
           <TabsTrigger value="environment">{t('projectDetail.tabs.secrets')}</TabsTrigger>
           <TabsTrigger value="database">{t('projectDetail.tabs.database')}</TabsTrigger>
@@ -1463,6 +1536,221 @@ function UserProjectDetail() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="runtime" className="pt-0">
+          <div className="space-y-6">
+            <div className="flex flex-col gap-1 border-b border-border/40 pb-4 mb-6">
+              <h2 className="text-xl font-bold tracking-tight text-foreground/90">{t('projectDetail.runtime.title')}</h2>
+              <p className="text-xs text-muted-foreground">{t('projectDetail.runtime.subtitle')}</p>
+            </div>
+
+            {project && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/80 flex items-center gap-2">
+                      <Box className="w-4 h-4 text-primary" />
+                      {t('projectDetail.runtime.containers')}
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card className="bg-card/45 border-border/40 backdrop-blur-md relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-black tracking-widest text-primary uppercase">web</span>
+                            <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.webRole')}</CardTitle>
+                          </div>
+                          <StatusIndicator status={project.status} />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3.5 pt-0 text-xs">
+                        <div className="flex justify-between items-center border-b border-border/30 pb-2">
+                          <span className="text-muted-foreground">{t('projectDetail.runtime.cpuLimit')}</span>
+                          <span className="font-bold text-foreground/90">{project.cpu_limit ? `${project.cpu_limit} Cores` : '0.5 Cores'}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-border/30 pb-2">
+                          <span className="text-muted-foreground">{t('projectDetail.runtime.memoryLimit')}</span>
+                          <span className="font-bold text-foreground/90">{project.memory_limit ? project.memory_limit : '512 MB'}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-border/30 pb-2">
+                          <span className="text-muted-foreground">{t('projectDetail.runtime.port')}</span>
+                          <span className="font-bold text-foreground/90">{project.internal_port ? project.internal_port : 'Auto (8000)'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Container ID</span>
+                          <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[10px] text-foreground/80">
+                            {project.container_id ? project.container_id.substring(0, 12) : '-'}
+                          </code>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {(project.framework === 'Laravel' ? project.queue_enabled : !!project.worker_command) && (
+                      <Card className="bg-card/45 border-border/40 backdrop-blur-md relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black tracking-widest text-indigo-400 uppercase">worker</span>
+                              <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.workerRole')}</CardTitle>
+                            </div>
+                            <StatusIndicator status={project.status === 'sleeping' ? 'sleeping' : (project.worker_container_id ? 'running' : 'stopped')} />
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3.5 pt-0 text-xs">
+                          <div className="flex justify-between items-center border-b border-border/30 pb-2">
+                            <span className="text-muted-foreground">{t('projectDetail.runtime.cpuLimit')}</span>
+                            <span className="font-bold text-foreground/90">{project.cpu_limit ? `${project.cpu_limit} Cores` : '0.5 Cores'}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b border-border/30 pb-2">
+                            <span className="text-muted-foreground">{t('projectDetail.runtime.memoryLimit')}</span>
+                            <span className="font-bold text-foreground/90">{project.memory_limit ? project.memory_limit : '512 MB'}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b border-border/30 pb-2">
+                            <span className="text-muted-foreground">Command</span>
+                            <span className="font-mono text-[10px] text-foreground/90 truncate max-w-[120px]" title={project.worker_command || 'queue:work'}>
+                              {project.worker_command || 'queue:work'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Container ID</span>
+                            <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[10px] text-foreground/80">
+                              {project.worker_container_id ? project.worker_container_id.substring(0, 12) : '-'}
+                            </code>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+
+                  <Card className="bg-card/40 border-border/40 backdrop-blur-md">
+                    <CardHeader className="pb-3 border-b border-border/40">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-indigo-500/10 rounded-lg flex items-center justify-center text-indigo-400">
+                          <GitBranch className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.rollbacks')}</CardTitle>
+                          <CardDescription className="text-[10px]">Select any successfully completed build checkpoint to instantly rollback the container hot-swap.</CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0 text-xs">
+                      <div className="divide-y divide-border/30 max-h-[300px] overflow-y-auto">
+                        {checkpoints.length === 0 ? (
+                          <div className="p-6 text-center text-muted-foreground">{t('projectDetail.runtime.noEvents')}</div>
+                        ) : (
+                          checkpoints.map((cp, idx) => (
+                            <div key={idx} className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors group/row">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <code className="font-mono font-bold text-foreground text-[10px] bg-muted px-1.5 py-0.5 rounded">
+                                    {cp.sha.substring(0, 7)}
+                                  </code>
+                                  {project.last_commit_hash === cp.sha && (
+                                    <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-emerald-500/30 bg-emerald-500/10 text-emerald-500 font-bold uppercase tracking-wider">
+                                      Active Version
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-foreground/80 font-medium max-w-[320px] truncate" title={cp.message}>
+                                  {cp.message}
+                                </p>
+                                <span className="text-[9px] text-muted-foreground/60">{cp.time}</span>
+                              </div>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={project.last_commit_hash === cp.sha || isRollingBack}
+                                onClick={() => triggerRollbackConfirm(cp.sha)}
+                                className="h-8 rounded-full text-[10px] font-bold uppercase tracking-wider border-border/50 hover:bg-primary hover:text-white transition-all opacity-80 group-hover/row:opacity-100"
+                              >
+                                {t('projectDetail.runtime.rollbackBtn')}
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="p-4 border-t border-border/40 flex gap-3 bg-muted/20">
+                        <Input
+                          placeholder="Or enter any custom Commit SHA..."
+                          value={rollbackCommitSHA}
+                          onChange={(e) => setRollbackCommitSHA(e.target.value)}
+                          className="h-9 text-xs rounded-lg"
+                        />
+                        <Button
+                          size="sm"
+                          disabled={rollbackCommitSHA.length < 7 || isRollingBack}
+                          onClick={() => triggerRollbackConfirm(rollbackCommitSHA)}
+                          className="h-9 px-4 rounded-lg font-bold text-xs uppercase tracking-wider bg-primary text-primary-foreground hover:bg-primary/95"
+                        >
+                          {isRollingBack ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            t('projectDetail.runtime.rollbackBtn')
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/80 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-primary" />
+                    {t('projectDetail.runtime.events')}
+                  </h3>
+
+                  <Card className="bg-card/40 border-border/40 backdrop-blur-md">
+                    <CardContent className="p-4">
+                      {runtimeEvents.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                          <Activity className="w-8 h-8 text-muted-foreground/30 mb-2" />
+                          <p className="text-xs text-muted-foreground font-medium">{t('projectDetail.runtime.noEvents')}</p>
+                        </div>
+                      ) : (
+                        <div className="relative pl-4 border-l border-border/50 space-y-5 py-1">
+                          {runtimeEvents.map((evt, idx) => {
+                            const isError = ['oom_killed', 'crashed', 'deployment_failed'].includes(evt.event_type)
+                            const isWarning = ['auto_healing_restart', 'scale_to_zero', 'sleeping'].includes(evt.event_type)
+                            const bulletColor = isError 
+                              ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]' 
+                              : isWarning 
+                                ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)]' 
+                                : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+
+                            return (
+                              <div key={idx} className="relative group/evt">
+                                <div className={cn("absolute -left-[21.5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-background z-10", bulletColor)} />
+                                
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-[10px] uppercase tracking-wider text-foreground/80">
+                                      {evt.event_type.replace(/_/g, ' ')}
+                                    </span>
+                                    <span className="text-[8px] text-muted-foreground/60">
+                                      {new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-muted-foreground leading-normal" title={evt.message}>
+                                    {evt.message}
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="domains" className="pt-0">

@@ -9,9 +9,11 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/infrastructure"
@@ -19,6 +21,7 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
 	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
+	setting "github.com/laravel-paas/shared/services/setting"
 )
 
 // CentralWatchdog oversees system consistency and maintenance tasks
@@ -27,6 +30,7 @@ type CentralWatchdog struct {
 	redisService   *infrastructure.RedisService
 	dockerService  *docker.DockerService
 	projectService *projectServicePkg.ProjectService
+	settingService *setting.SettingService
 	running        bool
 	stopChan       chan struct{}
 }
@@ -37,12 +41,14 @@ func NewCentralWatchdog(
 	redisService *infrastructure.RedisService,
 	dockerService *docker.DockerService,
 	projectService *projectServicePkg.ProjectService,
+	settingService *setting.SettingService,
 ) *CentralWatchdog {
 	return &CentralWatchdog{
 		projectRepo:    projectRepo,
 		redisService:   redisService,
 		dockerService:  dockerService,
 		projectService: projectService,
+		settingService: settingService,
 		running:        false,
 		stopChan:       make(chan struct{}),
 	}
@@ -63,6 +69,8 @@ func (w *CentralWatchdog) Start() {
 	w.StartExpiryJanitor()
 	w.StartStaleBuildWatchdog()
 	w.StartDelayedJobScheduler()
+	w.StartScaleToZeroJanitor()
+	w.StartAutoHealingWatchdog()
 }
 
 // Stop cleanly terminates all supervisory routines
@@ -340,4 +348,210 @@ func (w *CentralWatchdog) cleanupExpiredProjects() {
 			slog.Error("Central watchdog: background image prune failed", "error", err)
 		}
 	}()
+}
+
+// StartScaleToZeroJanitor launches the scale-to-zero supervision loop.
+func (w *CentralWatchdog) StartScaleToZeroJanitor() {
+	go func() {
+		time.Sleep(30 * time.Second)
+		for w.running {
+			w.scaleToZeroCheck()
+			select {
+			case <-w.stopChan:
+				return
+			case <-time.After(1 * time.Minute):
+			}
+		}
+	}()
+}
+
+func (w *CentralWatchdog) scaleToZeroCheck() {
+	idleMinStr := w.settingService.Get(models.SettingScaleToZeroIdleMin, models.DefaultScaleToZeroIdleMin)
+	var idleMin int
+	if _, err := fmt.Sscanf(idleMinStr, "%d", &idleMin); err != nil {
+		idleMin = 1440 // fallback to 24h
+	}
+
+	if idleMin <= 0 {
+		return
+	}
+
+	runningProjects, err := w.projectRepo.GetRunningWithContainers()
+	if err != nil {
+		slog.Error("Central watchdog: failed to fetch running projects for scale-to-zero check", "error", err)
+		return
+	}
+
+	for i := range runningProjects {
+		project := runningProjects[i]
+		if project.LastAccessedAt == nil {
+			continue
+		}
+
+		if time.Since(*project.LastAccessedAt) > time.Duration(idleMin)*time.Minute {
+			slog.Info("Central watchdog: scaling project to zero due to inactivity", "projectId", project.ID, "subdomain", project.Subdomain, "lastAccessed", project.LastAccessedAt)
+
+			if project.ContainerID != nil && *project.ContainerID != "" {
+				slog.Info("Central watchdog: scale-to-zero: stopping main container", "containerId", *project.ContainerID)
+				if err := w.dockerService.StopContainer(*project.ContainerID); err != nil {
+					slog.Warn("Central watchdog: scale-to-zero: failed to stop web container", "projectId", project.ID, "error", err)
+				}
+			}
+
+			if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+				slog.Info("Central watchdog: scale-to-zero: stopping worker container", "containerId", *project.WorkerContainerID)
+				if err := w.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
+					slog.Warn("Central watchdog: scale-to-zero: failed to stop worker container", "projectId", project.ID, "error", err)
+				}
+			}
+
+			if err := w.projectRepo.UpdateStatus(project.ID, models.StatusSleeping); err != nil {
+				slog.Error("Central watchdog: scale-to-zero: failed to update status to sleeping", "projectId", project.ID, "error", err)
+				continue
+			}
+
+			if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+				slog.Warn("Central watchdog: scale-to-zero: failed to invalidate subdomain cache", "subdomain", project.Subdomain, "error", err)
+			}
+
+			jobID := "system"
+			if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+				jobID = *project.DeploymentJobID
+			}
+
+			event := &models.DeploymentEvent{
+				ProjectID: project.ID,
+				JobID:     jobID,
+				WorkerID:  "watchdog",
+				StateFrom: string(models.StatusRunning),
+				StateTo:   string(models.StatusSleeping),
+				EventType: "scale_to_zero",
+				Payload:   "Scale to Zero: Project went idle, sleeping container",
+				CreatedAt: time.Now(),
+			}
+
+			if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
+				slog.Error("Central watchdog: scale-to-zero: failed to record event", "projectId", project.ID, "error", err)
+			}
+
+			if eventJSON, err := json.Marshal(event); err == nil {
+				_ = w.redisService.PublishDeploymentEvent(project.ID, string(eventJSON))
+			}
+		}
+	}
+}
+
+// StartAutoHealingWatchdog launches the container health auto-healing checker loop.
+func (w *CentralWatchdog) StartAutoHealingWatchdog() {
+	go func() {
+		time.Sleep(45 * time.Second)
+		for w.running {
+			w.autoHealingCheck()
+			select {
+			case <-w.stopChan:
+				return
+			case <-time.After(1 * time.Minute):
+			}
+		}
+	}()
+}
+
+func (w *CentralWatchdog) inspectContainerState(containerID string) (running bool, oomKilled bool, err error) {
+	cmd := exec.Command("docker", "inspect", "--format", "{{.State.Running}}::{{.State.OOMKilled}}", containerID)
+	out, err := cmd.Output()
+	if err != nil {
+		return false, false, err
+	}
+	parts := strings.Split(strings.TrimSpace(string(out)), "::")
+	if len(parts) != 2 {
+		return false, false, fmt.Errorf("unexpected inspect output: %s", string(out))
+	}
+	running = parts[0] == "true"
+	oomKilled = parts[1] == "true"
+	return running, oomKilled, nil
+}
+
+func (w *CentralWatchdog) recordAutoHealingEvent(projectID uint, eventType string, payload string, deploymentJobID *string) {
+	jobID := "system"
+	if deploymentJobID != nil && *deploymentJobID != "" {
+		jobID = *deploymentJobID
+	}
+	event := &models.DeploymentEvent{
+		ProjectID: projectID,
+		JobID:     jobID,
+		WorkerID:  "watchdog",
+		StateFrom: string(models.StatusRunning),
+		StateTo:   string(models.StatusRunning),
+		EventType: eventType,
+		Payload:   payload,
+		CreatedAt: time.Now(),
+	}
+	if err := w.projectRepo.RecordDeploymentEvent(event); err != nil {
+		slog.Error("Central watchdog: failed to record auto-healing event", "projectId", projectID, "error", err)
+	}
+	if eventJSON, err := json.Marshal(event); err == nil {
+		_ = w.redisService.PublishDeploymentEvent(projectID, string(eventJSON))
+	}
+}
+
+func (w *CentralWatchdog) autoHealingCheck() {
+	runningProjects, err := w.projectRepo.GetRunningWithContainers()
+	if err != nil {
+		slog.Error("Central watchdog: failed to fetch running projects for auto-healing check", "error", err)
+		return
+	}
+
+	for i := range runningProjects {
+		project := runningProjects[i]
+
+		// Check Web Container
+		if project.ContainerID != nil && *project.ContainerID != "" {
+			running, oomKilled, err := w.inspectContainerState(*project.ContainerID)
+			if err == nil && !running {
+				if oomKilled {
+					slog.Warn("Central watchdog: container OOM killed", "projectId", project.ID, "containerId", *project.ContainerID)
+					w.recordAutoHealingEvent(project.ID, "oom_killed", "Container terminated: Out of Memory (OOM Killed)", project.DeploymentJobID)
+					errorMsg := "Your application was terminated by the system because it exceeded its RAM limit. Please optimize your memory consumption or contact the administrator."
+					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+						"error_log": errorMsg,
+					})
+				} else {
+					slog.Warn("Central watchdog: container is not running", "projectId", project.ID, "containerId", *project.ContainerID)
+					w.recordAutoHealingEvent(project.ID, "container_crashed", "Container is not running", project.DeploymentJobID)
+				}
+
+				slog.Info("Central watchdog: auto-healing: restarting web container", "projectId", project.ID)
+				if err := w.dockerService.StartContainer(*project.ContainerID); err != nil {
+					slog.Error("Central watchdog: auto-healing: failed to restart web container", "projectId", project.ID, "error", err)
+				} else {
+					w.recordAutoHealingEvent(project.ID, "auto_healing_restart", "Auto-healing: Restarted container", project.DeploymentJobID)
+				}
+			}
+		}
+
+		// Check Worker Container
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			running, oomKilled, err := w.inspectContainerState(*project.WorkerContainerID)
+			if err == nil && !running {
+				if oomKilled {
+					slog.Warn("Central watchdog: worker container OOM killed", "projectId", project.ID, "containerId", *project.WorkerContainerID)
+					w.recordAutoHealingEvent(project.ID, "worker_oom_killed", "Worker container terminated: Out of Memory (OOM Killed)", project.DeploymentJobID)
+					errorMsg := "Your background worker was terminated by the system because it exceeded its RAM limit."
+					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+						"error_log": errorMsg,
+					})
+				} else {
+					slog.Warn("Central watchdog: worker container is not running", "projectId", project.ID, "containerId", *project.WorkerContainerID)
+					w.recordAutoHealingEvent(project.ID, "worker_container_crashed", "Worker container is not running", project.DeploymentJobID)
+				}
+
+				slog.Info("Central watchdog: auto-healing: restarting worker container", "projectId", project.ID)
+				if err := w.dockerService.StartContainer(*project.WorkerContainerID); err != nil {
+					slog.Error("Central watchdog: auto-healing: failed to restart worker container", "projectId", project.ID, "error", err)
+				} else {
+					w.recordAutoHealingEvent(project.ID, "auto_healing_restart", "Auto-healing: Restarted worker container", project.DeploymentJobID)
+				}
+			}
+		}
+	}
 }

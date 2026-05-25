@@ -703,11 +703,16 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			Middlewares: []string{"security-headers@file"},
 		}
 
+		targetURL := fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort)
+		if proj.Status == models.StatusSleeping {
+			targetURL = fmt.Sprintf("http://paas-backend:8080/proxy/wakeup?subdomain=%s", proj.Subdomain)
+		}
+
 		resp.HTTP.Services[serviceName] = TraefikService{
 			LoadBalancer: TraefikLoadBalancer{
 				Servers: []TraefikServer{
 					{
-						URL: fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort),
+						URL: targetURL,
 					},
 				},
 				HealthCheck: &TraefikHealthCheck{

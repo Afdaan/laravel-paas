@@ -224,6 +224,23 @@ start_redis() {
         redis:alpine sh -c "$redis_cmd"
 }
 
+start_buildkit() {
+    echo -e "${YELLOW}Starting BuildKit (Rootless)...${NC}"
+    docker rm -f paas-buildkit 2>/dev/null || true
+    docker volume create paas-buildkit-cache 2>/dev/null || true
+    local config_path="${PROJECT_ROOT}/docker/templates/buildkitd.toml"
+    docker run -d \
+        --name paas-buildkit \
+        --network paas-network \
+        --restart unless-stopped \
+        --cpus="2.0" \
+        --memory="3g" \
+        -v paas-buildkit-cache:/var/lib/buildkit \
+        -v "${config_path}:/etc/buildkit/buildkitd.toml:ro" \
+        moby/buildkit:rootless --addr tcp://0.0.0.0:1234
+}
+
+
 start_traefik() {
     echo -e "${YELLOW}Starting Traefik...${NC}"
     docker rm -f paas-traefik 2>/dev/null || true
@@ -369,6 +386,7 @@ start_all() {
     start_postgres
     start_redis
     start_traefik
+    start_buildkit
     start_backend
     start_worker
     start_frontend
@@ -387,6 +405,7 @@ start_service() {
         postgres|psql) start_postgres ;;
         redis) start_redis ;;
         traefik) start_traefik ;;
+        buildkit) start_buildkit ;;
         backend) start_backend ;;
         worker) start_worker ;;
         frontend) start_frontend ;;
@@ -400,7 +419,7 @@ show_status() {
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
-    local services=("paas-mysql" "paas-postgres" "paas-redis" "paas-traefik" "paas-backend" "paas-worker-manager" "paas-frontend")
+    local services=("paas-mysql" "paas-postgres" "paas-redis" "paas-traefik" "paas-buildkit" "paas-backend" "paas-worker-manager" "paas-frontend")
     for s in "${services[@]}"; do
         local status="not_created"
         local ip="-"
@@ -435,21 +454,23 @@ service_menu() {
         echo "2) PostgreSQL (paas-postgres)"
         echo "3) Redis (paas-redis)"
         echo "4) Traefik (paas-traefik)"
-        echo "5) Backend (paas-backend)"
-        echo "6) Worker Manager (paas-worker-manager)"
-        echo "7) Frontend (paas-frontend)"
-        echo "8) Back to Main Menu"
-        read -p "Select service [1-8]: " s_opt
+        echo "5) BuildKit (paas-buildkit)"
+        echo "6) Backend (paas-backend)"
+        echo "7) Worker Manager (paas-worker-manager)"
+        echo "8) Frontend (paas-frontend)"
+        echo "9) Back to Main Menu"
+        read -p "Select service [1-9]: " s_opt
         
         case "$s_opt" in
             1) start_mysql ; break ;;
             2) start_postgres ; break ;;
             3) start_redis ; break ;;
             4) start_traefik ; break ;;
-            5) start_backend ; break ;;
-            6) start_worker ; break ;;
-            7) start_frontend ; break ;;
-            8) return 0 ;;
+            5) start_buildkit ; break ;;
+            6) start_backend ; break ;;
+            7) start_worker ; break ;;
+            8) start_frontend ; break ;;
+            9) return 0 ;;
             *) echo -e "${RED}Invalid option!${NC}" ;;
         esac
     done
@@ -492,7 +513,7 @@ case "$1" in
         ;;
     *)
         echo "Usage: $0 [all|service_name|status]"
-        echo "Services: mysql, postgres/psql, redis, traefik, backend, worker, frontend"
+        echo "Services: mysql, postgres/psql, redis, traefik, buildkit, backend, worker, frontend"
         exit 1
         ;;
 esac

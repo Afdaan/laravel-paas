@@ -35,6 +35,7 @@ type ProjectRepository interface {
 	GetRunningWithContainers() ([]models.Project, error)
 	RecordDeploymentEvent(event *models.DeploymentEvent) error
 	ListDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error)
+	ListAllDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error)
 	ListByDeploymentStatuses(statuses []models.DeploymentStatus) ([]models.Project, error)
 	UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error
 	UpdateDeploymentHeartbeat(id uint) error
@@ -241,6 +242,13 @@ func (r *projectRepository) ListDeploymentEventsByProjectID(projectID uint) ([]m
 		query = query.Where("job_id = ?", *project.DeploymentJobID)
 	}
 	err := query.Order("sequence_number ASC, created_at ASC").Find(&events).Error
+	return events, err
+}
+
+func (r *projectRepository) ListAllDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error) {
+	var events []models.DeploymentEvent
+	err := r.db.Where("project_id = ? AND event_type NOT IN (?, ?, ?)", projectID, "lease_acquired", "lease_renewed", "lease_released").
+		Order("created_at DESC, sequence_number DESC").Limit(50).Find(&events).Error
 	return events, err
 }
 

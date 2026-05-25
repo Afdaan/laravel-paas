@@ -151,6 +151,9 @@ export const projectsAPI = {
   restart: (id: number | string) =>
     api.post(`/projects/${id}/restart`),
   
+  rollback: (id: number | string, commitSHA: string) =>
+    api.post(`/projects/${id}/rollback`, { commit_sha: commitSHA }),
+  
   update: (id: number | string, data: unknown) =>
     api.put(`/projects/${id}`, data),
   
@@ -175,8 +178,8 @@ export const projectsAPI = {
   buildLogs: (id: number | string) =>
     api.get(`/projects/${id}/build-logs`),
   
-  getDeploymentEvents: (id: number | string) =>
-    api.get(`/projects/${id}/deployment-events`),
+  getDeploymentEvents: (id: number | string, all = false) =>
+    api.get(`/projects/${id}/deployment-events`, { params: { all } }),
   
   // Custom Domain endpoints
   listDomains: (id: number | string) =>
@@ -315,6 +318,20 @@ export const systemAPI = {
   
   initialize: (data: unknown) => 
     api.post('/system/initialize', data),
+}
+
+export const githubAPI = {
+  listInstallations: () =>
+    api.get('/github/installations'),
+  
+  linkInstallation: (installationId: number | string) =>
+    api.post('/github/installations/link', { installation_id: Number(installationId) }),
+  
+  listRepositories: (installationId: number | string) =>
+    api.get(`/github/installations/${installationId}/repositories`),
+  
+  listBranches: (owner: string, repo: string) =>
+    api.get(`/github/repositories/${owner}/${repo}/branches`),
 }
 
 export default api

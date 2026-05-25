@@ -1,0 +1,13 @@
+[worker.oci]
+  enabled = true
+  gc = true
+  gckeepstorage = "35GB"
+
+  [[worker.oci.gcpolicy]]
+    keepBytes = "10GB"
+    keepDuration = 1209600 # 14 days in seconds
+    filters = ["type==source.local", "type==exec.cachemount", "type==regular"]
+
+  [[worker.oci.gcpolicy]]
+    all = true
+    keepBytes = "35GB"

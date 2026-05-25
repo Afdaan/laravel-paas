@@ -64,7 +64,7 @@ export interface Project {
   php_version: string;
   port: number;
   db_name: string;
-  status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting';
+  status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting' | 'sleeping';
   subdomain?: string;
   url?: string;
   user?: User;
@@ -83,6 +83,10 @@ export interface Project {
   node_version?: string;
   framework?: string;
   language_version?: string;
+  cpu_limit?: number;
+  memory_limit?: string;
+  internal_port?: string;
+  last_commit_hash?: string;
   custom_domains?: CustomDomain[];
   deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'provisioning' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
   deployment_job_id?: string;
@@ -131,4 +135,24 @@ export interface SystemStats {
   total_databases: number;
   memory_usage?: string;
   cpu_usage?: string;
+}
+
+export interface GithubAppInstallation {
+  id: number;
+  user_id: number;
+  installation_id: number;
+  account_name: string;
+  avatar_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GithubRepository {
+  id: number;
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string;
+  private: boolean;
+  default_branch: string;
 }

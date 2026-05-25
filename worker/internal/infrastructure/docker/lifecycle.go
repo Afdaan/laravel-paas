@@ -3,7 +3,9 @@ package docker
 import (
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -58,8 +60,50 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 }
 
 // sanitizeBuildError strips internal build system noise from stderr output
-// and returns only the lines that are actionable by the end user.
+// and returns only the lines that are actionable by the end user using regex error classifiers.
 func sanitizeBuildError(stderr string) string {
+	lines := strings.Split(stderr, "\n")
+	
+	// Define actionable error patterns
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\[vite\]:\s*Rollup\s*failed`),
+		regexp.MustCompile(`(?i)ERROR\s*in\s+`),
+		regexp.MustCompile(`(?i)Failed\s*to\s*compile`),
+		regexp.MustCompile(`(?i)Your\s*requirements\s*could\s*not\s*be\s*resolved`),
+		regexp.MustCompile(`(?i)npm\s+ERR!`),
+		regexp.MustCompile(`(?i)yarn\s+error`),
+		regexp.MustCompile(`(?i)command\s+failed\s+with\s+exit\s+code`),
+		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
+		regexp.MustCompile(`(?i)syntax\s+error`),
+		regexp.MustCompile(`(?i)fatal:\s+`),
+	}
+
+	for i, line := range lines {
+		for _, pat := range patterns {
+			if pat.MatchString(line) {
+				start := i - 1
+				if start < 0 {
+					start = 0
+				}
+				end := i + 2
+				if end >= len(lines) {
+					end = len(lines) - 1
+				}
+				
+				var contextLines []string
+				for idx := start; idx <= end; idx++ {
+					trimmed := strings.TrimSpace(lines[idx])
+					if trimmed != "" {
+						contextLines = append(contextLines, trimmed)
+					}
+				}
+				if len(contextLines) > 0 {
+					return strings.Join(contextLines, "\n")
+				}
+			}
+		}
+	}
+
 	noisePatterns := []string{
 		"ERRO failed to solve",
 		"failed to solve:",
@@ -71,7 +115,7 @@ func sanitizeBuildError(stderr string) string {
 		" WARN ",
 	}
 	var kept []string
-	for _, line := range strings.Split(stderr, "\n") {
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
@@ -90,6 +134,9 @@ func sanitizeBuildError(stderr string) string {
 	if len(kept) == 0 {
 		return "Build failed. Check the build logs for details."
 	}
+	if len(kept) > 15 {
+		kept = kept[len(kept)-15:]
+	}
 	return strings.Join(kept, "\n")
 }
 
@@ -101,6 +148,14 @@ func sanitizeBuildError(stderr string) string {
 // enforce strict network ingress isolation.
 func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+	if project.LastCommitHash != "" {
+		tagToCheck := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
+		checkImg, _ := exec.Command("docker", "image", "inspect", tagToCheck).Output()
+		if len(checkImg) > 0 {
+			imageName = tagToCheck
+			slog.Info("Using specific commit tag image for startup", "tag", tagToCheck)
+		}
+	}
 
 	s.storage.EnsurePersistentPath(project)
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
