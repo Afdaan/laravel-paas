@@ -148,6 +148,21 @@ function UserProjectDetail() {
     }
   }, [activeTab, fetchRuntimeEvents])
 
+  // Support deep linking to tabs (e.g. ?tab=build or #build)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tabParam = params.get('tab')
+    const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
+    if (tabParam && allowedTabs.includes(tabParam)) {
+      setActiveTab(tabParam)
+    } else {
+      const hash = window.location.hash.replace('#', '')
+      if (hash && allowedTabs.includes(hash)) {
+        setActiveTab(hash)
+      }
+    }
+  }, [])
+
   const handleRollback = async (commitSHA: string) => {
     if (!uid) return
     setIsRollingBack(true)

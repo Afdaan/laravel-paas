@@ -115,11 +115,8 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				if projectUID == "" {
 					projectUID = fmt.Sprintf("%d", p.ID)
 				}
-				targetURL := fmt.Sprintf("%s/projects/%s", h.cfg.FrontendURL, projectUID)
-				desc := "GitHub Push trigger: " + payload.HeadCommit.Message
-				if len(desc) > 140 {
-					desc = desc[:137] + "..."
-				}
+				targetURL := fmt.Sprintf("%s/projects/%s?tab=build", h.cfg.FrontendURL, projectUID)
+				desc := "Build queued. Waiting for an available worker slot..."
 				err := h.githubService.UpdateCommitStatus(*p.GithubInstallationID, p.GithubRepoOwner, p.GithubRepoName, commitSHA, "pending", targetURL, desc)
 				if err != nil {
 					slog.Warn("Failed to update initial GitHub commit status to pending", "project_id", p.ID, "error", err)

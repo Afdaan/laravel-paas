@@ -867,27 +867,55 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	}
 
 	ghState := "pending"
+	desc := ""
+
 	switch state {
 	case models.DepStatusCompleted:
 		ghState = "success"
-	case models.DepStatusFailed, models.DepStatusRollback:
+		desc = "Deployment successful. Application is live."
+	case models.DepStatusFailed:
 		ghState = "failure"
+		desc = "Deployment failed. View build logs in the dashboard for details."
+	case models.DepStatusRollback:
+		ghState = "failure"
+		desc = "Deployment failed. Rolled back to previous stable version."
 	case models.DepStatusCancelled:
 		ghState = "error"
+		desc = "Deployment cancelled by user."
+	case models.DepStatusQueued:
+		desc = "Build queued. Waiting for an available worker slot..."
+	case models.DepStatusPreparing:
+		desc = "Preparing build environment..."
+	case models.DepStatusCloning:
+		desc = "Cloning source code repository..."
+	case models.DepStatusBuilding:
+		desc = "Building container image using BuildKit..."
+	case models.DepStatusStarting:
+		desc = "Provisioning container instance..."
+	case models.DepStatusHealthchecking:
+		desc = "Running health checks and readiness probes..."
+	case models.DepStatusMigrating:
+		desc = "Running database migrations..."
+	case models.DepStatusPromoting:
+		desc = "Promoting release and propagating routing traffic..."
+	case models.DepStatusCleanup:
+		desc = "Cleaning up build artifacts..."
+	default:
+		desc = description
+		if desc == "" {
+			desc = string(state)
+		}
+	}
+
+	if len(desc) > 140 {
+		desc = desc[:137] + "..."
 	}
 
 	projectUID := project.UID
 	if projectUID == "" {
 		projectUID = fmt.Sprintf("%d", project.ID)
 	}
-	targetURL := fmt.Sprintf("%s/projects/%s", w.cfg.FrontendURL, projectUID)
-	desc := description
-	if len(desc) > 140 {
-		desc = desc[:137] + "..."
-	}
-	if desc == "" {
-		desc = string(state)
-	}
+	targetURL := fmt.Sprintf("%s/projects/%s?tab=build", w.cfg.FrontendURL, projectUID)
 
 	slog.Info("Updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
 	go func() {
