@@ -876,7 +876,11 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		ghState = "error"
 	}
 
-	targetURL := fmt.Sprintf("%s/projects/%d/deployments", w.cfg.FrontendURL, project.ID)
+	projectUID := project.UID
+	if projectUID == "" {
+		projectUID = fmt.Sprintf("%d", project.ID)
+	}
+	targetURL := fmt.Sprintf("%s/projects/%s", w.cfg.FrontendURL, projectUID)
 	desc := description
 	if len(desc) > 140 {
 		desc = desc[:137] + "..."

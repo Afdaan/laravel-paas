@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -106,6 +107,23 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 			if isQueued {
 				slog.Info("Project already queued, skipping webhook trigger", "project_id", p.ID)
 				continue
+			}
+
+			// Update GitHub commit status to pending immediately (synchronous to prevent race conditions with the worker)
+			if p.GithubInstallationID != nil && *p.GithubInstallationID != 0 && p.GithubRepoOwner != "" && p.GithubRepoName != "" && commitSHA != "" {
+				projectUID := p.UID
+				if projectUID == "" {
+					projectUID = fmt.Sprintf("%d", p.ID)
+				}
+				targetURL := fmt.Sprintf("%s/projects/%s", h.cfg.FrontendURL, projectUID)
+				desc := "GitHub Push trigger: " + payload.HeadCommit.Message
+				if len(desc) > 140 {
+					desc = desc[:137] + "..."
+				}
+				err := h.githubService.UpdateCommitStatus(*p.GithubInstallationID, p.GithubRepoOwner, p.GithubRepoName, commitSHA, "pending", targetURL, desc)
+				if err != nil {
+					slog.Warn("Failed to update initial GitHub commit status to pending", "project_id", p.ID, "error", err)
+				}
 			}
 
 			// Update commit hash in DB
