@@ -127,7 +127,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
-		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
 	}
 
 	if isWebFacing {

@@ -34,7 +34,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--memory-swap", memoryLimit,
 		"--security-opt=no-new-privileges:true",
 		"--pids-limit=250",
-		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
 
 		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
 		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
@@ -190,7 +190,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--pids-limit=250",
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
-		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
