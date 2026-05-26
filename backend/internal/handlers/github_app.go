@@ -96,7 +96,7 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 		slog.Info("Received push webhook from GitHub", "repo", owner+"/"+repo, "branch", branch, "commit", commitSHA)
 
 		var projects []models.Project
-		if err := h.db.Where("github_repo_owner = ? AND github_repo_name = ? AND branch = ? AND github_installation_id = ?",
+		if err := h.db.Where("LOWER(github_repo_owner) = LOWER(?) AND LOWER(github_repo_name) = LOWER(?) AND branch = ? AND github_installation_id = ?",
 			owner, repo, branch, payload.Installation.ID).Find(&projects).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
