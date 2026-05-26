@@ -313,6 +313,16 @@ type CommitStatusRequest struct {
 }
 
 func (s *GithubService) UpdateCommitStatus(installationID int64, owner, repo, sha, state, targetURL, description string) error {
+	err := s.updateCommitStatusRaw(installationID, owner, repo, sha, state, targetURL, description)
+	if err != nil && (strings.Contains(err.Error(), "status=401") || strings.Contains(err.Error(), "status=404")) {
+		slog.Warn("GitHub API auth error updating commit status, retrying with fresh token", "installation_id", installationID, "error", err)
+		s.InvalidateInstallationToken(installationID)
+		err = s.updateCommitStatusRaw(installationID, owner, repo, sha, state, targetURL, description)
+	}
+	return err
+}
+
+func (s *GithubService) updateCommitStatusRaw(installationID int64, owner, repo, sha, state, targetURL, description string) error {
 	token, err := s.GetInstallationToken(installationID)
 	if err != nil {
 		return err
