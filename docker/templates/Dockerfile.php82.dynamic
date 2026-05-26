@@ -206,8 +206,6 @@ RUN mkdir -p storage/app/public \
               /var/www/html/webpack.mix.js \
               /var/www/html/tailwind.config.js \
               /var/www/html/postcss.config.js \
-              /var/www/html/composer.json \
-              /var/www/html/composer.lock \
               /var/www/html/README.md \
               /var/www/html/Dockerfile \
               /var/www/html/.dockerignore \
