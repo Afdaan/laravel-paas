@@ -104,6 +104,6 @@ docker run -d \
     --memory="4g" \
     -v paas-buildkit-cache:/home/user/.local/share/buildkit \
     -v "$(pwd)/docker/templates/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro" \
-    moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
+    moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox
 
 echo "[SUCCESS] Infrastructure is up! Cek status dengan: docker ps"

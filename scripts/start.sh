@@ -277,7 +277,7 @@ start_buildkit() {
         --memory="4g" \
         -v paas-buildkit-cache:/home/user/.local/share/buildkit \
         -v "${config_path}:/etc/buildkit/buildkitd.toml:ro" \
-        moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
+        moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox
 }
 
 
