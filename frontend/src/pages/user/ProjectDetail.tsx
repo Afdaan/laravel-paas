@@ -24,6 +24,7 @@ import {
   Save,
   Copy,
   Blocks,
+  ArrowUpRight,
   Code2
 } from 'lucide-react'
 import { AxiosError } from 'axios'
@@ -1037,11 +1038,26 @@ function UserProjectDetail() {
                 </div>
                 {project.last_commit_hash && (
                   <div className="p-3 rounded-lg bg-muted border">
-                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Active Commit</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest block">Active Commit</label>
+                      <button
+                        onClick={() => setActiveTab('runtime')}
+                        className="text-[10px] font-bold text-primary hover:text-primary/80 hover:underline flex items-center gap-0.5 transition-all group cursor-pointer"
+                        title="Go to Deployment Checkpoints"
+                      >
+                        Go to Checkpoints
+                        <ArrowUpRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      </button>
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <code className="font-mono font-bold text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20">
+                      <button
+                        onClick={() => setActiveTab('runtime')}
+                        className="group flex items-center gap-1 font-mono font-bold text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-1.5 py-0.5 rounded border border-primary/20 transition-all hover:scale-105"
+                        title="View in Deployment Checkpoints"
+                      >
                         {project.last_commit_hash.substring(0, 7)}
-                      </code>
+                        <ArrowUpRight className="w-3 h-3 text-primary/70 group-hover:text-primary transition-colors" />
+                      </button>
                       {checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message ? (
                         <span className="text-[11px] text-foreground/80 font-medium truncate max-w-[280px]" title={checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message}>
                           — {checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message}
