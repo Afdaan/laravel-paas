@@ -660,6 +660,8 @@ export const translations = {
         rollbackSuccess: "Rollback initiated successfully ({{type}})",
         rollbackFailed: "Failed to initiate rollback: {{error}}",
         autoHealingActive: "Running (Auto-Healing Guarded)",
+        goToCheckpoints: "Go to Checkpoints",
+        goToCheckpointsTooltip: "Go to Deployment Checkpoints",
       },
       settings: {
         phpVersion: "Select PHP version",
@@ -1550,6 +1552,8 @@ export const translations = {
         rollbackSuccess: "Rollback berhasil dimulai ({{type}})",
         rollbackFailed: "Gagal memulai rollback: {{error}}",
         autoHealingActive: "Berjalan (Guarded oleh Auto-Healing)",
+        goToCheckpoints: "Ke Checkpoint",
+        goToCheckpointsTooltip: "Ke Halaman Deployment Checkpoint",
       },
       settings: {
         phpVersion: "PHP Version",
