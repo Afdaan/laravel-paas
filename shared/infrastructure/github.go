@@ -80,18 +80,22 @@ func (s *GithubService) doRequestWithRetry(req *http.Request) (*http.Response, e
 					}
 					
 					slog.Warn("GitHub API rate limit hit, backing off", "url", req.URL.String(), "wait", waitDuration, "attempt", attempt)
+					if attempt < maxRetries {
+						resp.Body.Close()
+					}
 					time.Sleep(waitDuration)
 					backoff *= 2
-					resp.Body.Close()
 					continue
 				}
 			}
 
 			if resp.StatusCode >= 500 && resp.StatusCode <= 504 {
 				slog.Warn("GitHub API transient server error, retrying", "url", req.URL.String(), "status", resp.StatusCode, "attempt", attempt)
+				if attempt < maxRetries {
+					resp.Body.Close()
+				}
 				time.Sleep(backoff)
 				backoff *= 2
-				resp.Body.Close()
 				continue
 			}
 

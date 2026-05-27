@@ -17,7 +17,8 @@ import (
 
 // GetContainerIP extracts the private IP of a container on the Docker network
 func (s *DockerService) GetContainerIP(containerID string) (string, error) {
-	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", containerID)
+	format := fmt.Sprintf("{{(index .NetworkSettings.Networks %q).IPAddress}}", models.NetworkName)
+	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", format, containerID)
 	if err != nil {
 		return "", err
 	}

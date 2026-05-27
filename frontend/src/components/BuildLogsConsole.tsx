@@ -133,25 +133,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     });
   }, [events, clearedEventMaxId])
 
-  const lastJobId = useRef(project?.deployment_job_id)
-  const lastStatus = useRef(project?.deployment_status)
 
-  // Instantly reset logs state during render when a new job starts or gets queued
-  if (project?.deployment_job_id && project.deployment_job_id !== lastJobId.current) {
-    lastJobId.current = project.deployment_job_id
-    setClearedCount(0)
-    setClearedEventMaxId(-1)
-    setLogs([])
-    setEvents([])
-  }
-
-  if (project?.deployment_status === 'queued' && lastStatus.current !== 'queued') {
-    setClearedCount(0)
-    setClearedEventMaxId(-1)
-    setLogs([])
-    setEvents([])
-  }
-  lastStatus.current = project?.deployment_status
 
   const isDeploying = useMemo(() => {
     return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))

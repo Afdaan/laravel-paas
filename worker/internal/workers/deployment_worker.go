@@ -426,10 +426,20 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
+	logFile, err := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		slog.Error("Failed to open build log file", "path", buildLogPath, "error", err)
+	} else {
+		defer logFile.Close()
+	}
+
+	var logFileMu sync.Mutex
 	appendLog := func(msg string) {
-		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
-			_, _ = f.WriteString(msg + "\n")
-			f.Close()
+		logFileMu.Lock()
+		defer logFileMu.Unlock()
+
+		if logFile != nil {
+			_, _ = logFile.WriteString(msg + "\n")
 		}
 		_ = w.redisService.PublishBuildLog(project.ID, msg)
 	}

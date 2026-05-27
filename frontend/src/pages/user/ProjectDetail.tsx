@@ -1295,7 +1295,15 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} project={project} onDeploymentEvent={handleDeploymentEvent} />}
+          {activeTab === 'build' && project && (
+            <BuildLogsConsole 
+              key={project.deployment_job_id || 'no-job'} 
+              projectId={project.uid} 
+              status={project.status} 
+              project={project} 
+              onDeploymentEvent={handleDeploymentEvent} 
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
