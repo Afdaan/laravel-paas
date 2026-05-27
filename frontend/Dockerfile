@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package*.json ./
 # Install packages leveraging BuildKit NPM local cache
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+    npm ci --prefer-offline --no-audit --no-fund --no-progress
 
 # Declare build-time arguments for Vite to inject
 ARG VITE_GITHUB_APP_URL

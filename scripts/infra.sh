@@ -96,12 +96,14 @@ docker run -d \
     --name paas-buildkit \
     --network paas-network \
     -p 127.0.0.1:1234:1234 \
-    --privileged \
+    --device /dev/fuse \
+    --security-opt seccomp=unconfined \
+    --security-opt apparmor=unconfined \
     --restart unless-stopped \
-    --cpus="2.0" \
-    --memory="3g" \
-    -v paas-buildkit-cache:/var/lib/buildkit \
+    --cpus="4.0" \
+    --memory="4g" \
+    -v paas-buildkit-cache:/home/user/.local/share/buildkit \
     -v "$(pwd)/docker/templates/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro" \
-    moby/buildkit --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
+    moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
 
 echo "[SUCCESS] Infrastructure is up! Cek status dengan: docker ps"

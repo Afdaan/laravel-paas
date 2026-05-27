@@ -27,5 +27,5 @@ const (
 	DefaultMaxConcurrent    = "3"
 	DefaultBuildTimeout     = "1800"
 	DefaultMaxDomainsPerProject = "3"
-	DefaultMaxImageRetention   = "2"
+	DefaultMaxImageRetention   = "3"
 )

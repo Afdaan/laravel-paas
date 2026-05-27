@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 )
@@ -39,6 +40,39 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Name and Github URL are required",
 		})
+	}
+
+	if req.GithubInstallationID != nil && *req.GithubInstallationID != 0 {
+		var localInst models.GithubAppInstallation
+		if err := h.db.Where("installation_id = ? AND user_id = ?", *req.GithubInstallationID, userID).First(&localInst).Error; err != nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "The specified GitHub installation does not belong to your account",
+			})
+		}
+
+		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
+		repos, err := githubService.ListRepositories(*req.GithubInstallationID)
+		if err != nil {
+			slog.Warn("Failed to list repositories for validation", "installation_id", *req.GithubInstallationID, "error", err)
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Failed to verify repository access with GitHub. Please check your GitHub App configuration.",
+			})
+		}
+
+		expectedFullName := fmt.Sprintf("%s/%s", req.GithubRepoOwner, req.GithubRepoName)
+		found := false
+		for _, r := range repos {
+			if strings.EqualFold(r.FullName, expectedFullName) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "The repository is not authorized or does not exist under the specified GitHub App installation.",
+			})
+		}
 	}
 
 	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)

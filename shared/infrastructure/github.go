@@ -17,6 +17,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/pkg/metrics"
 )
 
 type GithubService struct {
@@ -33,6 +34,86 @@ func NewGithubService(cfg *config.Config, redisService *RedisService) *GithubSer
 			Timeout: 15 * time.Second,
 		},
 	}
+}
+
+func (s *GithubService) doRequestWithRetry(req *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	maxRetries := 3
+	backoff := 1 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		metrics.GetCollector().IncrGithubApiRequests()
+
+		// Reset request body on retry if it supports it
+		if attempt > 1 && req.GetBody != nil {
+			if body, bodyErr := req.GetBody(); bodyErr == nil {
+				req.Body = body
+			}
+		}
+
+		resp, err = s.httpClient.Do(req)
+		if err == nil {
+			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden {
+				remaining := resp.Header.Get("X-RateLimit-Remaining")
+				if remaining == "0" || resp.StatusCode == http.StatusTooManyRequests {
+					resetHeader := resp.Header.Get("X-RateLimit-Reset")
+					retryAfterHeader := resp.Header.Get("Retry-After")
+					
+					var waitDuration time.Duration
+					if retryAfterHeader != "" {
+						if sec, convErr := strconv.Atoi(retryAfterHeader); convErr == nil {
+							waitDuration = time.Duration(sec) * time.Second
+						}
+					}
+					if waitDuration <= 0 && resetHeader != "" {
+						if resetUnix, convErr := strconv.ParseInt(resetHeader, 10, 64); convErr == nil {
+							waitDuration = time.Until(time.Unix(resetUnix, 0))
+						}
+					}
+					if waitDuration <= 0 {
+						waitDuration = backoff
+					}
+					
+					if waitDuration > 10*time.Second {
+						waitDuration = 10 * time.Second
+					}
+					
+					slog.Warn("GitHub API rate limit hit, backing off", "url", req.URL.String(), "wait", waitDuration, "attempt", attempt)
+					time.Sleep(waitDuration)
+					backoff *= 2
+					resp.Body.Close()
+					continue
+				}
+			}
+
+			if resp.StatusCode >= 500 && resp.StatusCode <= 504 {
+				slog.Warn("GitHub API transient server error, retrying", "url", req.URL.String(), "status", resp.StatusCode, "attempt", attempt)
+				time.Sleep(backoff)
+				backoff *= 2
+				resp.Body.Close()
+				continue
+			}
+
+			return resp, nil
+		}
+
+		slog.Warn("GitHub API network error, retrying", "url", req.URL.String(), "error", err, "attempt", attempt)
+		if attempt < maxRetries {
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+	}
+
+	metrics.GetCollector().IncrGithubApiFailures()
+
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
+	return nil, fmt.Errorf("request failed after %d attempts, last status=%d", maxRetries, resp.StatusCode)
 }
 
 func (s *GithubService) getAppID() (int64, error) {
@@ -175,7 +256,7 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.doRequestWithRetry(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request to exchange installation token: %w", err)
 	}
@@ -247,7 +328,7 @@ func (s *GithubService) ListRepositories(installationID int64) ([]GithubReposito
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.doRequestWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request to list repositories: %w", err)
 	}
@@ -286,7 +367,7 @@ func (s *GithubService) ListBranches(installationID int64, owner, repo string) (
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.doRequestWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request to list branches: %w", err)
 	}
@@ -351,7 +432,7 @@ func (s *GithubService) updateCommitStatusRaw(installationID int64, owner, repo,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.doRequestWithRetry(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request to update commit status: %w", err)
 	}
@@ -388,7 +469,7 @@ func (s *GithubService) GetInstallationDetails(installationID int64) (*GithubIns
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.doRequestWithRetry(req)
 	if err != nil {
 		return nil, err
 	}

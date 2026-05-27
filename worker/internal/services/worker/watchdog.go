@@ -17,11 +17,12 @@ import (
 	"time"
 
 	"github.com/laravel-paas/shared/infrastructure"
-	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/setting"
+	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
-	setting "github.com/laravel-paas/shared/services/setting"
 )
 
 // CentralWatchdog oversees system consistency and maintenance tasks
@@ -223,11 +224,12 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 						"reason", reason)
 
 					errorMsg := fmt.Sprintf("Deployment failed: %s.", reason)
-					if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", errorMsg); err != nil {
+					sanitizedMsg := utils.SanitizeError(errorMsg)
+					if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", sanitizedMsg); err != nil {
 						slog.Error("Central watchdog: failed atomic state transition for failed project deployment", "id", project.ID, "error", err)
 					}
 					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-						"error_log": errorMsg,
+						"error_log": sanitizedMsg,
 					})
 
 					if lockMeta != nil {
@@ -296,7 +298,7 @@ func (w *CentralWatchdog) StartPruneScheduler() {
 				slog.Error("Central watchdog: scheduled image prune failed", "error", err)
 			}
 
-			if err := exec.Command("docker", "builder", "prune", "-a", "-f").Run(); err != nil {
+			if err := exec.Command("docker", "builder", "prune", "-f", "--filter", "until=48h").Run(); err != nil {
 				slog.Warn("Central watchdog: failed to prune docker builder", "error", err)
 			}
 		}

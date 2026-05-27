@@ -454,6 +454,15 @@ func (r *RedisService) SetCache(key string, value interface{}, expiration time.D
 	return nil
 }
 
+// SetNX sets a cache key only if it does not exist, returning true if successful.
+func (r *RedisService) SetNX(key string, value interface{}, expiration time.Duration) (bool, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false, err
+	}
+	return r.client.SetNX(r.ctx, key, data, expiration).Result()
+}
+
 // GetCache gets a value from cache
 func (r *RedisService) GetCache(key string, dest interface{}) error {
 	data, err := r.client.Get(r.ctx, key).Result()

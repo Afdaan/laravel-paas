@@ -7,7 +7,7 @@
   "phases": {
     "install": {
       "cmds": [
-        "npm install --legacy-peer-deps --no-audit --no-fund || yarn install --no-immutable || pnpm install --no-frozen-lockfile || bun install"
+        "npm install --prefer-offline --no-audit --no-fund --no-progress --legacy-peer-deps || yarn install --prefer-offline --no-progress --no-immutable || pnpm install --prefer-offline --no-audit --no-progress --no-frozen-lockfile || bun install --prefer-offline --no-audit"
       ]
     },
     "build": {

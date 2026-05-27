@@ -11,12 +11,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/metrics"
 	"gorm.io/gorm"
 )
 
@@ -39,6 +41,20 @@ func NewGithubAppHandler(db *gorm.DB, cfg *config.Config, githubService *infrast
 }
 
 func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
+	metrics.GetCollector().IncrGithubWebhooksReceived()
+
+	deliveryID := c.Get("X-GitHub-Delivery")
+	if deliveryID != "" {
+		key := fmt.Sprintf("github:webhook:processed:%s", deliveryID)
+		ok, err := h.redisService.SetNX(key, true, 24*time.Hour)
+		if err != nil {
+			slog.Warn("Failed to check webhook delivery cache", "delivery_id", deliveryID, "error", err)
+		} else if !ok {
+			slog.Info("Duplicate webhook delivery detected, ignoring", "delivery_id", deliveryID)
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Duplicate event ignored"})
+		}
+	}
+
 	secret := h.cfg.GithubAppWebhookSecret
 	if secret == "" {
 		secret = os.Getenv("GITHUB_APP_WEBHOOK_SECRET")
@@ -171,6 +187,7 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 		}
 	}
 
+	metrics.GetCollector().IncrGithubWebhooksProcessed()
 	return c.SendStatus(fiber.StatusOK)
 }
 
@@ -200,7 +217,9 @@ func (h *GithubAppHandler) LinkInstallation(c *fiber.Ctx) error {
 	var existing models.GithubAppInstallation
 	if err := h.db.Where("installation_id = ?", req.InstallationID).First(&existing).Error; err == nil {
 		if existing.UserID != userID {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "This GitHub installation is already linked to another account"})
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "This GitHub account is already connected to another user profile. Please disconnect it from the other profile first or use a different GitHub account.",
+			})
 		}
 	}
 

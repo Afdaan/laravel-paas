@@ -310,7 +310,17 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// 1. Establish overall deployment watchdog timeout (default 30 mins)
+	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
+	if err != nil || buildTimeoutSec <= 0 {
+		buildTimeoutSec = 1800
+	}
+	// Give the overall deployment 1.5x the build timeout to cover cloning, migrations, and Nginx reloads
+	overallTimeout := time.Duration(buildTimeoutSec) * 3 / 2 * time.Second
+	if overallTimeout < 5*time.Minute {
+		overallTimeout = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), overallTimeout)
 	defer cancel()
 
 	cancelSub, err := w.redisService.SubscribeCancellation(ctx, job.ProjectID)
@@ -527,11 +537,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	wg.Wait()
 
 	if cloneErr != nil {
-		w.updateProjectError(project, job.JobID, "Failed to clone repository: "+cloneErr.Error())
+		w.updateProjectError(project, job.JobID, "[CLONE_FAILED] Failed to clone repository: "+cloneErr.Error())
 		return
 	}
 	if dbErr != nil {
-		w.updateProjectError(project, job.JobID, "Failed to create database: "+dbErr.Error())
+		w.updateProjectError(project, job.JobID, "[INFRASTRUCTURE_FAILED] Failed to create database: "+dbErr.Error())
 		return
 	}
 
@@ -693,17 +703,23 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if ctx.Err() == context.Canceled {
 			appendLog("ERROR: Deployment cancelled by user request.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCancelled, project.DeploymentProgress, "deployment_cancelled", "User requested cancellation")
-			w.updateProjectError(project, job.JobID, "Deployment cancelled by user.")
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user request.")
+			return
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			appendLog("ERROR: Deployment timed out (watchdog kill).")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusFailed, project.DeploymentProgress, "watchdog_timeout", "Watchdog timed out the overall deployment process")
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment aborted: Execution watchdog timeout exceeded.")
 			return
 		}
 		if errors.Is(buildCtx.Err(), context.DeadlineExceeded) {
-			appendLog("ERROR: Deployment build phase timed out (watchdog kill).")
+			appendLog("ERROR: Deployment build phase timed out (build limit).")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusFailed, project.DeploymentProgress, "watchdog_timeout", "Build log watchdog timed out build step")
-			w.updateProjectError(project, job.JobID, "Deployment failed: Build step exceeded maximum allowed time limit.")
+			w.updateProjectError(project, job.JobID, "[BUILD_FAILED] Deployment failed: Build step exceeded maximum allowed time limit.")
 			return
 		}
 		appendLog("ERROR: Failed to deploy container: " + err.Error())
-		w.updateProjectError(project, job.JobID, "Failed to deploy container: "+err.Error())
+		w.updateProjectError(project, job.JobID, "[BUILD_FAILED] Failed to deploy container: "+err.Error())
 		return
 	}
 	sharedDocker.GetCircuitBreaker().RecordSuccess()
@@ -732,7 +748,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			"rollout_container_id": nil,
 		})
 
-		w.updateProjectError(project, job.JobID, "Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
+		w.updateProjectError(project, job.JobID, "[RUNTIME_FAILED] Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
 	} else {
 		appendLog("✓ Health check passed.")
@@ -747,7 +763,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "Deployment cancelled by user before migrations. Old version is still running.")
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force")
@@ -763,7 +779,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
@@ -967,8 +983,12 @@ func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, event
 
 // updateProjectError sets project deployment status to failed
 func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID string, errorMsg string) {
-	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", errorMsg)
-	msg := errorMsg
+	// Log the raw error for administrator diagnostics
+	slog.Error("Deployment failure with raw diagnostic details", "projectId", project.ID, "jobId", jobID, "error", errorMsg)
+
+	sanitizedMsg := utils.SanitizeError(errorMsg)
+	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
+	msg := sanitizedMsg
 	project.ErrorLog = &msg
 	
 	// Determine the correct project status after a failure

@@ -237,18 +237,12 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 		"rollout_container_id": newID,
 	})
 
-	isHealthy := false
-	maxWait := 30
-	for i := 0; i < maxWait; i++ {
-		if s.dockerService.IsContainerHealthy(newID) {
-			isHealthy = true
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
+	// Run Advanced 2-step Healthcheck with timeout context
+	hcCtx, hcCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer hcCancel()
 
-	if !isHealthy {
-		slog.Error("New container failed health check, rolling back", "subdomain", project.Subdomain, "newID", newID)
+	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID); err != nil {
+		slog.Error("New container failed advanced healthcheck, rolling back", "subdomain", project.Subdomain, "newID", newID, "error", err)
 
 		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
@@ -257,7 +251,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 			"rollout_container_id": nil,
 		})
 
-		return fmt.Errorf("recreation failed: new container is unhealthy")
+		return fmt.Errorf("recreation failed: %w", err)
 	}
 
 	if err := s.PromoteRolloutContainer(project.ID, newID); err != nil {

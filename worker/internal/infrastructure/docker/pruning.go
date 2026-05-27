@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/models"
@@ -15,9 +15,22 @@ import (
 // RemoveImage removes a project's docker image
 func (s *DockerService) RemoveImage(subdomain string) error {
 	imageName := fmt.Sprintf("paas-%s", subdomain)
-	// Try both with and without the paas- prefix in case naming varies
-	if err := exec.Command("docker", "rmi", imageName).Run(); err != nil {
-		slog.Warn("Failed to remove image", "image", imageName, "error", err)
+	res, err := utils.Run(30*time.Second, "docker", "images", "--format", "{{.Tag}}", imageName)
+	if err != nil {
+		slog.Warn("Failed to list project images for deletion", "image", imageName, "error", err)
+		return nil
+	}
+	tags := strings.Split(strings.TrimSpace(res.Stdout), "\n")
+	for _, tag := range tags {
+		if tag == "" {
+			continue
+		}
+		imgToDel := fmt.Sprintf("%s:%s", imageName, tag)
+		if delRes, delErr := utils.Run(30*time.Second, "docker", "rmi", "-f", imgToDel); delErr != nil {
+			slog.Warn("Failed to remove project image tag", "image", imgToDel, "error", delErr, "stderr", delRes.Stderr)
+		} else {
+			slog.Info("Successfully removed project image tag", "image", imgToDel)
+		}
 	}
 	return nil
 }
@@ -32,8 +45,8 @@ func (s *DockerService) PruneImages() error {
 	}
 
 	// 2. Also remove unused project images (those with our label)
-	filter := fmt.Sprintf("label=%s=true", models.LabelProjectManaged)
-	if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter); err != nil {
+	filter := fmt.Sprintf("label=%s", models.LabelProjectManaged)
+	if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f", "--filter", filter); err != nil {
 		slog.Warn("Failed to prune project images", "error", err)
 	}
 

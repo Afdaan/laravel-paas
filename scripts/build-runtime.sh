@@ -83,13 +83,13 @@ for VERSION in "${VERSIONS[@]}"; do
     # 1. Build Base Runtime
     if [[ "$TARGET" == "all" || "$TARGET" == "runtime" ]]; then
         TAG_RUNTIME="paas-runtime-php:${VERSION}-alpine"
+        reg_port=${REGISTRY_PORT:-"5000"}
+        reg_host=${REGISTRY_HOST:-"127.0.0.1"}
         
         if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_RUNTIME" >/dev/null 2>&1; then
             echo -e "${GREEN}[SKIP] PHP ${VERSION} runtime already exists. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG_RUNTIME)${NC}"
-            reg_port=${REGISTRY_PORT:-"5000"}
-            reg_host=${REGISTRY_HOST:-"127.0.0.1"}
             
             # Tag with registry hosts to avoid remote pulls and enable instant local resolution in BuildKit.
             $BUILD_CMD \
@@ -99,24 +99,26 @@ for VERSION in "${VERSIONS[@]}"; do
                 -t "paas-registry:5000/library/paas-runtime-php:${VERSION}-alpine" \
                 -t "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine" \
                 "${PROJECT_ROOT}/docker/runtime"
-            
-            echo -e "${YELLOW}Pushing PHP ${VERSION} runtime to local registry at ${reg_host}:${reg_port}...${NC}"
-            docker push "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
-            
-            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime built and registered successfully.${NC}"
         fi
+
+        # Always verify tags and push to local registry to heal wiped registry containers
+        docker tag "$TAG_RUNTIME" "paas-registry:5000/library/paas-runtime-php:${VERSION}-alpine" 2>/dev/null || true
+        docker tag "$TAG_RUNTIME" "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine" 2>/dev/null || true
+        echo -e "${YELLOW}Ensuring PHP ${VERSION} runtime is registered at ${reg_host}:${reg_port}...${NC}"
+        docker push "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
+        echo -e "${GREEN}[SUCCESS] PHP ${VERSION} runtime registered successfully.${NC}"
     fi
 
     # 2. Build Unified Builder
     if [[ "$TARGET" == "all" || "$TARGET" == "builder" ]]; then
         TAG_BUILDER="paas-builder-base:${VERSION}-alpine"
+        reg_port=${REGISTRY_PORT:-"5000"}
+        reg_host=${REGISTRY_HOST:-"127.0.0.1"}
         
         if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_BUILDER" >/dev/null 2>&1; then
             echo -e "${GREEN}[SKIP] PHP ${VERSION} Unified Builder already exists. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} Unified Builder... ($TAG_BUILDER)${NC}"
-            reg_port=${REGISTRY_PORT:-"5000"}
-            reg_host=${REGISTRY_HOST:-"127.0.0.1"}
             
             # Tag with registry hosts to avoid remote pulls and enable instant local resolution in BuildKit.
             $BUILD_CMD \
@@ -126,12 +128,14 @@ for VERSION in "${VERSIONS[@]}"; do
                 -t "paas-registry:5000/library/paas-builder-base:${VERSION}-alpine" \
                 -t "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine" \
                 "${PROJECT_ROOT}/docker/runtime"
-            
-            echo -e "${YELLOW}Pushing PHP ${VERSION} Unified Builder to local registry at ${reg_host}:${reg_port}...${NC}"
-            docker push "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
-            
-            echo -e "${GREEN}[SUCCESS] PHP ${VERSION} builder built and registered successfully.${NC}"
         fi
+
+        # Always verify tags and push to local registry to heal wiped registry containers
+        docker tag "$TAG_BUILDER" "paas-registry:5000/library/paas-builder-base:${VERSION}-alpine" 2>/dev/null || true
+        docker tag "$TAG_BUILDER" "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine" 2>/dev/null || true
+        echo -e "${YELLOW}Ensuring PHP ${VERSION} Unified Builder is registered at ${reg_host}:${reg_port}...${NC}"
+        docker push "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
+        echo -e "${GREEN}[SUCCESS] PHP ${VERSION} Unified Builder registered successfully.${NC}"
     fi
 done
 

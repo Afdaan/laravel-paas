@@ -634,8 +634,8 @@ func (s *DockerService) PruneImages() error {
 		slog.Warn("Failed to prune dangling images", "error", err)
 	}
 
-	filter := fmt.Sprintf("label=%s=true", models.LabelProjectManaged)
-	if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", filter); err != nil {
+	filter := fmt.Sprintf("label=%s", models.LabelProjectManaged)
+	if err := utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f", "--filter", filter); err != nil {
 		slog.Warn("Failed to prune project images", "error", err)
 	}
 

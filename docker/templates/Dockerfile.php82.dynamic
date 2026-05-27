@@ -10,13 +10,33 @@ WORKDIR /app
 ARG BUILD_COMMAND
 RUN mkdir -p public/build
 
-# Copy all files
-COPY . .
+# Copy Composer lockfiles first
+COPY composer.json composer.lock* ./
 
 # Run Composer (excluding dev)
 RUN --mount=type=cache,target=/root/.composer/cache \
     composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs || \
     composer install --no-dev --prefer-dist --ignore-platform-reqs
+
+# Copy JS dependency files
+COPY package*.json pnpm-lock.yaml* yarn.lock* bun.lock* ./
+
+# Auto-detect package manager and install JS dependencies with caching and performance flags
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=cache,target=/root/.local/share/pnpm/store \
+    --mount=type=cache,target=/root/.cache/yarn \
+    --mount=type=cache,target=/root/.bun/install/cache \
+    if [ -f package.json ]; then \
+        echo "[PROGRESS] Installing JavaScript dependencies..." && \
+        if [ -f bun.lock ]; then bun install --prefer-offline --no-audit; \
+        elif [ -f pnpm-lock.yaml ]; then pnpm install --prefer-offline --no-audit --no-progress; \
+        elif [ -f yarn.lock ]; then yarn install --prefer-offline --no-progress; \
+        elif [ -f package-lock.json ]; then npm ci --prefer-offline --no-audit --no-fund --no-progress; \
+        else npm install --prefer-offline --no-audit --no-fund --no-progress; fi; \
+    fi
+
+# Copy the remaining application source code
+COPY . .
 
 # Generate optimized autoloader and detect extensions
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scripts
@@ -60,18 +80,8 @@ PHP_EOF
 
 RUN php detect_extensions.php > /tmp/required_extensions.txt
 
-# 1. Auto-detect package manager and build JS assets
-RUN --mount=type=cache,target=/root/.npm \
-    --mount=type=cache,target=/root/.local/share/pnpm/store \
-    --mount=type=cache,target=/root/.cache/yarn \
-    --mount=type=cache,target=/root/.bun/install/cache \
-    if [ -f package.json ]; then \
-        echo "[PROGRESS] Installing JavaScript dependencies..." && \
-        if [ -f bun.lock ]; then bun install; \
-        elif [ -f pnpm-lock.yaml ]; then pnpm install; \
-        elif [ -f yarn.lock ]; then yarn install; \
-        elif [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
-        else npm install --no-audit --no-fund; fi && \
+# Build JS assets if package.json exists
+RUN if [ -f package.json ]; then \
         echo "[PROGRESS] Building frontend assets..." && \
         if grep -q '"build":' package.json; then \
             if [ -f bun.lock ]; then bun run build; \

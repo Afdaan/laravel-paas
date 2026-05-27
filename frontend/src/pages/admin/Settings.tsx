@@ -263,7 +263,7 @@ const AdminSettings = () => {
                   <NumberStepper
                     min={1}
                     max={20}
-                    value={settings.max_image_retention || 5}
+                    value={settings.max_image_retention || 3}
                     onChange={(val) => handleChange('max_image_retention', val)}
                     unit={t('admin.settings.images')}
                   />
