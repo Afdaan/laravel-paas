@@ -3,10 +3,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Activity, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DeploymentEvent } from '@/types'
 
 interface RuntimeEventsProps {
-  runtimeEvents: any[];
-  t: (key: string, params?: any) => string;
+  runtimeEvents: DeploymentEvent[];
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export const RuntimeEvents: React.FC<RuntimeEventsProps> = ({ runtimeEvents, t }) => {
@@ -33,8 +34,8 @@ export const RuntimeEvents: React.FC<RuntimeEventsProps> = ({ runtimeEvents, t }
             <>
               <div className="relative pl-4 border-l border-border/50 space-y-5 py-1 transition-all duration-300">
                 {visibleEvents.map((evt, idx) => {
-                  const isError = ['oom_killed', 'crashed', 'deployment_failed'].includes(evt.event_type)
-                  const isWarning = ['auto_healing_restart'].includes(evt.event_type)
+                  const isError = ['oom_killed', 'crashed', 'deployment_failed'].includes(evt.event_type ?? '')
+                  const isWarning = ['auto_healing_restart'].includes(evt.event_type ?? '')
                   const bulletColor = isError 
                     ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]' 
                     : isWarning 
@@ -48,7 +49,7 @@ export const RuntimeEvents: React.FC<RuntimeEventsProps> = ({ runtimeEvents, t }
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-[10px] uppercase tracking-wider text-foreground/80">
-                            {evt.event_type.replace(/_/g, ' ')}
+                            {(evt.event_type ?? 'unknown').replace(/_/g, ' ')}
                           </span>
                           <span className="text-[8px] text-muted-foreground/60">
                             {new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

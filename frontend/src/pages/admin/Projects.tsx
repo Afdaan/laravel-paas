@@ -145,8 +145,9 @@ const AdminProjects = () => {
         toast.success(t('projectDetail.actions.redeployStarted'))
       }
       fetchProjects()
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || `Failed to ${action} container`)
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } }
+      toast.error(axiosErr?.response?.data?.error || `Failed to ${action} container`)
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: false }))
     }

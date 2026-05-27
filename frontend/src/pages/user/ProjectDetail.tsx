@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { projectsAPI, databaseAPI } from '../../services/api'
-import { Project, ProjectStats } from '../../types'
+import { Project, ProjectStats, DeploymentEvent } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseManager from './DatabaseManager'
 import { Button } from '@/components/ui/button'
@@ -127,7 +127,7 @@ function UserProjectDetail() {
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
   const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
-  const [runtimeEvents, setRuntimeEvents] = useState<any[]>([])
+  const [runtimeEvents, setRuntimeEvents] = useState<DeploymentEvent[]>([])
   const [isRollingBack, setIsRollingBack] = useState(false)
   const [rollbackCommitSHA, setRollbackCommitSHA] = useState('')
 
@@ -172,8 +172,9 @@ function UserProjectDetail() {
       toast.success(t('projectDetail.runtime.rollbackSuccess', { type: response.data.type }) || `Rollback initiated successfully (${response.data.type})`)
       fetchProject(true)
       fetchRuntimeEvents()
-    } catch (error: any) {
-      const errMsg = error.response?.data?.error || error.message || 'Unknown error'
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } }; message?: string }
+      const errMsg = axiosErr.response?.data?.error || axiosErr.message || 'Unknown error'
       toast.error(t('projectDetail.runtime.rollbackFailed', { error: errMsg }) || `Failed to initiate rollback: ${errMsg}`)
     } finally {
       setIsRollingBack(false)
@@ -222,9 +223,11 @@ function UserProjectDetail() {
     runtimeEvents.forEach(evt => {
       if (evt.event_type === 'deployment_completed' || evt.event_type === 'rollback_completed' || evt.event_type === 'deployment_skipped_existing_image') {
         const sha = evt.payload || evt.message
-        if (sha && sha.length === 40 && !seen.has(sha)) {
+        // Validate as a real 40-char hex SHA — prevents arbitrary messages from becoming fake checkpoints
+        const isValidSha = sha && /^[0-9a-f]{40}$/i.test(sha)
+        if (isValidSha && !seen.has(sha)) {
           seen.add(sha)
-          const commitMsg = commitMsgMap.get(evt.job_id) || evt.deployment_message || `Deployment version ${sha.substring(0, 7)}`
+          const commitMsg = (evt.job_id && commitMsgMap.get(evt.job_id)) || evt.message || `Deployment version ${sha.substring(0, 7)}`
           list.push({
             sha,
             time: new Date(evt.created_at).toLocaleString(),

@@ -5,7 +5,7 @@ import { translations } from '../lib/translations'
 const useTranslation = () => {
   const { language } = useLanguageStore()
   
-  const t = useCallback((keyPath: string, data?: Record<string, string | number>): any => {
+  const t = useCallback((keyPath: string, data?: Record<string, string | number>): string => {
     const keys = keyPath.split('.')
     let current: unknown = translations[language as keyof typeof translations]
     
@@ -28,7 +28,9 @@ const useTranslation = () => {
     }
     
     if (current && typeof current === 'object') {
-      return current
+      // Resolved to a nested namespace, not a leaf string — return keyPath so
+      // callers see the raw key instead of silent [object Object] rendering.
+      return keyPath
     }
     
     let result = String(current)

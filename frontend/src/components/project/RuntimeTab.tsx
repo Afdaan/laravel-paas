@@ -37,7 +37,7 @@ interface RuntimeTabProps {
   setRollbackCommitSHA: (sha: string) => void
   triggerRollbackConfirm: (sha: string) => void
   runtimeEvents: DeploymentEvent[]
-  t: (key: string, options?: any) => string
+  t: (key: string, options?: Record<string, string | number>) => string
 }
 
 export function RuntimeTab({

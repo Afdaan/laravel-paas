@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI, githubAPI } from '../../services/api'
@@ -92,6 +92,7 @@ function UserNewProject() {
   const isLinkingRef = React.useRef(false)
   const revokedToastShown = React.useRef(false)
   const selectedInstallationIdRef = React.useRef('')
+  const loadInstallationsRef = React.useRef<(triggerRepoLoad?: boolean) => Promise<void>>(async () => {})
 
   // Keep ref in sync with state to prevent stale closures in async and focus callbacks
   React.useEffect(() => {
@@ -113,7 +114,7 @@ function UserNewProject() {
     [branches, formData.branch]
   )
 
-  const loadRepositories = async (installationId: string) => {
+  const loadRepositories = useCallback(async (installationId: string) => {
     const currentSeq = ++repoQuerySeq.current
     setIsGithubLoading(true)
     try {
@@ -136,7 +137,8 @@ function UserNewProject() {
             revokedToastShown.current = true
             toast.error(t('newProject.errors.installationRevoked'))
           }
-          loadInstallations(false)
+          // Access via ref to avoid circular dependency between callbacks
+          loadInstallationsRef.current(false)
         } else {
           toast.error(t('newProject.errors.failedToLoadRepos'))
         }
@@ -146,9 +148,9 @@ function UserNewProject() {
         setIsGithubLoading(false)
       }
     }
-  }
+  }, [t])
 
-  const loadInstallations = async (triggerRepoLoad = false) => {
+  const loadInstallations = useCallback(async (triggerRepoLoad = false) => {
     setIsGithubLoading(true)
     try {
       const response = await githubAPI.listInstallations()
@@ -180,8 +182,16 @@ function UserNewProject() {
     } finally {
       setIsGithubLoading(false)
     }
-  }
+  }, [loadRepositories])
 
+  // Keep ref in sync so callbacks and effects always access the latest version
+  // without needing to re-register listeners or re-trigger mount effects.
+  React.useEffect(() => {
+    loadInstallationsRef.current = loadInstallations
+  }, [loadInstallations])
+
+  // Mount-only: read URL params and either link a GitHub installation or
+  // load the installations list. Uses refs to avoid re-running on deps change.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const installationId = params.get('installation_id')
@@ -196,9 +206,8 @@ function UserNewProject() {
           toast.success(t('newProject.githubConnected') || 'GitHub App connected successfully')
           const cleanUrl = window.location.pathname
           window.history.replaceState({}, document.title, cleanUrl)
-          await loadInstallations(true)
-        } catch (err) {
-          // Link failed — toast already shown, no raw error exposure
+          await loadInstallationsRef.current(true)
+        } catch {
           toast.error(t('newProject.errors.failedToLink'))
         } finally {
           setIsGithubLoading(false)
@@ -206,15 +215,16 @@ function UserNewProject() {
       }
       linkGithub()
     } else {
-      loadInstallations(true)
+      loadInstallationsRef.current(true)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Real-time tab-focus sync for GitHub App installations list.
-  // This automatically syncs local state when users return from configuring installations on GitHub.
+  // Stable focus listener — syncs installations when user returns from GitHub.
+  // Uses ref so the listener never needs to be re-attached.
   useEffect(() => {
     const handleFocus = () => {
-      loadInstallations(false)
+      loadInstallationsRef.current(false)
     }
     window.addEventListener('focus', handleFocus)
     return () => {
@@ -470,7 +480,7 @@ function UserNewProject() {
                       <Button
                         type="button"
                         onClick={() => {
-                          const appUrl = (import.meta as any).env.VITE_GITHUB_APP_URL || 'https://github.com/apps/laravel-paas-local'
+                          const appUrl = import.meta.env.VITE_GITHUB_APP_URL || 'https://github.com/apps/laravel-paas-local'
                           window.open(`${appUrl}/installations/new`, '_blank')
                         }}
                         className="gap-2 mx-auto"
@@ -538,7 +548,7 @@ function UserNewProject() {
                             type="button"
                             variant="outline"
                             onClick={() => {
-                              const appUrl = (import.meta as any).env.VITE_GITHUB_APP_URL || 'https://github.com/apps/laravel-paas-local'
+                              const appUrl = import.meta.env.VITE_GITHUB_APP_URL || 'https://github.com/apps/laravel-paas-local'
                               window.open(`${appUrl}/installations/new`, '_blank')
                             }}
                             className="w-full h-11 gap-2 rounded-xl"
