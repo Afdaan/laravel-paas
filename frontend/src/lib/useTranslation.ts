@@ -5,7 +5,7 @@ import { translations } from '../lib/translations'
 const useTranslation = () => {
   const { language } = useLanguageStore()
   
-  const t = useCallback((keyPath: string, data?: Record<string, string | number>): string => {
+  const t = useCallback((keyPath: string, data?: Record<string, string | number>): any => {
     const keys = keyPath.split('.')
     let current: unknown = translations[language as keyof typeof translations]
     
@@ -25,6 +25,10 @@ const useTranslation = () => {
         current = fallback
         break
       }
+    }
+    
+    if (current && typeof current === 'object') {
+      return current
     }
     
     let result = String(current)
