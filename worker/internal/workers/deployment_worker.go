@@ -426,12 +426,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
-	logFile, err := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		slog.Error("Failed to open build log file", "path", buildLogPath, "error", err)
-	} else {
-		defer logFile.Close()
-	}
+	var logFile *os.File
 
 	var logFileMu sync.Mutex
 	appendLog := func(msg string) {
@@ -553,6 +548,15 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if dbErr != nil {
 		w.updateProjectError(project, job.JobID, "[INFRASTRUCTURE_FAILED] Failed to create database: "+dbErr.Error())
 		return
+	}
+
+	// Open build log file after repository has been successfully synced/cloned
+	var logOpenErr error
+	logFile, logOpenErr = os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if logOpenErr != nil {
+		slog.Error("Failed to open build log file", "path", buildLogPath, "error", logOpenErr)
+	} else {
+		defer logFile.Close()
 	}
 
 	project.LastCommitHash = cloneHash
