@@ -64,9 +64,24 @@ interface ValidationErrors {
 }
 
 const databaseEngines = [
-  { value: 'mysql', label: 'MySQL (8.0)' },
-  { value: 'postgresql', label: 'PostgreSQL (15)' },
+  { value: 'mysql', label: 'MySQL (8.0)', tone: 'amber' },
+  { value: 'postgresql', label: 'PostgreSQL (15)', tone: 'sky' },
 ] as const
+
+type DatabaseEngineOption = (typeof databaseEngines)[number]
+
+const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOption; className?: string }) => (
+  <div
+    className={cn(
+      'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background/80 shadow-sm',
+      engine.tone === 'amber' && 'border-amber-500/20 bg-amber-500/10 text-amber-500',
+      engine.tone === 'sky' && 'border-sky-500/20 bg-sky-500/10 text-sky-500',
+      className
+    )}
+  >
+    <Database className='h-4 w-4' />
+  </div>
+)
 
 function UserNewProject() {
   const { t } = useTranslation()
@@ -824,7 +839,10 @@ function UserNewProject() {
                               }}
                             >
                               <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
-                                <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
+                                <div className="flex items-center gap-3 text-left flex-1 min-w-0 pr-4">
+                                  <DatabaseEngineBadge engine={selectedDatabaseEngine} />
+                                  <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
+                                </div>
                               </SelectTrigger>
                               <SelectContent
                                 side="top"
@@ -839,7 +857,10 @@ function UserNewProject() {
                                     value={engine.value}
                                     className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
                                   >
-                                    <span className="font-medium text-foreground/90 text-sm">{engine.label}</span>
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <DatabaseEngineBadge engine={engine} className="h-7 w-7" />
+                                      <span className="font-medium text-foreground/90 text-sm truncate">{engine.label}</span>
+                                    </div>
                                   </SelectItem>
                                 ))}
                               </SelectContent>
