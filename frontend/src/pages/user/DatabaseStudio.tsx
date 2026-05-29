@@ -1784,25 +1784,22 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
             </Card>
           </div>
 
-          {/* SRE Cap Sidebar */}
+          {/* Backup Retention Card */}
           <div className="space-y-6">
-            <Card className="p-5 border-primary/10 bg-primary/5">
-              <h4 className="font-extrabold text-sm mb-3 flex items-center gap-2 text-primary uppercase tracking-wide border-b pb-2">
-                <Shield className="w-4.5 h-4.5" />
-                {t('databaseStudio.backups.sreRetentionTitle')}
+            <Card className="p-5 border-muted-foreground/10 bg-muted/5">
+              <h4 className="font-bold text-xs mb-3 flex items-center gap-2 text-foreground/80 uppercase tracking-wider border-b pb-2">
+                <Shield className="w-4 h-4" />
+                {t('databaseStudio.backups.retentionTitle')}
               </h4>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {t('databaseStudio.backups.sreRetentionDesc')}
+                {t('databaseStudio.backups.retentionDesc')}
               </p>
-              <div className="flex justify-between items-center text-xs mt-4 pt-3 border-t border-primary/10">
-                <span className="font-bold text-muted-foreground">{t('databaseStudio.backups.catalogCapacity')}</span>
-                <span className="font-mono font-bold text-primary">
+              <div className="flex justify-between items-center text-xs mt-4 pt-3 border-t border-muted-foreground/10">
+                <span className="font-semibold text-muted-foreground">{t('databaseStudio.backups.catalogCapacity')}</span>
+                <span className="font-mono font-bold text-foreground">
                   {backups.filter(b => b.status === 'completed').length} / 5 {t('databaseStudio.backups.snapshotsLabel')}
                 </span>
               </div>
-              <p className="text-[10px] text-muted-foreground italic mt-3 leading-relaxed">
-                {t('databaseStudio.backups.sreRetentionNote')}
-              </p>
             </Card>
           </div>
         </div>
