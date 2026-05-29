@@ -209,6 +209,7 @@ func Setup(
 	projects.Get("/", projectHandler.ListOwn)
 	projects.Post("/", projectHandler.Create)
 	projects.Get("/:id", projectHandler.Get)
+	projects.Get("/:id/branches", projectHandler.ListBranches)
 	projects.Put("/:id", projectHandler.Update)
 	projects.Post("/:id/redeploy", projectHandler.Redeploy)
 	projects.Post("/:id/rollback", projectHandler.Rollback)

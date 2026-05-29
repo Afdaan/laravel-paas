@@ -231,3 +231,33 @@ func (s *GitService) GetRemoteCommitHash(githubURL, branch string) (string, erro
 
 	return "", fmt.Errorf("no commit hash found for branch %s", branch)
 }
+
+// GetRemoteBranches retrieves all remote branch names without cloning the repository.
+func (s *GitService) GetRemoteBranches(githubURL string) ([]string, error) {
+	authGithubURL, gitEnv, cleanupGitAuth, authErr := gitAuthEnv(githubURL)
+	if authErr != nil {
+		return nil, fmt.Errorf("failed to prepare Git authentication: %w", authErr)
+	}
+	defer cleanupGitAuth()
+
+	// Use a 15-second context timeout and add `--` to prevent flag/parameter hijacking
+	res, err := utils.RunInDirWithEnv(15*time.Second, "", gitEnv, "git", "ls-remote", "--heads", "--", authGithubURL)
+	if err != nil {
+		return nil, err
+	}
+
+	var branches []string
+	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
+	for _, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		ref := parts[1] // refs/heads/branch-name
+		if strings.HasPrefix(ref, "refs/heads/") {
+			branches = append(branches, strings.TrimPrefix(ref, "refs/heads/"))
+		}
+	}
+	return branches, nil
+}
+

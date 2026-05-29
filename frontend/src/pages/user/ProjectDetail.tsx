@@ -122,6 +122,9 @@ function UserProjectDetail() {
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
   const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [branchesList, setBranchesList] = useState<string[]>([])
+  const [isFetchingBranches, setIsFetchingBranches] = useState(false)
+  const [forceManualInput, setForceManualInput] = useState(false)
   
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
   const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
@@ -270,6 +273,25 @@ function UserProjectDetail() {
   }, [project?.deployment_status, isDeploying])
   
   const displayStatus = deploymentPhase ? 'building' : project?.status
+
+  const fetchBranches = useCallback(async (showToast = false) => {
+    if (!uid) return
+    setIsFetchingBranches(true)
+    try {
+      const response = await projectsAPI.listBranches(uid)
+      setBranchesList(response.data.data || [])
+      if (showToast) {
+        toast.success(t('projectDetail.settings.syncSuccess') || 'Branches synchronized successfully')
+      }
+    } catch {
+      setBranchesList([]) // Fallback to manual text input on failure
+      if (showToast) {
+        toast.error(t('projectDetail.settings.syncFailed') || 'Failed to synchronize branches')
+      }
+    } finally {
+      setIsFetchingBranches(false)
+    }
+  }, [uid, t])
 
   const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid) return
@@ -588,8 +610,9 @@ function UserProjectDetail() {
       setQueueEnabledInput(project.queue_enabled || false)
       setLanguageVersionInput(project.language_version || '')
       settingsInitialized.current = true
+      fetchBranches()
     }
-  }, [project])
+  }, [project, fetchBranches])
 
   useEffect(() => {
     if (project && !isSettingsDirty && settingsInitialized.current) {
@@ -1473,14 +1496,64 @@ function UserProjectDetail() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.branchTitle')}</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={branchInput}
-                        onChange={(e) => setBranchInput(e.target.value)}
-                        placeholder={t('projectDetail.settings.branchPlaceholder')}
-                        className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
-                      />
+                    <div className="flex items-center gap-2 max-w-[290px]">
+                      {branchesList.length > 0 && !forceManualInput ? (
+                        <div className="relative flex-1">
+                          <Select
+                            value={branchInput}
+                            onValueChange={(val) => setBranchInput(val || '')}
+                          >
+                            <SelectTrigger className="w-full h-9 px-3 rounded-lg border border-muted-foreground/15 hover:border-muted-foreground/30 bg-muted/5 hover:bg-muted/10 text-xs font-mono transition-all duration-200 outline-none focus:outline-none focus:ring-1 focus:ring-primary/20 focus:border-primary cursor-pointer flex items-center justify-between data-[size=default]:h-9 data-[size=default]:py-0 data-[size=default]:pr-3 data-[size=default]:pl-3">
+                              <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
+                                <GitBranch className="w-3.5 h-3.5 text-primary shrink-0" />
+                                <span className="truncate text-foreground/90 font-medium">{branchInput || t('newProject.selectBranch') || 'Select a branch'}</span>
+                              </div>
+                            </SelectTrigger>
+                            <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                              {branchesList.map(branchName => (
+                                <SelectItem key={branchName} value={branchName} className="rounded-lg py-2 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
+                                  <div className="flex items-center gap-2">
+                                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                    <span className="font-mono text-xs text-foreground/90">{branchName}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (
+                        <Input
+                          value={branchInput}
+                          onChange={(e) => setBranchInput(e.target.value)}
+                          placeholder={t('projectDetail.settings.branchPlaceholder')}
+                          className="h-9 flex-1 bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs font-mono"
+                        />
+                      )}
+                      
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => fetchBranches(true)}
+                        disabled={isFetchingBranches}
+                        className="h-9 w-9 shrink-0 rounded-lg hover:bg-muted/10 transition-all cursor-pointer flex items-center justify-center border border-muted-foreground/10"
+                        title={t('projectDetail.settings.syncBranches') || 'Sync Branches'}
+                      >
+                        <RefreshCw className={cn("w-3.5 h-3.5 text-muted-foreground", isFetchingBranches && "animate-spin text-primary")} />
+                      </Button>
                     </div>
+                    {branchesList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setForceManualInput(!forceManualInput)}
+                        className="text-[9px] text-primary hover:underline font-semibold cursor-pointer block mt-1 pl-0.5"
+                      >
+                        {forceManualInput 
+                          ? t('projectDetail.settings.useDropdown') || 'Select branch from list'
+                          : t('projectDetail.settings.typeManually') || 'Use manual text input'
+                        }
+                      </button>
+                    )}
                     <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
                       <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
                     </p>

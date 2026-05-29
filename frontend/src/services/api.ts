@@ -181,6 +181,9 @@ export const projectsAPI = {
   getDeploymentEvents: (id: number | string, all = false) =>
     api.get(`/projects/${id}/deployment-events`, { params: { all } }),
   
+  listBranches: (id: number | string) =>
+    api.get(`/projects/${id}/branches`),
+  
   // Custom Domain endpoints
   listDomains: (id: number | string) =>
     api.get(`/projects/${id}/domains`),
