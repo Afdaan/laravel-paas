@@ -44,6 +44,9 @@ MYSQL_PASSWORD=${MYSQL_PASSWORD:-"$MYSQL_ROOT_PASSWORD"}
 PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
 PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
+USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
+USER_PG_PORT=${USER_PG_PORT:-5433}
+USER_PG_HOST=${USER_PG_HOST:-"paas-user-postgres"}
 
 # Deployment Mode
 APP_MODE=${APP_MODE:-"docker"}
@@ -232,6 +235,9 @@ deploy_backend() {
         -e JWT_SECRET="$JWT_SECRET" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
+        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
         --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
@@ -286,6 +292,9 @@ deploy_worker() {
         -e JWT_SECRET="$JWT_SECRET" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
+        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
