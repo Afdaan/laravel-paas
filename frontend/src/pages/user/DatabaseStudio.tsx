@@ -24,7 +24,6 @@ import {
   PlusCircle,
   AlertTriangle,
   DatabaseZap,
-  Info,
   Search,
   Download
 } from 'lucide-react'
@@ -121,7 +120,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [newTableName, setNewTableName] = useState('')
   const [newColName, setNewColName] = useState('')
   const [newColType, setNewColType] = useState('varchar')
-  const [newColLength, setNewColLength] = useState(255)
+  const [newColLength, setNewColLength] = useState<number | string>(255)
   const [newColNullable, setNewColNullable] = useState(true)
   
   const [indexName] = useState('')
@@ -495,7 +494,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       payload.column = {
         name: newColName,
         type: newColType,
-        length: newColLength,
+        length: newColLength === "" ? 255 : Number(newColLength),
         nullable: newColNullable
       }
     } else if (designerAction === 'create_index') {
@@ -1316,17 +1315,6 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
             )}
           </Card>
 
-          {/* Guidelines under the main card */}
-          <Card className="p-5 bg-muted/5 border-primary/10">
-            <h4 className="font-extrabold text-sm mb-3 flex items-center gap-2 text-primary uppercase tracking-wide border-b pb-2">
-              <Info className="w-4.5 h-4.5" />
-              {t('databaseStudio.structure.guidelinesTitle')}
-            </h4>
-            <p className="text-xs text-muted-foreground leading-relaxed pl-1">
-              {t('databaseStudio.structure.guidelinesDesc')}
-            </p>
-          </Card>
-
           {/* Create Table Dialog Modal */}
           <Dialog open={designerAction === 'create_table'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
             <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
@@ -1422,7 +1410,10 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         id="new_col_len"
                         type="number"
                         value={newColLength}
-                        onChange={(e) => setNewColLength(Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewColLength(val === "" ? "" : Number(val));
+                        }}
                         placeholder="255"
                         className="h-10 rounded-xl bg-background/50 text-xs"
                       />

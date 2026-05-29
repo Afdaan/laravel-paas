@@ -3,8 +3,8 @@ import { Button } from "./button"
 import { cn } from "@/lib/utils"
 
 interface NumberStepperProps {
-  value: number;
-  onChange: (value: number) => void;
+  value: number | string | undefined;
+  onChange: (value: any) => void;
   min?: number;
   max?: number;
   step?: number;
@@ -23,17 +23,19 @@ export function NumberStepper({
   unit,
   disabled = false
 }: NumberStepperProps) {
-  const numericValue = Number(value) || 0;
+  const displayValue = value === undefined || value === null || value === "" ? "" : value;
 
   const handleDecrement = () => {
-    if (numericValue > min) {
-      onChange(Math.max(min, numericValue - step));
+    const currentVal = value === undefined || value === null || value === "" ? min : Number(value);
+    if (currentVal > min) {
+      onChange(Math.max(min, currentVal - step));
     }
   };
 
   const handleIncrement = () => {
-    if (numericValue < max) {
-      onChange(Math.min(max, numericValue + step));
+    const currentVal = value === undefined || value === null || value === "" ? min : Number(value);
+    if (currentVal < max) {
+      onChange(Math.min(max, currentVal + step));
     }
   };
 
@@ -42,10 +44,15 @@ export function NumberStepper({
       <div className="shrink-0">
         <input
           type="number"
-          value={numericValue}
+          value={displayValue}
           onChange={(e) => {
-            const val = Number(e.target.value);
-            if (!isNaN(val)) onChange(val);
+            const valStr = e.target.value;
+            if (valStr === "") {
+              onChange("");
+            } else {
+              const val = Number(valStr);
+              if (!isNaN(val)) onChange(val);
+            }
           }}
           className="block h-5 w-10 bg-transparent text-base font-bold tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           disabled={disabled}
@@ -68,7 +75,7 @@ export function NumberStepper({
           size="icon-xs"
           className="h-6 w-6 rounded-sm hover:bg-background hover:text-rose-500 transition-colors"
           onClick={handleDecrement}
-          disabled={disabled || numericValue <= min}
+          disabled={disabled || (value !== undefined && value !== null && value !== "" && Number(value) <= min)}
         >
           <Minus className="h-3 w-3" />
         </Button>
@@ -81,7 +88,7 @@ export function NumberStepper({
           size="icon-xs"
           className="h-6 w-6 rounded-sm hover:bg-background hover:text-emerald-500 transition-colors"
           onClick={handleIncrement}
-          disabled={disabled || numericValue >= max}
+          disabled={disabled || (value !== undefined && value !== null && value !== "" && Number(value) >= max)}
         >
           <Plus className="h-3 w-3" />
         </Button>
