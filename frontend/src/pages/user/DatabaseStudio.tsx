@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 interface DatabaseStudioProps {
@@ -808,237 +809,264 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       )}
 
       {activeTab === 'designer' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="space-y-6 animate-in fade-in duration-300">
           {/* Main Visual Schema Explorer */}
-          <div className="lg:col-span-2 space-y-6">
-            <Card className="p-6">
-              <div className="flex items-center justify-between border-b pb-4 mb-5">
-                <div>
-                  <h3 className="font-extrabold text-base">Visual Table Designer GUI</h3>
-                  <p className="text-muted-foreground text-xs">Direct visual schema architecting, writes audit log markers</p>
-                </div>
-                
-                <Button
-                  size="sm"
-                  onClick={() => setDesignerAction('create_table')}
-                  disabled={isActionLoading || isSuspended}
-                  className="font-bold shrink-0 gap-1.5 h-10 rounded-xl"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  Create Table
-                </Button>
+          <Card className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between border-b pb-4 mb-5">
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-base flex items-center gap-3">
+                  Visual Table Designer GUI
+                  <Button
+                    size="xs"
+                    onClick={() => setDesignerAction('create_table')}
+                    disabled={isActionLoading || isSuspended}
+                    className="font-bold gap-1 h-7 text-[11px] rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Create Table
+                  </Button>
+                </h3>
+                <p className="text-muted-foreground text-xs">Direct visual schema architecting, writes audit log markers</p>
               </div>
+            </div>
 
-              {isSuspended ? (
-                <div className="py-12 text-center text-muted-foreground text-sm font-semibold uppercase tracking-wide">
-                  No visual designer access. Database is suspended.
+            {isSuspended ? (
+              <div className="py-12 text-center text-muted-foreground text-sm font-semibold uppercase tracking-wide">
+                No visual designer access. Database is suspended.
+              </div>
+            ) : schemaData.length === 0 ? (
+              <div className="py-16 text-center border border-dashed rounded-xl flex flex-col items-center justify-center gap-4 bg-muted/5">
+                <DatabaseZap className="w-10 h-10 text-muted-foreground/60" />
+                <div className="space-y-1">
+                  <h4 className="font-extrabold text-base">Database contains no schema objects</h4>
+                  <p className="text-xs text-muted-foreground max-w-sm">Table schemas have not been declared. Click the Create Table trigger to begin visual schema modeling.</p>
                 </div>
-              ) : schemaData.length === 0 ? (
-                <div className="py-16 text-center border border-dashed rounded-xl flex flex-col items-center justify-center gap-4 bg-muted/5">
-                  <DatabaseZap className="w-10 h-10 text-muted-foreground/60" />
-                  <div className="space-y-1">
-                    <h4 className="font-extrabold text-base">Database contains no schema objects</h4>
-                    <p className="text-xs text-muted-foreground max-w-sm">Table schemas have not been declared. Click the Create Table trigger to begin visual schema modeling.</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {schemaData.map((table: any) => (
-                    <div key={table.name} className="border border-border/80 rounded-xl overflow-hidden shadow-sm bg-background/10">
-                      <div className="flex items-center justify-between p-4 bg-muted/20 border-b border-border/80">
-                        <span className="font-mono font-bold text-sm text-foreground/90 flex items-center gap-2">
-                          <Table className="w-4 h-4 text-primary" />
-                          {table.name}
-                        </span>
-                        
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            onClick={() => {
-                              setSelectedTable(table.name)
-                              setDesignerAction('add_column')
-                            }}
-                            className="h-8 text-xs font-bold gap-1 rounded-lg"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add Column
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-xs font-medium">
-                          <thead>
-                            <tr className="border-b border-border/40 bg-muted/5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                              <th className="py-3 px-4">Column</th>
-                              <th className="py-3 px-4">Datatype</th>
-                              <th className="py-3 px-4 text-center">Nullable</th>
-                              <th className="py-3 px-4 text-center">Keys</th>
-                              <th className="py-3 px-4">Default</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {table.columns.map((col: any) => (
-                              <tr key={col.name} className="border-b border-border/20 hover:bg-muted/5 transition-colors">
-                                <td className="py-3 px-4 font-mono font-semibold text-foreground/90">{col.name}</td>
-                                <td className="py-3 px-4 font-mono text-primary/80">{col.type}</td>
-                                <td className="py-3 px-4 text-center">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded text-[10px] font-bold border",
-                                    col.nullable 
-                                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
-                                      : "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                  )}>
-                                    {col.nullable ? 'YES' : 'NO'}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  {col.key === 'PRI' && (
-                                    <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] font-extrabold uppercase tracking-wide">
-                                      PK
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
-
-          {/* Designer Interactive Modals/Panels */}
-          <div className="space-y-6">
-            {designerAction === 'create_table' && (
-              <Card className="p-5 border-primary/20 bg-primary/5 animate-in slide-in-from-right-3 duration-300">
-                <h4 className="font-extrabold text-sm mb-4 uppercase tracking-wide text-primary flex items-center gap-1.5">
-                  <Table className="w-4.5 h-4.5" />
-                  Create Table Model
-                </h4>
-                <form onSubmit={handleDesignerAction} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="new_table_name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Table Name</Label>
-                    <Input
-                      id="new_table_name"
-                      value={newTableName}
-                      onChange={(e) => setNewTableName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                      placeholder="e.g. posts"
-                      required
-                      className="h-10 rounded-xl"
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground italic leading-relaxed">Automatic design: GORM structures require a primary key. An auto-incrementing integer key <code>id</code> will be added automatically.</p>
-                  
-                  <div className="flex gap-2.5 pt-2">
-                    <Button type="submit" disabled={isActionLoading} size="sm" className="font-bold flex-1 rounded-xl">
-                      Execute Alter
-                    </Button>
-                    <Button type="button" onClick={() => setDesignerAction(null)} variant="outline" size="sm" className="font-bold flex-1 rounded-xl">
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </Card>
-            )}
-
-            {designerAction === 'add_column' && (
-              <Card className="p-5 border-primary/20 bg-primary/5 animate-in slide-in-from-right-3 duration-300">
-                <h4 className="font-extrabold text-sm mb-4 uppercase tracking-wide text-primary flex items-center gap-1.5">
-                  <PlusCircle className="w-4.5 h-4.5" />
-                  Add Column Model — {selectedTable}
-                </h4>
-                <form onSubmit={handleDesignerAction} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="new_col_name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Column Name</Label>
-                    <Input
-                      id="new_col_name"
-                      value={newColName}
-                      onChange={(e) => setNewColName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                      placeholder="e.g. title"
-                      required
-                      className="h-10 rounded-xl"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Type</Label>
-                      <select
-                        value={newColType}
-                        onChange={(e) => setNewColType(e.target.value)}
-                        className="w-full h-10 px-3 rounded-xl border border-border bg-background text-xs font-semibold"
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {schemaData.map((table: any) => (
+                  <div key={table.name} className="border border-border/80 rounded-xl overflow-hidden shadow-sm bg-background/10">
+                    <div className="flex items-center gap-3 p-4 bg-muted/20 border-b border-border/80">
+                      <span className="font-mono font-bold text-sm text-foreground/90 flex items-center gap-2">
+                        <Table className="w-4 h-4 text-primary" />
+                        {table.name}
+                      </span>
+                      
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => {
+                          setSelectedTable(table.name)
+                          setDesignerAction('add_column')
+                        }}
+                        className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors"
                       >
-                        <option value="varchar">VARCHAR</option>
-                        <option value="integer">INTEGER</option>
-                        <option value="bigint">BIGINT</option>
-                        <option value="text">TEXT</option>
-                        <option value="boolean">BOOLEAN</option>
-                        <option value="timestamp">TIMESTAMP</option>
-                      </select>
+                        <Plus className="w-3 h-3" />
+                        Add Column
+                      </Button>
                     </div>
 
-                    {newColType === 'varchar' && (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Length</Label>
-                        <Input
-                          id="new_col_len"
-                          type="number"
-                          value={newColLength}
-                          onChange={(e) => setNewColLength(Number(e.target.value))}
-                          placeholder="255"
-                          className="h-10 rounded-xl text-xs"
-                        />
-                      </div>
-                    )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs font-medium">
+                        <thead>
+                          <tr className="border-b border-border/40 bg-muted/5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            <th className="py-3 px-4">Name</th>
+                            <th className="py-3 px-4">Type</th>
+                            <th className="py-3 px-4 text-center">Nullable</th>
+                            <th className="py-3 px-4 text-center">Key</th>
+                            <th className="py-3 px-4">Default</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {table.columns.map((col: any) => (
+                            <tr key={col.name} className="border-b border-border/20 hover:bg-muted/5 transition-colors">
+                              <td className="py-3 px-4 font-mono font-semibold text-foreground/90">{col.name}</td>
+                              <td className="py-3 px-4 font-mono text-primary/80">{col.type}</td>
+                              <td className="py-3 px-4 text-center">
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded text-[10px] font-bold border",
+                                  col.nullable 
+                                    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
+                                    : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                )}>
+                                  {col.nullable ? 'YES' : 'NO'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                {col.key === 'PRI' && (
+                                  <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] font-extrabold uppercase tracking-wide">
+                                    PK
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
+                            </tr>
+                          ))}
+                          <tr className="hover:bg-primary/5 transition-colors border-t border-border/10">
+                            <td colSpan={5} className="p-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedTable(table.name)
+                                  setDesignerAction('add_column')
+                                }}
+                                className="w-full text-left py-3 px-4 font-bold text-xs text-primary/85 hover:text-primary flex items-center gap-2 group transition-all"
+                              >
+                                <Plus className="w-3.5 h-3.5 text-primary/60 group-hover:text-primary transition-all group-hover:scale-110" />
+                                Add column to <span className="font-mono text-foreground font-bold">{table.name}</span>...
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-
-                  <div className="flex items-center justify-between border-t pt-3 mt-4">
-                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nullable</Label>
-                    <button
-                      type="button"
-                      onClick={() => setNewColNullable(!newColNullable)}
-                      className={cn(
-                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-                        newColNullable ? "bg-primary" : "bg-muted"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
-                          newColNullable ? "translate-x-4" : "translate-x-0"
-                        )}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="flex gap-2.5 pt-2">
-                    <Button type="submit" disabled={isActionLoading} size="sm" className="font-bold flex-1 rounded-xl">
-                      Add Field
-                    </Button>
-                    <Button type="button" onClick={() => setDesignerAction(null)} variant="outline" size="sm" className="font-bold flex-1 rounded-xl">
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </Card>
+                ))}
+              </div>
             )}
+          </Card>
 
-            <Card className="p-5 bg-muted/5 border-primary/10">
-              <h4 className="font-extrabold text-sm mb-3 flex items-center gap-2 text-primary uppercase tracking-wide border-b pb-2">
-                <Info className="w-4.5 h-4.5" />
-                Designer Guidelines
-              </h4>
-              <p className="text-xs text-muted-foreground leading-relaxed pl-1">
-                Visual migrations automatically map and format standard SQL statements. All updates generated are instantly evaluated. GORM schema reconciliation triggers automatically to synchronize ORM metadata tables safely.
-              </p>
-            </Card>
-          </div>
+          {/* Guidelines under the main card */}
+          <Card className="p-5 bg-muted/5 border-primary/10">
+            <h4 className="font-extrabold text-sm mb-3 flex items-center gap-2 text-primary uppercase tracking-wide border-b pb-2">
+              <Info className="w-4.5 h-4.5" />
+              Designer Guidelines
+            </h4>
+            <p className="text-xs text-muted-foreground leading-relaxed pl-1">
+              Visual migrations automatically map and format standard SQL statements. All updates generated are instantly evaluated. GORM schema reconciliation triggers automatically to synchronize ORM metadata tables safely.
+            </p>
+          </Card>
+
+          {/* Create Table Dialog Modal */}
+          <Dialog open={designerAction === 'create_table'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
+            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
+              <DialogHeader className="pb-2 border-b border-border/40">
+                <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
+                  <Table className="w-5 h-5 text-primary" />
+                  Create Table
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Define the schema namespace for the new relational table.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleDesignerAction} className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="new_table_name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Table Name</Label>
+                  <Input
+                    id="new_table_name"
+                    value={newTableName}
+                    onChange={(e) => setNewTableName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    placeholder="e.g. posts"
+                    required
+                    className="h-10 rounded-xl bg-background/50"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground italic leading-relaxed bg-muted/20 p-2.5 rounded-lg border border-border/40">
+                  <strong>Automatic design:</strong> GORM structures require a primary key. An auto-incrementing integer key <code>id</code> will be added automatically.
+                </p>
+                
+                <div className="flex gap-2.5 pt-2">
+                  <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl">
+                    {isActionLoading ? 'Executing...' : 'Create Table'}
+                  </Button>
+                  <Button type="button" onClick={() => setDesignerAction(null)} variant="outline" className="font-bold flex-1 rounded-xl">
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Add Column Dialog Modal */}
+          <Dialog open={designerAction === 'add_column'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
+            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
+              <DialogHeader className="pb-2 border-b border-border/40">
+                <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  Add Column — {selectedTable}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Append a new attribute column schema definition to the selected table.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleDesignerAction} className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="new_col_name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Column Name</Label>
+                  <Input
+                    id="new_col_name"
+                    value={newColName}
+                    onChange={(e) => setNewColName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    placeholder="e.g. title"
+                    required
+                    className="h-10 rounded-xl bg-background/50"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Type</Label>
+                    <select
+                      value={newColType}
+                      onChange={(e) => setNewColType(e.target.value)}
+                      className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
+                    >
+                      <option value="varchar">VARCHAR</option>
+                      <option value="integer">INTEGER</option>
+                      <option value="bigint">BIGINT</option>
+                      <option value="text">TEXT</option>
+                      <option value="boolean">BOOLEAN</option>
+                      <option value="timestamp">TIMESTAMP</option>
+                      <option value="decimal">DECIMAL</option>
+                    </select>
+                  </div>
+
+                  {newColType === 'varchar' && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="new_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Length</Label>
+                      <Input
+                        id="new_col_len"
+                        type="number"
+                        value={newColLength}
+                        onChange={(e) => setNewColLength(Number(e.target.value))}
+                        placeholder="255"
+                        className="h-10 rounded-xl bg-background/50 text-xs"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t pt-3 mt-4">
+                  <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nullable</Label>
+                  <button
+                    type="button"
+                    onClick={() => setNewColNullable(!newColNullable)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                      newColNullable ? "bg-primary" : "bg-muted"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
+                        newColNullable ? "translate-x-4" : "translate-x-0"
+                      )}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex gap-2.5 pt-2">
+                  <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl">
+                    {isActionLoading ? 'Executing...' : 'Add Column'}
+                  </Button>
+                  <Button type="button" onClick={() => setDesignerAction(null)} variant="outline" className="font-bold flex-1 rounded-xl">
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
