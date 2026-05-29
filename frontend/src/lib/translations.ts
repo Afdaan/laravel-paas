@@ -1013,6 +1013,7 @@ export const translations = {
         }
       },
       tables: {
+        title: "Tables",
         sidebarTitle: "Database Tables",
         sidebarDesc: "Select or create tables to inspect schemas and run visual mutations.",
         searchPlaceholder: "Search tables...",
@@ -2191,6 +2192,7 @@ export const translations = {
         }
       },
       tables: {
+        title: "Tabel",
         sidebarTitle: "Database Tables",
         sidebarDesc: "Pilih atau buat tabel untuk mengelola skema dan memodifikasi data secara visual.",
         searchPlaceholder: "Cari tabel...",
