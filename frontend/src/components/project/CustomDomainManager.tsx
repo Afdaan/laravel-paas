@@ -721,9 +721,10 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                         variant="ghost"
                         size="sm"
                         onClick={(e) => handleRemoveDomain(e, domain)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        style={{ cursor: 'pointer' }}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} />
                       </Button>
                     </div>
                   </div>

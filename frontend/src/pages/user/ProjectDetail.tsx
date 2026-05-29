@@ -28,7 +28,7 @@ import {
   Code2
 } from 'lucide-react'
 import { AxiosError } from 'axios'
-import { projectsAPI, databaseAPI } from '../../services/api'
+import { projectsAPI } from '../../services/api'
 import { Project, ProjectStats, DeploymentEvent } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseStudio from './DatabaseStudio'
@@ -112,7 +112,6 @@ function UserProjectDetail() {
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleCommand, setConsoleCommand] = useState('')
   const [isExecuting, setIsExecuting] = useState(false)
-  const [credentials, setCredentials] = useState<Record<string, string> | null>(null)
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
   const [buildCommandInput, setBuildCommandInput] = useState('')
@@ -336,15 +335,6 @@ function UserProjectDetail() {
   }, [uid])
 
 
-  const fetchCredentials = useCallback(async () => {
-    if (!uid) return
-    try {
-      const response = await databaseAPI.getCredentials(uid)
-      setCredentials(response.data)
-    } catch (error) {
-      // Credentials only available if DB is ready
-    }
-  }, [uid])
 
   usePolling(() => {
     if (consecutiveErrors < 3) {
@@ -368,11 +358,6 @@ function UserProjectDetail() {
     }
   }, [logType, activeTab, project?.container_id, fetchLogs])
 
-  useEffect(() => {
-    if (activeTab === 'database') {
-      fetchCredentials()
-    }
-  }, [activeTab, uid, fetchCredentials])
 
   const { visibleLogLines, logOffset } = useMemo(() => {
     if (!logs) return { visibleLogLines: [], logOffset: 0 }
@@ -827,8 +812,14 @@ function UserProjectDetail() {
               fetchProject(true)
             }}
           />
-          <Button variant="outline" size="icon" onClick={handleDelete} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30">
-            <Trash2 className="w-4 h-4" />
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={handleDelete} 
+            className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 cursor-pointer"
+            style={{ cursor: 'pointer' }}
+          >
+            <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} />
           </Button>
         </div>
       </div>
@@ -1179,35 +1170,7 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="database" className="pt-0">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                      <DatabaseIcon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{t('projectDetail.database.creds')}</CardTitle>
-                      <CardDescription>{t('projectDetail.database.params')}</CardDescription>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="text-emerald-500 bg-emerald-500/5 border-emerald-500/20 gap-1.5 uppercase tracking-wider text-[10px]">
-                    <ShieldAlert className="w-3 h-3" /> {t('projectDetail.database.privateAccess')}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <CredentialRow label="Host" value={credentials?.host || "paas-mysql.cluster.local"} />
-                  <CredentialRow label="Schema" value={credentials?.database || project.database_name || '...'} />
-                  <CredentialRow label="Username" value={credentials?.username || project.database_name || '...'} />
-                  <CredentialRow label="Password" value={credentials?.password || project.database_name || '...'} isSecret />
-                </div>
-              </CardContent>
-            </Card>
-            <DatabaseStudio embedded={true} projectId={uid} />
-          </div>
+          <DatabaseStudio embedded={true} projectId={uid} />
         </TabsContent>
 
         <TabsContent value="logs" className="pt-0">
@@ -1650,26 +1613,5 @@ function UserProjectDetail() {
   )
 }
 
-function CredentialRow({ label, value, isSecret = false }: { label: string, value: string, isSecret?: boolean }) {
-  const { t } = useTranslation()
-  const copy = () => {
-    navigator.clipboard.writeText(value)
-    toast.success(t('common.copySuccess'))
-  }
-
-  return (
-    <div className="p-4 rounded-xl bg-muted/50 border hover:border-primary/20 transition-colors group">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{label}</span>
-        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={copy}>
-          <Copy className="w-3 h-3" />
-        </Button>
-      </div>
-      <div className={cn("text-xs font-mono truncate font-bold", isSecret && "opacity-30 select-none")}>
-        {isSecret ? "••••••••••••••••" : value}
-      </div>
-    </div>
-  )
-}
 
 export default UserProjectDetail

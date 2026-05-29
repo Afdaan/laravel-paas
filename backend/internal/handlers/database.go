@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -509,6 +510,43 @@ func (h *DatabaseHandler) DeleteBackup(c *fiber.Ctx) error {
 		"success": true,
 		"message": "Database backup catalog record and snapshot file pruned permanently.",
 	})
+}
+
+// DownloadBackup downloads a physical database snapshot backup file
+func (h *DatabaseHandler) DownloadBackup(c *fiber.Ctx) error {
+	project, err := h.getProjectForUser(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	backupID, err := strconv.Atoi(c.Params("backup"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid backup ID"})
+	}
+
+	backup, err := h.databaseService.GetBackupByID(project.ID, uint(backupID))
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Backup snapshot not found"})
+	}
+
+	if backup.Status != models.BackupStatusCompleted {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Backup snapshot is not completed"})
+	}
+
+	// Defense in depth: Check that absolute backup path resides within ProjectsPath
+	absProjectsPath, err := filepath.Abs(h.cfg.ProjectsPath)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server config error"})
+	}
+	absBackupPath, err := filepath.Abs(backup.Path)
+	if err != nil || !strings.HasPrefix(absBackupPath, absProjectsPath) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Unauthorized file path"})
+	}
+
+	h.recordAuditLog(c, project.ID, "db_backup_download", "", strconv.Itoa(backupID), "completed", "")
+
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", backup.Name))
+	return c.Download(backup.Path)
 }
 
 // GetMetrics returns active metrics like connections and size

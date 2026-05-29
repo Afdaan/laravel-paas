@@ -269,6 +269,10 @@ export const databaseAPI = {
   deleteBackup: (projectId: number | string, backupId: number | string) => 
     api.delete(`/projects/${projectId}/database/backups/${backupId}`),
 
+  // Download backup snapshot file
+  downloadBackup: (projectId: number | string, backupId: number | string) => 
+    api.get(`/projects/${projectId}/database/backups/${backupId}/download`, { responseType: 'blob' }),
+
   // Get real-time connection metrics
   getMetrics: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/metrics`),

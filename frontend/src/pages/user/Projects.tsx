@@ -251,10 +251,11 @@ const UserProjects = () => {
                         variant="outline"
                         size="icon"
                         onClick={(e) => handleDelete(project.uid, e)}
-                        className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30"
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30 cursor-pointer"
+                        style={{ cursor: 'pointer' }}
                         title={t('projectDetail.actions.delete')}
                       >
-                         <Trash2 className="w-4 h-4" />
+                         <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} />
                       </Button>
                       <Button size="icon" className="h-9 w-9">
                          <ArrowRight className="w-4 h-4" />

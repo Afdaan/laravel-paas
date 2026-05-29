@@ -881,17 +881,46 @@ func (s *DatabaseService) mapDesignerType(engine, dtype string, length int) stri
 			length = 255
 		}
 		return fmt.Sprintf("VARCHAR(%d)", length)
+	case "char":
+		if length <= 0 {
+			length = 1
+		}
+		return fmt.Sprintf("CHAR(%d)", length)
 	case "integer", "int":
 		return "INT"
 	case "bigint":
 		return "BIGINT"
+	case "decimal":
+		return "DECIMAL(10,2)"
+	case "double":
+		if engine == "postgresql" {
+			return "DOUBLE PRECISION"
+		}
+		return "DOUBLE"
 	case "text":
 		return "TEXT"
+	case "longtext":
+		if engine == "postgresql" {
+			return "TEXT"
+		}
+		return "LONGTEXT"
 	case "boolean", "bool":
 		if engine == "postgresql" {
 			return "BOOLEAN"
 		}
 		return "TINYINT(1)"
+	case "json":
+		if engine == "postgresql" {
+			return "JSONB"
+		}
+		return "JSON"
+	case "uuid":
+		if engine == "postgresql" {
+			return "UUID"
+		}
+		return "VARCHAR(36)"
+	case "date":
+		return "DATE"
 	case "timestamp", "datetime":
 		if engine == "postgresql" {
 			return "TIMESTAMP WITH TIME ZONE"
@@ -992,6 +1021,15 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 	}
 
 	return backup, nil
+}
+
+// GetBackupByID retrieves a specific database backup record for a project
+func (s *DatabaseService) GetBackupByID(projectID uint, backupID uint) (*models.DatabaseBackup, error) {
+	var backup models.DatabaseBackup
+	if err := s.db.Where("id = ? AND project_id = ?", backupID, projectID).First(&backup).Error; err != nil {
+		return nil, err
+	}
+	return &backup, nil
 }
 
 // RestoreBackup recovers SQL backup state into the project database

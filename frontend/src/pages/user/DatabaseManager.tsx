@@ -298,8 +298,13 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                   <Button variant="outline" onClick={() => setShowCredentials(true)} className="gap-2">
                      <Key className="w-4 h-4" /> {t('databaseManager.credentials')}
                   </Button>
-                  <Button variant="outline" onClick={confirmReset} className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 gap-2">
-                     <Trash2 className="w-4 h-4" /> {t('databaseManager.reset')}
+                  <Button 
+                     variant="outline" 
+                     onClick={confirmReset} 
+                     className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 gap-2 cursor-pointer"
+                     style={{ cursor: 'pointer' }}
+                  >
+                     <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} /> {t('databaseManager.reset')}
                   </Button>
                </div>
             </div>
@@ -410,10 +415,11 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
                                                       <Button
                                                          variant="ghost"
                                                          size="icon"
-                                                         className="h-9 w-9 text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
+                                                         className="h-9 w-9 text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all cursor-pointer"
+                                                         style={{ cursor: 'pointer' }}
                                                          onClick={() => requestDeleteRow(row)}
                                                       >
-                                                         <Trash2 className="w-4 h-4" />
+                                                         <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} />
                                                       </Button>
                                                    </td>
                                                 )}
