@@ -77,13 +77,13 @@ const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOpti
   return (
     <div
       className={cn(
-        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background/80 shadow-sm',
-        engine.value === 'mysql' && 'border-amber-500/20 bg-amber-500/10',
-        engine.value === 'postgresql' && 'border-sky-500/20 bg-sky-500/10',
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-background/90 shadow-sm ring-1 ring-white/5',
+        engine.value === 'mysql' && 'border-amber-500/30 bg-amber-500/12',
+        engine.value === 'postgresql' && 'border-sky-500/30 bg-sky-500/12',
         className
       )}
     >
-      <svg viewBox='0 0 24 24' aria-hidden='true' className='h-4 w-4'>
+      <svg viewBox='0 0 24 24' aria-hidden='true' className='h-6 w-6'>
         <path fill={fillColor} d={engine.icon.path} />
       </svg>
     </div>
@@ -846,7 +846,7 @@ function UserNewProject() {
                               }}
                             >
                               <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
-                                <div className="flex items-center gap-3 text-left flex-1 min-w-0 pr-4">
+                                <div className="flex items-center gap-3.5 text-left flex-1 min-w-0 pr-4">
                                   <DatabaseEngineBadge engine={selectedDatabaseEngine} />
                                   <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
                                 </div>
@@ -864,8 +864,8 @@ function UserNewProject() {
                                     value={engine.value}
                                     className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
                                   >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      <DatabaseEngineBadge engine={engine} className="h-7 w-7" />
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                      <DatabaseEngineBadge engine={engine} className="h-9 w-9" />
                                       <span className="font-medium text-foreground/90 text-sm truncate">{engine.label}</span>
                                     </div>
                                   </SelectItem>
