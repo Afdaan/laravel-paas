@@ -62,7 +62,17 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   // SQL Scratchpad states
   const [sqlQuery, setSqlQuery] = useState('SELECT * FROM users LIMIT 10;')
   const [queryResult, setQueryResult] = useState<any>(null)
-  const [queryHistory, setQueryHistory] = useState<string[]>([])
+  const [queryHistory, setQueryHistory] = useState<string[]>(() => {
+    if (typeof window !== 'undefined' && id) {
+      try {
+        const saved = localStorage.getItem(`db_query_history_${id}`)
+        return saved ? JSON.parse(saved) : []
+      } catch (e) {
+        return []
+      }
+    }
+    return []
+  })
   
   // Table Viewer states
   const [selectedTable, setSelectedTable] = useState<string>('')
@@ -177,6 +187,17 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     }
   }, [activeTab, selectedTable, tablePage, loadTableDataGrid])
 
+  // Load query history on database ID change
+  useEffect(() => {
+    if (!id) return
+    try {
+      const saved = localStorage.getItem(`db_query_history_${id}`)
+      setQueryHistory(saved ? JSON.parse(saved) : [])
+    } catch (e) {
+      setQueryHistory([])
+    }
+  }, [id])
+
   // Action helpers
   const handleRotateCredentials = () => {
     if (!id) return
@@ -241,7 +262,17 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     try {
       const res = await databaseAPI.query(id, sqlQuery)
       setQueryResult(res.data)
-      setQueryHistory(prev => [sqlQuery, ...prev.slice(0, 9)])
+      
+      setQueryHistory(prev => {
+        const newHistory = [sqlQuery, ...prev.filter(q => q !== sqlQuery).slice(0, 49)]
+        try {
+          localStorage.setItem(`db_query_history_${id}`, JSON.stringify(newHistory))
+        } catch (e) {
+          console.error(e)
+        }
+        return newHistory
+      })
+      
       toast.success(t('databaseStudio.query.successToast'))
     } catch (err: any) {
       const errMsg = err.response?.data?.error || err.message
@@ -250,6 +281,23 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     } finally {
       setIsActionLoading(false)
     }
+  }
+
+  const handleClearQueryHistory = () => {
+    triggerConfirmation({
+      title: t('databaseStudio.query.history.clearConfirmTitle'),
+      message: t('databaseStudio.query.history.clearConfirmDesc'),
+      type: 'danger',
+      confirmText: t('databaseStudio.query.history.clearConfirmAction'),
+      onConfirm: () => {
+        setQueryHistory([])
+        try {
+          localStorage.removeItem(`db_query_history_${id}`)
+        } catch (e) {
+          console.error(e)
+        }
+      }
+    })
   }
 
   const handleCreateBackup = async () => {
@@ -1595,10 +1643,21 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Right History Sidebar */}
           <div className="space-y-6">
             <Card className="p-5">
-              <h4 className="font-extrabold text-sm mb-4 border-b pb-2 flex items-center gap-2 uppercase tracking-wide">
-                <History className="w-4.5 h-4.5" />
-                {t('databaseStudio.query.history.title')}
-              </h4>
+              <div className="flex items-center justify-between border-b pb-2 mb-4">
+                <h4 className="font-extrabold text-sm flex items-center gap-2 uppercase tracking-wide">
+                  <History className="w-4.5 h-4.5" />
+                  {t('databaseStudio.query.history.title')}
+                </h4>
+                {queryHistory.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearQueryHistory}
+                    className="text-[10px] font-bold uppercase tracking-widest text-rose-500 hover:text-rose-600 cursor-pointer"
+                  >
+                    {t('databaseStudio.query.history.clearAll')}
+                  </button>
+                )}
+              </div>
               
               {queryHistory.length === 0 ? (
                 <div className="py-8 text-center text-xs text-muted-foreground italic font-semibold">
