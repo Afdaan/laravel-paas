@@ -66,6 +66,7 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.IdempotentOperation{},
 		&models.PendingReconcile{},
 		&models.AuditLog{},
+		&models.GithubAppInstallation{},
 	}
 
 	for _, m := range modelsList {
@@ -259,6 +260,11 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Migrate legacy "student" role to "user" role
 	if err := db.Exec("UPDATE users SET role = 'user' WHERE role = 'student';").Error; err != nil {
 		slog.Warn("Failed to migrate student roles to user roles", "error", err)
+	}
+
+	// Migrate legacy "sleeping" status to "stopped" status
+	if err := db.Exec("UPDATE projects SET status = 'stopped' WHERE status = 'sleeping';").Error; err != nil {
+		slog.Warn("Failed to migrate sleeping projects to stopped status", "error", err)
 	}
 
 	// Reconcile User

@@ -51,8 +51,8 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	logFilePath := filepath.Join(projectPath, "build.log")
 
-	// Set BuildKit host to use the local docker socket
-	os.Setenv("BUILDKIT_HOST", "unix:///var/run/docker.sock")
+	// Set BuildKit host to use the remote BuildKit container
+	os.Setenv("BUILDKIT_HOST", "tcp://paas-buildkit:1234")
 
 	var err error
 	var internalPort string
@@ -68,6 +68,15 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	if err != nil {
 		return "", err
+	}
+
+	// Apply commit SHA tag for rollbacks/image retention
+	if project.LastCommitHash != "" {
+		commitTag := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
+		slog.Info("Applying commit tag to built image", "tag", commitTag)
+		if tagRes, tagErr := utils.Run(1*time.Minute, "docker", "tag", imageName+":latest", commitTag); tagErr != nil {
+			slog.Warn("Failed to tag image with commit hash", "error", tagErr, "stderr", tagRes.Stderr)
+		}
 	}
 
 	// 3.5. NEW: Dynamic Port Detection from Image Metadata
@@ -118,7 +127,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
-		"--env-file", filepath.Join(s.storage.GetProjectsHostPath(project.Subdomain), ".env"),
+		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
 	}
 
 	if isWebFacing {
@@ -236,7 +245,7 @@ stdout_logfile_maxbytes=0
 	}
 
 	// 4. Build using Docker Buildx
-	buildArgs := []string{"buildx", "build", "--load"}
+	buildArgs := []string{"buildx", "build", "--builder", "paas-builder", "--load"}
 	if noCache {
 		buildArgs = append(buildArgs, "--no-cache")
 	}
@@ -250,7 +259,7 @@ stdout_logfile_maxbytes=0
 	if project.NodeVersion != "" {
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("NODE_VERSION=%s", project.NodeVersion))
 	}
-	buildArgs = append(buildArgs, "--label", models.LabelProjectManaged, "-t", imageName, s.storage.GetProjectsHostPath(project.Subdomain))
+	buildArgs = append(buildArgs, "--label", models.LabelProjectManaged, "-t", imageName, buildPath)
 
 	res, err := utils.RunWithRefinedLogCtx(ctx, 30*time.Minute, logFilePath, logCallback, "docker", buildArgs...)
 
@@ -491,4 +500,69 @@ func (s *DockerService) injectDockerIgnore(projectPath string) {
 	}
 
 	slog.Debug("Injected default .dockerignore", "path", ignorePath)
+}
+
+// PruneProjectImages removes older images for a project keeping only the latest maxRetention unique versions
+func (s *DockerService) PruneProjectImages(subdomain string, maxRetention int) {
+	if maxRetention <= 0 {
+		maxRetention = 2 // default fallback
+	}
+
+	slog.Info("Running image retention pruning", "subdomain", subdomain, "max_retention", maxRetention)
+
+	// List images with their tags and image IDs
+	res, err := utils.Run(30*time.Second, "docker", "images", "--format", "{{.Tag}}::{{.ID}}", "paas-"+subdomain)
+	if err != nil {
+		slog.Warn("Failed to list project images for pruning", "subdomain", subdomain, "error", err)
+		return
+	}
+
+	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
+	if len(lines) <= maxRetention {
+		return // Not enough images to prune
+	}
+
+	type imageInfo struct {
+		tag string
+		id  string
+	}
+	var images []imageInfo
+	for _, line := range lines {
+		parts := strings.Split(line, "::")
+		if len(parts) == 2 && parts[0] != "" {
+			images = append(images, imageInfo{tag: parts[0], id: parts[1]})
+		}
+	}
+
+	// Find the unique images by ID, preserving order (newest first)
+	var uniqueImageIDs []string
+	seenIDs := make(map[string]bool)
+	for _, img := range images {
+		if !seenIDs[img.id] {
+			seenIDs[img.id] = true
+			uniqueImageIDs = append(uniqueImageIDs, img.id)
+		}
+	}
+
+	// If the number of unique images is within the retention limit, nothing to prune
+	if len(uniqueImageIDs) <= maxRetention {
+		return
+	}
+
+	// The images we want to keep are the ones corresponding to the top `maxRetention` unique IDs
+	keepIDs := make(map[string]bool)
+	for i := 0; i < maxRetention && i < len(uniqueImageIDs); i++ {
+		keepIDs[uniqueImageIDs[i]] = true
+	}
+
+	// Now find all tags that belong to the images we want to delete
+	for _, img := range images {
+		if !keepIDs[img.id] && img.tag != "latest" {
+			imageToDel := fmt.Sprintf("paas-%s:%s", subdomain, img.tag)
+			slog.Info("Pruning old project image", "image", imageToDel)
+			if delRes, delErr := utils.Run(30*time.Second, "docker", "rmi", imageToDel); delErr != nil {
+				slog.Warn("Failed to delete old project image", "image", imageToDel, "error", delErr, "stderr", delRes.Stderr)
+			}
+		}
+	}
 }

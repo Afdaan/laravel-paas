@@ -27,6 +27,12 @@ const useTranslation = () => {
       }
     }
     
+    if (current && typeof current === 'object') {
+      // Resolved to a nested namespace, not a leaf string — return keyPath so
+      // callers see the raw key instead of silent [object Object] rendering.
+      return keyPath
+    }
+    
     let result = String(current)
     if (data && typeof result === 'string') {
       Object.entries(data).forEach(([key, value]) => {

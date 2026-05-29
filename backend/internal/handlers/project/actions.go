@@ -1,12 +1,16 @@
 package project
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 )
@@ -38,7 +42,40 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled)
+	if req.GithubInstallationID != nil && *req.GithubInstallationID != 0 {
+		var localInst models.GithubAppInstallation
+		if err := h.db.Where("installation_id = ? AND user_id = ?", *req.GithubInstallationID, userID).First(&localInst).Error; err != nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "The specified GitHub installation does not belong to your account",
+			})
+		}
+
+		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
+		repos, err := githubService.ListRepositories(*req.GithubInstallationID)
+		if err != nil {
+			slog.Warn("Failed to list repositories for validation", "installation_id", *req.GithubInstallationID, "error", err)
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Failed to verify repository access with GitHub. Please check your GitHub App configuration.",
+			})
+		}
+
+		expectedFullName := fmt.Sprintf("%s/%s", req.GithubRepoOwner, req.GithubRepoName)
+		found := false
+		for _, r := range repos {
+			if strings.EqualFold(r.FullName, expectedFullName) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "The repository is not authorized or does not exist under the specified GitHub App installation.",
+			})
+		}
+	}
+
+	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
 	if err != nil {
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -238,3 +275,68 @@ func (h *ProjectHandler) Restart(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"message": "Project restarted successfully"})
 }
+
+// Rollback restores a previous deployment instantly if cached locally or falls back to rebuild
+func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
+	project, err := h.getProject(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	var req struct {
+		CommitSHA string `json:"commit_sha"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.ErrBadRequest
+	}
+
+	if req.CommitSHA == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "commit_sha is required"})
+	}
+
+	imageTag := fmt.Sprintf("paas-%s:%s", project.Subdomain, req.CommitSHA)
+	inspectRes, inspectErr := utils.Run(10*time.Second, "docker", "image", "inspect", imageTag)
+	imageExists := inspectErr == nil && strings.TrimSpace(inspectRes.Stdout) != ""
+
+	if imageExists {
+		slog.Info("Performing instant rollback using existing local image", "project", project.Subdomain, "commit", req.CommitSHA)
+		
+		project.LastCommitHash = req.CommitSHA
+		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
+
+		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "rollback")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue rollback"})
+		}
+
+		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Instant rollback to "+req.CommitSHA, 0, jobID)
+		
+		return c.JSON(fiber.Map{
+			"message": "Instant rollback initiated successfully",
+			"type": "instant",
+		})
+	} else {
+		slog.Info("Image not found locally, performing rebuild/redeploy fallback", "project", project.Subdomain, "commit", req.CommitSHA)
+		
+		project.LastCommitHash = req.CommitSHA
+		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
+
+		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue redeploy fallback"})
+		}
+
+		projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Rebuild fallback for rollback to "+req.CommitSHA, 0, jobID)
+
+		return c.JSON(fiber.Map{
+			"message": "Rebuild rollback initiated successfully",
+			"type": "rebuild",
+		})
+	}
+}
+

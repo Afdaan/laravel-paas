@@ -70,6 +70,11 @@ type Config struct {
 	InternalIP                string
 	IntegrityValidationMarker string
 	TraefikHTTPPort           int
+
+	// GitHub App
+	GithubAppID             string
+	GithubAppPrivateKeyPath string
+	GithubAppWebhookSecret  string
 }
 
 // Load reads configuration from environment variables
@@ -152,6 +157,11 @@ func Load() *Config {
 		InternalIP:                getEnv("INTERNAL_IP", "127.0.0.1"),
 		IntegrityValidationMarker: getEnv("INTEGRITY_VALIDATION_MARKER", ""),
 		TraefikHTTPPort:           getEnvInt("HTTP_PORT", 80),
+
+		// GitHub App
+		GithubAppID:             getEnv("GITHUB_APP_ID", ""),
+		GithubAppPrivateKeyPath: getEnv("GITHUB_APP_PRIVATE_KEY_PATH", ""),
+		GithubAppWebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
 	}
 
 	// Ensure host paths are absolute to prevent Docker volume naming errors

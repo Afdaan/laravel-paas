@@ -68,6 +68,12 @@ type MetricsCollector struct {
 	domainPollerStoppedTotal       int64
 	domainTransitionRejectedTotal  int64
 	domainStaleWriteRejectedTotal  int64
+
+	// GitHub Integration Metrics
+	githubWebhooksReceivedTotal  int64
+	githubWebhooksProcessedTotal int64
+	githubApiRequestsTotal       int64
+	githubApiFailuresTotal       int64
 }
 
 type SumCount struct {
@@ -212,6 +218,22 @@ func (m *MetricsCollector) IncrDomainStaleWriteRejected() {
 	atomic.AddInt64(&m.domainStaleWriteRejectedTotal, 1)
 }
 
+func (m *MetricsCollector) IncrGithubWebhooksReceived() {
+	atomic.AddInt64(&m.githubWebhooksReceivedTotal, 1)
+}
+
+func (m *MetricsCollector) IncrGithubWebhooksProcessed() {
+	atomic.AddInt64(&m.githubWebhooksProcessedTotal, 1)
+}
+
+func (m *MetricsCollector) IncrGithubApiRequests() {
+	atomic.AddInt64(&m.githubApiRequestsTotal, 1)
+}
+
+func (m *MetricsCollector) IncrGithubApiFailures() {
+	atomic.AddInt64(&m.githubApiFailuresTotal, 1)
+}
+
 // PrometheusHandler exposes the recorded metrics in standard Prometheus / OpenMetrics text format.
 func PrometheusHandler() fiber.Handler {
 	return func(c *fiber.Ctx) error {
@@ -255,6 +277,11 @@ func PrometheusHandler() fiber.Handler {
 		writeCounterMetric(&buf, "domain_poller_stopped_total", "Total stopped SSL status pollers", atomic.LoadInt64(&col.domainPollerStoppedTotal))
 		writeCounterMetric(&buf, "domain_transition_rejected_total", "Total rejected domain state transitions due to illegal state path", atomic.LoadInt64(&col.domainTransitionRejectedTotal))
 		writeCounterMetric(&buf, "domain_stale_write_rejected_total", "Total rejected domain state updates due to stale sequence version", atomic.LoadInt64(&col.domainStaleWriteRejectedTotal))
+
+		writeCounterMetric(&buf, "github_webhooks_received_total", "Total GitHub App webhooks received by the backend", atomic.LoadInt64(&col.githubWebhooksReceivedTotal))
+		writeCounterMetric(&buf, "github_webhooks_processed_total", "Total GitHub App webhooks successfully processed", atomic.LoadInt64(&col.githubWebhooksProcessedTotal))
+		writeCounterMetric(&buf, "github_api_requests_total", "Total GitHub API requests sent", atomic.LoadInt64(&col.githubApiRequestsTotal))
+		writeCounterMetric(&buf, "github_api_failures_total", "Total failed GitHub API requests", atomic.LoadInt64(&col.githubApiFailuresTotal))
 
 		c.Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		return c.Send(buf.Bytes())

@@ -18,7 +18,7 @@ COPY . .
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative --no-scripts
 
 # Stage 2: Production (Laravel Runtime)
-FROM paas-runtime-php:8.0-alpine
+FROM paas-registry:5000/library/paas-runtime-php:8.0-alpine
 
 LABEL maintainer="Laravel PaaS"
 LABEL description="Laravel 8.x with PHP 8.0 (Pure Laravel - No Frontend Assets)"

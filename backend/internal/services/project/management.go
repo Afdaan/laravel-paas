@@ -186,7 +186,7 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	// Enforce per-user project limit (bypass for admins and superadmins)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
 		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
@@ -232,21 +232,24 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	}
 
 	project := &models.Project{
-		UserID:           userID,
-		Name:             name,
-		GithubURL:        githubURL,
-		Branch:           branch,
-		Subdomain:        subdomain,
-		DatabaseName:     dbName,
-		DatabasePassword: dbPassword,
-		BaseDirectory:    baseDirectory,
-		BuildCommand:     sanitizeCommand(buildCommand),
-		StartCommand:     strings.TrimSpace(startCommand),
-		QueueEnabled:     queueEnabled,
-		Status:           models.StatusPending,
-		DeploymentStatus: models.DepStatusQueued,
-		ExpiresAt:        expiresAt,
-		UID:              utils.GenerateRandomUID(),
+		UserID:               userID,
+		Name:                 name,
+		GithubURL:            githubURL,
+		Branch:               branch,
+		Subdomain:            subdomain,
+		DatabaseName:         dbName,
+		DatabasePassword:     dbPassword,
+		BaseDirectory:        baseDirectory,
+		BuildCommand:         sanitizeCommand(buildCommand),
+		StartCommand:         strings.TrimSpace(startCommand),
+		QueueEnabled:         queueEnabled,
+		Status:               models.StatusPending,
+		DeploymentStatus:     models.DepStatusQueued,
+		ExpiresAt:            expiresAt,
+		UID:                  utils.GenerateRandomUID(),
+		GithubInstallationID: githubInstallationID,
+		GithubRepoOwner:      githubRepoOwner,
+		GithubRepoName:       githubRepoName,
 	}
 
 	if err := s.projectRepo.Create(project); err != nil {
@@ -372,4 +375,9 @@ func (s *ProjectService) GetRunningProjectsWithContainers() ([]models.Project, e
 // GetDeploymentEvents returns the timeline of deployment events for a project
 func (s *ProjectService) GetDeploymentEvents(projectID uint) ([]models.DeploymentEvent, error) {
 	return s.projectRepo.ListDeploymentEventsByProjectID(projectID)
+}
+
+// GetAllDeploymentEvents returns the complete unfiltered timeline of deployment events for a project
+func (s *ProjectService) GetAllDeploymentEvents(projectID uint) ([]models.DeploymentEvent, error) {
+	return s.projectRepo.ListAllDeploymentEventsByProjectID(projectID)
 }

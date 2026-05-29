@@ -16,7 +16,7 @@ MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 
 # 2. Bersihkan kontainer lama
 echo "[INFO] Cleaning old infrastructure..."
-docker rm -f paas-mysql paas-postgres paas-redis paas-traefik 2>/dev/null || true
+docker rm -f paas-mysql paas-postgres paas-redis paas-traefik paas-buildkit paas-registry 2>/dev/null || true
 
 # 3. Siapkan Network & Folder (Pakai sudo untuk folder agar aman dari Permission Denied)
 echo "[INFO] Preparing storage folders..."
@@ -71,5 +71,39 @@ docker run -d \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     -v "$(pwd)/docker/traefik/traefik.yml:/traefik.yml:ro" \
     traefik:v3.6
+
+# 7.5. Jalankan Registry
+echo "[INFO] Starting Local Registry..."
+REGISTRY_PORT=${REGISTRY_PORT:-"5000"}
+REGISTRY_HOST=${REGISTRY_HOST:-"127.0.0.1"}
+REGISTRY_IMAGE=${REGISTRY_IMAGE:-"registry:2"}
+
+docker volume create paas-registry-data 2>/dev/null || true
+docker run -d \
+    --name paas-registry \
+    --network paas-network \
+    -p "${REGISTRY_HOST}:${REGISTRY_PORT}:5000" \
+    --restart unless-stopped \
+    -v paas-registry-data:/var/lib/registry \
+    "${REGISTRY_IMAGE}"
+
+# 8. Jalankan BuildKit
+# Root mode: --privileged voids rootless security guarantees, and rootless writes
+# cache to user-space paths that are not covered by the volume mount.
+echo "[INFO] Starting BuildKit..."
+docker volume create paas-buildkit-cache 2>/dev/null || true
+docker run -d \
+    --name paas-buildkit \
+    --network paas-network \
+    -p 127.0.0.1:1234:1234 \
+    --device /dev/fuse \
+    --security-opt seccomp=unconfined \
+    --security-opt apparmor=unconfined \
+    --restart unless-stopped \
+    --cpus="4.0" \
+    --memory="4g" \
+    -v paas-buildkit-cache:/home/user/.local/share/buildkit \
+    -v "$(pwd)/docker/templates/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro" \
+    moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox
 
 echo "[SUCCESS] Infrastructure is up! Cek status dengan: docker ps"

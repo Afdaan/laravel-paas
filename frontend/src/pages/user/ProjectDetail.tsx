@@ -24,11 +24,12 @@ import {
   Save,
   Copy,
   Blocks,
+  ArrowUpRight,
   Code2
 } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { projectsAPI, databaseAPI } from '../../services/api'
-import { Project, ProjectStats } from '../../types'
+import { Project, ProjectStats, DeploymentEvent } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseManager from './DatabaseManager'
 import { Button } from '@/components/ui/button'
@@ -48,6 +49,7 @@ import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 import { CustomDomainManager } from '../../components/project/CustomDomainManager'
+import { RuntimeTab } from '../../components/project/RuntimeTab'
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -125,6 +127,60 @@ function UserProjectDetail() {
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
   const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
+  const [runtimeEvents, setRuntimeEvents] = useState<DeploymentEvent[]>([])
+  const [isRollingBack, setIsRollingBack] = useState(false)
+  const [rollbackCommitSHA, setRollbackCommitSHA] = useState('')
+
+  const fetchRuntimeEvents = useCallback(async () => {
+    if (!uid) return
+    try {
+      const response = await projectsAPI.getDeploymentEvents(uid, true)
+      setRuntimeEvents(response.data)
+    } catch (err) {
+      setRuntimeEvents([])
+    }
+  }, [uid])
+
+  useEffect(() => {
+    if (activeTab === 'runtime') {
+      fetchRuntimeEvents()
+      const interval = setInterval(fetchRuntimeEvents, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [activeTab, fetchRuntimeEvents])
+
+  // Support deep linking to tabs (e.g. ?tab=build or #build)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tabParam = params.get('tab')
+    const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
+    if (tabParam && allowedTabs.includes(tabParam)) {
+      setActiveTab(tabParam)
+    } else {
+      const hash = window.location.hash.replace('#', '')
+      if (hash && allowedTabs.includes(hash)) {
+        setActiveTab(hash)
+      }
+    }
+  }, [])
+
+  const handleRollback = async (commitSHA: string) => {
+    if (!uid) return
+    setIsRollingBack(true)
+    try {
+      const response = await projectsAPI.rollback(uid, commitSHA)
+      toast.success(t('projectDetail.runtime.rollbackSuccess', { type: response.data.type }) || `Rollback initiated successfully (${response.data.type})`)
+      fetchProject(true)
+      fetchRuntimeEvents()
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { data?: { error?: string } }; message?: string }
+      const errMsg = axiosErr.response?.data?.error || axiosErr.message || 'Unknown error'
+      toast.error(t('projectDetail.runtime.rollbackFailed', { error: errMsg }) || `Failed to initiate rollback: ${errMsg}`)
+    } finally {
+      setIsRollingBack(false)
+    }
+  }
+
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -133,6 +189,55 @@ function UserProjectDetail() {
     onConfirm: () => { },
     confirmText: t('common.confirm')
   })
+
+  const triggerRollbackConfirm = (commitSHA: string) => {
+    setConfirmModal({
+      title: t('projectDetail.runtime.confirmRollback') || 'Confirm Rollback',
+      message: t('projectDetail.runtime.confirmRollbackMsg') || 'Are you sure you want to rollback to this commit? If the image is cached locally, it will perform a zero-downtime hot-swap. Otherwise, it will trigger an automated rebuild.',
+      type: 'warning',
+      confirmText: t('projectDetail.runtime.rollbackBtn') || 'Rollback',
+      isOpen: true,
+      onConfirm: () => {
+        handleRollback(commitSHA)
+      }
+    })
+  }
+
+  const checkpoints = useMemo(() => {
+    const seen = new Set<string>()
+    const list: { sha: string, time: string, message: string }[] = []
+    
+    // Create a map of jobId -> commitMessage from "building_image" events
+    const commitMsgMap = new Map<string, string>()
+    runtimeEvents.forEach(evt => {
+      if (evt.event_type === 'building_image' && evt.job_id) {
+        // evt.payload looks like: "Commit abcd123: Add custom domain setup"
+        // Let's extract everything after the colon
+        const parts = evt.payload ? evt.payload.split(':') : []
+        if (parts.length > 1) {
+          commitMsgMap.set(evt.job_id, parts.slice(1).join(':').trim())
+        }
+      }
+    })
+    
+    runtimeEvents.forEach(evt => {
+      if (evt.event_type === 'deployment_completed' || evt.event_type === 'rollback_completed' || evt.event_type === 'deployment_skipped_existing_image') {
+        const sha = evt.payload || evt.message
+        // Validate as a real 40-char hex SHA — prevents arbitrary messages from becoming fake checkpoints
+        const isValidSha = sha && /^[0-9a-f]{40}$/i.test(sha)
+        if (isValidSha && !seen.has(sha)) {
+          seen.add(sha)
+          const commitMsg = (evt.job_id && commitMsgMap.get(evt.job_id)) || evt.message || `Deployment version ${sha.substring(0, 7)}`
+          list.push({
+            sha,
+            time: new Date(evt.created_at).toLocaleString(),
+            message: commitMsg
+          })
+        }
+      }
+    })
+    return list
+  }, [runtimeEvents])
 
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
@@ -781,6 +886,7 @@ function UserProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-muted p-1 rounded-lg w-fit overflow-x-auto">
           <TabsTrigger value="project">{t('projectDetail.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="runtime">{t('projectDetail.tabs.runtime')}</TabsTrigger>
           <TabsTrigger value="console">{t('projectDetail.tabs.console')}</TabsTrigger>
           <TabsTrigger value="environment">{t('projectDetail.tabs.secrets')}</TabsTrigger>
           <TabsTrigger value="database">{t('projectDetail.tabs.database')}</TabsTrigger>
@@ -933,6 +1039,38 @@ function UserProjectDetail() {
                     </div>
                   </div>
                 </div>
+                {project.last_commit_hash && (
+                  <div className="p-3 rounded-lg bg-muted border">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest block">Active Commit</label>
+                      <button
+                        onClick={() => setActiveTab('runtime')}
+                        className="text-[10px] font-bold text-primary hover:text-primary/80 hover:underline flex items-center gap-0.5 transition-all group cursor-pointer"
+                        title={t('projectDetail.runtime.goToCheckpointsTooltip') || 'Go to Deployment Checkpoints'}
+                      >
+                        {t('projectDetail.runtime.goToCheckpoints') || 'Go to Checkpoints'}
+                        <ArrowUpRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setActiveTab('runtime')}
+                        className="group flex items-center gap-1 font-mono font-bold text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-1.5 py-0.5 rounded border border-primary/20 transition-all hover:scale-105"
+                        title={t('projectDetail.runtime.goToCheckpointsTooltip') || 'View in Deployment Checkpoints'}
+                      >
+                        {project.last_commit_hash.substring(0, 7)}
+                        <ArrowUpRight className="w-3 h-3 text-primary/70 group-hover:text-primary transition-colors" />
+                      </button>
+                      {checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message ? (
+                        <span className="text-[11px] text-foreground/80 font-medium truncate max-w-[280px]" title={checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message}>
+                          — {checkpoints.find(cp => cp.sha === project.last_commit_hash)?.message}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground italic">No commit message found</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -1160,7 +1298,15 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && <BuildLogsConsole projectId={project.uid} status={project.status} project={project} onDeploymentEvent={handleDeploymentEvent} />}
+          {activeTab === 'build' && project && (
+            <BuildLogsConsole 
+              key={project.deployment_job_id || 'no-job'} 
+              projectId={project.uid} 
+              status={project.status} 
+              project={project} 
+              onDeploymentEvent={handleDeploymentEvent} 
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
@@ -1309,6 +1455,7 @@ function UserProjectDetail() {
 
                   </div>
                 )}
+
 
                 {/* Common Custom Commands Area */}
                 <div className="space-y-4 pt-6 mt-6 border-t border-dashed">
@@ -1462,6 +1609,21 @@ function UserProjectDetail() {
                 </Card>
               </div>
             </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="runtime" className="pt-0">
+          {project && (
+            <RuntimeTab
+              project={project}
+              checkpoints={checkpoints}
+              isRollingBack={isRollingBack}
+              rollbackCommitSHA={rollbackCommitSHA}
+              setRollbackCommitSHA={setRollbackCommitSHA}
+              triggerRollbackConfirm={triggerRollbackConfirm}
+              runtimeEvents={runtimeEvents}
+              t={t}
+            />
           )}
         </TabsContent>
 

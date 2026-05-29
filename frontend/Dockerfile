@@ -11,7 +11,12 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci
+# Install packages leveraging BuildKit NPM local cache
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --no-fund --no-progress
+
+# Declare build-time arguments for Vite to inject
+ARG VITE_GITHUB_APP_URL
 
 # Copy source and build
 COPY . .

@@ -103,11 +103,13 @@ func Setup(
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
 	userHandler := handlers.NewUserHandler(userService)
-	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, redisService, projectService, userService)
+	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, db, redisService, projectService, userService, dockerService)
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
+	githubService := infrastructure.NewGithubService(cfg, redisService)
+	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
@@ -122,6 +124,7 @@ func Setup(
 	// -----------------------------
 	auth := api.Group("/auth")
 	auth.Post("/login", middleware.RateLimitLogin(), authHandler.Login)
+	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
 
 	// -----------------------------
 	// System Init (public, rate limited)
@@ -145,6 +148,12 @@ func Setup(
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
 	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
+
+	// GitHub Integration
+	protected.Get("/github/installations", githubAppHandler.ListInstallations)
+	protected.Post("/github/installations/link", githubAppHandler.LinkInstallation)
+	protected.Get("/github/installations/:id/repositories", githubAppHandler.ListRepositories)
+	protected.Get("/github/repositories/:owner/:repo/branches", githubAppHandler.ListBranches)
 
 	// Feedback (common)
 	protected.Post("/feedback", feedbackHandler.Create)
@@ -202,6 +211,7 @@ func Setup(
 	projects.Get("/:id", projectHandler.Get)
 	projects.Put("/:id", projectHandler.Update)
 	projects.Post("/:id/redeploy", projectHandler.Redeploy)
+	projects.Post("/:id/rollback", projectHandler.Rollback)
 	projects.Post("/:id/stop", projectHandler.Stop)
 	projects.Post("/:id/start", projectHandler.Start)
 	projects.Post("/:id/restart", projectHandler.Restart)

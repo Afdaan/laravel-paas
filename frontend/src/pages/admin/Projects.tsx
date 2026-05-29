@@ -19,7 +19,12 @@ import {
   Info,
   Box,
   Monitor,
-  RefreshCw
+  RefreshCw,
+  Play,
+  Square,
+  RotateCw,
+  Zap,
+  Loader2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,13 +41,25 @@ interface ProjectStats {
   memory_max_mb: number;
 }
 
-const StatusBadge = ({ status, t }: { status: Project['status'], t: (key: string) => string }) => {
+const StatusBadge = ({ status, t }: { status: Project['status'] | string, t: (key: string) => string }) => {
   switch (status) {
     case 'running':
       return <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" /> {t('status.running')}</Badge>
     case 'building':
+    case 'deploying':
       return <Badge variant="outline" className="text-indigo-600 border-indigo-500/40 bg-indigo-500/10"><div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-1.5 animate-pulse" /> {t('status.building')}</Badge>
+    case 'starting':
+    case 'restarting':
+      return <Badge variant="outline" className="text-blue-600 border-blue-500/40 bg-blue-500/10"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 animate-pulse" /> {t('status.restarting') || 'Restarting'}</Badge>
     case 'pending':
+    case 'queued':
+    case 'provisioning':
+    case 'healthchecking':
+    case 'migrating':
+    case 'promoting':
+    case 'cleanup':
+    case 'rollback':
+    case 'deleting':
       return <Badge variant="outline" className="text-amber-600 border-amber-500/40 bg-amber-500/10"><div className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" /> {t('status.pending')}</Badge>
     case 'failed':
       return <Badge variant="destructive" className="bg-destructive/10 text-destructive hover:bg-destructive/20"><div className="w-1.5 h-1.5 rounded-full bg-destructive mr-1.5" /> {t('status.failed')}</Badge>
@@ -90,6 +107,7 @@ const AdminProjects = () => {
   const [limit, setLimit] = useState(10)
   const [isLoading, setIsLoading] = useState(true)
   const isFirstLoad = useRef(true)
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
 
   const fetchProjects = useCallback(async (forced = false) => {
     if (isFirstLoad.current || forced) {
@@ -108,6 +126,32 @@ const AdminProjects = () => {
       isFirstLoad.current = false
     }
   }, [page, search, statusFilter, limit, t])
+
+  const handleAction = useCallback(async (projectId: number, uid: string, action: 'start' | 'stop' | 'restart' | 'redeploy') => {
+    const key = `${projectId}-${action}`
+    setActionLoading(prev => ({ ...prev, [key]: true }))
+    try {
+      if (action === 'start') {
+        await projectsAPI.start(uid)
+        toast.success(t('projectDetail.actions.startStarted'))
+      } else if (action === 'stop') {
+        await projectsAPI.stop(uid)
+        toast.success(t('projectDetail.actions.stopStarted'))
+      } else if (action === 'restart') {
+        await projectsAPI.restart(uid)
+        toast.success(t('projectDetail.actions.restartStarted'))
+      } else if (action === 'redeploy') {
+        await projectsAPI.redeploy(uid)
+        toast.success(t('projectDetail.actions.redeployStarted'))
+      }
+      fetchProjects()
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } }
+      toast.error(axiosErr?.response?.data?.error || `Failed to ${action} container`)
+    } finally {
+      setActionLoading(prev => ({ ...prev, [key]: false }))
+    }
+  }, [fetchProjects, t])
 
   useEffect(() => {
     fetchProjects()
@@ -189,12 +233,12 @@ const AdminProjects = () => {
           <Table className="min-w-[1100px] table-fixed">
             <TableHeader>
               <TableRow className="bg-muted/20 hover:bg-muted/20">
-                <TableHead className="h-12 w-[32%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.projectName')}</TableHead>
-                <TableHead className="h-12 w-[18%] px-4 text-xs font-semibold uppercase tracking-wider">Owner</TableHead>
-                <TableHead className="h-12 w-[14%] px-4 text-xs font-semibold uppercase tracking-wider">Framework</TableHead>
-                <TableHead className="h-12 w-[12%] px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
-                <TableHead className="h-12 w-[16%] px-4 text-center text-xs font-semibold uppercase tracking-wider">Resource Usage</TableHead>
-                <TableHead className="h-12 w-[8%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
+                <TableHead className="h-12 w-[24%] pl-6 pr-4 text-xs font-semibold uppercase tracking-wider">{t('common.projectName')}</TableHead>
+                <TableHead className="h-12 w-[15%] px-4 text-xs font-semibold uppercase tracking-wider">Owner</TableHead>
+                <TableHead className="h-12 w-[11%] px-4 text-xs font-semibold uppercase tracking-wider">Framework</TableHead>
+                <TableHead className="h-12 w-[10%] px-4 text-center text-xs font-semibold uppercase tracking-wider">{t('common.status')}</TableHead>
+                <TableHead className="h-12 w-[15%] px-4 text-center text-xs font-semibold uppercase tracking-wider">Resource Usage</TableHead>
+                <TableHead className="h-12 w-[25%] pl-4 pr-6 text-right text-xs font-semibold uppercase tracking-wider">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -282,13 +326,94 @@ const AdminProjects = () => {
                       )}
                     </TableCell>
                     <TableCell className="pl-4 pr-6 py-3 text-right">
-                      <Link
-                        to={`/projects/${project.uid}`}
-                      >
-                        <Button variant="outline" size="sm" className="h-8">
-                          {t('common.details')}
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Start/Stop container shortcut */}
+                        {project.status === 'running' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-rose-500/10 text-rose-500/70 hover:border-rose-500/30 hover:bg-rose-500/5 hover:text-rose-500 px-2.5 flex items-center gap-1.5 transition-colors"
+                            onClick={() => handleAction(project.id, project.uid, 'stop')}
+                            disabled={actionLoading[`${project.id}-stop`]}
+                            title={t('projectDetail.actions.stop')}
+                          >
+                            {actionLoading[`${project.id}-stop`] ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Square className="w-3.5 h-3.5" />
+                            )}
+                            <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Stop</span>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-emerald-500/10 text-emerald-500/70 hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-500 px-2.5 flex items-center gap-1.5 transition-colors"
+                            onClick={() => handleAction(project.id, project.uid, 'start')}
+                            disabled={
+                              actionLoading[`${project.id}-start`] ||
+                              project.status === 'building' ||
+                              project.status === 'pending'
+                            }
+                            title={t('projectDetail.actions.start')}
+                          >
+                            {actionLoading[`${project.id}-start`] ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Play className="w-3.5 h-3.5" />
+                            )}
+                            <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Start</span>
+                          </Button>
+                        )}
+
+                        {/* Restart container shortcut */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 px-2.5 flex items-center gap-1.5 transition-colors"
+                          onClick={() => handleAction(project.id, project.uid, 'restart')}
+                          disabled={
+                            actionLoading[`${project.id}-restart`] ||
+                            project.status !== 'running'
+                          }
+                          title={t('projectDetail.actions.restart')}
+                        >
+                          {actionLoading[`${project.id}-restart`] ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RotateCw className="w-3.5 h-3.5" />
+                          )}
+                          <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Restart</span>
                         </Button>
-                      </Link>
+
+                        {/* Trigger redeploy shortcut */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-border/50 text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 px-2.5 flex items-center gap-1.5 transition-colors"
+                          onClick={() => handleAction(project.id, project.uid, 'redeploy')}
+                          disabled={
+                            actionLoading[`${project.id}-redeploy`] ||
+                            project.status === 'building' ||
+                            project.status === 'pending'
+                          }
+                          title={t('projectDetail.actions.redeploy')}
+                        >
+                          {actionLoading[`${project.id}-redeploy`] ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Zap className="w-3.5 h-3.5" />
+                          )}
+                          <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline">Redeploy</span>
+                        </Button>
+
+                        {/* Link to project details */}
+                        <Link to={`/projects/${project.uid}`}>
+                          <Button variant="secondary" size="sm" className="h-8 font-bold text-[10px] uppercase tracking-wider px-3">
+                            {t('common.details')}
+                          </Button>
+                        </Link>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )

@@ -645,8 +645,9 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 	}
 
 	type TraefikHTTP struct {
-		Routers  map[string]TraefikRouter  `json:"routers"`
-		Services map[string]TraefikService `json:"services"`
+		Routers     map[string]TraefikRouter     `json:"routers"`
+		Middlewares map[string]interface{}        `json:"middlewares,omitempty"`
+		Services    map[string]TraefikService    `json:"services"`
 	}
 
 	type TraefikConfigResponse struct {
@@ -655,8 +656,9 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 
 	resp := TraefikConfigResponse{
 		HTTP: TraefikHTTP{
-			Routers:  make(map[string]TraefikRouter),
-			Services: make(map[string]TraefikService),
+			Routers:     make(map[string]TraefikRouter),
+			Middlewares: make(map[string]interface{}),
+			Services:    make(map[string]TraefikService),
 		},
 	}
 
@@ -703,11 +705,13 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			Middlewares: []string{"security-headers@file"},
 		}
 
+		targetURL := fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort)
+
 		resp.HTTP.Services[serviceName] = TraefikService{
 			LoadBalancer: TraefikLoadBalancer{
 				Servers: []TraefikServer{
 					{
-						URL: fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort),
+						URL: targetURL,
 					},
 				},
 				HealthCheck: &TraefikHealthCheck{

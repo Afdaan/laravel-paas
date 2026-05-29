@@ -259,18 +259,23 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open log file %s: %w", logFilePath, err)
-	}
-	defer logFile.Close()
-
-	var output io.Writer = logFile
+	var output io.Writer
+	var logFile *os.File
 	var sw *streamWriter
+	var err error
+
 	if logCallback != nil {
 		sw = &streamWriter{cb: logCallback}
 		output = sw
+	} else {
+		logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file %s: %w", logFilePath, err)
+		}
+		defer logFile.Close()
+		output = logFile
 	}
+
 	var refiner *LogRefiner
 	if refined {
 		refiner = NewLogRefiner(output)

@@ -142,7 +142,34 @@ def certbot_worker():
         for d in all_domains_list:
             certbot_args.extend(["-d", d])
             
-        ssl_success, ssl_out = run_command(certbot_args)
+        # Retry loop to mitigate Let's Encrypt / Certbot global lock contention
+        max_lock_retries = 5
+        lock_retry_delay = 5.0
+        ssl_success = False
+        ssl_out = ""
+
+        for attempt in range(max_lock_retries):
+            ssl_success, ssl_out = run_command(certbot_args)
+            if ssl_success:
+                break
+
+            # Check if the failure is due to global lock contention
+            is_lock_conflict = any(msg in ssl_out for msg in [
+                "Another instance of Certbot is already running",
+                "lock file",
+                "Could not bind",
+                "already running"
+            ])
+
+            if is_lock_conflict and attempt < max_lock_retries - 1:
+                logging.warning(
+                    f"[{subdomain}] Certbot lock contention detected. "
+                    f"Retrying in {lock_retry_delay}s... (Attempt {attempt + 1}/{max_lock_retries})"
+                )
+                time.sleep(lock_retry_delay)
+            else:
+                break
+
         if ssl_success:
             logging.info(f"[{subdomain}] Background SSL certificates successfully provisioned. Committing Nginx SSL config.")
             with GLOBAL_SYNC_LOCK:

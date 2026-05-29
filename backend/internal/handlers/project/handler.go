@@ -10,8 +10,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/backend/internal/services"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"gorm.io/gorm"
 )
 
 // ===========================================
@@ -22,18 +25,22 @@ import (
 // ProjectHandler handles project endpoints
 type ProjectHandler struct {
 	cfg            *config.Config
+	db             *gorm.DB
 	redisService   *infrastructure.RedisService
 	projectService *projectServicePkg.ProjectService
 	userService    *services.UserService
+	dockerService  *docker.DockerService
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(cfg *config.Config, redisService *infrastructure.RedisService, projectService *projectServicePkg.ProjectService, userService *services.UserService) *ProjectHandler {
+func NewProjectHandler(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, projectService *projectServicePkg.ProjectService, userService *services.UserService, dockerService *docker.DockerService) *ProjectHandler {
 	return &ProjectHandler{
 		cfg:            cfg,
+		db:             db,
 		projectService: projectService,
 		userService:    userService,
 		redisService:   redisService,
+		dockerService:  dockerService,
 	}
 }
 
@@ -44,8 +51,16 @@ func (h *ProjectHandler) GetDeploymentEvents(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 
-	events, err := h.projectService.GetDeploymentEvents(project.ID)
-	if err != nil {
+	var events []models.DeploymentEvent
+	var fetchErr error
+
+	if c.Query("all") == "true" {
+		events, fetchErr = h.projectService.GetAllDeploymentEvents(project.ID)
+	} else {
+		events, fetchErr = h.projectService.GetDeploymentEvents(project.ID)
+	}
+
+	if fetchErr != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve deployment events"})
 	}
 

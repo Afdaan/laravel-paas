@@ -43,6 +43,7 @@ type DeploymentWorker struct {
 	redisService   *infrastructure.RedisService
 	projectRepo    repositories.ProjectRepository
 	settingService *setting.SettingService
+	githubService  *infrastructure.GithubService
 
 	running  bool
 	stopChan chan struct{}
@@ -71,6 +72,7 @@ func NewDeploymentWorker(
 		redisService:   redisService,
 		projectRepo:    projectRepo,
 		settingService: settingService,
+		githubService:  infrastructure.NewGithubService(cfg, redisService),
 		running:        false,
 		stopChan:       make(chan struct{}),
 	}
@@ -308,7 +310,17 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// 1. Establish overall deployment watchdog timeout (default 30 mins)
+	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
+	if err != nil || buildTimeoutSec <= 0 {
+		buildTimeoutSec = 1800
+	}
+	// Give the overall deployment 1.5x the build timeout to cover cloning, migrations, and Nginx reloads
+	overallTimeout := time.Duration(buildTimeoutSec) * 3 / 2 * time.Second
+	if overallTimeout < 5*time.Minute {
+		overallTimeout = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), overallTimeout)
 	defer cancel()
 
 	cancelSub, err := w.redisService.SubscribeCancellation(ctx, job.ProjectID)
@@ -389,6 +401,17 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Warn("Instant update failed, falling back to full deployment", "subdomain", project.Subdomain)
 	}
 
+	if job.Type == "rollback" {
+		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
+		if err := w.redeployExistingImage(project); err == nil {
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
+			return
+		}
+		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
+	}
+
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
 	project.ErrorLog = nil
 	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -403,17 +426,63 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
+	var logFile *os.File
+
+	var logFileMu sync.Mutex
 	appendLog := func(msg string) {
-		if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
-			_, _ = f.WriteString(msg + "\n")
-			f.Close()
+		logFileMu.Lock()
+		defer logFileMu.Unlock()
+
+		if logFile != nil {
+			_, _ = logFile.WriteString(msg + "\n")
 		}
 		_ = w.redisService.PublishBuildLog(project.ID, msg)
 	}
 
 	w.checkDiskSpace()
 
-	latestHash, hashErr := w.gitService.GetRemoteCommitHash(project.GithubURL, project.Branch)
+	// Obtain GitHub App installation token for authenticating private repositories
+	authURL := project.GithubURL
+	var installationID int64
+	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
+		installationID = *project.GithubInstallationID
+	} else {
+		// Dynamic Self-Healing: Attempt to resolve missing installation ID from owner or user's account
+		owner := ""
+		trimmed := strings.TrimPrefix(authURL, "https://github.com/")
+		trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
+		trimmed = strings.TrimSuffix(trimmed, "/")
+		parts := strings.Split(trimmed, "/")
+		if len(parts) > 0 {
+			owner = parts[0]
+		}
+		
+		if resolvedID, err := w.projectRepo.ResolveInstallationID(project.UserID, owner); err == nil && resolvedID != 0 {
+			installationID = resolvedID
+			slog.Info("Self-healed and dynamically resolved GitHub Installation ID for project", "projectId", project.ID, "owner", owner, "resolvedID", resolvedID)
+			
+			// Persist the resolved installation ID to prevent future slow resolution runs
+			project.GithubInstallationID = &resolvedID
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"github_installation_id": resolvedID,
+			})
+		}
+	}
+
+	if installationID != 0 {
+		token, err := w.githubService.GetInstallationToken(installationID)
+		if err != nil {
+			slog.Error("Failed to get GitHub installation token for deployment", "projectId", project.ID, "error", err)
+			w.updateProjectError(project, job.JobID, "Failed to authenticate with GitHub App: "+err.Error())
+			return
+		}
+		// Inject token into git URL: https://x-access-token:<token>@github.com/owner/repo
+		if strings.HasPrefix(authURL, "https://github.com/") {
+			authURL = "https://x-access-token:" + token + "@" + strings.TrimPrefix(authURL, "https://")
+		}
+	}
+
+	latestHash, hashErr := w.gitService.GetRemoteCommitHash(authURL, project.Branch)
 	if job.Type == "deploy" && hashErr == nil && latestHash != "" && project.LastCommitHash == latestHash && project.ContainerID != nil {
 		slog.Info("Commit hash unchanged, checking for existing image", "subdomain", project.Subdomain, "hash", latestHash)
 
@@ -438,7 +507,23 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.GithubURL, project.Branch, project.Subdomain)
+		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(authURL, project.Branch, project.Subdomain)
+		if cloneErr != nil && installationID != 0 && (strings.Contains(cloneErr.Error(), "Authentication failed") || strings.Contains(cloneErr.Error(), "Invalid username or token") || strings.Contains(cloneErr.Error(), "could not read Username")) {
+			slog.Warn("Git clone failed due to authentication issue, invalidating cached token and retrying...", "projectId", project.ID, "installationId", installationID)
+			w.githubService.InvalidateInstallationToken(installationID)
+			
+			// Fetch a fresh token
+			newToken, err := w.githubService.GetInstallationToken(installationID)
+			if err == nil && newToken != "" {
+				// Reconstruct authURL with fresh token
+				retryURL := project.GithubURL
+				if strings.HasPrefix(retryURL, "https://github.com/") {
+					retryURL = "https://x-access-token:" + newToken + "@" + strings.TrimPrefix(retryURL, "https://")
+				}
+				slog.Info("Retrying Git clone with a fresh token...", "projectId", project.ID)
+				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(retryURL, project.Branch, project.Subdomain)
+			}
+		}
 	}()
 
 	go func() {
@@ -457,12 +542,21 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	wg.Wait()
 
 	if cloneErr != nil {
-		w.updateProjectError(project, job.JobID, "Failed to clone repository: "+cloneErr.Error())
+		w.updateProjectError(project, job.JobID, "[CLONE_FAILED] Failed to clone repository: "+cloneErr.Error())
 		return
 	}
 	if dbErr != nil {
-		w.updateProjectError(project, job.JobID, "Failed to create database: "+dbErr.Error())
+		w.updateProjectError(project, job.JobID, "[INFRASTRUCTURE_FAILED] Failed to create database: "+dbErr.Error())
 		return
+	}
+
+	// Open build log file after repository has been successfully synced/cloned
+	var logOpenErr error
+	logFile, logOpenErr = os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if logOpenErr != nil {
+		slog.Error("Failed to open build log file", "path", buildLogPath, "error", logOpenErr)
+	} else {
+		defer logFile.Close()
 	}
 
 	project.LastCommitHash = cloneHash
@@ -623,17 +717,23 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if ctx.Err() == context.Canceled {
 			appendLog("ERROR: Deployment cancelled by user request.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCancelled, project.DeploymentProgress, "deployment_cancelled", "User requested cancellation")
-			w.updateProjectError(project, job.JobID, "Deployment cancelled by user.")
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user request.")
+			return
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			appendLog("ERROR: Deployment timed out (watchdog kill).")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusFailed, project.DeploymentProgress, "watchdog_timeout", "Watchdog timed out the overall deployment process")
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment aborted: Execution watchdog timeout exceeded.")
 			return
 		}
 		if errors.Is(buildCtx.Err(), context.DeadlineExceeded) {
-			appendLog("ERROR: Deployment build phase timed out (watchdog kill).")
+			appendLog("ERROR: Deployment build phase timed out (build limit).")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusFailed, project.DeploymentProgress, "watchdog_timeout", "Build log watchdog timed out build step")
-			w.updateProjectError(project, job.JobID, "Deployment failed: Build step exceeded maximum allowed time limit.")
+			w.updateProjectError(project, job.JobID, "[BUILD_FAILED] Deployment failed: Build step exceeded maximum allowed time limit.")
 			return
 		}
 		appendLog("ERROR: Failed to deploy container: " + err.Error())
-		w.updateProjectError(project, job.JobID, "Failed to deploy container: "+err.Error())
+		w.updateProjectError(project, job.JobID, "[BUILD_FAILED] Failed to deploy container: "+err.Error())
 		return
 	}
 	sharedDocker.GetCircuitBreaker().RecordSuccess()
@@ -662,7 +762,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			"rollout_container_id": nil,
 		})
 
-		w.updateProjectError(project, job.JobID, "Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
+		w.updateProjectError(project, job.JobID, "[RUNTIME_FAILED] Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
 	} else {
 		appendLog("✓ Health check passed.")
@@ -677,7 +777,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "Deployment cancelled by user before migrations. Old version is still running.")
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force")
@@ -693,7 +793,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
@@ -748,7 +848,15 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	w.dockerService.CleanupLegacyContainers(project.Subdomain, newContainerID, project.WorkerContainerID)
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", "Release successfully promoted and live") {
+	// Prune old project image builds according to retention policy
+	maxRetentionStr := w.getSetting(models.SettingMaxImageRetention, models.DefaultMaxImageRetention)
+	maxRetention, _ := strconv.Atoi(maxRetentionStr)
+	if maxRetention <= 0 {
+		maxRetention, _ = strconv.Atoi(models.DefaultMaxImageRetention)
+	}
+	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
+
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
 		w.forceDeploymentCompleted(project, job.JobID)
 	}
 	
@@ -778,8 +886,74 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 		project.DeploymentStatus = updatedProject.DeploymentStatus
 		project.DeploymentProgress = updatedProject.DeploymentProgress
 		project.DeploymentMessage = updatedProject.DeploymentMessage
+		w.updateGitHubCommitStatus(project, nextState, payload)
 	}
 	return true
+}
+
+func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
+	if project.GithubInstallationID == nil || *project.GithubInstallationID == 0 || project.GithubRepoOwner == "" || project.GithubRepoName == "" || project.LastCommitHash == "" {
+		return
+	}
+
+	ghState := "pending"
+	desc := ""
+
+	switch state {
+	case models.DepStatusCompleted:
+		ghState = "success"
+		desc = "Deployment successful. Application is live."
+	case models.DepStatusFailed:
+		ghState = "failure"
+		desc = "Deployment failed. View build logs in the dashboard for details."
+	case models.DepStatusRollback:
+		ghState = "failure"
+		desc = "Deployment failed. Rolled back to previous stable version."
+	case models.DepStatusCancelled:
+		ghState = "error"
+		desc = "Deployment cancelled by user."
+	case models.DepStatusQueued:
+		desc = "Build queued. Waiting for an available worker slot..."
+	case models.DepStatusPreparing:
+		desc = "Preparing build environment..."
+	case models.DepStatusCloning:
+		desc = "Cloning source code repository..."
+	case models.DepStatusBuilding:
+		desc = "Building container image using BuildKit..."
+	case models.DepStatusStarting:
+		desc = "Provisioning container instance..."
+	case models.DepStatusHealthchecking:
+		desc = "Running health checks and readiness probes..."
+	case models.DepStatusMigrating:
+		desc = "Running database migrations..."
+	case models.DepStatusPromoting:
+		desc = "Promoting release and propagating routing traffic..."
+	case models.DepStatusCleanup:
+		desc = "Cleaning up build artifacts..."
+	default:
+		desc = description
+		if desc == "" {
+			desc = string(state)
+		}
+	}
+
+	if len(desc) > 140 {
+		desc = desc[:137] + "..."
+	}
+
+	projectUID := project.UID
+	if projectUID == "" {
+		projectUID = fmt.Sprintf("%d", project.ID)
+	}
+	targetURL := fmt.Sprintf("%s/projects/%s?tab=build", w.cfg.FrontendURL, projectUID)
+
+	slog.Info("Updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
+	go func() {
+		err := w.githubService.UpdateCommitStatus(*project.GithubInstallationID, project.GithubRepoOwner, project.GithubRepoName, project.LastCommitHash, ghState, targetURL, desc)
+		if err != nil {
+			slog.Warn("Failed to update GitHub commit status", "project_id", project.ID, "error", err)
+		}
+	}()
 }
 
 func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, jobID string) {
@@ -792,6 +966,7 @@ func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, job
 	project.DeploymentProgress = 100
 	msg := "Release successfully promoted and live"
 	project.DeploymentMessage = &msg
+	w.updateGitHubCommitStatus(project, models.DepStatusCompleted, msg)
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache after forced deployment completion", "subdomain", project.Subdomain, "error", err)
 	}
@@ -822,9 +997,26 @@ func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, event
 
 // updateProjectError sets project deployment status to failed
 func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID string, errorMsg string) {
-	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", errorMsg)
-	msg := errorMsg
+	// Log the raw error for administrator diagnostics
+	slog.Error("Deployment failure with raw diagnostic details", "projectId", project.ID, "jobId", jobID, "error", errorMsg)
+
+	sanitizedMsg := utils.SanitizeError(errorMsg)
+	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
+	msg := sanitizedMsg
 	project.ErrorLog = &msg
+	
+	// Determine the correct project status after a failure
+	statusUpdate := models.StatusFailed
+	if project.ContainerID != nil && *project.ContainerID != "" {
+		// If an existing container is already running, keep the status as running
+		statusUpdate = models.StatusRunning
+	}
+	project.Status = statusUpdate
+	
+	if err := w.projectRepo.UpdateStatus(project.ID, statusUpdate); err != nil {
+		slog.Error("Failed to update project runtime status on error", "id", project.ID, "status", statusUpdate, "error", err)
+	}
+
 	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"error_log": msg,
 	}); err != nil {
@@ -867,18 +1059,12 @@ func (w *DeploymentWorker) checkDiskSpace() {
 	usageStr := strings.TrimSuffix(fields[4], "%")
 	usage, _ := strconv.Atoi(usageStr)
 
-	if usage > 90 {
-		slog.Warn("Disk space critical, performing emergency prune", "usage", usage)
-		// Immediate cleanup
-		if err := w.dockerService.PruneImages(); err != nil {
-			slog.Warn("Emergency image prune failed", "error", err)
-		}
-		if err := utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-a", "-f"); err != nil {
-			slog.Warn("Emergency builder prune failed", "error", err)
-		}
-		if err := utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f"); err != nil {
-			slog.Warn("Emergency volume prune failed", "error", err)
-		}
+	if usage > 85 {
+		slog.Warn("Disk space usage exceeds 85%, performing smart cleanup", "usage", usage)
+		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-a", "-f", "--filter", "until=24h")
+		_ = utils.RunSilent(5*time.Minute, "docker", "builder", "prune", "-f")
+		_ = utils.RunSilent(5*time.Minute, "docker", "buildx", "prune", "-f", "--builder", "paas-builder")
+		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}
 }
 

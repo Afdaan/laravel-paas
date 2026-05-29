@@ -154,6 +154,11 @@ type Project struct {
 	// Health Check Configuration
 	HealthCheckPath string `gorm:"size:255" json:"health_check_path"` // Custom health check path (default: "/" for most, "/health" for Laravel)
 
+	// GitHub Integration (Git Connect)
+	GithubInstallationID *int64 `gorm:"index" json:"github_installation_id,omitempty"`
+	GithubRepoOwner      string `gorm:"size:255" json:"github_repo_owner,omitempty"`
+	GithubRepoName       string `gorm:"size:255" json:"github_repo_name,omitempty"`
+
 	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
 }
 
@@ -515,3 +520,19 @@ type AuditLog struct {
 	TraceID      string    `gorm:"size:100;index" json:"trace_id"`
 	CreatedAt    time.Time `gorm:"index" json:"created_at"`
 }
+
+// ===========================================
+// GithubAppInstallation Model
+// ===========================================
+
+// GithubAppInstallation maps a user's authenticated GitHub organization/account.
+type GithubAppInstallation struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	UserID         uint      `gorm:"not null;index" json:"user_id"`
+	InstallationID int64     `gorm:"uniqueIndex;not null" json:"installation_id"`
+	AccountName    string    `gorm:"size:255;not null" json:"account_name"`
+	AvatarURL      string    `gorm:"size:500" json:"avatar_url"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+

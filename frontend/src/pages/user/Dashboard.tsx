@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../../services/api'
 import useAuthStore from '../../stores/authStore'
@@ -67,9 +67,12 @@ function UserDashboard() {
   const { user } = useAuthStore()
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
-
+  const isFirstLoad = useRef(true)
+  
   const fetchDashboardData = useCallback(async () => {
-    setIsLoading(true)
+    if (isFirstLoad.current) {
+      setIsLoading(true)
+    }
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
@@ -77,6 +80,7 @@ function UserDashboard() {
       toast.error(t('common.loadError'))
     } finally {
       setIsLoading(false)
+      isFirstLoad.current = false
     }
   }, [t])
 

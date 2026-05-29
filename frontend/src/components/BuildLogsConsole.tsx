@@ -133,29 +133,16 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     });
   }, [events, clearedEventMaxId])
 
-  const currentJobId = useRef(project?.deployment_job_id)
 
-  useEffect(() => {
-    const isNewJob = project?.deployment_job_id && project.deployment_job_id !== currentJobId.current;
-    const isQueued = project?.deployment_status === 'queued';
-    
-    if (isNewJob || isQueued) {
-      if (project?.deployment_job_id) {
-        currentJobId.current = project.deployment_job_id;
-      }
-      setClearedCount(0);
-      setClearedEventMaxId(-1);
-      setLogs([]);
-      setEvents([]);
-    }
-  }, [project?.deployment_job_id, project?.deployment_status])
 
   const isDeploying = useMemo(() => {
     return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   }, [project?.deployment_status])
 
-  // 1. Fetch static logs immediately on mount, tab switch, or when deployment completes
+  // 1. Fetch static logs once if deployment is NOT active
   useEffect(() => {
+    if (isDeploying) return
+    
     let isMounted = true
     
     const fetchStaticLogs = async () => {
@@ -170,6 +157,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         if (logsRes.data?.logs) {
           const lines = logsRes.data.logs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
           setLogs(lines)
+        } else {
+          setLogs([])
         }
         if (Array.isArray(eventsRes.data)) {
           setEvents(eventsRes.data)
@@ -177,6 +166,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             const sorted = [...eventsRes.data].sort((a, b) => (b.id || 0) - (a.id || 0))
             onDeploymentEvent(sorted[0])
           }
+        } else {
+          setEvents([])
         }
       } catch (err) {
         console.error('Failed to fetch initial build logs:', err)

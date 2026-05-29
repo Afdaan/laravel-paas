@@ -56,7 +56,7 @@ prepare_env() {
     docker network create paas-network 2>/dev/null || true
     sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+    sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 }
 
 # Helper to get next numeric tag for a service
@@ -92,9 +92,30 @@ deploy_with_anti_downtime() {
             return 1
         fi
     else
-        if ! docker build -t "$image_name" "$context_dir"; then
-            echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
-            return 1
+        if [ "$service_name" = "frontend" ]; then
+            # Capture and disable execution tracing to safeguard build arguments from leaking.
+            [[ $- == *x* ]] && was_tracing=true || was_tracing=false
+            { set +x; } 2>/dev/null
+            
+            local success=false
+            if docker build \
+                --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
+                -t "$image_name" "$context_dir"; then
+                success=true
+            fi
+            
+            # Restore execution tracing if it was active
+            if [ "$was_tracing" = true ]; then set -x; fi
+            
+            if [ "$success" = false ]; then
+                echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+                return 1
+            fi
+        else
+            if ! docker build -t "$image_name" "$context_dir"; then
+                echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
+                return 1
+            fi
         fi
     fi
     echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
@@ -224,6 +245,42 @@ start_redis() {
         redis:alpine sh -c "$redis_cmd"
 }
 
+start_buildkit() {
+    local reg_port=${REGISTRY_PORT:-"5000"}
+    local reg_host=${REGISTRY_HOST:-"127.0.0.1"}
+    local reg_image=${REGISTRY_IMAGE:-"registry:2"}
+
+    echo -e "${YELLOW}Starting Local Registry...${NC}"
+    docker rm -f paas-registry 2>/dev/null || true
+    docker volume create paas-registry-data 2>/dev/null || true
+    docker run -d \
+        --name paas-registry \
+        --network paas-network \
+        -p "${reg_host}:${reg_port}:5000" \
+        --restart unless-stopped \
+        -v paas-registry-data:/var/lib/registry \
+        "${reg_image}"
+
+    echo -e "${YELLOW}Starting BuildKit...${NC}"
+    docker rm -f paas-buildkit 2>/dev/null || true
+    docker volume create paas-buildkit-cache 2>/dev/null || true
+    local config_path="${PROJECT_ROOT}/docker/templates/buildkitd.toml"
+    docker run -d \
+        --name paas-buildkit \
+        --network paas-network \
+        -p 127.0.0.1:1234:1234 \
+        --device /dev/fuse \
+        --security-opt seccomp=unconfined \
+        --security-opt apparmor=unconfined \
+        --restart unless-stopped \
+        --cpus="4.0" \
+        --memory="4g" \
+        -v paas-buildkit-cache:/home/user/.local/share/buildkit \
+        -v "${config_path}:/etc/buildkit/buildkitd.toml:ro" \
+        moby/buildkit:rootless --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox
+}
+
+
 start_traefik() {
     echo -e "${YELLOW}Starting Traefik...${NC}"
     docker rm -f paas-traefik 2>/dev/null || true
@@ -236,7 +293,7 @@ start_traefik() {
         return 1
     fi
     if [ -f "$dynamic_template" ]; then
-        sed "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" "$dynamic_template" > "$dynamic_conf"
+        sed -e "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" -e "s/{{PROJECT_DOMAIN}}/${PROJECT_DOMAIN:-$BASE_DOMAIN}/g" "$dynamic_template" > "$dynamic_conf"
     else
         echo -e "${RED}Error: dynamic.yml.template not found${NC}"
         return 1
@@ -369,6 +426,7 @@ start_all() {
     start_postgres
     start_redis
     start_traefik
+    start_buildkit
     start_backend
     start_worker
     start_frontend
@@ -387,6 +445,7 @@ start_service() {
         postgres|psql) start_postgres ;;
         redis) start_redis ;;
         traefik) start_traefik ;;
+        buildkit) start_buildkit ;;
         backend) start_backend ;;
         worker) start_worker ;;
         frontend) start_frontend ;;
@@ -400,7 +459,7 @@ show_status() {
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
-    local services=("paas-mysql" "paas-postgres" "paas-redis" "paas-traefik" "paas-backend" "paas-worker-manager" "paas-frontend")
+    local services=("paas-mysql" "paas-postgres" "paas-redis" "paas-traefik" "paas-buildkit" "paas-backend" "paas-worker-manager" "paas-frontend")
     for s in "${services[@]}"; do
         local status="not_created"
         local ip="-"
@@ -435,21 +494,23 @@ service_menu() {
         echo "2) PostgreSQL (paas-postgres)"
         echo "3) Redis (paas-redis)"
         echo "4) Traefik (paas-traefik)"
-        echo "5) Backend (paas-backend)"
-        echo "6) Worker Manager (paas-worker-manager)"
-        echo "7) Frontend (paas-frontend)"
-        echo "8) Back to Main Menu"
-        read -p "Select service [1-8]: " s_opt
+        echo "5) BuildKit (paas-buildkit)"
+        echo "6) Backend (paas-backend)"
+        echo "7) Worker Manager (paas-worker-manager)"
+        echo "8) Frontend (paas-frontend)"
+        echo "9) Back to Main Menu"
+        read -p "Select service [1-9]: " s_opt
         
         case "$s_opt" in
             1) start_mysql ; break ;;
             2) start_postgres ; break ;;
             3) start_redis ; break ;;
             4) start_traefik ; break ;;
-            5) start_backend ; break ;;
-            6) start_worker ; break ;;
-            7) start_frontend ; break ;;
-            8) return 0 ;;
+            5) start_buildkit ; break ;;
+            6) start_backend ; break ;;
+            7) start_worker ; break ;;
+            8) start_frontend ; break ;;
+            9) return 0 ;;
             *) echo -e "${RED}Invalid option!${NC}" ;;
         esac
     done
@@ -481,7 +542,7 @@ case "$1" in
     all)
         start_all
         ;;
-    mysql|postgres|psql|redis|traefik|backend|worker|frontend)
+    mysql|postgres|psql|redis|traefik|buildkit|backend|worker|frontend)
         start_service "$1"
         ;;
     status)
@@ -492,7 +553,7 @@ case "$1" in
         ;;
     *)
         echo "Usage: $0 [all|service_name|status]"
-        echo "Services: mysql, postgres/psql, redis, traefik, backend, worker, frontend"
+        echo "Services: mysql, postgres/psql, redis, traefik, buildkit, backend, worker, frontend"
         exit 1
         ;;
 esac
