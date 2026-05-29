@@ -163,7 +163,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"deployment_events", "uni_project_job_seq", []string{"project_id", "job_id", "sequence_number"}},
 		{"idempotent_operations", "uni_idempotent_operations_key", []string{"key"}},
 		{"pending_reconciles", "uni_pending_reconciles_domain_id", []string{"domain_id"}},
-		{"database_instances", "uni_db_instances_project", []string{"project_id"}},
+		{"database_instances", "uni_database_instances_project_id", []string{"project_id"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -309,7 +309,7 @@ func ReconcileSchemas(db *gorm.DB) error {
 	_ = EnsureConstraint(db, &models.PendingReconcile{}, "uni_pending_reconciles_domain_id", "UNIQUE (domain_id)")
 
 	// Reconcile DatabaseInstance
-	_ = EnsureConstraint(db, &models.DatabaseInstance{}, "uni_db_instances_project", "UNIQUE (project_id)")
+	_ = EnsureConstraint(db, &models.DatabaseInstance{}, "uni_database_instances_project_id", "UNIQUE (project_id)")
 
 	return nil
 }

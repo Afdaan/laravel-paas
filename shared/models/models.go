@@ -555,7 +555,7 @@ const (
 // which container and driver handles provisioning and queries.
 type DatabaseInstance struct {
 	ID                 uint                   `gorm:"primaryKey" json:"id"`
-	ProjectID          uint                   `gorm:"uniqueIndex:uni_db_instances_project;not null" json:"project_id"`
+	ProjectID          uint                   `gorm:"uniqueIndex:uni_database_instances_project_id;not null" json:"project_id"`
 	Project            Project                `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	Engine             string                 `gorm:"size:20;not null;default:mysql" json:"engine"` // "mysql" or "postgresql"
 	Version            string                 `gorm:"size:50" json:"version,omitempty"`
