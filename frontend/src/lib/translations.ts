@@ -905,7 +905,7 @@ export const translations = {
         connectFailed: "Failed to connect to Managed Database. Verify project is running.",
         readRowsFailed: "Failed to read table rows.",
         rotateFailed: "Failed to rotate credentials.",
-        testConnectionFailed: "Connection restart test failed",
+        testConnectionFailed: "Connection test failed.",
         updateStatusFailed: "Failed to update status.",
         createBackupFailed: "Failed to generate snapshot backup.",
         restoreBackupFailed: "Failed to restore snapshot.",
@@ -918,6 +918,9 @@ export const translations = {
       dashboard: {
         title: "Database Studio",
         subtitle: "Isolated Tenant Resources & DDL Schema Designer",
+        simpleHealthTitle: "Database Health Status",
+        simpleHealthDesc: "All database instances are active, healthy, and running securely.",
+        testConnectionSuccess: "Connection test succeeded! Database is active.",
         suspendedWarning: "No database access. Database is suspended.",
         suspendedTitle: "Database Instance Suspended",
         suspendedDesc: "Connect privileges have been actively revoked and all active backend connections have been forcefully terminated to secure resources. Restart or resume the instance to restore full data access.",
@@ -933,27 +936,27 @@ export const translations = {
           activeConnectionsSub: "Number of active apps connected to this database",
           connectionsLimitDesc: "Strict 15-connection ceiling is enforced per tenant to guarantee cluster DoS protection.",
           storageUsage: "Storage Usage",
-          storageUsageSub: "Tenant database disk allocation",
-          storageLimitDesc: "Managed volumes prevent shared host system disk space starvation.",
-          tablesCount: "Tables Count",
+          storageUsageSub: "Database storage allocation",
+          storageLimitDesc: "Managed storage allocation to prevent excessive disk usage on the server.",
+          tablesCount: "Total Tables",
           version: "Version",
           diskUsed: "Disk Used",
           tables: "Tables",
           resourceUsageTitle: "Resource Usage Metrics"
         },
         actions: {
-          syncState: "Sync State",
+          syncState: "Sync Status",
           testConnection: "Test Connection",
           rotateCredentials: "Rotate Password",
           suspendDatabase: "Suspend DB",
           resumeDatabase: "Resume DB Instance",
-          rotating: "Rotating...",
+          rotating: "Processing...",
           testing: "Testing...",
           updating: "Updating..."
         },
         credentials: {
           title: "Connection Credentials",
-          subtitle: "Internal credentials for project container connection bindings",
+          subtitle: "Internal credentials for project container connection binding",
           host: "Host",
           port: "Port",
           databaseName: "Database Name",
@@ -964,13 +967,13 @@ export const translations = {
         },
         autoBackup: {
           title: "Auto Backup (Pro)",
-          desc: "Automatic Daily backups scheduled at midnight.",
+          desc: "Automated daily backups scheduled at midnight.",
           enabled: "Enabled (Daily at 00:00)",
           disabled: "Disabled"
         },
         snapshotLimit: {
-          title: "Snapshot Files Limit",
-          desc: "Active database backup snapshot files limit in retention catalog.",
+          title: "Snapshots Limit",
+          desc: "Maximum active backup snapshots limit in retention catalog.",
           freeLimit: "5 Snapshots (Free Limit)",
           proLimit: "50 Snapshots (Pro Limit)",
           manageConfig: "Manage Snapshots Configuration",
@@ -993,6 +996,19 @@ export const translations = {
         sidebarDesc: "Select or create tables to inspect schemas and run visual mutations.",
         searchPlaceholder: "Search tables...",
         addTable: "Add Table",
+        insertRow: "Insert Row",
+        stats: {
+          rows: "Total Rows",
+          size: "Data Size",
+          cols: "Columns"
+        },
+        insertModal: {
+          title: "Insert New Record",
+          desc: "Add a new row to the table visually using our dynamic schema mapper.",
+          submit: "Insert Record",
+          success: "New record inserted successfully.",
+          failed: "Failed to insert record."
+        },
         noTableSelected: "No Table Selected",
         noTableSelectedDesc: "Select a table from the sidebar or build one in the Structure tab.",
         tableEmpty: "Table is empty. No rows exist.",
@@ -1027,22 +1043,23 @@ export const translations = {
         updateSuccess: "Table structure updated.",
         actions: {
           dropColumn: "Drop Column",
+          dropColumnConfirmDesc: "Are you sure you want to drop column \"{{column}}\" from table \"{{table}}\"? This action is permanent and will delete all data in this column.",
           createIndex: "Create Index",
           dropIndex: "Drop Index"
         },
         createTableDialog: {
           title: "Create Table Dialog",
           desc: "Define your new table structure and dynamic columns.",
-          tableName: "Table Name",
+          tableName: "TableName",
           tableNamePlaceholder: "e.g. posts",
-          autoDesignWarning: "Automatic design: GORM structures require a primary key. An auto-incrementing integer key id will be added automatically.",
-          columnsDefinition: "Columns Definition",
+          autoDesignWarning: "Auto design: GORM structure requires a primary key. An auto-incrementing integer key 'id' will be added automatically.",
+          columnsDefinition: "Column Definitions",
           addColumnBtn: "Add Column",
           columnName: "Column Name",
           dataType: "Data Type",
           nullableLabel: "Nullable",
           defaultValue: "Default Value",
-          primaryKey: "Primary Key",
+          primaryKey: "PrimaryKey",
           unique: "Unique",
           indexed: "Indexed",
           removeBtn: "Remove",
@@ -1078,6 +1095,13 @@ export const translations = {
         successMsg: "Success. Rows affected: {{count}}",
         failedMsg: "[QUERY EXECUTION FAILED]",
         queryDuration: "Query duration",
+        templates: {
+          label: "Query Templates",
+          select: "Select All Records",
+          count: "Aggregate Row Count",
+          filter: "Filter by Condition",
+          group: "Group and Order Data"
+        },
         history: {
           title: "Query History",
           emptyHistory: "No queries run in this session.",
@@ -2046,9 +2070,12 @@ export const translations = {
         deleteRowFailed: "Gagal menghapus baris data.",
         designerActionFailed: "Aksi visual designer gagal."
       },
-      overview: {
+      dashboard: {
         title: "Database Studio",
         subtitle: "Isolated Tenant Resources & DDL Schema Designer",
+        simpleHealthTitle: "Database Health Status",
+        simpleHealthDesc: "Seluruh database instance aktif, sehat, dan berjalan dengan aman.",
+        testConnectionSuccess: "Uji koneksi berhasil! Database dalam kondisi aktif.",
         suspendedWarning: "Tidak ada akses database. Database ditangguhkan.",
         suspendedTitle: "Database Instance Suspended",
         suspendedDesc: "Hak koneksi dicabut secara aktif dan seluruh koneksi backend diputus secara paksa untuk mengamankan resources. Aktifkan kembali database instance untuk memulihkan akses data penuh.",
@@ -2124,6 +2151,19 @@ export const translations = {
         sidebarDesc: "Pilih atau buat tabel untuk mengelola skema dan memodifikasi data secara visual.",
         searchPlaceholder: "Cari tabel...",
         addTable: "Tambah Tabel",
+        insertRow: "Tambah Baris",
+        stats: {
+          rows: "Total Baris",
+          size: "Ukuran Data",
+          cols: "Jumlah Kolom"
+        },
+        insertModal: {
+          title: "Tambah Data Baru",
+          desc: "Tambahkan baris data baru ke tabel secara visual tanpa menulis kueri SQL.",
+          submit: "Simpan Data",
+          success: "Data baru berhasil ditambahkan.",
+          failed: "Gagal menambahkan data baru."
+        },
         noTableSelected: "Tidak Ada Tabel Terpilih",
         noTableSelectedDesc: "Pilih tabel dari sidebar atau buat baru di tab Struktur.",
         tableEmpty: "Tabel kosong. Tidak ada baris data.",
@@ -2158,6 +2198,7 @@ export const translations = {
         updateSuccess: "Struktur tabel diperbarui.",
         actions: {
           dropColumn: "Hapus Kolom",
+          dropColumnConfirmDesc: "Apakah yakin ingin menghapus kolom \"{{column}}\" dari tabel \"{{table}}\"? Tindakan ini permanen dan akan menghapus seluruh data pada kolom tersebut.",
           createIndex: "Buat Indeks",
           dropIndex: "Hapus Indeks"
         },
@@ -2188,7 +2229,7 @@ export const translations = {
         },
         createIndexDialog: {
           title: "Buat Indeks",
-          desc: "Tambahkan index berkinerja tinggi untuk optimasi query pada kolom target.",
+          desc: "Tambahkan index berkinerja tinggi untuk optimasi kueri pada kolom target.",
           indexName: "Nama Indeks",
           selectColumn: "Pilih Kolom Target",
           submitBtn: "Buat Indeks"
@@ -2196,7 +2237,7 @@ export const translations = {
       },
       query: {
         title: "SQL Scratchpad Workspace",
-        subtitle: "Eksekusi SQL query secara langsung, dilindungi dengan execution timeout 15 detik",
+        subtitle: "Eksekusi SQL kueri secara langsung, dilindungi dengan execution timeout 15 detik",
         queryPlaceholder: "SELECT * FROM table LIMIT 10;",
         outputHeader: "Output Eksekusi Kueri",
         errorLabel: "Error",
@@ -2209,6 +2250,13 @@ export const translations = {
         successMsg: "Sukses. Baris terpengaruh: {{count}}",
         failedMsg: "[EKSEKUSI QUERY GAGAL]",
         queryDuration: "Durasi query",
+        templates: {
+          label: "Koleksi Query",
+          select: "Tampilkan Semua Baris",
+          count: "Hitung Jumlah Baris",
+          filter: "Filter dengan Kondisi",
+          group: "Kelompokkan & Urutkan Data"
+        },
         history: {
           title: "Query History",
           emptyHistory: "Belum ada query yang dijalankan pada sesi ini.",

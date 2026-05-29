@@ -73,6 +73,10 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [tableTotal, setTableTotal] = useState(0)
   const [tableSearch, setTableSearch] = useState('')
 
+  // Dynamic visual insert row modal states
+  const [showInsertModal, setShowInsertModal] = useState(false)
+  const [insertFormData, setInsertFormData] = useState<Record<string, any>>({})
+
   // Confirmation Modal state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -331,6 +335,32 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     }
   }
 
+  const handleDropColumn = (tableName: string, colName: string) => {
+    if (!id) return
+    triggerConfirmation({
+      title: t('databaseStudio.structure.actions.dropColumn'),
+      message: t('databaseStudio.structure.actions.dropColumnConfirmDesc', { column: colName, table: tableName }),
+      type: 'danger',
+      confirmText: t('databaseStudio.structure.actions.dropColumn'),
+      onConfirm: async () => {
+        setIsActionLoading(true)
+        try {
+          await databaseAPI.executeDesigner(id, {
+            action: 'drop_column',
+            table_name: tableName,
+            index_name: colName // Reuse IndexName for Column Name here as per backend GORM spec
+          })
+          toast.success(t('databaseStudio.structure.updateSuccess'))
+          loadStudioData()
+        } catch (err: any) {
+          toast.error(err.response?.data?.error || t('databaseStudio.errors.designerActionFailed'))
+        } finally {
+          setIsActionLoading(false)
+        }
+      }
+    })
+  }
+
   const handleDeleteRow = (row: any, pkCol: string) => {
     if (!id || !selectedTable) return
     const pkValue = row[pkCol]
@@ -356,6 +386,61 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         }
       }
     })
+  }
+
+  const handleInsertRowSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!id || !selectedTable) return
+
+    setIsActionLoading(true)
+    try {
+      const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
+      const fields: string[] = []
+      const values: string[] = []
+
+      const isPostgres = dbOverview?.engine?.toLowerCase() === 'postgres'
+      const q = isPostgres ? '"' : '`'
+
+      cols.forEach((col: any) => {
+        if (col.key === 'PRI' && !insertFormData[col.name]) return
+
+        const val = insertFormData[col.name]
+        if (val === undefined || val === '') return
+
+        fields.push(`${q}${col.name}${q}`)
+
+        const typeLower = col.type.toLowerCase()
+        if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+          values.push(String(Number(val)))
+        } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+          values.push(val === 'true' || val === true ? '1' : '0')
+        } else {
+          const escapedVal = String(val).replace(/'/g, "''")
+          values.push(`'${escapedVal}'`)
+        }
+      })
+
+      if (fields.length === 0) {
+        toast.error(t('databaseStudio.errors.designerActionFailed'))
+        setIsActionLoading(false)
+        return
+      }
+
+      const sql = `INSERT INTO ${q}${selectedTable}${q} (${fields.join(', ')}) VALUES (${values.join(', ')});`
+      const res = await databaseAPI.query(id, sql)
+      if (res.data && res.data.error) {
+        throw new Error(res.data.error)
+      }
+
+      toast.success(t('databaseStudio.tables.insertModal.success'))
+      setShowInsertModal(false)
+      loadTableDataGrid()
+      loadStudioData()
+    } catch (err: any) {
+      toast.error(t('databaseStudio.tables.insertModal.failed') + ': ' + (err.response?.data?.error || err.message))
+    } finally {
+      setIsActionLoading(false)
+    }
   }
 
   const handleDesignerAction = async (e: React.FormEvent) => {
@@ -778,7 +863,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
           {/* Right Column: Data Grid */}
           <Card className="lg:col-span-3 p-6 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between border-b pb-4 mb-5">
+            <div className="flex items-start sm:items-center justify-between gap-4 border-b pb-4 mb-5">
               <div className="flex items-center gap-3">
                 <Table className="w-5 h-5 text-primary" />
                 <div>
@@ -786,7 +871,49 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   <p className="text-muted-foreground text-xs">{t('databaseStudio.tables.tableDesc')}</p>
                 </div>
               </div>
+              {selectedTable && !isSuspended && (
+                <Button
+                  onClick={() => {
+                    const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
+                    const initialData: Record<string, any> = {}
+                    cols.forEach((c: any) => {
+                      if (c.key === 'PRI') return
+                      initialData[c.name] = c.default !== null ? c.default : ''
+                    })
+                    setInsertFormData(initialData)
+                    setShowInsertModal(true)
+                  }}
+                  className="font-bold gap-1.5 h-10 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm shrink-0 cursor-pointer"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <Plus className="w-4 h-4" />
+                  {t('databaseStudio.tables.insertRow')}
+                </Button>
+              )}
             </div>
+
+            {selectedTable && !isSuspended && (
+              <div className="grid grid-cols-3 gap-4 mb-5 animate-in fade-in duration-300">
+                <div className="p-3.5 bg-muted/20 border border-border/40 rounded-xl flex flex-col hover:border-primary/20 transition-all">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.tables.stats.rows')}</span>
+                  <span className="text-lg font-extrabold text-foreground mt-0.5">
+                    {schemaData.find(t => t.name === selectedTable)?.rows ?? tableTotal}
+                  </span>
+                </div>
+                <div className="p-3.5 bg-muted/20 border border-border/40 rounded-xl flex flex-col hover:border-primary/20 transition-all">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.tables.stats.cols')}</span>
+                  <span className="text-lg font-extrabold text-foreground mt-0.5">
+                    {schemaData.find(t => t.name === selectedTable)?.columns?.length || 0}
+                  </span>
+                </div>
+                <div className="p-3.5 bg-muted/20 border border-border/40 rounded-xl flex flex-col hover:border-primary/20 transition-all">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.metrics.engine')}</span>
+                  <span className="text-lg font-extrabold text-foreground mt-0.5 capitalize">
+                    {dbOverview?.engine || 'MySQL'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {isSuspended ? (
               <div className="py-12 text-center text-muted-foreground text-sm font-semibold uppercase tracking-wide">
@@ -884,6 +1011,117 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               <div className="py-10 text-center text-muted-foreground flex-1 flex items-center justify-center">{t('databaseStudio.tables.loadingRows')}</div>
             )}
           </Card>
+
+          {/* Visual Insert Row Modal */}
+          <Dialog open={showInsertModal} onOpenChange={(open: boolean) => !open && setShowInsertModal(false)}>
+            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader className="pb-2 border-b border-border/40">
+                <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  {t('databaseStudio.tables.insertModal.title')}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  {t('databaseStudio.tables.insertModal.desc')} — <span className="font-mono text-primary font-semibold">{selectedTable}</span>
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleInsertRowSubmit} className="space-y-4 pt-3">
+                <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1">
+                  {(schemaData.find(t => t.name === selectedTable)?.columns || []).map((col: any) => {
+                    const isPK = col.key === 'PRI'
+                    const isNullable = col.nullable
+                    const typeLower = col.type.toLowerCase()
+
+                    return (
+                      <div key={col.name} className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`insert_${col.name}`} className="text-xs font-bold text-foreground/90 flex items-center gap-2">
+                            <span className="font-mono">{col.name}</span>
+                            <span className="text-[10px] text-muted-foreground font-normal">({col.type})</span>
+                          </Label>
+                          <div className="flex items-center gap-1.5">
+                            {isPK && (
+                              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-black uppercase">
+                                PK
+                              </span>
+                            )}
+                            {!isNullable ? (
+                              <span className="text-[9px] font-extrabold uppercase text-amber-500/80 bg-amber-500/5 px-1.5 py-0.5 rounded border border-amber-500/10">
+                                Required
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold uppercase text-muted-foreground/60 bg-muted/10 px-1.5 py-0.5 rounded border border-border/40">
+                                Optional
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {isPK ? (
+                          <Input
+                            id={`insert_${col.name}`}
+                            disabled
+                            value={insertFormData[col.name] || ''}
+                            placeholder="Auto-incrementing ID"
+                            className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
+                          />
+                        ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
+                          <select
+                            id={`insert_${col.name}`}
+                            value={String(insertFormData[col.name] ?? '')}
+                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <option value="">-- Select Boolean --</option>
+                            <option value="true">True (Yes)</option>
+                            <option value="false">False (No)</option>
+                          </select>
+                        ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
+                          <Input
+                            id={`insert_${col.name}`}
+                            type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
+                            value={insertFormData[col.name] || ''}
+                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            required={!isNullable}
+                            className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                          />
+                        ) : typeLower.includes('text') ? (
+                          <textarea
+                            id={`insert_${col.name}`}
+                            value={insertFormData[col.name] || ''}
+                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            required={!isNullable}
+                            rows={3}
+                            placeholder={`Enter text data...`}
+                            className="w-full p-3 rounded-xl border border-border/70 bg-background/50 text-xs font-mono outline-none focus:border-primary/50"
+                          />
+                        ) : (
+                          <Input
+                            id={`insert_${col.name}`}
+                            type={typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double') ? "number" : "text"}
+                            value={insertFormData[col.name] || ''}
+                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            required={!isNullable}
+                            placeholder={isNullable ? "Optional value" : "Required value"}
+                            className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                  <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                    {isActionLoading ? t('common.executing') : t('databaseStudio.tables.insertModal.submit')}
+                  </Button>
+                  <Button type="button" onClick={() => setShowInsertModal(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
@@ -956,6 +1194,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                             <th className="py-3 px-4 text-center">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</th>
                             <th className="py-3 px-4 text-center">{t('databaseStudio.structure.keyHeader')}</th>
                             <th className="py-3 px-4">{t('databaseStudio.structure.defaultHeader')}</th>
+                            <th className="py-3 px-4 text-right">{t('databaseStudio.tables.actionHeader')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -979,12 +1218,34 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                                     PK
                                   </span>
                                 )}
+                                {col.key === 'UNI' && (
+                                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-extrabold uppercase tracking-wide" title="Unique Constraint">
+                                    UQ
+                                  </span>
+                                )}
+                                {col.key === 'MUL' && (
+                                  <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-600 border border-sky-500/20 text-[10px] font-extrabold uppercase tracking-wide" title="Indexed Column">
+                                    IDX
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
+                              <td className="py-3 px-4 text-right">
+                                {col.key !== 'PRI' && (
+                                  <button
+                                    onClick={() => handleDropColumn(table.name, col.name)}
+                                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                    style={{ cursor: 'pointer' }}
+                                    title={t('databaseStudio.structure.actions.dropColumn')}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </td>
                             </tr>
                           ))}
                           <tr className="hover:bg-primary/5 transition-colors border-t border-border/10">
-                            <td colSpan={5} className="p-0">
+                            <td colSpan={6} className="p-0">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1163,7 +1424,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Main SQL Area */}
           <div className="lg:col-span-2 space-y-6">
             <Card className="p-6">
-              <div className="flex items-center justify-between border-b pb-4 mb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 mb-4">
                 <div>
                   <h3 className="font-extrabold text-base flex items-center gap-2">
                     <Terminal className="w-5 h-5 text-primary" />
@@ -1172,15 +1433,57 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   <p className="text-muted-foreground text-xs">{t('databaseStudio.query.subtitle')}</p>
                 </div>
 
-                <Button
-                  onClick={handleExecuteSQL}
-                  disabled={isActionLoading || isSuspended || !sqlQuery.trim()}
-                  className="font-bold shrink-0 gap-1.5 h-10 rounded-xl cursor-pointer"
-                  style={{ cursor: 'pointer' }}
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  {t('databaseStudio.query.runQuery')}
-                </Button>
+                <div className="flex items-center gap-3 shrink-0">
+                  {!isSuspended && (
+                    <select
+                      onChange={(e) => {
+                        const template = e.target.value
+                        if (!template) return
+                        
+                        const tableName = selectedTable || (schemaData.length > 0 ? schemaData[0].name : 'users')
+                        const columns = schemaData.find(t => t.name === tableName)?.columns || []
+                        const firstColName = columns.length > 0 ? columns[0].name : 'id'
+
+                        const isPostgres = dbOverview?.engine?.toLowerCase() === 'postgres'
+                        const q = isPostgres ? '"' : '`'
+
+                        let sql = ''
+                        if (template === 'select') {
+                          sql = `SELECT * FROM ${q}${tableName}${q} LIMIT 10;`
+                        } else if (template === 'count') {
+                          sql = `SELECT COUNT(*) AS total_rows FROM ${q}${tableName}${q};`
+                        } else if (template === 'filter') {
+                          sql = `SELECT * FROM ${q}${tableName}${q} WHERE ${q}${firstColName}${q} = 1;`
+                        } else if (template === 'group') {
+                          sql = `SELECT ${q}${firstColName}${q}, COUNT(*) AS count FROM ${q}${tableName}${q} GROUP BY ${q}${firstColName}${q} ORDER BY count DESC;`
+                        }
+                        
+                        if (sql) {
+                          setSqlQuery(sql)
+                        }
+                        e.target.value = '' // Reset selector choice
+                      }}
+                      className="h-10 px-3.5 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <option value="">{t('databaseStudio.query.templates.label')}</option>
+                      <option value="select">{t('databaseStudio.query.templates.select')}</option>
+                      <option value="count">{t('databaseStudio.query.templates.count')}</option>
+                      <option value="filter">{t('databaseStudio.query.templates.filter')}</option>
+                      <option value="group">{t('databaseStudio.query.templates.group')}</option>
+                    </select>
+                  )}
+
+                  <Button
+                    onClick={handleExecuteSQL}
+                    disabled={isActionLoading || isSuspended || !sqlQuery.trim()}
+                    className="font-bold shrink-0 gap-1.5 h-10 rounded-xl cursor-pointer"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    {t('databaseStudio.query.runQuery')}
+                  </Button>
+                </div>
               </div>
 
               {isSuspended ? (
