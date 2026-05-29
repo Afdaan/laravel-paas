@@ -159,7 +159,8 @@ type Project struct {
 	GithubRepoOwner      string `gorm:"size:255" json:"github_repo_owner,omitempty"`
 	GithubRepoName       string `gorm:"size:255" json:"github_repo_name,omitempty"`
 
-	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
+	CustomDomains    []CustomDomain    `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
+	DatabaseInstance *DatabaseInstance `gorm:"foreignKey:ProjectID" json:"database_instance,omitempty"`
 }
 
 // GetInternalPort returns the target port for Traefik routing
@@ -536,3 +537,64 @@ type GithubAppInstallation struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// ===========================================
+// DatabaseInstance Model
+// ===========================================
+
+// DatabaseInstanceStatus represents the lifecycle state of a managed database instance.
+type DatabaseInstanceStatus string
+
+const (
+	DBStatusActive    DatabaseInstanceStatus = "active"
+	DBStatusSuspended DatabaseInstanceStatus = "suspended"
+	DBStatusDeleted   DatabaseInstanceStatus = "deleted"
+)
+
+// DatabaseInstance represents a managed database provisioned for a user project.
+// Each project has at most one database instance. The engine field determines
+// which container and driver handles provisioning and queries.
+type DatabaseInstance struct {
+	ID                 uint                   `gorm:"primaryKey" json:"id"`
+	ProjectID          uint                   `gorm:"uniqueIndex:uni_db_instances_project;not null" json:"project_id"`
+	Project            Project                `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Engine             string                 `gorm:"size:20;not null;default:mysql" json:"engine"` // "mysql" or "postgresql"
+	Version            string                 `gorm:"size:50" json:"version,omitempty"`
+	Status             DatabaseInstanceStatus `gorm:"size:20;not null;default:active" json:"status"`
+	Name               string                 `gorm:"size:100;not null" json:"name"`
+	Username           string                 `gorm:"size:100;not null" json:"username"`
+	Password           string                 `gorm:"size:255;not null" json:"-"` // Never expose in JSON
+	Host               string                 `gorm:"size:255;not null" json:"host"`
+	Port               int                    `gorm:"not null" json:"port"`
+	StorageAllocation  int64                  `gorm:"default:1073741824" json:"storage_allocation"` // Default 1GB in bytes
+	StorageConsumption int64                  `gorm:"default:0" json:"storage_consumption"`
+	ConnectionCount    int                    `gorm:"default:0" json:"connection_count"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+}
+
+// ===========================================
+// DatabaseBackup Model
+// ===========================================
+
+// DatabaseBackupStatus represents the state of a database backup job.
+type DatabaseBackupStatus string
+
+const (
+	BackupStatusPending   DatabaseBackupStatus = "pending"
+	BackupStatusCompleted DatabaseBackupStatus = "completed"
+	BackupStatusFailed    DatabaseBackupStatus = "failed"
+)
+
+// DatabaseBackup tracks point-in-time SQL snapshots for a database instance.
+// A strict retention policy of 5 backups per database is enforced at creation time.
+type DatabaseBackup struct {
+	ID                 uint                 `gorm:"primaryKey" json:"id"`
+	DatabaseInstanceID uint                 `gorm:"not null;index" json:"database_instance_id"`
+	DatabaseInstance   DatabaseInstance     `gorm:"foreignKey:DatabaseInstanceID" json:"database_instance,omitempty"`
+	ProjectID          uint                 `gorm:"not null;index" json:"project_id"`
+	Name               string               `gorm:"size:255;not null" json:"name"`
+	Path               string               `gorm:"size:500;not null" json:"path"`
+	Size               string               `gorm:"size:50" json:"size"`
+	Status             DatabaseBackupStatus `gorm:"size:20;not null;default:pending" json:"status"`
+	CreatedAt          time.Time            `json:"created_at"`
+}

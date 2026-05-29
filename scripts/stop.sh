@@ -19,6 +19,7 @@ init_vars() {
     DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
     PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
     REDIS_DATA_DIR="${PROJECT_ROOT}/storage/redis"
+    USER_PG_DATA_DIR="${PROJECT_ROOT}/storage/user-postgres"
     
     cd "$PROJECT_ROOT"
 
@@ -40,6 +41,8 @@ init_vars() {
     PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
     PG_USER=${PG_USER:-"postgres"}
     PG_DATABASE=${PG_DATABASE:-"paas"}
+    USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
+    USER_PG_PORT=${USER_PG_PORT:-5433}
     HTTP_PORT=${HTTP_PORT:-80}
     HTTPS_PORT=${HTTPS_PORT:-443}
     APP_MODE=${APP_MODE:-"docker"}
@@ -52,7 +55,7 @@ init_vars() {
 
 prepare_env() {
     docker network create paas-network 2>/dev/null || true
-    sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+    sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 }
@@ -192,6 +195,28 @@ stop_postgres() {
     docker rm paas-postgres 2>/dev/null || true
 }
 
+start_user_postgres() {
+    echo -e "${YELLOW}Starting User PostgreSQL (paas-user-postgres)...${NC}"
+    prepare_env
+    docker rm -f paas-user-postgres 2>/dev/null || true
+    docker run -d \
+        --name paas-user-postgres \
+        --network paas-network \
+        --restart unless-stopped \
+        -e POSTGRES_USER="postgres" \
+        -e POSTGRES_PASSWORD="$USER_PG_PASSWORD" \
+        -e POSTGRES_DB="postgres" \
+        -p "$USER_PG_PORT":5432 \
+        -v "${USER_PG_DATA_DIR}:/var/lib/postgresql/data" \
+        postgres:15-alpine
+}
+
+stop_user_postgres() {
+    echo -e "${YELLOW}Stopping User PostgreSQL (paas-user-postgres)...${NC}"
+    docker stop paas-user-postgres 2>/dev/null || true
+    docker rm paas-user-postgres 2>/dev/null || true
+}
+
 start_redis() {
     echo -e "${YELLOW}Starting Redis (paas-redis)...${NC}"
     prepare_env
@@ -288,6 +313,9 @@ start_backend() {
         -e JWT_SECRET="$JWT_SECRET" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
+        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
         --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
@@ -341,6 +369,10 @@ start_worker() {
         -e JWT_SECRET="$JWT_SECRET" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+        -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
+        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
@@ -380,6 +412,7 @@ stop_frontend() {
 start_all() {
     start_mysql
     start_postgres
+    start_user_postgres
     start_redis
     start_traefik
     start_backend
@@ -396,6 +429,7 @@ stop_all() {
     stop_worker
     stop_traefik
     stop_redis
+    stop_user_postgres
     stop_postgres
     stop_mysql
     echo -e "${GREEN}[SUCCESS] All containers stopped${NC}"
@@ -407,7 +441,7 @@ show_status() {
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
-    local services=("paas-mysql" "paas-postgres" "paas-redis" "paas-traefik" "paas-backend" "paas-worker-manager" "paas-frontend")
+    local services=("paas-mysql" "paas-postgres" "paas-user-postgres" "paas-redis" "paas-traefik" "paas-backend" "paas-worker-manager" "paas-frontend")
     for s in "${services[@]}"; do
         local status="not_created"
         local ip="-"
@@ -439,6 +473,7 @@ start_service() {
     case "$1" in
         mysql) start_mysql ;;
         postgres|psql) start_postgres ;;
+        user-postgres) start_user_postgres ;;
         redis) start_redis ;;
         traefik) start_traefik ;;
         backend) start_backend ;;
@@ -452,6 +487,7 @@ stop_service() {
     case "$1" in
         mysql) stop_mysql ;;
         postgres|psql) stop_postgres ;;
+        user-postgres) stop_user_postgres ;;
         redis) stop_redis ;;
         traefik) stop_traefik ;;
         backend) stop_backend ;;
@@ -472,24 +508,26 @@ service_menu() {
         echo -e "\n${YELLOW}=== Manage Individual Service ===${NC}"
         echo "1) MySQL (paas-mysql)"
         echo "2) PostgreSQL (paas-postgres)"
-        echo "3) Redis (paas-redis)"
-        echo "4) Traefik (paas-traefik)"
-        echo "5) Backend (paas-backend)"
-        echo "6) Worker Manager (paas-worker-manager)"
-        echo "7) Frontend (paas-frontend)"
-        echo "8) Back to Main Menu"
-        read -p "Select service [1-8]: " s_opt
+        echo "3) User PostgreSQL (paas-user-postgres)"
+        echo "4) Redis (paas-redis)"
+        echo "5) Traefik (paas-traefik)"
+        echo "6) Backend (paas-backend)"
+        echo "7) Worker Manager (paas-worker-manager)"
+        echo "8) Frontend (paas-frontend)"
+        echo "9) Back to Main Menu"
+        read -p "Select service [1-9]: " s_opt
         
         local svc=""
         case "$s_opt" in
             1) svc="mysql" ;;
             2) svc="postgres" ;;
-            3) svc="redis" ;;
-            4) svc="traefik" ;;
-            5) svc="backend" ;;
-            6) svc="worker" ;;
-            7) svc="frontend" ;;
-            8) return 0 ;;
+            3) svc="user-postgres" ;;
+            4) svc="redis" ;;
+            5) svc="traefik" ;;
+            6) svc="backend" ;;
+            7) svc="worker" ;;
+            8) svc="frontend" ;;
+            9) return 0 ;;
             *) echo -e "${RED}Invalid option!${NC}" && continue ;;
         esac
         
@@ -564,12 +602,12 @@ case "$1" in
         ;;
     --clean)
         echo "[CLEAN] Removing platform containers..."
-        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis paas-mysql paas-postgres 2>/dev/null || true
+        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis paas-mysql paas-postgres paas-user-postgres 2>/dev/null || true
         echo "[SUCCESS] Containers removed"
         ;;
     --purge)
         echo "[PURGE] Removing platform containers and volumes..."
-        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis paas-mysql paas-postgres 2>/dev/null || true
+        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis paas-mysql paas-postgres paas-user-postgres 2>/dev/null || true
         docker volume rm paas-redis-data paas-letsencrypt 2>/dev/null || true
         echo "[SUCCESS] Containers removed; Redis and TLS volumes purged (MySQL & PG data preserved)"
         ;;
@@ -579,7 +617,7 @@ case "$1" in
     *)
         echo "Usage: $0 [start|stop|restart|status] [service_name]"
         echo "       $0 [--clean|--purge]"
-        echo "Services: mysql, postgres/psql, redis, traefik, backend, worker, frontend"
+        echo "Services: mysql, postgres/psql, user-postgres, redis, traefik, backend, worker, frontend"
         exit 1
         ;;
 esac

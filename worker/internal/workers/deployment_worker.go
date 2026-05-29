@@ -7,6 +7,7 @@ package workers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"github.com/laravel-paas/shared/repositories"
 	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 	"github.com/laravel-paas/shared/services/setting"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
@@ -536,7 +538,68 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				slog.Warn("Failed to save database password", "id", project.ID, "error", err)
 			}
 		}
-		dbErr = w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+
+		engine := "mysql"
+		var dbInstance *models.DatabaseInstance
+		if project.DatabaseInstance != nil {
+			engine = project.DatabaseInstance.Engine
+			dbInstance = project.DatabaseInstance
+		}
+
+		if engine == "postgresql" {
+			pgService := infrastructure.NewPostgreSQLService()
+			dbErr = pgService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+			if dbErr == nil && dbInstance != nil {
+				dbInstance.Host = "paas-user-postgres"
+				dbInstance.Port = 5432
+				dbInstance.Password = project.DatabasePassword
+				dbInstance.Status = models.DBStatusActive
+
+				var version string
+				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					project.DatabaseName, project.DatabasePassword, w.cfg.UserPGHost, w.cfg.UserPGPort, project.DatabaseName,
+				)
+				dbConn, err := sql.Open("pgx", dsn)
+				if err == nil {
+					_ = dbConn.QueryRow("SELECT version()").Scan(&version)
+					dbConn.Close()
+				}
+				if version == "" {
+					version = "PostgreSQL 15"
+				} else {
+					// Clean up the verbose PostgreSQL version output
+					parts := strings.Split(version, " on ")
+					if len(parts) > 0 {
+						version = parts[0]
+					}
+				}
+				dbInstance.Version = version
+				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
+			}
+		} else {
+			dbErr = w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+			if dbErr == nil && dbInstance != nil {
+				dbInstance.Host = "paas-mysql"
+				dbInstance.Port = 3306
+				dbInstance.Password = project.DatabasePassword
+				dbInstance.Status = models.DBStatusActive
+
+				var version string
+				dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
+					project.DatabaseName, project.DatabasePassword, w.cfg.MYSQLHost, w.cfg.MYSQLPort, project.DatabaseName,
+				)
+				dbConn, err := sql.Open("mysql", dsn)
+				if err == nil {
+					_ = dbConn.QueryRow("SELECT @@version").Scan(&version)
+					dbConn.Close()
+				}
+				if version == "" {
+					version = "MySQL 8.0"
+				}
+				dbInstance.Version = version
+				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
+			}
+		}
 	}()
 
 	wg.Wait()

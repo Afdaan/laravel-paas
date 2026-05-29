@@ -34,6 +34,11 @@ type Config struct {
 	MYSQLPassword     string
 	MYSQLRootPassword string
 
+	// User Database (PostgreSQL Engine)
+	UserPGHost     string
+	UserPGPort     string
+	UserPGPassword string
+
 	// JWT
 	JWTSecret      string
 	JWTExpiryHours int
@@ -81,6 +86,13 @@ type Config struct {
 func Load() *Config {
 	appMode := getEnv("APP_MODE", "local")
 	hostRoot := getEnv("HOST_ROOT_PATH", ".")
+
+	userPGHostDefault := "paas-user-postgres"
+	userPGPortDefault := "5432"
+	if appMode != "docker" {
+		userPGHostDefault = "localhost"
+		userPGPortDefault = "5433"
+	}
 	if abs, err := filepath.Abs(hostRoot); err == nil {
 		hostRoot = abs
 	}
@@ -120,6 +132,11 @@ func Load() *Config {
 		MYSQLUser:         getEnv("MYSQL_USER", "paas"),
 		MYSQLPassword:     getEnv("MYSQL_PASSWORD", ""),
 		MYSQLRootPassword: getEnv("MYSQL_ROOT_PASSWORD", "rootpassword"),
+
+		// User Database (PostgreSQL Engine)
+		UserPGHost:     getEnv("USER_PG_HOST", userPGHostDefault),
+		UserPGPort:     getEnv("USER_PG_PORT", userPGPortDefault),
+		UserPGPassword: getEnv("USER_PG_PASSWORD", "user-pg-rootpassword"),
 
 		// JWT
 		JWTSecret:      getEnv("JWT_SECRET", "change-this-secret"),

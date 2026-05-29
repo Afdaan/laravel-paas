@@ -31,6 +31,8 @@ type CreateProjectRequest struct {
 	BuildCommand         string `json:"build_command"`
 	StartCommand         string `json:"start_command"`
 	QueueEnabled         bool   `json:"queue_enabled"`
+	EnableDatabase       bool   `json:"enable_database"`
+	DatabaseEngine       string `json:"database_engine"`
 	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
 	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
 	GithubRepoName       string `json:"github_repo_name,omitempty"`

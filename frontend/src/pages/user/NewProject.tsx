@@ -50,6 +50,8 @@ interface NewProjectForm {
   build_command: string;
   start_command: string;
   queue_enabled: boolean;
+  enable_database: boolean;
+  database_engine: 'mysql' | 'postgresql';
   github_installation_id?: number;
   github_repo_owner?: string;
   github_repo_name?: string;
@@ -84,6 +86,8 @@ function UserNewProject() {
     build_command: '',
     start_command: '',
     queue_enabled: false,
+    enable_database: true,
+    database_engine: 'mysql',
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
 
@@ -330,7 +334,9 @@ function UserNewProject() {
     const errors: ValidationErrors = {}
     if (!formData.name.trim()) errors.name = t('common.validation.required', { field: t('newProject.displayName') })
     if (!formData.github_url.trim()) errors.github_url = t('common.validation.required', { field: t('newProject.repoUrl') })
-    if (!formData.database_name.trim()) errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+    if (formData.enable_database && !formData.database_name.trim()) {
+      errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+    }
 
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
@@ -748,26 +754,89 @@ function UserNewProject() {
                   </div>
 
                   {/* Database Settings */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                        <Database className="w-4 h-4" />
+                  <div className="space-y-6 border-t pt-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Managed Database Studio
+                          </Label>
+                          <span className="text-[10px] text-muted-foreground">Provision a secure, isolated database with one click</span>
+                        </div>
                       </div>
-                      <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        {t('newProject.dbName')}
-                      </Label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            enable_database: !prev.enable_database
+                          }))
+                        }}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                          formData.enable_database ? "bg-primary" : "bg-muted"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
+                            formData.enable_database ? "translate-x-5" : "translate-x-0"
+                          )}
+                        />
+                      </button>
                     </div>
-                    <Input
-                      id="database_name"
-                      name="database_name"
-                      value={formData.database_name}
-                      onChange={handleChange}
-                      placeholder={t('newProject.dbName')}
-                      className={cn(validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
-                    />
-                    <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">{t('newProject.dbAutoDesc')}</p>
-                    {validationErrors.database_name && (
-                      <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
+
+                    {formData.enable_database && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 rounded-xl border bg-muted/5 animate-in slide-in-from-top-3 duration-300">
+                        {/* Database Engine Dropdown */}
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Database Engine
+                          </Label>
+                          <Select
+                            value={formData.database_engine}
+                            onValueChange={(val) => {
+                              setFormData(prev => ({
+                                ...prev,
+                                database_engine: val as 'mysql' | 'postgresql'
+                              }))
+                            }}
+                          >
+                            <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/60 hover:border-border bg-background/50 hover:bg-background/80 text-sm font-medium transition-all duration-200">
+                              <span className="capitalize">{formData.database_engine}</span>
+                            </SelectTrigger>
+                            <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl p-1.5">
+                              <SelectItem value="mysql" className="rounded-lg py-2.5 px-3 cursor-pointer">
+                                MySQL (8.0)
+                              </SelectItem>
+                              <SelectItem value="postgresql" className="rounded-lg py-2.5 px-3 cursor-pointer">
+                                PostgreSQL (15)
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Database Name */}
+                        <div className="space-y-2">
+                          <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            {t('newProject.dbName')}
+                          </Label>
+                          <Input
+                            id="database_name"
+                            name="database_name"
+                            value={formData.database_name}
+                            onChange={handleChange}
+                            placeholder={t('newProject.dbName')}
+                            className={cn("h-11 rounded-xl", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {validationErrors.database_name && (
+                            <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
 

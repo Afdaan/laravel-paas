@@ -88,6 +88,7 @@ export interface Project {
   internal_port?: string;
   last_commit_hash?: string;
   custom_domains?: CustomDomain[];
+  database_instance?: DatabaseInstance;
   deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'provisioning' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
   deployment_job_id?: string;
   rollout_container_id?: string;
@@ -155,4 +156,32 @@ export interface GithubRepository {
   description: string;
   private: boolean;
   default_branch: string;
+}
+
+export interface DatabaseInstance {
+  id: number;
+  project_id: number;
+  engine: 'mysql' | 'postgresql';
+  version?: string;
+  status: 'active' | 'suspended' | 'deleted';
+  name: string;
+  username: string;
+  host: string;
+  port: number;
+  storage_allocation: number;
+  storage_consumption: number;
+  connection_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseBackup {
+  id: number;
+  database_instance_id: number;
+  project_id: number;
+  name: string;
+  path: string;
+  size: string;
+  status: 'pending' | 'completed' | 'failed';
+  created_at: string;
 }

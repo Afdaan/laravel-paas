@@ -19,6 +19,7 @@ init_vars() {
     DB_DATA_DIR="${PROJECT_ROOT}/storage/mysql"
     PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
     REDIS_DATA_DIR="${PROJECT_ROOT}/storage/redis"
+    USER_PG_DATA_DIR="${PROJECT_ROOT}/storage/user-postgres"
     
     cd "$PROJECT_ROOT"
 
@@ -42,6 +43,8 @@ init_vars() {
     PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
     PG_USER=${PG_USER:-"postgres"}
     PG_DATABASE=${PG_DATABASE:-"paas"}
+    USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
+    USER_PG_PORT=${USER_PG_PORT:-5433}
     HTTP_PORT=${HTTP_PORT:-80}
     HTTPS_PORT=${HTTPS_PORT:-443}
     APP_MODE=${APP_MODE:-"docker"}
@@ -54,7 +57,7 @@ init_vars() {
 
 prepare_env() {
     docker network create paas-network 2>/dev/null || true
-    sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+    sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 }
@@ -232,6 +235,21 @@ start_postgres() {
         postgres:15-alpine
 }
 
+start_user_postgres() {
+    echo -e "${YELLOW}Starting User PostgreSQL (paas-user-postgres)...${NC}"
+    docker rm -f paas-user-postgres 2>/dev/null || true
+    docker run -d \
+        --name paas-user-postgres \
+        --network paas-network \
+        --restart unless-stopped \
+        -e POSTGRES_USER="postgres" \
+        -e POSTGRES_PASSWORD="$USER_PG_PASSWORD" \
+        -e POSTGRES_DB="postgres" \
+        -p "$USER_PG_PORT":5432 \
+        -v "${USER_PG_DATA_DIR}:/var/lib/postgresql/data" \
+        postgres:15-alpine
+}
+
 start_redis() {
     echo -e "${YELLOW}Starting Redis with persistence...${NC}"
     docker rm -f paas-redis 2>/dev/null || true
@@ -349,6 +367,9 @@ start_backend() {
         -e JWT_SECRET="$JWT_SECRET" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
+        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
         --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
@@ -396,6 +417,9 @@ start_worker() {
         -e JWT_SECRET="$JWT_SECRET" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
+        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
@@ -424,6 +448,7 @@ start_all() {
     run_backups
     start_mysql
     start_postgres
+    start_user_postgres
     start_redis
     start_traefik
     start_buildkit
@@ -443,6 +468,7 @@ start_service() {
     case "$1" in
         mysql) start_mysql ;;
         postgres|psql) start_postgres ;;
+        user-postgres) start_user_postgres ;;
         redis) start_redis ;;
         traefik) start_traefik ;;
         buildkit) start_buildkit ;;
@@ -459,7 +485,7 @@ show_status() {
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
-    local services=("paas-mysql" "paas-postgres" "paas-redis" "paas-traefik" "paas-buildkit" "paas-backend" "paas-worker-manager" "paas-frontend")
+    local services=("paas-mysql" "paas-postgres" "paas-user-postgres" "paas-redis" "paas-traefik" "paas-buildkit" "paas-backend" "paas-worker-manager" "paas-frontend")
     for s in "${services[@]}"; do
         local status="not_created"
         local ip="-"
@@ -492,25 +518,27 @@ service_menu() {
         echo -e "\n${YELLOW}=== Start Individual Service ===${NC}"
         echo "1) MySQL (paas-mysql)"
         echo "2) PostgreSQL (paas-postgres)"
-        echo "3) Redis (paas-redis)"
-        echo "4) Traefik (paas-traefik)"
-        echo "5) BuildKit (paas-buildkit)"
-        echo "6) Backend (paas-backend)"
-        echo "7) Worker Manager (paas-worker-manager)"
-        echo "8) Frontend (paas-frontend)"
-        echo "9) Back to Main Menu"
-        read -p "Select service [1-9]: " s_opt
+        echo "3) User PostgreSQL (paas-user-postgres)"
+        echo "4) Redis (paas-redis)"
+        echo "5) Traefik (paas-traefik)"
+        echo "6) BuildKit (paas-buildkit)"
+        echo "7) Backend (paas-backend)"
+        echo "8) Worker Manager (paas-worker-manager)"
+        echo "9) Frontend (paas-frontend)"
+        echo "10) Back to Main Menu"
+        read -p "Select service [1-10]: " s_opt
         
         case "$s_opt" in
             1) start_mysql ; break ;;
             2) start_postgres ; break ;;
-            3) start_redis ; break ;;
-            4) start_traefik ; break ;;
-            5) start_buildkit ; break ;;
-            6) start_backend ; break ;;
-            7) start_worker ; break ;;
-            8) start_frontend ; break ;;
-            9) return 0 ;;
+            3) start_user_postgres ; break ;;
+            4) start_redis ; break ;;
+            5) start_traefik ; break ;;
+            6) start_buildkit ; break ;;
+            7) start_backend ; break ;;
+            8) start_worker ; break ;;
+            9) start_frontend ; break ;;
+            10) return 0 ;;
             *) echo -e "${RED}Invalid option!${NC}" ;;
         esac
     done
@@ -542,7 +570,7 @@ case "$1" in
     all)
         start_all
         ;;
-    mysql|postgres|psql|redis|traefik|buildkit|backend|worker|frontend)
+    mysql|postgres|psql|user-postgres|redis|traefik|buildkit|backend|worker|frontend)
         start_service "$1"
         ;;
     status)
@@ -553,7 +581,7 @@ case "$1" in
         ;;
     *)
         echo "Usage: $0 [all|service_name|status]"
-        echo "Services: mysql, postgres/psql, redis, traefik, buildkit, backend, worker, frontend"
+        echo "Services: mysql, postgres/psql, user-postgres, redis, traefik, buildkit, backend, worker, frontend"
         exit 1
         ;;
 esac

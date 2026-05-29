@@ -229,39 +229,83 @@ export const databaseAPI = {
   getCredentials: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/credentials`),
   
-  // List all tables
+  // Rotate credentials
+  rotateCredentials: (projectId: number | string) => 
+    api.post(`/projects/${projectId}/database/rotate-credentials`),
+
+  // Restart database connection pool
+  restartDatabase: (projectId: number | string) => 
+    api.post(`/projects/${projectId}/database/restart`),
+
+  // Suspend or resume database status
+  updateStatus: (projectId: number | string, suspend: boolean) => 
+    api.post(`/projects/${projectId}/database/status`, { suspend }),
+
+  // Get overview statistics
+  getOverview: (projectId: number | string) => 
+    api.get(`/projects/${projectId}/database/overview`),
+
+  // Get visual schema metadata
+  getSchema: (projectId: number | string) => 
+    api.get(`/projects/${projectId}/database/schema`),
+
+  // Execute Table Designer Action
+  executeDesigner: (projectId: number | string, data: unknown) => 
+    api.post(`/projects/${projectId}/database/designer`, data),
+
+  // List backup snapshots
+  listBackups: (projectId: number | string) => 
+    api.get(`/projects/${projectId}/database/backups`),
+
+  // Create manual backup snapshot
+  createBackup: (projectId: number | string) => 
+    api.post(`/projects/${projectId}/database/backups`),
+
+  // Restore backup state
+  restoreBackup: (projectId: number | string, backupId: number | string) => 
+    api.post(`/projects/${projectId}/database/backups/${backupId}/restore`),
+
+  // Prune backup snapshot
+  deleteBackup: (projectId: number | string, backupId: number | string) => 
+    api.delete(`/projects/${projectId}/database/backups/${backupId}`),
+
+  // Get real-time connection metrics
+  getMetrics: (projectId: number | string) => 
+    api.get(`/projects/${projectId}/database/metrics`),
+
+  // List all tables (Fallback/Legacy)
   listTables: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/tables`),
   
-  // Get table structure (columns)
+  // Get table structure (columns) (Fallback/Legacy)
   getStructure: (projectId: number | string, tableName: string) => 
     api.get(`/projects/${projectId}/database/tables/${tableName}`),
   
-  // Get table data with pagination
+  // Get table data with pagination (Fallback/Legacy)
   getData: (projectId: number | string, tableName: string, page: number = 1, limit: number = 50) => 
     api.get(`/projects/${projectId}/database/tables/${tableName}/data`, { 
       params: { page, limit } 
     }),
   
-  // Delete row securely using primary key
+  // Delete row securely using primary key (Fallback/Legacy)
   deleteRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown) => 
     api.delete(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
       data: { primary_key: primaryKey, value } 
     }),
   
-  // Execute SQL query
+  // Execute SQL query (Fallback/Legacy)
   query: (projectId: number | string, sql: string) => 
     api.post(`/projects/${projectId}/database/query`, { query: sql }),
   
-  // Export database as SQL file
+  // Export database as SQL file (Fallback/Legacy)
   export: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/export`, { responseType: 'blob' }),
   
-  // Import SQL
+  // Import SQL (Fallback/Legacy)
   import: (projectId: number | string, sql: string) => 
     api.post(`/projects/${projectId}/database/import`, { sql }),
   
-  // Reset database (drop all tables)
+  // Reset database (drop all tables) (Fallback/Legacy)
   reset: (projectId: number | string) => 
     api.post(`/projects/${projectId}/database/reset`),
 

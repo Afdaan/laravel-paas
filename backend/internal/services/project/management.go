@@ -186,7 +186,7 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool, enableDatabase bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	// Enforce per-user project limit (bypass for admins and superadmins)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
 		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
@@ -250,6 +250,32 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		GithubInstallationID: githubInstallationID,
 		GithubRepoOwner:      githubRepoOwner,
 		GithubRepoName:       githubRepoName,
+	}
+
+	if enableDatabase {
+		engine := "mysql"
+		if databaseEngine == "postgresql" {
+			engine = "postgresql"
+		}
+
+		host := "paas-mysql"
+		port := 3306
+		if engine == "postgresql" {
+			host = "paas-user-postgres"
+			port = 5432
+		}
+
+		instance := &models.DatabaseInstance{
+			Engine:            engine,
+			Status:            models.DBStatusActive,
+			Name:              dbName,
+			Username:          dbName,
+			Password:          dbPassword,
+			Host:              host,
+			Port:              port,
+			StorageAllocation: 1073741824, // 1GB
+		}
+		project.DatabaseInstance = instance
 	}
 
 	if err := s.projectRepo.Create(project); err != nil {

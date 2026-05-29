@@ -202,6 +202,14 @@ func (s *DockerService) loadMandatoryEnv(project *models.Project, projectDomain 
 		}
 	}
 
+	// Dynamic override for PostgreSQL if active
+	if project.DatabaseInstance != nil && project.DatabaseInstance.Engine == "postgresql" {
+		result["DB_CONNECTION"] = "pgsql"
+		result["DB_HOST"] = "paas-user-postgres"
+		result["DB_PORT"] = "5432"
+		result["DATABASE_URL"] = fmt.Sprintf("postgres://%s:%s@paas-user-postgres:5432/%s?sslmode=disable", project.DatabaseName, project.DatabasePassword, project.DatabaseName)
+	}
+
 	return result, nil
 }
 

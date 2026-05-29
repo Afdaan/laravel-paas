@@ -42,6 +42,7 @@ type ProjectRepository interface {
 	UpdateDeploymentHeartbeat(id uint) error
 	PromoteRolloutContainer(id uint, newContainerID string) error
 	ResolveInstallationID(userID uint, owner string) (int64, error)
+	SaveDatabaseInstance(instance *models.DatabaseInstance) error
 }
 
 type projectRepository struct {
@@ -54,7 +55,7 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 
 func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Preload("User").Preload("CustomDomains").First(&project, id).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").First(&project, id).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -85,7 +86,7 @@ func (r *projectRepository) GetByIDForNginx(id uint) (*models.Project, error) {
 
 func (r *projectRepository) GetByUID(uid string) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Preload("User").Preload("CustomDomains").Where("uid = ?", uid).First(&project).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Where("uid = ?", uid).First(&project).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -118,7 +119,7 @@ func (r *projectRepository) List(page, limit int, userID uint, status string, se
 	query.Count(&total)
 
 	offset := (page - 1) * limit
-	err := query.Preload("User").Preload("CustomDomains").Order("created_at DESC").Offset(offset).Limit(limit).Find(&projects).Error
+	err := query.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Order("created_at DESC").Offset(offset).Limit(limit).Find(&projects).Error
 
 	return projects, total, err
 }
@@ -131,7 +132,7 @@ func (r *projectRepository) ListByUserID(userID uint) ([]models.Project, error) 
 
 func (r *projectRepository) ListAll() ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Preload("CustomDomains").Order("created_at DESC").Find(&projects).Error
+	err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Order("created_at DESC").Find(&projects).Error
 	return projects, err
 }
 
@@ -308,4 +309,8 @@ func (r *projectRepository) ResolveInstallationID(userID uint, owner string) (in
 		}
 	}
 	return 0, errors.New("installation not found")
+}
+
+func (r *projectRepository) SaveDatabaseInstance(instance *models.DatabaseInstance) error {
+	return r.db.Save(instance).Error
 }

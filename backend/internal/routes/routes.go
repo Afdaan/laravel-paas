@@ -107,7 +107,7 @@ func Setup(
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
-	databaseHandler := handlers.NewDatabaseHandler(cfg, databaseService, projectService)
+	databaseHandler := handlers.NewDatabaseHandler(db, cfg, databaseService, projectService, redisService)
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 
@@ -234,6 +234,19 @@ func Setup(
 	// Database Management Routes
 	// -----------------------------
 	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
+	projects.Post("/:id/database/rotate-credentials", databaseHandler.RotateCredentials)
+	projects.Post("/:id/database/restart", databaseHandler.RestartDatabase)
+	projects.Post("/:id/database/status", databaseHandler.UpdateStatus)
+	projects.Get("/:id/database/overview", databaseHandler.GetOverview)
+	projects.Get("/:id/database/schema", databaseHandler.GetSchema)
+	projects.Post("/:id/database/designer", databaseHandler.ExecuteDesignerAction)
+	projects.Get("/:id/database/backups", databaseHandler.ListBackups)
+	projects.Post("/:id/database/backups", databaseHandler.CreateBackup)
+	projects.Post("/:id/database/backups/:backup/restore", databaseHandler.RestoreBackup)
+	projects.Delete("/:id/database/backups/:backup", databaseHandler.DeleteBackup)
+	projects.Get("/:id/database/metrics", databaseHandler.GetMetrics)
+
+	// Fallback/Legacy endpoints
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
 	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)

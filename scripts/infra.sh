@@ -16,7 +16,7 @@ MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 
 # 2. Bersihkan kontainer lama
 echo "[INFO] Cleaning old infrastructure..."
-docker rm -f paas-mysql paas-postgres paas-redis paas-traefik paas-buildkit paas-registry 2>/dev/null || true
+docker rm -f paas-mysql paas-postgres paas-user-postgres paas-redis paas-traefik paas-buildkit paas-registry 2>/dev/null || true
 
 # 3. Siapkan Network & Folder (Pakai sudo untuk folder agar aman dari Permission Denied)
 echo "[INFO] Preparing storage folders..."
@@ -47,6 +47,23 @@ docker run -d \
     -e POSTGRES_DB="$PG_DATABASE" \
     -p 5432:5432 \
     -v "$(pwd)/storage/postgres:/var/lib/postgresql/data" \
+    postgres:15-alpine
+
+# 5.5. Jalankan User PostgreSQL (Isolated User Database Container)
+echo "[INFO] Starting User PostgreSQL..."
+USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
+USER_PG_PORT=${USER_PG_PORT:-5433}
+sudo mkdir -p storage/user-postgres
+sudo chown -R $(id -u):$(id -g) storage/user-postgres
+docker run -d \\
+    --name paas-user-postgres \\
+    --network paas-network \\
+    --restart unless-stopped \\
+    -e POSTGRES_USER="postgres" \\
+    -e POSTGRES_PASSWORD="$USER_PG_PASSWORD" \\
+    -e POSTGRES_DB="postgres" \\
+    -p "$USER_PG_PORT":5432 \\
+    -v "$(pwd)/storage/user-postgres:/var/lib/postgresql/data" \\
     postgres:15-alpine
 
 # 6. Jalankan Redis

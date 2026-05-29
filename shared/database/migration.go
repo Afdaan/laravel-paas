@@ -67,6 +67,8 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.PendingReconcile{},
 		&models.AuditLog{},
 		&models.GithubAppInstallation{},
+		&models.DatabaseInstance{},
+		&models.DatabaseBackup{},
 	}
 
 	for _, m := range modelsList {
@@ -87,6 +89,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	// Backfill UIDs for projects that don't have one.
 	if err := BackfillUIDs(db, &config.Config{UIDSalt: os.Getenv("UID_SALT")}); err != nil {
 		slog.Warn("Failed to backfill UIDs", "error", err)
+	}
+
+	// Backfill DatabaseInstance records for existing projects that have MySQL databases.
+	if err := BackfillDatabaseInstances(db); err != nil {
+		slog.Warn("Failed to backfill database instances", "error", err)
 	}
 
 	return nil
@@ -156,6 +163,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"deployment_events", "uni_project_job_seq", []string{"project_id", "job_id", "sequence_number"}},
 		{"idempotent_operations", "uni_idempotent_operations_key", []string{"key"}},
 		{"pending_reconciles", "uni_pending_reconciles_domain_id", []string{"domain_id"}},
+		{"database_instances", "uni_db_instances_project", []string{"project_id"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -300,6 +308,9 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile PendingReconcile — constraint name must match GORM's uni_<table>_<column> convention
 	_ = EnsureConstraint(db, &models.PendingReconcile{}, "uni_pending_reconciles_domain_id", "UNIQUE (domain_id)")
 
+	// Reconcile DatabaseInstance
+	_ = EnsureConstraint(db, &models.DatabaseInstance{}, "uni_db_instances_project", "UNIQUE (project_id)")
+
 	return nil
 }
 
@@ -410,4 +421,44 @@ func getTableName(db *gorm.DB, model interface{}) string {
 		return stmt.Schema.Table
 	}
 	return fmt.Sprintf("%Ts", model)
+}
+
+// BackfillDatabaseInstances creates DatabaseInstance records for existing projects
+// that have a database_name set but no corresponding DatabaseInstance row.
+// This ensures seamless migration from the legacy inline credentials model.
+func BackfillDatabaseInstances(db *gorm.DB) error {
+	var projects []models.Project
+	if err := db.Where("database_name != '' AND database_name IS NOT NULL").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	backfilled := 0
+	for _, p := range projects {
+		var count int64
+		db.Model(&models.DatabaseInstance{}).Where("project_id = ?", p.ID).Count(&count)
+		if count > 0 {
+			continue
+		}
+
+		instance := models.DatabaseInstance{
+			ProjectID: p.ID,
+			Engine:    "mysql",
+			Status:    models.DBStatusActive,
+			Name:      p.DatabaseName,
+			Username:  p.DatabaseName,
+			Password:  p.DatabasePassword,
+			Host:      "paas-mysql",
+			Port:      3306,
+		}
+		if err := db.Create(&instance).Error; err != nil {
+			slog.Warn("Failed to backfill database instance", "project_id", p.ID, "error", err)
+			continue
+		}
+		backfilled++
+	}
+
+	if backfilled > 0 {
+		slog.Info("Backfilled database instances for legacy projects", "count", backfilled)
+	}
+	return nil
 }
