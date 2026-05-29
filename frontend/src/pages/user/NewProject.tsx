@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { siMysql, siPostgresql } from 'simple-icons'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -64,24 +65,30 @@ interface ValidationErrors {
 }
 
 const databaseEngines = [
-  { value: 'mysql', label: 'MySQL (8.0)', tone: 'amber' },
-  { value: 'postgresql', label: 'PostgreSQL (15)', tone: 'sky' },
+  { value: 'mysql', label: 'MySQL (8.0)', icon: siMysql },
+  { value: 'postgresql', label: 'PostgreSQL (15)', icon: siPostgresql },
 ] as const
 
 type DatabaseEngineOption = (typeof databaseEngines)[number]
 
-const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOption; className?: string }) => (
-  <div
-    className={cn(
-      'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background/80 shadow-sm',
-      engine.tone === 'amber' && 'border-amber-500/20 bg-amber-500/10 text-amber-500',
-      engine.tone === 'sky' && 'border-sky-500/20 bg-sky-500/10 text-sky-500',
-      className
-    )}
-  >
-    <Database className='h-4 w-4' />
-  </div>
-)
+const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOption; className?: string }) => {
+  const fillColor = `#${engine.icon.hex}`
+
+  return (
+    <div
+      className={cn(
+        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background/80 shadow-sm',
+        engine.value === 'mysql' && 'border-amber-500/20 bg-amber-500/10',
+        engine.value === 'postgresql' && 'border-sky-500/20 bg-sky-500/10',
+        className
+      )}
+    >
+      <svg viewBox='0 0 24 24' aria-hidden='true' className='h-4 w-4'>
+        <path fill={fillColor} d={engine.icon.path} />
+      </svg>
+    </div>
+  )
+}
 
 function UserNewProject() {
   const { t } = useTranslation()
