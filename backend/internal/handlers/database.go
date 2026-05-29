@@ -691,6 +691,43 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 	})
 }
 
+// UpdateTableRow updates specific fields of a row in a table using a primary key filter
+func (h *DatabaseHandler) UpdateTableRow(c *fiber.Ctx) error {
+	project, err := h.getProjectForUser(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	tableName := c.Params("table")
+	if tableName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Table name required"})
+	}
+
+	var req struct {
+		PrimaryKey string                 `json:"primary_key"`
+		Value      interface{}            `json:"value"`
+		Updates    map[string]interface{} `json:"updates"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+
+	if req.PrimaryKey == "" || req.Value == nil || len(req.Updates) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key, value, and updates map are required"})
+	}
+
+	updated, err := h.databaseService.UpdateTableRow(project.DatabaseName, project.DatabasePassword, tableName, req.PrimaryKey, req.Value, req.Updates)
+	if err != nil {
+		slog.Warn("Failed to update table row", "project_id", project.ID, "table", tableName, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"updated": updated,
+	})
+}
+
 // ExecuteQuery runs a manual raw query (Legacy/Fallback)
 func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)

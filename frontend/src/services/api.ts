@@ -299,6 +299,12 @@ export const databaseAPI = {
     api.delete(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
       data: { primary_key: primaryKey, value } 
     }),
+
+  // Update row securely using primary key
+  updateRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown, updates: Record<string, unknown>) => 
+    api.put(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
+      primary_key: primaryKey, value, updates 
+    }),
   
   // Execute SQL query (Fallback/Legacy)
   query: (projectId: number | string, sql: string) => 

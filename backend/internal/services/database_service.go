@@ -406,6 +406,70 @@ func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn s
 	return rowsAffected, nil
 }
 
+// UpdateTableRow safely updates a specific row's fields in a table using a primary key
+func (s *DatabaseService) UpdateTableRow(dbName, password, tableName, pkColumn string, pkValue interface{}, updates map[string]interface{}) (int64, error) {
+	if !s.isValidIdentifier(tableName) {
+		return 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters")
+	}
+	if !s.isValidIdentifier(pkColumn) {
+		return 0, apperr.New(400, "INVALID_COLUMN_NAME", "Column name contains invalid characters")
+	}
+
+	db, err := s.ConnectToProjectDB(dbName, password)
+	if err != nil {
+		return 0, err
+	}
+
+	engine := s.getEngineForDB(dbName)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	escapedTable := s.escapeIdentifier(engine, tableName)
+	escapedPkCol := s.escapeIdentifier(engine, pkColumn)
+
+	var setClauses []string
+	var args []interface{}
+	placeholderIdx := 1
+
+	for col, val := range updates {
+		if !s.isValidIdentifier(col) {
+			return 0, apperr.New(400, "INVALID_COLUMN_NAME", "Column name contains invalid characters")
+		}
+		escapedCol := s.escapeIdentifier(engine, col)
+		if engine == "postgresql" {
+			setClauses = append(setClauses, fmt.Sprintf("%s = $%d", escapedCol, placeholderIdx))
+		} else {
+			setClauses = append(setClauses, fmt.Sprintf("%s = ?", escapedCol))
+		}
+		args = append(args, val)
+		placeholderIdx++
+	}
+
+	if len(setClauses) == 0 {
+		return 0, apperr.New(400, "NO_UPDATES", "No updates provided")
+	}
+
+	var query string
+	if engine == "postgresql" {
+		query = fmt.Sprintf("UPDATE %s SET %s WHERE %s = $%d", escapedTable, strings.Join(setClauses, ", "), escapedPkCol, placeholderIdx)
+	} else {
+		query = fmt.Sprintf("UPDATE %s SET %s WHERE %s = ? LIMIT 1", escapedTable, strings.Join(setClauses, ", "), escapedPkCol)
+	}
+	args = append(args, pkValue)
+
+	result, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return rowsAffected, nil
+}
+
 // ExecuteRawQuery runs a manual SQL query against a project database under a 15-second execution timeout.
 func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*QueryResult, error) {
 	query = strings.TrimSpace(query)
@@ -863,6 +927,85 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 		sqlQuery = fmt.Sprintf("CREATE INDEX %s ON %s (%s);",
 			escapedIdx, escapedTable, strings.Join(escapedCols, ", "),
 		)
+
+	case "modify_column":
+		if req.Column == nil || !s.isValidIdentifier(req.Column.Name) {
+			return apperr.New(400, "COLUMN_REQUIRED", "Valid column name is required")
+		}
+		escapedCol := s.escapeIdentifier(engine, req.Column.Name)
+		dbType := s.mapDesignerType(engine, req.Column.Type, req.Column.Length)
+
+		nullability := "NULL"
+		if !req.Column.Nullable {
+			nullability = "NOT NULL"
+		}
+
+		defaultClause := ""
+		if req.Column.DefaultValue != nil {
+			defaultClause = fmt.Sprintf(" DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+		}
+
+		if engine == "postgresql" {
+			// 1. Alter Type (with USING cast)
+			typeCast := fmt.Sprintf("TYPE %s USING %s::%s", dbType, escapedCol, dbType)
+			sqlQuery1 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, typeCast)
+			if _, err = db.ExecContext(ctx, sqlQuery1); err != nil {
+				return err
+			}
+
+			// 2. Alter Nullability
+			nullAction := "DROP NOT NULL"
+			if !req.Column.Nullable {
+				nullAction = "SET NOT NULL"
+			}
+			sqlQuery2 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, nullAction)
+			if _, err = db.ExecContext(ctx, sqlQuery2); err != nil {
+				return err
+			}
+
+			// 3. Alter Default
+			defaultAction := "DROP DEFAULT"
+			if req.Column.DefaultValue != nil {
+				defaultAction = fmt.Sprintf("SET DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+			}
+			sqlQuery3 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, defaultAction)
+			if _, err = db.ExecContext(ctx, sqlQuery3); err != nil {
+				return err
+			}
+
+			// 4. Rename column (if NewName is provided and is different)
+			if req.NewName != "" && req.NewName != req.Column.Name {
+				if !s.isValidIdentifier(req.NewName) {
+					return apperr.New(400, "INVALID_NEW_NAME", "New column name is invalid")
+				}
+				sqlQueryRename := fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", escapedTable, escapedCol, s.escapeIdentifier(engine, req.NewName))
+				if _, err = db.ExecContext(ctx, sqlQueryRename); err != nil {
+					return err
+				}
+			}
+			return nil
+
+		} else {
+			// MySQL: MODIFY COLUMN
+			sqlQuery = fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s %s%s;",
+				escapedTable, escapedCol, dbType, nullability, defaultClause,
+			)
+			if _, err = db.ExecContext(ctx, sqlQuery); err != nil {
+				return err
+			}
+
+			// Rename column (if NewName is provided and is different)
+			if req.NewName != "" && req.NewName != req.Column.Name {
+				if !s.isValidIdentifier(req.NewName) {
+					return apperr.New(400, "INVALID_NEW_NAME", "New column name is invalid")
+				}
+				sqlQueryRename := fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", escapedTable, escapedCol, s.escapeIdentifier(engine, req.NewName))
+				if _, err = db.ExecContext(ctx, sqlQueryRename); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 
 	default:
 		return apperr.New(400, "UNKNOWN_ACTION", "Visual designer action is unrecognized")

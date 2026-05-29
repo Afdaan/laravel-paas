@@ -1031,6 +1031,17 @@ export const translations = {
           success: "New record inserted successfully.",
           failed: "Failed to insert record."
         },
+        editModal: {
+          title: "Edit Record",
+          desc: "Update table row values visually using our dynamic schema mapper.",
+          submit: "Update Record",
+          success: "Record updated successfully.",
+          failed: "Failed to update record.",
+          previewTitle: "Preview Changes (SQL)",
+          previewDesc: "Review the SQL script that will be executed on the database server.",
+          commitBtn: "Commit Changes",
+          backBtn: "Back"
+        },
         noTableSelected: "No Table Selected",
         noTableSelectedDesc: "Select a table from the sidebar or build one in the Structure tab.",
         tableEmpty: "Table is empty. No rows exist.",
@@ -1070,7 +1081,8 @@ export const translations = {
           dropTable: "Drop Table",
           dropTableConfirmDesc: "Are you sure you want to drop table \"{{table}}\"? This action is permanent and will delete all data inside this table.",
           createIndex: "Create Index",
-          dropIndex: "Drop Index"
+          dropIndex: "Drop Index",
+          modifyColumn: "Modify Column"
         },
         createTableDialog: {
           title: "Create Table Dialog",
@@ -1096,6 +1108,16 @@ export const translations = {
           columnNamePlaceholder: "e.g. title",
           lengthLabel: "Length",
           submitBtn: "Add Column"
+        },
+        modifyColumnDialog: {
+          title: "Modify Column Dialog",
+          desc: "Update the column schema type, length, nullability, and default value.",
+          columnNameLabel: "Column Name",
+          submitBtn: "Update Column",
+          previewTitle: "Preview DDL Changes (SQL)",
+          previewDesc: "Review the DDL statement that will alter the table structure.",
+          commitBtn: "Commit Alteration",
+          backBtn: "Back"
         },
         createIndexDialog: {
           title: "Create Index Dialog",
@@ -2210,6 +2232,17 @@ export const translations = {
           success: "Data baru berhasil ditambahkan.",
           failed: "Gagal menambahkan data baru."
         },
+        editModal: {
+          title: "Ubah Data",
+          desc: "Perbarui data baris tabel secara visual tanpa menulis kueri SQL.",
+          submit: "Simpan Perubahan",
+          success: "Data berhasil diperbarui.",
+          failed: "Gagal memperbarui data.",
+          previewTitle: "Pratinjau Perubahan (SQL)",
+          previewDesc: "Tinjau skrip SQL yang akan dieksekusi pada server database.",
+          commitBtn: "Komit Perubahan",
+          backBtn: "Kembali"
+        },
         noTableSelected: "Tidak Ada Tabel Terpilih",
         noTableSelectedDesc: "Pilih tabel dari sidebar atau buat baru di tab Struktur.",
         tableEmpty: "Tabel kosong. Tidak ada baris data.",
@@ -2249,7 +2282,8 @@ export const translations = {
           dropTable: "Hapus Tabel",
           dropTableConfirmDesc: "Apakah yakin ingin menghapus tabel \"{{table}}\"? Tindakan ini permanen dan akan menghapus seluruh data di dalam tabel tersebut.",
           createIndex: "Buat Indeks",
-          dropIndex: "Hapus Indeks"
+          dropIndex: "Hapus Indeks",
+          modifyColumn: "Ubah Kolom"
         },
         createTableDialog: {
           title: "Buat Tabel",
@@ -2275,6 +2309,16 @@ export const translations = {
           columnNamePlaceholder: "contoh: title",
           lengthLabel: "Panjang",
           submitBtn: "Tambah Kolom"
+        },
+        modifyColumnDialog: {
+          title: "Ubah Kolom",
+          desc: "Perbarui skema kolom, tipe data, dan nilai default secara dinamis.",
+          columnNameLabel: "Nama Kolom",
+          submitBtn: "Simpan Perubahan",
+          previewTitle: "Pratinjau Perubahan DDL (SQL)",
+          previewDesc: "Tinjau pernyataan DDL yang akan mengubah struktur tabel.",
+          commitBtn: "Komit Perubahan",
+          backBtn: "Kembali"
         },
         createIndexDialog: {
           title: "Buat Indeks",

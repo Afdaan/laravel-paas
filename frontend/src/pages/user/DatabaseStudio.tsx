@@ -25,16 +25,51 @@ import {
   AlertTriangle,
   DatabaseZap,
   Search,
-  Download
+  Download,
+  Pencil,
+  MoreHorizontal
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from '@/components/ConfirmationModal'
+
+const parseDbType = (dbType: string) => {
+  const typeLower = dbType.toLowerCase();
+  let length: number | string = 255;
+  const match = typeLower.match(/\((\d+)\)/);
+  if (match) {
+    length = parseInt(match[1], 10);
+  }
+  
+  if (typeLower.includes('varchar') || typeLower.includes('string') || typeLower.includes('char')) {
+    return { type: 'varchar', length };
+  }
+  if (typeLower.includes('tinyint(1)') || typeLower.includes('bool') || typeLower.includes('boolean')) {
+    return { type: 'boolean', length: '' };
+  }
+  if (typeLower.includes('bigint')) {
+    return { type: 'bigint', length: '' };
+  }
+  if (typeLower.includes('int') || typeLower.includes('integer')) {
+    return { type: 'integer', length: '' };
+  }
+  if (typeLower.includes('text')) {
+    return { type: 'text', length: '' };
+  }
+  if (typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date')) {
+    return { type: 'timestamp', length: '' };
+  }
+  if (typeLower.includes('decimal')) {
+    return { type: 'decimal', length: '' };
+  }
+  return { type: 'varchar', length: 255 };
+};
 
 interface DatabaseStudioProps {
   projectId?: string | number | null;
@@ -87,6 +122,23 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [showInsertModal, setShowInsertModal] = useState(false)
   const [insertFormData, setInsertFormData] = useState<Record<string, any>>({})
 
+  // Edit row states
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingRow, setEditingRow] = useState<any>(null)
+  const [editFormData, setEditFormData] = useState<Record<string, any>>({})
+  const [showRowEditPreview, setShowRowEditPreview] = useState(false)
+  const [rowEditPreviewSql, setRowEditPreviewSql] = useState('')
+
+  // Modify column states
+  const [editingCol, setEditingCol] = useState<any>(null)
+  const [editColNewName, setEditColNewName] = useState('')
+  const [editColType, setEditColType] = useState('varchar')
+  const [editColLength, setEditColLength] = useState<number | string>(255)
+  const [editColNullable, setEditColNullable] = useState(true)
+  const [editColDefault, setEditColDefault] = useState('')
+  const [showColModifyPreview, setShowColModifyPreview] = useState(false)
+  const [colModifyPreviewSql, setColModifyPreviewSql] = useState('')
+
   // Confirmation Modal state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -127,7 +179,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   )
   
   // Visual Designer states
-  const [designerAction, setDesignerAction] = useState<'create_table' | 'add_column' | 'create_index' | null>(null)
+  const [designerAction, setDesignerAction] = useState<'create_table' | 'add_column' | 'create_index' | 'modify_column' | null>(null)
   const [newTableName, setNewTableName] = useState('')
   const [newColName, setNewColName] = useState('')
   const [newColType, setNewColType] = useState('varchar')
@@ -521,6 +573,234 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       loadStudioData()
     } catch (err: any) {
       toast.error(t('databaseStudio.tables.insertModal.failed') + ': ' + (err.response?.data?.error || err.message))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  const generateRowEditSql = () => {
+    if (!selectedTable || !editingRow) return ''
+    const pkColumn = tableData?.columns.find((c: string) => 
+      c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
+    ) || tableData?.columns[0]
+    const pkValue = editingRow[pkColumn]
+
+    const isPostgres = dbOverview?.engine?.toLowerCase() === 'postgres'
+    const q = isPostgres ? '"' : '`'
+
+    const setClauses: string[] = []
+    const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
+
+    cols.forEach((col: any) => {
+      if (col.name === pkColumn) return
+
+      const val = editFormData[col.name]
+      const escapedCol = `${q}${col.name}${q}`
+
+      if (val === undefined || val === '') {
+        if (col.nullable) {
+          setClauses.push(`${escapedCol} = NULL`)
+        } else {
+          const typeLower = col.type.toLowerCase()
+          if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+            setClauses.push(`${escapedCol} = 0`)
+          } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+            setClauses.push(`${escapedCol} = false`)
+          } else {
+            setClauses.push(`${escapedCol} = ''`)
+          }
+        }
+        return
+      }
+
+      const typeLower = col.type.toLowerCase()
+      if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+        setClauses.push(`${escapedCol} = ${Number(val)}`)
+      } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+        const boolVal = val === 'true' || val === true
+        setClauses.push(`${escapedCol} = ${isPostgres ? (boolVal ? 'TRUE' : 'FALSE') : (boolVal ? '1' : '0')}`)
+      } else {
+        const escapedVal = String(val).replace(/'/g, "''")
+        setClauses.push(`${escapedCol} = '${escapedVal}'`)
+      }
+    })
+
+    const escapedPkValue = typeof pkValue === 'number' ? pkValue : `'${String(pkValue).replace(/'/g, "''")}'`
+    return `UPDATE ${q}${selectedTable}${q} SET ${setClauses.join(', ')} WHERE ${q}${pkColumn}${q} = ${escapedPkValue};`
+  }
+
+  const openEditRowModal = (row: any) => {
+    setEditingRow(row)
+    
+    const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
+    const initialData: Record<string, any> = {}
+    cols.forEach((c: any) => {
+      initialData[c.name] = row[c.name] !== null ? row[c.name] : ''
+    })
+    setEditFormData(initialData)
+    setShowRowEditPreview(false)
+    setRowEditPreviewSql('')
+    setShowEditModal(true)
+  }
+
+  const handleEditRowFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const sql = generateRowEditSql()
+    setRowEditPreviewSql(sql)
+    setShowRowEditPreview(true)
+  }
+
+  const handleEditRowSubmit = async () => {
+    if (!id || !selectedTable || !editingRow) return
+
+    const pkColumn = tableData?.columns.find((c: string) => 
+      c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
+    ) || tableData?.columns[0]
+
+    const pkValue = editingRow[pkColumn]
+    if (pkValue == null) {
+      toast.error(t('databaseStudio.errors.missingPrimaryKey'))
+      return
+    }
+
+    setIsActionLoading(true)
+    try {
+      const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
+      const updates: Record<string, any> = {}
+
+      cols.forEach((col: any) => {
+        if (col.name === pkColumn) return
+
+        const val = editFormData[col.name]
+        if (val === undefined || val === '') {
+          if (col.nullable) {
+            updates[col.name] = null
+          } else {
+            const typeLower = col.type.toLowerCase()
+            if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+              updates[col.name] = 0
+            } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+              updates[col.name] = false
+            } else {
+              updates[col.name] = ""
+            }
+          }
+          return
+        }
+
+        const typeLower = col.type.toLowerCase()
+        if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+          updates[col.name] = Number(val)
+        } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+          updates[col.name] = val === 'true' || val === true
+        } else {
+          updates[col.name] = val
+        }
+      })
+
+      await databaseAPI.updateRow(id, selectedTable, pkColumn, pkValue, updates)
+      toast.success(t('databaseStudio.tables.editModal.success'))
+      setShowEditModal(false)
+      loadTableDataGrid()
+      loadStudioData()
+    } catch (err: any) {
+      toast.error(t('databaseStudio.tables.editModal.failed') + ': ' + (err.response?.data?.error || err.message))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  const openModifyColumnModal = (tableName: string, col: any) => {
+    setSelectedTable(tableName)
+    setEditingCol(col)
+    setEditColNewName(col.name)
+    
+    const parsed = parseDbType(col.type)
+    setEditColType(parsed.type)
+    setEditColLength(parsed.length)
+    setEditColNullable(col.nullable)
+    setEditColDefault(col.default !== null ? String(col.default) : '')
+    setShowColModifyPreview(false)
+    setColModifyPreviewSql('')
+    
+    setDesignerAction('modify_column')
+  }
+
+  const generateColModifySql = () => {
+    if (!selectedTable || !editingCol) return ''
+    const isPostgres = dbOverview?.engine?.toLowerCase() === 'postgres'
+    const q = isPostgres ? '"' : '`'
+
+    const escapedTable = `${q}${selectedTable}${q}`
+    const escapedCol = `${q}${editingCol.name}${q}`
+    
+    let dbType = editColType.toUpperCase()
+    if (editColType === 'varchar') {
+      const len = editColLength === "" ? 255 : Number(editColLength)
+      dbType = `VARCHAR(${len})`
+    } else if (editColType === 'integer') {
+      dbType = 'INT'
+    } else if (editColType === 'boolean') {
+      dbType = isPostgres ? 'BOOLEAN' : 'TINYINT(1)'
+    } else if (editColType === 'decimal') {
+      dbType = 'DECIMAL(10,2)'
+    }
+
+    const nullability = editColNullable ? 'NULL' : 'NOT NULL'
+    const defaultClause = editColDefault !== '' ? ` DEFAULT '${editColDefault.replace(/'/g, "''")}'` : ''
+
+    if (isPostgres) {
+      const sqls: string[] = []
+      sqls.push(`-- 1. Alter Column Type\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} TYPE ${dbType} USING ${escapedCol}::${dbType.toLowerCase()};`)
+      sqls.push(`-- 2. Alter Column Nullability\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} ${editColNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`)
+      sqls.push(`-- 3. Alter Column Default\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} ${editColDefault !== '' ? `SET DEFAULT '${editColDefault.replace(/'/g, "''")}'` : 'DROP DEFAULT'};`)
+      if (editColNewName && editColNewName !== editingCol.name) {
+        const escapedNewCol = `${q}${editColNewName}${q}`
+        sqls.push(`-- 4. Rename Column\nALTER TABLE ${escapedTable} RENAME COLUMN ${escapedCol} TO ${escapedNewCol};`)
+      }
+      return sqls.join('\n\n')
+    } else {
+      const sqls: string[] = []
+      sqls.push(`ALTER TABLE ${escapedTable} MODIFY COLUMN ${escapedCol} ${dbType} ${nullability}${defaultClause};`)
+      if (editColNewName && editColNewName !== editingCol.name) {
+        const escapedNewCol = `${q}${editColNewName}${q}`
+        sqls.push(`ALTER TABLE ${escapedTable} RENAME COLUMN ${escapedCol} TO ${escapedNewCol};`)
+      }
+      return sqls.join('\n')
+    }
+  }
+
+  const handleModifyColumnFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const sql = generateColModifySql()
+    setColModifyPreviewSql(sql)
+    setShowColModifyPreview(true)
+  }
+
+  const handleCommitModifyColumn = async () => {
+    if (!id || !selectedTable || !editingCol) return
+
+    let payload: any = {
+      action: 'modify_column',
+      table_name: selectedTable,
+      column: {
+        name: editingCol.name,
+        type: editColType,
+        length: editColLength === "" ? 255 : Number(editColLength),
+        nullable: editColNullable,
+        default_value: editColDefault === "" ? null : editColDefault
+      },
+      new_name: editColNewName
+    }
+
+    setIsActionLoading(true)
+    try {
+      await databaseAPI.executeDesigner(id, payload)
+      toast.success(t('databaseStudio.structure.updateSuccess'))
+      setDesignerAction(null)
+      loadStudioData()
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || t('databaseStudio.errors.designerActionFailed'))
     } finally {
       setIsActionLoading(false)
     }
@@ -1038,13 +1318,23 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                           return (
                             <tr key={idx} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
                               <td className="py-3.5 px-4 text-center shrink-0">
-                                <button 
-                                  onClick={() => handleDeleteRow(row, pkColumn)}
-                                  className="p-1 bg-destructive/10 hover:bg-destructive/20 text-destructive rounded transition-colors cursor-pointer"
-                                  style={{ cursor: 'pointer' }}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 cursor-pointer" style={{ cursor: 'pointer' }} />
-                                </button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 cursor-pointer" style={{ cursor: 'pointer' }}>
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="center" className="w-32 bg-card/98 border border-border/80 rounded-xl shadow-xl backdrop-blur-xl">
+                                    <DropdownMenuItem onClick={() => openEditRowModal(row)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
+                                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                                      {t('common.edit')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDeleteRow(row, pkColumn)} className="text-destructive gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      {t('common.delete')}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </td>
                               {tableData.columns.map((col: string) => (
                                 <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
@@ -1203,6 +1493,152 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   </Button>
                 </div>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Visual Edit Row Modal */}
+          <Dialog open={showEditModal} onOpenChange={(open: boolean) => !open && setShowEditModal(false)}>
+            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader className="pb-2 border-b border-border/40">
+                <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
+                  <Pencil className="w-5 h-5 text-primary" />
+                  {showRowEditPreview ? t('databaseStudio.tables.editModal.previewTitle') : t('databaseStudio.tables.editModal.title')}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  {showRowEditPreview ? t('databaseStudio.tables.editModal.previewDesc') : t('databaseStudio.tables.editModal.desc')} — <span className="font-mono text-primary font-semibold">{selectedTable}</span>
+                </DialogDescription>
+              </DialogHeader>
+
+              {!showRowEditPreview ? (
+                <form onSubmit={handleEditRowFormSubmit} className="space-y-4 pt-3">
+                  <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1">
+                    {(schemaData.find(t => t.name === selectedTable)?.columns || []).map((col: any) => {
+                      const pkColumn = tableData?.columns.find((c: string) => 
+                        c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
+                      ) || tableData?.columns[0]
+                      const isPK = col.name === pkColumn
+                      const isNullable = col.nullable
+                      const typeLower = col.type.toLowerCase()
+
+                      return (
+                        <div key={col.name} className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor={`edit_${col.name}`} className="text-xs font-bold text-foreground/90 flex items-center gap-2">
+                              <span className="font-mono">{col.name}</span>
+                              <span className="text-[10px] text-muted-foreground font-normal">({col.type})</span>
+                            </Label>
+                            <div className="flex items-center gap-1.5">
+                              {isPK && (
+                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-black uppercase">
+                                  PK
+                                </span>
+                              )}
+                              {!isNullable ? (
+                                <span className="text-[9px] font-extrabold uppercase text-amber-500/80 bg-amber-500/5 px-1.5 py-0.5 rounded border border-amber-500/10">
+                                  Required
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold uppercase text-muted-foreground/60 bg-muted/10 px-1.5 py-0.5 rounded border border-border/40">
+                                  Optional
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {isPK ? (
+                            <Input
+                              id={`edit_${col.name}`}
+                              disabled
+                              value={editFormData[col.name] || ''}
+                              className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
+                            />
+                          ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
+                            <select
+                              id={`edit_${col.name}`}
+                              value={String(editFormData[col.name] ?? '')}
+                              onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                              className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <option value="">-- Select Boolean --</option>
+                              <option value="true">True (Yes)</option>
+                              <option value="false">False (No)</option>
+                            </select>
+                          ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
+                            <Input
+                              id={`edit_${col.name}`}
+                              type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
+                              value={editFormData[col.name] || ''}
+                              onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                              required={!isNullable}
+                              className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                            />
+                          ) : typeLower.includes('text') ? (
+                            <textarea
+                              id={`edit_${col.name}`}
+                              value={editFormData[col.name] || ''}
+                              onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                              required={!isNullable}
+                              rows={3}
+                              placeholder={`Enter text data...`}
+                              className="w-full p-3 rounded-xl border border-border/70 bg-background/50 text-xs font-mono outline-none focus:border-primary/50"
+                            />
+                          ) : (
+                            <Input
+                              id={`edit_${col.name}`}
+                              type={typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double') ? "number" : "text"}
+                              value={editFormData[col.name] || ''}
+                              onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                              required={!isNullable}
+                              placeholder={isNullable ? "Optional value" : "Required value"}
+                              className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                            />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                    <Button type="submit" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('databaseStudio.tables.editModal.submit')}
+                    </Button>
+                    <Button type="button" onClick={() => setShowEditModal(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4 pt-3">
+                  <div className="rounded-xl border border-border/80 bg-background/50 overflow-hidden">
+                    <div className="flex items-center justify-between bg-muted/30 px-4 py-2 border-b border-border/80">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">SQL Script</span>
+                      <button 
+                        type="button" 
+                        onClick={() => copyToClipboard(rowEditPreviewSql)} 
+                        className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={rowEditPreviewSql}
+                      className="w-full h-44 p-4 font-mono text-xs bg-transparent border-none outline-none resize-none leading-relaxed text-foreground/90 select-all"
+                    />
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                    <Button onClick={handleEditRowSubmit} disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {isActionLoading ? t('common.executing') : t('databaseStudio.tables.editModal.commitBtn')}
+                    </Button>
+                    <Button onClick={() => setShowRowEditPreview(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('databaseStudio.tables.editModal.backBtn')}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
         </div>
@@ -1398,37 +1834,28 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                                   </td>
                                   <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
                                   <td className="py-3 px-4 text-right">
-                                    {col.key !== 'PRI' && (
-                                      <button
-                                        onClick={() => handleDropColumn(table.name, col.name)}
-                                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded-lg transition-colors cursor-pointer"
-                                        style={{ cursor: 'pointer' }}
-                                        title={t('databaseStudio.structure.actions.dropColumn')}
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 cursor-pointer" style={{ cursor: 'pointer' }}>
+                                          <MoreHorizontal className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-36 bg-card/98 border border-border/80 rounded-xl shadow-xl backdrop-blur-xl">
+                                        <DropdownMenuItem onClick={() => openModifyColumnModal(table.name, col)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
+                                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                                          {t('databaseStudio.structure.actions.modifyColumn') || 'Modify Column'}
+                                        </DropdownMenuItem>
+                                        {col.key !== 'PRI' && (
+                                          <DropdownMenuItem onClick={() => handleDropColumn(table.name, col.name)} className="text-destructive gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            {t('databaseStudio.structure.actions.dropColumn')}
+                                          </DropdownMenuItem>
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
                                   </td>
                                 </tr>
                               ))}
-                              <tr className="hover:bg-primary/5 transition-colors border-t border-border/10">
-                                <td colSpan={6} className="p-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedTable(table.name)
-                                      setDesignerAction('add_column')
-                                    }}
-                                    className="w-full text-left py-3 px-4 font-bold text-xs text-primary/85 hover:text-primary flex items-center gap-2 group transition-all cursor-pointer"
-                                    style={{ cursor: 'pointer' }}
-                                  >
-                                    <Plus className="w-3.5 h-3.5 text-primary/60 group-hover:text-primary transition-all group-hover:scale-110" />
-                                    {t('databaseStudio.structure.addColumnTo', { table: '||' }).split('||').map((part, index) => 
-                                      index === 1 ? <span key={index} className="font-mono text-foreground font-bold">{table.name}</span> : part
-                                    )}
-                                  </button>
-                                </td>
-                              </tr>
                             </tbody>
                           </table>
                         </div>
@@ -1583,6 +2010,155 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   </Button>
                 </div>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modify Column Dialog Modal */}
+          <Dialog open={designerAction === 'modify_column'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
+            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
+              <DialogHeader className="pb-2 border-b border-border/40">
+                <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
+                  <Pencil className="w-5 h-5 text-primary" />
+                  {showColModifyPreview ? t('databaseStudio.structure.modifyColumnDialog.previewTitle') : t('databaseStudio.structure.modifyColumnDialog.title')} — {selectedTable}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  {showColModifyPreview ? t('databaseStudio.structure.modifyColumnDialog.previewDesc') : t('databaseStudio.structure.modifyColumnDialog.desc')}
+                </DialogDescription>
+              </DialogHeader>
+
+              {!showColModifyPreview ? (
+                <form onSubmit={handleModifyColumnFormSubmit} className="space-y-4 pt-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit_col_name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('databaseStudio.structure.modifyColumnDialog.columnNameLabel')}
+                    </Label>
+                    <Input
+                      id="edit_col_name"
+                      value={editColNewName}
+                      onChange={(e) => setEditColNewName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                      placeholder={t('databaseStudio.structure.createTableDialog.columnName')}
+                      required
+                      className="h-10 rounded-xl bg-background/50"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {t('databaseStudio.structure.createTableDialog.dataType')}
+                      </Label>
+                      <select
+                        value={editColType}
+                        onChange={(e) => setEditColType(e.target.value)}
+                        className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <option value="varchar">VARCHAR</option>
+                        <option value="integer">INTEGER</option>
+                        <option value="bigint">BIGINT</option>
+                        <option value="text">TEXT</option>
+                        <option value="boolean">BOOLEAN</option>
+                        <option value="timestamp">TIMESTAMP</option>
+                        <option value="decimal">DECIMAL</option>
+                      </select>
+                    </div>
+
+                    {editColType === 'varchar' && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="edit_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {t('databaseStudio.structure.addColumnDialog.lengthLabel')}
+                        </Label>
+                        <Input
+                          id="edit_col_len"
+                          type="number"
+                          value={editColLength}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditColLength(val === "" ? "" : Number(val));
+                          }}
+                          placeholder="255"
+                          className="h-10 rounded-xl bg-background/50 text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit_col_default" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('databaseStudio.structure.createTableDialog.defaultValue')}
+                    </Label>
+                    <Input
+                      id="edit_col_default"
+                      value={editColDefault}
+                      onChange={(e) => setEditColDefault(e.target.value)}
+                      placeholder="e.g. NULL, 'active', 0"
+                      className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between border-t pt-3 mt-4">
+                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      {t('databaseStudio.structure.createTableDialog.nullableLabel')}
+                    </Label>
+                    <button
+                      type="button"
+                      onClick={() => setEditColNullable(!editColNullable)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                        editColNullable ? "bg-primary" : "bg-muted"
+                      )}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
+                          editColNullable ? "translate-x-4" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2">
+                    <Button type="submit" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('databaseStudio.structure.modifyColumnDialog.submitBtn')}
+                    </Button>
+                    <Button type="button" onClick={() => setDesignerAction(null)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-4 pt-3">
+                  <div className="rounded-xl border border-border/80 bg-background/50 overflow-hidden">
+                    <div className="flex items-center justify-between bg-muted/30 px-4 py-2 border-b border-border/80">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">SQL Script</span>
+                      <button 
+                        type="button" 
+                        onClick={() => copyToClipboard(colModifyPreviewSql)} 
+                        className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={colModifyPreviewSql}
+                      className="w-full h-44 p-4 font-mono text-xs bg-transparent border-none outline-none resize-none leading-relaxed text-foreground/90 select-all"
+                    />
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                    <Button onClick={handleCommitModifyColumn} disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {isActionLoading ? t('common.executing') : t('databaseStudio.structure.modifyColumnDialog.commitBtn')}
+                    </Button>
+                    <Button onClick={() => setShowColModifyPreview(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('databaseStudio.structure.modifyColumnDialog.backBtn')}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
         </>

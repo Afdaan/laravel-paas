@@ -253,6 +253,7 @@ func Setup(
 	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
 	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)
 	projects.Delete("/:id/database/tables/:table/rows", databaseHandler.DeleteTableRow)
+	projects.Put("/:id/database/tables/:table/rows", databaseHandler.UpdateTableRow)
 	projects.Post("/:id/database/query", middleware.RateLimitQuery(), databaseHandler.ExecuteQuery)
 	projects.Get("/:id/database/export", databaseHandler.ExportDatabase)
 	projects.Post("/:id/database/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
