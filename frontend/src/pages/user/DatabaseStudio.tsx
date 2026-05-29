@@ -676,33 +676,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
             </Card>
           </div>
 
-          {/* Right Sidebar - Admin Controls / SRE Info */}
+          {/* Right Sidebar - Admin Controls */}
           <div className="space-y-8">
-            <Card className="p-5 bg-muted/5 border-primary/10">
-              <h4 className="font-extrabold text-sm mb-3 flex items-center gap-2 text-primary uppercase tracking-wide border-b pb-2">
-                <Shield className="w-4.5 h-4.5" />
-                {t('databaseStudio.dashboard.sre.title')}
-              </h4>
-              <ul className="space-y-3.5 pl-1.5">
-                <li className="text-xs text-muted-foreground flex items-start gap-2.5">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0 mt-1.5" />
-                  <span><strong>{t('databaseStudio.dashboard.sre.portMapping')}</strong> {t('databaseStudio.dashboard.sre.portMappingDesc')}</span>
-                </li>
-                <li className="text-xs text-muted-foreground flex items-start gap-2.5">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0 mt-1.5" />
-                  <span><strong>{t('databaseStudio.dashboard.sre.dosCap')}</strong> {t('databaseStudio.dashboard.sre.dosCapDesc')}</span>
-                </li>
-                <li className="text-xs text-muted-foreground flex items-start gap-2.5">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0 mt-1.5" />
-                  <span><strong>{t('databaseStudio.dashboard.sre.queryTimeouts')}</strong> {t('databaseStudio.dashboard.sre.queryTimeoutsDesc')}</span>
-                </li>
-                <li className="text-xs text-muted-foreground flex items-start gap-2.5">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0 mt-1.5" />
-                  <span><strong>{t('databaseStudio.dashboard.sre.auditLogs')}</strong> {t('databaseStudio.dashboard.sre.auditLogsDesc')}</span>
-                </li>
-              </ul>
-            </Card>
-
             <Card className="p-5 space-y-4">
               <h4 className="font-extrabold text-sm uppercase tracking-wide border-b pb-2 flex items-center gap-2">
                 <Activity className="w-4.5 h-4.5" />
