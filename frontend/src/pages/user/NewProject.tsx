@@ -801,66 +801,68 @@ function UserNewProject() {
 
                     <div
                       className={cn(
-                        "overflow-hidden transition-all duration-500 ease-out",
+                        "grid transition-[grid-template-rows,opacity,transform] duration-500 ease-in-out",
                         formData.enable_database
-                          ? "max-h-80 opacity-100 translate-y-0"
-                          : "max-h-0 opacity-0 -translate-y-2 pointer-events-none"
+                          ? "grid-rows-[1fr] opacity-100 translate-y-0"
+                          : "grid-rows-[0fr] opacity-0 -translate-y-2 pointer-events-none"
                       )}
                     >
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl border border-border/70 bg-background/45 shadow-[0_18px_60px_-40px_hsl(var(--foreground))] backdrop-blur-sm transition-colors duration-300">
-                        {/* Database Engine Dropdown */}
-                        <div className="space-y-2 min-w-0">
-                          <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Database Engine
-                          </Label>
-                          <Select
-                            value={formData.database_engine}
-                            onValueChange={(val) => {
-                              setFormData(prev => ({
-                                ...prev,
-                                database_engine: val as 'mysql' | 'postgresql'
-                              }))
-                            }}
-                          >
-                            <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
-                              <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
-                            </SelectTrigger>
-                            <SelectContent
-                              side="top"
-                              align="start"
-                              sideOffset={8}
-                              alignItemWithTrigger={false}
-                              className="min-w-[var(--anchor-width)] w-[var(--anchor-width)] bg-popover/98 backdrop-blur-xl border border-border/80 rounded-xl shadow-2xl p-1.5"
+                      <div className="min-h-0 overflow-hidden">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl border border-border/70 bg-background/45 shadow-[0_18px_60px_-40px_hsl(var(--foreground))] backdrop-blur-sm transition-[background-color,border-color,box-shadow,transform,opacity] duration-500 ease-in-out">
+                          {/* Database Engine Dropdown */}
+                          <div className="space-y-2 min-w-0">
+                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                              Database Engine
+                            </Label>
+                            <Select
+                              value={formData.database_engine}
+                              onValueChange={(val) => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  database_engine: val as 'mysql' | 'postgresql'
+                                }))
+                              }}
                             >
-                              {databaseEngines.map(engine => (
-                                <SelectItem
-                                  key={engine.value}
-                                  value={engine.value}
-                                  className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
-                                >
-                                  <span className="font-medium text-foreground/90 text-sm">{engine.label}</span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                              <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
+                                <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
+                              </SelectTrigger>
+                              <SelectContent
+                                side="top"
+                                align="start"
+                                sideOffset={8}
+                                alignItemWithTrigger={false}
+                                className="min-w-[var(--anchor-width)] w-[var(--anchor-width)] bg-popover/98 backdrop-blur-xl border border-border/80 rounded-xl shadow-2xl p-1.5"
+                              >
+                                {databaseEngines.map(engine => (
+                                  <SelectItem
+                                    key={engine.value}
+                                    value={engine.value}
+                                    className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
+                                  >
+                                    <span className="font-medium text-foreground/90 text-sm">{engine.label}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        {/* Database Name */}
-                        <div className="space-y-2 min-w-0">
-                          <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            {t('newProject.dbName')}
-                          </Label>
-                          <Input
-                            id="database_name"
-                            name="database_name"
-                            value={formData.database_name}
-                            onChange={handleChange}
-                            placeholder={t('newProject.dbName')}
-                            className={cn("h-11 rounded-xl border-border/70 bg-background/80 shadow-sm transition-all duration-200", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
-                          />
-                          {validationErrors.database_name && (
-                            <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
-                          )}
+                          {/* Database Name */}
+                          <div className="space-y-2 min-w-0">
+                            <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                              {t('newProject.dbName')}
+                            </Label>
+                            <Input
+                              id="database_name"
+                              name="database_name"
+                              value={formData.database_name}
+                              onChange={handleChange}
+                              placeholder={t('newProject.dbName')}
+                              className={cn("h-11 rounded-xl border-border/70 bg-background/80 shadow-sm transition-all duration-200", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
+                            />
+                            {validationErrors.database_name && (
+                              <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
