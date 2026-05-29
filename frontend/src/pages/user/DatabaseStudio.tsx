@@ -81,6 +81,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [tableLimit] = useState(25)
   const [tableTotal, setTableTotal] = useState(0)
   const [tableSearch, setTableSearch] = useState('')
+  const [structureSearch, setStructureSearch] = useState('')
 
   // Dynamic visual insert row modal states
   const [showInsertModal, setShowInsertModal] = useState(false)
@@ -145,10 +146,14 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       setDbOverview(overviewRes.data)
       
       const schemaRes = await databaseAPI.getSchema(id)
-      setSchemaData(schemaRes.data.tables || [])
-      if (schemaRes.data.tables && schemaRes.data.tables.length > 0) {
-        setSelectedTable(schemaRes.data.tables[0].name)
-      }
+      const tables = schemaRes.data.tables || []
+      setSchemaData(tables)
+      
+      setSelectedTable(current => {
+        const exists = tables.some((t: any) => t.name === current)
+        if (exists && current) return current
+        return tables.length > 0 ? tables[0].name : ''
+      })
       
       const backupsRes = await databaseAPI.listBackups(id)
       setBackups(backupsRes.data.backups || [])
@@ -1201,167 +1206,247 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
             </DialogContent>
           </Dialog>
         </div>
-      )}
-
-      {activeTab === 'structure' && (
-        <div className="space-y-6 animate-in fade-in duration-300">
-          {/* Main Visual Schema Explorer */}
-          <Card className="p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between border-b pb-4 mb-5">
-              <div className="space-y-1">
-                <h3 className="font-extrabold text-base flex items-center gap-3">
-                  {t('databaseStudio.structure.title')}
+      )}      {activeTab === 'structure' && (
+        <>
+          <div className="border border-border/80 shadow-2xl overflow-hidden flex flex-col md:flex-row h-[600px] bg-card/40 backdrop-blur-md rounded-xl animate-in fade-in duration-300">
+            {/* Left Sidebar: macOS Finder Style Sidebar */}
+            <div className="w-full md:w-80 border-r border-border/60 bg-muted/5 flex flex-col h-full shrink-0">
+              {/* Sidebar Header with Title & Action */}
+              <div className="p-4 border-b border-border/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    {t('databaseStudio.tables.title') || 'Tables'}
+                  </span>
                   <Button
                     size="xs"
                     onClick={() => setDesignerAction('create_table')}
                     disabled={isActionLoading || isSuspended}
-                    className="font-bold gap-1 h-7 text-[11px] rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors cursor-pointer"
+                    className="font-bold gap-1 h-6 px-2 text-[10px] rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors cursor-pointer"
                     style={{ cursor: 'pointer' }}
                   >
                     <Plus className="w-3 h-3" />
                     {t('databaseStudio.structure.createTableDialog.submitBtn')}
                   </Button>
-                </h3>
-                <p className="text-muted-foreground text-xs">{t('databaseStudio.structure.subtitle')}</p>
+                </div>
+                
+                {/* Search Bar for Tables */}
+                {!isSuspended && schemaData.length > 0 && (
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/50" />
+                    <Input
+                      type="text"
+                      placeholder={t('databaseStudio.tables.searchPlaceholder') || 'Search tables...'}
+                      value={structureSearch}
+                      onChange={(e) => setStructureSearch(e.target.value)}
+                      className="h-8 pl-8 pr-3 text-[11px] rounded-lg bg-background/50 border-border/60 focus:bg-background/80"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Sidebar Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-0.5 scrollbar-thin">
+                {isSuspended ? (
+                  <div className="py-12 text-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    {t('databaseStudio.dashboard.suspendedWarning')}
+                  </div>
+                ) : schemaData.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-2">
+                    <DatabaseZap className="w-8 h-8 text-muted-foreground/30" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{t('common.empty')}</span>
+                  </div>
+                ) : (() => {
+                  const filteredTables = schemaData.filter(table => 
+                    table.name.toLowerCase().includes(structureSearch.toLowerCase())
+                  )
+                  if (filteredTables.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-xs text-muted-foreground">
+                        {t('databaseStudio.tables.noTablesMatch', { search: structureSearch })}
+                      </div>
+                    )
+                  }
+                  return filteredTables.map((table: any) => {
+                    const isSelected = selectedTable === table.name
+                    return (
+                      <button
+                        key={table.name}
+                        onClick={() => {
+                          setSelectedTable(table.name)
+                        }}
+                        className={cn(
+                          "w-full text-left py-2 px-3 rounded-lg text-xs font-mono font-semibold transition-all duration-150 cursor-pointer flex items-center justify-between group border",
+                          isSelected
+                            ? "bg-primary/10 border-primary/20 text-primary shadow-sm"
+                            : "border-transparent hover:bg-muted/10 text-muted-foreground hover:text-foreground"
+                        )}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <span className="flex items-center gap-2 truncate pr-1">
+                          <Table className={cn("w-3.5 h-3.5 transition-colors", isSelected ? "text-primary animate-pulse" : "text-muted-foreground/60 group-hover:text-foreground/80")} />
+                          {table.name}
+                        </span>
+                        <span className={cn(
+                          "text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border shrink-0 transition-all",
+                          isSelected 
+                            ? "bg-primary/20 text-primary border-primary/30" 
+                            : "bg-muted text-muted-foreground/50 border-muted-foreground/10 group-hover:text-muted-foreground"
+                        )}>
+                          {table.columns?.length || 0}
+                        </span>
+                      </button>
+                    )
+                  })
+                })()}
               </div>
             </div>
 
-            {isSuspended ? (
-              <div className="py-12 text-center text-muted-foreground text-sm font-semibold uppercase tracking-wide">
-                {t('databaseStudio.dashboard.suspendedWarning')}
-              </div>
-            ) : schemaData.length === 0 ? (
-              <div className="py-16 text-center border border-dashed rounded-xl flex flex-col items-center justify-center gap-4 bg-muted/5">
-                <DatabaseZap className="w-10 h-10 text-muted-foreground/60" />
-                <div className="space-y-1">
-                  <h4 className="font-extrabold text-base">{t('databaseStudio.structure.noSchemaObjects')}</h4>
-                  <p className="text-xs text-muted-foreground max-w-sm">{t('databaseStudio.structure.noSchemaObjectsDesc')}</p>
+            {/* Right Pane: macOS Finder Detail View */}
+            <div className="flex-1 flex flex-col h-full min-w-0 bg-background/5 overflow-hidden">
+              {isSuspended ? (
+                <div className="flex-1 flex items-center justify-center p-6 text-center text-muted-foreground">
+                  <div className="text-sm font-semibold uppercase tracking-wide">
+                    {t('databaseStudio.dashboard.suspendedWarning')}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {schemaData.map((table: any) => (
-                  <div key={table.name} className="border border-border/80 rounded-xl overflow-hidden shadow-sm bg-background/10">
-                    <div className="flex items-center justify-between p-4 bg-muted/20 border-b border-border/80">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-sm text-foreground/90 flex items-center gap-2">
-                          <Table className="w-4 h-4 text-primary" />
-                          {table.name}
-                        </span>
-                        
+              ) : selectedTable && schemaData.find(t => t.name === selectedTable) ? (
+                (() => {
+                  const table = schemaData.find(t => t.name === selectedTable)
+                  return (
+                    <div key={table.name} className="flex-1 flex flex-col h-full overflow-hidden animate-in fade-in slide-in-from-right-2 duration-300 ease-out">
+                      {/* Pane Header */}
+                      <div className="flex items-center justify-between border-b border-border/40 p-4 shrink-0 bg-muted/5">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-sm text-foreground/90 flex items-center gap-2">
+                            <Table className="w-4 h-4 text-primary" />
+                            {table.name}
+                          </span>
+                          
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => {
+                              setSelectedTable(table.name)
+                              setDesignerAction('add_column')
+                            }}
+                            className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/45 shadow-none transition-colors cursor-pointer"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            {t('databaseStudio.structure.addColumn')}
+                          </Button>
+                        </div>
+
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="xs"
-                          onClick={() => {
-                            setSelectedTable(table.name)
-                            setDesignerAction('add_column')
-                          }}
-                          className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors cursor-pointer"
+                          onClick={() => handleDeleteTable(table.name)}
+                          className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                           style={{ cursor: 'pointer' }}
+                          title={t('databaseStudio.structure.actions.dropTable')}
                         >
-                          <Plus className="w-3 h-3" />
-                          {t('databaseStudio.structure.addColumn')}
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {t('databaseStudio.structure.actions.dropTable')}
                         </Button>
                       </div>
 
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => handleDeleteTable(table.name)}
-                        className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                        style={{ cursor: 'pointer' }}
-                        title={t('databaseStudio.structure.actions.dropTable')}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        {t('databaseStudio.structure.actions.dropTable')}
-                      </Button>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs font-medium">
-                        <thead>
-                          <tr className="border-b border-border/40 bg-muted/5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                            <th className="py-3 px-4">{t('databaseStudio.structure.nameHeader')}</th>
-                            <th className="py-3 px-4">{t('databaseStudio.structure.typeHeader')}</th>
-                            <th className="py-3 px-4 text-center">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</th>
-                            <th className="py-3 px-4 text-center">{t('databaseStudio.structure.keyHeader')}</th>
-                            <th className="py-3 px-4">{t('databaseStudio.structure.defaultHeader')}</th>
-                            <th className="py-3 px-4 text-right">{t('databaseStudio.tables.actionHeader')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {table.columns.map((col: any) => (
-                            <tr key={col.name} className="border-b border-border/20 hover:bg-muted/5 transition-colors">
-                              <td className="py-3 px-4 font-mono font-semibold text-foreground/90">{col.name}</td>
-                              <td className="py-3 px-4 font-mono text-primary/80">{col.type}</td>
-                              <td className="py-3 px-4 text-center">
-                                <span className={cn(
-                                  "px-2 py-0.5 rounded text-[10px] font-bold border",
-                                  col.nullable 
-                                    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
-                                    : "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                )}>
-                                  {col.nullable ? t('common.yes').toUpperCase() : t('common.no').toUpperCase()}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                {col.key === 'PRI' && (
-                                  <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] font-extrabold uppercase tracking-wide">
-                                    PK
-                                  </span>
-                                )}
-                                {col.key === 'UNI' && (
-                                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-extrabold uppercase tracking-wide" title="Unique Constraint">
-                                    UQ
-                                  </span>
-                                )}
-                                {col.key === 'MUL' && (
-                                  <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-600 border border-sky-500/20 text-[10px] font-extrabold uppercase tracking-wide" title="Indexed Column">
-                                    IDX
-                                  </span>
-                                )}
-                              </td>
-                              <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
-                              <td className="py-3 px-4 text-right">
-                                {col.key !== 'PRI' && (
+                      {/* Pane Scrollable Table Grid */}
+                      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+                        <div className="border border-border/60 rounded-xl overflow-hidden bg-background/20">
+                          <table className="w-full text-left border-collapse text-xs font-medium">
+                            <thead>
+                              <tr className="border-b border-border/40 bg-muted/20 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sticky top-0 backdrop-blur-md z-10">
+                                <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.nameHeader')}</th>
+                                <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.typeHeader')}</th>
+                                <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</th>
+                                <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.keyHeader')}</th>
+                                <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.defaultHeader')}</th>
+                                <th className="py-3 px-4 text-right bg-muted/20">{t('databaseStudio.tables.actionHeader')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {table.columns.map((col: any) => (
+                                <tr key={col.name} className="border-b border-border/15 hover:bg-muted/5 transition-colors">
+                                  <td className="py-3 px-4 font-mono font-semibold text-foreground/90">{col.name}</td>
+                                  <td className="py-3 px-4 font-mono text-primary/80">{col.type}</td>
+                                  <td className="py-3 px-4 text-center">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded text-[10px] font-bold border",
+                                      col.nullable 
+                                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
+                                        : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                    )}>
+                                      {col.nullable ? t('common.yes').toUpperCase() : t('common.no').toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    {col.key === 'PRI' && (
+                                      <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] font-extrabold uppercase tracking-wide">
+                                        PK
+                                      </span>
+                                    )}
+                                    {col.key === 'UNI' && (
+                                      <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-extrabold uppercase tracking-wide" title={t('databaseStudio.structure.uniqueConstraint')}>
+                                        UQ
+                                      </span>
+                                    )}
+                                    {col.key === 'MUL' && (
+                                      <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-600 border border-sky-500/20 text-[10px] font-extrabold uppercase tracking-wide" title={t('databaseStudio.structure.indexedColumn')}>
+                                        IDX
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
+                                  <td className="py-3 px-4 text-right">
+                                    {col.key !== 'PRI' && (
+                                      <button
+                                        onClick={() => handleDropColumn(table.name, col.name)}
+                                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                        style={{ cursor: 'pointer' }}
+                                        title={t('databaseStudio.structure.actions.dropColumn')}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr className="hover:bg-primary/5 transition-colors border-t border-border/10">
+                                <td colSpan={6} className="p-0">
                                   <button
-                                    onClick={() => handleDropColumn(table.name, col.name)}
-                                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedTable(table.name)
+                                      setDesignerAction('add_column')
+                                    }}
+                                    className="w-full text-left py-3 px-4 font-bold text-xs text-primary/85 hover:text-primary flex items-center gap-2 group transition-all cursor-pointer"
                                     style={{ cursor: 'pointer' }}
-                                    title={t('databaseStudio.structure.actions.dropColumn')}
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Plus className="w-3.5 h-3.5 text-primary/60 group-hover:text-primary transition-all group-hover:scale-110" />
+                                    {t('databaseStudio.structure.addColumnTo', { table: '||' }).split('||').map((part, index) => 
+                                      index === 1 ? <span key={index} className="font-mono text-foreground font-bold">{table.name}</span> : part
+                                    )}
                                   </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr className="hover:bg-primary/5 transition-colors border-t border-border/10">
-                            <td colSpan={6} className="p-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedTable(table.name)
-                                  setDesignerAction('add_column')
-                                }}
-                                className="w-full text-left py-3 px-4 font-bold text-xs text-primary/85 hover:text-primary flex items-center gap-2 group transition-all cursor-pointer"
-                                style={{ cursor: 'pointer' }}
-                              >
-                                <Plus className="w-3.5 h-3.5 text-primary/60 group-hover:text-primary transition-all group-hover:scale-110" />
-                                {t('databaseStudio.structure.addColumnTo', { table: '||' }).split('||').map((part, index) => 
-                                  index === 1 ? <span key={index} className="font-mono text-foreground font-bold">{table.name}</span> : part
-                                )}
-                              </button>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
+                  )
+                })()
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-muted-foreground gap-4 animate-in fade-in duration-300">
+                  <Table className="w-10 h-10 text-muted-foreground/40" />
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-base">{t('databaseStudio.tables.noTableSelected') || 'No table selected'}</h4>
+                    <p className="text-xs text-muted-foreground max-w-sm">Select a table from the list to view its columns structure.</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Create Table Dialog Modal */}
           <Dialog open={designerAction === 'create_table'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
@@ -1500,7 +1585,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               </form>
             </DialogContent>
           </Dialog>
-        </div>
+        </>
       )}
 
       {activeTab === 'query' && (
