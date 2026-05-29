@@ -1044,6 +1044,8 @@ export const translations = {
         actions: {
           dropColumn: "Drop Column",
           dropColumnConfirmDesc: "Are you sure you want to drop column \"{{column}}\" from table \"{{table}}\"? This action is permanent and will delete all data in this column.",
+          dropTable: "Drop Table",
+          dropTableConfirmDesc: "Are you sure you want to drop table \"{{table}}\"? This action is permanent and will delete all data inside this table.",
           createIndex: "Create Index",
           dropIndex: "Drop Index"
         },
@@ -2199,6 +2201,8 @@ export const translations = {
         actions: {
           dropColumn: "Hapus Kolom",
           dropColumnConfirmDesc: "Apakah yakin ingin menghapus kolom \"{{column}}\" dari tabel \"{{table}}\"? Tindakan ini permanen dan akan menghapus seluruh data pada kolom tersebut.",
+          dropTable: "Hapus Tabel",
+          dropTableConfirmDesc: "Apakah yakin ingin menghapus tabel \"{{table}}\"? Tindakan ini permanen dan akan menghapus seluruh data di dalam tabel tersebut.",
           createIndex: "Buat Indeks",
           dropIndex: "Hapus Indeks"
         },

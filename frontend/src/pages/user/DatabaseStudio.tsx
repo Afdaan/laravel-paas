@@ -361,6 +361,37 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     })
   }
 
+  const handleDeleteTable = (tableName: string) => {
+    if (!id) return
+    triggerConfirmation({
+      title: t('databaseStudio.structure.actions.dropTable'),
+      message: t('databaseStudio.structure.actions.dropTableConfirmDesc', { table: tableName }),
+      type: 'danger',
+      confirmText: t('databaseStudio.structure.actions.dropTable'),
+      onConfirm: async () => {
+        setIsActionLoading(true)
+        try {
+          await databaseAPI.executeDesigner(id, {
+            action: 'drop_table',
+            table_name: tableName
+          })
+          toast.success(t('databaseStudio.structure.updateSuccess'))
+          
+          if (selectedTable === tableName) {
+            setSelectedTable('')
+            setTableData(null)
+          }
+
+          loadStudioData()
+        } catch (err: any) {
+          toast.error(err.response?.data?.error || t('databaseStudio.errors.designerActionFailed'))
+        } finally {
+          setIsActionLoading(false)
+        }
+      }
+    })
+  }
+
   const handleDeleteRow = (row: any, pkCol: string) => {
     if (!id || !selectedTable) return
     const pkValue = row[pkCol]
@@ -1164,24 +1195,38 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               <div className="space-y-6">
                 {schemaData.map((table: any) => (
                   <div key={table.name} className="border border-border/80 rounded-xl overflow-hidden shadow-sm bg-background/10">
-                    <div className="flex items-center gap-3 p-4 bg-muted/20 border-b border-border/80">
-                      <span className="font-mono font-bold text-sm text-foreground/90 flex items-center gap-2">
-                        <Table className="w-4 h-4 text-primary" />
-                        {table.name}
-                      </span>
-                      
+                    <div className="flex items-center justify-between p-4 bg-muted/20 border-b border-border/80">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-sm text-foreground/90 flex items-center gap-2">
+                          <Table className="w-4 h-4 text-primary" />
+                          {table.name}
+                        </span>
+                        
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          onClick={() => {
+                            setSelectedTable(table.name)
+                            setDesignerAction('add_column')
+                          }}
+                          className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors cursor-pointer"
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <Plus className="w-3 h-3" />
+                          {t('databaseStudio.structure.addColumn')}
+                        </Button>
+                      </div>
+
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="xs"
-                        onClick={() => {
-                          setSelectedTable(table.name)
-                          setDesignerAction('add_column')
-                        }}
-                        className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 shadow-none transition-colors cursor-pointer"
+                        onClick={() => handleDeleteTable(table.name)}
+                        className="h-7 text-[11px] font-bold gap-1 rounded-lg px-2.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                         style={{ cursor: 'pointer' }}
+                        title={t('databaseStudio.structure.actions.dropTable')}
                       >
-                        <Plus className="w-3 h-3" />
-                        {t('databaseStudio.structure.addColumn')}
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {t('databaseStudio.structure.actions.dropTable')}
                       </Button>
                     </div>
 
