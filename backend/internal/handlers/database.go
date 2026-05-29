@@ -367,6 +367,7 @@ func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
 
 	type TableSchema struct {
 		Name    string               `json:"name"`
+		Rows    int64                `json:"rows"`
 		Columns []services.ColumnInfo `json:"columns"`
 	}
 
@@ -376,6 +377,7 @@ func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
 		if err == nil {
 			schemas = append(schemas, TableSchema{
 				Name:    t.Name,
+				Rows:    t.Rows,
 				Columns: cols,
 			})
 		}

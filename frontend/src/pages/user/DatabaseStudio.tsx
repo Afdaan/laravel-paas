@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { databaseAPI, projectsAPI } from '../../services/api'
-import { DatabaseInstance, DatabaseBackup } from '../../types'
+import { databaseAPI } from '../../services/api'
+import { DatabaseBackup } from '../../types'
 import {
   Database,
   RefreshCw,
@@ -24,13 +24,13 @@ import {
   PlusCircle,
   AlertTriangle,
   DatabaseZap,
-  Info
+  Info,
+  Search
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 interface DatabaseStudioProps {
@@ -41,9 +41,8 @@ interface DatabaseStudioProps {
 function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioProps) {
   const params = useParams<{ id: string }>()
   const id = projectId || params.id
-  const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'viewer' | 'designer' | 'scratchpad' | 'backups'>('overview')
   
+  const [activeTab, setActiveTab] = useState<'overview' | 'viewer' | 'designer' | 'scratchpad' | 'backups'>('overview')
   const [isLoading, setIsLoading] = useState(true)
   const [isActionLoading, setIsActionLoading] = useState(false)
   
@@ -67,6 +66,11 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [tablePage, setTablePage] = useState(1)
   const [tableLimit] = useState(25)
   const [tableTotal, setTableTotal] = useState(0)
+  const [tableSearch, setTableSearch] = useState('')
+
+  const filteredTables = schemaData.filter(t => 
+    t.name.toLowerCase().includes(tableSearch.toLowerCase())
+  )
   
   // Visual Designer states
   const [designerAction, setDesignerAction] = useState<'create_table' | 'add_column' | 'create_index' | null>(null)
@@ -76,8 +80,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [newColLength, setNewColLength] = useState(255)
   const [newColNullable, setNewColNullable] = useState(true)
   
-  const [indexName, setIndexName] = useState('')
-  const [indexCols, setIndexCols] = useState<string[]>([])
+  const [indexName] = useState('')
+  const [indexCols] = useState<string[]>([])
 
   // Load complete studio dataset
   const loadStudioData = useCallback(async () => {
@@ -243,13 +247,21 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
   const handleDeleteRow = async (row: any, pkCol: string) => {
     if (!id || !selectedTable) return
+    const pkValue = row[pkCol]
+    if (pkValue == null) {
+      toast.error('Primary key value is missing.')
+      return
+    }
     if (!window.confirm('Are you sure you want to visually delete this row?')) return
+    setIsActionLoading(true)
     try {
-      const res = await databaseAPI.deleteRow(id, selectedTable, pkCol, row[pkCol])
+      await databaseAPI.deleteRow(id, selectedTable, pkCol, pkValue)
       toast.success('Row deleted securely.')
       loadTableDataGrid()
     } catch (err: any) {
-      toast.error('Failed to delete row.')
+      toast.error(err.response?.data?.error || 'Failed to delete row.')
+    } finally {
+      setIsActionLoading(false)
     }
   }
 
@@ -628,132 +640,171 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       )}
 
       {activeTab === 'viewer' && (
-        <Card className="p-6">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b pb-4 mb-5 gap-4">
-            <div className="flex items-center gap-3">
-              <Table className="w-5 h-5 text-primary" />
-              <div>
-                <h3 className="font-extrabold text-base">Live Table Data Grid</h3>
-                <p className="text-muted-foreground text-xs">Browse records visually and prune rows securely without SQL</p>
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch animate-in fade-in duration-300">
+          {/* Left Column: Table List Sidebar */}
+          <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/95 ring-1 ring-white/5 p-4 gap-3">
+            <div className="flex items-center justify-between px-2 pt-1 border-b border-border/40 pb-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Tables ({schemaData.length})</span>
             </div>
-
-            {schemaData.length > 0 && (
-              <Select
-                value={selectedTable}
-                onValueChange={(val) => {
-                  setSelectedTable(val)
-                  setTablePage(1)
-                }}
-              >
-                <SelectTrigger className="w-56 h-10 border-border bg-background/50 hover:bg-background/80 text-sm font-semibold rounded-xl">
-                  <span>{selectedTable || 'Select Table'}</span>
-                </SelectTrigger>
-                <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl p-1.5 max-h-60">
-                  {schemaData.map(t => (
-                    <SelectItem key={t.name} value={t.name} className="rounded-lg py-2.5 px-3 cursor-pointer">
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            
+            {!isSuspended && schemaData.length > 0 && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+                <Input
+                  placeholder="Search Table..."
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  className="pl-9 h-10 text-xs font-semibold rounded-xl bg-background/50 border-border/70 hover:border-primary/30 focus-visible:ring-primary/25"
+                />
+              </div>
             )}
-          </div>
-
-          {isSuspended ? (
-            <div className="py-12 text-center text-muted-foreground text-sm font-semibold uppercase tracking-wide">
-              No database access. Database is suspended.
-            </div>
-          ) : !selectedTable ? (
-            <div className="py-12 border border-dashed rounded-xl flex flex-col items-center justify-center text-center gap-3 bg-muted/5">
-              <Table className="w-8 h-8 text-muted-foreground" />
-              <div className="space-y-1">
-                <h4 className="font-bold text-sm">No Tables Found</h4>
-                <p className="text-xs text-muted-foreground">Use the Visual Designer tab to build your first database table.</p>
-              </div>
-            </div>
-          ) : tableData ? (
-            <div className="space-y-4">
-              <div className="overflow-x-auto border border-border/80 rounded-xl bg-background/30 max-h-[500px]">
-                <table className="w-full text-left border-collapse text-xs font-medium">
-                  <thead>
-                    <tr className="bg-muted/30 border-b border-border/80 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      <th className="py-3.5 px-4 w-12 text-center">Action</th>
-                      {tableData.columns.map((col: string) => (
-                        <th key={col} className="py-3.5 px-4 font-mono font-semibold">{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tableData.rows.length === 0 ? (
-                      <tr>
-                        <td colSpan={tableData.columns.length + 1} className="py-10 text-center text-muted-foreground italic font-semibold">
-                          Table is empty. No rows exist.
-                        </td>
-                      </tr>
-                    ) : (
-                      tableData.rows.map((row: any, idx: number) => {
-                        // Dynamically look for common primary key column names (id, uid, uuid)
-                        const pkColumn = tableData.columns.find((c: string) => 
-                          c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
-                        ) || tableData.columns[0]
-
-                        return (
-                          <tr key={idx} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
-                            <td className="py-3.5 px-4 text-center shrink-0">
-                              <button 
-                                onClick={() => handleDeleteRow(row, pkColumn)}
-                                className="p-1 bg-destructive/10 hover:bg-destructive/20 text-destructive rounded transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                            {tableData.columns.map((col: string) => (
-                              <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
-                                {row[col] === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(row[col])}
-                              </td>
-                            ))}
-                          </tr>
-                        )
-                      })
+            
+            <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin max-h-[500px] pr-1">
+              {isSuspended ? (
+                <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">Database Suspended</div>
+              ) : schemaData.length === 0 ? (
+                <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">No tables found</div>
+              ) : filteredTables.length === 0 ? (
+                <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">No matches</div>
+              ) : (
+                filteredTables.map(table => (
+                  <button
+                    key={table.name}
+                    onClick={() => {
+                      setSelectedTable(table.name)
+                      setTablePage(1)
+                    }}
+                    className={cn(
+                      "w-full text-left px-3.5 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-between transition-all duration-200 group",
+                      selectedTable === table.name
+                        ? 'bg-primary/10 border-primary/20 text-primary shadow-sm'
+                        : 'border-transparent text-muted-foreground/80 hover:bg-muted/40 hover:text-foreground hover:border-border/50'
                     )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Data Grid Pagination */}
-              {tableTotal > tableLimit && (
-                <div className="flex items-center justify-between border-t border-border/40 pt-4">
-                  <span className="text-xs text-muted-foreground font-semibold">
-                    Showing {(tablePage - 1) * tableLimit + 1} - {Math.min(tablePage * tableLimit, tableTotal)} of {tableTotal} rows
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="xs" 
-                      onClick={() => setTablePage(prev => Math.max(prev - 1, 1))}
-                      disabled={tablePage === 1}
-                      className="font-bold h-8 text-xs px-3 rounded-lg"
-                    >
-                      Prev
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="xs" 
-                      onClick={() => setTablePage(prev => prev + 1)}
-                      disabled={tablePage * tableLimit >= tableTotal}
-                      className="font-bold h-8 text-xs px-3 rounded-lg"
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <Table className={cn("w-3.5 h-3.5 shrink-0", selectedTable === table.name ? "text-primary" : "text-muted-foreground/60 group-hover:text-foreground")} />
+                      <span className="truncate pr-1 tracking-tight">{table.name}</span>
+                    </div>
+                    {table.rows != null && (
+                      <span className={cn(
+                        "text-[9px] font-mono px-1.5 py-0.5 rounded-md",
+                        selectedTable === table.name ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/50'
+                      )}>
+                        {table.rows}
+                      </span>
+                    )}
+                  </button>
+                ))
               )}
             </div>
-          ) : (
-            <div className="py-10 text-center text-muted-foreground">Loading Table Rows...</div>
-          )}
-        </Card>
+          </Card>
+
+          {/* Right Column: Data Grid */}
+          <Card className="lg:col-span-3 p-6 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b pb-4 mb-5">
+              <div className="flex items-center gap-3">
+                <Table className="w-5 h-5 text-primary" />
+                <div>
+                  <h3 className="font-extrabold text-base">{selectedTable || 'No Table Selected'}</h3>
+                  <p className="text-muted-foreground text-xs">Browse records visually and prune rows securely without SQL</p>
+                </div>
+              </div>
+            </div>
+
+            {isSuspended ? (
+              <div className="py-12 text-center text-muted-foreground text-sm font-semibold uppercase tracking-wide">
+                No database access. Database is suspended.
+              </div>
+            ) : !selectedTable ? (
+              <div className="py-12 border border-dashed rounded-xl flex flex-col items-center justify-center text-center gap-3 bg-muted/5">
+                <Table className="w-8 h-8 text-muted-foreground" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm">No Table Selected</h4>
+                  <p className="text-xs text-muted-foreground">Select a table from the sidebar or build one in the Designer tab.</p>
+                </div>
+              </div>
+            ) : tableData ? (
+              <div className="space-y-4 flex-1 flex flex-col min-h-0">
+                <div className="overflow-x-auto border border-border/80 rounded-xl bg-background/30 max-h-[420px] flex-1">
+                  <table className="w-full text-left border-collapse text-xs font-medium">
+                    <thead>
+                      <tr className="bg-muted/30 border-b border-border/80 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sticky top-0 backdrop-blur-md z-10">
+                        <th className="py-3.5 px-4 w-12 text-center bg-muted/30">Action</th>
+                        {tableData.columns.map((col: string) => (
+                          <th key={col} className="py-3.5 px-4 font-mono font-semibold bg-muted/30">{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableData.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={tableData.columns.length + 1} className="py-10 text-center text-muted-foreground italic font-semibold">
+                            Table is empty. No rows exist.
+                          </td>
+                        </tr>
+                      ) : (
+                        tableData.rows.map((row: any, idx: number) => {
+                          const pkColumn = tableData.columns.find((c: string) => 
+                            c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
+                          ) || tableData.columns[0]
+
+                          return (
+                            <tr key={idx} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
+                              <td className="py-3.5 px-4 text-center shrink-0">
+                                <button 
+                                  onClick={() => handleDeleteRow(row, pkColumn)}
+                                  className="p-1 bg-destructive/10 hover:bg-destructive/20 text-destructive rounded transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                              {tableData.columns.map((col: string) => (
+                                <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
+                                  {row[col] === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(row[col])}
+                                </td>
+                              ))}
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Data Grid Pagination */}
+                {tableTotal > tableLimit && (
+                  <div className="flex items-center justify-between border-t border-border/40 pt-4 mt-auto">
+                    <span className="text-xs text-muted-foreground font-semibold">
+                      Showing {(tablePage - 1) * tableLimit + 1} - {Math.min(tablePage * tableLimit, tableTotal)} of {tableTotal} rows
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="xs" 
+                        onClick={() => setTablePage(prev => Math.max(prev - 1, 1))}
+                        disabled={tablePage === 1}
+                        className="font-bold h-8 text-xs px-3 rounded-lg"
+                      >
+                        Prev
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="xs" 
+                        onClick={() => setTablePage(prev => prev + 1)}
+                        disabled={tablePage * tableLimit >= tableTotal}
+                        className="font-bold h-8 text-xs px-3 rounded-lg"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-10 text-center text-muted-foreground flex-1 flex items-center justify-center">Loading Table Rows...</div>
+            )}
+          </Card>
+        </div>
       )}
 
       {activeTab === 'designer' && (
