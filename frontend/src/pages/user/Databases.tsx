@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
 import { Project } from '../../types'
-import DatabaseManager from './DatabaseManager'
+import DatabaseStudio from './DatabaseStudio'
 import useTranslation from '../../lib/useTranslation'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -148,7 +148,7 @@ export default function Databases() {
       <Card className="flex-1 bg-muted/10 overflow-hidden flex flex-col relative border-muted/30">
         {selectedProject ? (
           <div className="flex-1 overflow-auto p-6 scrollbar-thin">
-             <DatabaseManager embedded={true} projectId={selectedProjectId} />
+             <DatabaseStudio embedded={true} projectId={selectedProjectId} />
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-6 opacity-40 animate-pulse">

@@ -33,8 +33,14 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
-function DatabaseStudio() {
-  const { id } = useParams<{ id: string }>()
+interface DatabaseStudioProps {
+  projectId?: string | number | null;
+  embedded?: boolean;
+}
+
+function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioProps) {
+  const params = useParams<{ id: string }>()
+  const id = projectId || params.id
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'overview' | 'viewer' | 'designer' | 'scratchpad' | 'backups'>('overview')
   
@@ -309,56 +315,58 @@ function DatabaseStudio() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       {/* Studio Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-border/40 pb-6">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-              <Database className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight">Database <span className="text-primary italic">Studio</span></h1>
-              <p className="text-muted-foreground text-xs uppercase tracking-widest font-bold">Isolated Tenant Resources & DDL Schema Designer</p>
+      {!embedded && (
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-border/40 pb-6">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight">Database <span className="text-primary italic">Studio</span></h1>
+                <p className="text-muted-foreground text-xs uppercase tracking-widest font-bold">Isolated Tenant Resources & DDL Schema Designer</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadStudioData}
-            disabled={isActionLoading}
-            className="gap-2 h-10"
-          >
-            <RefreshCw className={cn("w-4 h-4", isActionLoading && "animate-spin")} />
-            Sync State
-          </Button>
+          <div className="flex items-center gap-3 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadStudioData}
+              disabled={isActionLoading}
+              className="gap-2 h-10"
+            >
+              <RefreshCw className={cn("w-4 h-4", isActionLoading && "animate-spin")} />
+              Sync State
+            </Button>
 
-          {isSuspended ? (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => handleToggleStatus(false)}
-              disabled={isActionLoading}
-              className="gap-2 h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-            >
-              <Shield className="w-4 h-4" />
-              Resume DB Instance
-            </Button>
-          ) : (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => handleToggleStatus(true)}
-              disabled={isActionLoading}
-              className="gap-2 h-10 font-bold"
-            >
-              <ShieldAlert className="w-4 h-4" />
-              Suspend DB
-            </Button>
-          )}
+            {isSuspended ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => handleToggleStatus(false)}
+                disabled={isActionLoading}
+                className="gap-2 h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              >
+                <Shield className="w-4 h-4" />
+                Resume DB Instance
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleToggleStatus(true)}
+                disabled={isActionLoading}
+                className="gap-2 h-10 font-bold"
+              >
+                <ShieldAlert className="w-4 h-4" />
+                Suspend DB
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex border-b border-border/60 p-1 bg-muted/20 rounded-xl w-fit">

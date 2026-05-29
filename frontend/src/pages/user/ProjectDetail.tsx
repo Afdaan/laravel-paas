@@ -31,7 +31,7 @@ import { AxiosError } from 'axios'
 import { projectsAPI, databaseAPI } from '../../services/api'
 import { Project, ProjectStats, DeploymentEvent } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
-import DatabaseManager from './DatabaseManager'
+import DatabaseStudio from './DatabaseStudio'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -1206,7 +1206,7 @@ function UserProjectDetail() {
                 </div>
               </CardContent>
             </Card>
-            <DatabaseManager embedded={true} projectId={uid} />
+            <DatabaseStudio embedded={true} projectId={uid} />
           </div>
         </TabsContent>
 

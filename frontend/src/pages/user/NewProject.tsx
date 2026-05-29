@@ -63,6 +63,11 @@ interface ValidationErrors {
   database_name?: string;
 }
 
+const databaseEngines = [
+  { value: 'mysql', label: 'MySQL (8.0)' },
+  { value: 'postgresql', label: 'PostgreSQL (15)' },
+] as const
+
 function UserNewProject() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -116,6 +121,11 @@ function UserNewProject() {
   const currentBranch = React.useMemo(() => 
     branches.find(b => b.name === formData.branch),
     [branches, formData.branch]
+  )
+
+  const selectedDatabaseEngine = React.useMemo(
+    () => databaseEngines.find(engine => engine.value === formData.database_engine) || databaseEngines[0],
+    [formData.database_engine]
   )
 
   const loadRepositories = useCallback(async (installationId: string) => {
@@ -789,10 +799,17 @@ function UserNewProject() {
                       </button>
                     </div>
 
-                    {formData.enable_database && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 rounded-xl border bg-muted/5 animate-in slide-in-from-top-3 duration-300">
+                    <div
+                      className={cn(
+                        "overflow-hidden transition-all duration-500 ease-out",
+                        formData.enable_database
+                          ? "max-h-80 opacity-100 translate-y-0"
+                          : "max-h-0 opacity-0 -translate-y-2 pointer-events-none"
+                      )}
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl border border-border/70 bg-background/45 shadow-[0_18px_60px_-40px_hsl(var(--foreground))] backdrop-blur-sm transition-colors duration-300">
                         {/* Database Engine Dropdown */}
-                        <div className="space-y-2">
+                        <div className="space-y-2 min-w-0">
                           <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             Database Engine
                           </Label>
@@ -805,22 +822,31 @@ function UserNewProject() {
                               }))
                             }}
                           >
-                            <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/60 hover:border-border bg-background/50 hover:bg-background/80 text-sm font-medium transition-all duration-200">
-                              <span className="capitalize">{formData.database_engine}</span>
+                            <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
+                              <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
                             </SelectTrigger>
-                            <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl p-1.5">
-                              <SelectItem value="mysql" className="rounded-lg py-2.5 px-3 cursor-pointer">
-                                MySQL (8.0)
-                              </SelectItem>
-                              <SelectItem value="postgresql" className="rounded-lg py-2.5 px-3 cursor-pointer">
-                                PostgreSQL (15)
-                              </SelectItem>
+                            <SelectContent
+                              side="top"
+                              align="start"
+                              sideOffset={8}
+                              alignItemWithTrigger={false}
+                              className="min-w-[var(--anchor-width)] w-[var(--anchor-width)] bg-popover/98 backdrop-blur-xl border border-border/80 rounded-xl shadow-2xl p-1.5"
+                            >
+                              {databaseEngines.map(engine => (
+                                <SelectItem
+                                  key={engine.value}
+                                  value={engine.value}
+                                  className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
+                                >
+                                  <span className="font-medium text-foreground/90 text-sm">{engine.label}</span>
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
 
                         {/* Database Name */}
-                        <div className="space-y-2">
+                        <div className="space-y-2 min-w-0">
                           <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             {t('newProject.dbName')}
                           </Label>
@@ -830,14 +856,14 @@ function UserNewProject() {
                             value={formData.database_name}
                             onChange={handleChange}
                             placeholder={t('newProject.dbName')}
-                            className={cn("h-11 rounded-xl", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
+                            className={cn("h-11 rounded-xl border-border/70 bg-background/80 shadow-sm transition-all duration-200", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
                           />
                           {validationErrors.database_name && (
                             <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
                           )}
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* Base Directory */}
