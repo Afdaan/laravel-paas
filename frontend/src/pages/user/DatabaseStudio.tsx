@@ -71,6 +71,111 @@ const parseDbType = (dbType: string) => {
   return { type: 'varchar', length: 255 };
 };
 
+const toLocalISOString = (d: Date): string => {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+const toLocalDateString = (d: Date): string => {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const formatDatetimeLocal = (val: any) => {
+  if (val === null || val === undefined) return ''
+  try {
+    if (val instanceof Date) {
+      if (isNaN(val.getTime())) return ''
+      return toLocalISOString(val)
+    }
+
+    const strVal = String(val).trim()
+    if (!strVal) return ''
+
+    // If it's already in the exact format YYYY-MM-DDTHH:mm, return it
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(strVal)) {
+      return strVal
+    }
+
+    // Try parsing Unix timestamp if it's numeric
+    if (/^\d+$/.test(strVal)) {
+      const num = Number(strVal)
+      const date = new Date(strVal.length === 10 ? num * 1000 : num)
+      if (!isNaN(date.getTime())) {
+        return toLocalISOString(date)
+      }
+    }
+
+    // Direct regex parsing for common DB datetime formats (with optional ms/us, but no timezone)
+    // to preserve exact local database representation without browser timezone shifting.
+    const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
+    const match = strVal.match(regex)
+    if (match) {
+      const [_, year, month, day, hours, minutes, , , tz] = match
+      if (!tz) {
+        return `${year}-${month}-${day}T${hours}:${minutes}`
+      }
+    }
+
+    // Fallback: standard Date parsing
+    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+    const d = new Date(parsedStr)
+    if (isNaN(d.getTime())) return ''
+    return toLocalISOString(d)
+  } catch (e) {
+    return ''
+  }
+}
+
+const formatDate = (val: any) => {
+  if (val === null || val === undefined) return ''
+  try {
+    if (val instanceof Date) {
+      if (isNaN(val.getTime())) return ''
+      return toLocalDateString(val)
+    }
+
+    const strVal = String(val).trim()
+    if (!strVal) return ''
+
+    // If it's already in the exact format YYYY-MM-DD, return it
+    if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+      return strVal
+    }
+
+    // Try parsing Unix timestamp if it's numeric
+    if (/^\d+$/.test(strVal)) {
+      const num = Number(strVal)
+      const date = new Date(strVal.length === 10 ? num * 1000 : num)
+      if (!isNaN(date.getTime())) {
+        return toLocalDateString(date)
+      }
+    }
+
+    // Try matching YYYY-MM-DD from the beginning
+    const regex = /^(\d{4})-(\d{2})-(\d{2})/i
+    const match = strVal.match(regex)
+    if (match) {
+      const [_, year, month, day] = match
+      return `${year}-${month}-${day}`
+    }
+
+    // Fallback: standard Date parsing
+    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+    const d = new Date(parsedStr)
+    if (isNaN(d.getTime())) return ''
+    return toLocalDateString(d)
+  } catch (e) {
+    return ''
+  }
+}
+
 interface DatabaseStudioProps {
   projectId?: string | number | null;
   embedded?: boolean;
@@ -592,7 +697,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
 
     cols.forEach((col: any) => {
-      if (col.name === pkColumn) return
+      if (col.name.toLowerCase() === pkColumn.toLowerCase()) return
 
       const val = editFormData[col.name]
       const escapedCol = `${q}${col.name}${q}`
@@ -635,7 +740,22 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     const cols = schemaData.find(t => t.name === selectedTable)?.columns || []
     const initialData: Record<string, any> = {}
     cols.forEach((c: any) => {
-      initialData[c.name] = row[c.name] !== null ? row[c.name] : ''
+      // Find row value case-insensitively to prevent schema casing mismatch
+      const rowKey = Object.keys(row).find(k => k.toLowerCase() === c.name.toLowerCase()) || c.name
+      const val = row[rowKey]
+      if (val === null || val === undefined) {
+        initialData[c.name] = ''
+        return
+      }
+      
+      const typeLower = c.type.toLowerCase()
+      if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
+        initialData[c.name] = formatDatetimeLocal(val)
+      } else if (typeLower.includes('date')) {
+        initialData[c.name] = formatDate(val)
+      } else {
+        initialData[c.name] = val
+      }
     })
     setEditFormData(initialData)
     setShowRowEditPreview(false)
@@ -669,7 +789,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       const updates: Record<string, any> = {}
 
       cols.forEach((col: any) => {
-        if (col.name === pkColumn) return
+        if (col.name.toLowerCase() === pkColumn.toLowerCase()) return
 
         const val = editFormData[col.name]
         if (val === undefined || val === '') {
