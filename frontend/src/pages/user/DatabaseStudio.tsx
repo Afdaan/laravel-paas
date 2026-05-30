@@ -51,7 +51,7 @@ function DatabaseEngineIcon({ engine, className }: { engine?: string; className?
     <svg 
       viewBox="0 0 24 24" 
       aria-hidden="true" 
-      className={cn('w-4 h-4 shrink-0', className)} 
+      className={cn('w-5 h-5 shrink-0', className)} 
       xmlns="http://www.w3.org/2000/svg"
     >
       <path fill={`#${icon.hex}`} d={icon.path} />

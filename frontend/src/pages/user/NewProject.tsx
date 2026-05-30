@@ -77,13 +77,13 @@ const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOpti
   return (
     <div
       className={cn(
-        'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-background/90 shadow-sm ring-1 ring-white/5',
-        engine.value === 'mysql' && 'border-amber-500/30 bg-amber-500/12',
-        engine.value === 'postgresql' && 'border-sky-500/30 bg-sky-500/12',
+        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm transition-colors duration-200',
+        engine.value === 'mysql' && 'border-amber-500/20 bg-amber-500/10 text-amber-500',
+        engine.value === 'postgresql' && 'border-sky-500/20 bg-sky-500/10 text-sky-500',
         className
       )}
     >
-      <svg viewBox='0 0 24 24' aria-hidden='true' className='h-6 w-6'>
+      <svg viewBox='0 0 24 24' aria-hidden='true' className='h-4.5 w-4.5 drop-shadow-sm'>
         <path fill={fillColor} d={engine.icon.path} />
       </svg>
     </div>
