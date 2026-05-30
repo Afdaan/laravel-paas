@@ -1570,14 +1570,19 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                             <option value="false">False (No)</option>
                           </select>
                         ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
-                          <Input
+                          <input
                             id={`insert_${col.name}`}
                             key={selectedTable + '_' + col.name}
                             type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
                             defaultValue={insertFormData[col.name] || ''}
-                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              const isBadInput = e.target.validity?.badInput
+                              if (val === '' && isBadInput) return
+                              setInsertFormData(prev => ({ ...prev, [col.name]: val }))
+                            }}
                             required={!isNullable}
-                            className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                            className="flex h-10 w-full rounded-xl border border-border/70 bg-background/50 px-3 py-2 text-xs font-mono file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground outline-none focus:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
                           />
                         ) : typeLower.includes('text') ? (
                           <textarea
@@ -1686,14 +1691,19 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                               <option value="false">False (No)</option>
                             </select>
                           ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
-                            <Input
+                            <input
                               id={`edit_${col.name}`}
                               key={editingRow ? `${editingRow[pkColumn]}_${col.name}` : col.name}
                               type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
                               defaultValue={editFormData[col.name] || ''}
-                              onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                const isBadInput = e.target.validity?.badInput
+                                if (val === '' && isBadInput) return
+                                setEditFormData(prev => ({ ...prev, [col.name]: val }))
+                              }}
                               required={!isNullable}
-                              className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                              className="flex h-10 w-full rounded-xl border border-border/70 bg-background/50 px-3 py-2 text-xs font-mono file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground outline-none focus:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
                             />
                           ) : typeLower.includes('text') ? (
                             <textarea
