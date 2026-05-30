@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { databaseAPI } from '../../services/api'
 import { DatabaseBackup } from '../../types'
+import { siMysql, siPostgresql } from 'simple-icons'
 import {
   Database,
   RefreshCw,
@@ -17,7 +18,6 @@ import {
   Copy,
   Eye,
   EyeOff,
-  Server,
   Activity,
   HardDrive,
   Table,
@@ -39,6 +39,33 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from '@/components/ConfirmationModal'
+
+function DatabaseEngineIcon({ engine, className }: { engine?: string; className?: string }) {
+  const norm = (engine || '').toLowerCase().trim();
+  let icon = siMysql;
+  if (norm.includes('post') || norm.includes('pg')) {
+    icon = siPostgresql;
+  }
+
+  return (
+    <svg 
+      viewBox="0 0 24 24" 
+      aria-hidden="true" 
+      className={cn('w-4 h-4 shrink-0', className)} 
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path fill={`#${icon.hex}`} d={icon.path} />
+    </svg>
+  );
+}
+
+const getEngineDisplayName = (engine?: string) => {
+  const norm = (engine || '').toLowerCase().trim();
+  if (norm.includes('post') || norm.includes('pg')) {
+    return 'PostgreSQL';
+  }
+  return 'MySQL';
+};
 
 const parseDbType = (dbType: string) => {
   const typeLower = dbType.toLowerCase();
@@ -1156,33 +1183,33 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           <div className="lg:col-span-2 space-y-8">
             {/* Metric Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-              <Card className="p-5 flex flex-col gap-1 hover:border-primary/20 transition-all duration-300">
+              <Card className="p-5 flex flex-col gap-2 hover:border-primary/20 transition-all duration-300">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.metrics.engine')}</span>
-                <span className="text-lg font-extrabold text-foreground capitalize flex items-center gap-1.5">
-                  <Server className="w-4 h-4 text-primary" />
-                  {dbOverview?.engine || 'MySQL'}
+                <span className="text-sm font-bold text-foreground flex items-center gap-2 h-6">
+                  <DatabaseEngineIcon engine={dbOverview?.engine} />
+                  {getEngineDisplayName(dbOverview?.engine)}
                 </span>
               </Card>
 
-              <Card className="p-5 flex flex-col gap-1 hover:border-primary/20 transition-all duration-300">
+              <Card className="p-5 flex flex-col gap-2 hover:border-primary/20 transition-all duration-300">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.metrics.version')}</span>
-                <span className="text-xs font-mono font-bold truncate mt-1 text-foreground" title={dbOverview?.version}>
+                <span className="text-xs font-mono font-bold text-foreground truncate flex items-center h-6" title={dbOverview?.version}>
                   {dbOverview?.version || 'Unknown'}
                 </span>
               </Card>
 
-              <Card className="p-5 flex flex-col gap-1 hover:border-primary/20 transition-all duration-300">
+              <Card className="p-5 flex flex-col gap-2 hover:border-primary/20 transition-all duration-300">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.metrics.diskUsed')}</span>
-                <span className="text-lg font-extrabold text-foreground flex items-center gap-1.5">
-                  <HardDrive className="w-4 h-4 text-primary" />
+                <span className="text-sm font-mono font-bold text-foreground flex items-center gap-2 h-6">
+                  <HardDrive className="w-4 h-4 text-primary shrink-0" />
                   {dbOverview?.size || '0 KB'}
                 </span>
               </Card>
 
-              <Card className="p-5 flex flex-col gap-1 hover:border-primary/20 transition-all duration-300">
+              <Card className="p-5 flex flex-col gap-2 hover:border-primary/20 transition-all duration-300">
                 <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.metrics.tables')}</span>
-                <span className="text-lg font-extrabold text-foreground flex items-center gap-1.5">
-                  <Table className="w-4 h-4 text-primary" />
+                <span className="text-sm font-mono font-bold text-foreground flex items-center gap-2 h-6">
+                  <Table className="w-4 h-4 text-primary shrink-0" />
                   {dbOverview?.table_count || 0}
                 </span>
               </Card>
