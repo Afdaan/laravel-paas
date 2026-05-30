@@ -52,6 +52,14 @@ type ColumnInfo struct {
 	Key      string  `json:"key"`
 	Default  *string `json:"default"`
 	Extra    string  `json:"extra"`
+	Comment  string  `json:"comment"`
+}
+
+type ForeignKeyInfo struct {
+	ColumnName     string `json:"column_name"`
+	TargetTable    string `json:"target_table"`
+	TargetColumn   string `json:"target_column"`
+	ConstraintName string `json:"constraint_name"`
 }
 
 type QueryResult struct {
@@ -88,6 +96,12 @@ type DesignerColumn struct {
 	Nullable     bool    `json:"nullable"`
 	PrimaryKey   bool    `json:"primary_key"`
 	DefaultValue *string `json:"default_value"`
+	Unique       bool    `json:"unique"`
+	Comment      *string `json:"comment"`
+	ForeignKey   bool    `json:"foreign_key"`
+	FkTable      string  `json:"fk_table"`
+	FkColumn     string  `json:"fk_column"`
+	FkOnDelete   string  `json:"fk_on_delete"`
 }
 
 // LogAudit persists designer audit records to database
@@ -232,6 +246,9 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 		}
 		tables = append(tables, t)
 	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return tables, nil
 }
@@ -261,7 +278,8 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 					''
 				) AS column_key,
 				c.column_default,
-				'' AS extra
+				'' AS extra,
+				COALESCE(pg_catalog.col_description(quote_ident(c.table_name)::regclass, c.ordinal_position), '') AS column_comment
 			FROM information_schema.columns c
 			WHERE c.table_schema = 'public' AND c.table_name = $1
 			ORDER BY c.ordinal_position
@@ -274,7 +292,8 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 				IS_NULLABLE,
 				COLUMN_KEY,
 				COLUMN_DEFAULT,
-				EXTRA
+				EXTRA,
+				COLUMN_COMMENT
 			FROM information_schema.COLUMNS 
 			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 			ORDER BY ORDINAL_POSITION
@@ -290,15 +309,86 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 	for rows.Next() {
 		var col ColumnInfo
 		var nullable string
-		if err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Key, &col.Default, &col.Extra); err != nil {
+		if err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Key, &col.Default, &col.Extra, &col.Comment); err != nil {
 			continue
 		}
 		col.Nullable = (nullable == "YES" || nullable == "yes" || nullable == "TRUE" || nullable == "true")
 		columns = append(columns, col)
 	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return columns, nil
 }
+
+func (s *DatabaseService) GetTableForeignKeys(dbName, password, tableName string) ([]ForeignKeyInfo, error) {
+	db, err := s.ConnectToProjectDB(dbName, password)
+	if err != nil {
+		return nil, err
+	}
+
+	engine := s.getEngineForDB(dbName)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var rows *sql.Rows
+	if engine == "postgresql" {
+		rows, err = db.QueryContext(ctx, `
+			SELECT
+				kcu.column_name,
+				ccu.table_name AS referenced_table_name,
+				ccu.column_name AS referenced_column_name,
+				tc.constraint_name
+			FROM
+				information_schema.table_constraints AS tc
+				JOIN information_schema.key_column_usage AS kcu
+				  ON tc.constraint_name = kcu.constraint_name
+				  AND tc.table_schema = kcu.table_schema
+				JOIN information_schema.constraint_column_usage AS ccu
+				  ON ccu.constraint_name = tc.constraint_name
+				  AND ccu.table_schema = tc.table_schema
+			WHERE 
+				tc.constraint_type = 'FOREIGN KEY' 
+				AND tc.table_schema = 'public' 
+				AND tc.table_name = $1;
+		`, tableName)
+	} else {
+		rows, err = db.QueryContext(ctx, `
+			SELECT 
+				COLUMN_NAME,
+				REFERENCED_TABLE_NAME,
+				REFERENCED_COLUMN_NAME,
+				CONSTRAINT_NAME
+			FROM 
+				INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+			WHERE 
+				TABLE_SCHEMA = ? 
+				AND TABLE_NAME = ? 
+				AND REFERENCED_TABLE_NAME IS NOT NULL;
+		`, dbName, tableName)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	fks := []ForeignKeyInfo{}
+	for rows.Next() {
+		var fk ForeignKeyInfo
+		if err := rows.Scan(&fk.ColumnName, &fk.TargetTable, &fk.TargetColumn, &fk.ConstraintName); err != nil {
+			continue
+		}
+		fks = append(fks, fk)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return fks, nil
+}
+
 
 // GetTableData supports paginated data retrieval from a table
 func (s *DatabaseService) GetTableData(dbName, password, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
@@ -834,6 +924,23 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 	escapedTable := s.escapeIdentifier(engine, req.TableName)
 	var sqlQuery string
 
+	// Initialize transactional execution boundaries.
+	// For PostgreSQL, transactional DDL ensures perfect atomicity.
+	var tx *sql.Tx
+	var execer interface {
+		ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	} = db
+
+	if engine == "postgresql" {
+		var txErr error
+		tx, txErr = db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return txErr
+		}
+		defer tx.Rollback()
+		execer = tx
+	}
+
 	switch req.Action {
 	case "create_table":
 		if req.Column == nil {
@@ -870,6 +977,35 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 			sqlQuery = fmt.Sprintf("DROP TABLE %s;", escapedTable)
 		}
 
+	case "drop_column":
+		if req.IndexName == "" || !s.isValidIdentifier(req.IndexName) {
+			return apperr.New(400, "COLUMN_REQUIRED", "Valid column name is required to drop a column")
+		}
+		escapedCol := s.escapeIdentifier(engine, req.IndexName)
+		if engine == "postgresql" {
+			sqlQuery = fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s CASCADE;", escapedTable, escapedCol)
+		} else {
+			sqlQuery = fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", escapedTable, escapedCol)
+		}
+
+	case "create_index":
+		if req.IndexName == "" || !s.isValidIdentifier(req.IndexName) {
+			return apperr.New(400, "INDEX_NAME_REQUIRED", "Valid index name is required")
+		}
+		if len(req.IndexCols) == 0 {
+			return apperr.New(400, "COLUMNS_REQUIRED", "At least one column is required to create an index")
+		}
+		var escapedCols []string
+		for _, col := range req.IndexCols {
+			if !s.isValidIdentifier(col) {
+				return apperr.New(400, "INVALID_COLUMN_NAME", "Column name in index is invalid")
+			}
+			escapedCols = append(escapedCols, s.escapeIdentifier(engine, col))
+		}
+		escapedIndex := s.escapeIdentifier(engine, req.IndexName)
+		colsList := strings.Join(escapedCols, ", ")
+		sqlQuery = fmt.Sprintf("CREATE INDEX %s ON %s (%s);", escapedIndex, escapedTable, colsList)
+
 	case "add_column":
 		if req.Column == nil || !s.isValidIdentifier(req.Column.Name) {
 			return apperr.New(400, "COLUMN_REQUIRED", "Valid column name is required")
@@ -887,51 +1023,127 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 			defaultClause = fmt.Sprintf(" DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
 		}
 
-		sqlQuery = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s %s%s;",
-			escapedTable, escapedCol, dbType, nullability, defaultClause,
+		commentClause := ""
+		if engine == "mysql" && req.Column.Comment != nil && *req.Column.Comment != "" {
+			commentClause = fmt.Sprintf(" COMMENT '%s'", s.escapeSQLString(*req.Column.Comment))
+		}
+
+		sqlQuery = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s %s%s%s;",
+			escapedTable, escapedCol, dbType, nullability, defaultClause, commentClause,
 		)
-
-	case "drop_column":
-		if req.IndexName == "" { // Reuse IndexName for Column Name here to keep schema minimal
-			return apperr.New(400, "COLUMN_REQUIRED", "Column name is required")
-		}
-		if !s.isValidIdentifier(req.IndexName) {
-			return apperr.New(400, "INVALID_COLUMN_NAME", "Column name is invalid")
-		}
-		escapedCol := s.escapeIdentifier(engine, req.IndexName)
-		if engine == "postgresql" {
-			sqlQuery = fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s CASCADE;", escapedTable, escapedCol)
-		} else {
-			sqlQuery = fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", escapedTable, escapedCol)
+		if _, err = execer.ExecContext(ctx, sqlQuery); err != nil {
+			return err
 		}
 
-	case "create_index":
-		if req.IndexName == "" || len(req.IndexCols) == 0 {
-			return apperr.New(400, "INDEX_REQUIRED", "Index name and columns are required")
-		}
-		if !s.isValidIdentifier(req.IndexName) {
-			return apperr.New(400, "INVALID_INDEX_NAME", "Index name is invalid")
-		}
-		escapedIdx := s.escapeIdentifier(engine, req.IndexName)
-
-		var escapedCols []string
-		for _, col := range req.IndexCols {
-			if s.isValidIdentifier(col) {
-				escapedCols = append(escapedCols, s.escapeIdentifier(engine, col))
+		// Comment for PostgreSQL
+		if engine == "postgresql" && req.Column.Comment != nil && *req.Column.Comment != "" {
+			commentSql := fmt.Sprintf("COMMENT ON COLUMN %s.%s IS '%s';", escapedTable, escapedCol, s.escapeSQLString(*req.Column.Comment))
+			if _, err = execer.ExecContext(ctx, commentSql); err != nil {
+				return err
 			}
 		}
-		if len(escapedCols) == 0 {
-			return apperr.New(400, "INVALID_COLUMNS", "No valid columns provided")
+
+		// Primary Key Constraint
+		if req.Column.PrimaryKey {
+			var pkSql string
+			if engine == "postgresql" {
+				pkeyName := s.escapeIdentifier(engine, req.TableName+"_pkey")
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, pkeyName))
+				pkSql = fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", escapedTable, escapedCol)
+			} else {
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", escapedTable))
+				pkSql = fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", escapedTable, escapedCol)
+			}
+			if _, err = execer.ExecContext(ctx, pkSql); err != nil {
+				return err
+			}
 		}
 
-		sqlQuery = fmt.Sprintf("CREATE INDEX %s ON %s (%s);",
-			escapedIdx, escapedTable, strings.Join(escapedCols, ", "),
-		)
+		// Unique Constraint
+		if req.Column.Unique {
+			uqName := fmt.Sprintf("uq_%s_%s", req.TableName, req.Column.Name)
+			escapedUq := s.escapeIdentifier(engine, uqName)
+			var uqSql string
+			if engine == "postgresql" {
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, escapedUq))
+				uqSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);", escapedTable, escapedUq, escapedCol)
+			} else {
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", escapedTable, escapedUq))
+				uqSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);", escapedTable, escapedUq, escapedCol)
+			}
+			if _, err = execer.ExecContext(ctx, uqSql); err != nil {
+				return err
+			}
+		}
+
+		// Foreign Key Constraint
+		if req.Column.ForeignKey && req.Column.FkTable != "" && req.Column.FkColumn != "" {
+			if !s.isValidIdentifier(req.Column.FkTable) || !s.isValidIdentifier(req.Column.FkColumn) {
+				return apperr.New(400, "INVALID_FK_IDENTIFIER", "Foreign key target table or column is invalid")
+			}
+			escapedTargetTable := s.escapeIdentifier(engine, req.Column.FkTable)
+			escapedTargetCol := s.escapeIdentifier(engine, req.Column.FkColumn)
+			fkName := fmt.Sprintf("fk_%s_%s", req.TableName, req.Column.Name)
+			escapedFk := s.escapeIdentifier(engine, fkName)
+			
+			onDelete := "NO ACTION"
+			switch strings.ToUpper(req.Column.FkOnDelete) {
+			case "CASCADE":
+				onDelete = "CASCADE"
+			case "SET NULL":
+				onDelete = "SET NULL"
+			case "RESTRICT":
+				onDelete = "RESTRICT"
+			case "NO ACTION":
+				onDelete = "NO ACTION"
+			}
+
+			var fkSql string
+			if engine == "postgresql" {
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, escapedFk))
+				fkSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+					escapedTable, escapedFk, escapedCol, escapedTargetTable, escapedTargetCol, onDelete)
+			} else {
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s;", escapedTable, escapedFk))
+				fkSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+					escapedTable, escapedFk, escapedCol, escapedTargetTable, escapedTargetCol, onDelete)
+			}
+			if _, err = execer.ExecContext(ctx, fkSql); err != nil {
+				return err
+			}
+		}
+
+		if tx != nil {
+			if err = tx.Commit(); err != nil {
+				return err
+			}
+		}
+		return nil
 
 	case "modify_column":
 		if req.Column == nil || !s.isValidIdentifier(req.Column.Name) {
 			return apperr.New(400, "COLUMN_REQUIRED", "Valid column name is required")
 		}
+
+		// Retrieve current schema constraints to avoid needless dropping/creation races
+		var originalCol *ColumnInfo
+		currentCols, _ := s.GetTableStructure(dbName, password, req.TableName)
+		for _, c := range currentCols {
+			if c.Name == req.Column.Name {
+				originalCol = &c
+				break
+			}
+		}
+
+		var originalFk *ForeignKeyInfo
+		currentFks, _ := s.GetTableForeignKeys(dbName, password, req.TableName)
+		for _, f := range currentFks {
+			if f.ColumnName == req.Column.Name {
+				originalFk = &f
+				break
+			}
+		}
+
 		escapedCol := s.escapeIdentifier(engine, req.Column.Name)
 		dbType := s.mapDesignerType(engine, req.Column.Type, req.Column.Length)
 
@@ -949,7 +1161,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 			// 1. Alter Type (with USING cast)
 			typeCast := fmt.Sprintf("TYPE %s USING %s::%s", dbType, escapedCol, dbType)
 			sqlQuery1 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, typeCast)
-			if _, err = db.ExecContext(ctx, sqlQuery1); err != nil {
+			if _, err = execer.ExecContext(ctx, sqlQuery1); err != nil {
 				return err
 			}
 
@@ -959,7 +1171,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 				nullAction = "SET NOT NULL"
 			}
 			sqlQuery2 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, nullAction)
-			if _, err = db.ExecContext(ctx, sqlQuery2); err != nil {
+			if _, err = execer.ExecContext(ctx, sqlQuery2); err != nil {
 				return err
 			}
 
@@ -969,17 +1181,109 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 				defaultAction = fmt.Sprintf("SET DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
 			}
 			sqlQuery3 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, defaultAction)
-			if _, err = db.ExecContext(ctx, sqlQuery3); err != nil {
+			if _, err = execer.ExecContext(ctx, sqlQuery3); err != nil {
 				return err
 			}
 
-			// 4. Rename column (if NewName is provided and is different)
+			// 4. Conditional Foreign Key Drop
+			wasFk := originalFk != nil
+			isFk := req.Column.ForeignKey && req.Column.FkTable != "" && req.Column.FkColumn != ""
+			fkChanged := wasFk != isFk || (wasFk && isFk && (originalFk.TargetTable != req.Column.FkTable || originalFk.TargetColumn != req.Column.FkColumn))
+			if fkChanged && wasFk {
+				oldFkName := s.escapeIdentifier(engine, fmt.Sprintf("fk_%s_%s", req.TableName, req.Column.Name))
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, oldFkName))
+			}
+
+			// 5. Conditional Unique Key Drop
+			wasUq := originalCol != nil && originalCol.Key == "UNI"
+			isUq := req.Column.Unique
+			uqChanged := wasUq != isUq
+			if uqChanged && wasUq {
+				oldUqName := s.escapeIdentifier(engine, fmt.Sprintf("uq_%s_%s", req.TableName, req.Column.Name))
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, oldUqName))
+			}
+
+			// Rename column (if NewName is provided and is different)
+			colNameAfterRename := req.Column.Name
 			if req.NewName != "" && req.NewName != req.Column.Name {
 				if !s.isValidIdentifier(req.NewName) {
 					return apperr.New(400, "INVALID_NEW_NAME", "New column name is invalid")
 				}
 				sqlQueryRename := fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", escapedTable, escapedCol, s.escapeIdentifier(engine, req.NewName))
-				if _, err = db.ExecContext(ctx, sqlQueryRename); err != nil {
+				if _, err = execer.ExecContext(ctx, sqlQueryRename); err != nil {
+					return err
+				}
+				colNameAfterRename = req.NewName
+			}
+			escapedColAfterRename := s.escapeIdentifier(engine, colNameAfterRename)
+
+			// Comment
+			if req.Column.Comment != nil {
+				var commentSql string
+				if *req.Column.Comment == "" {
+					commentSql = fmt.Sprintf("COMMENT ON COLUMN %s.%s IS NULL;", escapedTable, escapedColAfterRename)
+				} else {
+					commentSql = fmt.Sprintf("COMMENT ON COLUMN %s.%s IS '%s';", escapedTable, escapedColAfterRename, s.escapeSQLString(*req.Column.Comment))
+				}
+				if _, err = execer.ExecContext(ctx, commentSql); err != nil {
+					return err
+				}
+			}
+
+			// Primary Key (if requested and changed)
+			wasPk := originalCol != nil && originalCol.Key == "PRI"
+			isPk := req.Column.PrimaryKey
+			pkChanged := wasPk != isPk
+			if pkChanged {
+				pkeyName := s.escapeIdentifier(engine, req.TableName+"_pkey")
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, pkeyName))
+				if isPk {
+					pkSql := fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", escapedTable, escapedColAfterRename)
+					if _, err = execer.ExecContext(ctx, pkSql); err != nil {
+						return err
+					}
+				}
+			}
+
+			// Unique (if requested and changed/renamed)
+			if isUq && (uqChanged || colNameAfterRename != req.Column.Name) {
+				newUqName := s.escapeIdentifier(engine, fmt.Sprintf("uq_%s_%s", req.TableName, colNameAfterRename))
+				uqSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);", escapedTable, newUqName, escapedColAfterRename)
+				if _, err = execer.ExecContext(ctx, uqSql); err != nil {
+					return err
+				}
+			}
+
+			// Foreign Key (if requested and changed/renamed)
+			if isFk && (fkChanged || colNameAfterRename != req.Column.Name) {
+				if !s.isValidIdentifier(req.Column.FkTable) || !s.isValidIdentifier(req.Column.FkColumn) {
+					return apperr.New(400, "INVALID_FK_IDENTIFIER", "Foreign key target table or column is invalid")
+				}
+				escapedTargetTable := s.escapeIdentifier(engine, req.Column.FkTable)
+				escapedTargetCol := s.escapeIdentifier(engine, req.Column.FkColumn)
+				newFkName := s.escapeIdentifier(engine, fmt.Sprintf("fk_%s_%s", req.TableName, colNameAfterRename))
+				
+				onDelete := "NO ACTION"
+				switch strings.ToUpper(req.Column.FkOnDelete) {
+				case "CASCADE":
+					onDelete = "CASCADE"
+				case "SET NULL":
+					onDelete = "SET NULL"
+				case "RESTRICT":
+					onDelete = "RESTRICT"
+				case "NO ACTION":
+					onDelete = "NO ACTION"
+				}
+
+				fkSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+					escapedTable, newFkName, escapedColAfterRename, escapedTargetTable, escapedTargetCol, onDelete)
+				if _, err = execer.ExecContext(ctx, fkSql); err != nil {
+					return err
+				}
+			}
+
+			if tx != nil {
+				if err = tx.Commit(); err != nil {
 					return err
 				}
 			}
@@ -987,20 +1291,105 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 
 		} else {
 			// MySQL: MODIFY COLUMN
-			sqlQuery = fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s %s%s;",
-				escapedTable, escapedCol, dbType, nullability, defaultClause,
+			commentClause := ""
+			if req.Column.Comment != nil && *req.Column.Comment != "" {
+				commentClause = fmt.Sprintf(" COMMENT '%s'", s.escapeSQLString(*req.Column.Comment))
+			}
+
+			sqlQuery = fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s %s%s%s;",
+				escapedTable, escapedCol, dbType, nullability, defaultClause, commentClause,
 			)
-			if _, err = db.ExecContext(ctx, sqlQuery); err != nil {
+			if _, err = execer.ExecContext(ctx, sqlQuery); err != nil {
 				return err
 			}
 
+			// Conditional Foreign Key Drop (MySQL)
+			wasFk := originalFk != nil
+			isFk := req.Column.ForeignKey && req.Column.FkTable != "" && req.Column.FkColumn != ""
+			fkChanged := wasFk != isFk || (wasFk && isFk && (originalFk.TargetTable != req.Column.FkTable || originalFk.TargetColumn != req.Column.FkColumn))
+			if fkChanged && wasFk {
+				oldFkName := s.escapeIdentifier(engine, fmt.Sprintf("fk_%s_%s", req.TableName, req.Column.Name))
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s;", escapedTable, oldFkName))
+			}
+
+			// Conditional Unique Key Drop (MySQL)
+			wasUq := originalCol != nil && originalCol.Key == "UNI"
+			isUq := req.Column.Unique
+			uqChanged := wasUq != isUq
+			if uqChanged && wasUq {
+				oldUqName := s.escapeIdentifier(engine, fmt.Sprintf("uq_%s_%s", req.TableName, req.Column.Name))
+				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", escapedTable, oldUqName))
+			}
+
 			// Rename column (if NewName is provided and is different)
+			colNameAfterRename := req.Column.Name
 			if req.NewName != "" && req.NewName != req.Column.Name {
 				if !s.isValidIdentifier(req.NewName) {
 					return apperr.New(400, "INVALID_NEW_NAME", "New column name is invalid")
 				}
 				sqlQueryRename := fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", escapedTable, escapedCol, s.escapeIdentifier(engine, req.NewName))
-				if _, err = db.ExecContext(ctx, sqlQueryRename); err != nil {
+				if _, err = execer.ExecContext(ctx, sqlQueryRename); err != nil {
+					return err
+				}
+				colNameAfterRename = req.NewName
+			}
+			escapedColAfterRename := s.escapeIdentifier(engine, colNameAfterRename)
+
+			// Primary Key (if requested and changed/renamed)
+			wasPk := originalCol != nil && originalCol.Key == "PRI"
+			isPk := req.Column.PrimaryKey
+			pkChanged := wasPk != isPk
+			if pkChanged {
+				if wasPk {
+					_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", escapedTable))
+				}
+				if isPk {
+					pkSql := fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s);", escapedTable, escapedColAfterRename)
+					if _, err = execer.ExecContext(ctx, pkSql); err != nil {
+						return err
+					}
+				}
+			}
+
+			// Unique (if requested and changed/renamed)
+			if isUq && (uqChanged || colNameAfterRename != req.Column.Name) {
+				newUqName := s.escapeIdentifier(engine, fmt.Sprintf("uq_%s_%s", req.TableName, colNameAfterRename))
+				uqSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);", escapedTable, newUqName, escapedColAfterRename)
+				if _, err = execer.ExecContext(ctx, uqSql); err != nil {
+					return err
+				}
+			}
+
+			// Foreign Key (if requested and changed/renamed)
+			if isFk && (fkChanged || colNameAfterRename != req.Column.Name) {
+				if !s.isValidIdentifier(req.Column.FkTable) || !s.isValidIdentifier(req.Column.FkColumn) {
+					return apperr.New(400, "INVALID_FK_IDENTIFIER", "Foreign key target table or column is invalid")
+				}
+				escapedTargetTable := s.escapeIdentifier(engine, req.Column.FkTable)
+				escapedTargetCol := s.escapeIdentifier(engine, req.Column.FkColumn)
+				newFkName := s.escapeIdentifier(engine, fmt.Sprintf("fk_%s_%s", req.TableName, colNameAfterRename))
+
+				onDelete := "NO ACTION"
+				switch strings.ToUpper(req.Column.FkOnDelete) {
+				case "CASCADE":
+					onDelete = "CASCADE"
+				case "SET NULL":
+					onDelete = "SET NULL"
+				case "RESTRICT":
+					onDelete = "RESTRICT"
+				case "NO ACTION":
+					onDelete = "NO ACTION"
+				}
+
+				fkSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+					escapedTable, newFkName, escapedColAfterRename, escapedTargetTable, escapedTargetCol, onDelete)
+				if _, err = execer.ExecContext(ctx, fkSql); err != nil {
+					return err
+				}
+			}
+
+			if tx != nil {
+				if err = tx.Commit(); err != nil {
 					return err
 				}
 			}
@@ -1011,7 +1400,10 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 		return apperr.New(400, "UNKNOWN_ACTION", "Visual designer action is unrecognized")
 	}
 
-	_, err = db.ExecContext(ctx, sqlQuery)
+	_, err = execer.ExecContext(ctx, sqlQuery)
+	if err == nil && tx != nil {
+		err = tx.Commit()
+	}
 	return err
 }
 
@@ -1249,6 +1641,9 @@ func (s *DatabaseService) escapeSQLString(val string) string {
 	val = strings.ReplaceAll(val, "'", "''")
 	val = strings.ReplaceAll(val, "\n", "\\n")
 	val = strings.ReplaceAll(val, "\r", "\\r")
+	val = strings.ReplaceAll(val, "\u0000", "\\0")
+	val = strings.ReplaceAll(val, "\u001a", "\\Z")
+	val = strings.ReplaceAll(val, "\u0008", "\\b")
 	return val
 }
 
@@ -1257,6 +1652,137 @@ func (s *DatabaseService) escapeIdentifier(engine, name string) string {
 		return fmt.Sprintf("\"%s\"", strings.ReplaceAll(name, "\"", "\"\""))
 	}
 	return fmt.Sprintf("`%s`", strings.ReplaceAll(name, "`", "``"))
+}
+
+// GetAllSchemaMetadata fetches columns and foreign keys for all tables in a single step to prevent N+1 query loops.
+func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[string][]ColumnInfo, map[string][]ForeignKeyInfo, error) {
+	db, err := s.ConnectToProjectDB(dbName, password)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	engine := s.getEngineForDB(dbName)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	columnsMap := make(map[string][]ColumnInfo)
+	fksMap := make(map[string][]ForeignKeyInfo)
+
+	// 1. Fetch All Columns
+	var colRows *sql.Rows
+	if engine == "postgresql" {
+		colRows, err = db.QueryContext(ctx, `
+			SELECT 
+				c.table_name,
+				c.column_name,
+				c.data_type,
+				c.is_nullable,
+				COALESCE(
+					(SELECT 'PRI' FROM pg_index i 
+					 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+					 WHERE i.indrelid = (c.table_schema || '.' || c.table_name)::regclass AND i.indisprimary AND a.attname = c.column_name LIMIT 1), 
+					''
+				) AS column_key,
+				c.column_default,
+				'' AS extra,
+				COALESCE(pg_catalog.col_description((c.table_schema || '.' || c.table_name)::regclass, c.ordinal_position), '') AS column_comment
+			FROM information_schema.columns c
+			WHERE c.table_schema = 'public'
+			ORDER BY c.table_name, c.ordinal_position
+		`)
+	} else {
+		colRows, err = db.QueryContext(ctx, `
+			SELECT 
+				TABLE_NAME,
+				COLUMN_NAME,
+				COLUMN_TYPE,
+				IS_NULLABLE,
+				COLUMN_KEY,
+				COLUMN_DEFAULT,
+				EXTRA,
+				COLUMN_COMMENT
+			FROM information_schema.COLUMNS 
+			WHERE TABLE_SCHEMA = ?
+			ORDER BY TABLE_NAME, ORDINAL_POSITION
+		`, dbName)
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+	defer colRows.Close()
+
+	for colRows.Next() {
+		var tableName string
+		var col ColumnInfo
+		var nullable string
+		if err := colRows.Scan(&tableName, &col.Name, &col.Type, &nullable, &col.Key, &col.Default, &col.Extra, &col.Comment); err != nil {
+			continue
+		}
+		col.Nullable = (nullable == "YES" || nullable == "yes" || nullable == "TRUE" || nullable == "true")
+		columnsMap[tableName] = append(columnsMap[tableName], col)
+	}
+	if err = colRows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	// 2. Fetch All Foreign Keys
+	var fkRows *sql.Rows
+	if engine == "postgresql" {
+		fkRows, err = db.QueryContext(ctx, `
+			SELECT
+				tc.table_name,
+				kcu.column_name,
+				ccu.table_name AS referenced_table_name,
+				ccu.column_name AS referenced_column_name,
+				tc.constraint_name
+			FROM
+				information_schema.table_constraints AS tc
+				JOIN information_schema.key_column_usage AS kcu
+				  ON tc.constraint_name = kcu.constraint_name
+				  AND tc.table_schema = kcu.table_schema
+				JOIN information_schema.constraint_column_usage AS ccu
+				  ON ccu.constraint_name = tc.constraint_name
+				  AND ccu.table_schema = tc.table_schema
+			WHERE 
+				tc.constraint_type = 'FOREIGN KEY' 
+				AND tc.table_schema = 'public';
+		`)
+	} else {
+		fkRows, err = db.QueryContext(ctx, `
+			SELECT 
+				TABLE_NAME,
+				COLUMN_NAME,
+				REFERENCED_TABLE_NAME,
+				REFERENCED_COLUMN_NAME,
+				CONSTRAINT_NAME
+			FROM 
+				INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+			WHERE 
+				TABLE_SCHEMA = ? 
+				AND REFERENCED_TABLE_NAME IS NOT NULL;
+		`, dbName)
+	}
+
+	if err != nil {
+		// Log error internally but do not fail the whole load; return empty FK map to degrade gracefully
+		return columnsMap, fksMap, nil
+	}
+	defer fkRows.Close()
+
+	for fkRows.Next() {
+		var tableName string
+		var fk ForeignKeyInfo
+		if err := fkRows.Scan(&tableName, &fk.ColumnName, &fk.TargetTable, &fk.TargetColumn, &fk.ConstraintName); err != nil {
+			continue
+		}
+		fksMap[tableName] = append(fksMap[tableName], fk)
+	}
+	if err = fkRows.Err(); err != nil {
+		return columnsMap, fksMap, nil
+	}
+
+	return columnsMap, fksMap, nil
 }
 
 // AdminListAllDatabases returns a summary of all user databases

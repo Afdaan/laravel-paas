@@ -366,22 +366,38 @@ func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve tables: " + err.Error()})
 	}
 
+	columnsMap, fksMap, schemaErr := h.databaseService.GetAllSchemaMetadata(instance.Name, instance.Password)
+	if schemaErr != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table metadata: " + schemaErr.Error()})
+	}
+
 	type TableSchema struct {
-		Name    string               `json:"name"`
-		Rows    int64                `json:"rows"`
-		Columns []services.ColumnInfo `json:"columns"`
+		Name        string                    `json:"name"`
+		Rows        int64                     `json:"rows"`
+		Size        string                    `json:"size"`
+		Created     string                    `json:"created"`
+		Columns     []services.ColumnInfo     `json:"columns"`
+		ForeignKeys []services.ForeignKeyInfo `json:"foreign_keys"`
 	}
 
 	var schemas []TableSchema
 	for _, t := range tables {
-		cols, err := h.databaseService.GetTableStructure(instance.Name, instance.Password, t.Name)
-		if err == nil {
-			schemas = append(schemas, TableSchema{
-				Name:    t.Name,
-				Rows:    t.Rows,
-				Columns: cols,
-			})
+		cols := columnsMap[t.Name]
+		if cols == nil {
+			cols = []services.ColumnInfo{}
 		}
+		fks := fksMap[t.Name]
+		if fks == nil {
+			fks = []services.ForeignKeyInfo{}
+		}
+		schemas = append(schemas, TableSchema{
+			Name:        t.Name,
+			Rows:        t.Rows,
+			Size:        t.Size,
+			Created:     t.Created,
+			Columns:     cols,
+			ForeignKeys: fks,
+		})
 	}
 
 	return c.JSON(fiber.Map{

@@ -27,6 +27,7 @@ import {
   Search,
   Download,
   Pencil,
+  Link,
   MoreHorizontal,
   Info
 } from 'lucide-react'
@@ -387,6 +388,13 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [editColLength, setEditColLength] = useState<number | string>(255)
   const [editColNullable, setEditColNullable] = useState(true)
   const [editColDefault, setEditColDefault] = useState('')
+  const [editColPk, setEditColPk] = useState(false)
+  const [editColUnique, setEditColUnique] = useState(false)
+  const [editColComment, setEditColComment] = useState('')
+  const [editColFk, setEditColFk] = useState(false)
+  const [editColFkTargetTable, setEditColFkTargetTable] = useState('')
+  const [editColFkTargetColumn, setEditColFkTargetColumn] = useState('')
+  const [editColFkOnDelete, setEditColFkOnDelete] = useState('CASCADE')
   const [showColModifyPreview, setShowColModifyPreview] = useState(false)
   const [colModifyPreviewSql, setColModifyPreviewSql] = useState('')
 
@@ -436,9 +444,52 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [newColType, setNewColType] = useState('varchar')
   const [newColLength, setNewColLength] = useState<number | string>(255)
   const [newColNullable, setNewColNullable] = useState(true)
+  const [newColDefault, setNewColDefault] = useState('')
+  const [newColPk, setNewColPk] = useState(false)
+  const [newColUnique, setNewColUnique] = useState(false)
+  const [newColComment, setNewColComment] = useState('')
+  const [newColFk, setNewColFk] = useState(false)
+  const [newColFkTargetTable, setNewColFkTargetTable] = useState('')
+  const [newColFkTargetColumn, setNewColFkTargetColumn] = useState('')
+  const [newColFkOnDelete, setNewColFkOnDelete] = useState('CASCADE')
   
   const [indexName] = useState('')
   const [indexCols] = useState<string[]>([])
+
+  const resetAddColumnForm = () => {
+    setNewColName('')
+    setNewColType('varchar')
+    setNewColLength(255)
+    setNewColNullable(true)
+    setNewColDefault('')
+    setNewColPk(false)
+    setNewColUnique(false)
+    setNewColComment('')
+    setNewColFk(false)
+    setNewColFkTargetTable('')
+    setNewColFkTargetColumn('')
+    setNewColFkOnDelete('CASCADE')
+    setDesignerAction(null)
+  }
+
+  const resetModifyColumnForm = () => {
+    setEditingCol(null)
+    setEditColNewName('')
+    setEditColType('varchar')
+    setEditColLength(255)
+    setEditColNullable(true)
+    setEditColDefault('')
+    setEditColPk(false)
+    setEditColUnique(false)
+    setEditColComment('')
+    setEditColFk(false)
+    setEditColFkTargetTable('')
+    setEditColFkTargetColumn('')
+    setEditColFkOnDelete('CASCADE')
+    setShowColModifyPreview(false)
+    setColModifyPreviewSql('')
+    setDesignerAction(null)
+  }
 
   // Load complete studio dataset
   const loadStudioData = useCallback(async () => {
@@ -991,11 +1042,23 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     setEditingCol(col)
     setEditColNewName(col.name)
     
+    const table = schemaData.find(t => t.name === tableName)
+    const tableFks = table?.foreign_keys || []
+    const fk = tableFks.find((f: any) => f.column_name === col.name)
+    
     const parsed = parseDbType(col.type)
     setEditColType(parsed.type)
     setEditColLength(parsed.length)
     setEditColNullable(col.nullable)
     setEditColDefault(col.default !== null ? String(col.default) : '')
+    setEditColPk(col.key === 'PRI')
+    setEditColUnique(col.key === 'UNI')
+    setEditColComment(col.comment || '')
+    setEditColFk(!!fk)
+    setEditColFkTargetTable(fk ? fk.target_table : '')
+    setEditColFkTargetColumn(fk ? fk.target_column : '')
+    setEditColFkOnDelete(fk ? (fk.on_delete || 'CASCADE') : 'CASCADE')
+    
     setShowColModifyPreview(false)
     setColModifyPreviewSql('')
     
@@ -1030,18 +1093,80 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       sqls.push(`-- 1. Alter Column Type\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} TYPE ${dbType} USING ${escapedCol}::${dbType.toLowerCase()};`)
       sqls.push(`-- 2. Alter Column Nullability\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} ${editColNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`)
       sqls.push(`-- 3. Alter Column Default\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} ${editColDefault !== '' ? `SET DEFAULT '${editColDefault.replace(/'/g, "''")}'` : 'DROP DEFAULT'};`)
+      
+      const oldUqName = `uq_${selectedTable}_${editingCol.name}`
+      sqls.push(`-- 4. Drop Old Unique Constraint (if any)\nALTER TABLE ${escapedTable} DROP CONSTRAINT IF EXISTS ${q}${oldUqName}${q};`)
+      
+      const oldFkName = `fk_${selectedTable}_${editingCol.name}`
+      sqls.push(`-- 5. Drop Old Foreign Key Constraint (if any)\nALTER TABLE ${escapedTable} DROP CONSTRAINT IF EXISTS ${q}${oldFkName}${q};`)
+
+      let colNameAfterRename = editingCol.name
       if (editColNewName && editColNewName !== editingCol.name) {
         const escapedNewCol = `${q}${editColNewName}${q}`
-        sqls.push(`-- 4. Rename Column\nALTER TABLE ${escapedTable} RENAME COLUMN ${escapedCol} TO ${escapedNewCol};`)
+        sqls.push(`-- 6. Rename Column\nALTER TABLE ${escapedTable} RENAME COLUMN ${escapedCol} TO ${escapedNewCol};`)
+        colNameAfterRename = editColNewName
       }
+      const escapedColAfterRename = `${q}${colNameAfterRename}${q}`
+
+      if (editColComment !== undefined) {
+        if (editColComment === '') {
+          sqls.push(`-- 7. Remove Column Comment\nCOMMENT ON COLUMN ${escapedTable}.${escapedColAfterRename} IS NULL;`)
+        } else {
+          sqls.push(`-- 7. Set Column Comment\nCOMMENT ON COLUMN ${escapedTable}.${escapedColAfterRename} IS '${editColComment.replace(/'/g, "''")}';`)
+        }
+      }
+
+      const pkeyName = `${selectedTable}_pkey`
+      sqls.push(`-- 8. Drop Primary Key Constraint (if any)\nALTER TABLE ${escapedTable} DROP CONSTRAINT IF EXISTS ${q}${pkeyName}${q};`)
+      if (editColPk) {
+        sqls.push(`-- 9. Add Primary Key Constraint\nALTER TABLE ${escapedTable} ADD PRIMARY KEY (${escapedColAfterRename});`)
+      }
+
+      if (editColUnique) {
+        const newUqName = `uq_${selectedTable}_${colNameAfterRename}`
+        sqls.push(`-- 10. Add Unique Constraint\nALTER TABLE ${escapedTable} ADD CONSTRAINT ${q}${newUqName}${q} UNIQUE (${escapedColAfterRename});`)
+      }
+
+      if (editColFk && editColFkTargetTable && editColFkTargetColumn) {
+        const newFkName = `fk_${selectedTable}_${colNameAfterRename}`
+        sqls.push(`-- 11. Add Foreign Key Constraint\nALTER TABLE ${escapedTable} ADD CONSTRAINT ${q}${newFkName}${q} FOREIGN KEY (${escapedColAfterRename}) REFERENCES ${q}${editColFkTargetTable}${q} (${q}${editColFkTargetColumn}${q}) ON DELETE ${editColFkOnDelete.toUpperCase()};`)
+      }
+
       return sqls.join('\n\n')
     } else {
       const sqls: string[] = []
-      sqls.push(`ALTER TABLE ${escapedTable} MODIFY COLUMN ${escapedCol} ${dbType} ${nullability}${defaultClause};`)
+      const commentSuffix = editColComment ? ` COMMENT '${editColComment.replace(/'/g, "''")}'` : ''
+      sqls.push(`-- 1. Modify Column Structure\nALTER TABLE ${escapedTable} MODIFY COLUMN ${escapedCol} ${dbType} ${nullability}${defaultClause}${commentSuffix};`)
+
+      const oldUqName = `uq_${selectedTable}_${editingCol.name}`
+      sqls.push(`-- 2. Drop Old Unique Index (if any)\nALTER TABLE ${escapedTable} DROP INDEX ${q}${oldUqName}${q};`)
+
+      const oldFkName = `fk_${selectedTable}_${editingCol.name}`
+      sqls.push(`-- 3. Drop Old Foreign Key Constraint (if any)\nALTER TABLE ${escapedTable} DROP FOREIGN KEY ${q}${oldFkName}${q};`)
+
+      let colNameAfterRename = editingCol.name
       if (editColNewName && editColNewName !== editingCol.name) {
         const escapedNewCol = `${q}${editColNewName}${q}`
-        sqls.push(`ALTER TABLE ${escapedTable} RENAME COLUMN ${escapedCol} TO ${escapedNewCol};`)
+        sqls.push(`-- 4. Rename Column\nALTER TABLE ${escapedTable} RENAME COLUMN ${escapedCol} TO ${escapedNewCol};`)
+        colNameAfterRename = editColNewName
       }
+      const escapedColAfterRename = `${q}${colNameAfterRename}${q}`
+
+      sqls.push(`-- 5. Drop Primary Key (if any)\nALTER TABLE ${escapedTable} DROP PRIMARY KEY;`)
+      if (editColPk) {
+        sqls.push(`-- 6. Add Primary Key\nALTER TABLE ${escapedTable} ADD PRIMARY KEY (${escapedColAfterRename});`)
+      }
+
+      if (editColUnique) {
+        const newUqName = `uq_${selectedTable}_${colNameAfterRename}`
+        sqls.push(`-- 7. Add Unique Constraint\nALTER TABLE ${escapedTable} ADD CONSTRAINT ${q}${newUqName}${q} UNIQUE (${escapedColAfterRename});`)
+      }
+
+      if (editColFk && editColFkTargetTable && editColFkTargetColumn) {
+        const newFkName = `fk_${selectedTable}_${colNameAfterRename}`
+        sqls.push(`-- 8. Add Foreign Key Constraint\nALTER TABLE ${escapedTable} ADD CONSTRAINT ${q}${newFkName}${q} FOREIGN KEY (${escapedColAfterRename}) REFERENCES ${q}${editColFkTargetTable}${q} (${q}${editColFkTargetColumn}${q}) ON DELETE ${editColFkOnDelete.toUpperCase()};`)
+      }
+
       return sqls.join('\n')
     }
   }
@@ -1064,7 +1189,14 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         type: editColType,
         length: editColLength === "" ? 255 : Number(editColLength),
         nullable: editColNullable,
-        default_value: editColDefault === "" ? null : editColDefault
+        default_value: editColDefault === "" ? null : editColDefault,
+        primary_key: editColPk,
+        unique: editColUnique,
+        comment: editColComment === "" ? null : editColComment,
+        foreign_key: editColFk,
+        fk_table: editColFkTargetTable,
+        fk_column: editColFkTargetColumn,
+        fk_on_delete: editColFkOnDelete
       },
       new_name: editColNewName
     }
@@ -1104,7 +1236,15 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         name: newColName,
         type: newColType,
         length: newColLength === "" ? 255 : Number(newColLength),
-        nullable: newColNullable
+        nullable: newColNullable,
+        default_value: newColDefault === "" ? null : newColDefault,
+        primary_key: newColPk,
+        unique: newColUnique,
+        comment: newColComment === "" ? null : newColComment,
+        foreign_key: newColFk,
+        fk_table: newColFkTargetTable,
+        fk_column: newColFkTargetColumn,
+        fk_on_delete: newColFkOnDelete
       }
     } else if (designerAction === 'create_index') {
       payload.index_name = indexName
@@ -1589,11 +1729,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   </span>
                 </div>
                 <div className="p-3.5 bg-muted/20 border border-border/40 rounded-xl flex flex-col hover:border-primary/20 transition-all">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.metrics.engine')}</span>
-                  <span className="text-lg font-extrabold text-foreground mt-0.5 capitalize">
-                    {dbOverview?.engine || 'MySQL'}
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">{t('databaseStudio.tables.stats.size')}</span>
+                  <span className="text-lg font-extrabold text-foreground mt-0.5">
+                    {schemaData.find(t => t.name === selectedTable)?.size || '0.00 KB'}
                   </span>
                 </div>
+
               </div>
             )}
 
@@ -2126,67 +2267,114 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                                 <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.nameHeader')}</th>
                                 <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.typeHeader')}</th>
                                 <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</th>
-                                <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.keyHeader')}</th>
+                                <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.constraintsHeader') || t('databaseStudio.structure.keyHeader')}</th>
                                 <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.defaultHeader')}</th>
                                 <th className="py-3 px-4 text-right bg-muted/20">{t('databaseStudio.tables.actionHeader')}</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {table.columns.map((col: any) => (
-                                <tr key={col.name} className="border-b border-border/15 hover:bg-muted/5 transition-colors">
-                                  <td className="py-3 px-4 font-mono font-semibold text-foreground/90">{col.name}</td>
-                                  <td className="py-3 px-4 font-mono text-primary/80">{col.type}</td>
-                                  <td className="py-3 px-4 text-center">
-                                    <span className={cn(
-                                      "px-2 py-0.5 rounded text-[10px] font-bold border",
-                                      col.nullable 
-                                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
-                                        : "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                    )}>
-                                      {col.nullable ? t('common.yes').toUpperCase() : t('common.no').toUpperCase()}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-4 text-center">
-                                    {col.key === 'PRI' && (
-                                      <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] font-extrabold uppercase tracking-wide">
-                                        PK
+                              {table.columns.map((col: any) => {
+                                const tableFks = table.foreign_keys || []
+                                const fk = tableFks.find((f: any) => f.column_name === col.name)
+                                const isPK = col.key === 'PRI'
+                                const isUQ = col.key === 'UNI'
+                                const isIDX = col.key === 'MUL'
+
+                                return (
+                                  <tr key={col.name} className="border-b border-border/15 hover:bg-muted/5 transition-colors">
+                                    <td className="py-3 px-4 font-mono font-semibold text-foreground/90 flex items-center gap-1.5" title={col.comment || undefined}>
+                                      {isPK && <span title="Primary Key"><Key className="w-3.5 h-3.5 text-purple-500" /></span>}
+                                      {fk && <span title={`Foreign Key: -> ${fk.target_table}(${fk.target_column})`}><Link className="w-3.5 h-3.5 text-blue-500" /></span>}
+                                      <span>{col.name}</span>
+                                      {col.comment && (
+                                        <span className="text-[10px] text-muted-foreground/60 italic font-normal max-w-[150px] truncate ml-1" title={col.comment}>
+                                          ({col.comment})
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="py-3 px-4 font-mono text-primary/80">
+                                      <div className="flex items-center gap-1.5">
+                                        <span 
+                                          className={cn("w-1.5 h-1.5 rounded-full shrink-0", col.nullable ? "bg-emerald-500" : "bg-amber-500")} 
+                                          title={col.nullable ? 'Nullable' : 'Not Null'} 
+                                        />
+                                        <span>{col.type}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 text-center">
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded text-[10px] font-bold border",
+                                        col.nullable 
+                                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
+                                          : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                      )}>
+                                        {col.nullable ? 'NULLABLE' : 'NOT NULL'}
                                       </span>
-                                    )}
-                                    {col.key === 'UNI' && (
-                                      <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-extrabold uppercase tracking-wide" title={t('databaseStudio.structure.uniqueConstraint')}>
-                                        UQ
-                                      </span>
-                                    )}
-                                    {col.key === 'MUL' && (
-                                      <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-600 border border-sky-500/20 text-[10px] font-extrabold uppercase tracking-wide" title={t('databaseStudio.structure.indexedColumn')}>
-                                        IDX
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
-                                  <td className="py-3 px-4 text-right">
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 cursor-pointer" style={{ cursor: 'pointer' }}>
-                                          <MoreHorizontal className="w-4 h-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end" className="w-36 bg-card/98 border border-border/80 rounded-xl shadow-xl backdrop-blur-xl">
-                                        <DropdownMenuItem onClick={() => openModifyColumnModal(table.name, col)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
-                                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                                          {t('databaseStudio.structure.actions.modifyColumn') || 'Modify Column'}
-                                        </DropdownMenuItem>
-                                        {col.key !== 'PRI' && (
-                                          <DropdownMenuItem onClick={() => handleDropColumn(table.name, col.name)} className="text-destructive gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                            {t('databaseStudio.structure.actions.dropColumn')}
-                                          </DropdownMenuItem>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <div className="flex flex-wrap justify-center gap-1">
+                                        {isPK && (
+                                          <span 
+                                            className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 border border-purple-500/20 text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1 cursor-help"
+                                            title={t('databaseStudio.structure.tooltips.primaryKey') || undefined}
+                                          >
+                                            <Key className="w-2.5 h-2.5" /> PK
+                                          </span>
                                         )}
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </td>
-                                </tr>
-                              ))}
+                                        {fk && (
+                                          <span 
+                                            className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 border border-blue-500/20 text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-help"
+                                            title={t('databaseStudio.structure.tooltips.foreignKey', { table: fk.target_table, column: fk.target_column }) || undefined}
+                                          >
+                                            <Link className="w-2.5 h-2.5" /> FK → {fk.target_table}({fk.target_column})
+                                          </span>
+                                        )}
+                                        {isUQ && (
+                                          <span 
+                                            className="px-2 py-0.5 rounded bg-orange-500/10 text-orange-600 border border-orange-500/20 text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1 cursor-help"
+                                            title={t('databaseStudio.structure.tooltips.unique') || undefined}
+                                          >
+                                            <Shield className="w-2.5 h-2.5" /> UQ
+                                          </span>
+                                        )}
+                                        {isIDX && !isPK && !isUQ && (
+                                          <span 
+                                            className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1 cursor-help"
+                                            title={t('databaseStudio.structure.tooltips.index') || undefined}
+                                          >
+                                            <Search className="w-2.5 h-2.5" /> IDX
+                                          </span>
+                                        )}
+                                        {!isPK && !fk && !isUQ && !isIDX && (
+                                          <span className="text-[10px] text-muted-foreground/40 italic">—</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 font-mono text-muted-foreground">{col.default === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(col.default)}</td>
+                                    <td className="py-3 px-4 text-right">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger>
+                                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 cursor-pointer" style={{ cursor: 'pointer' }}>
+                                            <MoreHorizontal className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-36 bg-card/98 border border-border/80 rounded-xl shadow-xl backdrop-blur-xl">
+                                          <DropdownMenuItem onClick={() => openModifyColumnModal(table.name, col)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
+                                            <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                                            {t('databaseStudio.structure.actions.modifyColumn') || 'Modify Column'}
+                                          </DropdownMenuItem>
+                                          {col.key !== 'PRI' && (
+                                            <DropdownMenuItem onClick={() => handleDropColumn(table.name, col.name)} className="text-destructive gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                              {t('databaseStudio.structure.actions.dropColumn')}
+                                            </DropdownMenuItem>
+                                          )}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -2250,8 +2438,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           </Dialog>
 
           {/* Add Column Dialog Modal */}
-          <Dialog open={designerAction === 'add_column'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
-            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
+          <Dialog open={designerAction === 'add_column'} onOpenChange={(open: boolean) => !open && resetAddColumnForm()}>
+            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl scrollbar-thin">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                   <PlusCircle className="w-5 h-5 text-primary" />
@@ -2280,17 +2468,34 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                     <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.typeHeader')}</Label>
                     <select
                       value={newColType}
-                      onChange={(e) => setNewColType(e.target.value)}
+                      onChange={(e) => {
+                        setNewColType(e.target.value);
+                        setNewColDefault('');
+                      }}
                       className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
                       style={{ cursor: 'pointer' }}
                     >
-                      <option value="varchar">VARCHAR</option>
-                      <option value="integer">INTEGER</option>
-                      <option value="bigint">BIGINT</option>
-                      <option value="text">TEXT</option>
-                      <option value="boolean">BOOLEAN</option>
-                      <option value="timestamp">TIMESTAMP</option>
-                      <option value="decimal">DECIMAL</option>
+                      <optgroup label="Text">
+                        <option value="varchar">VARCHAR</option>
+                        <option value="text">TEXT</option>
+                        <option value="char">CHAR</option>
+                      </optgroup>
+                      <optgroup label="Numeric">
+                        <option value="integer">INTEGER</option>
+                        <option value="bigint">BIGINT</option>
+                        <option value="decimal">DECIMAL</option>
+                        <option value="float">FLOAT</option>
+                        <option value="double">DOUBLE</option>
+                      </optgroup>
+                      <optgroup label="Temporal">
+                        <option value="timestamp">TIMESTAMP</option>
+                        <option value="datetime">DATETIME</option>
+                        <option value="date">DATE</option>
+                        <option value="time">TIME</option>
+                      </optgroup>
+                      <optgroup label="Logical">
+                        <option value="boolean">BOOLEAN</option>
+                      </optgroup>
                     </select>
                   </div>
 
@@ -2312,24 +2517,201 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   )}
                 </div>
 
-                <div className="flex items-center justify-between border-t pt-3 mt-4">
-                  <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</Label>
+                {/* Default Value Input & Helper Presets */}
+                <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new_col_default" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('databaseStudio.structure.createTableDialog.defaultValue')}
+                    </Label>
+                    <Input
+                      id="new_col_default"
+                      value={newColDefault}
+                      onChange={(e) => setNewColDefault(e.target.value)}
+                      placeholder="e.g. NULL, 'active', 0"
+                      className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                    />
+                  </div>
+                  {/* Preset Chips */}
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mr-1">Presets:</span>
+                    {(() => {
+                      let chips = ['NULL'];
+                      const normType = newColType.toLowerCase();
+                      if (normType === 'varchar' || normType === 'text' || normType === 'char') {
+                        chips = ["''", 'NULL'];
+                      } else if (['integer', 'bigint', 'decimal', 'float', 'double'].includes(normType)) {
+                        chips = ['0', '1', 'NULL'];
+                      } else if (['timestamp', 'datetime'].includes(normType)) {
+                        chips = ['CURRENT_TIMESTAMP', 'NULL'];
+                      } else if (normType === 'boolean') {
+                        chips = ['TRUE', 'FALSE', 'NULL'];
+                      }
+                      return chips.map(chip => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setNewColDefault(chip)}
+                          className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-muted/60 border border-border/40 hover:bg-muted/100 hover:border-border transition-colors cursor-pointer text-muted-foreground hover:text-foreground"
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {chip}
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Constraint Cards (Nullable, PK, Unique) */}
+                <div className="space-y-1.5 border-t border-border/40 pt-3">
+                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Konfigurasi Kolom & Batasan</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Nullable Card */}
+                    <button
+                      type="button"
+                      onClick={() => setNewColNullable(!newColNullable)}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 cursor-pointer text-center gap-1.5",
+                        newColNullable 
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 shadow-sm shadow-emerald-500/5" 
+                          : "bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50"
+                      )}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className="text-[10px] font-extrabold uppercase tracking-wide">Nullable</span>
+                      <span className="text-[9px] opacity-75 font-medium leading-tight">Bisa bernilai kosong</span>
+                    </button>
+                    
+                    {/* Primary Key Card */}
+                    <button
+                      type="button"
+                      onClick={() => setNewColPk(!newColPk)}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 cursor-pointer text-center gap-1.5",
+                        newColPk 
+                          ? "bg-purple-500/10 border-purple-500/30 text-purple-500 shadow-sm shadow-purple-500/5" 
+                          : "bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50"
+                      )}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className="text-[10px] font-extrabold uppercase tracking-wide">Primary Key</span>
+                      <span className="text-[9px] opacity-75 font-medium leading-tight">Kunci utama unik</span>
+                    </button>
+
+                    {/* Unique Card */}
+                    <button
+                      type="button"
+                      onClick={() => setNewColUnique(!newColUnique)}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 cursor-pointer text-center gap-1.5",
+                        newColUnique 
+                          ? "bg-orange-500/10 border-orange-500/30 text-orange-500 shadow-sm shadow-orange-500/5" 
+                          : "bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50"
+                      )}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className="text-[10px] font-extrabold uppercase tracking-wide">Unique</span>
+                      <span className="text-[9px] opacity-75 font-medium leading-tight">Nilai tidak kembar</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Collapsible Foreign Key Relation Panel */}
+                <div className="rounded-xl border border-border/60 bg-muted/5 overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => setNewColNullable(!newColNullable)}
-                    className={cn(
-                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-                      newColNullable ? "bg-primary" : "bg-muted"
-                    )}
+                    onClick={() => {
+                      const active = !newColFk;
+                      setNewColFk(active);
+                      if (active && !newColFkTargetTable && schemaData.length > 0) {
+                        const firstTable = schemaData[0].name;
+                        setNewColFkTargetTable(firstTable);
+                        const firstCol = schemaData[0].columns?.[0]?.name || '';
+                        setNewColFkTargetColumn(firstCol);
+                      }
+                    }}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-muted/20 border-b border-border/45 hover:bg-muted/40 transition-colors cursor-pointer text-left"
                     style={{ cursor: 'pointer' }}
                   >
-                    <span
-                      className={cn(
-                        "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
-                        newColNullable ? "translate-x-4" : "translate-x-0"
-                      )}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Link className={cn("w-4 h-4 transition-colors", newColFk ? "text-blue-500" : "text-muted-foreground")} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-foreground/80">Relasi Foreign Key</span>
+                    </div>
+                    <span className={cn(
+                      "text-[9px] font-black px-2 py-0.5 rounded border transition-all",
+                      newColFk ? "bg-blue-500/10 text-blue-500 border-blue-500/25" : "bg-muted text-muted-foreground border-border/40"
+                    )}>
+                      {newColFk ? "AKTIF" : "NONAKTIF"}
+                    </span>
                   </button>
+                  
+                  {newColFk && (
+                    <div className="p-4 space-y-3 bg-background/20 animate-in fade-in duration-200">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tabel Target</Label>
+                          <select
+                            value={newColFkTargetTable}
+                            onChange={(e) => {
+                              const newTable = e.target.value;
+                              setNewColFkTargetTable(newTable);
+                              const firstCol = schemaData.find(t => t.name === newTable)?.columns?.[0]?.name || '';
+                              setNewColFkTargetColumn(firstCol);
+                            }}
+                            className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <option value="">-- Pilih Tabel --</option>
+                            {schemaData.map((t: any) => (
+                              <option key={t.name} value={t.name}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Kolom Target</Label>
+                          <select
+                            value={newColFkTargetColumn}
+                            onChange={(e) => setNewColFkTargetColumn(e.target.value)}
+                            className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                            style={{ cursor: 'pointer' }}
+                            disabled={!newColFkTargetTable}
+                          >
+                            <option value="">-- Pilih Kolom --</option>
+                            {(schemaData.find(t => t.name === newColFkTargetTable)?.columns || []).map((c: any) => (
+                              <option key={c.name} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Aksi ON DELETE</Label>
+                        <select
+                          value={newColFkOnDelete}
+                          onChange={(e) => setNewColFkOnDelete(e.target.value)}
+                          className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <option value="CASCADE">CASCADE (Hapus anak jika induk dihapus)</option>
+                          <option value="SET NULL">SET NULL (Set kosong jika induk dihapus)</option>
+                          <option value="RESTRICT">RESTRICT (Cegah hapus jika memiliki anak)</option>
+                          <option value="NO ACTION">NO ACTION (Tanpa tindakan)</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Column Description Textarea */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="new_col_comment" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Deskripsi / Komentar Kolom</Label>
+                  <textarea
+                    id="new_col_comment"
+                    value={newColComment}
+                    onChange={(e) => setNewColComment(e.target.value)}
+                    placeholder="Berikan dokumentasi atau catatan kegunaan kolom baru ini..."
+                    className="w-full min-h-[60px] max-h-[120px] p-2.5 rounded-xl border border-border bg-background/50 hover:bg-background/80 text-xs transition-colors outline-none focus:border-primary/50 resize-y"
+                  />
                 </div>
 
                 <div className="flex gap-2.5 pt-2">
@@ -2345,8 +2727,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           </Dialog>
 
           {/* Modify Column Dialog Modal */}
-          <Dialog open={designerAction === 'modify_column'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
-            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
+          <Dialog open={designerAction === 'modify_column'} onOpenChange={(open: boolean) => !open && resetModifyColumnForm()}>
+            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl scrollbar-thin">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                   <Pencil className="w-5 h-5 text-primary" />
@@ -2381,17 +2763,34 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       </Label>
                       <select
                         value={editColType}
-                        onChange={(e) => setEditColType(e.target.value)}
+                        onChange={(e) => {
+                          setEditColType(e.target.value);
+                          setEditColDefault('');
+                        }}
                         className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
                         style={{ cursor: 'pointer' }}
                       >
-                        <option value="varchar">VARCHAR</option>
-                        <option value="integer">INTEGER</option>
-                        <option value="bigint">BIGINT</option>
-                        <option value="text">TEXT</option>
-                        <option value="boolean">BOOLEAN</option>
-                        <option value="timestamp">TIMESTAMP</option>
-                        <option value="decimal">DECIMAL</option>
+                        <optgroup label="Text">
+                          <option value="varchar">VARCHAR</option>
+                          <option value="text">TEXT</option>
+                          <option value="char">CHAR</option>
+                        </optgroup>
+                        <optgroup label="Numeric">
+                          <option value="integer">INTEGER</option>
+                          <option value="bigint">BIGINT</option>
+                          <option value="decimal">DECIMAL</option>
+                          <option value="float">FLOAT</option>
+                          <option value="double">DOUBLE</option>
+                        </optgroup>
+                        <optgroup label="Temporal">
+                          <option value="timestamp">TIMESTAMP</option>
+                          <option value="datetime">DATETIME</option>
+                          <option value="date">DATE</option>
+                          <option value="time">TIME</option>
+                        </optgroup>
+                        <optgroup label="Logical">
+                          <option value="boolean">BOOLEAN</option>
+                        </optgroup>
                       </select>
                     </div>
 
@@ -2415,39 +2814,201 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                     )}
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit_col_default" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                      {t('databaseStudio.structure.createTableDialog.defaultValue')}
-                    </Label>
-                    <Input
-                      id="edit_col_default"
-                      value={editColDefault}
-                      onChange={(e) => setEditColDefault(e.target.value)}
-                      placeholder="e.g. NULL, 'active', 0"
-                      className="h-10 rounded-xl bg-background/50 text-xs font-mono"
-                    />
+                  {/* Default Value Input & Helper Presets */}
+                  <div className="space-y-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit_col_default" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {t('databaseStudio.structure.createTableDialog.defaultValue')}
+                      </Label>
+                      <Input
+                        id="edit_col_default"
+                        value={editColDefault}
+                        onChange={(e) => setEditColDefault(e.target.value)}
+                        placeholder="e.g. NULL, 'active', 0"
+                        className="h-10 rounded-xl bg-background/50 text-xs font-mono"
+                      />
+                    </div>
+                    {/* Preset Chips */}
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mr-1">Presets:</span>
+                      {(() => {
+                        let chips = ['NULL'];
+                        const normType = editColType.toLowerCase();
+                        if (normType === 'varchar' || normType === 'text' || normType === 'char') {
+                          chips = ["''", 'NULL'];
+                        } else if (['integer', 'bigint', 'decimal', 'float', 'double'].includes(normType)) {
+                          chips = ['0', '1', 'NULL'];
+                        } else if (['timestamp', 'datetime'].includes(normType)) {
+                          chips = ['CURRENT_TIMESTAMP', 'NULL'];
+                        } else if (normType === 'boolean') {
+                          chips = ['TRUE', 'FALSE', 'NULL'];
+                        }
+                        return chips.map(chip => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => setEditColDefault(chip)}
+                            className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-muted/60 border border-border/40 hover:bg-muted/100 hover:border-border transition-colors cursor-pointer text-muted-foreground hover:text-foreground"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {chip}
+                          </button>
+                        ));
+                      })()}
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between border-t pt-3 mt-4">
-                    <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      {t('databaseStudio.structure.createTableDialog.nullableLabel')}
-                    </Label>
+                  {/* Constraint Cards (Nullable, PK, Unique) */}
+                  <div className="space-y-1.5 border-t border-border/40 pt-3">
+                    <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Konfigurasi Kolom & Batasan</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Nullable Card */}
+                      <button
+                        type="button"
+                        onClick={() => setEditColNullable(!editColNullable)}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 cursor-pointer text-center gap-1.5",
+                          editColNullable 
+                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 shadow-sm shadow-emerald-500/5" 
+                            : "bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50"
+                        )}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <span className="text-[10px] font-extrabold uppercase tracking-wide">Nullable</span>
+                        <span className="text-[9px] opacity-75 font-medium leading-tight">Bisa bernilai kosong</span>
+                      </button>
+                      
+                      {/* Primary Key Card */}
+                      <button
+                        type="button"
+                        onClick={() => setEditColPk(!editColPk)}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 cursor-pointer text-center gap-1.5",
+                          editColPk 
+                            ? "bg-purple-500/10 border-purple-500/30 text-purple-500 shadow-sm shadow-purple-500/5" 
+                            : "bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50"
+                        )}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <span className="text-[10px] font-extrabold uppercase tracking-wide">Primary Key</span>
+                        <span className="text-[9px] opacity-75 font-medium leading-tight">Kunci utama unik</span>
+                      </button>
+
+                      {/* Unique Card */}
+                      <button
+                        type="button"
+                        onClick={() => setEditColUnique(!editColUnique)}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 cursor-pointer text-center gap-1.5",
+                          editColUnique 
+                            ? "bg-orange-500/10 border-orange-500/30 text-orange-500 shadow-sm shadow-orange-500/5" 
+                            : "bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50"
+                        )}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <span className="text-[10px] font-extrabold uppercase tracking-wide">Unique</span>
+                        <span className="text-[9px] opacity-75 font-medium leading-tight">Nilai tidak kembar</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Collapsible Foreign Key Relation Panel */}
+                  <div className="rounded-xl border border-border/60 bg-muted/5 overflow-hidden">
                     <button
                       type="button"
-                      onClick={() => setEditColNullable(!editColNullable)}
-                      className={cn(
-                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-                        editColNullable ? "bg-primary" : "bg-muted"
-                      )}
+                      onClick={() => {
+                        const active = !editColFk;
+                        setEditColFk(active);
+                        if (active && !editColFkTargetTable && schemaData.length > 0) {
+                          const firstTable = schemaData[0].name;
+                          setEditColFkTargetTable(firstTable);
+                          const firstCol = schemaData[0].columns?.[0]?.name || '';
+                          setEditColFkTargetColumn(firstCol);
+                        }
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-muted/20 border-b border-border/45 hover:bg-muted/40 transition-colors cursor-pointer text-left"
                       style={{ cursor: 'pointer' }}
                     >
-                      <span
-                        className={cn(
-                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
-                          editColNullable ? "translate-x-4" : "translate-x-0"
-                        )}
-                      />
+                      <div className="flex items-center gap-2">
+                        <Link className={cn("w-4 h-4 transition-colors", editColFk ? "text-blue-500" : "text-muted-foreground")} />
+                        <span className="text-xs font-bold uppercase tracking-wider text-foreground/80">Relasi Foreign Key</span>
+                      </div>
+                      <span className={cn(
+                        "text-[9px] font-black px-2 py-0.5 rounded border transition-all",
+                        editColFk ? "bg-blue-500/10 text-blue-500 border-blue-500/25" : "bg-muted text-muted-foreground border-border/40"
+                      )}>
+                        {editColFk ? "AKTIF" : "NONAKTIF"}
+                      </span>
                     </button>
+                    
+                    {editColFk && (
+                      <div className="p-4 space-y-3 bg-background/20 animate-in fade-in duration-200">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tabel Target</Label>
+                            <select
+                              value={editColFkTargetTable}
+                              onChange={(e) => {
+                                const newTable = e.target.value;
+                                setEditColFkTargetTable(newTable);
+                                const firstCol = schemaData.find(t => t.name === newTable)?.columns?.[0]?.name || '';
+                                setEditColFkTargetColumn(firstCol);
+                              }}
+                              className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <option value="">-- Pilih Tabel --</option>
+                              {schemaData.map((t: any) => (
+                                <option key={t.name} value={t.name}>{t.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Kolom Target</Label>
+                            <select
+                              value={editColFkTargetColumn}
+                              onChange={(e) => setEditColFkTargetColumn(e.target.value)}
+                              className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                              style={{ cursor: 'pointer' }}
+                              disabled={!editColFkTargetTable}
+                            >
+                              <option value="">-- Pilih Kolom --</option>
+                              {(schemaData.find(t => t.name === editColFkTargetTable)?.columns || []).map((c: any) => (
+                                <option key={c.name} value={c.name}>{c.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Aksi ON DELETE</Label>
+                          <select
+                            value={editColFkOnDelete}
+                            onChange={(e) => setEditColFkOnDelete(e.target.value)}
+                            className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <option value="CASCADE">CASCADE (Hapus anak jika induk dihapus)</option>
+                            <option value="SET NULL">SET NULL (Set kosong jika induk dihapus)</option>
+                            <option value="RESTRICT">RESTRICT (Cegah hapus jika memiliki anak)</option>
+                            <option value="NO ACTION">NO ACTION (Tanpa tindakan)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column Description Textarea */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit_col_comment" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Deskripsi / Komentar Kolom</Label>
+                    <textarea
+                      id="edit_col_comment"
+                      value={editColComment}
+                      onChange={(e) => setEditColComment(e.target.value)}
+                      placeholder="Berikan dokumentasi atau catatan kegunaan kolom ini..."
+                      className="w-full min-h-[60px] max-h-[120px] p-2.5 rounded-xl border border-border bg-background/50 hover:bg-background/80 text-xs transition-colors outline-none focus:border-primary/50 resize-y"
+                    />
                   </div>
 
                   <div className="flex gap-2.5 pt-2">

@@ -1067,9 +1067,16 @@ export const translations = {
         nameHeader: "Name",
         typeHeader: "Type",
         keyHeader: "Key",
+        constraintsHeader: "Constraints",
         nullable: "Null",
         notNullable: "Not Null",
         defaultHeader: "Default",
+        tooltips: {
+          primaryKey: "Primary Key: A unique main key to identify each row",
+          foreignKey: "Foreign Key: References table {{table}}({{column}})",
+          unique: "Unique: Ensures every value in the column is unique",
+          index: "Index: Accelerates data lookups on this column"
+        },
         title: "Visual Table Designer GUI",
         subtitle: "Direct visual schema architecting, writes audit log markers",
         noSchemaObjects: "Database contains no schema objects",
@@ -2268,9 +2275,16 @@ export const translations = {
         nameHeader: "Nama",
         typeHeader: "Tipe",
         keyHeader: "Kunci",
+        constraintsHeader: "Batasan",
         nullable: "Null",
         notNullable: "Not Null",
         defaultHeader: "Default",
+        tooltips: {
+          primaryKey: "Primary Key: Kunci unik utama untuk mengidentifikasi setiap baris",
+          foreignKey: "Foreign Key: Merujuk ke tabel {{table}}({{column}})",
+          unique: "Unique: Memastikan setiap nilai dalam kolom unik/berbeda",
+          index: "Index: Mempercepat pencarian data pada kolom ini"
+        },
         title: "Desainer Tabel Visual",
         subtitle: "Desain skema visual secara langsung dengan pencatatan audit log",
         noSchemaObjects: "Database tidak memiliki objek skema",
