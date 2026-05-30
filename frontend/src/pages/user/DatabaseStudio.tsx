@@ -1851,134 +1851,121 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                 )}
               </div>
             ) : (
-              <div className="py-10 text-center text-muted-foreground flex-1 flex items-center justify-center">{t('databaseStudio.tables.loadingRows')}</div>
+                <div className="py-10 text-center text-muted-foreground flex-1 flex items-center justify-center">{t('databaseStudio.tables.loadingRows')}</div>
             )}
           </Card>
 
           {/* Visual Insert Row Modal */}
-          <Dialog open={showInsertModal} onOpenChange={(open: boolean) => !open && setShowInsertModal(false)}>
-            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader className="pb-2 border-b border-border/40">
-                <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
-                  <PlusCircle className="w-5 h-5 text-primary" />
-                  {t('databaseStudio.tables.insertModal.title')}
-                </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground">
-                  {t('databaseStudio.tables.insertModal.desc')} — <span className="font-mono text-primary font-semibold">{selectedTable}</span>
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleInsertRowSubmit} className="space-y-4 pt-3">
-                <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1">
-                  {(schemaData.find(t => t.name === selectedTable)?.columns || []).map((col: any) => {
-                    const isPK = col.key === 'PRI'
-                    const isNullable = col.nullable
-                    const typeLower = col.type.toLowerCase()
-
-                    return (
-                      <div key={col.name} className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor={`insert_${col.name}`} className="text-xs font-bold text-foreground/90 flex items-center gap-2">
-                            <span className="font-mono">{col.name}</span>
-                            <span className="text-[10px] text-muted-foreground font-normal">({col.type})</span>
-                          </Label>
-                          <div className="flex items-center gap-1.5">
-                            {isPK && (
-                              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-black uppercase">
-                                PK
+          {showInsertModal && (
+            <Dialog open={showInsertModal} onOpenChange={(open: boolean) => !open && setShowInsertModal(false)}>
+              <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader className="pb-2 border-b border-border/40">
+                  <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
+                    <PlusCircle className="w-5 h-5 text-primary" />
+                    {t('databaseStudio.tables.insertModal.title')}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground">
+                    {t('databaseStudio.tables.insertModal.desc')}
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleInsertRowSubmit} className="space-y-4 pt-3">
+                  <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                    {(tableData?.columns || []).map((col: any) => {
+                      const isPK = col.key === 'PRI' || col.extra?.toLowerCase().includes('auto_increment')
+                      const isNullable = col.nullable === 'YES' || col.null === 'YES'
+                      const typeLower = (col.type || '').toLowerCase()
+                      
+                      return (
+                        <div key={col.name} className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor={`insert_${col.name}`} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                              {col.name}
+                              <span className="font-mono text-[9px] text-muted-foreground/50 lowercase">({col.type})</span>
+                              {!isNullable && !isPK && <span className="text-red-500 font-bold">*</span>}
+                            </Label>
+                            
+                            {isPK ? (
+                              <span className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                Primary Key
                               </span>
-                            )}
-                            {!isNullable ? (
-                              <span className="text-[9px] font-extrabold uppercase text-amber-500/80 bg-amber-500/5 px-1.5 py-0.5 rounded border border-amber-500/10">
-                                Required
-                              </span>
-                            ) : (
+                            ) : isNullable ? (
                               <span className="text-[9px] font-bold uppercase text-muted-foreground/60 bg-muted/10 px-1.5 py-0.5 rounded border border-border/40">
                                 Optional
                               </span>
-                            )}
+                            ) : undefined}
                           </div>
+  
+                          {isPK ? (
+                            <Input
+                              id={`insert_${col.name}`}
+                              disabled
+                              value={insertFormData[col.name] || ''}
+                              placeholder="Auto-incrementing ID"
+                              className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
+                            />
+                          ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
+                            <Select
+                              value={String(insertFormData[col.name] ?? '')}
+                              onValueChange={(val) => setInsertFormData(prev => ({ ...prev, [col.name]: val }))}
+                            >
+                              <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                                <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                  {t('databaseStudio.tables.booleanTrue')}
+                                </SelectItem>
+                                <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                  {t('databaseStudio.tables.booleanFalse')}
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
+                            <input
+                              id={`insert_${col.name}`}
+                              key={selectedTable + '_' + col.name}
+                              type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
+                              defaultValue={insertFormData[col.name] || ''}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                const isBadInput = e.target.validity?.badInput
+                                if (val === '' && isBadInput) return
+                                setInsertFormData(prev => ({ ...prev, [col.name]: val }))
+                              }}
+                              required={!isNullable}
+                              className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
+                            />
+                          ) : (
+                            <Input
+                              id={`insert_${col.name}`}
+                              value={insertFormData[col.name] || ''}
+                              onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                              placeholder={isNullable ? "NULL" : "Enter value..."}
+                              required={!isNullable}
+                              className="h-10 rounded-xl bg-background/50 text-xs"
+                            />
+                          )}
                         </div>
-
-                        {isPK ? (
-                          <Input
-                            id={`insert_${col.name}`}
-                            disabled
-                            value={insertFormData[col.name] || ''}
-                            placeholder="Auto-incrementing ID"
-                            className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
-                          />
-                        ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
-                          <Select
-                            value={String(insertFormData[col.name] ?? '')}
-                            onValueChange={(val) => setInsertFormData(prev => ({ ...prev, [col.name]: val }))}
-                          >
-                            <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
-                              <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
-                                {t('databaseStudio.tables.booleanTrue')}
-                              </SelectItem>
-                              <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
-                                {t('databaseStudio.tables.booleanFalse')}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
-                          <input
-                            id={`insert_${col.name}`}
-                            key={selectedTable + '_' + col.name}
-                            type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
-                            defaultValue={insertFormData[col.name] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              const isBadInput = e.target.validity?.badInput
-                              if (val === '' && isBadInput) return
-                              setInsertFormData(prev => ({ ...prev, [col.name]: val }))
-                            }}
-                            required={!isNullable}
-                            className="flex h-10 w-full rounded-xl border border-border/70 bg-background/50 px-3 py-2 text-xs font-mono file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground outline-none focus:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
-                          />
-                        ) : typeLower.includes('text') ? (
-                          <textarea
-                            id={`insert_${col.name}`}
-                            value={insertFormData[col.name] || ''}
-                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
-                            required={!isNullable}
-                            rows={3}
-                            placeholder={`Enter text data...`}
-                            className="w-full p-3 rounded-xl border border-border/70 bg-background/50 text-xs font-mono outline-none focus:border-primary/50"
-                          />
-                        ) : (
-                          <Input
-                            id={`insert_${col.name}`}
-                            type={typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double') ? "number" : "text"}
-                            value={insertFormData[col.name] || ''}
-                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
-                            required={!isNullable}
-                            placeholder={isNullable ? "Optional value" : "Required value"}
-                            className="h-10 rounded-xl bg-background/50 text-xs font-mono"
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <div className="flex gap-2.5 pt-2 border-t border-border/40">
-                  <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
-                    {isActionLoading ? t('common.executing') : t('databaseStudio.tables.insertModal.submit')}
-                  </Button>
-                  <Button type="button" onClick={() => setShowInsertModal(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
-                    {t('common.cancel')}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+                      )
+                    })}
+                  </div>
+  
+                  <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                    <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {isActionLoading ? t('common.executing') : t('databaseStudio.tables.insertModal.submit')}
+                    </Button>
+                    <Button type="button" onClick={() => setShowInsertModal(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
 
           {/* Visual Edit Row Modal */}
-          <Dialog open={showEditModal} onOpenChange={(open: boolean) => !open && setShowEditModal(false)}>
+          {showEditModal && (
+            <Dialog open={showEditModal} onOpenChange={(open: boolean) => !open && setShowEditModal(false)}>
             <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
@@ -2133,6 +2120,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               )}
             </DialogContent>
           </Dialog>
+          )}
         </div>
       )}      {activeTab === 'structure' && (
         <>
@@ -2415,7 +2403,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           </div>
 
           {/* Create Table Dialog Modal */}
-          <Dialog open={designerAction === 'create_table'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
+          {designerAction === 'create_table' && (
+            <Dialog open={designerAction === 'create_table'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
             <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
@@ -2456,9 +2445,11 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               </form>
             </DialogContent>
           </Dialog>
+          )}
 
           {/* Add Column Dialog Modal */}
-          <Dialog open={designerAction === 'add_column'} onOpenChange={(open: boolean) => !open && resetAddColumnForm()}>
+          {designerAction === 'add_column' && (
+            <Dialog open={designerAction === 'add_column'} onOpenChange={(open: boolean) => !open && resetAddColumnForm()}>
             <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl scrollbar-thin">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
@@ -2771,9 +2762,11 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               </form>
             </DialogContent>
           </Dialog>
+          )}
 
           {/* Modify Column Dialog Modal */}
-          <Dialog open={designerAction === 'modify_column'} onOpenChange={(open: boolean) => !open && resetModifyColumnForm()}>
+          {designerAction === 'modify_column' && (
+            <Dialog open={designerAction === 'modify_column'} onOpenChange={(open: boolean) => !open && resetModifyColumnForm()}>
             <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl scrollbar-thin">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
@@ -3125,6 +3118,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               )}
             </DialogContent>
           </Dialog>
+          )}
         </>
       )}
 
@@ -3175,7 +3169,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       <SelectTrigger className="h-10 px-3.5 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between gap-2 cursor-pointer">
                         <SelectValue placeholder={t('databaseStudio.query.templates.label') || undefined} />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent alignItemWithTrigger={false} className="w-auto min-w-[220px]">
                         <SelectItem value="select" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.select')}</SelectItem>
                         <SelectItem value="count" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.count')}</SelectItem>
                         <SelectItem value="filter" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.filter')}</SelectItem>
