@@ -131,6 +131,11 @@ const formatDatetimeLocal = (val: any) => {
       return strVal
     }
 
+    // Normalize SQL DATETIME format (YYYY-MM-DD HH:MM:SS) to HTML5 datetime-local specification (YYYY-MM-DDTHH:mm).
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(strVal) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(strVal)) {
+      return strVal.substring(0, 16).replace(' ', 'T')
+    }
+
     // Try parsing Unix timestamp if it's numeric
     if (/^\d+$/.test(strVal)) {
       const num = Number(strVal)
