@@ -198,3 +198,14 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* Smooth scrolling and GPU hardware-acceleration for scroll containers */
+.overflow-y-auto,
+.overflow-y-scroll,
+.scrollbar-thin {
+  scroll-behavior: smooth;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  -webkit-overflow-scrolling: touch;
+}

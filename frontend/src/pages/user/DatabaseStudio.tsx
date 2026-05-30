@@ -1765,10 +1765,10 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                 <div className="overflow-x-auto border border-border/80 rounded-xl bg-background/30 max-h-[420px] flex-1">
                   <table className="w-full text-left border-collapse text-xs font-medium">
                     <thead>
-                      <tr className="bg-muted/30 border-b border-border/80 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sticky top-0 backdrop-blur-md z-10">
-                        <th className="py-3.5 px-4 w-12 text-center bg-muted/30">{t('databaseStudio.tables.actionHeader')}</th>
+                      <tr className="bg-muted border-b border-border/80 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sticky top-0 z-10">
+                        <th className="py-3.5 px-4 w-12 text-center bg-muted">{t('databaseStudio.tables.actionHeader')}</th>
                         {tableData.columns.map((col: string) => (
-                          <th key={col} className="py-3.5 px-4 font-mono font-semibold bg-muted/30">{col}</th>
+                          <th key={col} className="py-3.5 px-4 font-mono font-semibold bg-muted">{col}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1794,7 +1794,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                                       <MoreHorizontal className="w-4 h-4" />
                                     </Button>
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="center" className="w-32 bg-card/98 border border-border/80 rounded-xl shadow-xl backdrop-blur-xl">
+                                  <DropdownMenuContent align="center" className="w-32 bg-card border border-border/80 rounded-xl shadow-xl">
                                     <DropdownMenuItem onClick={() => openEditRowModal(row)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
                                       <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                                       {t('common.edit')}
@@ -1858,7 +1858,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Visual Insert Row Modal */}
           {showInsertModal && (
             <Dialog open={showInsertModal} onOpenChange={(open: boolean) => !open && setShowInsertModal(false)}>
-              <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
+              <DialogContent className="sm:max-w-md bg-card border border-border/80 rounded-xl shadow-2xl">
                 <DialogHeader className="pb-2 border-b border-border/40">
                   <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                     <PlusCircle className="w-5 h-5 text-primary" />
@@ -1966,7 +1966,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Visual Edit Row Modal */}
           {showEditModal && (
             <Dialog open={showEditModal} onOpenChange={(open: boolean) => !open && setShowEditModal(false)}>
-            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-md bg-card border border-border/80 rounded-xl shadow-2xl">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                   <Pencil className="w-5 h-5 text-primary" />
@@ -2124,7 +2124,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         </div>
       )}      {activeTab === 'structure' && (
         <>
-          <div className="border border-border/80 shadow-2xl overflow-hidden flex flex-col md:flex-row h-[600px] bg-card/40 backdrop-blur-md rounded-xl animate-in fade-in duration-300">
+          <div className="border border-border/80 shadow-2xl overflow-hidden flex flex-col md:flex-row h-[600px] bg-card rounded-xl animate-in fade-in duration-300">
             {/* Left Sidebar: macOS Finder Style Sidebar */}
             <div className="w-full md:w-80 border-r border-border/60 bg-muted/5 flex flex-col h-full shrink-0">
               {/* Sidebar Header with Title & Action */}
@@ -2271,13 +2271,13 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         <div className="border border-border/60 rounded-xl overflow-hidden bg-background/20">
                           <table className="w-full text-left border-collapse text-xs font-medium">
                             <thead>
-                              <tr className="border-b border-border/40 bg-muted/20 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sticky top-0 backdrop-blur-md z-10">
-                                <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.nameHeader')}</th>
-                                <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.typeHeader')}</th>
-                                <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</th>
-                                <th className="py-3 px-4 text-center bg-muted/20">{t('databaseStudio.structure.constraintsHeader') || t('databaseStudio.structure.keyHeader')}</th>
-                                <th className="py-3 px-4 bg-muted/20">{t('databaseStudio.structure.defaultHeader')}</th>
-                                <th className="py-3 px-4 text-right bg-muted/20">{t('databaseStudio.tables.actionHeader')}</th>
+                              <tr className="border-b border-border/40 bg-muted text-[10px] font-bold uppercase tracking-wider text-muted-foreground sticky top-0 z-10">
+                                <th className="py-3 px-4">{t('databaseStudio.structure.nameHeader')}</th>
+                                <th className="py-3 px-4">{t('databaseStudio.structure.typeHeader')}</th>
+                                <th className="py-3 px-4 text-center">{t('databaseStudio.structure.createTableDialog.nullableLabel')}</th>
+                                <th className="py-3 px-4 text-center">{t('databaseStudio.structure.constraintsHeader') || t('databaseStudio.structure.keyHeader')}</th>
+                                <th className="py-3 px-4">{t('databaseStudio.structure.defaultHeader')}</th>
+                                <th className="py-3 px-4 text-right">{t('databaseStudio.tables.actionHeader')}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2366,7 +2366,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                                             <MoreHorizontal className="w-4 h-4" />
                                           </Button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-36 bg-card/98 border border-border/80 rounded-xl shadow-xl backdrop-blur-xl">
+                                        <DropdownMenuContent align="end" className="w-36 bg-card border border-border/80 rounded-xl shadow-xl">
                                           <DropdownMenuItem onClick={() => openModifyColumnModal(table.name, col)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
                                             <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                                             {t('databaseStudio.structure.actions.modifyColumn') || 'Modify Column'}
@@ -2405,7 +2405,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Create Table Dialog Modal */}
           {designerAction === 'create_table' && (
             <Dialog open={designerAction === 'create_table'} onOpenChange={(open: boolean) => !open && setDesignerAction(null)}>
-            <DialogContent className="sm:max-w-md bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl">
+            <DialogContent className="sm:max-w-md bg-card border border-border/80 rounded-xl shadow-2xl">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                   <Table className="w-5 h-5 text-primary" />
@@ -2450,7 +2450,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Add Column Dialog Modal */}
           {designerAction === 'add_column' && (
             <Dialog open={designerAction === 'add_column'} onOpenChange={(open: boolean) => !open && resetAddColumnForm()}>
-            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl scrollbar-thin">
+            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card border border-border/80 rounded-xl shadow-2xl scrollbar-thin">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                   <PlusCircle className="w-5 h-5 text-primary" />
@@ -2767,7 +2767,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           {/* Modify Column Dialog Modal */}
           {designerAction === 'modify_column' && (
             <Dialog open={designerAction === 'modify_column'} onOpenChange={(open: boolean) => !open && resetModifyColumnForm()}>
-            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card/98 border border-border/80 rounded-xl shadow-2xl backdrop-blur-xl scrollbar-thin">
+            <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto bg-card border border-border/80 rounded-xl shadow-2xl scrollbar-thin">
               <DialogHeader className="pb-2 border-b border-border/40">
                 <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                   <Pencil className="w-5 h-5 text-primary" />
