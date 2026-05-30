@@ -115,6 +115,65 @@ const toLocalDateString = (d: Date): string => {
   return `${year}-${month}-${day}`
 }
 
+const adjustDatetimeForDatabase = (
+  inputValue: string,
+  columnName: string,
+  originalValue?: any,
+  tableRows?: any[],
+  dbEngine?: string
+): string => {
+  if (!inputValue) return inputValue
+
+  try {
+    const match = inputValue.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/)
+    if (!match) return inputValue
+
+    const [_, year, month, day, hours, minutes, secondsStr] = match
+    const seconds = secondsStr ? Number(secondsStr) : 0
+    const localDate = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), seconds)
+    
+    if (isNaN(localDate.getTime())) return inputValue
+
+    let hasTimezone = false
+    if (originalValue !== undefined && originalValue !== null && originalValue !== '') {
+      const origStr = String(originalValue).trim()
+      if (/Z$/i.test(origStr) || /[+-]\d{2}:?\d{2}?$/.test(origStr)) {
+        hasTimezone = true
+      }
+    } else if (tableRows && tableRows.length > 0) {
+      const otherRow = tableRows.find((r: any) => {
+        const rowKey = Object.keys(r).find(k => k.toLowerCase() === columnName.toLowerCase()) || columnName
+        const val = r[rowKey]
+        return val !== undefined && val !== null && val !== ''
+      })
+      if (otherRow) {
+        const rowKey = Object.keys(otherRow).find(k => k.toLowerCase() === columnName.toLowerCase()) || columnName
+        const val = otherRow[rowKey]
+        const origStr = String(val).trim()
+        if (/Z$/i.test(origStr) || /[+-]\d{2}:?\d{2}?$/.test(origStr)) {
+          hasTimezone = true
+        }
+      }
+    }
+
+    if (!hasTimezone && originalValue === null && (!tableRows || tableRows.length === 0)) {
+      const engine = dbEngine?.toLowerCase()
+      if (engine === 'mysql' || engine === 'postgres' || engine === 'postgresql') {
+        hasTimezone = true
+      }
+    }
+
+    if (hasTimezone) {
+      return localDate.toISOString()
+    } else {
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${localDate.getFullYear()}-${pad(localDate.getMonth() + 1)}-${pad(localDate.getDate())} ${pad(localDate.getHours())}:${pad(localDate.getMinutes())}:${pad(localDate.getSeconds())}`
+    }
+  } catch (e) {
+    return inputValue
+  }
+}
+
 const formatDatetimeLocal = (val: any) => {
   if (val === null || val === undefined) return ''
   try {
@@ -743,12 +802,16 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       cols.forEach((col: any) => {
         if (col.key === 'PRI' && !insertFormData[col.name]) return
 
-        const val = insertFormData[col.name]
+        let val = insertFormData[col.name]
         if (val === undefined || val === '') return
 
         fields.push(`${q}${col.name}${q}`)
 
         const typeLower = col.type.toLowerCase()
+        if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
+          val = adjustDatetimeForDatabase(val, col.name, null, tableData?.rows, dbOverview?.engine)
+        }
+
         if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
           values.push(String(Number(val)))
         } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
@@ -798,7 +861,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     cols.forEach((col: any) => {
       if (col.name.toLowerCase() === pkColumn.toLowerCase()) return
 
-      const val = editFormData[col.name]
+      let val = editFormData[col.name]
       const escapedCol = `${q}${col.name}${q}`
 
       if (val === undefined || val === '') {
@@ -818,6 +881,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       }
 
       const typeLower = col.type.toLowerCase()
+      if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
+        const rowKey = Object.keys(editingRow).find(k => k.toLowerCase() === col.name.toLowerCase()) || col.name
+        const originalVal = editingRow[rowKey]
+        val = adjustDatetimeForDatabase(val, col.name, originalVal, tableData?.rows, dbOverview?.engine)
+      }
+
       if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
         setClauses.push(`${escapedCol} = ${Number(val)}`)
       } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
@@ -890,7 +959,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       cols.forEach((col: any) => {
         if (col.name.toLowerCase() === pkColumn.toLowerCase()) return
 
-        const val = editFormData[col.name]
+        let val = editFormData[col.name]
         if (val === undefined || val === '') {
           if (col.nullable) {
             updates[col.name] = null
@@ -908,6 +977,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         }
 
         const typeLower = col.type.toLowerCase()
+        if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
+          const rowKey = Object.keys(editingRow).find(k => k.toLowerCase() === col.name.toLowerCase()) || col.name
+          const originalVal = editingRow[rowKey]
+          val = adjustDatetimeForDatabase(val, col.name, originalVal, tableData?.rows, dbOverview?.engine)
+        }
+
         if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
           updates[col.name] = Number(val)
         } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
