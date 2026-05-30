@@ -2563,7 +2563,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
                 {/* Constraint Cards (Nullable, PK, Unique) */}
                 <div className="space-y-1.5 border-t border-border/40 pt-3">
-                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Konfigurasi Kolom & Batasan</Label>
+                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.configHeader')}</Label>
                   <div className="grid grid-cols-3 gap-2">
                     {/* Nullable Card */}
                     <button
@@ -2578,7 +2578,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       style={{ cursor: 'pointer' }}
                     >
                       <span className="text-[10px] font-extrabold uppercase tracking-wide">Nullable</span>
-                      <span className="text-[9px] opacity-75 font-medium leading-tight">Bisa bernilai kosong</span>
+                      <span className="text-[9px] opacity-75 font-medium leading-tight">{t('databaseStudio.structure.designer.nullableDesc')}</span>
                     </button>
                     
                     {/* Primary Key Card */}
@@ -2594,7 +2594,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       style={{ cursor: 'pointer' }}
                     >
                       <span className="text-[10px] font-extrabold uppercase tracking-wide">Primary Key</span>
-                      <span className="text-[9px] opacity-75 font-medium leading-tight">Kunci utama unik</span>
+                      <span className="text-[9px] opacity-75 font-medium leading-tight">{t('databaseStudio.structure.designer.pkDesc')}</span>
                     </button>
 
                     {/* Unique Card */}
@@ -2610,7 +2610,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       style={{ cursor: 'pointer' }}
                     >
                       <span className="text-[10px] font-extrabold uppercase tracking-wide">Unique</span>
-                      <span className="text-[9px] opacity-75 font-medium leading-tight">Nilai tidak kembar</span>
+                      <span className="text-[9px] opacity-75 font-medium leading-tight">{t('databaseStudio.structure.designer.uniqueDesc')}</span>
                     </button>
                   </div>
                 </div>
@@ -2634,13 +2634,13 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                   >
                     <div className="flex items-center gap-2">
                       <Link className={cn("w-4 h-4 transition-colors", newColFk ? "text-blue-500" : "text-muted-foreground")} />
-                      <span className="text-xs font-bold uppercase tracking-wider text-foreground/80">Relasi Foreign Key</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-foreground/80">{t('databaseStudio.structure.designer.fkRelation')}</span>
                     </div>
                     <span className={cn(
                       "text-[9px] font-black px-2 py-0.5 rounded border transition-all",
                       newColFk ? "bg-blue-500/10 text-blue-500 border-blue-500/25" : "bg-muted text-muted-foreground border-border/40"
                     )}>
-                      {newColFk ? "AKTIF" : "NONAKTIF"}
+                      {newColFk ? t('databaseStudio.structure.designer.active') : t('databaseStudio.structure.designer.inactive')}
                     </span>
                   </button>
                   
@@ -2648,7 +2648,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                     <div className="p-4 space-y-3 bg-background/20 animate-in fade-in duration-200">
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
-                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tabel Target</Label>
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetTable')}</Label>
                           <select
                             value={newColFkTargetTable}
                             onChange={(e) => {
@@ -2660,7 +2660,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                             className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
                             style={{ cursor: 'pointer' }}
                           >
-                            <option value="">-- Pilih Tabel --</option>
+                            <option value="">{t('databaseStudio.structure.designer.selectTable')}</option>
                             {schemaData.map((t: any) => (
                               <option key={t.name} value={t.name}>{t.name}</option>
                             ))}
@@ -2668,7 +2668,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         </div>
                         
                         <div className="space-y-1.5">
-                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Kolom Target</Label>
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetColumn')}</Label>
                           <select
                             value={newColFkTargetColumn}
                             onChange={(e) => setNewColFkTargetColumn(e.target.value)}
@@ -2676,7 +2676,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                             style={{ cursor: 'pointer' }}
                             disabled={!newColFkTargetTable}
                           >
-                            <option value="">-- Pilih Kolom --</option>
+                            <option value="">{t('databaseStudio.structure.designer.selectColumn')}</option>
                             {(schemaData.find(t => t.name === newColFkTargetTable)?.columns || []).map((c: any) => (
                               <option key={c.name} value={c.name}>{c.name}</option>
                             ))}
@@ -2685,17 +2685,17 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       </div>
                       
                       <div className="space-y-1.5">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Aksi ON DELETE</Label>
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.onDeleteAction')}</Label>
                         <select
                           value={newColFkOnDelete}
                           onChange={(e) => setNewColFkOnDelete(e.target.value)}
                           className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
                           style={{ cursor: 'pointer' }}
                         >
-                          <option value="CASCADE">CASCADE (Hapus anak jika induk dihapus)</option>
-                          <option value="SET NULL">SET NULL (Set kosong jika induk dihapus)</option>
-                          <option value="RESTRICT">RESTRICT (Cegah hapus jika memiliki anak)</option>
-                          <option value="NO ACTION">NO ACTION (Tanpa tindakan)</option>
+                          <option value="CASCADE">{t('databaseStudio.structure.designer.cascadeDesc')}</option>
+                          <option value="SET NULL">{t('databaseStudio.structure.designer.setNullDesc')}</option>
+                          <option value="RESTRICT">{t('databaseStudio.structure.designer.restrictDesc')}</option>
+                          <option value="NO ACTION">{t('databaseStudio.structure.designer.noActionDesc')}</option>
                         </select>
                       </div>
                     </div>
@@ -2704,12 +2704,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
                 {/* Column Description Textarea */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="new_col_comment" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Deskripsi / Komentar Kolom</Label>
+                  <Label htmlFor="new_col_comment" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.commentLabel')}</Label>
                   <textarea
                     id="new_col_comment"
                     value={newColComment}
                     onChange={(e) => setNewColComment(e.target.value)}
-                    placeholder="Berikan dokumentasi atau catatan kegunaan kolom baru ini..."
+                    placeholder={t('databaseStudio.structure.designer.commentPlaceholder') || undefined}
                     className="w-full min-h-[60px] max-h-[120px] p-2.5 rounded-xl border border-border bg-background/50 hover:bg-background/80 text-xs transition-colors outline-none focus:border-primary/50 resize-y"
                   />
                 </div>
@@ -2860,7 +2860,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
                   {/* Constraint Cards (Nullable, PK, Unique) */}
                   <div className="space-y-1.5 border-t border-border/40 pt-3">
-                    <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Konfigurasi Kolom & Batasan</Label>
+                    <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.configHeader')}</Label>
                     <div className="grid grid-cols-3 gap-2">
                       {/* Nullable Card */}
                       <button
@@ -2875,7 +2875,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         style={{ cursor: 'pointer' }}
                       >
                         <span className="text-[10px] font-extrabold uppercase tracking-wide">Nullable</span>
-                        <span className="text-[9px] opacity-75 font-medium leading-tight">Bisa bernilai kosong</span>
+                        <span className="text-[9px] opacity-75 font-medium leading-tight">{t('databaseStudio.structure.designer.nullableDesc')}</span>
                       </button>
                       
                       {/* Primary Key Card */}
@@ -2891,7 +2891,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         style={{ cursor: 'pointer' }}
                       >
                         <span className="text-[10px] font-extrabold uppercase tracking-wide">Primary Key</span>
-                        <span className="text-[9px] opacity-75 font-medium leading-tight">Kunci utama unik</span>
+                        <span className="text-[9px] opacity-75 font-medium leading-tight">{t('databaseStudio.structure.designer.pkDesc')}</span>
                       </button>
 
                       {/* Unique Card */}
@@ -2907,7 +2907,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         style={{ cursor: 'pointer' }}
                       >
                         <span className="text-[10px] font-extrabold uppercase tracking-wide">Unique</span>
-                        <span className="text-[9px] opacity-75 font-medium leading-tight">Nilai tidak kembar</span>
+                        <span className="text-[9px] opacity-75 font-medium leading-tight">{t('databaseStudio.structure.designer.uniqueDesc')}</span>
                       </button>
                     </div>
                   </div>
@@ -2931,13 +2931,13 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                     >
                       <div className="flex items-center gap-2">
                         <Link className={cn("w-4 h-4 transition-colors", editColFk ? "text-blue-500" : "text-muted-foreground")} />
-                        <span className="text-xs font-bold uppercase tracking-wider text-foreground/80">Relasi Foreign Key</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-foreground/80">{t('databaseStudio.structure.designer.fkRelation')}</span>
                       </div>
                       <span className={cn(
                         "text-[9px] font-black px-2 py-0.5 rounded border transition-all",
                         editColFk ? "bg-blue-500/10 text-blue-500 border-blue-500/25" : "bg-muted text-muted-foreground border-border/40"
                       )}>
-                        {editColFk ? "AKTIF" : "NONAKTIF"}
+                        {editColFk ? t('databaseStudio.structure.designer.active') : t('databaseStudio.structure.designer.inactive')}
                       </span>
                     </button>
                     
@@ -2945,7 +2945,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       <div className="p-4 space-y-3 bg-background/20 animate-in fade-in duration-200">
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tabel Target</Label>
+                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetTable')}</Label>
                             <select
                               value={editColFkTargetTable}
                               onChange={(e) => {
@@ -2957,7 +2957,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                               className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
                               style={{ cursor: 'pointer' }}
                             >
-                              <option value="">-- Pilih Tabel --</option>
+                              <option value="">{t('databaseStudio.structure.designer.selectTable')}</option>
                               {schemaData.map((t: any) => (
                                 <option key={t.name} value={t.name}>{t.name}</option>
                               ))}
@@ -2965,7 +2965,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                           </div>
                           
                           <div className="space-y-1.5">
-                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Kolom Target</Label>
+                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetColumn')}</Label>
                             <select
                               value={editColFkTargetColumn}
                               onChange={(e) => setEditColFkTargetColumn(e.target.value)}
@@ -2973,7 +2973,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                               style={{ cursor: 'pointer' }}
                               disabled={!editColFkTargetTable}
                             >
-                              <option value="">-- Pilih Kolom --</option>
+                              <option value="">{t('databaseStudio.structure.designer.selectColumn')}</option>
                               {(schemaData.find(t => t.name === editColFkTargetTable)?.columns || []).map((c: any) => (
                                 <option key={c.name} value={c.name}>{c.name}</option>
                               ))}
@@ -2982,17 +2982,17 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         </div>
                         
                         <div className="space-y-1.5">
-                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Aksi ON DELETE</Label>
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.onDeleteAction')}</Label>
                           <select
                             value={editColFkOnDelete}
                             onChange={(e) => setEditColFkOnDelete(e.target.value)}
                             className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
                             style={{ cursor: 'pointer' }}
                           >
-                            <option value="CASCADE">CASCADE (Hapus anak jika induk dihapus)</option>
-                            <option value="SET NULL">SET NULL (Set kosong jika induk dihapus)</option>
-                            <option value="RESTRICT">RESTRICT (Cegah hapus jika memiliki anak)</option>
-                            <option value="NO ACTION">NO ACTION (Tanpa tindakan)</option>
+                            <option value="CASCADE">{t('databaseStudio.structure.designer.cascadeDesc')}</option>
+                            <option value="SET NULL">{t('databaseStudio.structure.designer.setNullDesc')}</option>
+                            <option value="RESTRICT">{t('databaseStudio.structure.designer.restrictDesc')}</option>
+                            <option value="NO ACTION">{t('databaseStudio.structure.designer.noActionDesc')}</option>
                           </select>
                         </div>
                       </div>
@@ -3001,12 +3001,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
                   {/* Column Description Textarea */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="edit_col_comment" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Deskripsi / Komentar Kolom</Label>
+                    <Label htmlFor="edit_col_comment" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.commentLabel')}</Label>
                     <textarea
                       id="edit_col_comment"
                       value={editColComment}
                       onChange={(e) => setEditColComment(e.target.value)}
-                      placeholder="Berikan dokumentasi atau catatan kegunaan kolom ini..."
+                      placeholder={t('databaseStudio.structure.designer.commentPlaceholder') || undefined}
                       className="w-full min-h-[60px] max-h-[120px] p-2.5 rounded-xl border border-border bg-background/50 hover:bg-background/80 text-xs transition-colors outline-none focus:border-primary/50 resize-y"
                     />
                   </div>

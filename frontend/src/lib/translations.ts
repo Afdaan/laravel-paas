@@ -1132,6 +1132,26 @@ export const translations = {
           indexName: "Index Name",
           selectColumn: "Select Target Column",
           submitBtn: "Create Index"
+        },
+        designer: {
+          configHeader: "Column Configuration & Constraints",
+          nullableDesc: "Can contain empty values",
+          pkDesc: "Unique principal identifier key",
+          uniqueDesc: "Values must not repeat",
+          fkRelation: "Foreign Key Relation",
+          active: "ACTIVE",
+          inactive: "INACTIVE",
+          targetTable: "Target Table",
+          selectTable: "-- Choose Table --",
+          targetColumn: "Target Column",
+          selectColumn: "-- Choose Column --",
+          onDeleteAction: "ON DELETE Action",
+          cascadeDesc: "CASCADE (Delete child rows if parent is deleted)",
+          setNullDesc: "SET NULL (Set to null if parent is deleted)",
+          restrictDesc: "RESTRICT (Prevent parent deletion if child rows exist)",
+          noActionDesc: "NO ACTION (Perform no cascading operation)",
+          commentLabel: "Column Description / Comment",
+          commentPlaceholder: "Provide documentation or notes on the purpose of this column..."
         }
       },
       query: {
@@ -2280,10 +2300,10 @@ export const translations = {
         notNullable: "Not Null",
         defaultHeader: "Default",
         tooltips: {
-          primaryKey: "Primary Key: Kunci unik utama untuk mengidentifikasi setiap baris",
-          foreignKey: "Foreign Key: Merujuk ke tabel {{table}}({{column}})",
-          unique: "Unique: Memastikan setiap nilai dalam kolom unik/berbeda",
-          index: "Index: Mempercepat pencarian data pada kolom ini"
+          primaryKey: "Primary Key: Kunci unik utama untuk mengidentifikasi record secara terpisah",
+          foreignKey: "Foreign Key: Hubungan relasional yang merujuk ke tabel {{table}}({{column}})",
+          unique: "Unique: Memastikan seluruh nilai di dalam kolom bersifat unik",
+          index: "Index: Struktur data untuk mempercepat operasi pencarian pada kolom"
         },
         title: "Desainer Tabel Visual",
         subtitle: "Desain skema visual secara langsung dengan pencatatan audit log",
@@ -2340,6 +2360,26 @@ export const translations = {
           indexName: "Nama Indeks",
           selectColumn: "Pilih Kolom Target",
           submitBtn: "Buat Indeks"
+        },
+        designer: {
+          configHeader: "Konfigurasi Kolom & Constraint",
+          nullableDesc: "Mengizinkan nilai NULL pada kolom",
+          pkDesc: "Sebagai Primary Key unik untuk baris data",
+          uniqueDesc: "Terapkan constraint UNIQUE agar nilai harus unik",
+          fkRelation: "Relasi Foreign Key",
+          active: "AKTIF",
+          inactive: "NONAKTIF",
+          targetTable: "Tabel Target",
+          selectTable: "-- Pilih Tabel --",
+          targetColumn: "Kolom Target",
+          selectColumn: "-- Pilih Kolom --",
+          onDeleteAction: "Aksi ON DELETE",
+          cascadeDesc: "CASCADE (Hapus baris data yang berelasi secara otomatis)",
+          setNullDesc: "SET NULL (Set nilai kolom yang berelasi menjadi NULL secara otomatis)",
+          restrictDesc: "RESTRICT (Cegah penghapusan jika data masih dirujuk oleh baris lain)",
+          noActionDesc: "NO ACTION (Tidak melakukan perubahan pada data terkait)",
+          commentLabel: "Komentar / Deskripsi Kolom",
+          commentPlaceholder: "Tulis deskripsi atau catatan dokumentasi untuk kolom ini..."
         }
       },
       query: {
