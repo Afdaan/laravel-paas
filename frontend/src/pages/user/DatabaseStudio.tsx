@@ -27,7 +27,8 @@ import {
   Search,
   Download,
   Pencil,
-  MoreHorizontal
+  MoreHorizontal,
+  Info
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -1188,43 +1189,86 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
             </div>
 
             {/* Connection Metrics */}
-            {metrics && (
-              <Card className="p-6">
-                <h3 className="font-extrabold text-base mb-4 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-primary" />
-                  {t('databaseStudio.dashboard.metrics.resourceUsageTitle')}
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      <span>{t('databaseStudio.dashboard.metrics.activeConnections')}</span>
-                      <span>{metrics.active_connections} / 15</span>
-                    </div>
-                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                      <div 
-                         className="h-full bg-primary transition-all duration-500" 
-                         style={{ width: `${Math.min((metrics.active_connections / 15) * 100, 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-muted-foreground italic">{t('databaseStudio.dashboard.metrics.connectionsLimitDesc')}</p>
-                  </div>
+            {metrics && (() => {
+              const connectionRatio = metrics.active_connections / 15;
+              const connectionColor = connectionRatio > 0.8 
+                ? 'bg-destructive' 
+                : connectionRatio > 0.6 
+                  ? 'bg-amber-500' 
+                  : 'bg-primary';
 
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      <span>{t('databaseStudio.dashboard.metrics.storageUsage')}</span>
-                      <span>{dbOverview?.size || '0 KB'} / 1 GB</span>
+              const storageRatio = metrics.size_kb / 1048576;
+              const storageColor = storageRatio > 0.8 
+                ? 'bg-destructive' 
+                : storageRatio > 0.6 
+                  ? 'bg-amber-500' 
+                  : 'bg-primary';
+
+              return (
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="font-extrabold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      {t('databaseStudio.dashboard.metrics.resourceUsageTitle')}
+                    </h3>
+                    <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-wider">
+                        {t('databaseStudio.dashboard.metrics.realtime') || 'Real-time'}
+                      </span>
                     </div>
-                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                      <div 
-                         className="h-full bg-primary transition-all duration-500" 
-                         style={{ width: `${Math.min((metrics.size_kb / 1048576) * 100, 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-muted-foreground italic">{t('databaseStudio.dashboard.metrics.storageLimitDesc')}</p>
                   </div>
-                </div>
-              </Card>
-            )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* Active Connections Widget */}
+                    <div className="border border-border/50 bg-muted/10 dark:bg-muted/5 p-4 rounded-xl space-y-3 hover:border-primary/10 transition-colors">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                          {t('databaseStudio.dashboard.metrics.activeConnections')}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-foreground">
+                          {metrics.active_connections} <span className="text-muted-foreground/60">/ 15</span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div 
+                           className={cn("h-full transition-all duration-500", connectionColor)} 
+                           style={{ width: `${Math.min(connectionRatio * 100, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/60 leading-normal flex items-start gap-1">
+                        <Info size={11} className="mt-0.5 shrink-0 text-muted-foreground/40" />
+                        <span>{t('databaseStudio.dashboard.metrics.connectionsLimitDesc')}</span>
+                      </p>
+                    </div>
+
+                    {/* Storage Usage Widget */}
+                    <div className="border border-border/50 bg-muted/10 dark:bg-muted/5 p-4 rounded-xl space-y-3 hover:border-primary/10 transition-colors">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                          {t('databaseStudio.dashboard.metrics.storageUsage')}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-foreground">
+                          {dbOverview?.size || '0 KB'} <span className="text-muted-foreground/60">/ 1 GB</span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div 
+                           className={cn("h-full transition-all duration-500", storageColor)} 
+                           style={{ width: `${Math.min(storageRatio * 100, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/60 leading-normal flex items-start gap-1">
+                        <Info size={11} className="mt-0.5 shrink-0 text-muted-foreground/40" />
+                        <span>{t('databaseStudio.dashboard.metrics.storageLimitDesc')}</span>
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })()}
 
             {/* Connection Credentials Card */}
             <Card className="p-6">
