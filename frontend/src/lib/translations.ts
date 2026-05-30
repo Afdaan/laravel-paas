@@ -1055,7 +1055,10 @@ export const translations = {
         tableDesc: "Browse records visually and prune rows securely without SQL",
         showingRows: "Showing {{start}} - {{end}} of {{total}} rows",
         loadingRows: "Loading Table Rows...",
-        deleteRowSuccess: "Row deleted securely."
+        deleteRowSuccess: "Row deleted securely.",
+        booleanSelect: "Select Boolean...",
+        booleanTrue: "True (Yes)",
+        booleanFalse: "False (No)"
       },
       structure: {
         columnsCount: "{{count}} columns",
@@ -2283,7 +2286,10 @@ export const translations = {
         tableDesc: "Kelola baris data secara visual dan hapus record dengan aman tanpa query SQL",
         showingRows: "Menampilkan {{start}} - {{end}} dari {{total}} baris",
         loadingRows: "Memuat Baris Tabel...",
-        deleteRowSuccess: "Baris data berhasil dihapus."
+        deleteRowSuccess: "Baris data berhasil dihapus.",
+        booleanSelect: "Pilih Boolean...",
+        booleanTrue: "True (Ya)",
+        booleanFalse: "False (Tidak)"
       },
       structure: {
         columnsCount: "{{count}} kolom",

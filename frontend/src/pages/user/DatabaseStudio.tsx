@@ -40,6 +40,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from '@/components/ConfirmationModal'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 function DatabaseEngineIcon({ engine, className }: { engine?: string; className?: string }) {
   const norm = (engine || '').toLowerCase().trim();
@@ -1898,17 +1908,22 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                             className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
                           />
                         ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
-                          <select
-                            id={`insert_${col.name}`}
+                          <Select
                             value={String(insertFormData[col.name] ?? '')}
-                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
-                            className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                            style={{ cursor: 'pointer' }}
+                            onValueChange={(val) => setInsertFormData(prev => ({ ...prev, [col.name]: val }))}
                           >
-                            <option value="">-- Select Boolean --</option>
-                            <option value="true">True (Yes)</option>
-                            <option value="false">False (No)</option>
-                          </select>
+                            <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                              <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                {t('databaseStudio.tables.booleanTrue')}
+                              </SelectItem>
+                              <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                {t('databaseStudio.tables.booleanFalse')}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
                         ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
                           <input
                             id={`insert_${col.name}`}
@@ -2019,17 +2034,22 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                               className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
                             />
                           ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
-                            <select
-                              id={`edit_${col.name}`}
+                            <Select
                               value={String(editFormData[col.name] ?? '')}
-                              onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
-                              className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                              style={{ cursor: 'pointer' }}
+                              onValueChange={(val) => setEditFormData(prev => ({ ...prev, [col.name]: val }))}
                             >
-                              <option value="">-- Select Boolean --</option>
-                              <option value="true">True (Yes)</option>
-                              <option value="false">False (No)</option>
-                            </select>
+                              <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                                <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                  {t('databaseStudio.tables.booleanTrue')}
+                                </SelectItem>
+                                <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                  {t('databaseStudio.tables.booleanFalse')}
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
                           ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
                             <input
                               id={`edit_${col.name}`}
@@ -2466,37 +2486,47 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.typeHeader')}</Label>
-                    <select
+                    <Select
                       value={newColType}
-                      onChange={(e) => {
-                        setNewColType(e.target.value);
+                      onValueChange={(val) => {
+                        setNewColType(val || '');
                         setNewColDefault('');
                       }}
-                      className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                      style={{ cursor: 'pointer' }}
                     >
-                      <optgroup label="Text">
-                        <option value="varchar">VARCHAR</option>
-                        <option value="text">TEXT</option>
-                        <option value="char">CHAR</option>
-                      </optgroup>
-                      <optgroup label="Numeric">
-                        <option value="integer">INTEGER</option>
-                        <option value="bigint">BIGINT</option>
-                        <option value="decimal">DECIMAL</option>
-                        <option value="float">FLOAT</option>
-                        <option value="double">DOUBLE</option>
-                      </optgroup>
-                      <optgroup label="Temporal">
-                        <option value="timestamp">TIMESTAMP</option>
-                        <option value="datetime">DATETIME</option>
-                        <option value="date">DATE</option>
-                        <option value="time">TIME</option>
-                      </optgroup>
-                      <optgroup label="Logical">
-                        <option value="boolean">BOOLEAN</option>
-                      </optgroup>
-                    </select>
+                      <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        <SelectGroup>
+                          <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Text</SelectLabel>
+                          <SelectItem value="varchar" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">VARCHAR</SelectItem>
+                          <SelectItem value="text" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">TEXT</SelectItem>
+                          <SelectItem value="char" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">CHAR</SelectItem>
+                        </SelectGroup>
+                        <SelectSeparator className="bg-border/40" />
+                        <SelectGroup>
+                          <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Numeric</SelectLabel>
+                          <SelectItem value="integer" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">INTEGER</SelectItem>
+                          <SelectItem value="bigint" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">BIGINT</SelectItem>
+                          <SelectItem value="decimal" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DECIMAL</SelectItem>
+                          <SelectItem value="float" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">FLOAT</SelectItem>
+                          <SelectItem value="double" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DOUBLE</SelectItem>
+                        </SelectGroup>
+                        <SelectSeparator className="bg-border/40" />
+                        <SelectGroup>
+                          <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Temporal</SelectLabel>
+                          <SelectItem value="timestamp" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">TIMESTAMP</SelectItem>
+                          <SelectItem value="datetime" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DATETIME</SelectItem>
+                          <SelectItem value="date" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DATE</SelectItem>
+                          <SelectItem value="time" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">TIME</SelectItem>
+                        </SelectGroup>
+                        <SelectSeparator className="bg-border/40" />
+                        <SelectGroup>
+                          <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Logical</SelectLabel>
+                          <SelectItem value="boolean" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">BOOLEAN</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {newColType === 'varchar' && (
@@ -2649,54 +2679,70 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetTable')}</Label>
-                          <select
+                          <Select
                             value={newColFkTargetTable}
-                            onChange={(e) => {
-                              const newTable = e.target.value;
-                              setNewColFkTargetTable(newTable);
-                              const firstCol = schemaData.find(t => t.name === newTable)?.columns?.[0]?.name || '';
+                            onValueChange={(val) => {
+                              setNewColFkTargetTable(val || '');
+                              const firstCol = schemaData.find(t => t.name === (val || ''))?.columns?.[0]?.name || '';
                               setNewColFkTargetColumn(firstCol);
                             }}
-                            className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                            style={{ cursor: 'pointer' }}
                           >
-                            <option value="">{t('databaseStudio.structure.designer.selectTable')}</option>
-                            {schemaData.map((t: any) => (
-                              <option key={t.name} value={t.name}>{t.name}</option>
-                            ))}
-                          </select>
+                            <SelectTrigger className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                              <SelectValue placeholder={t('databaseStudio.structure.designer.selectTable') || undefined} />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[250px]">
+                              <SelectItem value="" className="py-2 px-3 pl-8 text-xs font-medium text-muted-foreground cursor-pointer">
+                                {t('databaseStudio.structure.designer.selectTable')}
+                              </SelectItem>
+                              {schemaData.map((t: any) => (
+                                <SelectItem key={t.name} value={t.name} className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                         
                         <div className="space-y-1.5">
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetColumn')}</Label>
-                          <select
+                          <Select
                             value={newColFkTargetColumn}
-                            onChange={(e) => setNewColFkTargetColumn(e.target.value)}
-                            className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                            style={{ cursor: 'pointer' }}
+                            onValueChange={(val) => setNewColFkTargetColumn(val || '')}
                             disabled={!newColFkTargetTable}
                           >
-                            <option value="">{t('databaseStudio.structure.designer.selectColumn')}</option>
-                            {(schemaData.find(t => t.name === newColFkTargetTable)?.columns || []).map((c: any) => (
-                              <option key={c.name} value={c.name}>{c.name}</option>
-                            ))}
-                          </select>
+                            <SelectTrigger className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                              <SelectValue placeholder={t('databaseStudio.structure.designer.selectColumn') || undefined} />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[250px]">
+                              <SelectItem value="" className="py-2 px-3 pl-8 text-xs font-medium text-muted-foreground cursor-pointer">
+                                {t('databaseStudio.structure.designer.selectColumn')}
+                              </SelectItem>
+                              {(schemaData.find(t => t.name === newColFkTargetTable)?.columns || []).map((c: any) => (
+                                <SelectItem key={c.name} value={c.name} className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                       
                       <div className="space-y-1.5">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.onDeleteAction')}</Label>
-                        <select
+                        <Select
                           value={newColFkOnDelete}
-                          onChange={(e) => setNewColFkOnDelete(e.target.value)}
-                          className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                          style={{ cursor: 'pointer' }}
+                          onValueChange={(val) => setNewColFkOnDelete(val || '')}
                         >
-                          <option value="CASCADE">{t('databaseStudio.structure.designer.cascadeDesc')}</option>
-                          <option value="SET NULL">{t('databaseStudio.structure.designer.setNullDesc')}</option>
-                          <option value="RESTRICT">{t('databaseStudio.structure.designer.restrictDesc')}</option>
-                          <option value="NO ACTION">{t('databaseStudio.structure.designer.noActionDesc')}</option>
-                        </select>
+                          <SelectTrigger className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CASCADE" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.cascadeDesc')}</SelectItem>
+                            <SelectItem value="SET NULL" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.setNullDesc')}</SelectItem>
+                            <SelectItem value="RESTRICT" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.restrictDesc')}</SelectItem>
+                            <SelectItem value="NO ACTION" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.noActionDesc')}</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   )}
@@ -2761,37 +2807,47 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                       <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         {t('databaseStudio.structure.createTableDialog.dataType')}
                       </Label>
-                      <select
+                      <Select
                         value={editColType}
-                        onChange={(e) => {
-                          setEditColType(e.target.value);
+                        onValueChange={(val) => {
+                          setEditColType(val || '');
                           setEditColDefault('');
                         }}
-                        className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                        style={{ cursor: 'pointer' }}
                       >
-                        <optgroup label="Text">
-                          <option value="varchar">VARCHAR</option>
-                          <option value="text">TEXT</option>
-                          <option value="char">CHAR</option>
-                        </optgroup>
-                        <optgroup label="Numeric">
-                          <option value="integer">INTEGER</option>
-                          <option value="bigint">BIGINT</option>
-                          <option value="decimal">DECIMAL</option>
-                          <option value="float">FLOAT</option>
-                          <option value="double">DOUBLE</option>
-                        </optgroup>
-                        <optgroup label="Temporal">
-                          <option value="timestamp">TIMESTAMP</option>
-                          <option value="datetime">DATETIME</option>
-                          <option value="date">DATE</option>
-                          <option value="time">TIME</option>
-                        </optgroup>
-                        <optgroup label="Logical">
-                          <option value="boolean">BOOLEAN</option>
-                        </optgroup>
-                      </select>
+                        <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px]">
+                          <SelectGroup>
+                            <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Text</SelectLabel>
+                            <SelectItem value="varchar" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">VARCHAR</SelectItem>
+                            <SelectItem value="text" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">TEXT</SelectItem>
+                            <SelectItem value="char" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">CHAR</SelectItem>
+                          </SelectGroup>
+                          <SelectSeparator className="bg-border/40" />
+                          <SelectGroup>
+                            <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Numeric</SelectLabel>
+                            <SelectItem value="integer" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">INTEGER</SelectItem>
+                            <SelectItem value="bigint" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">BIGINT</SelectItem>
+                            <SelectItem value="decimal" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DECIMAL</SelectItem>
+                            <SelectItem value="float" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">FLOAT</SelectItem>
+                            <SelectItem value="double" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DOUBLE</SelectItem>
+                          </SelectGroup>
+                          <SelectSeparator className="bg-border/40" />
+                          <SelectGroup>
+                            <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Temporal</SelectLabel>
+                            <SelectItem value="timestamp" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">TIMESTAMP</SelectItem>
+                            <SelectItem value="datetime" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DATETIME</SelectItem>
+                            <SelectItem value="date" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">DATE</SelectItem>
+                            <SelectItem value="time" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">TIME</SelectItem>
+                          </SelectGroup>
+                          <SelectSeparator className="bg-border/40" />
+                          <SelectGroup>
+                            <SelectLabel className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 bg-muted/5">Logical</SelectLabel>
+                            <SelectItem value="boolean" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">BOOLEAN</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {editColType === 'varchar' && (
@@ -2946,54 +3002,70 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1.5">
                             <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetTable')}</Label>
-                            <select
+                            <Select
                               value={editColFkTargetTable}
-                              onChange={(e) => {
-                                const newTable = e.target.value;
-                                setEditColFkTargetTable(newTable);
-                                const firstCol = schemaData.find(t => t.name === newTable)?.columns?.[0]?.name || '';
+                              onValueChange={(val) => {
+                                setEditColFkTargetTable(val || '');
+                                const firstCol = schemaData.find(t => t.name === (val || ''))?.columns?.[0]?.name || '';
                                 setEditColFkTargetColumn(firstCol);
                               }}
-                              className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                              style={{ cursor: 'pointer' }}
                             >
-                              <option value="">{t('databaseStudio.structure.designer.selectTable')}</option>
-                              {schemaData.map((t: any) => (
-                                <option key={t.name} value={t.name}>{t.name}</option>
-                              ))}
-                            </select>
+                              <SelectTrigger className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                                <SelectValue placeholder={t('databaseStudio.structure.designer.selectTable') || undefined} />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[250px]">
+                                <SelectItem value="" className="py-2 px-3 pl-8 text-xs font-medium text-muted-foreground cursor-pointer">
+                                  {t('databaseStudio.structure.designer.selectTable')}
+                                </SelectItem>
+                                {schemaData.map((t: any) => (
+                                  <SelectItem key={t.name} value={t.name} className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                    {t.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           
                           <div className="space-y-1.5">
                             <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.targetColumn')}</Label>
-                            <select
+                            <Select
                               value={editColFkTargetColumn}
-                              onChange={(e) => setEditColFkTargetColumn(e.target.value)}
-                              className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                              style={{ cursor: 'pointer' }}
+                              onValueChange={(val) => setEditColFkTargetColumn(val || '')}
                               disabled={!editColFkTargetTable}
                             >
-                              <option value="">{t('databaseStudio.structure.designer.selectColumn')}</option>
-                              {(schemaData.find(t => t.name === editColFkTargetTable)?.columns || []).map((c: any) => (
-                                <option key={c.name} value={c.name}>{c.name}</option>
-                              ))}
-                            </select>
+                              <SelectTrigger className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                                <SelectValue placeholder={t('databaseStudio.structure.designer.selectColumn') || undefined} />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[250px]">
+                                <SelectItem value="" className="py-2 px-3 pl-8 text-xs font-medium text-muted-foreground cursor-pointer">
+                                  {t('databaseStudio.structure.designer.selectColumn')}
+                                </SelectItem>
+                                {(schemaData.find(t => t.name === editColFkTargetTable)?.columns || []).map((c: any) => (
+                                  <SelectItem key={c.name} value={c.name} className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                    {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
                         
                         <div className="space-y-1.5">
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.structure.designer.onDeleteAction')}</Label>
-                          <select
+                          <Select
                             value={editColFkOnDelete}
-                            onChange={(e) => setEditColFkOnDelete(e.target.value)}
-                            className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                            style={{ cursor: 'pointer' }}
+                            onValueChange={(val) => setEditColFkOnDelete(val || '')}
                           >
-                            <option value="CASCADE">{t('databaseStudio.structure.designer.cascadeDesc')}</option>
-                            <option value="SET NULL">{t('databaseStudio.structure.designer.setNullDesc')}</option>
-                            <option value="RESTRICT">{t('databaseStudio.structure.designer.restrictDesc')}</option>
-                            <option value="NO ACTION">{t('databaseStudio.structure.designer.noActionDesc')}</option>
-                          </select>
+                            <SelectTrigger className="w-full h-9 px-2.5 rounded-lg border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="CASCADE" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.cascadeDesc')}</SelectItem>
+                              <SelectItem value="SET NULL" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.setNullDesc')}</SelectItem>
+                              <SelectItem value="RESTRICT" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.restrictDesc')}</SelectItem>
+                              <SelectItem value="NO ACTION" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.structure.designer.noActionDesc')}</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                     )}
@@ -3072,10 +3144,10 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
                 <div className="flex items-center gap-3 shrink-0">
                   {!isSuspended && (
-                    <select
-                      onChange={(e) => {
-                        const template = e.target.value
-                        if (!template) return
+                    <Select
+                      value=""
+                      onValueChange={(val) => {
+                        if (!val) return
                         
                         const tableName = selectedTable || (schemaData.length > 0 ? schemaData[0].name : 'users')
                         const columns = schemaData.find(t => t.name === tableName)?.columns || []
@@ -3085,30 +3157,31 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         const q = isPostgres ? '"' : '`'
 
                         let sql = ''
-                        if (template === 'select') {
+                        if (val === 'select') {
                           sql = `SELECT * FROM ${q}${tableName}${q} LIMIT 10;`
-                        } else if (template === 'count') {
+                        } else if (val === 'count') {
                           sql = `SELECT COUNT(*) AS total_rows FROM ${q}${tableName}${q};`
-                        } else if (template === 'filter') {
+                        } else if (val === 'filter') {
                           sql = `SELECT * FROM ${q}${tableName}${q} WHERE ${q}${firstColName}${q} = 1;`
-                        } else if (template === 'group') {
+                        } else if (val === 'group') {
                           sql = `SELECT ${q}${firstColName}${q}, COUNT(*) AS count FROM ${q}${tableName}${q} GROUP BY ${q}${firstColName}${q} ORDER BY count DESC;`
                         }
                         
                         if (sql) {
                           setSqlQuery(sql)
                         }
-                        e.target.value = '' // Reset selector choice
                       }}
-                      className="h-10 px-3.5 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 cursor-pointer"
-                      style={{ cursor: 'pointer' }}
                     >
-                      <option value="">{t('databaseStudio.query.templates.label')}</option>
-                      <option value="select">{t('databaseStudio.query.templates.select')}</option>
-                      <option value="count">{t('databaseStudio.query.templates.count')}</option>
-                      <option value="filter">{t('databaseStudio.query.templates.filter')}</option>
-                      <option value="group">{t('databaseStudio.query.templates.group')}</option>
-                    </select>
+                      <SelectTrigger className="h-10 px-3.5 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between gap-2 cursor-pointer">
+                        <SelectValue placeholder={t('databaseStudio.query.templates.label') || undefined} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="select" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.select')}</SelectItem>
+                        <SelectItem value="count" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.count')}</SelectItem>
+                        <SelectItem value="filter" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.filter')}</SelectItem>
+                        <SelectItem value="group" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">{t('databaseStudio.query.templates.group')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   )}
 
                   <Button
