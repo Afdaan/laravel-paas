@@ -163,16 +163,19 @@ const adjustDatetimeForDatabase = (
       }
     }
 
+    const pad = (n: number) => String(n).padStart(2, '0')
     if (hasTimezone) {
-      return localDate.toISOString()
+      // Return UTC formatted as YYYY-MM-DD HH:mm:ss for maximum compatibility with all database engines (e.g. MySQL DATETIME)
+      return `${localDate.getUTCFullYear()}-${pad(localDate.getUTCMonth() + 1)}-${pad(localDate.getUTCDate())} ${pad(localDate.getUTCHours())}:${pad(localDate.getUTCMinutes())}:${pad(localDate.getUTCSeconds())}`
     } else {
-      const pad = (n: number) => String(n).padStart(2, '0')
+      // Return local formatted as YYYY-MM-DD HH:mm:ss
       return `${localDate.getFullYear()}-${pad(localDate.getMonth() + 1)}-${pad(localDate.getDate())} ${pad(localDate.getHours())}:${pad(localDate.getMinutes())}:${pad(localDate.getSeconds())}`
     }
   } catch (e) {
     return inputValue
   }
 }
+
 
 const formatDatetimeLocal = (val: any) => {
   if (val === null || val === undefined) return ''
