@@ -1572,8 +1572,9 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                         ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
                           <Input
                             id={`insert_${col.name}`}
+                            key={selectedTable + '_' + col.name}
                             type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
-                            value={insertFormData[col.name] || ''}
+                            defaultValue={insertFormData[col.name] || ''}
                             onChange={(e) => setInsertFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
                             required={!isNullable}
                             className="h-10 rounded-xl bg-background/50 text-xs font-mono"
@@ -1687,8 +1688,9 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                           ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
                             <Input
                               id={`edit_${col.name}`}
+                              key={editingRow ? `${editingRow[pkColumn]}_${col.name}` : col.name}
                               type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
-                              value={editFormData[col.name] || ''}
+                              defaultValue={editFormData[col.name] || ''}
                               onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
                               required={!isNullable}
                               className="h-10 rounded-xl bg-background/50 text-xs font-mono"
