@@ -121,7 +121,12 @@ function HoverableTabsTrigger({ icon, active, iconType, children, ...props }: Ho
       {...props}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={cn("flex items-center gap-1.5", props.className)}
+      className={cn(
+        "flex items-center gap-2 px-3.5 py-1.5 text-[13px] font-medium transition-all duration-300 whitespace-nowrap rounded-lg",
+        "data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-border/50",
+        "text-muted-foreground hover:text-foreground hover:bg-muted-foreground/5",
+        props.className
+      )}
     >
       <AnimatedTabIcon icon={icon} active={active} hovered={hovered} type={iconType} />
       {children}
@@ -976,37 +981,39 @@ function UserProjectDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-muted p-1 rounded-lg w-fit overflow-x-auto">
-          <HoverableTabsTrigger value="project" icon={LayoutGrid} active={activeTab === 'project'} iconType="scale">
-            {t('projectDetail.tabs.overview')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="runtime" icon={Cpu} active={activeTab === 'runtime'} iconType="pulse">
-            {t('projectDetail.tabs.runtime')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="console" icon={TerminalIcon} active={activeTab === 'console'} iconType="bounce">
-            {t('projectDetail.tabs.console')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="environment" icon={Key} active={activeTab === 'environment'} iconType="bounce">
-            {t('projectDetail.tabs.secrets')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="database" icon={DatabaseIcon} active={activeTab === 'database'} iconType="bounce">
-            {t('projectDetail.tabs.database')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="logs" icon={Scroll} active={activeTab === 'logs'} iconType="scale">
-            {t('projectDetail.tabs.logs')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="build" icon={Hammer} active={activeTab === 'build'} iconType="bounce">
-            {t('projectDetail.tabs.build')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="domains" icon={Globe} active={activeTab === 'domains'} iconType="rotate">
-            {t('projectDetail.tabs.domains')}
-          </HoverableTabsTrigger>
-          <HoverableTabsTrigger value="settings" icon={Settings} active={activeTab === 'settings'} iconType="rotate">
-            {t('projectDetail.tabs.settings')}
-          </HoverableTabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto pb-2 -mb-2 custom-scrollbar hide-scrollbar-on-mobile">
+          <TabsList className="bg-muted/40 p-1.5 rounded-xl border border-border/40 inline-flex min-w-max shadow-sm mb-1">
+            <HoverableTabsTrigger value="project" icon={LayoutGrid} active={activeTab === 'project'} iconType="scale">
+              {t('projectDetail.tabs.overview')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="runtime" icon={Cpu} active={activeTab === 'runtime'} iconType="pulse">
+              {t('projectDetail.tabs.runtime')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="console" icon={TerminalIcon} active={activeTab === 'console'} iconType="bounce">
+              {t('projectDetail.tabs.console')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="environment" icon={Key} active={activeTab === 'environment'} iconType="bounce">
+              {t('projectDetail.tabs.secrets')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="database" icon={DatabaseIcon} active={activeTab === 'database'} iconType="bounce">
+              {t('projectDetail.tabs.database')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="logs" icon={Scroll} active={activeTab === 'logs'} iconType="scale">
+              {t('projectDetail.tabs.logs')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="build" icon={Hammer} active={activeTab === 'build'} iconType="bounce">
+              {t('projectDetail.tabs.build')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="domains" icon={Globe} active={activeTab === 'domains'} iconType="rotate">
+              {t('projectDetail.tabs.domains')}
+            </HoverableTabsTrigger>
+            <HoverableTabsTrigger value="settings" icon={Settings} active={activeTab === 'settings'} iconType="rotate">
+              {t('projectDetail.tabs.settings')}
+            </HoverableTabsTrigger>
+          </TabsList>
+        </div>
 
-        <TabsContent value="project" className="pt-0">
+        <TabsContent value="project" className="pt-4">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-4">
