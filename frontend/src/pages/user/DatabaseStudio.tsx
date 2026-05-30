@@ -115,13 +115,7 @@ const toLocalDateString = (d: Date): string => {
   return `${year}-${month}-${day}`
 }
 
-const adjustDatetimeForDatabase = (
-  inputValue: string,
-  columnName: string,
-  originalValue?: any,
-  tableRows?: any[],
-  dbEngine?: string
-): string => {
+const adjustDatetimeForDatabase = (inputValue: string): string => {
   if (!inputValue) return inputValue
 
   try {
@@ -130,47 +124,9 @@ const adjustDatetimeForDatabase = (
 
     const [_, year, month, day, hours, minutes, secondsStr] = match
     const seconds = secondsStr ? Number(secondsStr) : 0
-    const localDate = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), seconds)
     
-    if (isNaN(localDate.getTime())) return inputValue
-
-    let hasTimezone = false
-    if (originalValue !== undefined && originalValue !== null && originalValue !== '') {
-      const origStr = String(originalValue).trim()
-      if (/Z$/i.test(origStr) || /[+-]\d{2}:?\d{2}?$/.test(origStr)) {
-        hasTimezone = true
-      }
-    } else if (tableRows && tableRows.length > 0) {
-      const otherRow = tableRows.find((r: any) => {
-        const rowKey = Object.keys(r).find(k => k.toLowerCase() === columnName.toLowerCase()) || columnName
-        const val = r[rowKey]
-        return val !== undefined && val !== null && val !== ''
-      })
-      if (otherRow) {
-        const rowKey = Object.keys(otherRow).find(k => k.toLowerCase() === columnName.toLowerCase()) || columnName
-        const val = otherRow[rowKey]
-        const origStr = String(val).trim()
-        if (/Z$/i.test(origStr) || /[+-]\d{2}:?\d{2}?$/.test(origStr)) {
-          hasTimezone = true
-        }
-      }
-    }
-
-    if (!hasTimezone && originalValue === null && (!tableRows || tableRows.length === 0)) {
-      const engine = dbEngine?.toLowerCase()
-      if (engine === 'mysql' || engine === 'postgres' || engine === 'postgresql') {
-        hasTimezone = true
-      }
-    }
-
     const pad = (n: number) => String(n).padStart(2, '0')
-    if (hasTimezone) {
-      // Return UTC formatted as YYYY-MM-DD HH:mm:ss for maximum compatibility with all database engines (e.g. MySQL DATETIME)
-      return `${localDate.getUTCFullYear()}-${pad(localDate.getUTCMonth() + 1)}-${pad(localDate.getUTCDate())} ${pad(localDate.getUTCHours())}:${pad(localDate.getUTCMinutes())}:${pad(localDate.getUTCSeconds())}`
-    } else {
-      // Return local formatted as YYYY-MM-DD HH:mm:ss
-      return `${localDate.getFullYear()}-${pad(localDate.getMonth() + 1)}-${pad(localDate.getDate())} ${pad(localDate.getHours())}:${pad(localDate.getMinutes())}:${pad(localDate.getSeconds())}`
-    }
+    return `${year}-${pad(Number(month))}-${pad(Number(day))} ${pad(Number(hours))}:${pad(Number(minutes))}:${pad(seconds)}`
   } catch (e) {
     return inputValue
   }
@@ -188,14 +144,25 @@ const formatDatetimeLocal = (val: any) => {
     const strVal = String(val).trim()
     if (!strVal) return ''
 
+    // Match YYYY-MM-DD HH:mm:ss (with optional fractional seconds and timezone) timezone-agnostically
+    const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
+    const match = strVal.match(regex)
+    if (match) {
+      const [_, year, month, day, hours, minutes] = match
+      return `${year}-${month}-${day}T${hours}:${minutes}`
+    }
+
+    // Match YYYY-MM-DD HH:mm (with optional timezone) timezone-agnostically
+    const regexShort = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?:(Z|[+-]\d{2}(?::?\d{2})?))?$/i
+    const matchShort = strVal.match(regexShort)
+    if (matchShort) {
+      const [_, year, month, day, hours, minutes] = matchShort
+      return `${year}-${month}-${day}T${hours}:${minutes}`
+    }
+
     // If it's already in the exact format YYYY-MM-DDTHH:mm, return it
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(strVal)) {
       return strVal
-    }
-
-    // Normalize SQL DATETIME format (YYYY-MM-DD HH:MM:SS) to HTML5 datetime-local specification (YYYY-MM-DDTHH:mm).
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(strVal) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(strVal)) {
-      return strVal.substring(0, 16).replace(' ', 'T')
     }
 
     // Try parsing Unix timestamp if it's numeric
@@ -204,17 +171,6 @@ const formatDatetimeLocal = (val: any) => {
       const date = new Date(strVal.length === 10 ? num * 1000 : num)
       if (!isNaN(date.getTime())) {
         return toLocalISOString(date)
-      }
-    }
-
-    // Direct regex parsing for common DB datetime formats (with optional ms/us, but no timezone)
-    // to preserve exact local database representation without browser timezone shifting.
-    const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
-    const match = strVal.match(regex)
-    if (match) {
-      const [_, year, month, day, hours, minutes, , , tz] = match
-      if (!tz) {
-        return `${year}-${month}-${day}T${hours}:${minutes}`
       }
     }
 
@@ -276,8 +232,26 @@ const formatHumanDatetime = (val: any) => {
   try {
     const strVal = String(val).trim()
     if (!strVal) return ''
-    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-    const d = new Date(parsedStr)
+
+    // Parse timezone-agnostically first to prevent browser timezone shifts
+    const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
+    const match = strVal.match(regex)
+    let d: Date
+    if (match) {
+      const [_, year, month, day, hours, minutes, seconds] = match
+      d = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds))
+    } else {
+      const regexShort = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?:(Z|[+-]\d{2}(?::?\d{2})?))?$/i
+      const matchShort = strVal.match(regexShort)
+      if (matchShort) {
+        const [_, year, month, day, hours, minutes] = matchShort
+        d = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), 0)
+      } else {
+        const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+        d = new Date(parsedStr)
+      }
+    }
+
     if (isNaN(d.getTime())) return strVal
 
     const year = d.getFullYear()
@@ -299,8 +273,19 @@ const formatHumanDate = (val: any) => {
   try {
     const strVal = String(val).trim()
     if (!strVal) return ''
-    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-    const d = new Date(parsedStr)
+
+    // Parse timezone-agnostically first to prevent browser timezone shifts
+    const regex = /^(\d{4})-(\d{2})-(\d{2})/i
+    const match = strVal.match(regex)
+    let d: Date
+    if (match) {
+      const [_, year, month, day] = match
+      d = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0)
+    } else {
+      const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+      d = new Date(parsedStr)
+    }
+
     if (isNaN(d.getTime())) return strVal
 
     const year = d.getFullYear()
@@ -812,7 +797,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
         const typeLower = col.type.toLowerCase()
         if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
-          val = adjustDatetimeForDatabase(val, col.name, null, tableData?.rows, dbOverview?.engine)
+          val = adjustDatetimeForDatabase(val)
         }
 
         if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
@@ -864,6 +849,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     cols.forEach((col: any) => {
       if (col.name.toLowerCase() === pkColumn.toLowerCase()) return
 
+      const typeLower = col.type.toLowerCase()
       let val = editFormData[col.name]
       const escapedCol = `${q}${col.name}${q}`
 
@@ -871,7 +857,6 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         if (col.nullable) {
           setClauses.push(`${escapedCol} = NULL`)
         } else {
-          const typeLower = col.type.toLowerCase()
           if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
             setClauses.push(`${escapedCol} = 0`)
           } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
@@ -883,11 +868,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
         return
       }
 
-      const typeLower = col.type.toLowerCase()
       if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
-        const rowKey = Object.keys(editingRow).find(k => k.toLowerCase() === col.name.toLowerCase()) || col.name
-        const originalVal = editingRow[rowKey]
-        val = adjustDatetimeForDatabase(val, col.name, originalVal, tableData?.rows, dbOverview?.engine)
+        val = adjustDatetimeForDatabase(val)
       }
 
       if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
@@ -962,12 +944,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       cols.forEach((col: any) => {
         if (col.name.toLowerCase() === pkColumn.toLowerCase()) return
 
+        const typeLower = col.type.toLowerCase()
         let val = editFormData[col.name]
         if (val === undefined || val === '') {
           if (col.nullable) {
             updates[col.name] = null
           } else {
-            const typeLower = col.type.toLowerCase()
             if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
               updates[col.name] = 0
             } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
@@ -979,11 +961,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
           return
         }
 
-        const typeLower = col.type.toLowerCase()
         if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
-          const rowKey = Object.keys(editingRow).find(k => k.toLowerCase() === col.name.toLowerCase()) || col.name
-          const originalVal = editingRow[rowKey]
-          val = adjustDatetimeForDatabase(val, col.name, originalVal, tableData?.rows, dbOverview?.engine)
+          val = adjustDatetimeForDatabase(val)
         }
 
         if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
