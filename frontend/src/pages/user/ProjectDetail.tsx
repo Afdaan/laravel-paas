@@ -10,7 +10,7 @@ import {
   Activity,
   Play,
   Power,
-  Layout,
+  LayoutGrid,
   Terminal as TerminalIcon,
   Code,
   Globe,
@@ -25,7 +25,10 @@ import {
   Copy,
   Blocks,
   ArrowUpRight,
-  Code2
+  Code2,
+  Key,
+  Scroll,
+  Hammer
 } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { projectsAPI } from '../../services/api'
@@ -50,6 +53,64 @@ import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 import { CustomDomainManager } from '../../components/project/CustomDomainManager'
 import { RuntimeTab } from '../../components/project/RuntimeTab'
+import { motion, useAnimation } from 'framer-motion'
+
+// Reusable animated tab icon wrapper to provide micro-interactions
+interface AnimatedTabIconProps {
+  icon: any
+  active: boolean
+  type?: 'rotate' | 'bounce' | 'pulse' | 'scale'
+}
+
+function AnimatedTabIcon({ icon: Icon, active, type = 'scale' }: AnimatedTabIconProps) {
+  const controls = useAnimation()
+
+  const handleHoverStart = () => {
+    if (type === 'rotate') {
+      controls.start({ rotate: 360, transition: { duration: 0.6, ease: 'easeInOut' } })
+    } else if (type === 'bounce') {
+      controls.start({ y: [0, -4, 0], transition: { duration: 0.4, times: [0, 0.5, 1], ease: 'easeInOut' } })
+    } else if (type === 'pulse') {
+      controls.start({ scale: [1, 1.15, 1], transition: { duration: 0.6, repeat: Infinity, repeatType: 'reverse' } })
+    } else if (type === 'scale') {
+      controls.start({ scale: 1.2, transition: { duration: 0.2 } })
+    }
+  }
+
+  const handleHoverEnd = () => {
+    if (type === 'rotate') {
+      controls.set({ rotate: 0 })
+    } else if (type === 'pulse') {
+      controls.stop()
+      controls.start({ scale: 1, transition: { duration: 0.2 } })
+    } else {
+      controls.start({ scale: 1, y: 0, transition: { duration: 0.2 } })
+    }
+  }
+
+  useEffect(() => {
+    if (active) {
+      controls.start({
+        scale: [1, 1.2, 0.95, 1],
+        y: [0, -3, 0],
+        transition: { duration: 0.4 }
+      })
+    }
+  }, [active, controls])
+
+  return (
+    <div
+      onMouseEnter={handleHoverStart}
+      onMouseLeave={handleHoverEnd}
+      className="inline-flex items-center justify-center cursor-pointer"
+      style={{ cursor: 'pointer' }}
+    >
+      <motion.div animate={controls} className="origin-center flex items-center justify-center">
+        <Icon className="w-3.5 h-3.5" />
+      </motion.div>
+    </div>
+  )
+}
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -899,15 +960,42 @@ function UserProjectDetail() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-muted p-1 rounded-lg w-fit overflow-x-auto">
-          <TabsTrigger value="project">{t('projectDetail.tabs.overview')}</TabsTrigger>
-          <TabsTrigger value="runtime">{t('projectDetail.tabs.runtime')}</TabsTrigger>
-          <TabsTrigger value="console">{t('projectDetail.tabs.console')}</TabsTrigger>
-          <TabsTrigger value="environment">{t('projectDetail.tabs.secrets')}</TabsTrigger>
-          <TabsTrigger value="database">{t('projectDetail.tabs.database')}</TabsTrigger>
-          <TabsTrigger value="logs">{t('projectDetail.tabs.logs')}</TabsTrigger>
-          <TabsTrigger value="build">{t('projectDetail.tabs.build')}</TabsTrigger>
-          <TabsTrigger value="domains">{t('projectDetail.tabs.domains')}</TabsTrigger>
-          <TabsTrigger value="settings">{t('projectDetail.tabs.settings')}</TabsTrigger>
+          <TabsTrigger value="project" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={LayoutGrid} active={activeTab === 'project'} type="scale" />
+            {t('projectDetail.tabs.overview')}
+          </TabsTrigger>
+          <TabsTrigger value="runtime" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={Cpu} active={activeTab === 'runtime'} type="pulse" />
+            {t('projectDetail.tabs.runtime')}
+          </TabsTrigger>
+          <TabsTrigger value="console" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={TerminalIcon} active={activeTab === 'console'} type="bounce" />
+            {t('projectDetail.tabs.console')}
+          </TabsTrigger>
+          <TabsTrigger value="environment" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={Key} active={activeTab === 'environment'} type="bounce" />
+            {t('projectDetail.tabs.secrets')}
+          </TabsTrigger>
+          <TabsTrigger value="database" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={DatabaseIcon} active={activeTab === 'database'} type="bounce" />
+            {t('projectDetail.tabs.database')}
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={Scroll} active={activeTab === 'logs'} type="scale" />
+            {t('projectDetail.tabs.logs')}
+          </TabsTrigger>
+          <TabsTrigger value="build" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={Hammer} active={activeTab === 'build'} type="bounce" />
+            {t('projectDetail.tabs.build')}
+          </TabsTrigger>
+          <TabsTrigger value="domains" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={Globe} active={activeTab === 'domains'} type="rotate" />
+            {t('projectDetail.tabs.domains')}
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-1.5">
+            <AnimatedTabIcon icon={Settings} active={activeTab === 'settings'} type="rotate" />
+            {t('projectDetail.tabs.settings')}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="project" className="pt-0">
@@ -915,7 +1003,7 @@ function UserProjectDetail() {
             <Card className="lg:col-span-2">
               <CardHeader className="pb-4">
                 <CardTitle className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
-                  <Layout className="w-4 h-4 text-primary" />
+                  <LayoutGrid className="w-4 h-4 text-primary" />
                   {t('projectDetail.overview.connectionInfo')}
                 </CardTitle>
               </CardHeader>
@@ -1565,7 +1653,7 @@ function UserProjectDetail() {
                 <CardHeader>
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-muted/50 rounded-lg flex items-center justify-center text-muted-foreground">
-                      <Layout className="w-5 h-5" />
+                      <LayoutGrid className="w-5 h-5" />
                     </div>
                     <div>
                       <CardTitle className="text-lg">{t('newProject.baseDir')}</CardTitle>
