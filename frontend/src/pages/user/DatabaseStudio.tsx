@@ -176,6 +176,72 @@ const formatDate = (val: any) => {
   }
 }
 
+const formatHumanDatetime = (val: any) => {
+  if (val === null || val === undefined) return ''
+  try {
+    const strVal = String(val).trim()
+    if (!strVal) return ''
+    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+    const d = new Date(parsedStr)
+    if (isNaN(d.getTime())) return strVal
+
+    const year = d.getFullYear()
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const month = monthNames[d.getMonth()]
+    const day = String(d.getDate()).padStart(2, '0')
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    const seconds = String(d.getSeconds()).padStart(2, '0')
+    
+    return `${day} ${month} ${year}, ${hours}:${minutes}:${seconds}`
+  } catch (e) {
+    return String(val)
+  }
+}
+
+const formatHumanDate = (val: any) => {
+  if (val === null || val === undefined) return ''
+  try {
+    const strVal = String(val).trim()
+    if (!strVal) return ''
+    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+    const d = new Date(parsedStr)
+    if (isNaN(d.getTime())) return strVal
+
+    const year = d.getFullYear()
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const month = monthNames[d.getMonth()]
+    const day = String(d.getDate()).padStart(2, '0')
+    
+    return `${day} ${month} ${year}`
+  } catch (e) {
+    return String(val)
+  }
+}
+
+const formatCellValue = (val: any): React.ReactNode => {
+  if (val === null || val === undefined) {
+    return <span className="text-muted-foreground/30 italic">NULL</span>
+  }
+  
+  const strVal = String(val).trim()
+  if (!strVal) return strVal
+
+  // Check if it matches ISO datetime or DB space-separated datetime
+  const datetimeRegex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
+  if (datetimeRegex.test(strVal)) {
+    return formatHumanDatetime(strVal)
+  }
+
+  // Check if it matches YYYY-MM-DD date-only
+  const dateRegex = /^(\d{4})-(\d{2})-(\d{2})$/
+  if (dateRegex.test(strVal)) {
+    return formatHumanDate(strVal)
+  }
+
+  return strVal
+}
+
 interface DatabaseStudioProps {
   projectId?: string | number | null;
   embedded?: boolean;
@@ -1458,7 +1524,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                               </td>
                               {tableData.columns.map((col: string) => (
                                 <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
-                                  {row[col] === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(row[col])}
+                                  {formatCellValue(row[col])}
                                 </td>
                               ))}
                             </tr>
@@ -2412,7 +2478,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
                                   <tr key={rIdx} className="border-b border-border/20 hover:bg-muted/5 transition-colors">
                                     {queryResult.columns.map((col: string) => (
                                       <td key={col} className="py-3 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
-                                        {row[col] === null ? <span className="text-muted-foreground/30 italic">NULL</span> : String(row[col])}
+                                        {formatCellValue(row[col])}
                                       </td>
                                     ))}
                                   </tr>
