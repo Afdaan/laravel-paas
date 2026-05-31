@@ -771,7 +771,7 @@ export function StudioStructureTab() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 items-end">
+                <div className="grid grid-cols-2 gap-4 items-start">
                   <div className="space-y-1.5">
                     <Label htmlFor="add_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                       {t('databaseStudio.structure.typeHeader')}
@@ -896,7 +896,7 @@ export function StudioStructureTab() {
                       <Checkbox
                         checked={newColNullable}
                         onCheckedChange={(checked) => setNewColNullable(Boolean(checked))}
-                        className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
+                        className="mt-0.5 h-4 w-4 rounded-[5px] border-border/80 data-[state=checked]:border-primary data-[state=checked]:bg-primary/90 data-[state=checked]:text-primary-foreground shadow-sm"
                       />
                       <div className="flex flex-col">
                         <span>{t('databaseStudio.structure.createTableDialog.nullableLabel')}</span>
@@ -908,7 +908,7 @@ export function StudioStructureTab() {
                       <Checkbox
                         checked={newColUnique}
                         onCheckedChange={(checked) => setNewColUnique(Boolean(checked))}
-                        className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
+                        className="mt-0.5 h-4 w-4 rounded-[5px] border-border/80 data-[state=checked]:border-primary data-[state=checked]:bg-primary/90 data-[state=checked]:text-primary-foreground shadow-sm"
                       />
                       <div className="flex flex-col">
                         <span>{t('databaseStudio.structure.uniqueConstraint')}</span>
@@ -936,7 +936,7 @@ export function StudioStructureTab() {
                     <Checkbox
                       checked={newColFk}
                       onCheckedChange={(checked) => setNewColFk(Boolean(checked))}
-                      className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
+                      className="mt-0.5 h-4 w-4 rounded-[5px] border-border/80 data-[state=checked]:border-primary data-[state=checked]:bg-primary/90 data-[state=checked]:text-primary-foreground shadow-sm"
                     />
                     <div className="flex flex-col">
                       <span>{t('databaseStudio.structure.designer.fkRelation')}</span>
@@ -1057,7 +1057,7 @@ export function StudioStructureTab() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 items-end">
+                  <div className="grid grid-cols-2 gap-4 items-start">
                     <div className="space-y-1.5">
                       <Label htmlFor="mod_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         {t('databaseStudio.structure.typeHeader')}
@@ -1182,7 +1182,7 @@ export function StudioStructureTab() {
                         <Checkbox
                           checked={editColNullable}
                           onCheckedChange={(checked) => setEditColNullable(Boolean(checked))}
-                          className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
+                          className="mt-0.5 h-4 w-4 rounded-[5px] border-border/80 data-[state=checked]:border-primary data-[state=checked]:bg-primary/90 data-[state=checked]:text-primary-foreground shadow-sm"
                         />
                         <div className="flex flex-col">
                           <span>{t('databaseStudio.structure.createTableDialog.nullableLabel')}</span>
@@ -1194,7 +1194,7 @@ export function StudioStructureTab() {
                         <Checkbox
                           checked={editColUnique}
                           onCheckedChange={(checked) => setEditColUnique(Boolean(checked))}
-                          className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
+                          className="mt-0.5 h-4 w-4 rounded-[5px] border-border/80 data-[state=checked]:border-primary data-[state=checked]:bg-primary/90 data-[state=checked]:text-primary-foreground shadow-sm"
                         />
                         <div className="flex flex-col">
                           <span>{t('databaseStudio.structure.uniqueConstraint')}</span>
@@ -1222,7 +1222,7 @@ export function StudioStructureTab() {
                       <Checkbox
                         checked={editColFk}
                         onCheckedChange={(checked) => setEditColFk(Boolean(checked))}
-                        className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
+                        className="mt-0.5 h-4 w-4 rounded-[5px] border-border/80 data-[state=checked]:border-primary data-[state=checked]:bg-primary/90 data-[state=checked]:text-primary-foreground shadow-sm"
                       />
                       <div className="flex flex-col">
                         <span>{t('databaseStudio.structure.designer.fkRelation')}</span>
