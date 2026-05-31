@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   TrendingUp,
@@ -605,20 +605,29 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
                 </Label>
                 <Select
                   value={selectedTargetProject}
-                  onValueChange={setSelectedTargetProject}
+                  onValueChange={(val) => setSelectedTargetProject(val || '')}
                 >
                   <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left justify-between">
-                    <SelectValue placeholder={t('databaseStudio.dashboard.transferModal.placeholderSelect')} />
+                    <SelectValue placeholder={t('databaseStudio.dashboard.transferModal.placeholderSelect')}>
+                      {(value) => {
+                        if (!value) return null
+                        const selectedProject = userProjects.find(p => p.uid === value)
+                        return selectedProject ? selectedProject.name : value
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                     {userProjects.length === 0 ? (
                       <div className="py-2 px-3 text-xs text-muted-foreground text-center">
                         {t('databaseStudio.dashboard.transferModal.noProjects')}
                       </div>
                     ) : (
                       userProjects.map(proj => (
-                        <SelectItem key={proj.uid} value={proj.uid} className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
-                          {proj.name} ({proj.subdomain})
+                        <SelectItem key={proj.uid} value={proj.uid} className="py-2.5 pl-3 cursor-pointer">
+                          <div className="flex min-w-0 flex-col gap-0.5 text-left">
+                            <span className="truncate text-sm font-medium leading-none">{proj.name}</span>
+                            <span className="truncate text-[10px] leading-none text-muted-foreground">{proj.subdomain}</span>
+                          </div>
                         </SelectItem>
                       ))
                     )}

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext } from 'react'
-import { DatabaseInstance, DatabaseBackup } from '../../types'
+import { DatabaseInstance, DatabaseBackup, DatabaseMetrics } from '../../types'
 
 export interface ConfirmationModalOptions {
   title: string;
@@ -33,7 +33,7 @@ export interface StudioContextType {
   dbOverview: DatabaseInstance | null;
   schemaData: SchemaTable[];
   backups: DatabaseBackup[];
-  metrics: Record<string, unknown> | null;
+  metrics: DatabaseMetrics | null;
   isActionLoading: boolean;
   setIsActionLoading: (val: boolean) => void;
   loadStudioData: () => Promise<void>;

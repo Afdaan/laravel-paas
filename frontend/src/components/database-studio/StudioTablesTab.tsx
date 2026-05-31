@@ -623,7 +623,7 @@ export function StudioTablesTab() {
                           <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
                             <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                             <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
                               {t('databaseStudio.tables.booleanTrue')}
                             </SelectItem>
@@ -740,7 +740,7 @@ export function StudioTablesTab() {
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
                               <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                               <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
                                 {t('databaseStudio.tables.booleanTrue')}
                               </SelectItem>

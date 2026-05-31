@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import { databaseAPI } from '../../services/api'
-import { DatabaseBackup, DatabaseInstance } from '../../types'
+import { DatabaseBackup, DatabaseInstance, DatabaseMetrics } from '../../types'
 
 // Import modular subcomponents
 import { StudioProvider, ConfirmationModalOptions, SchemaTable } from '@/components/database-studio/StudioContext'
@@ -42,7 +42,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const [dbOverview, setDbOverview] = useState<DatabaseInstance | null>(null)
   const [schemaData, setSchemaData] = useState<SchemaTable[]>([])
   const [backups, setBackups] = useState<DatabaseBackup[]>([])
-  const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null)
+  const [metrics, setMetrics] = useState<DatabaseMetrics | null>(null)
 
   // Confirmation Modal state
   const [confirmModal, setConfirmModal] = useState<{

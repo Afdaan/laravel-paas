@@ -765,7 +765,7 @@ export function StudioStructureTab() {
                       <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                         <SelectItem value="varchar" className="text-xs font-medium cursor-pointer">VARCHAR (string)</SelectItem>
                         <SelectItem value="integer" className="text-xs font-medium cursor-pointer">INT (number)</SelectItem>
                         <SelectItem value="boolean" className="text-xs font-medium cursor-pointer">BOOLEAN (bool)</SelectItem>
@@ -865,7 +865,7 @@ export function StudioStructureTab() {
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                               <SelectValue placeholder={t('databaseStudio.structure.designer.selectTable')} />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                               {typedSchemaData.map(tb => (
                                 <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium cursor-pointer">{tb.name}</SelectItem>
                               ))}
@@ -881,7 +881,7 @@ export function StudioStructureTab() {
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                               <SelectValue placeholder={t('databaseStudio.structure.designer.selectColumn')} />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                               {newColFkTargetTable && typedSchemaData.find(tb => tb.name === newColFkTargetTable)?.columns.map((c) => (
                                 <SelectItem key={c.name} value={c.name} className="text-xs font-medium cursor-pointer">{c.name}</SelectItem>
                               ))}
@@ -898,7 +898,7 @@ export function StudioStructureTab() {
                           <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                             <SelectItem value="CASCADE" className="text-xs font-medium cursor-pointer">CASCADE</SelectItem>
                             <SelectItem value="SET NULL" className="text-xs font-medium cursor-pointer">SET NULL</SelectItem>
                             <SelectItem value="RESTRICT" className="text-xs font-medium cursor-pointer">RESTRICT</SelectItem>
@@ -976,7 +976,7 @@ export function StudioStructureTab() {
                         <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                           <SelectItem value="varchar" className="text-xs font-medium cursor-pointer">VARCHAR (string)</SelectItem>
                           <SelectItem value="integer" className="text-xs font-medium cursor-pointer">INT (number)</SelectItem>
                           <SelectItem value="boolean" className="text-xs font-medium cursor-pointer">BOOLEAN (bool)</SelectItem>
@@ -1076,7 +1076,7 @@ export function StudioStructureTab() {
                               <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                                 <SelectValue placeholder={t('databaseStudio.structure.designer.selectTable')} />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                                 {typedSchemaData.map(tb => (
                                   <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium cursor-pointer">{tb.name}</SelectItem>
                                 ))}
@@ -1092,7 +1092,7 @@ export function StudioStructureTab() {
                               <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                                 <SelectValue placeholder={t('databaseStudio.structure.designer.selectColumn')} />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                                 {editColFkTargetTable && typedSchemaData.find(tb => tb.name === editColFkTargetTable)?.columns.map((c) => (
                                   <SelectItem key={c.name} value={c.name} className="text-xs font-medium cursor-pointer">{c.name}</SelectItem>
                                 ))}
@@ -1109,7 +1109,7 @@ export function StudioStructureTab() {
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
                               <SelectItem value="CASCADE" className="text-xs font-medium cursor-pointer">CASCADE</SelectItem>
                               <SelectItem value="SET NULL" className="text-xs font-medium cursor-pointer">SET NULL</SelectItem>
                               <SelectItem value="RESTRICT" className="text-xs font-medium cursor-pointer">RESTRICT</SelectItem>

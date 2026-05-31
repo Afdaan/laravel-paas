@@ -173,6 +173,11 @@ export interface DatabaseInstance {
   connection_count: number;
   created_at: string;
   updated_at: string;
+  size?: string;
+  table_count?: number;
+  row_count?: number;
+  database?: string;
+  password?: string;
 }
 
 export interface DatabaseBackup {
@@ -185,3 +190,9 @@ export interface DatabaseBackup {
   status: 'pending' | 'completed' | 'failed';
   created_at: string;
 }
+
+export interface DatabaseMetrics {
+  active_connections: number;
+  size_kb: number;
+}
+
