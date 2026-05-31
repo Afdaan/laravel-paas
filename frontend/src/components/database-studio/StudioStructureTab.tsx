@@ -270,10 +270,24 @@ export function StudioStructureTab() {
       dbType = `VARCHAR(${len})`
     } else if (editColType === 'integer') {
       dbType = 'INT'
+    } else if (editColType === 'bigint') {
+      dbType = 'BIGINT'
     } else if (editColType === 'boolean') {
       dbType = isPostgres ? 'BOOLEAN' : 'TINYINT(1)'
     } else if (editColType === 'decimal') {
       dbType = 'DECIMAL(10,2)'
+    } else if (editColType === 'double') {
+      dbType = isPostgres ? 'DOUBLE PRECISION' : 'DOUBLE'
+    } else if (editColType === 'json') {
+      dbType = isPostgres ? 'JSONB' : 'JSON'
+    } else if (editColType === 'uuid') {
+      dbType = isPostgres ? 'UUID' : 'VARCHAR(36)'
+    } else if (editColType === 'date') {
+      dbType = 'DATE'
+    } else if (editColType === 'timestamp') {
+      dbType = isPostgres ? 'TIMESTAMP WITH TIME ZONE' : 'DATETIME'
+    } else if (editColType === 'longtext') {
+      dbType = isPostgres ? 'TEXT' : 'LONGTEXT'
     }
 
     const nullability = editColNullable ? 'NULL' : 'NOT NULL'
@@ -761,17 +775,102 @@ export function StudioStructureTab() {
                     <Label htmlFor="add_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                       Type
                     </Label>
-                    <Select value={newColType} onValueChange={setNewColType}>
+                    <Select value={newColType} onValueChange={(val) => val && setNewColType(val)}>
                       <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
-                        <SelectValue />
+                        <SelectValue>
+                          {(value) => {
+                            if (!value) return '';
+                            const typesMap: Record<string, string> = {
+                              varchar: 'VARCHAR',
+                              integer: 'INT',
+                              bigint: 'BIGINT',
+                              boolean: 'BOOLEAN',
+                              text: 'TEXT',
+                              longtext: 'LONGTEXT',
+                              decimal: 'DECIMAL',
+                              double: 'DOUBLE',
+                              json: 'JSON',
+                              uuid: 'UUID',
+                              date: 'DATE',
+                              timestamp: 'TIMESTAMP'
+                            };
+                            return typesMap[String(value)] || String(value).toUpperCase();
+                          }}
+                        </SelectValue>
                       </SelectTrigger>
-                      <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
-                        <SelectItem value="varchar" className="text-xs font-medium cursor-pointer">VARCHAR (string)</SelectItem>
-                        <SelectItem value="integer" className="text-xs font-medium cursor-pointer">INT (number)</SelectItem>
-                        <SelectItem value="boolean" className="text-xs font-medium cursor-pointer">BOOLEAN (bool)</SelectItem>
-                        <SelectItem value="text" className="text-xs font-medium cursor-pointer">TEXT (large text)</SelectItem>
-                        <SelectItem value="timestamp" className="text-xs font-medium cursor-pointer">TIMESTAMP (datetime)</SelectItem>
-                        <SelectItem value="decimal" className="text-xs font-medium cursor-pointer">DECIMAL (decimal)</SelectItem>
+                      <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
+                        <SelectItem value="varchar" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">VARCHAR</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Variable-length string (e.g. text, email)</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="integer" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">INT</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Standard 32-bit integer number</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="bigint" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">BIGINT</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Large 64-bit integer for large counts</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="boolean" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">BOOLEAN</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Logical true/false flag value</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="text" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">TEXT</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Long-form paragraph text data</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="longtext" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">LONGTEXT</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Extremely large text data block</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="decimal" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">DECIMAL</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Exact decimal for currency & prices</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="double" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">DOUBLE</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Double precision floating-point number</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="json" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">JSON</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Structured JSON/JSONB document data</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="uuid" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">UUID</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Universally unique identifier string</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="date" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">DATE</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Calendar date without time</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="timestamp" className="py-2 pl-3 cursor-pointer">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="text-sm font-semibold leading-none">TIMESTAMP</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">Date and time value with timezone</span>
+                          </div>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -861,11 +960,11 @@ export function StudioStructureTab() {
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                             {t('databaseStudio.structure.designer.targetTable')}
                           </Label>
-                          <Select value={newColFkTargetTable} onValueChange={setNewColFkTargetTable}>
+                          <Select value={newColFkTargetTable} onValueChange={(val) => val && setNewColFkTargetTable(val)}>
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                               <SelectValue placeholder={t('databaseStudio.structure.designer.selectTable')} />
                             </SelectTrigger>
-                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                               {typedSchemaData.map(tb => (
                                 <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium cursor-pointer">{tb.name}</SelectItem>
                               ))}
@@ -877,11 +976,11 @@ export function StudioStructureTab() {
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                             {t('databaseStudio.structure.designer.targetColumn')}
                           </Label>
-                          <Select value={newColFkTargetColumn} onValueChange={setNewColFkTargetColumn}>
+                          <Select value={newColFkTargetColumn} onValueChange={(val) => val && setNewColFkTargetColumn(val)}>
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                               <SelectValue placeholder={t('databaseStudio.structure.designer.selectColumn')} />
                             </SelectTrigger>
-                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                               {newColFkTargetTable && typedSchemaData.find(tb => tb.name === newColFkTargetTable)?.columns.map((c) => (
                                 <SelectItem key={c.name} value={c.name} className="text-xs font-medium cursor-pointer">{c.name}</SelectItem>
                               ))}
@@ -894,11 +993,11 @@ export function StudioStructureTab() {
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                           {t('databaseStudio.structure.designer.onDeleteAction')}
                         </Label>
-                        <Select value={newColFkOnDelete} onValueChange={setNewColFkOnDelete}>
+                        <Select value={newColFkOnDelete} onValueChange={(val) => val && setNewColFkOnDelete(val)}>
                           <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                             <SelectItem value="CASCADE" className="text-xs font-medium cursor-pointer">CASCADE</SelectItem>
                             <SelectItem value="SET NULL" className="text-xs font-medium cursor-pointer">SET NULL</SelectItem>
                             <SelectItem value="RESTRICT" className="text-xs font-medium cursor-pointer">RESTRICT</SelectItem>
@@ -972,17 +1071,102 @@ export function StudioStructureTab() {
                       <Label htmlFor="mod_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         Type
                       </Label>
-                      <Select value={editColType} onValueChange={setEditColType}>
+                      <Select value={editColType} onValueChange={(val) => val && setEditColType(val)}>
                         <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
-                          <SelectValue />
+                          <SelectValue>
+                            {(value) => {
+                              if (!value) return '';
+                              const typesMap: Record<string, string> = {
+                                varchar: 'VARCHAR',
+                                integer: 'INT',
+                                bigint: 'BIGINT',
+                                boolean: 'BOOLEAN',
+                                text: 'TEXT',
+                                longtext: 'LONGTEXT',
+                                decimal: 'DECIMAL',
+                                double: 'DOUBLE',
+                                json: 'JSON',
+                                uuid: 'UUID',
+                                date: 'DATE',
+                                timestamp: 'TIMESTAMP'
+                              };
+                              return typesMap[String(value)] || String(value).toUpperCase();
+                            }}
+                          </SelectValue>
                         </SelectTrigger>
-                        <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
-                          <SelectItem value="varchar" className="text-xs font-medium cursor-pointer">VARCHAR (string)</SelectItem>
-                          <SelectItem value="integer" className="text-xs font-medium cursor-pointer">INT (number)</SelectItem>
-                          <SelectItem value="boolean" className="text-xs font-medium cursor-pointer">BOOLEAN (bool)</SelectItem>
-                          <SelectItem value="text" className="text-xs font-medium cursor-pointer">TEXT (large text)</SelectItem>
-                          <SelectItem value="timestamp" className="text-xs font-medium cursor-pointer">TIMESTAMP (datetime)</SelectItem>
-                          <SelectItem value="decimal" className="text-xs font-medium cursor-pointer">DECIMAL (decimal)</SelectItem>
+                        <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
+                          <SelectItem value="varchar" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">VARCHAR</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Variable-length string (e.g. text, email)</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="integer" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">INT</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Standard 32-bit integer number</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="bigint" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">BIGINT</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Large 64-bit integer for large counts</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="boolean" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">BOOLEAN</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Logical true/false flag value</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="text" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">TEXT</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Long-form paragraph text data</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="longtext" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">LONGTEXT</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Extremely large text data block</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="decimal" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">DECIMAL</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Exact decimal for currency & prices</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="double" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">DOUBLE</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Double precision floating-point number</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="json" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">JSON</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Structured JSON/JSONB document data</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="uuid" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">UUID</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Universally unique identifier string</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="date" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">DATE</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Calendar date without time</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="timestamp" className="py-2 pl-3 cursor-pointer">
+                            <div className="flex flex-col gap-0.5 text-left">
+                              <span className="text-sm font-semibold leading-none">TIMESTAMP</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">Date and time value with timezone</span>
+                            </div>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1072,11 +1256,11 @@ export function StudioStructureTab() {
                             <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                               {t('databaseStudio.structure.designer.targetTable')}
                             </Label>
-                            <Select value={editColFkTargetTable} onValueChange={setEditColFkTargetTable}>
+                            <Select value={editColFkTargetTable} onValueChange={(val) => val && setEditColFkTargetTable(val)}>
                               <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                                 <SelectValue placeholder={t('databaseStudio.structure.designer.selectTable')} />
                               </SelectTrigger>
-                              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                                 {typedSchemaData.map(tb => (
                                   <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium cursor-pointer">{tb.name}</SelectItem>
                                 ))}
@@ -1088,11 +1272,11 @@ export function StudioStructureTab() {
                             <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                               {t('databaseStudio.structure.designer.targetColumn')}
                             </Label>
-                            <Select value={editColFkTargetColumn} onValueChange={setEditColFkTargetColumn}>
+                            <Select value={editColFkTargetColumn} onValueChange={(val) => val && setEditColFkTargetColumn(val)}>
                               <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                                 <SelectValue placeholder={t('databaseStudio.structure.designer.selectColumn')} />
                               </SelectTrigger>
-                              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                                 {editColFkTargetTable && typedSchemaData.find(tb => tb.name === editColFkTargetTable)?.columns.map((c) => (
                                   <SelectItem key={c.name} value={c.name} className="text-xs font-medium cursor-pointer">{c.name}</SelectItem>
                                 ))}
@@ -1105,11 +1289,11 @@ export function StudioStructureTab() {
                           <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                             {t('databaseStudio.structure.designer.onDeleteAction')}
                           </Label>
-                          <Select value={editColFkOnDelete} onValueChange={setEditColFkOnDelete}>
+                          <Select value={editColFkOnDelete} onValueChange={(val) => val && setEditColFkOnDelete(val)}>
                             <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                               <SelectItem value="CASCADE" className="text-xs font-medium cursor-pointer">CASCADE</SelectItem>
                               <SelectItem value="SET NULL" className="text-xs font-medium cursor-pointer">SET NULL</SelectItem>
                               <SelectItem value="RESTRICT" className="text-xs font-medium cursor-pointer">RESTRICT</SelectItem>

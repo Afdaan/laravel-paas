@@ -1428,7 +1428,7 @@ function UserProjectDetail() {
                         <SelectTrigger className="h-12 border-muted-foreground/20">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                           {['8.1', '8.2', '8.3', '8.4'].map(v => (
                             <SelectItem key={v} value={v}>PHP {v} {v === '8.4' ? t('projectDetail.settings.latest') : ''}</SelectItem>
                           ))}
@@ -1461,7 +1461,7 @@ function UserProjectDetail() {
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                             {[
                               { v: '18', l: 'Node.js 18 (LTS)' },
                               { v: '20', l: 'Node.js 20 (LTS)' },
@@ -1484,7 +1484,7 @@ function UserProjectDetail() {
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                             {['1.20', '1.21', '1.22'].map(v => (
                               <SelectItem key={v} value={v}>Go {v}</SelectItem>
                             ))}
@@ -1503,7 +1503,7 @@ function UserProjectDetail() {
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                             {['3.9', '3.10', '3.11', '3.12'].map(v => (
                               <SelectItem key={v} value={v}>Python {v}</SelectItem>
                             ))}

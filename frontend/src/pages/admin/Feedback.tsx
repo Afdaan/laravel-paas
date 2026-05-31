@@ -140,7 +140,7 @@ const AdminFeedback = () => {
                 <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder={t('admin.feedback.allStates')} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                   <SelectItem value="all">{t('admin.feedback.allStates')}</SelectItem>
                   <SelectItem value="pending">{t('feedback.status.pending')}</SelectItem>
                   <SelectItem value="in_review">{t('feedback.status.inPreview')}</SelectItem>
@@ -155,7 +155,7 @@ const AdminFeedback = () => {
                 <SelectTrigger className="w-[160px]">
                   <SelectValue placeholder={t('admin.feedback.allCategories')} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                   <SelectItem value="all">
                     <div className="flex items-center gap-2"><Sparkles className="w-4 h-4" /> {t('admin.feedback.allCategories')}</div>
                   </SelectItem>

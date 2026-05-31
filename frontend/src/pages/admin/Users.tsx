@@ -304,7 +304,7 @@ const AdminUsers = () => {
               <SelectTrigger className={'w-full'}>
                 <SelectValue placeholder={t('admin.users.allAccess')} />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                 <SelectItem value="all">{t('admin.users.allAccess')}</SelectItem>
                 <SelectItem value="user">{t('admin.users.level1')}</SelectItem>
                 <SelectItem value="admin">{t('admin.users.level2')}</SelectItem>
@@ -456,7 +456,8 @@ const AdminUsers = () => {
                   <SelectContent
                     side="top"
                     align="end"
-                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                    alignItemWithTrigger={false}
+                    className="min-w-[120px] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72"
                   >
                     {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
                       <SelectItem

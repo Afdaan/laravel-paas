@@ -264,7 +264,8 @@ const AdminDatabases = () => {
                   <SelectContent
                     side="top"
                     align="end"
-                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                    alignItemWithTrigger={false}
+                    className="min-w-[120px] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-[220px]"
                   >
                     {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
                       <SelectItem
