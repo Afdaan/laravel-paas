@@ -494,7 +494,7 @@ export function StudioStructureTab() {
           {!isSuspended && (
             <button
               onClick={() => setDesignerAction('create_table')}
-              className="text-primary hover:text-primary/80 transition-colors p-1"
+              className="text-primary hover:text-primary/80 transition-colors p-1 cursor-pointer"
               title={t('databaseStudio.tables.addTable')}
             >
               <Plus className="w-4.5 h-4.5" />
