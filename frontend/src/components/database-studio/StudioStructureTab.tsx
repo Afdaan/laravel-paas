@@ -894,8 +894,8 @@ export function StudioStructureTab() {
                   <div className="flex flex-col gap-3 text-xs">
                     <label className="flex items-start gap-2.5 font-medium cursor-pointer select-none">
                       <Checkbox
-                        checked={newColUnique}
-                        onCheckedChange={(checked) => setNewColUnique(Boolean(checked))}
+                        checked={newColNullable}
+                        onCheckedChange={(checked) => setNewColNullable(Boolean(checked))}
                         className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                       />
                       <div className="flex flex-col">
