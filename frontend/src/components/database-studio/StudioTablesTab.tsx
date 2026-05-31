@@ -7,7 +7,8 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
-  PlusCircle
+  PlusCircle,
+  Clock
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,12 +30,23 @@ import {
   formatCellValue,
   adjustDatetimeForDatabase,
   formatDatetimeLocal,
-  formatDate
+  formatDate,
+  toLocalDateString,
+  toLocalISOString
 } from './utils'
 
 interface TableDataGrid {
   columns: string[];
   rows: Record<string, unknown>[];
+}
+
+const tryFormatJson = (val: string): string => {
+  try {
+    JSON.parse(val)
+    return val
+  } catch (e) {
+    return JSON.stringify(val)
+  }
 }
 
 export function StudioTablesTab() {
@@ -154,12 +166,17 @@ export function StudioTablesTab() {
         }
 
         if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
-          values.push(val === 'true' || val === true || val === '1' || val === 1 ? '1' : '0')
+          const boolVal = val === 'true' || val === true || val === '1' || val === 1
+          values.push(isPostgres ? (boolVal ? 'TRUE' : 'FALSE') : (boolVal ? '1' : '0'))
         } else if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
           const num = Number(val)
           values.push(isNaN(num) ? '0' : String(num))
         } else {
-          const escapedVal = String(val).replace(/'/g, "''")
+          let finalVal = String(val)
+          if (typeLower.includes('json') || col.name.toLowerCase().includes('json')) {
+            finalVal = tryFormatJson(finalVal)
+          }
+          const escapedVal = finalVal.replace(/'/g, "''")
           values.push(`'${escapedVal}'`)
         }
       })
@@ -234,7 +251,11 @@ export function StudioTablesTab() {
         const num = Number(val)
         setClauses.push(`${escapedCol} = ${isNaN(num) ? 0 : num}`)
       } else {
-        const escapedVal = String(val).replace(/'/g, "''")
+        let finalVal = String(val)
+        if (typeLower.includes('json') || col.name.toLowerCase().includes('json')) {
+          finalVal = tryFormatJson(finalVal)
+        }
+        const escapedVal = finalVal.replace(/'/g, "''")
         setClauses.push(`${escapedCol} = '${escapedVal}'`)
       }
     })
@@ -326,7 +347,11 @@ export function StudioTablesTab() {
           const num = Number(val)
           updates[col.name] = isNaN(num) ? 0 : num
         } else {
-          updates[col.name] = val
+          let finalVal = val
+          if (typeLower.includes('json') || col.name.toLowerCase().includes('json')) {
+            finalVal = tryFormatJson(String(val))
+          }
+          updates[col.name] = finalVal
         }
       })
 
@@ -636,20 +661,36 @@ export function StudioTablesTab() {
                           </SelectContent>
                         </Select>
                       ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
-                        <input
-                          id={`insert_${col}`}
-                          key={selectedTable + '_' + col}
-                          type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
-                          defaultValue={String(insertFormData[col] || '')}
-                          onChange={(e) => {
-                            const val = e.target.value
-                            const isBadInput = e.target.validity?.badInput
-                            if (val === '' && isBadInput) return
-                            setInsertFormData(prev => ({ ...prev, [col]: val }))
-                          }}
-                          required={!isNullable}
-                          className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
-                        />
+                        <div className="relative flex items-center w-full">
+                          <input
+                            id={`insert_${col}`}
+                            key={selectedTable + '_' + col}
+                            type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
+                            value={String(insertFormData[col] || '')}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              const isBadInput = e.target.validity?.badInput
+                              if (val === '' && isBadInput) return
+                              setInsertFormData(prev => ({ ...prev, [col]: val }))
+                            }}
+                            required={!isNullable}
+                            className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const now = new Date()
+                              const isDateOnly = typeLower.includes('date') && !typeLower.includes('time')
+                              const val = isDateOnly ? toLocalDateString(now) : toLocalISOString(now)
+                              setInsertFormData(prev => ({ ...prev, [col]: val }))
+                            }}
+                            className="absolute right-3 flex items-center justify-center p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                            title="Set to Current Time"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       ) : (
                         <Input
                           id={`insert_${col}`}
@@ -753,20 +794,36 @@ export function StudioTablesTab() {
                             </SelectContent>
                           </Select>
                         ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
-                          <input
-                            id={`edit_${col.name}`}
-                            key={editingRow ? `${editingRow[pkColumn ?? col.name]}_${col.name}` : col.name}
-                            type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
-                            defaultValue={String(editFormData[col.name] || '')}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              const isBadInput = e.target.validity?.badInput
-                              if (val === '' && isBadInput) return
-                              setEditFormData(prev => ({ ...prev, [col.name]: val }))
-                            }}
-                            required={!isNullable}
-                            className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
-                          />
+                          <div className="relative flex items-center w-full">
+                            <input
+                              id={`edit_${col.name}`}
+                              key={editingRow ? `${editingRow[pkColumn ?? col.name]}_${col.name}` : col.name}
+                              type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
+                              value={String(editFormData[col.name] || '')}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                const isBadInput = e.target.validity?.badInput
+                                if (val === '' && isBadInput) return
+                                setEditFormData(prev => ({ ...prev, [col.name]: val }))
+                              }}
+                              required={!isNullable}
+                              className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const now = new Date()
+                                const isDateOnly = typeLower.includes('date') && !typeLower.includes('time')
+                                const val = isDateOnly ? toLocalDateString(now) : toLocalISOString(now)
+                                setEditFormData(prev => ({ ...prev, [col.name]: val }))
+                              }}
+                              className="absolute right-3 flex items-center justify-center p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                              title="Set to Current Time"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         ) : (
                           <Input
                             id={`edit_${col.name}`}
