@@ -267,7 +267,9 @@ export const formatCellValue = (val: unknown): React.ReactNode => {
   }
   
   const strVal = String(val).trim()
-  if (!strVal) return strVal
+  if (!strVal || strVal.startsWith('0000-00-00') || strVal.startsWith('0001-01-01')) {
+    return React.createElement('span', { className: 'text-muted-foreground/30 italic' }, 'NULL')
+  }
 
   // Check if it matches ISO datetime or DB space-separated datetime
   const datetimeRegex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i

@@ -647,14 +647,14 @@ export function StudioStructureTab() {
                                   <MoreHorizontal className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="center" className="w-36 bg-card border border-border/80 rounded-xl shadow-xl">
-                                <DropdownMenuItem onClick={() => openModifyColumnModal(selectedTable, col)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
-                                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem onClick={() => openModifyColumnModal(selectedTable, col)}>
+                                  <Pencil />
                                   {t('databaseStudio.structure.actions.modifyColumn')}
                                 </DropdownMenuItem>
                                 {!isPri && (
-                                  <DropdownMenuItem onClick={() => handleDropColumn(selectedTable, col.name)} className="text-destructive gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                  <DropdownMenuItem onClick={() => handleDropColumn(selectedTable, col.name)} variant="destructive">
+                                    <Trash2 />
                                     {t('databaseStudio.structure.actions.dropColumn')}
                                   </DropdownMenuItem>
                                 )}

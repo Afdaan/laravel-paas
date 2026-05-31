@@ -8,7 +8,9 @@ import {
   Pencil,
   Trash2,
   PlusCircle,
-  Clock
+  Clock,
+  Copy,
+  Check
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -71,6 +73,9 @@ export function StudioTablesTab() {
   // Visual Dynamic Insert Row states
   const [showInsertModal, setShowInsertModal] = useState(false)
   const [insertFormData, setInsertFormData] = useState<Record<string, string | number | boolean | null>>({})
+  const [showRowInsertPreview, setShowRowInsertPreview] = useState(false)
+  const [rowInsertPreviewSql, setRowInsertPreviewSql] = useState('')
+  const [copiedSql, setCopiedSql] = useState(false)
 
   // Visual Edit Row states
   const [showEditModal, setShowEditModal] = useState(false)
@@ -139,11 +144,17 @@ export function StudioTablesTab() {
     })
   }
 
-  const handleInsertRowSubmit = async (e: React.FormEvent) => {
+  const handleCopySql = (sql: string) => {
+    navigator.clipboard.writeText(sql)
+    setCopiedSql(true)
+    toast.success(t('common.copied') || 'Copied to clipboard!')
+    setTimeout(() => setCopiedSql(false), 2000)
+  }
+
+  const handleInsertRowSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!id || !selectedTable) return
 
-    setIsActionLoading(true)
     try {
       const cols = schemaData.find(tb => tb.name === selectedTable)?.columns || []
       const fields: string[] = []
@@ -183,12 +194,24 @@ export function StudioTablesTab() {
 
       if (fields.length === 0) {
         toast.error(t('databaseStudio.errors.designerActionFailed'))
-        setIsActionLoading(false)
         return
       }
 
       const sql = `INSERT INTO ${q}${selectedTable}${q} (${fields.join(', ')}) VALUES (${values.join(', ')});`
-      const res = await databaseAPI.query(id, sql)
+      setRowInsertPreviewSql(sql)
+      setShowRowInsertPreview(true)
+    } catch (error) {
+      const err = error as { message?: string }
+      toast.error(t('databaseStudio.tables.insertModal.failed') + ': ' + err.message)
+    }
+  }
+
+  const handleInsertRowCommit = async () => {
+    if (!id || !selectedTable || !rowInsertPreviewSql) return
+
+    setIsActionLoading(true)
+    try {
+      const res = await databaseAPI.query(id, rowInsertPreviewSql)
       if (res.data && res.data.error) {
         throw new Error(res.data.error)
       }
@@ -449,9 +472,37 @@ export function StudioTablesTab() {
                 const initialData: Record<string, string | number | boolean | null> = {}
                 cols.forEach((c: SchemaColumn) => {
                   if (c.key === 'PRI') return
-                  initialData[c.name] = c.default ?? ''
+
+                  const typeLower = c.type.toLowerCase()
+                  const isDateType = typeLower.includes('date') || typeLower.includes('time') || typeLower.includes('timestamp')
+                  
+                  if (isDateType) {
+                    const isDynamicDefault = typeof c.default === 'string' && (
+                      c.default.toLowerCase().includes('current_timestamp') ||
+                      c.default.toLowerCase().includes('now()') ||
+                      c.default.toLowerCase().includes('uuid')
+                    )
+                    
+                    if (isDynamicDefault) {
+                      initialData[c.name] = ''
+                    } else if (c.default) {
+                      if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
+                        initialData[c.name] = formatDatetimeLocal(c.default)
+                      } else if (typeLower.includes('date')) {
+                        initialData[c.name] = formatDate(c.default)
+                      } else {
+                        initialData[c.name] = String(c.default)
+                      }
+                    } else {
+                      initialData[c.name] = ''
+                    }
+                  } else {
+                    initialData[c.name] = c.default ?? ''
+                  }
                 })
                 setInsertFormData(initialData)
+                setShowRowInsertPreview(false)
+                setRowInsertPreviewSql('')
                 setShowInsertModal(true)
               }}
               className="font-bold gap-1.5 h-10 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm shrink-0 cursor-pointer"
@@ -532,13 +583,13 @@ export function StudioTablesTab() {
                                   <MoreHorizontal className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="center" className="w-32 bg-card border border-border/80 rounded-xl shadow-xl">
-                                <DropdownMenuItem onClick={() => openEditRowModal(row)} className="gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
-                                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                              <DropdownMenuContent align="end" className="w-32">
+                                <DropdownMenuItem onClick={() => openEditRowModal(row)}>
+                                  <Pencil />
                                   {t('common.edit')}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDeleteRow(row, pkColumn)} className="text-destructive gap-2 cursor-pointer text-xs font-bold" style={{ cursor: 'pointer' }}>
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                <DropdownMenuItem onClick={() => handleDeleteRow(row, pkColumn)} variant="destructive">
+                                  <Trash2 />
                                   {t('common.delete')}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
@@ -600,121 +651,154 @@ export function StudioTablesTab() {
             <DialogHeader className="pb-2 border-b border-border/40">
               <DialogTitle className="text-lg font-extrabold flex items-center gap-2 text-foreground/90">
                 <PlusCircle className="w-5 h-5 text-primary" />
-                {t('databaseStudio.tables.insertModal.title')}
+                {showRowInsertPreview ? t('databaseStudio.tables.editModal.previewTitle') : t('databaseStudio.tables.insertModal.title')}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                {t('databaseStudio.tables.insertModal.desc')}
+                {showRowInsertPreview ? (
+                  <span>
+                    {t('databaseStudio.tables.editModal.previewDesc')} — <span className="font-mono text-primary font-semibold">{selectedTable}</span>
+                  </span>
+                ) : (
+                  t('databaseStudio.tables.insertModal.desc')
+                )}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleInsertRowSubmit} className="space-y-4 pt-3">
-              <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-                {(tableData?.columns || []).map((col: string) => {
-                  const schemaTable = schemaData.find(tb => tb.name === selectedTable)
-                  const colDetail = schemaTable?.columns?.find((c: SchemaColumn) => c.name === col)
-                  const isPK = colDetail?.key === 'PRI' || colDetail?.extra?.toLowerCase().includes('auto_increment')
-                  const isNullable = colDetail?.nullable === 'YES' || colDetail?.null === 'YES' || colDetail?.nullable === true
-                  const typeLower = (colDetail?.type || 'varchar').toLowerCase()
-                  
-                  return (
-                    <div key={col} className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor={`insert_${col}`} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                          {col}
-                          <span className="font-mono text-[9px] text-muted-foreground/50 lowercase">({colDetail?.type || 'unknown'})</span>
-                          {!isNullable && !isPK && <span className="text-red-500 font-bold">*</span>}
-                        </Label>
-                        
-                        {isPK ? (
-                          <span className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                            Primary Key
-                          </span>
-                        ) : isNullable ? (
-                          <span className="text-[9px] font-bold uppercase text-muted-foreground/60 bg-muted/10 px-1.5 py-0.5 rounded border border-border/40">
-                            Optional
-                          </span>
-                        ) : undefined}
-                      </div>
 
-                      {isPK ? (
-                        <Input
-                          id={`insert_${col}`}
-                          disabled
-                          value={String(insertFormData[col] || '')}
-                          placeholder="Auto-incrementing ID"
-                          className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
-                        />
-                      ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
-                        <Select
-                          value={String(insertFormData[col] ?? '')}
-                          onValueChange={(val) => setInsertFormData(prev => ({ ...prev, [col]: val }))}
-                        >
-                          <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
-                            <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
-                          </SelectTrigger>
-                          <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
-                            <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
-                              {t('databaseStudio.tables.booleanTrue')}
-                            </SelectItem>
-                            <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
-                              {t('databaseStudio.tables.booleanFalse')}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
-                        <div className="relative flex items-center w-full">
-                          <input
-                            id={`insert_${col}`}
-                            key={selectedTable + '_' + col}
-                            type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
-                            value={String(insertFormData[col] || '')}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              const isBadInput = e.target.validity?.badInput
-                              if (val === '' && isBadInput) return
-                              setInsertFormData(prev => ({ ...prev, [col]: val }))
-                            }}
-                            required={!isNullable}
-                            className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const now = new Date()
-                              const isDateOnly = typeLower.includes('date') && !typeLower.includes('time')
-                              const val = isDateOnly ? toLocalDateString(now) : toLocalISOString(now)
-                              setInsertFormData(prev => ({ ...prev, [col]: val }))
-                            }}
-                            className="absolute right-3 flex items-center justify-center p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                            title="Set to Current Time"
-                            style={{ cursor: 'pointer' }}
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                          </button>
+            {!showRowInsertPreview ? (
+              <form onSubmit={handleInsertRowSubmit} className="space-y-4 pt-3">
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  {(tableData?.columns || []).map((col: string) => {
+                    const schemaTable = schemaData.find(tb => tb.name === selectedTable)
+                    const colDetail = schemaTable?.columns?.find((c: SchemaColumn) => c.name === col)
+                    const isPK = colDetail?.key === 'PRI' || colDetail?.extra?.toLowerCase().includes('auto_increment')
+                    const isNullable = colDetail?.nullable === 'YES' || colDetail?.null === 'YES' || colDetail?.nullable === true
+                    const typeLower = (colDetail?.type || 'varchar').toLowerCase()
+                    
+                    return (
+                      <div key={col} className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`insert_${col}`} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                            {col}
+                            <span className="font-mono text-[9px] text-muted-foreground/50 lowercase">({colDetail?.type || 'unknown'})</span>
+                            {!isNullable && !isPK && <span className="text-red-500 font-bold">*</span>}
+                          </Label>
+                          
+                          {isPK ? (
+                            <span className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                              Primary Key
+                            </span>
+                          ) : isNullable ? (
+                            <span className="text-[9px] font-bold uppercase text-muted-foreground/60 bg-muted/10 px-1.5 py-0.5 rounded border border-border/40">
+                              Optional
+                            </span>
+                          ) : undefined}
                         </div>
-                      ) : (
-                        <Input
-                          id={`insert_${col}`}
-                          value={String(insertFormData[col] || '')}
-                          onChange={(e) => setInsertFormData(prev => ({ ...prev, [col]: e.target.value }))}
-                          placeholder={isNullable ? "NULL" : "Enter value..."}
-                          required={!isNullable}
-                          className="h-10 rounded-xl bg-background/50 text-xs"
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+  
+                        {isPK ? (
+                          <Input
+                            id={`insert_${col}`}
+                            disabled
+                            value={String(insertFormData[col] || '')}
+                            placeholder="Auto-incrementing ID"
+                            className="h-10 rounded-xl bg-muted/40 border-border/40 font-mono text-xs cursor-not-allowed"
+                          />
+                        ) : typeLower.includes('bool') || typeLower.includes('tinyint(1)') ? (
+                          <Select
+                            value={String(insertFormData[col] ?? '')}
+                            onValueChange={(val) => setInsertFormData(prev => ({ ...prev, [col]: val }))}
+                          >
+                            <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold text-left justify-between">
+                              <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
+                            </SelectTrigger>
+                            <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
+                              <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                {t('databaseStudio.tables.booleanTrue')}
+                              </SelectItem>
+                              <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                                {t('databaseStudio.tables.booleanFalse')}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
+                          <div className="relative flex items-center w-full">
+                            <input
+                              id={`insert_${col}`}
+                              key={selectedTable + '_' + col}
+                              type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
+                              value={String(insertFormData[col] || '')}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                const isBadInput = e.target.validity?.badInput
+                                if (val === '' && isBadInput) return
+                                setInsertFormData(prev => ({ ...prev, [col]: val }))
+                              }}
+                              required={!isNullable}
+                              className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const now = new Date()
+                                const isDateOnly = typeLower.includes('date') && !typeLower.includes('time')
+                                const val = isDateOnly ? toLocalDateString(now) : toLocalISOString(now)
+                                setInsertFormData(prev => ({ ...prev, [col]: val }))
+                              }}
+                              className="absolute right-3 flex items-center justify-center p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                              title="Set to Current Time"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <Input
+                            id={`insert_${col}`}
+                            value={String(insertFormData[col] || '')}
+                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col]: e.target.value }))}
+                            placeholder={isNullable ? "NULL" : "Enter value..."}
+                            required={!isNullable}
+                            className="h-10 rounded-xl bg-background/50 text-xs"
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+  
+                <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                  <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                    {isActionLoading ? t('common.executing') : t('databaseStudio.tables.insertModal.submit')}
+                  </Button>
+                  <Button type="button" onClick={() => setShowInsertModal(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4 pt-3">
+                <div className="relative bg-muted/30 border border-border/60 rounded-xl p-3.5 font-mono text-xs text-foreground/80 whitespace-pre-wrap select-all max-h-[220px] overflow-y-auto leading-relaxed scrollbar-thin pr-12">
+                  {rowInsertPreviewSql}
+                  <button
+                    type="button"
+                    onClick={() => handleCopySql(rowInsertPreviewSql)}
+                    className="absolute right-2.5 top-2.5 p-1.5 rounded-lg bg-background border border-border/40 text-muted-foreground hover:text-foreground transition-all duration-200 cursor-pointer shadow-sm"
+                    title={t('common.copy')}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {copiedSql ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
 
-              <div className="flex gap-2.5 pt-2 border-t border-border/40">
-                <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
-                  {isActionLoading ? t('common.executing') : t('databaseStudio.tables.insertModal.submit')}
-                </Button>
-                <Button type="button" onClick={() => setShowInsertModal(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
-                  {t('common.cancel')}
-                </Button>
+                <div className="flex gap-2.5 pt-2 border-t border-border/40">
+                  <Button onClick={handleInsertRowCommit} disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                    {isActionLoading ? t('common.executing') : t('databaseStudio.tables.editModal.commitBtn')}
+                  </Button>
+                  <Button type="button" onClick={() => setShowRowInsertPreview(false)} variant="outline" className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
+                    {t('databaseStudio.tables.editModal.backBtn')}
+                  </Button>
+                </div>
               </div>
-            </form>
+            )}
           </DialogContent>
         </Dialog>
       )}
@@ -850,8 +934,17 @@ export function StudioTablesTab() {
               </form>
             ) : (
               <div className="space-y-4 pt-3">
-                <div className="bg-muted/30 border border-border/60 rounded-xl p-3.5 font-mono text-xs text-foreground/80 whitespace-pre-wrap select-all max-h-[220px] overflow-y-auto leading-relaxed scrollbar-thin">
+                <div className="relative bg-muted/30 border border-border/60 rounded-xl p-3.5 font-mono text-xs text-foreground/80 whitespace-pre-wrap select-all max-h-[220px] overflow-y-auto leading-relaxed scrollbar-thin pr-12">
                   {rowEditPreviewSql}
+                  <button
+                    type="button"
+                    onClick={() => handleCopySql(rowEditPreviewSql)}
+                    className="absolute right-2.5 top-2.5 p-1.5 rounded-lg bg-background border border-border/40 text-muted-foreground hover:text-foreground transition-all duration-200 cursor-pointer shadow-sm"
+                    title={t('common.copy')}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {copiedSql ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
 
                 <div className="flex gap-2.5 pt-2 border-t border-border/40">
