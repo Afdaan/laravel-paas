@@ -683,6 +683,17 @@ function UserProjectDetail() {
 
   useEffect(() => {
     settingsInitialized.current = false
+    // Clear stale data from previous project immediately to prevent dirty-state false positives
+    setBranchesList([])
+    setBranchInput('')
+    setBaseDirInput('')
+    setBuildCommandInput('')
+    setStartCommandInput('')
+    setNodeVersionInput('20')
+    setPhpVersionInput('8.2')
+    setWorkerCommandInput('')
+    setQueueEnabledInput(false)
+    setLanguageVersionInput('')
     setIsLoading(true)
     fetchProject(true)
     fetchBranches(false)
