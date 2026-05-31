@@ -966,7 +966,7 @@ export function StudioStructureTab() {
                             </SelectTrigger>
                             <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                               {typedSchemaData.map(tb => (
-                                <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium cursor-pointer">{tb.name}</SelectItem>
+                                <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium py-2 pl-3 cursor-pointer">{tb.name}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -982,7 +982,7 @@ export function StudioStructureTab() {
                             </SelectTrigger>
                             <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                               {newColFkTargetTable && typedSchemaData.find(tb => tb.name === newColFkTargetTable)?.columns.map((c) => (
-                                <SelectItem key={c.name} value={c.name} className="text-xs font-medium cursor-pointer">{c.name}</SelectItem>
+                                <SelectItem key={c.name} value={c.name} className="text-xs font-medium py-2 pl-3 cursor-pointer">{c.name}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -998,10 +998,10 @@ export function StudioStructureTab() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
-                            <SelectItem value="CASCADE" className="text-xs font-medium cursor-pointer">CASCADE</SelectItem>
-                            <SelectItem value="SET NULL" className="text-xs font-medium cursor-pointer">SET NULL</SelectItem>
-                            <SelectItem value="RESTRICT" className="text-xs font-medium cursor-pointer">RESTRICT</SelectItem>
-                            <SelectItem value="NO ACTION" className="text-xs font-medium cursor-pointer">NO ACTION</SelectItem>
+                            <SelectItem value="CASCADE" className="text-xs font-medium py-2 pl-3 cursor-pointer">CASCADE</SelectItem>
+                            <SelectItem value="SET NULL" className="text-xs font-medium py-2 pl-3 cursor-pointer">SET NULL</SelectItem>
+                            <SelectItem value="RESTRICT" className="text-xs font-medium py-2 pl-3 cursor-pointer">RESTRICT</SelectItem>
+                            <SelectItem value="NO ACTION" className="text-xs font-medium py-2 pl-3 cursor-pointer">NO ACTION</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -1252,7 +1252,7 @@ export function StudioStructureTab() {
                               </SelectTrigger>
                               <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                                 {typedSchemaData.map(tb => (
-                                  <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium cursor-pointer">{tb.name}</SelectItem>
+                                  <SelectItem key={tb.name} value={tb.name} className="text-xs font-medium py-2 pl-3 cursor-pointer">{tb.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -1268,7 +1268,7 @@ export function StudioStructureTab() {
                               </SelectTrigger>
                               <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                                 {editColFkTargetTable && typedSchemaData.find(tb => tb.name === editColFkTargetTable)?.columns.map((c) => (
-                                  <SelectItem key={c.name} value={c.name} className="text-xs font-medium cursor-pointer">{c.name}</SelectItem>
+                                  <SelectItem key={c.name} value={c.name} className="text-xs font-medium py-2 pl-3 cursor-pointer">{c.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -1284,10 +1284,10 @@ export function StudioStructureTab() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
-                              <SelectItem value="CASCADE" className="text-xs font-medium cursor-pointer">CASCADE</SelectItem>
-                              <SelectItem value="SET NULL" className="text-xs font-medium cursor-pointer">SET NULL</SelectItem>
-                              <SelectItem value="RESTRICT" className="text-xs font-medium cursor-pointer">RESTRICT</SelectItem>
-                              <SelectItem value="NO ACTION" className="text-xs font-medium cursor-pointer">NO ACTION</SelectItem>
+                              <SelectItem value="CASCADE" className="text-xs font-medium py-2 pl-3 cursor-pointer">CASCADE</SelectItem>
+                              <SelectItem value="SET NULL" className="text-xs font-medium py-2 pl-3 cursor-pointer">SET NULL</SelectItem>
+                              <SelectItem value="RESTRICT" className="text-xs font-medium py-2 pl-3 cursor-pointer">RESTRICT</SelectItem>
+                              <SelectItem value="NO ACTION" className="text-xs font-medium py-2 pl-3 cursor-pointer">NO ACTION</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
