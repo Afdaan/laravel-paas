@@ -395,7 +395,7 @@ export function StudioTablesTab() {
                      "text-[9px] font-mono px-1.5 py-0.5 rounded-md",
                      selectedTable === table.name ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/50'
                   )}>
-                    {table.rows}
+                    {table.rows} rows
                   </span>
                 )}
               </button>
@@ -421,7 +421,7 @@ export function StudioTablesTab() {
                 const initialData: Record<string, string | number | boolean | null> = {}
                 cols.forEach((c: SchemaColumn) => {
                   if (c.key === 'PRI') return
-                  initialData[c.name] = c.default !== null ? c.default : ''
+                  initialData[c.name] = c.default ?? ''
                 })
                 setInsertFormData(initialData)
                 setShowInsertModal(true)
@@ -752,7 +752,7 @@ export function StudioTablesTab() {
                         ) : typeLower.includes('timestamp') || typeLower.includes('datetime') || typeLower.includes('date') ? (
                           <input
                             id={`edit_${col.name}`}
-                            key={editingRow ? `${editingRow[pkColumn]}_${col.name}` : col.name}
+                            key={editingRow ? `${editingRow[pkColumn ?? col.name]}_${col.name}` : col.name}
                             type={typeLower.includes('date') && !typeLower.includes('time') ? "date" : "datetime-local"}
                             defaultValue={String(editFormData[col.name] || '')}
                             onChange={(e) => {

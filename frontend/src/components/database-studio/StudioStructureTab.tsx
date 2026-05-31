@@ -538,6 +538,14 @@ export function StudioStructureTab() {
                   <Table className={cn("w-3.5 h-3.5 shrink-0", selectedTable === table.name ? "text-primary" : "text-muted-foreground/60 group-hover:text-foreground")} />
                   <span className="truncate pr-1 tracking-tight">{table.name}</span>
                 </div>
+                {table.rows != null && (
+                  <span className={cn(
+                     "text-[9px] font-mono px-1.5 py-0.5 rounded-md shrink-0",
+                     selectedTable === table.name ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/50'
+                  )}>
+                    {table.rows} rows
+                  </span>
+                )}
               </button>
             ))
           )}
