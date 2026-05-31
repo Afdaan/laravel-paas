@@ -12,7 +12,8 @@ import {
   Eye,
   ArrowRightLeft,
   Terminal,
-  Plus
+  Plus,
+  ArrowRight
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -555,31 +556,31 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
             <button
               onClick={() => setActiveTab('query')}
               disabled={isSuspended}
-              className="w-full p-3 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group w-full p-3 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ cursor: 'pointer' }}
             >
               <span>{t('databaseStudio.dashboard.activity.sqlEditor')}</span>
-              <Plus className="w-3.5 h-3.5 text-primary rotate-45" />
+              <ArrowRight className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             <button
               onClick={() => setActiveTab('tables')}
               disabled={isSuspended}
-              className="w-full p-3 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group w-full p-3 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ cursor: 'pointer' }}
             >
               <span>{t('databaseStudio.dashboard.activity.tableExplorer')}</span>
-              <Plus className="w-3.5 h-3.5 text-primary rotate-45" />
+              <ArrowRight className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             <button
               onClick={() => setActiveTab('structure')}
               disabled={isSuspended}
-              className="w-full p-3 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group w-full p-3 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ cursor: 'pointer' }}
             >
               <span>{t('databaseStudio.dashboard.activity.schemaArchitect')}</span>
-              <Plus className="w-3.5 h-3.5 text-primary rotate-45" />
+              <ArrowRight className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
             </button>
           </div>
         </Card>

@@ -1169,7 +1169,7 @@ export const translations = {
           unique: "Unique: Ensures every value in the column is unique",
           index: "Index: Accelerates data lookups on this column"
         },
-        title: "Visual Table Designer GUI",
+        title: "Structure Editor",
         subtitle: "Direct visual schema architecting, writes audit log markers",
         noSchemaObjects: "Database contains no schema objects",
         noSchemaObjectsDesc: "Table schemas have not been declared. Click the Create Table trigger to begin visual schema modeling.",
@@ -2489,7 +2489,7 @@ export const translations = {
           unique: "Unique: Memastikan seluruh nilai di dalam kolom bersifat unik",
           index: "Index: Struktur data untuk mempercepat operasi pencarian pada kolom"
         },
-        title: "Desainer Tabel Visual",
+        title: "Editor Struktur",
         subtitle: "Desain skema visual secara langsung dengan pencatatan audit log",
         noSchemaObjects: "Database tidak memiliki objek skema",
         noSchemaObjectsDesc: "Skema tabel belum terdefinisi. Klik tombol Buat Tabel untuk memulai desain skema secara visual.",

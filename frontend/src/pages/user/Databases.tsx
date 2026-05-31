@@ -3,7 +3,6 @@ import {
   Database as DbIcon, 
   Search, 
   ArrowRight,
-  Terminal,
   Loader2
 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
@@ -111,7 +110,7 @@ export default function Databases() {
                      key={p.uid}
                      onClick={() => setSelectedProjectId(p.uid)}
                      className={cn(
-                        "w-full text-left p-4 rounded-xl transition-all border group",
+                        "w-full text-left p-4 rounded-xl transition-all border group focus:outline-none",
                         selectedProjectId === p.uid 
                            ? 'bg-primary/10 border-primary/30 shadow-sm' 
                            : 'border-transparent hover:bg-muted hover:border-border'
@@ -130,7 +129,7 @@ export default function Databases() {
                        )} />
                      </div>
                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-medium uppercase tracking-tight truncate">
-                       <Terminal className="w-3 h-3 text-primary/50 group-hover:text-primary" />
+                       <DbIcon className="w-3 h-3 text-primary/50 group-hover:text-primary" />
                        db_{p.database_name || '...'}
                      </div>
                    </button>
