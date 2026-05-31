@@ -674,7 +674,7 @@ export function StudioTablesTab() {
                               setInsertFormData(prev => ({ ...prev, [col]: val }))
                             }}
                             required={!isNullable}
-                            className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
+                            className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                           />
                           <button
                             type="button"
@@ -807,7 +807,7 @@ export function StudioTablesTab() {
                                 setEditFormData(prev => ({ ...prev, [col.name]: val }))
                               }}
                               required={!isNullable}
-                              className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50"
+                              className="w-full h-10 pl-3 pr-10 rounded-xl border border-border/70 bg-background/50 hover:bg-background/80 text-xs font-semibold outline-none focus:border-primary/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                             />
                             <button
                               type="button"
