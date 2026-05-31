@@ -993,10 +993,10 @@ export const translations = {
           tabPdo: "PHP PDO",
           hostInternal: "Host Internal:",
           portLabel: "Port:",
-          dosLimit: "DoS Cap Limit:",
+          dosLimit: "Max Connections:",
           timeoutLabel: "Query Timeout:",
           threads: "15 threads",
-          timeoutSre: "15s SRE Cap"
+          timeoutSre: "Max 15s"
         },
         activity: {
           title: "Real-time DB Activity & Cluster Health",
@@ -1040,7 +1040,7 @@ export const translations = {
           manageConfigSub: "Click to configure snapshot settings, limits, and automatic schedules."
         },
         sre: {
-          title: "SRE Tenant Isolation",
+          title: "Database Policies",
           portMapping: "Port Mapping:",
           portMappingDesc: "isolated PostgreSQL listens on host port 5433, isolated MySQL on 3306.",
           dosCap: "DoS Cap:",
@@ -2313,15 +2313,15 @@ export const translations = {
           tabPdo: "PHP PDO",
           hostInternal: "Host Internal:",
           portLabel: "Port:",
-          dosLimit: "Batas DoS Cap:",
-          timeoutLabel: "Timeout Kueri:",
+          dosLimit: "Batas Koneksi Maksimal:",
+          timeoutLabel: "Timeout Query:",
           threads: "15 thread",
-          timeoutSre: "Batas SRE 15s"
+          timeoutSre: "Maksimal 15 detik"
         },
         activity: {
           title: "Aktivitas DB Real-time & Kesehatan Cluster",
           desc: "Simulasi throughput thread database transaksional",
-          throughput: "Throughput Kueri (ops/s)",
+          throughput: "Throughput Query (ops/s)",
           panelTitle: "Panel Kontrol & Sumber Daya",
           connections: "Koneksi",
           storageUsage: "Penggunaan Penyimpanan",
@@ -2360,7 +2360,7 @@ export const translations = {
           manageConfigSub: "Klik untuk mengonfigurasi snapshot, batas kuota, dan jadwal otomatis."
         },
         sre: {
-          title: "SRE Tenant Isolation",
+          title: "Database Policies",
           portMapping: "Port Mapping:",
           portMappingDesc: "PostgreSQL terisolasi menggunakan port host 5433, MySQL menggunakan port 3306.",
           dosCap: "DoS Protection:",
@@ -2385,14 +2385,14 @@ export const translations = {
         },
         insertModal: {
           title: "Tambah Data Baru",
-          desc: "Tambahkan baris data baru ke tabel secara visual tanpa menulis kueri SQL.",
+          desc: "Tambahkan baris data baru ke tabel secara visual tanpa menulis Query SQL.",
           submit: "Simpan Data",
           success: "Data baru berhasil ditambahkan.",
           failed: "Gagal menambahkan data baru."
         },
         editModal: {
           title: "Ubah Data",
-          desc: "Perbarui data baris tabel secara visual tanpa menulis kueri SQL.",
+          desc: "Perbarui data baris tabel secara visual tanpa menulis Query SQL.",
           submit: "Simpan Perubahan",
           success: "Data berhasil diperbarui.",
           failed: "Gagal memperbarui data.",
@@ -2540,7 +2540,7 @@ export const translations = {
         },
         createIndexDialog: {
           title: "Buat Indeks",
-          desc: "Tambahkan index berkinerja tinggi untuk optimasi kueri pada kolom target.",
+          desc: "Tambahkan index berkinerja tinggi untuk optimasi Query pada kolom target.",
           indexName: "Nama Indeks",
           selectColumn: "Pilih Kolom Target",
           submitBtn: "Buat Indeks"
@@ -2568,11 +2568,11 @@ export const translations = {
       },
       query: {
         title: "SQL Scratchpad Workspace",
-        subtitle: "Eksekusi SQL kueri secara langsung, dilindungi dengan execution timeout 15 detik",
+        subtitle: "Eksekusi SQL Query secara langsung, dilindungi dengan execution timeout 15 detik",
         queryPlaceholder: "SELECT * FROM table LIMIT 10;",
-        outputHeader: "Output Eksekusi Kueri",
+        outputHeader: "Output Eksekusi Query",
         errorLabel: "Error",
-        noRecords: "Tidak ada baris yang cocok dengan kueri.",
+        noRecords: "Tidak ada baris yang cocok dengan Query.",
         successToast: "Query berhasil dieksekusi.",
         failedToast: "Eksekusi query gagal",
         runQuery: "Jalankan Query",
