@@ -28,7 +28,8 @@ import {
   Code2,
   Key,
   Scroll,
-  Hammer
+  Hammer,
+  MemoryStick
 } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { projectsAPI } from '../../services/api'
@@ -962,7 +963,7 @@ function UserProjectDetail() {
           value={stats ? `${stats.memory_mb.toFixed(0)} MB` : '0 MB'}
           subtext={t('projectDetail.metrics.unitOf', { total: stats?.memory_max_mb?.toFixed(0) || 512, unit: 'MB' })}
           colorClass="text-emerald-500"
-          icon={Activity}
+          icon={MemoryStick}
         />
         <MetricCard
           title={t('projectDetail.metrics.framework')}

@@ -73,9 +73,13 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   }
 
   // Load complete studio dataset
-  const loadStudioData = useCallback(async () => {
+  const loadStudioData = useCallback(async (silent = true) => {
     if (!id) return
-    setIsLoading(true)
+    if (!silent) {
+      setIsLoading(true)
+    } else {
+      setIsActionLoading(true)
+    }
     try {
       const overviewRes = await databaseAPI.getOverview(id)
       setDbOverview(overviewRes.data)
@@ -92,12 +96,16 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     } catch (error) {
       toast.error(t('databaseStudio.errors.connectFailed'))
     } finally {
-      setIsLoading(false)
+      if (!silent) {
+        setIsLoading(false)
+      } else {
+        setIsActionLoading(false)
+      }
     }
   }, [id, t])
 
   useEffect(() => {
-    loadStudioData()
+    loadStudioData(false)
   }, [loadStudioData])
 
   const handleToggleStatus = (suspend: boolean) => {
@@ -172,7 +180,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadStudioData}
+                onClick={() => loadStudioData(true)}
                 disabled={isActionLoading}
                 className="gap-2 h-10 cursor-pointer"
                 style={{ cursor: 'pointer' }}
