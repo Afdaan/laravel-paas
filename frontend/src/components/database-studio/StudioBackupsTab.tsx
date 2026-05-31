@@ -1,4 +1,3 @@
-import React from 'react'
 import { toast } from 'sonner'
 import {
   History,
@@ -164,7 +163,7 @@ export function StudioBackupsTab() {
                     </tr>
                   ) : (
                     backups.map(backup => (
-                      <tr key={backup.id} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
+                      <tr key={backup.id} className="border-b border-border/40 hover:bg-muted/15">
                         <td className="py-3.5 px-4 shrink-0">
                           <div className="flex items-center gap-2">
                             <Button

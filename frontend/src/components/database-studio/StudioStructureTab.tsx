@@ -494,10 +494,11 @@ export function StudioStructureTab() {
           {!isSuspended && (
             <button
               onClick={() => setDesignerAction('create_table')}
-              className="text-primary hover:text-primary/80 transition-colors p-1 cursor-pointer"
+              className="flex items-center justify-center w-6 h-6 rounded-md bg-white border border-border/10 text-neutral-950 hover:bg-neutral-100 transition-colors shadow-sm cursor-pointer"
               title={t('databaseStudio.tables.addTable')}
+              style={{ cursor: 'pointer' }}
             >
-              <Plus className="w-4.5 h-4.5" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -638,7 +639,7 @@ export function StudioStructureTab() {
                       const fkDetail = activeTableData.foreign_keys?.find((f) => f.column_name === col.name)
 
                       return (
-                        <tr key={col.name} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
+                        <tr key={col.name} className="border-b border-border/40 hover:bg-muted/15">
                           <td className="py-3 px-4 text-center shrink-0">
                             <DropdownMenu>
                               <DropdownMenuTrigger>

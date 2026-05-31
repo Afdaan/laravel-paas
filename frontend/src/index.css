@@ -199,13 +199,20 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Smooth scrolling and GPU hardware-acceleration for scroll containers */
+/* Optimize scroll containers for native performance, touchpads, and touch devices */
+.overflow-x-auto,
 .overflow-y-auto,
+.overflow-x-scroll,
 .overflow-y-scroll,
+.overflow-auto,
 .scrollbar-thin {
-  scroll-behavior: smooth;
-  will-change: transform;
-  backface-visibility: hidden;
-  transform: translate3d(0, 0, 0);
+  scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent horizontal scroll-chaining (like browser history swipe gestures) on horizontal containers */
+.overflow-x-auto,
+.overflow-x-scroll,
+.overflow-auto {
+  overscroll-behavior-x: contain;
 }

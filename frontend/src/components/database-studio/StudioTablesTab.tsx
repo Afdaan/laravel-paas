@@ -496,7 +496,7 @@ export function StudioTablesTab() {
                       ) || tableData.columns[0]
 
                       return (
-                        <tr key={idx} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
+                        <tr key={idx} className="border-b border-border/40 hover:bg-muted/15">
                           <td className="py-3.5 px-4 text-center shrink-0">
                             <DropdownMenu>
                               <DropdownMenuTrigger>

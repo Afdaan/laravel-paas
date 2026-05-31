@@ -167,7 +167,7 @@ export function StudioQueryTab() {
                         </thead>
                         <tbody>
                           {queryResult.rows.map((row: Record<string, unknown>, idx: number) => (
-                            <tr key={idx} className="border-b border-border/40 hover:bg-muted/15 transition-colors">
+                            <tr key={idx} className="border-b border-border/40 hover:bg-muted/15">
                               {queryResult.columns?.map((col: string) => (
                                 <td key={col} className="py-3 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
                                   {formatCellValue(row[col])}
