@@ -35,11 +35,11 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const { t } = useTranslation()
   
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = (searchParams.get('tab') as 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') || 'dashboard'
+  const activeTab = (searchParams.get('dbTab') as 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') || 'dashboard'
   
   const setActiveTab = (tab: 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') => {
     setSearchParams(prev => {
-      prev.set('tab', tab)
+      prev.set('dbTab', tab)
       return prev
     }, { replace: true })
   }
