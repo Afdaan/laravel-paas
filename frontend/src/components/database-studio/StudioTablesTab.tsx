@@ -153,10 +153,11 @@ export function StudioTablesTab() {
           val = adjustDatetimeForDatabase(String(val))
         }
 
-        if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
-          values.push(String(Number(val)))
-        } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
-          values.push(val === 'true' || val === true ? '1' : '0')
+        if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+          values.push(val === 'true' || val === true || val === '1' || val === 1 ? '1' : '0')
+        } else if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+          const num = Number(val)
+          values.push(isNaN(num) ? '0' : String(num))
         } else {
           const escapedVal = String(val).replace(/'/g, "''")
           values.push(`'${escapedVal}'`)
@@ -211,10 +212,10 @@ export function StudioTablesTab() {
         if (col.nullable === 'YES' || col.nullable === true) {
           setClauses.push(`${escapedCol} = NULL`)
         } else {
-          if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
-            setClauses.push(`${escapedCol} = 0`)
-          } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+          if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
             setClauses.push(`${escapedCol} = false`)
+          } else if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+            setClauses.push(`${escapedCol} = 0`)
           } else {
             setClauses.push(`${escapedCol} = ''`)
           }
@@ -226,11 +227,12 @@ export function StudioTablesTab() {
         val = adjustDatetimeForDatabase(String(val))
       }
 
-      if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
-        setClauses.push(`${escapedCol} = ${Number(val)}`)
-      } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
-        const boolVal = val === 'true' || val === true
+      if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+        const boolVal = val === 'true' || val === true || val === '1' || val === 1
         setClauses.push(`${escapedCol} = ${isPostgres ? (boolVal ? 'TRUE' : 'FALSE') : (boolVal ? '1' : '0')}`)
+      } else if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+        const num = Number(val)
+        setClauses.push(`${escapedCol} = ${isNaN(num) ? 0 : num}`)
       } else {
         const escapedVal = String(val).replace(/'/g, "''")
         setClauses.push(`${escapedCol} = '${escapedVal}'`)
@@ -303,10 +305,10 @@ export function StudioTablesTab() {
           if (col.nullable === 'YES' || col.nullable === true) {
             updates[col.name] = null
           } else {
-            if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
-              updates[col.name] = 0
-            } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+            if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
               updates[col.name] = false
+            } else if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+              updates[col.name] = 0
             } else {
               updates[col.name] = ""
             }
@@ -318,10 +320,11 @@ export function StudioTablesTab() {
           val = adjustDatetimeForDatabase(String(val))
         }
 
-        if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
-          updates[col.name] = Number(val)
-        } else if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
-          updates[col.name] = val === 'true' || val === true
+        if (typeLower.includes('bool') || typeLower.includes('tinyint(1)')) {
+          updates[col.name] = val === 'true' || val === true || val === '1' || val === 1
+        } else if (typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double')) {
+          const num = Number(val)
+          updates[col.name] = isNaN(num) ? 0 : num
         } else {
           updates[col.name] = val
         }
