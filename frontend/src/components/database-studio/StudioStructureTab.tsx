@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
@@ -770,13 +771,13 @@ export function StudioStructureTab() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 items-end">
                   <div className="space-y-1.5">
                     <Label htmlFor="add_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                       {t('databaseStudio.structure.typeHeader')}
                     </Label>
                     <Select value={newColType} onValueChange={(val) => val && setNewColType(val)}>
-                      <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
+                      <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left data-[size=default]:h-10 data-[size=default]:py-0">
                         <SelectValue>
                           {(value) => {
                             if (!value) return '';
@@ -861,11 +862,11 @@ export function StudioStructureTab() {
                     </Select>
                   </div>
 
-                  {newColType === 'varchar' && (
-                    <div className="space-y-1.5">
-                      <Label htmlFor="add_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        {t('databaseStudio.structure.addColumnDialog.lengthLabel')}
-                      </Label>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="add_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('databaseStudio.structure.addColumnDialog.lengthLabel')}
+                    </Label>
+                    {newColType === 'varchar' ? (
                       <Input
                         id="add_col_len"
                         type="number"
@@ -874,21 +875,27 @@ export function StudioStructureTab() {
                         required
                         className="h-10 rounded-xl bg-background/50 text-xs"
                       />
-                    </div>
-                  )}
+                    ) : (
+                      <Input
+                        id="add_col_len"
+                        value="-"
+                        disabled
+                        className="h-10 rounded-xl bg-background/30 text-xs text-muted-foreground/60"
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <div className="border border-border/60 rounded-xl p-4 bg-muted/5 space-y-4">
                   <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground border-b pb-1.5 flex items-center">
                     {t('databaseStudio.structure.designer.configHeader')}
                   </span>
-                  
+
                   <div className="flex flex-col gap-3 text-xs">
                     <label className="flex items-start gap-2.5 font-medium cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={newColNullable}
-                        onChange={(e) => setNewColNullable(e.target.checked)}
+                      <Checkbox
+                        checked={newColUnique}
+                        onCheckedChange={(checked) => setNewColUnique(Boolean(checked))}
                         className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                       />
                       <div className="flex flex-col">
@@ -898,10 +905,9 @@ export function StudioStructureTab() {
                     </label>
 
                     <label className="flex items-start gap-2.5 font-medium cursor-pointer select-none">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={newColUnique}
-                        onChange={(e) => setNewColUnique(e.target.checked)}
+                        onCheckedChange={(checked) => setNewColUnique(Boolean(checked))}
                         className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                       />
                       <div className="flex flex-col">
@@ -927,10 +933,9 @@ export function StudioStructureTab() {
 
                 <div className="space-y-1.5 font-medium border border-border/60 rounded-xl p-4 bg-muted/5 space-y-4">
                   <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={newColFk}
-                      onChange={(e) => setNewColFk(e.target.checked)}
+                      onCheckedChange={(checked) => setNewColFk(Boolean(checked))}
                       className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                     />
                     <div className="flex flex-col">
@@ -1052,13 +1057,13 @@ export function StudioStructureTab() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4 items-end">
                     <div className="space-y-1.5">
                       <Label htmlFor="mod_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         {t('databaseStudio.structure.typeHeader')}
                       </Label>
                       <Select value={editColType} onValueChange={(val) => val && setEditColType(val)}>
-                        <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
+                        <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left data-[size=default]:h-10 data-[size=default]:py-0">
                           <SelectValue>
                             {(value) => {
                               if (!value) return '';
@@ -1143,11 +1148,11 @@ export function StudioStructureTab() {
                       </Select>
                     </div>
 
-                    {editColType === 'varchar' && (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="mod_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          {t('databaseStudio.structure.addColumnDialog.lengthLabel')}
-                        </Label>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mod_col_len" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {t('databaseStudio.structure.addColumnDialog.lengthLabel')}
+                      </Label>
+                      {editColType === 'varchar' ? (
                         <Input
                           id="mod_col_len"
                           type="number"
@@ -1156,8 +1161,15 @@ export function StudioStructureTab() {
                           required
                           className="h-10 rounded-xl bg-background/50 text-xs"
                         />
-                      </div>
-                    )}
+                      ) : (
+                        <Input
+                          id="mod_col_len"
+                          value="-"
+                          disabled
+                          className="h-10 rounded-xl bg-background/30 text-xs text-muted-foreground/60"
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div className="border border-border/60 rounded-xl p-4 bg-muted/5 space-y-4">
@@ -1167,10 +1179,9 @@ export function StudioStructureTab() {
                     
                     <div className="flex flex-col gap-3 text-xs">
                       <label className="flex items-start gap-2.5 font-medium cursor-pointer select-none">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={editColNullable}
-                          onChange={(e) => setEditColNullable(e.target.checked)}
+                          onCheckedChange={(checked) => setEditColNullable(Boolean(checked))}
                           className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                         />
                         <div className="flex flex-col">
@@ -1180,10 +1191,9 @@ export function StudioStructureTab() {
                       </label>
 
                       <label className="flex items-start gap-2.5 font-medium cursor-pointer select-none">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={editColUnique}
-                          onChange={(e) => setEditColUnique(e.target.checked)}
+                          onCheckedChange={(checked) => setEditColUnique(Boolean(checked))}
                           className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                         />
                         <div className="flex flex-col">
@@ -1209,10 +1219,9 @@ export function StudioStructureTab() {
 
                   <div className="space-y-1.5 font-medium border border-border/60 rounded-xl p-4 bg-muted/5 space-y-4">
                     <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={editColFk}
-                        onChange={(e) => setEditColFk(e.target.checked)}
+                        onCheckedChange={(checked) => setEditColFk(Boolean(checked))}
                         className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                       />
                       <div className="flex flex-col">
