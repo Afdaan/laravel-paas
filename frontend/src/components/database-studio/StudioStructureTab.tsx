@@ -758,7 +758,7 @@ export function StudioStructureTab() {
               <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1">
                 <div className="space-y-1.5">
                   <Label htmlFor="add_col_name" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Column Name
+                    {t('databaseStudio.structure.createTableDialog.columnName')}
                   </Label>
                   <Input
                     id="add_col_name"
@@ -773,102 +773,88 @@ export function StudioStructureTab() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="add_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                      Type
+                      {t('databaseStudio.structure.typeHeader')}
                     </Label>
                     <Select value={newColType} onValueChange={(val) => val && setNewColType(val)}>
                       <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                         <SelectValue>
                           {(value) => {
                             if (!value) return '';
-                            const typesMap: Record<string, string> = {
-                              varchar: 'VARCHAR',
-                              integer: 'INT',
-                              bigint: 'BIGINT',
-                              boolean: 'BOOLEAN',
-                              text: 'TEXT',
-                              longtext: 'LONGTEXT',
-                              decimal: 'DECIMAL',
-                              double: 'DOUBLE',
-                              json: 'JSON',
-                              uuid: 'UUID',
-                              date: 'DATE',
-                              timestamp: 'TIMESTAMP'
-                            };
-                            return typesMap[String(value)] || String(value).toUpperCase();
+                            return t(`databaseStudio.structure.types.${String(value)}.label`) || String(value).toUpperCase();
                           }}
                         </SelectValue>
                       </SelectTrigger>
-                      <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
+                      <SelectContent align="start" alignItemWithTrigger={false} className="w-[320px] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                         <SelectItem value="varchar" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">VARCHAR</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Variable-length string (e.g. text, email)</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.varchar.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.varchar.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="integer" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">INT</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Standard 32-bit integer number</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.integer.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.integer.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="bigint" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">BIGINT</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Large 64-bit integer for large counts</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.bigint.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.bigint.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="boolean" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">BOOLEAN</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Logical true/false flag value</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.boolean.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.boolean.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="text" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">TEXT</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Long-form paragraph text data</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.text.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.text.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="longtext" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">LONGTEXT</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Extremely large text data block</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.longtext.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.longtext.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="decimal" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">DECIMAL</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Exact decimal for currency & prices</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.decimal.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.decimal.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="double" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">DOUBLE</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Double precision floating-point number</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.double.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.double.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="json" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">JSON</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Structured JSON/JSONB document data</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.json.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.json.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="uuid" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">UUID</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Universally unique identifier string</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.uuid.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.uuid.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="date" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">DATE</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Calendar date without time</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.date.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.date.desc')}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="timestamp" className="py-2 pl-3 cursor-pointer">
                           <div className="flex flex-col gap-0.5 text-left">
-                            <span className="text-sm font-semibold leading-none">TIMESTAMP</span>
-                            <span className="text-[10px] leading-none text-muted-foreground">Date and time value with timezone</span>
+                            <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.timestamp.label')}</span>
+                            <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.timestamp.desc')}</span>
                           </div>
                         </SelectItem>
                       </SelectContent>
@@ -919,7 +905,7 @@ export function StudioStructureTab() {
                         className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                       />
                       <div className="flex flex-col">
-                        <span>Unique Constraint</span>
+                        <span>{t('databaseStudio.structure.uniqueConstraint')}</span>
                         <span className="text-[10px] text-muted-foreground font-normal">{t('databaseStudio.structure.designer.uniqueDesc')}</span>
                       </div>
                     </label>
@@ -1069,102 +1055,88 @@ export function StudioStructureTab() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <Label htmlFor="mod_col_type" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        Type
+                        {t('databaseStudio.structure.typeHeader')}
                       </Label>
                       <Select value={editColType} onValueChange={(val) => val && setEditColType(val)}>
                         <SelectTrigger className="w-full h-10 px-3 rounded-xl border border-border/70 bg-background/50 text-xs font-semibold text-left">
                           <SelectValue>
                             {(value) => {
                               if (!value) return '';
-                              const typesMap: Record<string, string> = {
-                                varchar: 'VARCHAR',
-                                integer: 'INT',
-                                bigint: 'BIGINT',
-                                boolean: 'BOOLEAN',
-                                text: 'TEXT',
-                                longtext: 'LONGTEXT',
-                                decimal: 'DECIMAL',
-                                double: 'DOUBLE',
-                                json: 'JSON',
-                                uuid: 'UUID',
-                                date: 'DATE',
-                                timestamp: 'TIMESTAMP'
-                              };
-                              return typesMap[String(value)] || String(value).toUpperCase();
+                              return t(`databaseStudio.structure.types.${String(value)}.label`) || String(value).toUpperCase();
                             }}
                           </SelectValue>
                         </SelectTrigger>
-                        <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
+                        <SelectContent align="start" alignItemWithTrigger={false} className="w-[320px] p-1 bg-popover border border-border/80 rounded-xl shadow-2xl max-h-72">
                           <SelectItem value="varchar" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">VARCHAR</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Variable-length string (e.g. text, email)</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.varchar.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.varchar.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="integer" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">INT</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Standard 32-bit integer number</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.integer.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.integer.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="bigint" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">BIGINT</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Large 64-bit integer for large counts</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.bigint.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.bigint.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="boolean" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">BOOLEAN</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Logical true/false flag value</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.boolean.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.boolean.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="text" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">TEXT</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Long-form paragraph text data</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.text.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.text.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="longtext" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">LONGTEXT</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Extremely large text data block</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.longtext.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.longtext.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="decimal" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">DECIMAL</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Exact decimal for currency & prices</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.decimal.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.decimal.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="double" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">DOUBLE</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Double precision floating-point number</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.double.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.double.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="json" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">JSON</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Structured JSON/JSONB document data</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.json.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.json.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="uuid" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">UUID</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Universally unique identifier string</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.uuid.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.uuid.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="date" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">DATE</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Calendar date without time</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.date.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.date.desc')}</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="timestamp" className="py-2 pl-3 cursor-pointer">
                             <div className="flex flex-col gap-0.5 text-left">
-                              <span className="text-sm font-semibold leading-none">TIMESTAMP</span>
-                              <span className="text-[10px] leading-none text-muted-foreground">Date and time value with timezone</span>
+                              <span className="text-sm font-semibold leading-none">{t('databaseStudio.structure.types.timestamp.label')}</span>
+                              <span className="text-[10px] leading-none text-muted-foreground">{t('databaseStudio.structure.types.timestamp.desc')}</span>
                             </div>
                           </SelectItem>
                         </SelectContent>
@@ -1215,7 +1187,7 @@ export function StudioStructureTab() {
                           className="mt-0.5 rounded border-border text-primary focus:ring-primary/25 cursor-pointer"
                         />
                         <div className="flex flex-col">
-                          <span>Unique Constraint</span>
+                          <span>{t('databaseStudio.structure.uniqueConstraint')}</span>
                           <span className="text-[10px] text-muted-foreground font-normal">{t('databaseStudio.structure.designer.uniqueDesc')}</span>
                         </div>
                       </label>

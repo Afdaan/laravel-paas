@@ -1113,6 +1113,56 @@ export const translations = {
         nullable: "Null",
         notNullable: "Not Null",
         defaultHeader: "Default",
+        types: {
+          varchar: {
+            label: "VARCHAR",
+            desc: "Variable-length string (e.g. text, email)"
+          },
+          integer: {
+            label: "INT",
+            desc: "Standard 32-bit integer number"
+          },
+          bigint: {
+            label: "BIGINT",
+            desc: "Large 64-bit integer for large counts"
+          },
+          boolean: {
+            label: "BOOLEAN",
+            desc: "Logical true/false flag value"
+          },
+          text: {
+            label: "TEXT",
+            desc: "Long-form paragraph text data"
+          },
+          longtext: {
+            label: "LONGTEXT",
+            desc: "Extremely large text data block"
+          },
+          decimal: {
+            label: "DECIMAL",
+            desc: "Exact decimal for currency & prices"
+          },
+          double: {
+            label: "DOUBLE",
+            desc: "Double precision floating-point number"
+          },
+          json: {
+            label: "JSON",
+            desc: "Structured JSON/JSONB document data"
+          },
+          uuid: {
+            label: "UUID",
+            desc: "Universally unique identifier string"
+          },
+          date: {
+            label: "DATE",
+            desc: "Calendar date without time"
+          },
+          timestamp: {
+            label: "TIMESTAMP",
+            desc: "Date and time value with timezone"
+          }
+        },
         tooltips: {
           primaryKey: "Primary Key: A unique main key to identify each row",
           foreignKey: "Foreign Key: References table {{table}}({{column}})",
@@ -2383,6 +2433,56 @@ export const translations = {
         nullable: "Null",
         notNullable: "Not Null",
         defaultHeader: "Default",
+        types: {
+          varchar: {
+            label: "VARCHAR",
+            desc: "String dengan panjang dinamis (misal: teks, email)"
+          },
+          integer: {
+            label: "INT",
+            desc: "Angka bulat standar 32-bit"
+          },
+          bigint: {
+            label: "BIGINT",
+            desc: "Angka bulat besar 64-bit untuk data berkapasitas besar"
+          },
+          boolean: {
+            label: "BOOLEAN",
+            desc: "Nilai logika benar/salah (true/false)"
+          },
+          text: {
+            label: "TEXT",
+            desc: "Data teks paragraf panjang"
+          },
+          longtext: {
+            label: "LONGTEXT",
+            desc: "Blok data teks dengan kapasitas sangat besar"
+          },
+          decimal: {
+            label: "DECIMAL",
+            desc: "Angka desimal presisi untuk mata uang & harga"
+          },
+          double: {
+            label: "DOUBLE",
+            desc: "Angka pecahan presisi ganda (floating-point)"
+          },
+          json: {
+            label: "JSON",
+            desc: "Data dokumen terstruktur dalam format JSON/JSONB"
+          },
+          uuid: {
+            label: "UUID",
+            desc: "String identifikasi unik yang valid secara universal"
+          },
+          date: {
+            label: "DATE",
+            desc: "Tanggal kalender tanpa informasi waktu"
+          },
+          timestamp: {
+            label: "TIMESTAMP",
+            desc: "Nilai tanggal dan waktu beserta zona waktu"
+          }
+        },
         tooltips: {
           primaryKey: "Primary Key: Kunci unik utama untuk mengidentifikasi record secara terpisah",
           foreignKey: "Foreign Key: Hubungan relasional yang merujuk ke tabel {{table}}({{column}})",
