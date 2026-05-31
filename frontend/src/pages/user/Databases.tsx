@@ -82,7 +82,7 @@ export default function Databases() {
       {/* Sidebar - Project Selection */}
       <div className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-6">
          <Card className="flex flex-col overflow-hidden h-full pt-0">
-            <CardHeader className="bg-muted/30 border-b pb-4">
+            <CardHeader className="bg-muted/30 border-b pt-5 pb-5">
                <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
                     <DbIcon className="w-5 h-5" />
@@ -92,7 +92,7 @@ export default function Databases() {
                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t('databaseManager.activeInstances')}</p>
                   </div>
                </div>
-               <div className="relative mt-6">
+               <div className="relative mt-4">
                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                  <Input 
                    placeholder={t('databaseManager.searchSchema')} 
