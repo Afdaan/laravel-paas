@@ -1265,8 +1265,10 @@ export const translations = {
           label: "Query Templates",
           select: "Select All Records",
           count: "Aggregate Row Count",
-          filter: "Filter by Condition",
-          group: "Group and Order Data"
+          group: "Group and Order Data",
+          showTables: "List Database Tables",
+          describeTable: "Describe Table Structure",
+          showConnections: "Show Active Connections"
         },
         history: {
           title: "Query History",
@@ -2585,8 +2587,10 @@ export const translations = {
           label: "Koleksi Query",
           select: "Tampilkan Semua Baris",
           count: "Hitung Jumlah Baris",
-          filter: "Filter dengan Kondisi",
-          group: "Kelompokkan & Urutkan Data"
+          group: "Kelompokkan & Urutkan Data",
+          showTables: "Daftar Tabel Database",
+          describeTable: "Deskripsi Struktur Tabel",
+          showConnections: "Tampilkan Koneksi Aktif"
         },
         history: {
           title: "Query History",

@@ -235,6 +235,42 @@ export function StudioQueryTab() {
                 <span>{t('databaseStudio.query.templates.filter')}</span>
                 <ArrowLeft className="w-3.5 h-3.5 text-primary group-hover:-translate-x-0.5 transition-transform" />
               </button>
+
+              <button
+                onClick={() => setSqlQuery('SELECT status, COUNT(*) as count FROM users GROUP BY status ORDER BY count DESC;')}
+                className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
+                style={{ cursor: 'pointer' }}
+              >
+                <span>{t('databaseStudio.query.templates.group')}</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-primary group-hover:-translate-x-0.5 transition-transform" />
+              </button>
+
+              <button
+                onClick={() => setSqlQuery('SHOW TABLES;')}
+                className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
+                style={{ cursor: 'pointer' }}
+              >
+                <span>{t('databaseStudio.query.templates.showTables')}</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-primary group-hover:-translate-x-0.5 transition-transform" />
+              </button>
+
+              <button
+                onClick={() => setSqlQuery('DESCRIBE users;')}
+                className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
+                style={{ cursor: 'pointer' }}
+              >
+                <span>{t('databaseStudio.query.templates.describeTable')}</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-primary group-hover:-translate-x-0.5 transition-transform" />
+              </button>
+
+              <button
+                onClick={() => setSqlQuery('SHOW PROCESSLIST;')}
+                className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
+                style={{ cursor: 'pointer' }}
+              >
+                <span>{t('databaseStudio.query.templates.showConnections')}</span>
+                <ArrowLeft className="w-3.5 h-3.5 text-primary group-hover:-translate-x-0.5 transition-transform" />
+              </button>
             </div>
           </Card>
         )}
