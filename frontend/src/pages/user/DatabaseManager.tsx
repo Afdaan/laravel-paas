@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
    ArrowLeft,
@@ -68,9 +68,16 @@ export default function DatabaseManager({ embedded = false, projectId = null }: 
    const { t } = useTranslation()
    const params = useParams<{ uid: string }>()
    const navigate = useNavigate()
+   const [searchParams, setSearchParams] = useSearchParams()
    const id = projectId || params.uid
    const [project, setProject] = useState<Project | null>(null)
-   const [activeTab, setActiveTab] = useState('tables')
+   const activeTab = searchParams.get('tab') || 'tables'
+   const setActiveTab = (tab: string) => {
+      setSearchParams(prev => {
+         prev.set('tab', tab)
+         return prev
+      }, { replace: true })
+   }
    const [tables, setTables] = useState<TableInfo[]>([])
    const [selectedTable, setSelectedTable] = useState<string | null>(null)
    const [tableData, setTableData] = useState<TableData | null>(null)

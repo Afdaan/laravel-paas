@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Search,
@@ -80,7 +81,18 @@ export function StudioStructureTab() {
 
   const typedSchemaData = schemaData as SchemaTableWithFks[]
 
-  const [selectedTable, setSelectedTable] = useState<string>('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedTable = searchParams.get('table') || ''
+  const setSelectedTable = (table: string) => {
+    setSearchParams(prev => {
+      if (table) {
+        prev.set('table', table)
+      } else {
+        prev.delete('table')
+      }
+      return prev
+    }, { replace: true })
+  }
   const [structureSearch, setStructureSearch] = useState('')
 
   // Visual Designer states

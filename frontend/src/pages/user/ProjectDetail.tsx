@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import useTranslation from '../../lib/useTranslation'
 import {
@@ -188,7 +188,18 @@ function UserProjectDetail() {
   const [logs, setLogs] = useState('')
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('project')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') || (() => {
+    const hash = window.location.hash.replace('#', '')
+    const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
+    return (hash && allowedTabs.includes(hash)) ? hash : 'project'
+  })()
+  const setActiveTab = (tab: string) => {
+    setSearchParams(prev => {
+      prev.set('tab', tab)
+      return prev
+    }, { replace: true })
+  }
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
   const isActionPendingRef = useRef(false)
@@ -239,11 +250,9 @@ function UserProjectDetail() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const tabParam = params.get('tab')
-    const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
-    if (tabParam && allowedTabs.includes(tabParam)) {
-      setActiveTab(tabParam)
-    } else {
+    if (!tabParam) {
       const hash = window.location.hash.replace('#', '')
+      const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
       if (hash && allowedTabs.includes(hash)) {
         setActiveTab(hash)
       }

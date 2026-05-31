@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Search,
@@ -63,7 +64,18 @@ export function StudioTablesTab() {
     t
   } = useStudio()
 
-  const [selectedTable, setSelectedTable] = useState<string>('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedTable = searchParams.get('table') || ''
+  const setSelectedTable = (table: string) => {
+    setSearchParams(prev => {
+      if (table) {
+        prev.set('table', table)
+      } else {
+        prev.delete('table')
+      }
+      return prev
+    }, { replace: true })
+  }
   const [tableData, setTableData] = useState<TableDataGrid | null>(null)
   const [tablePage, setTablePage] = useState(1)
   const [tableLimit] = useState(25)

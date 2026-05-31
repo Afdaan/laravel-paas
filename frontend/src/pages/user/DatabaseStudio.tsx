@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Database,
@@ -34,7 +34,16 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const id = projectId || params.id
   const { t } = useTranslation()
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tables' | 'structure' | 'query' | 'backups'>('dashboard')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = (searchParams.get('tab') as 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') || 'dashboard'
+  
+  const setActiveTab = (tab: 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') => {
+    setSearchParams(prev => {
+      prev.set('tab', tab)
+      return prev
+    }, { replace: true })
+  }
+
   const [isLoading, setIsLoading] = useState(true)
   const [isActionLoading, setIsActionLoading] = useState(false)
   
