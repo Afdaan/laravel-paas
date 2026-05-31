@@ -39,7 +39,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       toastOptions={{
         classNames: {
-          toast: "group rounded-2xl p-4 flex gap-4 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 w-[380px] shadow-2xl relative items-start",
+          toast: "group rounded-2xl p-4 flex gap-4 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 w-[380px] shadow-2xl items-start",
           title: "text-[13px] font-bold tracking-tight text-foreground leading-tight",
           description: "text-xs text-muted-foreground/90 leading-relaxed mt-1.5 whitespace-pre-wrap break-words",
           success: "!bg-emerald-950/20 dark:!bg-emerald-950/30 !border-emerald-500/20 !text-emerald-200 [box-shadow:0_12px_40px_rgba(16,185,129,0.06),inset_0_0_12px_rgba(16,185,129,0.02)]",
