@@ -81,7 +81,7 @@ export default function Databases() {
       
       {/* Sidebar - Project Selection */}
       <div className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-6">
-         <Card className="flex flex-col overflow-hidden h-full">
+         <Card className="flex flex-col overflow-hidden h-full pt-0">
             <CardHeader className="bg-muted/30 border-b pb-4">
                <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
