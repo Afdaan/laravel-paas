@@ -280,6 +280,10 @@ export const databaseAPI = {
   getMetrics: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/metrics`),
 
+  // Transfer database ownership to another project
+  transfer: (projectId: number | string, targetProjectId: number | string) => 
+    api.post(`/projects/${projectId}/database/transfer`, { target_project_id: targetProjectId }),
+
   // List all tables (Fallback/Legacy)
   listTables: (projectId: number | string) => 
     api.get(`/projects/${projectId}/database/tables`),

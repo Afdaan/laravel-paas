@@ -609,6 +609,106 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 	})
 }
 
+// TransferDatabase transfers database instance from one project to another project
+func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
+	// 1. Get source project
+	sourceProject, err := h.getProjectForUser(c)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Source project not found"})
+	}
+
+	// 2. Parse target project ID
+	var req struct {
+		TargetProjectID string `json:"target_project_id"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+
+	if req.TargetProjectID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Target project ID is required"})
+	}
+
+	// 3. Fetch target project
+	var targetProject *models.Project
+	targetProject, err = h.projectService.GetProjectByUID(req.TargetProjectID)
+	if err != nil {
+		id, errConv := strconv.Atoi(req.TargetProjectID)
+		if errConv == nil {
+			targetProject, err = h.projectService.GetProjectByID(uint(id))
+		}
+	}
+	if err != nil || targetProject == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Target project not found"})
+	}
+
+	// 4. Validate ownership of target project
+	uidVal := c.Locals("user_id")
+	roleVal := c.Locals("role")
+	if uidVal == nil || roleVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized: missing user context"})
+	}
+	userID := uidVal.(uint)
+	role := models.Role(roleVal.(string))
+
+	if role != models.RoleAdmin && role != models.RoleSuperAdmin && targetProject.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "You do not have permission to access the target project"})
+	}
+
+	// 5. Fetch source database instance
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(sourceProject.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned for source project"})
+	}
+
+	// 6. Check if target project already has an active database instance (Option 1: Prevent)
+	targetInstance, err := h.databaseService.GetDatabaseInstanceByProjectID(targetProject.ID)
+	if err == nil && targetInstance != nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Target project already has an active database instance"})
+	}
+
+	// 7. Update database record associations
+	oldProjectID := instance.ProjectID
+	instance.ProjectID = targetProject.ID
+	if err := h.db.Save(instance).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database instance ownership: " + err.Error()})
+	}
+
+	// Also update Project database name & password fields to match!
+	targetProject.DatabaseName = sourceProject.DatabaseName
+	targetProject.DatabasePassword = sourceProject.DatabasePassword
+	if err := h.db.Save(targetProject).Error; err != nil {
+		slog.Warn("Failed to update target project database credentials", "error", err)
+	}
+
+	sourceProject.DatabaseName = ""
+	sourceProject.DatabasePassword = ""
+	if err := h.db.Save(sourceProject).Error; err != nil {
+		slog.Warn("Failed to update source project database credentials", "error", err)
+	}
+
+	// 8. Record audit log
+	h.recordAuditLog(c, sourceProject.ID, "db_transfer", strconv.Itoa(int(oldProjectID)), strconv.Itoa(int(targetProject.ID)), "completed", "")
+
+	// 9. Hot-swap environment binding: trigger env update redeployment for both source and target projects
+	sourceJobID, err := h.redisService.EnqueueDeployment(sourceProject.ID, sourceProject.UserID, "update_env")
+	if err != nil {
+		slog.Warn("Failed to enqueue source project update_env deployment", "project_id", sourceProject.ID, "error", err)
+	}
+
+	targetJobID, err := h.redisService.EnqueueDeployment(targetProject.ID, targetProject.UserID, "update_env")
+	if err != nil {
+		slog.Warn("Failed to enqueue target project update_env deployment", "project_id", targetProject.ID, "error", err)
+	}
+
+	return c.JSON(fiber.Map{
+		"success":       true,
+		"message":       "Database ownership transferred successfully and environment updates enqueued.",
+		"source_job_id": sourceJobID,
+		"target_job_id": targetJobID,
+	})
+}
+
 // ListTables returns all tables in the database (Legacy/Fallback)
 func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 	project, err := h.getProjectForUser(c)

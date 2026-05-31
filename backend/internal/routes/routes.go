@@ -247,6 +247,7 @@ func Setup(
 	projects.Delete("/:id/database/backups/:backup", databaseHandler.DeleteBackup)
 	projects.Get("/:id/database/backups/:backup/download", databaseHandler.DownloadBackup)
 	projects.Get("/:id/database/metrics", databaseHandler.GetMetrics)
+	projects.Post("/:id/database/transfer", databaseHandler.TransferDatabase)
 
 	// Fallback/Legacy endpoints
 	projects.Get("/:id/database/tables", databaseHandler.ListTables)
