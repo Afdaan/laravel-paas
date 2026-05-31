@@ -490,7 +490,7 @@ export function StudioStructureTab() {
       {/* Left Sidebar: Tables navigation */}
       <Card className="lg:col-span-1 flex flex-col overflow-hidden border-none shadow-xl bg-card/95 ring-1 ring-white/5 p-4 gap-3">
         <div className="flex items-center justify-between px-2 pt-1 border-b border-border/40 pb-2">
-          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">{t('databaseStudio.tables.sidebarTitle')} ({schemaData.length})</span>
+          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">{t('databaseStudio.tables.sidebarTitle')} ({schemaData.length} tables)</span>
           {!isSuspended && (
             <button
               onClick={() => setDesignerAction('create_table')}
