@@ -39,14 +39,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       toastOptions={{
         classNames: {
-          toast: "group rounded-2xl !p-4 !flex !gap-4 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 w-[380px] shadow-2xl !items-start",
-          title: "text-[13px] font-bold tracking-tight text-foreground leading-tight",
+          toast: "group rounded-2xl !p-4 !flex !gap-3.5 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 w-[380px] shadow-2xl !items-center",
+          title: "text-[13px] font-bold tracking-tight text-foreground leading-none",
           description: "text-xs text-muted-foreground/90 leading-relaxed mt-1.5 whitespace-pre-wrap break-words",
           success: "!bg-emerald-950/20 dark:!bg-emerald-950/30 !border-emerald-500/20 !text-emerald-200 [box-shadow:0_12px_40px_rgba(16,185,129,0.06),inset_0_0_12px_rgba(16,185,129,0.02)]",
           error: "!bg-rose-950/25 dark:!bg-rose-950/35 !border-rose-500/20 !text-rose-200 [box-shadow:0_12px_40px_rgba(244,63,94,0.08),inset_0_0_12px_rgba(244,63,94,0.03)]",
           warning: "!bg-amber-950/20 dark:!bg-amber-950/30 !border-amber-500/20 !text-amber-200 [box-shadow:0_12px_40px_rgba(245,158,11,0.06),inset_0_0_12px_rgba(245,158,11,0.02)]",
           info: "!bg-blue-950/20 dark:!bg-blue-950/30 !border-blue-500/20 !text-blue-200 [box-shadow:0_12px_40px_rgba(59,130,246,0.06),inset_0_0_12px_rgba(59,130,246,0.02)]",
-          closeButton: "!absolute !top-3 !right-3 !left-auto !translate-x-0 !translate-y-0 !bg-transparent hover:!bg-white/10 !border-transparent hover:!text-foreground !text-muted-foreground/60 !rounded-lg !p-1 !h-6 !w-6 !flex !items-center !justify-center !transition-all cursor-pointer z-50",
+          closeButton: "!absolute !top-1/2 !right-3 !left-auto !translate-x-0 !-translate-y-1/2 !bg-transparent hover:!bg-white/10 !border-transparent hover:!text-foreground !text-muted-foreground/60 !rounded-lg !p-1 !h-6 !w-6 !flex !items-center !justify-center !transition-all cursor-pointer z-50",
         },
       }}
       {...props}

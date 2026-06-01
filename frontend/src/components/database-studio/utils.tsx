@@ -106,9 +106,11 @@ export const formatDatetimeLocal = (val: unknown) => {
     const strVal = String(val).trim()
     if (!strVal) return ''
 
+    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+
     // Match YYYY-MM-DD HH:mm:ss (with optional fractional seconds and timezone) timezone-agnostically
     const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
-    const match = strVal.match(regex)
+    const match = parsedStr.match(regex)
     if (match) {
       const [, year, month, day, hours, minutes] = match
       return `${year}-${month}-${day}T${hours}:${minutes}`
@@ -137,8 +139,8 @@ export const formatDatetimeLocal = (val: unknown) => {
     }
 
     // Fallback: standard Date parsing
-    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-    const d = new Date(parsedStr)
+    const fallbackParsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
+    const d = new Date(fallbackParsedStr)
     if (isNaN(d.getTime())) return ''
     return toLocalISOString(d)
   } catch (e) {
@@ -193,7 +195,7 @@ export const formatHumanDatetime = (val: unknown) => {
   if (val === null || val === undefined) return ''
   try {
     const strVal = String(val).trim()
-    if (!strVal) return ''
+    if (!strVal || strVal.startsWith('0000-00-00') || strVal.startsWith('0001-01-01')) return ''
 
     // Parse timezone-agnostically first to prevent browser timezone shifts
     const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i

@@ -59,10 +59,15 @@ ReactDOM.createRoot(root).render(
       <ErrorBoundary>
         <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
           <App />
-          <Toaster 
+          <Toaster
             position="top-center"
             expand={false}
             visibleToasts={3}
+            richColors
+            toastOptions={{
+              className: 'gap-3 font-medium rounded-xl',
+              style: { padding: '12px 16px' }
+            }}
           />
         </ThemeProvider>
       </ErrorBoundary>
