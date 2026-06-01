@@ -305,14 +305,14 @@ export const databaseAPI = {
     }),
 
   // Update row securely using primary key
-  updateRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown, updates: Record<string, unknown>) => 
+  updateRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown, updates: Record<string, unknown>, config?: import('axios').AxiosRequestConfig) => 
     api.put(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
       primary_key: primaryKey, value, updates 
-    }),
+    }, config),
   
   // Execute SQL query (Fallback/Legacy)
-  query: (projectId: number | string, sql: string) => 
-    api.post(`/projects/${projectId}/database/query`, { query: sql }),
+  query: (projectId: number | string, sql: string, config?: import('axios').AxiosRequestConfig) => 
+    api.post(`/projects/${projectId}/database/query`, { query: sql }, config),
   
   // Export database as SQL file (Fallback/Legacy)
   export: (projectId: number | string) => 

@@ -82,14 +82,15 @@ export const adjustDatetimeForDatabase = (inputValue: string): string => {
   if (!inputValue) return inputValue
 
   try {
-    const match = inputValue.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/)
-    if (!match) return inputValue
-
-    const [, year, month, day, hours, minutes, secondsStr] = match
-    const seconds = secondsStr ? Number(secondsStr) : 0
+    // inputValue from datetime-local is like "2026-06-01T15:45" (local time).
+    // If it's just a date (length 10), append T00:00 to force parsing as local time,
+    // otherwise JS parses "YYYY-MM-DD" as UTC midnight.
+    const strToParse = inputValue.length === 10 ? `${inputValue}T00:00` : inputValue
+    const d = new Date(strToParse)
+    if (isNaN(d.getTime())) return inputValue
     
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${year}-${pad(Number(month))}-${pad(Number(day))} ${pad(Number(hours))}:${pad(Number(minutes))}:${pad(seconds)}`
+    // toISOString() returns UTC like "2026-06-01T08:45:00.000Z"
+    return d.toISOString().slice(0, 19).replace('T', ' ')
   } catch (e) {
     return inputValue
   }
@@ -104,44 +105,18 @@ export const formatDatetimeLocal = (val: unknown) => {
     }
 
     const strVal = String(val).trim()
-    if (!strVal) return ''
+    if (!strVal || strVal.startsWith('0000-00-00')) return ''
 
-    const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-
-    // Match YYYY-MM-DD HH:mm:ss (with optional fractional seconds and timezone) timezone-agnostically
-    const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
-    const match = parsedStr.match(regex)
-    if (match) {
-      const [, year, month, day, hours, minutes] = match
-      return `${year}-${month}-${day}T${hours}:${minutes}`
+    // Assume database timestamp is UTC, append Z so Date parses it as UTC
+    let parsedStr = strVal.includes(' ') ? strVal.replace(' ', 'T') : strVal
+    if (!parsedStr.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(parsedStr)) {
+      parsedStr += 'Z'
     }
 
-    // Match YYYY-MM-DD HH:mm (with optional timezone) timezone-agnostically
-    const regexShort = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?:(Z|[+-]\d{2}(?::?\d{2})?))?$/i
-    const matchShort = strVal.match(regexShort)
-    if (matchShort) {
-      const [, year, month, day, hours, minutes] = matchShort
-      return `${year}-${month}-${day}T${hours}:${minutes}`
-    }
-
-    // If it's already in the exact format YYYY-MM-DDTHH:mm, return it
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(strVal)) {
-      return strVal
-    }
-
-    // Try parsing Unix timestamp if it's numeric
-    if (/^\d+$/.test(strVal)) {
-      const num = Number(strVal)
-      const date = new Date(strVal.length === 10 ? num * 1000 : num)
-      if (!isNaN(date.getTime())) {
-        return toLocalISOString(date)
-      }
-    }
-
-    // Fallback: standard Date parsing
-    const fallbackParsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-    const d = new Date(fallbackParsedStr)
+    const d = new Date(parsedStr)
     if (isNaN(d.getTime())) return ''
+    
+    // toLocalISOString converts it to the format expected by datetime-local input
     return toLocalISOString(d)
   } catch (e) {
     return ''
@@ -197,25 +172,13 @@ export const formatHumanDatetime = (val: unknown) => {
     const strVal = String(val).trim()
     if (!strVal || strVal.startsWith('0000-00-00') || strVal.startsWith('0001-01-01')) return ''
 
-    // Parse timezone-agnostically first to prevent browser timezone shifts
-    const regex = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i
-    const match = strVal.match(regex)
-    let d: Date
-    if (match) {
-      const [, year, month, day, hours, minutes, seconds] = match
-      d = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds))
-    } else {
-      const regexShort = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?:(Z|[+-]\d{2}(?::?\d{2})?))?$/i
-      const matchShort = strVal.match(regexShort)
-      if (matchShort) {
-        const [, year, month, day, hours, minutes] = matchShort
-        d = new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), 0)
-      } else {
-        const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-        d = new Date(parsedStr)
-      }
+    // Assume database timestamp is UTC, append Z so Date parses it as UTC
+    let parsedStr = strVal.includes(' ') ? strVal.replace(' ', 'T') : strVal
+    if (!parsedStr.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(parsedStr)) {
+      parsedStr += 'Z'
     }
 
+    const d = new Date(parsedStr)
     if (isNaN(d.getTime())) return strVal
 
     const year = d.getFullYear()
@@ -236,28 +199,20 @@ export const formatHumanDate = (val: unknown) => {
   if (val === null || val === undefined) return ''
   try {
     const strVal = String(val).trim()
-    if (!strVal) return ''
+    if (!strVal || strVal.startsWith('0000-00-00')) return ''
 
-    // Parse timezone-agnostically first to prevent browser timezone shifts
-    const regex = /^(\d{4})-(\d{2})-(\d{2})/i
+    // Extract YYYY-MM-DD directly without parsing as a Date object.
+    // Parsing "YYYY-MM-DD" natively in JS converts it to UTC midnight,
+    // which causes date-shifting bugs (showing yesterday) for users in timezones behind UTC.
+    const regex = /^(\d{4})-(\d{2})-(\d{2})/
     const match = strVal.match(regex)
-    let d: Date
     if (match) {
       const [, year, month, day] = match
-      d = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0)
-    } else {
-      const parsedStr = strVal.includes(' ') && !strVal.includes('T') ? strVal.replace(' ', 'T') : strVal
-      d = new Date(parsedStr)
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      return `${day} ${monthNames[Number(month) - 1]} ${year}`
     }
 
-    if (isNaN(d.getTime())) return strVal
-
-    const year = d.getFullYear()
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    const month = monthNames[d.getMonth()]
-    const day = String(d.getDate()).padStart(2, '0')
-    
-    return `${day} ${month} ${year}`
+    return strVal
   } catch (e) {
     return String(val)
   }

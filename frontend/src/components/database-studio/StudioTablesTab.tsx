@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -63,6 +63,16 @@ export function StudioTablesTab() {
     triggerConfirmation,
     t
   } = useStudio()
+
+  const insertAbortController = useRef<AbortController | null>(null)
+  const editAbortController = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => {
+      insertAbortController.current?.abort()
+      editAbortController.current?.abort()
+    }
+  }, [])
 
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedTable = searchParams.get('table') || ''
@@ -221,9 +231,14 @@ export function StudioTablesTab() {
   const handleInsertRowCommit = async () => {
     if (!id || !selectedTable || !rowInsertPreviewSql) return
 
+    if (insertAbortController.current) {
+      insertAbortController.current.abort()
+    }
+    insertAbortController.current = new AbortController()
+
     setIsActionLoading(true)
     try {
-      const res = await databaseAPI.query(id, rowInsertPreviewSql)
+      const res = await databaseAPI.query(id, rowInsertPreviewSql, { signal: insertAbortController.current.signal })
       if (res.data && res.data.error) {
         throw new Error(res.data.error)
       }
@@ -232,7 +247,8 @@ export function StudioTablesTab() {
       setShowInsertModal(false)
       loadTableDataGrid()
       loadStudioData()
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'CanceledError') return
       const err = error as { response?: { data?: { error?: string } }; message?: string }
       toast.error(t('databaseStudio.tables.insertModal.failed') + ': ' + (err.response?.data?.error || err.message))
     } finally {
@@ -347,6 +363,11 @@ export function StudioTablesTab() {
       return
     }
 
+    if (editAbortController.current) {
+      editAbortController.current.abort()
+    }
+    editAbortController.current = new AbortController()
+
     setIsActionLoading(true)
     try {
       const cols = schemaData.find(tb => tb.name === selectedTable)?.columns || []
@@ -390,12 +411,13 @@ export function StudioTablesTab() {
         }
       })
 
-      await databaseAPI.updateRow(id, selectedTable, pkColumn, pkValue, updates)
+      await databaseAPI.updateRow(id, selectedTable, pkColumn, String(pkValue), updates, { signal: editAbortController.current.signal })
       toast.success(t('databaseStudio.tables.editModal.success'))
       setShowEditModal(false)
       loadTableDataGrid()
       loadStudioData()
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'CanceledError') return
       const err = error as { response?: { data?: { error?: string } }; message?: string }
       toast.error(t('databaseStudio.tables.editModal.failed') + ': ' + (err.response?.data?.error || err.message))
     } finally {
