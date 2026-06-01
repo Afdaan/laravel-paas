@@ -790,10 +790,22 @@ export function StudioTablesTab() {
                         ) : (
                           <Input
                             id={`insert_${col}`}
-                            type={isNumeric ? "number" : "text"}
-                            step={isNumeric && !typeLower.includes('int') ? "any" : undefined}
+                            type="text"
+                            inputMode={isNumeric ? (typeLower.includes('int') ? "numeric" : "decimal") : "text"}
                             value={String(insertFormData[col] || '')}
-                            onChange={(e) => setInsertFormData(prev => ({ ...prev, [col]: e.target.value }))}
+                            onChange={(e) => {
+                              let val = e.target.value
+                              if (isNumeric) {
+                                if (typeLower.includes('int')) {
+                                  val = val.replace(/[^-0-9]/g, '').replace(/(?!^)-/g, '')
+                                } else {
+                                  val = val.replace(/[^-0-9.]/g, '').replace(/(?!^)-/g, '')
+                                  const parts = val.split('.')
+                                  if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('')
+                                }
+                              }
+                              setInsertFormData(prev => ({ ...prev, [col]: val }))
+                            }}
                             placeholder={isNullable ? "NULL" : "Enter value..."}
                             required={!isNullable}
                             maxLength={maxLength}
@@ -952,10 +964,22 @@ export function StudioTablesTab() {
                         ) : (
                           <Input
                             id={`edit_${col.name}`}
-                            type={isNumeric ? "number" : "text"}
-                            step={isNumeric && !typeLower.includes('int') ? "any" : undefined}
+                            type="text"
+                            inputMode={isNumeric ? (typeLower.includes('int') ? "numeric" : "decimal") : "text"}
                             value={String(editFormData[col.name] ?? '')}
-                            onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            onChange={(e) => {
+                              let val = e.target.value
+                              if (isNumeric) {
+                                if (typeLower.includes('int')) {
+                                  val = val.replace(/[^-0-9]/g, '').replace(/(?!^)-/g, '')
+                                } else {
+                                  val = val.replace(/[^-0-9.]/g, '').replace(/(?!^)-/g, '')
+                                  const parts = val.split('.')
+                                  if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('')
+                                }
+                              }
+                              setEditFormData(prev => ({ ...prev, [col.name]: val }))
+                            }}
                             placeholder={isNullable ? "NULL" : "Enter value..."}
                             required={!isNullable}
                             maxLength={typeLower.match(/\d+/)?.[0] ? parseInt(typeLower.match(/\d+/)?.[0] || '255') : undefined}
