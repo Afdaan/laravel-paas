@@ -914,7 +914,9 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 	}
 
 	engine := s.getEngineForDB(dbName)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// DDL operations may wait for Metadata Locks if the application has active transactions.
+	// We use a longer timeout (45s) to allow locks to release gracefully without timing out the UI prematurely.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
 	if !s.isValidIdentifier(req.TableName) {
@@ -924,21 +926,32 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 	escapedTable := s.escapeIdentifier(engine, req.TableName)
 	var sqlQuery string
 
+	// Acquire a dedicated connection from the pool to enforce session-level variables
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
 	// Initialize transactional execution boundaries.
-	// For PostgreSQL, transactional DDL ensures perfect atomicity.
 	var tx *sql.Tx
 	var execer interface {
 		ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	} = db
+	} = conn
 
 	if engine == "postgresql" {
+		// Enforce a strict 2-second lock wait timeout to prevent DDL from causing a metadata lock DoS
+		_, _ = conn.ExecContext(ctx, "SET lock_timeout = '2s';")
 		var txErr error
-		tx, txErr = db.BeginTx(ctx, nil)
+		tx, txErr = conn.BeginTx(ctx, nil)
 		if txErr != nil {
 			return txErr
 		}
 		defer tx.Rollback()
 		execer = tx
+	} else {
+		// Enforce a strict 2-second lock wait timeout to prevent DDL from causing a metadata lock DoS
+		_, _ = conn.ExecContext(ctx, "SET SESSION lock_wait_timeout = 2;")
 	}
 
 	switch req.Action {
@@ -1020,7 +1033,11 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 
 		defaultClause := ""
 		if req.Column.DefaultValue != nil {
-			defaultClause = fmt.Sprintf(" DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+			if strings.ToUpper(strings.TrimSpace(*req.Column.DefaultValue)) == "NULL" {
+				defaultClause = " DEFAULT NULL"
+			} else {
+				defaultClause = fmt.Sprintf(" DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+			}
 		}
 
 		commentClause := ""
@@ -1154,7 +1171,11 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 
 		defaultClause := ""
 		if req.Column.DefaultValue != nil {
-			defaultClause = fmt.Sprintf(" DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+			if strings.ToUpper(strings.TrimSpace(*req.Column.DefaultValue)) == "NULL" {
+				defaultClause = " DEFAULT NULL"
+			} else {
+				defaultClause = fmt.Sprintf(" DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+			}
 		}
 
 		if engine == "postgresql" {
@@ -1178,7 +1199,11 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 			// 3. Alter Default
 			defaultAction := "DROP DEFAULT"
 			if req.Column.DefaultValue != nil {
-				defaultAction = fmt.Sprintf("SET DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+				if strings.ToUpper(strings.TrimSpace(*req.Column.DefaultValue)) == "NULL" {
+					defaultAction = "SET DEFAULT NULL"
+				} else {
+					defaultAction = fmt.Sprintf("SET DEFAULT '%s'", s.escapeSQLString(*req.Column.DefaultValue))
+				}
 			}
 			sqlQuery3 := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s %s;", escapedTable, escapedCol, defaultAction)
 			if _, err = execer.ExecContext(ctx, sqlQuery3); err != nil {

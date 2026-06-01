@@ -292,5 +292,23 @@ func (s *DockerService) UpdateDatabaseCredentialsInEnv(project *models.Project) 
 		finalLines = append(finalLines, fmt.Sprintf("DB_PASSWORD=%s", project.DatabasePassword))
 	}
 
-	return os.WriteFile(envPath, []byte(strings.Join(finalLines, "\n")), 0644)
+	tempPath := envPath + ".tmp"
+	f, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempPath)
+
+	if _, err := f.Write([]byte(strings.Join(finalLines, "\n"))); err != nil {
+		f.Close()
+		return err
+	}
+	
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	return os.Rename(tempPath, envPath)
 }
