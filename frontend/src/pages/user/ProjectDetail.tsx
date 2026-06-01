@@ -54,86 +54,7 @@ import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 import { CustomDomainManager } from '../../components/project/CustomDomainManager'
 import { RuntimeTab } from '../../components/project/RuntimeTab'
-import { motion, useAnimation } from 'framer-motion'
 
-// Reusable animated tab icon wrapper to provide micro-interactions
-interface AnimatedTabIconProps {
-  icon: any
-  active: boolean
-  hovered: boolean
-  type?: 'rotate' | 'bounce' | 'pulse' | 'scale'
-}
-
-function AnimatedTabIcon({ icon: Icon, active, hovered, type = 'scale' }: AnimatedTabIconProps) {
-  const controls = useAnimation()
-
-  useEffect(() => {
-    if (hovered) {
-      if (type === 'rotate') {
-        controls.start({ rotate: 360, transition: { duration: 0.6, ease: 'easeInOut' } })
-      } else if (type === 'bounce') {
-        controls.start({ y: [0, -4, 0], transition: { duration: 0.4, times: [0, 0.5, 1], ease: 'easeInOut' } })
-      } else if (type === 'pulse') {
-        controls.start({ scale: [1, 1.15, 1], transition: { duration: 0.6, repeat: Infinity, repeatType: 'reverse' } })
-      } else if (type === 'scale') {
-        controls.start({ scale: 1.2, transition: { duration: 0.2 } })
-      }
-    } else {
-      if (type === 'rotate') {
-        controls.set({ rotate: 0 })
-      } else if (type === 'pulse') {
-        controls.stop()
-        controls.start({ scale: 1, transition: { duration: 0.2 } })
-      } else {
-        controls.start({ scale: 1, y: 0, transition: { duration: 0.2 } })
-      }
-    }
-  }, [hovered, type, controls])
-
-  useEffect(() => {
-    if (active) {
-      controls.start({
-        scale: [1, 1.2, 0.95, 1],
-        y: [0, -3, 0],
-        transition: { duration: 0.4 }
-      })
-    }
-  }, [active, controls])
-
-  return (
-    <div className="inline-flex items-center justify-center pointer-events-none">
-      <motion.div animate={controls} className="origin-center flex items-center justify-center">
-        <Icon className="w-3.5 h-3.5" />
-      </motion.div>
-    </div>
-  )
-}
-
-interface HoverableTabsTriggerProps extends React.ComponentPropsWithoutRef<typeof TabsTrigger> {
-  icon: any
-  active: boolean
-  iconType?: 'rotate' | 'bounce' | 'pulse' | 'scale'
-}
-
-function HoverableTabsTrigger({ icon, active, iconType, children, ...props }: HoverableTabsTriggerProps) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <TabsTrigger
-      {...props}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={cn(
-        "flex items-center gap-2 px-3.5 py-1.5 text-[13px] font-medium transition-all duration-300 whitespace-nowrap rounded-lg",
-        "data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-border/50",
-        "text-muted-foreground hover:text-foreground hover:bg-muted-foreground/5",
-        props.className
-      )}
-    >
-      <AnimatedTabIcon icon={icon} active={active} hovered={hovered} type={iconType} />
-      {children}
-    </TabsTrigger>
-  )
-}
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -1014,33 +935,42 @@ function UserProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="w-full overflow-x-auto pb-2 -mb-2 custom-scrollbar hide-scrollbar-on-mobile">
           <TabsList className="bg-muted/40 p-1.5 rounded-xl border border-border/40 inline-flex min-w-max shadow-sm mb-1">
-            <HoverableTabsTrigger value="project" icon={LayoutGrid} active={activeTab === 'project'} iconType="scale">
+            <TabsTrigger value="project" className="flex items-center gap-2">
+              <LayoutGrid className="w-4 h-4" />
               {t('projectDetail.tabs.overview')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="runtime" icon={Cpu} active={activeTab === 'runtime'} iconType="pulse">
+            </TabsTrigger>
+            <TabsTrigger value="runtime" className="flex items-center gap-2">
+              <Cpu className="w-4 h-4" />
               {t('projectDetail.tabs.runtime')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="console" icon={TerminalIcon} active={activeTab === 'console'} iconType="bounce">
+            </TabsTrigger>
+            <TabsTrigger value="console" className="flex items-center gap-2">
+              <TerminalIcon className="w-4 h-4" />
               {t('projectDetail.tabs.console')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="environment" icon={Key} active={activeTab === 'environment'} iconType="bounce">
+            </TabsTrigger>
+            <TabsTrigger value="environment" className="flex items-center gap-2">
+              <Key className="w-4 h-4" />
               {t('projectDetail.tabs.secrets')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="database" icon={DatabaseIcon} active={activeTab === 'database'} iconType="bounce">
+            </TabsTrigger>
+            <TabsTrigger value="database" className="flex items-center gap-2">
+              <DatabaseIcon className="w-4 h-4" />
               {t('projectDetail.tabs.database')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="logs" icon={Scroll} active={activeTab === 'logs'} iconType="scale">
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="flex items-center gap-2">
+              <Scroll className="w-4 h-4" />
               {t('projectDetail.tabs.logs')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="build" icon={Hammer} active={activeTab === 'build'} iconType="bounce">
+            </TabsTrigger>
+            <TabsTrigger value="build" className="flex items-center gap-2">
+              <Hammer className="w-4 h-4" />
               {t('projectDetail.tabs.build')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="domains" icon={Globe} active={activeTab === 'domains'} iconType="rotate">
+            </TabsTrigger>
+            <TabsTrigger value="domains" className="flex items-center gap-2">
+              <Globe className="w-4 h-4" />
               {t('projectDetail.tabs.domains')}
-            </HoverableTabsTrigger>
-            <HoverableTabsTrigger value="settings" icon={Settings} active={activeTab === 'settings'} iconType="rotate">
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
               {t('projectDetail.tabs.settings')}
-            </HoverableTabsTrigger>
+            </TabsTrigger>
           </TabsList>
         </div>
 
