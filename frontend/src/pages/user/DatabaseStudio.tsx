@@ -93,7 +93,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     }
     try {
       const overviewRes = await databaseAPI.getOverview(id)
-      setDbOverview(overviewRes.data)
+      const credentialsRes = await databaseAPI.getCredentials(id)
+      setDbOverview({ ...overviewRes.data, password: credentialsRes.data.password })
       
       const schemaRes = await databaseAPI.getSchema(id)
       const tables = schemaRes.data.tables || []
