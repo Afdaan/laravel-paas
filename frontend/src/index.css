@@ -216,3 +216,15 @@
 .overflow-auto {
   overscroll-behavior-x: contain;
 }
+
+/* Force Sonner toaster container to center precisely at viewport midpoint */
+[data-sonner-toaster][data-x-position="center"] {
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+/* Ensure individual toasts center within the toaster container */
+[data-sonner-toast] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
