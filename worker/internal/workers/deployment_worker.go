@@ -1138,6 +1138,11 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project) error {
 		return err
 	}
 
+	// Ensure rotated database credentials take effect if they were changed
+	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
+		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
+	}
+
 	return w.projectService.RecreateProjectZeroDowntime(project)
 }
 
@@ -1147,6 +1152,11 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error 
 	// Refresh .env before restart
 	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
 		slog.Warn("Failed to refresh environment file during redeploy", "id", project.ID, "error", err)
+	}
+
+	// Ensure rotated database credentials take effect if they were changed
+	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
+		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
 	}
 
 	return w.projectService.RecreateProjectZeroDowntime(project)

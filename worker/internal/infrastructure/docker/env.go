@@ -249,3 +249,48 @@ func (s *DockerService) parseProjectEnv(path string) (map[string]string, error) 
 
 	return envVars, nil
 }
+
+// UpdateDatabaseCredentialsInEnv safely updates only the database password and URL in an existing .env file
+func (s *DockerService) UpdateDatabaseCredentialsInEnv(project *models.Project) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
+	envPath := filepath.Join(projectPath, ".env")
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // If it doesn't exist, CreateEnvFile will handle it anyway
+		}
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var finalLines []string
+	dbPasswordUpdated := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		if strings.HasPrefix(trimmed, "DB_PASSWORD=") {
+			finalLines = append(finalLines, fmt.Sprintf("DB_PASSWORD=%s", project.DatabasePassword))
+			dbPasswordUpdated = true
+			continue
+		}
+		
+		if strings.HasPrefix(trimmed, "DATABASE_URL=") {
+			if project.DatabaseInstance != nil && project.DatabaseInstance.Engine == "postgresql" {
+				finalLines = append(finalLines, fmt.Sprintf("DATABASE_URL=postgres://%s:%s@paas-user-postgres:5432/%s?sslmode=disable", project.DatabaseName, project.DatabasePassword, project.DatabaseName))
+			} else {
+				finalLines = append(finalLines, fmt.Sprintf("DATABASE_URL=mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName))
+			}
+			continue
+		}
+		finalLines = append(finalLines, line)
+	}
+
+	// If DB_PASSWORD wasn't found in the file, we should probably add it at the end
+	if !dbPasswordUpdated && project.DatabasePassword != "" {
+		finalLines = append(finalLines, fmt.Sprintf("DB_PASSWORD=%s", project.DatabasePassword))
+	}
+
+	return os.WriteFile(envPath, []byte(strings.Join(finalLines, "\n")), 0644)
+}
