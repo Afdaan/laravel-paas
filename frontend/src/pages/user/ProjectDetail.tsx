@@ -197,6 +197,9 @@ function UserProjectDetail() {
   const setActiveTab = (tab: string) => {
     setSearchParams(prev => {
       prev.set('tab', tab)
+      // Explicitly delete known sub-tab state to prevent leakage without destroying global params
+      prev.delete('dbTab')
+      prev.delete('table')
       return prev
     }, { replace: true })
   }

@@ -40,6 +40,8 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const setActiveTab = (tab: 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') => {
     setSearchParams(prev => {
       prev.set('dbTab', tab)
+      // Explicitly delete known sub-tab state to prevent leakage without destroying global params
+      prev.delete('table')
       return prev
     }, { replace: true })
   }
