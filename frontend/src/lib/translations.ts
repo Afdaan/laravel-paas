@@ -685,6 +685,8 @@ export const translations = {
       settings: {
         phpVersion: "Select PHP version",
         redeployWarning: "Changing version triggers a container rebuild.",
+        redeployWarningBranch: "Changing branch triggers a container rebuild.",
+        redeployWarningDirectory: "Changing base directory triggers a container rebuild.",
         queueConfig: "Worker Config",
         queueHandles: "Handles async background jobs",
         phpTitle: "PHP Stack",
@@ -2008,6 +2010,8 @@ export const translations = {
       settings: {
         phpVersion: "PHP Version",
         redeployWarning: "Mengubah versi akan memicu container rebuild.",
+        redeployWarningBranch: "Mengubah branch akan memicu container rebuild.",
+        redeployWarningDirectory: "Mengubah base directory akan memicu container rebuild.",
         queueConfig: "Worker Config",
         queueHandles: "Menangani background job secara asinkron",
         phpTitle: "PHP Stack",

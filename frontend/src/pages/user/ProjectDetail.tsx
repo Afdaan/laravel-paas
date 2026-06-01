@@ -1577,6 +1577,10 @@ function UserProjectDetail() {
                 )}
 
 
+                <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
+                  <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
+                </p>
+
                 {/* Common Custom Commands Area */}
                 <div className="space-y-4 pt-6 mt-6 border-t border-dashed">
                   <div className="space-y-2">
@@ -1608,9 +1612,6 @@ function UserProjectDetail() {
                   </div>
                 </div>
 
-                <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                  <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
-                </p>
               </CardContent>
             </Card>
 
@@ -1689,7 +1690,7 @@ function UserProjectDetail() {
                       </button>
                     )}
                     <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
-                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
+                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarningBranch')}
                     </p>
                   </div>
                 </CardContent>
@@ -1719,7 +1720,7 @@ function UserProjectDetail() {
                       />
                     </div>
                     <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
-                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarning')}
+                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarningDirectory')}
                     </p>
                   </div>
                 </CardContent>
