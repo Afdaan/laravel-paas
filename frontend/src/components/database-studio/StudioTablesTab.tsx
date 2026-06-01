@@ -629,11 +629,17 @@ export function StudioTablesTab() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>
-                          {tableData.columns.map((col: string) => (
-                            <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
-                              {formatCellValue(row[col])}
-                            </td>
-                          ))}
+                          {tableData.columns.map((col: string) => {
+                            const colSchema = schemaData
+                              .find(t => t.name === selectedTable)
+                              ?.columns.find(c => c.name === col)
+                            const colType = colSchema?.type || ''
+                            return (
+                              <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
+                                {formatCellValue(row[col], colType)}
+                              </td>
+                            )
+                          })}
                         </tr>
                       )
                     })

@@ -218,7 +218,7 @@ export const formatHumanDate = (val: unknown) => {
   }
 }
 
-export const formatCellValue = (val: unknown): React.ReactNode => {
+export const formatCellValue = (val: unknown, columnType?: string): React.ReactNode => {
   if (val === null || val === undefined) {
     return React.createElement('span', { className: 'text-muted-foreground/30 italic' }, 'NULL')
   }
@@ -226,6 +226,12 @@ export const formatCellValue = (val: unknown): React.ReactNode => {
   const strVal = String(val).trim()
   if (!strVal || strVal.startsWith('0000-00-00') || strVal.startsWith('0001-01-01')) {
     return React.createElement('span', { className: 'text-muted-foreground/30 italic' }, 'NULL')
+  }
+
+  // Handle explicit date column type
+  const lowerType = columnType?.toLowerCase() || ''
+  if (lowerType === 'date') {
+    return formatHumanDate(strVal)
   }
 
   // Check if it matches ISO datetime or DB space-separated datetime
