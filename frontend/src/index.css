@@ -163,26 +163,26 @@
 }
 
 /* Global scrollbar */
-* {
+:root {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
-*::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-*::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
 
-*::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 10px;
 }
 
-*::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
 

@@ -182,7 +182,7 @@ export function StudioTablesTab() {
       const fields: string[] = []
       const values: string[] = []
 
-      const isPostgres = dbOverview?.engine?.toLowerCase() === 'postgres'
+      const isPostgres = dbOverview?.engine?.toLowerCase().includes('post') || dbOverview?.engine?.toLowerCase().includes('pg')
       const q = isPostgres ? '"' : '`'
 
       cols.forEach((col: SchemaColumn) => {
@@ -263,7 +263,7 @@ export function StudioTablesTab() {
     ) || tableData.columns[0]
     const pkValue = editingRow[pkColumn]
 
-    const isPostgres = dbOverview?.engine?.toLowerCase() === 'postgres'
+    const isPostgres = dbOverview?.engine?.toLowerCase().includes('post') || dbOverview?.engine?.toLowerCase().includes('pg')
     const q = isPostgres ? '"' : '`'
 
     const setClauses: string[] = []
@@ -707,6 +707,9 @@ export function StudioTablesTab() {
                     const isPK = colDetail?.key === 'PRI' || colDetail?.extra?.toLowerCase().includes('auto_increment')
                     const isNullable = colDetail?.nullable === 'YES' || colDetail?.null === 'YES' || colDetail?.nullable === true
                     const typeLower = (colDetail?.type || 'varchar').toLowerCase()
+                    const lengthMatch = typeLower.match(/\((\d+)\)/)
+                    const maxLength = lengthMatch ? parseInt(lengthMatch[1], 10) : undefined
+                    const isNumeric = typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double') || typeLower.includes('numeric') || typeLower.includes('real')
                     
                     return (
                       <div key={col} className="space-y-1.5">
@@ -745,10 +748,10 @@ export function StudioTablesTab() {
                               <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
                             </SelectTrigger>
                             <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
-                              <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                              <SelectItem value="true" className="py-2 px-3 text-xs font-medium cursor-pointer">
                                 {t('databaseStudio.tables.booleanTrue')}
                               </SelectItem>
-                              <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                              <SelectItem value="false" className="py-2 px-3 text-xs font-medium cursor-pointer">
                                 {t('databaseStudio.tables.booleanFalse')}
                               </SelectItem>
                             </SelectContent>
@@ -787,10 +790,13 @@ export function StudioTablesTab() {
                         ) : (
                           <Input
                             id={`insert_${col}`}
+                            type={isNumeric ? "number" : "text"}
+                            step={isNumeric && !typeLower.includes('int') ? "any" : undefined}
                             value={String(insertFormData[col] || '')}
                             onChange={(e) => setInsertFormData(prev => ({ ...prev, [col]: e.target.value }))}
                             placeholder={isNullable ? "NULL" : "Enter value..."}
                             required={!isNullable}
+                            maxLength={maxLength}
                             className="h-10 rounded-xl bg-background/50 text-xs"
                           />
                         )}
@@ -861,6 +867,7 @@ export function StudioTablesTab() {
                     const isPK = col.name === pkColumn
                     const isNullable = col.nullable === 'YES' || col.nullable === true
                     const typeLower = col.type.toLowerCase()
+                    const isNumeric = typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double') || typeLower.includes('numeric') || typeLower.includes('real')
 
                     return (
                       <div key={col.name} className="space-y-1.5">
@@ -903,10 +910,10 @@ export function StudioTablesTab() {
                               <SelectValue placeholder={t('databaseStudio.tables.booleanSelect') || undefined} />
                             </SelectTrigger>
                             <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1 bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl max-h-72">
-                              <SelectItem value="true" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                              <SelectItem value="true" className="py-2 px-3 text-xs font-medium cursor-pointer">
                                 {t('databaseStudio.tables.booleanTrue')}
                               </SelectItem>
-                              <SelectItem value="false" className="py-2 px-3 pl-8 text-xs font-medium cursor-pointer">
+                              <SelectItem value="false" className="py-2 px-3 text-xs font-medium cursor-pointer">
                                 {t('databaseStudio.tables.booleanFalse')}
                               </SelectItem>
                             </SelectContent>
@@ -945,10 +952,13 @@ export function StudioTablesTab() {
                         ) : (
                           <Input
                             id={`edit_${col.name}`}
-                            value={String(editFormData[col.name] || '')}
+                            type={isNumeric ? "number" : "text"}
+                            step={isNumeric && !typeLower.includes('int') ? "any" : undefined}
+                            value={String(editFormData[col.name] ?? '')}
                             onChange={(e) => setEditFormData(prev => ({ ...prev, [col.name]: e.target.value }))}
                             placeholder={isNullable ? "NULL" : "Enter value..."}
                             required={!isNullable}
+                            maxLength={typeLower.match(/\d+/)?.[0] ? parseInt(typeLower.match(/\d+/)?.[0] || '255') : undefined}
                             className="h-10 rounded-xl bg-background/50 text-xs"
                           />
                         )}
