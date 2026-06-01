@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
+import { getEngineDisplayName } from '../../components/database-studio/utils'
 import { Project } from '../../types'
 
 const getFrameworkLabel = (framework?: string, fallback?: string) => {
@@ -217,7 +218,9 @@ const UserProjects = () => {
                       <span>{t('projectDetail.metrics.db')}</span>
                     </div>
                     <span className="text-xs font-semibold text-primary">
-                      {project.database_name ? t('projectDetail.metrics.active') : t('projectDetail.metrics.inactive')}
+                      {project.database_name 
+                        ? getEngineDisplayName(project.database_instance?.engine) 
+                        : t('projectDetail.metrics.inactive')}
                     </span>
                   </div>
                 </div>
