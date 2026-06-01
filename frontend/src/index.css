@@ -227,4 +227,19 @@
 [data-sonner-toast] {
   margin-left: auto !important;
   margin-right: auto !important;
+  position: relative !important;
+}
+
+/* Fix spacing between Sonner icon and text */
+[data-sonner-toast] [data-icon] {
+  margin-right: 14px !important;
+}
+
+/* Ensure the close button is perfectly centered vertically and aligned to the right */
+[data-sonner-toast] [data-close-button] {
+  position: absolute !important;
+  top: 50% !important;
+  right: 12px !important;
+  left: auto !important;
+  transform: translateY(-50%) !important;
 }
