@@ -76,6 +76,7 @@ export function StudioStructureTab() {
     isActionLoading,
     setIsActionLoading,
     triggerConfirmation,
+    setActiveTab,
     t
   } = useStudio()
 
@@ -551,14 +552,29 @@ export function StudioStructureTab() {
                   <Table className={cn("w-3.5 h-3.5 shrink-0", selectedTable === table.name ? "text-primary" : "text-muted-foreground/60 group-hover:text-foreground")} />
                   <span className="truncate pr-1 tracking-tight">{table.name}</span>
                 </div>
-                {table.rows != null && (
-                  <span className={cn(
-                     "text-[9px] font-mono px-1.5 py-0.5 rounded-md shrink-0",
-                     selectedTable === table.name ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/50'
-                  )}>
-                    {table.rows} rows
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {table.rows != null && (
+                    <span className={cn(
+                       "text-[9px] font-mono px-1.5 py-0.5 rounded-md shrink-0",
+                       selectedTable === table.name ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground/50'
+                    )}>
+                      {table.rows}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedTable(table.name)
+                      setActiveTab('tables')
+                    }}
+                    className="p-1 rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary transition-all shrink-0 cursor-pointer"
+                    title="Browse Table Data"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </button>
             ))
           )}
@@ -571,7 +587,21 @@ export function StudioStructureTab() {
           <div className="flex items-center gap-3">
             <Table className="w-5 h-5 text-primary" />
             <div>
-              <h3 className="font-extrabold text-base">{t('databaseStudio.structure.title')}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base">{t('databaseStudio.structure.title')}</h3>
+                {selectedTable && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setActiveTab('tables')}
+                    className="text-[10px] h-6 px-2 font-bold gap-1 text-primary hover:bg-primary/10 hover:text-primary rounded-lg cursor-pointer"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Table className="w-3.5 h-3.5" />
+                    {t('databaseStudio.tabs.tables') || 'Browse Data'}
+                  </Button>
+                )}
+              </div>
               <p className="text-muted-foreground text-xs">{t('databaseStudio.structure.subtitle')}</p>
             </div>
           </div>
