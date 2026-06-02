@@ -9,6 +9,7 @@ export interface User {
   last_ip?: string;
   last_location?: string;
   created_at?: string;
+  avatar_url?: string;
 }
 
 export interface CustomDomain {
@@ -70,6 +71,9 @@ export interface Project {
   user?: User;
   laravel_version?: string;
   github_url?: string;
+  github_installation_id?: number | null;
+  github_repo_owner?: string;
+  github_repo_name?: string;
   error_log?: string;
   queue_enabled?: boolean;
   is_manual_version?: boolean;

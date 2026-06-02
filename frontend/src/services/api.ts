@@ -77,6 +77,9 @@ export const authAPI = {
   
   me: () => 
     api.get('/auth/me'),
+
+  updateProfile: (data: { name: string; email: string; password?: string }) =>
+    api.put('/auth/profile', data),
 }
 
 // ===========================================

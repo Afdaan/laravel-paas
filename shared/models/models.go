@@ -39,6 +39,7 @@ type User struct {
 	LastActivity *time.Time     `json:"last_activity,omitempty"`
 	LastIP       string         `gorm:"size:45" json:"last_ip,omitempty"`
 	LastLocation string         `gorm:"size:255" json:"last_location,omitempty"`
+	AvatarURL    string         `gorm:"size:500" json:"avatar_url,omitempty"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`

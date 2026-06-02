@@ -235,6 +235,13 @@ func (h *GithubAppHandler) LinkInstallation(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save installation mapping"})
 	}
 
+	// Update user's avatar URL to match the newly connected GitHub profile
+	if ghInst.Account.AvatarURL != "" {
+		if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("avatar_url", ghInst.Account.AvatarURL).Error; err != nil {
+			slog.Warn("Failed to update user avatar URL", "user_id", userID, "error", err)
+		}
+	}
+
 	return c.JSON(fiber.Map{"message": "GitHub App connected successfully", "data": inst})
 }
 

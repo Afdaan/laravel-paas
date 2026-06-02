@@ -43,6 +43,7 @@ const AdminDatabases = lazy(() => import('./pages/admin/Databases'))
 const AdminDeploymentQueue = lazy(() => import('./pages/admin/DeploymentQueue'))
 const UserDomains = lazy(() => import('./pages/user/Domains'))
 const AdminDomains = lazy(() => import('./pages/admin/Domains'))
+const UserSettings = lazy(() => import('./pages/user/Settings').then(module => ({ default: module.UserSettings })))
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -221,6 +222,7 @@ function App() {
           <Route path="/domains" element={<UserDomains />} />
           <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<UserFeedback />} />
+          <Route path="/settings" element={<UserSettings />} />
         </Route>
 
         {/* Admin Routes */}

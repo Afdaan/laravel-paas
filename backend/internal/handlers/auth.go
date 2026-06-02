@@ -98,6 +98,32 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
+// UpdateProfileRequest represents profile update payload
+type UpdateProfileRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password,omitempty"`
+}
+
+// UpdateProfile updates the current authenticated user's profile
+func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+
+	var req UpdateProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.ErrBadRequest
+	}
+
+	user, err := h.userService.UpdateUser(userID, req.Name, req.Email, req.Password)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(user)
+}
+
 // GenerateStreamToken generates a short-lived (60s) ephemeral stream JWT intended exclusively for SSE endpoints
 func (h *AuthHandler) GenerateStreamToken(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)

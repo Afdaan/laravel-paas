@@ -32,7 +32,7 @@ import {
   MemoryStick
 } from 'lucide-react'
 import { AxiosError } from 'axios'
-import { projectsAPI } from '../../services/api'
+import { projectsAPI, githubAPI } from '../../services/api'
 import { Project, ProjectStats, DeploymentEvent } from '../../types'
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseStudio from './DatabaseStudio'
@@ -54,6 +54,25 @@ import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
 import { CustomDomainManager } from '../../components/project/CustomDomainManager'
 import { RuntimeTab } from '../../components/project/RuntimeTab'
+
+const Github = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={props.className}
+    style={props.style}
+    width={props.width || "1em"}
+    height={props.height || "1em"}
+    {...props}
+  >
+    <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+    <path d="M9 18c-4.51 2-5-2-7-2" />
+  </svg>
+)
 
 
 // Status Indicator Component
@@ -145,12 +164,79 @@ function UserProjectDetail() {
   const [isFetchingBranches, setIsFetchingBranches] = useState(false)
   const [forceManualInput, setForceManualInput] = useState(false)
   
+  // Git Connection states
+  const [githubUrlInput, setGithubUrlInput] = useState('')
+  const [githubInstallationIdInput, setGithubInstallationIdInput] = useState<number | null>(null)
+  const [githubRepoOwnerInput, setGithubRepoOwnerInput] = useState('')
+  const [githubRepoNameInput, setGithubRepoNameInput] = useState('')
+  const [gitConnectionMode, setGitConnectionMode] = useState<'manual' | 'github_app'>('manual')
+
+  const [githubInstallations, setGithubInstallations] = useState<any[]>([])
+  const [isGithubInstallationsLoading, setIsGithubInstallationsLoading] = useState(false)
+  const [githubRepos, setGithubRepos] = useState<any[]>([])
+  const [isGithubReposLoading, setIsGithubReposLoading] = useState(false)
+
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
   const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
   const [runtimeEvents, setRuntimeEvents] = useState<DeploymentEvent[]>([])
   const [isRollingBack, setIsRollingBack] = useState(false)
   const [rollbackCommitSHA, setRollbackCommitSHA] = useState('')
+
+  const loadGithubInstallations = async () => {
+    setIsGithubInstallationsLoading(true)
+    try {
+      const response = await githubAPI.listInstallations()
+      setGithubInstallations(response.data.data || [])
+    } catch (err) {
+      console.error('Failed to load GitHub installations', err)
+    } finally {
+      setIsGithubInstallationsLoading(false)
+    }
+  }
+
+  const loadGithubRepos = async (installationId: number | string) => {
+    setIsGithubReposLoading(true)
+    try {
+      const response = await githubAPI.listRepositories(installationId)
+      setGithubRepos(response.data.data || [])
+    } catch (err) {
+      console.error('Failed to load GitHub repositories', err)
+      setGithubRepos([])
+    } finally {
+      setIsGithubReposLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      loadGithubInstallations()
+    }
+  }, [activeTab])
+
+  useEffect(() => {
+    if (githubInstallationIdInput) {
+      loadGithubRepos(githubInstallationIdInput)
+    } else {
+      setGithubRepos([])
+    }
+  }, [githubInstallationIdInput])
+
+  useEffect(() => {
+    if (gitConnectionMode === 'github_app' && githubRepoOwnerInput && githubRepoNameInput) {
+      setIsFetchingBranches(true)
+      githubAPI.listBranches(githubRepoOwnerInput, githubRepoNameInput)
+        .then(res => {
+          setBranchesList(res.data.data || [])
+        })
+        .catch(() => {
+          setBranchesList([])
+        })
+        .finally(() => {
+          setIsFetchingBranches(false)
+        })
+    }
+  }, [gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput])
 
   const fetchRuntimeEvents = useCallback(async () => {
     if (!uid) return
@@ -560,8 +646,16 @@ function UserProjectDetail() {
       phpVersionInput !== (project.php_version || '8.2') ||
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
-      languageVersionInput !== (project.language_version || '')
-  }, [project, branchInput, baseDirInput, buildCommandInput, startCommandInput, nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput, languageVersionInput])
+      languageVersionInput !== (project.language_version || '') ||
+      githubUrlInput !== (project.github_url || '') ||
+      githubInstallationIdInput !== (project.github_installation_id || null) ||
+      githubRepoOwnerInput !== (project.github_repo_owner || '') ||
+      githubRepoNameInput !== (project.github_repo_name || '')
+  }, [
+    project, branchInput, baseDirInput, buildCommandInput, startCommandInput,
+    nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput,
+    languageVersionInput, githubUrlInput, githubInstallationIdInput, githubRepoOwnerInput, githubRepoNameInput
+  ])
 
   const handleResetSettings = () => {
     if (!project) return
@@ -574,6 +668,11 @@ function UserProjectDetail() {
     setWorkerCommandInput(project.worker_command || '')
     setQueueEnabledInput(project.queue_enabled || false)
     setLanguageVersionInput(project.language_version || '')
+    setGithubUrlInput(project.github_url || '')
+    setGithubInstallationIdInput(project.github_installation_id || null)
+    setGithubRepoOwnerInput(project.github_repo_owner || '')
+    setGithubRepoNameInput(project.github_repo_name || '')
+    setGitConnectionMode(project.github_installation_id ? 'github_app' : 'manual')
     toast.info(t('common.resetSuccess') || 'Settings reset to original values')
   }
 
@@ -598,7 +697,11 @@ function UserProjectDetail() {
             php_version: phpVersionInput,
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput,
-            language_version: languageVersionInput
+            language_version: languageVersionInput,
+            github_url: githubUrlInput,
+            github_installation_id: gitConnectionMode === 'github_app' ? githubInstallationIdInput : null,
+            github_repo_owner: gitConnectionMode === 'github_app' ? githubRepoOwnerInput : '',
+            github_repo_name: gitConnectionMode === 'github_app' ? githubRepoNameInput : ''
           }
           await projectsAPI.update(uid, payload)
           toast.success(t('common.success'))
@@ -628,6 +731,11 @@ function UserProjectDetail() {
     setWorkerCommandInput('')
     setQueueEnabledInput(false)
     setLanguageVersionInput('')
+    setGithubUrlInput('')
+    setGithubInstallationIdInput(null)
+    setGithubRepoOwnerInput('')
+    setGithubRepoNameInput('')
+    setGitConnectionMode('manual')
     setIsLoading(true)
     fetchProject(true)
     fetchBranches(false)
@@ -644,6 +752,11 @@ function UserProjectDetail() {
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
       setLanguageVersionInput(project.language_version || '')
+      setGithubUrlInput(project.github_url || '')
+      setGithubInstallationIdInput(project.github_installation_id || null)
+      setGithubRepoOwnerInput(project.github_repo_owner || '')
+      setGithubRepoNameInput(project.github_repo_name || '')
+      setGitConnectionMode(project.github_installation_id ? 'github_app' : 'manual')
       settingsInitialized.current = true
       fetchBranches()
     }
@@ -660,6 +773,11 @@ function UserProjectDetail() {
       setWorkerCommandInput(project.worker_command || '')
       setQueueEnabledInput(project.queue_enabled || false)
       setLanguageVersionInput(project.language_version || '')
+      setGithubUrlInput(project.github_url || '')
+      setGithubInstallationIdInput(project.github_installation_id || null)
+      setGithubRepoOwnerInput(project.github_repo_owner || '')
+      setGithubRepoNameInput(project.github_repo_name || '')
+      setGitConnectionMode(project.github_installation_id ? 'github_app' : 'manual')
     }
   }, [project, isSettingsDirty])
 
@@ -1653,6 +1771,182 @@ function UserProjectDetail() {
                       <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarningDirectory')}
                     </p>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+                      <Github className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{t('user.settings.gitConfigTitle')}</CardTitle>
+                      <CardDescription>{t('user.settings.gitConfigDesc')}</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Connection Mode Toggle */}
+                  <div className="flex rounded-lg p-1 bg-muted/20 border border-muted-foreground/10 gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setGitConnectionMode('github_app')}
+                      className={cn(
+                        "flex-1 py-2 px-3 text-xs font-bold rounded-md transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 h-auto hover:bg-transparent",
+                        gitConnectionMode === 'github_app'
+                          ? "bg-card text-primary shadow-sm border border-border/40 font-extrabold hover:text-primary hover:bg-card"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Github className="w-3.5 h-3.5" />
+                      GitHub App
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setGitConnectionMode('manual')}
+                      className={cn(
+                        "flex-1 py-2 px-3 text-xs font-bold rounded-md transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 h-auto hover:bg-transparent",
+                        gitConnectionMode === 'manual'
+                          ? "bg-card text-primary shadow-sm border border-border/40 font-extrabold hover:text-primary hover:bg-card"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      Manual Git URL
+                    </Button>
+                  </div>
+
+                  {/* Mode 1: GitHub App */}
+                  {gitConnectionMode === 'github_app' && (
+                    <div className="space-y-4">
+                      {isGithubInstallationsLoading ? (
+                        <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
+                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          <span className="text-xs">Loading accounts...</span>
+                        </div>
+                      ) : githubInstallations.length > 0 ? (
+                        <div className="space-y-4">
+                          {/* Installation Select */}
+                          <div className="space-y-2">
+                            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">GitHub Account / Org</Label>
+                            <Select
+                              value={githubInstallationIdInput ? String(githubInstallationIdInput) : ''}
+                              onValueChange={(val) => {
+                                const idNum = Number(val)
+                                setGithubInstallationIdInput(idNum)
+                                setGithubRepoOwnerInput('')
+                                setGithubRepoNameInput('')
+                                setGithubUrlInput('')
+                              }}
+                            >
+                              <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs">
+                                <SelectValue placeholder="Select connected account" />
+                              </SelectTrigger>
+                              <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
+                                {githubInstallations.map((inst) => (
+                                  <SelectItem key={inst.installation_id} value={String(inst.installation_id)} className="rounded-lg py-2 cursor-pointer">
+                                    <div className="flex items-center gap-2">
+                                      {inst.avatar_url ? (
+                                        <img src={inst.avatar_url} alt={inst.account_name} className="w-4 h-4 rounded-full" />
+                                      ) : (
+                                        <Github className="w-4 h-4" />
+                                      )}
+                                      <span>{inst.account_name}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Repository Select */}
+                          {githubInstallationIdInput && (
+                            <div className="space-y-2">
+                              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Repository</Label>
+                              {isGithubReposLoading ? (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2 pl-1">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                  <span>Loading repositories...</span>
+                                </div>
+                              ) : githubRepos.length > 0 ? (
+                                <Select
+                                  value={githubRepoNameInput ? `${githubRepoOwnerInput}/${githubRepoNameInput}` : ''}
+                                  onValueChange={(val) => {
+                                    if (!val) return
+                                    const parts = val.split('/')
+                                    if (parts.length === 2) {
+                                      setGithubRepoOwnerInput(parts[0])
+                                      setGithubRepoNameInput(parts[1])
+                                      
+                                      // Find selected repo details to set URL
+                                      const repoDetail = githubRepos.find(r => r.full_name === val)
+                                      if (repoDetail) {
+                                        setGithubUrlInput(repoDetail.html_url)
+                                      }
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs font-mono">
+                                    <SelectValue placeholder="Select repository" />
+                                  </SelectTrigger>
+                                  <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
+                                    {githubRepos.map((repo) => (
+                                      <SelectItem key={repo.id} value={repo.full_name} className="rounded-lg py-2 cursor-pointer font-mono text-xs">
+                                        <span>{repo.name}</span>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <p className="text-xs text-muted-foreground italic pl-1">No repositories found in this account.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="border border-dashed border-border rounded-xl p-6 text-center space-y-3 bg-muted/5">
+                          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                            No GitHub accounts connected. Please configure your GitHub App to easily link repositories.
+                          </p>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              const appUrl = import.meta.env.VITE_GITHUB_APP_URL || 'https://github.com/apps/laravel-paas-local'
+                              window.open(`${appUrl}/installations/new`, '_blank')
+                            }}
+                            className="gap-2 h-9 rounded-lg mx-auto text-xs"
+                          >
+                            <Github className="w-3.5 h-3.5" />
+                            Configure GitHub App
+                            <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mode 2: Manual Git URL */}
+                  {gitConnectionMode === 'manual' && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Repository Git URL</Label>
+                        <Input
+                          value={githubUrlInput}
+                          onChange={(e) => setGithubUrlInput(e.target.value)}
+                          placeholder="e.g. git@github.com:username/repository.git"
+                          className="h-10 text-xs bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all font-mono"
+                        />
+                        <p className="text-[9px] text-muted-foreground italic leading-relaxed pl-0.5 mt-1">
+                          Note: For private repositories, make sure the server's SSH key is added to the repository's deploy keys.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

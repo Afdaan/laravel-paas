@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -157,6 +157,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/databases', icon: Icons.Database, label: t('common.databases') },
           { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
+          { to: '/settings', icon: Icons.Settings, label: t('common.settings') },
         ]
       }
 
@@ -463,6 +464,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           <div className="p-3 border-t">
             <div className="mb-2 flex items-center rounded-md transition-all duration-300 hover:bg-muted p-1.5 gap-3">
               <Avatar className="h-9 w-9 shrink-0">
+                {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={user.name} className="object-cover" />}
                 <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
               </Avatar>
               <div className={`flex-1 min-w-0 text-left transition-all ease-in-out ${

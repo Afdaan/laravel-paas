@@ -147,6 +147,7 @@ func Setup(
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
+	protected.Put("/auth/profile", authHandler.UpdateProfile)
 	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
 
 	// GitHub Integration
