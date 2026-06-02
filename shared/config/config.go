@@ -93,6 +93,14 @@ func Load() *Config {
 		userPGHostDefault = "localhost"
 		userPGPortDefault = "5433"
 	}
+
+	userPGPortVal := getEnv("USER_PG_PORT", userPGPortDefault)
+	if appMode == "docker" {
+		// Inside the docker network, the paas-user-postgres container always listens on 5432 internally.
+		// The USER_PG_PORT environment variable (e.g. 5433) is the published port on the host VPS.
+		userPGPortVal = "5432"
+	}
+
 	if abs, err := filepath.Abs(hostRoot); err == nil {
 		hostRoot = abs
 	}
@@ -135,7 +143,7 @@ func Load() *Config {
 
 		// User Database (PostgreSQL Engine)
 		UserPGHost:     getEnv("USER_PG_HOST", userPGHostDefault),
-		UserPGPort:     getEnv("USER_PG_PORT", userPGPortDefault),
+		UserPGPort:     userPGPortVal,
 		UserPGPassword: getEnv("USER_PG_PASSWORD", "user-pg-rootpassword"),
 
 		// JWT

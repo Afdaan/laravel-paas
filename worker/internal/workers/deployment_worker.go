@@ -848,7 +848,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		appendLog(">> Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-			appendLog("ERROR: Migrations failed:\n" + output)
+			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
 			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)

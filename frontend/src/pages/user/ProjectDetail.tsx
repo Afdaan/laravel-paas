@@ -1024,7 +1024,11 @@ function UserProjectDetail() {
         />
         <MetricCard
           title={t('projectDetail.metrics.db')}
-          value="MySQL"
+          value={
+            project.database_instance
+              ? (project.database_instance.engine === 'postgresql' ? 'PostgreSQL' : 'MySQL')
+              : 'None'
+          }
           subtext={project.database_name || t('projectDetail.metrics.noDb')}
           icon={DatabaseIcon}
         />

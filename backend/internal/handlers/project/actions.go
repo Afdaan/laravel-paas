@@ -53,7 +53,13 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
 		repos, err := githubService.ListRepositories(*req.GithubInstallationID)
 		if err != nil {
-			slog.Warn("Failed to list repositories for validation", "installation_id", *req.GithubInstallationID, "error", err)
+			// Retry with fresh token — handles stale cache after GitHub App reinstall
+			slog.Warn("GitHub API error during repo validation, retrying with fresh token", "installation_id", *req.GithubInstallationID, "error", err)
+			githubService.InvalidateInstallationToken(*req.GithubInstallationID)
+			repos, err = githubService.ListRepositories(*req.GithubInstallationID)
+		}
+		if err != nil {
+			slog.Warn("Failed to list repositories for validation after retry", "installation_id", *req.GithubInstallationID, "error", err)
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "Failed to verify repository access with GitHub. Please check your GitHub App configuration.",
 			})

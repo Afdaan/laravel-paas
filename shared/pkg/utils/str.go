@@ -99,3 +99,30 @@ func SanitizeError(errStr string) string {
 
 	return errStr
 }
+
+// SanitizeLogOutput redacts sensitive infrastructure details, IP addresses, database names,
+// and system usernames from raw build, migration, or runtime logs before presenting them to users.
+func SanitizeLogOutput(logStr string) string {
+	if logStr == "" {
+		return ""
+	}
+
+	// 1. Redact IP Addresses (e.g., 172.18.0.11)
+	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
+	logStr = ipRegex.ReplaceAllString(logStr, "[HOST_REDACTED]")
+
+	// 2. Redact dynamic database names/usernames (e.g., laravel_crud_psql_0kllgh)
+	// These always follow the tenant database naming pattern
+	dbNameRegex := regexp.MustCompile(`\b[a-zA-Z0-9_]+_[a-z0-9]{6}\b`)
+	logStr = dbNameRegex.ReplaceAllString(logStr, "[DATABASE_REDACTED]")
+
+	// 3. Redact internal docker service hostnames
+	hostRegex := regexp.MustCompile(`\bpaas-(mysql|postgres|user-postgres|redis|registry|traefik|buildkit)\b`)
+	logStr = hostRegex.ReplaceAllString(logStr, "database.local")
+
+	// 4. Redact database user connection details
+	accessDeniedRegex := regexp.MustCompile(`Access denied for user '[^']+'@'[^']+'`)
+	logStr = accessDeniedRegex.ReplaceAllString(logStr, "Access denied for user '[USER_REDACTED]'@'[HOST_REDACTED]'")
+
+	return logStr
+}
