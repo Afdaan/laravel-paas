@@ -110,10 +110,11 @@ function App() {
     const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
 
     const handleIdleLogout = () => {
-      if (token) {
+      const currentToken = useAuthStore.getState().token || localStorage.getItem('token')
+      if (currentToken) {
         useAuthStore.setState({ token: null, user: null, isLoading: false })
         localStorage.removeItem('token')
-        toast.error(t('common.sessionExpired'), { id: 'user-idle-timeout' })
+        toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
         navigate('/login', { state: { from: window.location.pathname }, replace: true })
       }
     }
@@ -138,9 +139,13 @@ function App() {
 
   useEffect(() => {
     const handleExpired = () => {
-      useAuthStore.setState({ token: null, user: null, isLoading: false })
-      toast.error(t('common.sessionExpired'), { id: 'auth-expired' })
-      navigate('/login', { state: { from: window.location.pathname }, replace: true })
+      const currentToken = useAuthStore.getState().token || localStorage.getItem('token')
+      if (currentToken) {
+        useAuthStore.setState({ token: null, user: null, isLoading: false })
+        localStorage.removeItem('token')
+        toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
+        navigate('/login', { state: { from: window.location.pathname }, replace: true })
+      }
     }
 
     const handleOffline = () => {
