@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/apperr"
@@ -33,26 +34,51 @@ func (s *PostgreSQLService) CreateDatabase(dbName, password string) error {
 		return apperr.New(400, "INVALID_DB_PASSWORD", "Database password must contain only alphanumeric characters and be 8-128 characters long")
 	}
 
-	// Create role with connection limit to prevent tenant connection storms and SQL injection
-	createRoleSQL := fmt.Sprintf(
-		"CREATE ROLE \"%s\" WITH LOGIN PASSWORD '%s' CONNECTION LIMIT 15;",
-		dbName, password,
-	)
-	res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
-		"psql", "-U", "postgres", "-c", createRoleSQL)
-	if err != nil {
-		return apperr.New(500, "PG_ROLE_FAILED", "Failed to create PostgreSQL role: "+res.Stderr)
+	// Check if role already exists
+	checkRoleSQL := fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';", dbName)
+	checkRoleRes, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-t", "-c", checkRoleSQL)
+
+	roleExists := err == nil && strings.Contains(checkRoleRes.Stdout, "1")
+
+	if !roleExists {
+		// Create role with connection limit to prevent tenant connection storms and SQL injection
+		createRoleSQL := fmt.Sprintf(
+			"CREATE ROLE \"%s\" WITH LOGIN PASSWORD '%s' CONNECTION LIMIT 15;",
+			dbName, password,
+		)
+		res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
+			"psql", "-U", "postgres", "-c", createRoleSQL)
+		if err != nil {
+			return apperr.New(500, "PG_ROLE_FAILED", "Failed to create PostgreSQL role: "+res.Stderr)
+		}
+	} else {
+		// If role exists, safely update/rotate its password to ensure it matches the current session
+		alterRoleSQL := fmt.Sprintf("ALTER ROLE \"%s\" WITH PASSWORD '%s';", dbName, password)
+		if res, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+			"psql", "-U", "postgres", "-c", alterRoleSQL); err != nil {
+			slog.Warn("Failed to update password for existing PostgreSQL role", "role", dbName, "err", err, "stderr", res.Stderr)
+		}
 	}
 
-	// Create database owned by the new role
-	createDBSQL := fmt.Sprintf(
-		"CREATE DATABASE \"%s\" OWNER \"%s\";",
-		dbName, dbName,
-	)
-	res, err = utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
-		"psql", "-U", "postgres", "-c", createDBSQL)
-	if err != nil {
-		return apperr.New(500, "PG_DB_FAILED", "Failed to create PostgreSQL database: "+res.Stderr)
+	// Check if database already exists
+	checkDBSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';", dbName)
+	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-t", "-c", checkDBSQL)
+
+	dbExists := err == nil && strings.Contains(checkDBRes.Stdout, "1")
+
+	if !dbExists {
+		// Create database owned by the new role
+		createDBSQL := fmt.Sprintf(
+			"CREATE DATABASE \"%s\" OWNER \"%s\";",
+			dbName, dbName,
+		)
+		res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
+			"psql", "-U", "postgres", "-c", createDBSQL)
+		if err != nil {
+			return apperr.New(500, "PG_DB_FAILED", "Failed to create PostgreSQL database: "+res.Stderr)
+		}
 	}
 
 	// Apply idle connection cleanup timeouts to prevent hung sessions from leaking RAM
