@@ -202,7 +202,7 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 		rows, err = db.QueryContext(ctx, `
 			SELECT 
 				t.tablename,
-				COALESCE(c.reltuples::bigint, 0) AS table_rows,
+				COALESCE(c.reltuples::bigint, -1) AS table_rows,
 				ROUND((pg_total_relation_size(quote_ident(t.tablename)) / 1024.0), 2) AS size_kb,
 				'PostgreSQL' AS engine,
 				NOW() AS create_time
@@ -238,6 +238,19 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 		if err := rows.Scan(&t.Name, &t.Rows, &sizeKB, &t.Engine, &created); err != nil {
 			continue
 		}
+
+		if engine == "postgresql" && t.Rows < 0 {
+			// Table is unanalyzed/new (pg_class.reltuples returned -1).
+			// Fetch the exact, real-time count using a quick COUNT(*).
+			escapedTableName := s.escapeIdentifier(engine, t.Name)
+			var realCount int64
+			if err := db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", escapedTableName)).Scan(&realCount); err == nil {
+				t.Rows = realCount
+			} else {
+				t.Rows = 0
+			}
+		}
+
 		t.Size = fmt.Sprintf("%.2f KB", sizeKB)
 		if created.Valid {
 			t.Created = created.Time.Format("2006-01-02 15:04")
