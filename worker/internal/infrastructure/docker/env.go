@@ -250,7 +250,67 @@ func (s *DockerService) parseProjectEnv(path string) (map[string]string, error) 
 	return envVars, nil
 }
 
-// UpdateDatabaseCredentialsInEnv safely updates only the database password and URL in an existing .env file
+type DBConfig struct {
+	Connection  string
+	Host        string
+	Port        string
+	DatabaseURL string
+}
+
+type EngineConfig struct {
+	Connection string
+	Host       string
+	Port       string
+	GetURL     func(project *models.Project) string
+}
+
+// DBRegistry holds the configuration adapters for all database engines supported by the PaaS.
+// To add support for a new engine (e.g. MongoDB, Redis, SQLite, etc.) in the future,
+// simply declare its configuration in this registry. Zero core code changes required.
+var DBRegistry = map[string]EngineConfig{
+	"mysql": {
+		Connection: "mysql",
+		Host:       "paas-mysql",
+		Port:       "3306",
+		GetURL: func(p *models.Project) string {
+			return fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", p.DatabaseName, p.DatabasePassword, p.DatabaseName)
+		},
+	},
+	"postgresql": {
+		Connection: "pgsql",
+		Host:       "paas-user-postgres",
+		Port:       "5432",
+		GetURL: func(p *models.Project) string {
+			return fmt.Sprintf("postgres://%s:%s@paas-user-postgres:5432/%s?sslmode=disable", p.DatabaseName, p.DatabasePassword, p.DatabaseName)
+		},
+	},
+	"mongodb": {
+		Connection: "mongodb",
+		Host:       "paas-mongodb",
+		Port:       "27017",
+		GetURL: func(p *models.Project) string {
+			return fmt.Sprintf("mongodb://%s:%s@paas-mongodb:27017/%s", p.DatabaseName, p.DatabasePassword, p.DatabaseName)
+		},
+	},
+}
+
+// getDBConfig returns the environment variables for the specified database engine.
+func getDBConfig(engine string, project *models.Project) DBConfig {
+	cfg, exists := DBRegistry[engine]
+	if !exists {
+		// Fallback to MySQL if engine is unsupported or empty
+		cfg = DBRegistry["mysql"]
+	}
+	return DBConfig{
+		Connection:  cfg.Connection,
+		Host:        cfg.Host,
+		Port:        cfg.Port,
+		DatabaseURL: cfg.GetURL(project),
+	}
+}
+
+// UpdateDatabaseCredentialsInEnv safely updates all database connection and credential variables in an existing .env file.
+// It auto-detects changes in the database engine (e.g. MySQL to PostgreSQL) and dynamically heals the file.
 func (s *DockerService) UpdateDatabaseCredentialsInEnv(project *models.Project) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
 	envPath := filepath.Join(projectPath, ".env")
@@ -263,6 +323,24 @@ func (s *DockerService) UpdateDatabaseCredentialsInEnv(project *models.Project) 
 		return err
 	}
 
+	engine := "mysql"
+	if project.DatabaseInstance != nil {
+		engine = project.DatabaseInstance.Engine
+	}
+	dbCfg := getDBConfig(engine, project)
+
+	// Define the map of environment variable updates we want to apply to the .env file.
+	// This makes the replacement logic completely DRY and generic.
+	updates := map[string]string{
+		"DB_CONNECTION": dbCfg.Connection,
+		"DB_HOST":       dbCfg.Host,
+		"DB_PORT":       dbCfg.Port,
+		"DB_DATABASE":   project.DatabaseName,
+		"DB_USERNAME":   project.DatabaseName,
+		"DB_PASSWORD":   project.DatabasePassword,
+		"DATABASE_URL":  dbCfg.DatabaseURL,
+	}
+
 	lines := strings.Split(string(data), "\n")
 	var finalLines []string
 	dbPasswordUpdated := false
@@ -270,24 +348,30 @@ func (s *DockerService) UpdateDatabaseCredentialsInEnv(project *models.Project) 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		
-		if strings.HasPrefix(trimmed, "DB_PASSWORD=") {
-			finalLines = append(finalLines, fmt.Sprintf("DB_PASSWORD=%s", project.DatabasePassword))
-			dbPasswordUpdated = true
+		// If it's a comment or empty line, preserve it
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			finalLines = append(finalLines, line)
 			continue
 		}
-		
-		if strings.HasPrefix(trimmed, "DATABASE_URL=") {
-			if project.DatabaseInstance != nil && project.DatabaseInstance.Engine == "postgresql" {
-				finalLines = append(finalLines, fmt.Sprintf("DATABASE_URL=postgres://%s:%s@paas-user-postgres:5432/%s?sslmode=disable", project.DatabaseName, project.DatabasePassword, project.DatabaseName))
-			} else {
-				finalLines = append(finalLines, fmt.Sprintf("DATABASE_URL=mysql://%s:%s@paas-mysql:3306/%s", project.DatabaseName, project.DatabasePassword, project.DatabaseName))
+
+		updated := false
+		for key, val := range updates {
+			if strings.HasPrefix(trimmed, key+"=") {
+				finalLines = append(finalLines, fmt.Sprintf("%s=%s", key, val))
+				if key == "DB_PASSWORD" {
+					dbPasswordUpdated = true
+				}
+				updated = true
+				break
 			}
-			continue
 		}
-		finalLines = append(finalLines, line)
+
+		if !updated {
+			finalLines = append(finalLines, line)
+		}
 	}
 
-	// If DB_PASSWORD wasn't found in the file, we should probably add it at the end
+	// If DB_PASSWORD wasn't found in the file, we add it at the end
 	if !dbPasswordUpdated && project.DatabasePassword != "" {
 		finalLines = append(finalLines, fmt.Sprintf("DB_PASSWORD=%s", project.DatabasePassword))
 	}
