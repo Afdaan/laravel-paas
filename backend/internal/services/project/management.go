@@ -296,6 +296,20 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 		return nil, apperr.New(403, "FORBIDDEN", "You do not have permission to update this project")
 	}
 
+	// Automate Laravel .env QUEUE_CONNECTION update if queue status changes
+	if project.Framework == "Laravel" && project.QueueEnabled != queueEnabled {
+		if content, err := s.storageService.GetEnvFile(project.Subdomain); err == nil {
+			updatedContent := updateEnvQueueConnection(content, queueEnabled)
+			if updatedContent != content {
+				if err := s.storageService.SaveEnvFile(project.Subdomain, updatedContent); err != nil {
+					slog.Warn("Failed to automatically update QUEUE_CONNECTION in .env file on settings update", "subdomain", project.Subdomain, "error", err)
+				} else {
+					slog.Info("Automatically updated QUEUE_CONNECTION in .env file", "subdomain", project.Subdomain, "queue_enabled", queueEnabled)
+				}
+			}
+		}
+	}
+
 	if name != "" {
 		project.Name = name
 	}
@@ -412,4 +426,46 @@ func (s *ProjectService) GetDeploymentEvents(projectID uint) ([]models.Deploymen
 // GetAllDeploymentEvents returns the complete unfiltered timeline of deployment events for a project
 func (s *ProjectService) GetAllDeploymentEvents(projectID uint) ([]models.DeploymentEvent, error) {
 	return s.projectRepo.ListAllDeploymentEventsByProjectID(projectID)
+}
+
+func updateEnvQueueConnection(content string, queueEnabled bool) string {
+	lines := strings.Split(content, "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		cleanLine := trimmed
+		if strings.HasPrefix(trimmed, "#") {
+			cleanLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+		}
+		
+		if strings.HasPrefix(cleanLine, "QUEUE_CONNECTION=") {
+			parts := strings.SplitN(cleanLine, "=", 2)
+			currentVal := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+			
+			newVal := currentVal
+			if queueEnabled {
+				if currentVal == "sync" || currentVal == "" {
+					newVal = "database"
+				}
+			} else {
+				if currentVal != "sync" {
+					newVal = "sync"
+				}
+			}
+			
+			lines[i] = "QUEUE_CONNECTION=" + newVal
+			found = true
+			break
+		}
+	}
+	
+	if !found && queueEnabled {
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "QUEUE_CONNECTION=database")
+	}
+	
+	return strings.Join(lines, "\n")
 }
