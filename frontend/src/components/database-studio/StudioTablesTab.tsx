@@ -85,6 +85,7 @@ export function StudioTablesTab() {
       } else {
         prev.delete('table')
       }
+      prev.delete('column')
       return prev
     }, { replace: true })
   }
@@ -118,6 +119,46 @@ export function StudioTablesTab() {
   const filteredTables = schemaData.filter(tb => 
     tb.name.toLowerCase().includes(tableSearch.toLowerCase())
   )
+
+  const highlightedHeaderRef = useRef<HTMLTableHeaderCellElement | null>(null)
+
+  // Scroll highlighted column into view
+  useEffect(() => {
+    const colParam = searchParams.get('column')
+    if (colParam && tableData?.columns.includes(colParam)) {
+      let frameId1: number
+      let frameId2: number
+      
+      frameId1 = requestAnimationFrame(() => {
+        frameId2 = requestAnimationFrame(() => {
+          highlightedHeaderRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+            inline: 'center'
+          })
+        })
+      })
+      
+      return () => {
+        cancelAnimationFrame(frameId1)
+        cancelAnimationFrame(frameId2)
+      }
+    }
+  }, [searchParams, tableData])
+
+  // Cleanup column search parameter when tab is unmounted
+  useEffect(() => {
+    return () => {
+      setSearchParams(prev => {
+        if (prev.has('column')) {
+          const next = new URLSearchParams(prev)
+          next.delete('column')
+          return next
+        }
+        return prev
+      }, { replace: true })
+    }
+  }, [setSearchParams])
 
   // Load paginated table data in data grid
   const loadTableDataGrid = useCallback(async () => {
@@ -623,9 +664,40 @@ export function StudioTablesTab() {
                 <thead>
                   <tr className="bg-muted border-b border-border/80 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sticky top-0 z-10">
                     <th className="py-3.5 px-4 w-12 text-center bg-muted">{t('databaseStudio.tables.actionHeader')}</th>
-                    {tableData.columns.map((col: string) => (
-                      <th key={col} className="py-3.5 px-4 font-mono font-semibold bg-muted">{col}</th>
-                    ))}
+                    {tableData.columns.map((col: string) => {
+                      const isHighlighted = searchParams.get('column') === col
+                      return (
+                        <th
+                          key={col}
+                          ref={isHighlighted ? highlightedHeaderRef : null}
+                          className={cn(
+                            "py-3.5 px-4 font-mono font-semibold bg-muted transition-all duration-300 relative group/th",
+                            isHighlighted && "bg-primary/10 text-primary border-x border-primary/20"
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5 justify-between">
+                            <span className="truncate">{col}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              className="h-5 w-5 opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0 focus:outline-none transition-opacity rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary shrink-0 cursor-pointer"
+                              title="View Column Structure"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSearchParams(prev => {
+                                  prev.set('column', col)
+                                  return prev
+                                })
+                                setActiveTab('structure')
+                              }}
+                            >
+                              <Info className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -667,8 +739,16 @@ export function StudioTablesTab() {
                               .find(t => t.name === selectedTable)
                               ?.columns.find(c => c.name === col)
                             const colType = colSchema?.type || ''
+                            const isHighlighted = searchParams.get('column') === col
                             return (
-                              <td key={col} className="py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]" title={String(row[col] ?? '')}>
+                              <td
+                                key={col}
+                                className={cn(
+                                  "py-3.5 px-4 font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] transition-colors duration-300",
+                                  isHighlighted && "bg-primary/5 dark:bg-primary/10 border-x border-primary/10"
+                                )}
+                                title={String(row[col] ?? '')}
+                              >
                                 {formatCellValue(row[col], colType)}
                               </td>
                             )

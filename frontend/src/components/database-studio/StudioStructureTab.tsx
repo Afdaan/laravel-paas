@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -91,6 +91,7 @@ export function StudioStructureTab() {
       } else {
         prev.delete('table')
       }
+      prev.delete('column')
       return prev
     }, { replace: true })
   }
@@ -148,6 +149,46 @@ export function StudioStructureTab() {
   const filteredTables = typedSchemaData.filter(tb => 
     tb.name.toLowerCase().includes(structureSearch.toLowerCase())
   )
+
+  const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
+
+  // Scroll highlighted structure row into view
+  useEffect(() => {
+    const colParam = searchParams.get('column')
+    const activeTableData = typedSchemaData.find(t => t.name === selectedTable)
+    if (colParam && activeTableData?.columns.some(c => c.name === colParam)) {
+      let frameId1: number
+      let frameId2: number
+      
+      frameId1 = requestAnimationFrame(() => {
+        frameId2 = requestAnimationFrame(() => {
+          highlightedRowRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          })
+        })
+      })
+      
+      return () => {
+        cancelAnimationFrame(frameId1)
+        cancelAnimationFrame(frameId2)
+      }
+    }
+  }, [searchParams, selectedTable, typedSchemaData])
+
+  // Cleanup column search parameter when tab is unmounted
+  useEffect(() => {
+    return () => {
+      setSearchParams(prev => {
+        if (prev.has('column')) {
+          const next = new URLSearchParams(prev)
+          next.delete('column')
+          return next
+        }
+        return prev
+      }, { replace: true })
+    }
+  }, [setSearchParams])
 
   const resetAddColumnForm = () => {
     setNewColName('')
@@ -684,8 +725,17 @@ export function StudioStructureTab() {
                       const hasFk = activeTableData.foreign_keys?.some((f) => f.column_name === col.name)
                       const fkDetail = activeTableData.foreign_keys?.find((f) => f.column_name === col.name)
 
+                      const isHighlighted = searchParams.get('column') === col.name
+
                       return (
-                        <tr key={col.name} className="border-b border-border/40 hover:bg-muted/15">
+                        <tr
+                          key={col.name}
+                          ref={isHighlighted ? highlightedRowRef : null}
+                          className={cn(
+                            "border-b border-border/40 hover:bg-muted/15 transition-all duration-300",
+                            isHighlighted && "bg-primary/5 dark:bg-primary/10 border-l-2 border-l-primary"
+                          )}
+                        >
                           <td className="py-3 px-4 text-center shrink-0">
                             <DropdownMenu>
                               <DropdownMenuTrigger>
@@ -707,7 +757,28 @@ export function StudioStructureTab() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>
-                          <td className="py-3 px-4 font-mono font-bold text-foreground">{col.name}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-foreground">
+                            <div className="flex items-center gap-2 group/col">
+                              <span>{col.name}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-xs"
+                                className="h-5 w-5 opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0 focus:outline-none transition-opacity rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary shrink-0 cursor-pointer"
+                                title="Browse Column Data"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSearchParams(prev => {
+                                    prev.set('column', col.name)
+                                    return prev
+                                  })
+                                  setActiveTab('tables')
+                                }}
+                              >
+                                <Table className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </td>
                           <td className="py-3 px-4 font-mono text-muted-foreground">{col.type}</td>
                           <td className="py-3 px-4 font-mono">
                             <div className="flex items-center gap-1.5 flex-wrap">
