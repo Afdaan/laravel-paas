@@ -310,7 +310,12 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch branches from GitHub"})
 	}
 
-	return c.JSON(fiber.Map{"data": branches})
+	branchNames := make([]string, 0, len(branches))
+	for _, b := range branches {
+		branchNames = append(branchNames, b.Name)
+	}
+
+	return c.JSON(fiber.Map{"data": branchNames})
 }
 
 // isGitHubAuthError checks whether a GitHub API error indicates a stale/revoked credential.

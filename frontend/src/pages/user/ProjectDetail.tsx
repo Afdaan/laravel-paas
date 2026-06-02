@@ -227,7 +227,8 @@ function UserProjectDetail() {
       setIsFetchingBranches(true)
       githubAPI.listBranches(githubRepoOwnerInput, githubRepoNameInput)
         .then(res => {
-          setBranchesList(res.data.data || [])
+          const raw = res.data.data || []
+          setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
         })
         .catch(() => {
           setBranchesList([])
@@ -382,7 +383,8 @@ function UserProjectDetail() {
     setIsFetchingBranches(true)
     try {
       const response = await projectsAPI.listBranches(uid)
-      setBranchesList(response.data.data || [])
+      const raw = response.data.data || []
+      setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
       if (showToast) {
         toast.success(t('projectDetail.settings.syncSuccess') || 'Branches synchronized successfully')
       }
