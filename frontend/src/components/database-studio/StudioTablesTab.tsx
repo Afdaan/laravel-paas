@@ -146,19 +146,7 @@ export function StudioTablesTab() {
     }
   }, [searchParams, tableData])
 
-  // Cleanup column search parameter when tab is unmounted
-  useEffect(() => {
-    return () => {
-      setSearchParams(prev => {
-        if (prev.has('column')) {
-          const next = new URLSearchParams(prev)
-          next.delete('column')
-          return next
-        }
-        return prev
-      }, { replace: true })
-    }
-  }, [setSearchParams])
+
 
   // Load paginated table data in data grid
   const loadTableDataGrid = useCallback(async () => {

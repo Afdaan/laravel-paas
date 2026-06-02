@@ -176,19 +176,7 @@ export function StudioStructureTab() {
     }
   }, [searchParams, selectedTable, typedSchemaData])
 
-  // Cleanup column search parameter when tab is unmounted
-  useEffect(() => {
-    return () => {
-      setSearchParams(prev => {
-        if (prev.has('column')) {
-          const next = new URLSearchParams(prev)
-          next.delete('column')
-          return next
-        }
-        return prev
-      }, { replace: true })
-    }
-  }, [setSearchParams])
+
 
   const resetAddColumnForm = () => {
     setNewColName('')
