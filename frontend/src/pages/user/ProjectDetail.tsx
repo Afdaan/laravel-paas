@@ -1849,7 +1849,24 @@ function UserProjectDetail() {
                               }}
                             >
                               <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs">
-                                <SelectValue placeholder="Select connected account" />
+                                <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
+                                  {(() => {
+                                    const inst = githubInstallations.find(i => i.installation_id === githubInstallationIdInput)
+                                    if (inst) {
+                                      return (
+                                        <>
+                                          {inst.avatar_url ? (
+                                            <img src={inst.avatar_url} alt={inst.account_name} className="w-4 h-4 rounded-full border border-border/40 shrink-0" />
+                                          ) : (
+                                            <Github className="w-4 h-4 text-muted-foreground shrink-0" />
+                                          )}
+                                          <span className="truncate text-foreground/90 font-medium">{inst.account_name}</span>
+                                        </>
+                                      )
+                                    }
+                                    return <span className="text-muted-foreground/60">Select connected account</span>
+                                  })()}
+                                </div>
                               </SelectTrigger>
                               <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
                                 {githubInstallations.map((inst) => (
@@ -1958,7 +1975,7 @@ function UserProjectDetail() {
 
           {/* Floating Save Action Bar for Settings */}
           {activeTab === 'settings' && isSettingsDirty && (
-            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-10 duration-500">
+            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-10 duration-500">
               <div className="relative group">
                 {/* Glow effect background */}
                 <div className="absolute -inset-1 bg-gradient-to-r from-primary/50 to-blue-500/50 rounded-[22px] blur-xl opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>

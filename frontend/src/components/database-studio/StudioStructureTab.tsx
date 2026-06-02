@@ -505,14 +505,16 @@ export function StudioStructureTab() {
         <div className="flex items-center justify-between px-2 pt-1 border-b border-border/40 pb-2">
           <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">{t('databaseStudio.tables.sidebarTitle')} ({schemaData.length} tables)</span>
           {!isSuspended && (
-            <button
+            <Button
+              variant="outline"
+              size="icon-xs"
               onClick={() => setDesignerAction('create_table')}
-              className="flex items-center justify-center w-6 h-6 rounded-md bg-white border border-border/10 text-neutral-950 hover:bg-neutral-100 transition-colors shadow-sm cursor-pointer"
+              className="w-6 h-6 rounded-md bg-background border border-border/50 hover:bg-muted text-foreground transition-colors shadow-sm cursor-pointer"
               title={t('databaseStudio.tables.addTable')}
               style={{ cursor: 'pointer' }}
             >
               <Plus className="w-3.5 h-3.5" />
-            </button>
+            </Button>
           )}
         </div>
         
@@ -537,7 +539,7 @@ export function StudioStructureTab() {
             <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">{t('databaseStudio.tables.noMatches')}</div>
           ) : (
             filteredTables.map(table => (
-              <button
+              <div
                 key={table.name}
                 onClick={() => setSelectedTable(table.name)}
                 className={cn(
@@ -561,21 +563,23 @@ export function StudioStructureTab() {
                       {table.rows}
                     </span>
                   )}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={(e) => {
                       e.stopPropagation()
                       setSelectedTable(table.name)
                       setActiveTab('tables')
                     }}
-                    className="p-1 rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary transition-all shrink-0 cursor-pointer"
+                    className="h-6 w-6 p-0 rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary transition-all shrink-0 cursor-pointer"
                     title="Browse Table Data"
                     style={{ cursor: 'pointer' }}
                   >
                     <Table className="w-3.5 h-3.5" />
-                  </button>
+                  </Button>
                 </div>
-              </button>
+              </div>
             ))
           )}
         </div>

@@ -459,7 +459,7 @@ export function StudioTablesTab() {
             <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">{t('databaseStudio.tables.noMatches')}</div>
           ) : (
             filteredTables.map(table => (
-              <button
+              <div
                 key={table.name}
                 onClick={() => {
                   setSelectedTable(table.name)
@@ -486,21 +486,23 @@ export function StudioTablesTab() {
                       {table.rows}
                     </span>
                   )}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={(e) => {
                       e.stopPropagation()
                       setSelectedTable(table.name)
                       setActiveTab('structure')
                     }}
-                    className="p-1 rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary transition-all shrink-0 cursor-pointer"
+                    className="h-6 w-6 p-0 rounded hover:bg-primary/20 text-muted-foreground/60 hover:text-primary transition-all shrink-0 cursor-pointer"
                     title="View Table Structure"
                     style={{ cursor: 'pointer' }}
                   >
                     <Info className="w-3.5 h-3.5" />
-                  </button>
+                  </Button>
                 </div>
-              </button>
+              </div>
             ))
           )}
         </div>
