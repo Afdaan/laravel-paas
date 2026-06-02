@@ -246,7 +246,7 @@ export function StudioQueryTab() {
               </button>
 
               <button
-                onClick={() => setSqlQuery('SHOW TABLES;')}
+                onClick={() => setSqlQuery(dbOverview?.engine === 'postgresql' ? "SELECT tablename FROM pg_tables WHERE schemaname = 'public';" : "SHOW TABLES;")}
                 className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
                 style={{ cursor: 'pointer' }}
               >
@@ -255,7 +255,7 @@ export function StudioQueryTab() {
               </button>
 
               <button
-                onClick={() => setSqlQuery('DESCRIBE users;')}
+                onClick={() => setSqlQuery(dbOverview?.engine === 'postgresql' ? "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = 'users';" : "DESCRIBE users;")}
                 className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
                 style={{ cursor: 'pointer' }}
               >
@@ -264,7 +264,7 @@ export function StudioQueryTab() {
               </button>
 
               <button
-                onClick={() => setSqlQuery('SHOW PROCESSLIST;')}
+                onClick={() => setSqlQuery(dbOverview?.engine === 'postgresql' ? "SELECT pid, query, state, age(clock_timestamp(), query_start) FROM pg_stat_activity WHERE query IS NOT NULL;" : "SHOW PROCESSLIST;")}
                 className="group w-full p-2.5 rounded-lg border border-border/80 hover:bg-muted/40 text-left transition-all text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center justify-between cursor-pointer"
                 style={{ cursor: 'pointer' }}
               >
