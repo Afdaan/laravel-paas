@@ -7,12 +7,15 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -33,6 +36,8 @@ type DatabaseHandler struct {
 	databaseService *services.DatabaseService
 	projectService  *projectServicePkg.ProjectService
 	redisService    *infrastructure.RedisService
+	localIPs        []string
+	ipsOnce         sync.Once
 }
 
 // NewDatabaseHandler creates a new database handler
@@ -596,9 +601,61 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if instance.Engine == "postgresql" {
-			_ = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_stat_activity WHERE datname = $1", instance.Name).Scan(&activeConnections)
+			// Exclude connections originating from the PaaS backend itself (using secure salted app name)
+			appHash := sha256.Sum256([]byte(h.cfg.UIDSalt))
+			appName := fmt.Sprintf("paas-backend-%x", appHash[:8])
+			
+			_ = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_stat_activity WHERE datname = $1 AND application_name != $2", instance.Name, appName).Scan(&activeConnections)
 		} else {
-			_ = db.QueryRowContext(ctx, "SELECT count(*) FROM information_schema.processlist WHERE db = ?", instance.Name).Scan(&activeConnections)
+			// MySQL: Exclude connections originating from the backend container IP
+			rows, queryErr := db.QueryContext(ctx, "SELECT HOST FROM information_schema.processlist WHERE db = ?", instance.Name)
+			if queryErr == nil {
+				defer rows.Close()
+				
+				// Thread-safely cache backend IPs to avoid costly interface lookups on every poll
+				h.ipsOnce.Do(func() {
+					if addrs, errIP := net.InterfaceAddrs(); errIP == nil {
+						for _, addr := range addrs {
+							if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+								if ipnet.IP.To4() != nil {
+									h.localIPs = append(h.localIPs, ipnet.IP.String())
+								}
+							}
+						}
+					}
+				})
+				
+				for rows.Next() {
+					var host string
+					if errScan := rows.Scan(&host); errScan == nil {
+						clientIP := host
+						if idx := strings.Index(host, ":"); idx != -1 {
+							clientIP = host[:idx]
+						}
+						
+						isBackend := false
+						if clientIP == "localhost" || clientIP == "127.0.0.1" {
+							isBackend = true
+						} else {
+							for _, ip := range h.localIPs {
+								if clientIP == ip {
+									isBackend = true
+									break
+								}
+							}
+						}
+						
+						if !isBackend {
+							activeConnections++
+						}
+					}
+				}
+				
+				// Verify if any connection error occurred during iteration
+				if errErr := rows.Err(); errErr != nil {
+					slog.Warn("Error occurred during processlist iteration", "db", instance.Name, "error", errErr)
+				}
+			}
 		}
 	}
 

@@ -7,6 +7,7 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"io/ioutil"
@@ -152,8 +153,12 @@ func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, 
 	var err error
 
 	if engine == "postgresql" {
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			dbName, password, s.cfg.UserPGHost, s.cfg.UserPGPort, dbName,
+		// Generate salted application name to prevent client-side spoofing
+		appHash := sha256.Sum256([]byte(s.cfg.UIDSalt))
+		appName := fmt.Sprintf("paas-backend-%x", appHash[:8])
+
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s",
+			dbName, password, s.cfg.UserPGHost, s.cfg.UserPGPort, dbName, appName,
 		)
 		db, err = sql.Open("pgx", dsn)
 	} else {
