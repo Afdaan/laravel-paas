@@ -274,7 +274,14 @@ function UserNewProject() {
     try {
       const response = await githubAPI.listBranches(owner, repo)
       if (currentSeq === branchQuerySeq.current) {
-        setBranches(response.data.data || [])
+        const raw = response.data.data || []
+        const normalized = raw.map((b: string | { name: string }) => {
+          if (typeof b === 'string') {
+            return { name: b }
+          }
+          return { name: b?.name || '' }
+        })
+        setBranches(normalized)
         const repoDetails = currentReposList.find(r => r.full_name === `${owner}/${repo}`)
         const defaultBranch = repoDetails?.default_branch || 'main'
         setFormData(prev => ({ ...prev, branch: defaultBranch }))
