@@ -157,7 +157,6 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/databases', icon: Icons.Database, label: t('common.databases') },
           { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
-          { to: '/settings', icon: Icons.Settings, label: t('common.settings') },
         ]
       }
 
@@ -462,72 +461,75 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           </nav>
           
           <div className="p-3 border-t">
-            <div className="mb-2 flex items-center rounded-md transition-all duration-300 hover:bg-muted p-1.5 gap-3">
-              <Avatar className="h-9 w-9 shrink-0">
-                {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={user.name} className="object-cover" />}
-                <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
-              </Avatar>
-              <div className={`flex-1 min-w-0 text-left transition-all ease-in-out ${
-                isVisualExpanded 
-                  ? 'opacity-100 max-w-[180px] duration-300 delay-100' 
-                  : 'opacity-0 max-w-0 overflow-hidden duration-75'
-              }`}>
-                <p className="text-sm font-medium leading-none truncate whitespace-nowrap">{user?.name}</p>
-                <p className="text-xs text-muted-foreground truncate mt-1 whitespace-nowrap">{user?.email}</p>
-              </div>
-            </div>
-            
-            <div className="space-y-1">
-              {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
-                <Button 
-                  variant="ghost" 
-                  className="h-8 w-full text-xs transition-all duration-300 justify-start pl-4 pr-2" 
-                  render={<NavLink to="/admin" title={t('common.adminPanel')} />}
-                >
-                  <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
-                  <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
-                    isVisualExpanded 
-                      ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
-                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
-                  }`}>
-                    {t('common.adminPanel')}
-                  </span>
-                </Button>
-              )}
-              
-              {isAdmin && (
-                <Button 
-                  variant="ghost" 
-                  className="h-8 w-full text-xs transition-all duration-300 justify-start pl-4 pr-2" 
-                  render={<NavLink to="/dashboard" title={t('common.userView')} />}
-                >
-                  <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
-                  <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
-                    isVisualExpanded 
-                      ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
-                      : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
-                  }`}>
-                    {t('common.userView')}
-                  </span>
-                </Button>
-              )}
-              
-              <Button 
-                 variant="ghost" 
-                 className="h-8 w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 transition-all duration-300 justify-start pl-4 pr-2"
-                 onClick={handleLogout}
-                 title={t('common.logout')}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="w-full mb-1 flex items-center rounded-md transition-all duration-300 hover:bg-muted p-1.5 gap-3 cursor-pointer outline-none focus:outline-none border border-transparent text-left bg-transparent"
+                style={{ cursor: 'pointer' }}
               >
-                <LogOut className="h-3.5 w-3.5 shrink-0" />
-                <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
+                <Avatar className="h-9 w-9 shrink-0">
+                  {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={user.name} className="object-cover" />}
+                  <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
+                </Avatar>
+                <div className={`flex-1 min-w-0 text-left transition-all ease-in-out ${
                   isVisualExpanded 
-                    ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
-                    : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
+                    ? 'opacity-100 max-w-[180px] duration-300 delay-100' 
+                    : 'opacity-0 max-w-0 overflow-hidden duration-75'
                 }`}>
-                  {t('common.logout')}
-                </span>
-              </Button>
-            </div>
+                  <p className="text-sm font-medium leading-none truncate whitespace-nowrap">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground truncate mt-1 whitespace-nowrap">{user?.email}</p>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground/60 transition-transform duration-200 shrink-0 ${
+                  isVisualExpanded ? 'opacity-100' : 'opacity-0 max-w-0 overflow-hidden'
+                }`} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-[220px] bg-popover/95 backdrop-blur-xl border border-border shadow-2xl rounded-xl p-1.5 mb-2">
+                {/* 1. Account Settings */}
+                <DropdownMenuItem
+                  onClick={() => navigate('/settings')}
+                  className="flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors focus:bg-accent/80"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <Settings className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>{t('common.settings')}</span>
+                </DropdownMenuItem>
+
+                {/* 2. Admin Panel toggle if applicable */}
+                {!isAdmin && (user?.role === 'superadmin' || user?.role === 'admin') && (
+                  <DropdownMenuItem
+                    onClick={() => navigate('/admin')}
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors focus:bg-accent/80"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span>{t('common.adminPanel')}</span>
+                  </DropdownMenuItem>
+                )}
+
+                {isAdmin && (
+                  <DropdownMenuItem
+                    onClick={() => navigate('/dashboard')}
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors focus:bg-accent/80"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span>{t('common.userView')}</span>
+                  </DropdownMenuItem>
+                )}
+
+                {/* Divider */}
+                <div className="h-[1px] bg-border my-1.5" />
+
+                {/* 3. Logout */}
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-destructive focus:text-destructive focus:bg-destructive/10 rounded-lg cursor-pointer transition-colors"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <LogOut className="w-3.5 h-3.5 text-destructive" />
+                  <span>{t('common.logout')}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </aside>
       </div>
