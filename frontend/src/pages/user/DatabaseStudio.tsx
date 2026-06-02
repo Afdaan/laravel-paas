@@ -40,8 +40,12 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
   const setActiveTab = (tab: 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') => {
     setSearchParams(prev => {
       prev.set('dbTab', tab)
-      // Explicitly delete known sub-tab state to prevent leakage without destroying global params
-      prev.delete('table')
+      // Keep 'table' and 'column' parameters when switching between 'tables' and 'structure' tabs.
+      // Delete them only when switching to other tabs (dashboard, backups, etc.) to keep URL clean.
+      if (tab !== 'tables' && tab !== 'structure') {
+        prev.delete('table')
+        prev.delete('column')
+      }
       return prev
     }, { replace: true })
   }
