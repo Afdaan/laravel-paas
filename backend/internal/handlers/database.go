@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -27,6 +28,7 @@ import (
 	"github.com/laravel-paas/backend/internal/services"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DatabaseHandler handles database management endpoints
@@ -170,77 +172,100 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 
 	newPassword := utils.GeneratePassword(16)
 
-	// Guard against concurrent operations to enforce safety and prevent race-triggered corruption
-	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
-	if isQueued {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Project has an active operation in the deployment queue. Please wait."})
-	}
+	var lockedProject models.Project
+	var jobID string
+	var isRunning bool
 
-	if project.DeploymentStatus != models.DepStatusCompleted &&
-		project.DeploymentStatus != models.DepStatusFailed &&
-		project.DeploymentStatus != models.DepStatusCancelled {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Project deployment or operation is currently in progress. Please wait for it to complete."})
-	}
-
-	// 1. Update password inside container engine
-	if instance.Engine == "postgresql" {
-		pgService := infrastructure.NewPostgreSQLService()
-		if err := pgService.UpdatePassword(instance.Name, newPassword); err != nil {
-			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update PostgreSQL database password: " + err.Error()})
+	// Guard against concurrent operations using a pessimistic transaction lock
+	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		// Acquire pessimistic row-level lock on the project to prevent race-triggered corruption
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedProject, project.ID).Error; err != nil {
+			return err
 		}
-	} else {
-		mysqlService := infrastructure.NewMySQLService()
-		if err := mysqlService.UpdatePassword(instance.Name, newPassword); err != nil {
-			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update MySQL database password: " + err.Error()})
+
+		isQueued, errCheck := h.redisService.IsProjectQueued(lockedProject.ID)
+		if errCheck == nil && isQueued {
+			return fiber.ErrConflict
 		}
-	}
 
-	// 2. Persist in database records
-	instance.Password = newPassword
-	project.DatabasePassword = newPassword
+		if lockedProject.DeploymentStatus != models.DepStatusCompleted &&
+			lockedProject.DeploymentStatus != models.DepStatusFailed &&
+			lockedProject.DeploymentStatus != models.DepStatusCancelled {
+			return fiber.ErrConflict
+		}
 
-	if err := h.db.Save(project).Error; err != nil {
-		slog.Warn("Failed to update project password in GORM", "error", err)
-	}
-
-	if err := h.db.Save(instance).Error; err != nil {
-		slog.Warn("Failed to update database instance password in GORM", "error", err)
-	}
-
-	// 2.5 Rewrite database credentials to the project's .env file on host directly
-	if envContent, err := h.projectService.GetEnv(project.Subdomain); err == nil {
-		updatedEnv := updateEnvPassword(envContent, newPassword, project.DatabaseName, instance.Engine)
-		if err := h.projectService.SaveEnv(project.Subdomain, updatedEnv); err != nil {
-			slog.Warn("Failed to write rotated password to .env file", "subdomain", project.Subdomain, "error", err)
+		// 1. Update password inside container engine
+		if instance.Engine == "postgresql" {
+			pgService := infrastructure.NewPostgreSQLService()
+			if err := pgService.UpdatePassword(instance.Name, newPassword); err != nil {
+				return err
+			}
 		} else {
-			slog.Info("Successfully wrote rotated database password to .env file", "subdomain", project.Subdomain)
+			mysqlService := infrastructure.NewMySQLService()
+			if err := mysqlService.UpdatePassword(instance.Name, newPassword); err != nil {
+				return err
+			}
 		}
+
+		// 2. Persist in database records within the atomic transaction
+		instance.Password = newPassword
+		if err := tx.Save(instance).Error; err != nil {
+			return err
+		}
+
+		lockedProject.DatabasePassword = newPassword
+
+		// 3. Rewrite database credentials to the project's .env file on host directly
+		if envContent, err := h.projectService.GetEnv(lockedProject.Subdomain); err == nil {
+			updatedEnv := updateEnvPassword(envContent, newPassword, lockedProject.DatabaseName, instance.Engine)
+			if err := h.projectService.SaveEnv(lockedProject.Subdomain, updatedEnv); err != nil {
+				return fmt.Errorf("failed to rewrite .env file: %w", err)
+			}
+		}
+
+		isRunning = lockedProject.ContainerID != nil && *lockedProject.ContainerID != ""
+		if isRunning {
+			var errQueue error
+			jobID, errQueue = h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
+			if errQueue != nil {
+				return fmt.Errorf("failed to queue update_env job: %w", errQueue)
+			}
+
+			// Transition project status to queued within the transactional lock
+			lockedProject.DeploymentStatus = models.DepStatusQueued
+			msg := "Credentials rotation env update"
+			lockedProject.DeploymentMessage = &msg
+			lockedProject.DeploymentJobID = &jobID
+			now := time.Now()
+			lockedProject.DeploymentStartedAt = &now
+			lockedProject.DeploymentHeartbeatAt = &now
+			lockedProject.DeploymentFinishedAt = nil
+		}
+
+		if err := tx.Save(&lockedProject).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if errTx != nil {
+		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", errTx.Error())
+		if errors.Is(errTx, fiber.ErrConflict) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Project has an active deployment or operation in progress. Please wait."})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials rotation failed: " + errTx.Error()})
 	}
 
-	// 3. Trigger Environment hot-swap redeployment job in Redis only if container is running
-	if project.ContainerID != nil && *project.ContainerID != "" {
-		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
-		if err != nil {
-			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "partially_completed", "Failed to queue update_env: "+err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials updated, but failed to queue zero-downtime hot-swap: " + err.Error()})
-		}
+	h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
 
-		if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Credentials rotation env update", 0, jobID); err != nil {
-			slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
-		}
-
-		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
-
+	if isRunning {
 		return c.JSON(fiber.Map{
 			"success": true,
 			"message": "Database credentials rotated successfully. Zero-downtime environment update queued.",
 			"job_id":  jobID,
 		})
 	}
-
-	h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
 
 	return c.JSON(fiber.Map{
 		"success": true,
