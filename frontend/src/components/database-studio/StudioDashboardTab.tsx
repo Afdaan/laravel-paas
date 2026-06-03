@@ -45,7 +45,7 @@ export function StudioDashboardTab() {
     t
   } = useStudio()
 
-  const pollIntervalRef = useRef<any>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     return () => {

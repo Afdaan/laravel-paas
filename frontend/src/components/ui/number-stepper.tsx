@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 
 interface NumberStepperProps {
   value: number | string | undefined;
-  onChange: (value: any) => void;
+  onChange: (value: number | string) => void;
   min?: number;
   max?: number;
   step?: number;

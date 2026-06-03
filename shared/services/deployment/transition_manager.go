@@ -83,6 +83,7 @@ func (m *transitionManager) TransitionState(ctx context.Context, projectID uint,
 		// Track precise lifecycle boundary timestamps for operational observability
 		if nextState == models.DepStatusQueued || nextState == models.DepStatusPreparing {
 			updates["deployment_started_at"] = now
+			updates["deployment_heartbeat_at"] = now
 			updates["deployment_finished_at"] = nil
 		} else if nextState == models.DepStatusCompleted || nextState == models.DepStatusFailed || nextState == models.DepStatusCancelled {
 			updates["deployment_finished_at"] = now

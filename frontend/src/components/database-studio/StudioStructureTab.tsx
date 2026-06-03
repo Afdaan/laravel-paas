@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -84,7 +84,7 @@ export function StudioStructureTab() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedTable = searchParams.get('table') || ''
-  const setSelectedTable = (table: string) => {
+  const setSelectedTable = useCallback((table: string) => {
     setSearchParams(prev => {
       if (table) {
         prev.set('table', table)
@@ -94,7 +94,7 @@ export function StudioStructureTab() {
       prev.delete('column')
       return prev
     }, { replace: true })
-  }
+  }, [setSearchParams])
   const [structureSearch, setStructureSearch] = useState('')
 
   // Visual Designer states
@@ -144,7 +144,7 @@ export function StudioStructureTab() {
     if (typedSchemaData.length > 0 && !selectedTable) {
       setSelectedTable(typedSchemaData[0].name)
     }
-  }, [typedSchemaData, selectedTable])
+  }, [typedSchemaData, selectedTable, setSelectedTable])
 
   const filteredTables = typedSchemaData.filter(tb => 
     tb.name.toLowerCase().includes(structureSearch.toLowerCase())
@@ -157,10 +157,9 @@ export function StudioStructureTab() {
     const colParam = searchParams.get('column')
     const activeTableData = typedSchemaData.find(t => t.name === selectedTable)
     if (colParam && activeTableData?.columns.some(c => c.name === colParam)) {
-      let frameId1: number
-      let frameId2: number
+      let frameId2: number | undefined
       
-      frameId1 = requestAnimationFrame(() => {
+      const frameId1 = requestAnimationFrame(() => {
         frameId2 = requestAnimationFrame(() => {
           highlightedRowRef.current?.scrollIntoView({
             behavior: 'smooth',
@@ -171,7 +170,9 @@ export function StudioStructureTab() {
       
       return () => {
         cancelAnimationFrame(frameId1)
-        cancelAnimationFrame(frameId2)
+        if (frameId2 !== undefined) {
+          cancelAnimationFrame(frameId2)
+        }
       }
     }
   }, [searchParams, selectedTable, typedSchemaData])

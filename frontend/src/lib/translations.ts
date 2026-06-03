@@ -998,7 +998,11 @@ export const translations = {
           resumeDatabase: "Resume DB Instance",
           rotating: "Processing...",
           testing: "Testing...",
-          updating: "Updating..."
+          updating: "Updating...",
+          rotatingInProgress: "Rotation in progress. Zero-downtime container swap is executing...",
+          rotateSuccess: "Database credentials rotated and container swapped successfully!",
+          rotateJobFailed: "Container swap failed. Please check build/deployment logs.",
+          rotateTimeout: "Operation is taking longer than expected. Please check the project status panel."
         },
         credentials: {
           title: "Connection Credentials",
@@ -2346,7 +2350,11 @@ export const translations = {
           resumeDatabase: "Aktifkan DB Instance",
           rotating: "Memproses...",
           testing: "Menguji...",
-          updating: "Memperbarui..."
+          updating: "Memperbarui...",
+          rotatingInProgress: "Rotasi password sedang berjalan. Silahkan tunggu proses selesai.",
+          rotateSuccess: "Kredensial database berhasil dirotasi dan container berhasil direstart secara aman!",
+          rotateJobFailed: "Restart container gagal. Silakan periksa log build/deployment.",
+          rotateTimeout: "Proses memakan waktu lebih lama dari yang diperkirakan. Silakan periksa panel status proyek."
         },
         credentials: {
           title: "Connection Credentials",

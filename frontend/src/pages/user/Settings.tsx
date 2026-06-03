@@ -38,13 +38,19 @@ const Github = (props: React.SVGProps<SVGSVGElement>) => (
 )
 
 
+interface GitHubInstallation {
+  installation_id: number
+  account_name: string
+  avatar_url?: string
+}
+
 export function UserSettings() {
   const { t } = useTranslation()
   const { user, fetchUser } = useAuthStore()
 
   const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'integrations'>('profile')
   const [isLoading, setIsLoading] = useState(false)
-  const [installations, setInstallations] = useState<any[]>([])
+  const [installations, setInstallations] = useState<GitHubInstallation[]>([])
   const [isGithubLoading, setIsGithubLoading] = useState(false)
 
   // Profile Form State
@@ -103,8 +109,9 @@ export function UserSettings() {
       })
       toast.success(t('user.settings.profileUpdated'))
       await fetchUser()
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || t('common.actionFailed'))
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } }; message?: string }
+      toast.error(error.response?.data?.error || t('common.actionFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -136,8 +143,9 @@ export function UserSettings() {
         newPassword: '',
         confirmPassword: '',
       })
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || t('common.actionFailed'))
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } }; message?: string }
+      toast.error(error.response?.data?.error || t('common.actionFailed'))
     } finally {
       setIsLoading(false)
     }

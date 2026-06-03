@@ -34,6 +34,19 @@ import {
 import { AxiosError } from 'axios'
 import { projectsAPI, githubAPI } from '../../services/api'
 import { Project, ProjectStats, DeploymentEvent } from '../../types'
+interface GitHubInstallation {
+  installation_id: number
+  account_name: string
+  avatar_url?: string
+}
+
+interface GitHubRepo {
+  id: number
+  name: string
+  full_name: string
+  html_url: string
+}
+
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseStudio from './DatabaseStudio'
 import { Button } from '@/components/ui/button'
@@ -134,7 +147,7 @@ function UserProjectDetail() {
     const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
     return (hash && allowedTabs.includes(hash)) ? hash : 'project'
   })()
-  const setActiveTab = (tab: string) => {
+  const setActiveTab = useCallback((tab: string) => {
     setSearchParams(prev => {
       prev.set('tab', tab)
       // Explicitly delete known sub-tab state to prevent leakage without destroying global params
@@ -142,7 +155,7 @@ function UserProjectDetail() {
       prev.delete('table')
       return prev
     }, { replace: true })
-  }
+  }, [setSearchParams])
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
   const isActionPendingRef = useRef(false)
@@ -171,9 +184,9 @@ function UserProjectDetail() {
   const [githubRepoNameInput, setGithubRepoNameInput] = useState('')
   const [gitConnectionMode, setGitConnectionMode] = useState<'manual' | 'github_app'>('manual')
 
-  const [githubInstallations, setGithubInstallations] = useState<any[]>([])
+  const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>([])
   const [isGithubInstallationsLoading, setIsGithubInstallationsLoading] = useState(false)
-  const [githubRepos, setGithubRepos] = useState<any[]>([])
+  const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([])
   const [isGithubReposLoading, setIsGithubReposLoading] = useState(false)
 
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
@@ -268,7 +281,7 @@ function UserProjectDetail() {
         setActiveTab(hash)
       }
     }
-  }, [])
+  }, [setActiveTab])
 
   const handleRollback = async (commitSHA: string) => {
     if (!uid) return

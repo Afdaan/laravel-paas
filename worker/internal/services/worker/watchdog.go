@@ -198,7 +198,11 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 				}
 				var reason string
 
-				lockMeta, _ := w.redisService.GetLockMetadata(project.ID)
+				lockMeta, err := w.redisService.GetLockMetadata(project.ID)
+				if err != nil {
+					slog.Warn("Central watchdog: failed to fetch lock metadata from Redis", "projectId", project.ID, "error", err)
+					continue
+				}
 				if lockMeta != nil {
 					jobID = lockMeta.DeploymentID
 					leaseMeta, _ := w.redisService.GetDeploymentLease(jobID)

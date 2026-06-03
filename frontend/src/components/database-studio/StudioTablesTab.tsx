@@ -78,7 +78,7 @@ export function StudioTablesTab() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedTable = searchParams.get('table') || ''
-  const setSelectedTable = (table: string) => {
+  const setSelectedTable = useCallback((table: string) => {
     setSearchParams(prev => {
       if (table) {
         prev.set('table', table)
@@ -88,7 +88,7 @@ export function StudioTablesTab() {
       prev.delete('column')
       return prev
     }, { replace: true })
-  }
+  }, [setSearchParams])
   const [tableData, setTableData] = useState<TableDataGrid | null>(null)
   const [tablePage, setTablePage] = useState(1)
   const [tableLimit] = useState(25)
@@ -114,7 +114,7 @@ export function StudioTablesTab() {
     if (schemaData.length > 0 && !selectedTable) {
       setSelectedTable(schemaData[0].name)
     }
-  }, [schemaData, selectedTable])
+  }, [schemaData, selectedTable, setSelectedTable])
 
   const filteredTables = schemaData.filter(tb => 
     tb.name.toLowerCase().includes(tableSearch.toLowerCase())
@@ -126,10 +126,9 @@ export function StudioTablesTab() {
   useEffect(() => {
     const colParam = searchParams.get('column')
     if (colParam && tableData?.columns.includes(colParam)) {
-      let frameId1: number
-      let frameId2: number
+      let frameId2: number | undefined
       
-      frameId1 = requestAnimationFrame(() => {
+      const frameId1 = requestAnimationFrame(() => {
         frameId2 = requestAnimationFrame(() => {
           highlightedHeaderRef.current?.scrollIntoView({
             behavior: 'smooth',
@@ -141,7 +140,9 @@ export function StudioTablesTab() {
       
       return () => {
         cancelAnimationFrame(frameId1)
-        cancelAnimationFrame(frameId2)
+        if (frameId2 !== undefined) {
+          cancelAnimationFrame(frameId2)
+        }
       }
     }
   }, [searchParams, tableData])
@@ -278,8 +279,8 @@ export function StudioTablesTab() {
       setShowInsertModal(false)
       loadTableDataGrid()
       loadStudioData()
-    } catch (error: any) {
-      if (error.name === 'CanceledError') return
+    } catch (error) {
+      if (error && (error as { name?: string }).name === 'CanceledError') return
       const err = error as { response?: { data?: { error?: string } }; message?: string }
       toast.error(t('databaseStudio.tables.insertModal.failed') + ': ' + (err.response?.data?.error || err.message))
     } finally {
@@ -447,8 +448,8 @@ export function StudioTablesTab() {
       setShowEditModal(false)
       loadTableDataGrid()
       loadStudioData()
-    } catch (error: any) {
-      if (error.name === 'CanceledError') return
+    } catch (error) {
+      if (error && (error as { name?: string }).name === 'CanceledError') return
       const err = error as { response?: { data?: { error?: string } }; message?: string }
       toast.error(t('databaseStudio.tables.editModal.failed') + ': ' + (err.response?.data?.error || err.message))
     } finally {

@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from './components/ui/sonner'
-import { toast } from 'sonner'
+import { toast, type ExternalToast } from 'sonner'
 import App from './App'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './components/ThemeProvider'
@@ -16,10 +16,18 @@ const originalToast = {
   warning: toast.warning.bind(toast)
 }
 
-const activeToasts = new Map<string, { id: string | number; timestamp: number; timeoutId: any }>()
+const activeToasts = new Map<string, { id: string | number; timestamp: number; timeoutId: ReturnType<typeof setTimeout> }>()
 
-const preventSpam = (message: any, originalFn: Function, options: any = {}) => {
-  const msgStr = typeof message === 'string' ? message : String(message || '')
+type ToastMessage = Parameters<typeof toast.success>[0]
+
+const preventSpam = (
+  message: ToastMessage,
+  originalFn: (message: ToastMessage, options?: ExternalToast) => string | number,
+  options: ExternalToast = {}
+) => {
+  const msgStr = typeof message === 'string' 
+    ? message 
+    : (typeof message === 'function' ? 'functional-toast' : String(message || ''))
   const now = Date.now()
   const existing = activeToasts.get(msgStr)
 
@@ -46,10 +54,10 @@ const preventSpam = (message: any, originalFn: Function, options: any = {}) => {
   return id
 }
 
-toast.success = (message: any, options: any) => preventSpam(message, originalToast.success, options)
-toast.error = (message: any, options: any) => preventSpam(message, originalToast.error, options)
-toast.info = (message: any, options: any) => preventSpam(message, originalToast.info, options)
-toast.warning = (message: any, options: any) => preventSpam(message, originalToast.warning, options)
+toast.success = (message: ToastMessage, options?: ExternalToast) => preventSpam(message, originalToast.success, options)
+toast.error = (message: ToastMessage, options?: ExternalToast) => preventSpam(message, originalToast.error, options)
+toast.info = (message: ToastMessage, options?: ExternalToast) => preventSpam(message, originalToast.info, options)
+toast.warning = (message: ToastMessage, options?: ExternalToast) => preventSpam(message, originalToast.warning, options)
 
 const root = document.getElementById('root') as HTMLElement
 
