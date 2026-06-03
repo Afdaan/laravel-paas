@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"runtime"
 	"sync"
 	"time"
@@ -55,6 +56,65 @@ func NewDomainService(cfg *config.Config, db *gorm.DB, redisService *infrastruct
 	leaseProvider := NewRedisLeaseProvider(redisService)
 	queue := NewReconcileQueue(db)
 	reconciler := NewReconciler(repo, queue, leaseProvider, stateMachine)
+
+	// Set AppMode for HTTP client internal routing
+	SetAppMode(cfg.AppMode)
+
+	// Resolve local public IPs for hairpin NAT / loopback routing
+	var localIPs []string
+	resolver := getRealtimeResolver()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if cfg.BaseDomain != "" && cfg.BaseDomain != "localhost" && cfg.BaseDomain != "127.0.0.1" {
+		if ips, err := resolver.LookupHost(ctx, cfg.BaseDomain); err == nil {
+			localIPs = append(localIPs, ips...)
+		} else if ips, err := net.DefaultResolver.LookupHost(ctx, cfg.BaseDomain); err == nil {
+			localIPs = append(localIPs, ips...)
+		}
+	}
+	if cfg.ProjectDomain != "" && cfg.ProjectDomain != "localhost" && cfg.ProjectDomain != "127.0.0.1" && cfg.ProjectDomain != cfg.BaseDomain {
+		if ips, err := resolver.LookupHost(ctx, cfg.ProjectDomain); err == nil {
+			localIPs = append(localIPs, ips...)
+		} else if ips, err := net.DefaultResolver.LookupHost(ctx, cfg.ProjectDomain); err == nil {
+			localIPs = append(localIPs, ips...)
+		}
+	}
+
+	// Also get public IPs from local interfaces to cover NAT scenarios or dynamic binds
+	if interfaces, err := net.Interfaces(); err == nil {
+		for _, iface := range interfaces {
+			if addrs, err := iface.Addrs(); err == nil {
+				for _, addr := range addrs {
+					var ip net.IP
+					switch v := addr.(type) {
+					case *net.IPNet:
+						ip = v.IP
+					case *net.IPAddr:
+						ip = v.IP
+					}
+					if ip != nil && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsMulticast() {
+						localIPs = append(localIPs, ip.String())
+					}
+				}
+			}
+		}
+	}
+
+	// Deduplicate local IP list to keep matching performance high
+	uniqueIPs := make(map[string]struct{})
+	var deduplicatedIPs []string
+	for _, ip := range localIPs {
+		if _, exists := uniqueIPs[ip]; !exists {
+			uniqueIPs[ip] = struct{}{}
+			deduplicatedIPs = append(deduplicatedIPs, ip)
+		}
+	}
+
+	if len(deduplicatedIPs) > 0 {
+		slog.Info("Registered local public IPs for hairpin NAT bypass", "ips", deduplicatedIPs)
+		SetLocalPublicIPs(deduplicatedIPs)
+	}
 
 	return &DomainService{
 		cfg:            cfg,
