@@ -164,7 +164,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
   const [isLoading, setIsLoading] = useState(true)
   const [newDomain, setNewDomain] = useState('')
   const [isAdding, setIsAdding] = useState(false)
-  const [verifyingId, setVerifyingId] = useState<number | null>(null)
+  const [verifyingIds, setVerifyingIds] = useState<Record<number, boolean>>({})
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
 
   const [eventsModal, setEventsModal] = useState<{
@@ -454,15 +454,25 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
   const handleVerifyDomain = async (e: React.MouseEvent, domainId: number) => {
     e.stopPropagation()
-    setVerifyingId(domainId)
+    setVerifyingIds(prev => ({ ...prev, [domainId]: true }))
+
+    const dom = domains.find(d => d.id === domainId)
+    const isAlreadyActive = dom?.status === 'active' || dom?.status === 'ssl_active'
+
     try {
       const res = await projectsAPI.verifyDomain(projectId, domainId)
       if (res.data?.error) {
         showErrorToast(res.data.error.message || t('common.error'))
       } else {
-        toast.success(t('domains.verified') || 'Domain Verified', {
-          description: t('domains.verifiedDesc') || 'DNS configuration verified successfully.'
-        })
+        if (isAlreadyActive) {
+          toast.success(t('domains.healthcheckTriggered') || 'Health Check Triggered', {
+            description: t('domains.healthcheckTriggeredDesc') || 'Background health check has been initiated. Status will update shortly.'
+          })
+        } else {
+          toast.success(t('domains.verified') || 'Domain Verified', {
+            description: t('domains.verifiedDesc') || 'DNS configuration verified successfully.'
+          })
+        }
       }
       fetchDomains()
       onDomainsChanged?.()
@@ -472,7 +482,11 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       fetchDomains()
       onDomainsChanged?.()
     } finally {
-      setVerifyingId(null)
+      setVerifyingIds(prev => {
+        const next = { ...prev }
+        delete next[domainId]
+        return next
+      })
     }
   }
 
@@ -715,16 +729,28 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                         <FileText className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">Audit Log</span>
                       </Button>
-                      {!isActive && (
+                      {isActive ? (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={(e) => handleVerifyDomain(e, domain.id)}
-                          disabled={verifyingId === domain.id}
+                          disabled={!!verifyingIds[domain.id]}
+                          className="h-8 gap-2 text-xs transition-all text-muted-foreground hover:text-primary hover:bg-primary/10 border-border"
+                          title="Trigger instant health check"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${verifyingIds[domain.id] ? 'animate-spin' : ''}`} />
+                          {verifyingIds[domain.id] ? t('domains.checking') : t('domains.checkHealth')}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => handleVerifyDomain(e, domain.id)}
+                          disabled={!!verifyingIds[domain.id]}
                           className="h-8 gap-2 text-xs transition-all text-emerald-500 border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/50"
                         >
-                          <RefreshCw className={`w-3 h-3 ${verifyingId === domain.id ? 'animate-spin' : ''}`} />
-                          {verifyingId === domain.id ? 'Verifying...' : t('common.verify')}
+                          <RefreshCw className={`w-3 h-3 ${verifyingIds[domain.id] ? 'animate-spin' : ''}`} />
+                          {verifyingIds[domain.id] ? t('domains.verifying') : t('common.verify')}
                         </Button>
                       )}
                       <Button

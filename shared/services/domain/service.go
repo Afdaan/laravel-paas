@@ -60,28 +60,63 @@ func NewDomainService(cfg *config.Config, db *gorm.DB, redisService *infrastruct
 	// Set AppMode for HTTP client internal routing
 	SetAppMode(cfg.AppMode)
 
-	// Resolve local public IPs for hairpin NAT / loopback routing
+	svc := &DomainService{
+		cfg:            cfg,
+		db:             db,
+		redisService:   redisService,
+		projectService: projectService,
+		projectRepo:    projectRepo,
+		repo:           repo,
+		stateMachine:   stateMachine,
+		reconciler:     reconciler,
+		queue:          queue,
+	}
+
+	// Run initial synchronous scan of interfaces and DNS
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	svc.syncLocalPublicIPs(ctx)
+	cancel()
+
+	// Launch background synchronization worker to detect any dynamic network interface or DNS updates
+	svc.SafeGo(context.Background(), 0, 0, "local_ip_sync", func(ctx context.Context) error {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-ticker.C:
+				syncCtx, syncCancel := context.WithTimeout(ctx, 10*time.Second)
+				svc.syncLocalPublicIPs(syncCtx)
+				syncCancel()
+			}
+		}
+	})
+
+	return svc
+}
+
+// syncLocalPublicIPs queries DNS configuration and active network interfaces, then registers public IP addresses to http_client.
+func (s *DomainService) syncLocalPublicIPs(ctx context.Context) {
 	var localIPs []string
 	resolver := getRealtimeResolver()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	if cfg.BaseDomain != "" && cfg.BaseDomain != "localhost" && cfg.BaseDomain != "127.0.0.1" {
-		if ips, err := resolver.LookupHost(ctx, cfg.BaseDomain); err == nil {
+	if s.cfg.BaseDomain != "" && s.cfg.BaseDomain != "localhost" && s.cfg.BaseDomain != "127.0.0.1" {
+		if ips, err := resolver.LookupHost(ctx, s.cfg.BaseDomain); err == nil {
 			localIPs = append(localIPs, ips...)
-		} else if ips, err := net.DefaultResolver.LookupHost(ctx, cfg.BaseDomain); err == nil {
+		} else if ips, err := net.DefaultResolver.LookupHost(ctx, s.cfg.BaseDomain); err == nil {
 			localIPs = append(localIPs, ips...)
 		}
 	}
-	if cfg.ProjectDomain != "" && cfg.ProjectDomain != "localhost" && cfg.ProjectDomain != "127.0.0.1" && cfg.ProjectDomain != cfg.BaseDomain {
-		if ips, err := resolver.LookupHost(ctx, cfg.ProjectDomain); err == nil {
+	if s.cfg.ProjectDomain != "" && s.cfg.ProjectDomain != "localhost" && s.cfg.ProjectDomain != "127.0.0.1" && s.cfg.ProjectDomain != s.cfg.BaseDomain {
+		if ips, err := resolver.LookupHost(ctx, s.cfg.ProjectDomain); err == nil {
 			localIPs = append(localIPs, ips...)
-		} else if ips, err := net.DefaultResolver.LookupHost(ctx, cfg.ProjectDomain); err == nil {
+		} else if ips, err := net.DefaultResolver.LookupHost(ctx, s.cfg.ProjectDomain); err == nil {
 			localIPs = append(localIPs, ips...)
 		}
 	}
 
-	// Also get public IPs from local interfaces to cover NAT scenarios or dynamic binds
+	// Scan local network interfaces for non-private public IP mappings
 	if interfaces, err := net.Interfaces(); err == nil {
 		for _, iface := range interfaces {
 			if addrs, err := iface.Addrs(); err == nil {
@@ -101,7 +136,7 @@ func NewDomainService(cfg *config.Config, db *gorm.DB, redisService *infrastruct
 		}
 	}
 
-	// Deduplicate local IP list to keep matching performance high
+	// Deduplicate the results
 	uniqueIPs := make(map[string]struct{})
 	var deduplicatedIPs []string
 	for _, ip := range localIPs {
@@ -114,18 +149,6 @@ func NewDomainService(cfg *config.Config, db *gorm.DB, redisService *infrastruct
 	if len(deduplicatedIPs) > 0 {
 		slog.Info("Registered local public IPs for hairpin NAT bypass", "ips", deduplicatedIPs)
 		SetLocalPublicIPs(deduplicatedIPs)
-	}
-
-	return &DomainService{
-		cfg:            cfg,
-		db:             db,
-		redisService:   redisService,
-		projectService: projectService,
-		projectRepo:    projectRepo,
-		repo:           repo,
-		stateMachine:   stateMachine,
-		reconciler:     reconciler,
-		queue:          queue,
 	}
 }
 

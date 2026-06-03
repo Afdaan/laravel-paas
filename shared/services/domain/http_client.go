@@ -21,7 +21,8 @@ var (
 	appMode            string = "local"
 	appModeLock        sync.RWMutex
 	defaultGateway     string = "127.0.0.1"
-	defaultGatewayOnce sync.Once
+	defaultGatewayLock sync.RWMutex
+	gatewayResolved    bool
 )
 
 // SetLocalPublicIPs registers the server's public IPs.
@@ -54,12 +55,23 @@ func getAppMode() string {
 
 // getDefaultGateway returns the cached default route gateway IP.
 func getDefaultGateway() string {
-	defaultGatewayOnce.Do(func() {
+	defaultGatewayLock.RLock()
+	if gatewayResolved {
+		gw := defaultGateway
+		defaultGatewayLock.RUnlock()
+		return gw
+	}
+	defaultGatewayLock.RUnlock()
+
+	defaultGatewayLock.Lock()
+	defer defaultGatewayLock.Unlock()
+	if !gatewayResolved {
 		gw, err := detectDefaultGateway()
 		if err == nil && gw != "" {
 			defaultGateway = gw
+			gatewayResolved = true
 		}
-	})
+	}
 	return defaultGateway
 }
 
