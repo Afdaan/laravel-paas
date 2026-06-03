@@ -431,10 +431,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Updating environment and restarting container")
 		
 		if err := w.instantUpdateEnv(project, appendLog); err != nil {
+			appendLog("")
 			appendLog("✗ Environment update failed: " + err.Error())
 			slog.Error("Instant update failed", "subdomain", project.Subdomain, "error", err)
 			w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to update environment variables: "+err.Error())
 		} else {
+			appendLog("")
 			appendLog("✓ Environment update completed successfully!")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
 		}
@@ -468,10 +470,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
 		if err := w.redeployExistingImage(project, appendLog); err == nil {
+			appendLog("")
 			appendLog("✓ Rollback completed successfully.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
 			return
 		}
+		appendLog("")
 		appendLog("✗ Rollback failed. Falling back to full rebuild.")
 		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
@@ -1200,21 +1204,24 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc fun
 	}
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
-	logFunc("[INFO] Regenerating project environment configuration file...")
+	logFunc("")
+	logFunc(">> Regenerating environment configuration...")
 	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
-		logFunc("[ERROR] Failed to generate environment file: " + err.Error())
+		logFunc("✗ Failed to regenerate environment configuration: " + err.Error())
 		return err
 	}
-	logFunc("[SUCCESS] Environment variables generated successfully.")
+	logFunc("✓ Environment configuration regenerated successfully.")
 
-	logFunc("[INFO] Updating database password configuration in environment...")
+	logFunc("")
+	logFunc(">> Updating database connection credentials...")
 	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
-		logFunc("[WARNING] Failed to update database credentials in env: " + err.Error())
+		logFunc("✗ Failed to update database connection credentials: " + err.Error())
 		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
 	} else {
-		logFunc("[SUCCESS] Database password configuration updated in env.")
+		logFunc("✓ Database connection credentials updated successfully.")
 	}
 
+	logFunc("")
 	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
 }
 
@@ -1224,17 +1231,24 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFun
 	}
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
-	logFunc("[INFO] Refreshing environment configuration file during rollback...")
+	logFunc("")
+	logFunc(">> Refreshing environment configuration...")
 	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
-		logFunc("[WARNING] Failed to refresh environment file during redeploy: " + err.Error())
+		logFunc("✗ Failed to refresh environment configuration: " + err.Error())
 		slog.Warn("Failed to refresh environment file during redeploy", "id", project.ID, "error", err)
+	} else {
+		logFunc("✓ Environment configuration refreshed successfully.")
 	}
 
-	logFunc("[INFO] Updating database password configuration in environment...")
+	logFunc("")
+	logFunc(">> Updating database connection credentials...")
 	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
-		logFunc("[WARNING] Failed to update database credentials in env: " + err.Error())
+		logFunc("✗ Failed to update database connection credentials: " + err.Error())
 		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
+	} else {
+		logFunc("✓ Database connection credentials updated successfully.")
 	}
 
+	logFunc("")
 	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
 }
