@@ -392,9 +392,11 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     const trimmedDomain = newDomain.trim()
     if (!trimmedDomain) return
 
-    if (trimmedDomain.includes(':')) {
+    // Strict FQDN formatting check to prevent config injections and malformed routing records
+    const domainRegex = /^[a-zA-Z0-9.-]+$/
+    if (!domainRegex.test(trimmedDomain) || trimmedDomain.startsWith('.') || trimmedDomain.endsWith('.') || trimmedDomain.startsWith('-') || trimmedDomain.endsWith('-') || trimmedDomain.includes('..')) {
       toast.error(t('domains.errors.invalidFormat') || 'Invalid Domain Format', {
-        description: t('domains.errors.noPort') || 'Domain names cannot contain ports or colons.'
+        description: t('domains.errors.invalidCharacters') || 'Domain names can only contain letters, numbers, dots, and hyphens.'
       })
       return
     }
