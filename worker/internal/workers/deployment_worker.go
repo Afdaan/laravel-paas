@@ -395,12 +395,23 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
-	if job.Type == "update_env" && project.ContainerID != nil {
-		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
-		if err := w.instantUpdateEnv(project); err == nil {
+	if job.Type == "update_env" {
+		if project.ContainerID == nil || *project.ContainerID == "" {
+			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
 			return
 		}
-		slog.Warn("Instant update failed, falling back to full deployment", "subdomain", project.Subdomain)
+
+		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Updating environment and restarting container")
+		
+		if err := w.instantUpdateEnv(project); err != nil {
+			slog.Error("Instant update failed", "subdomain", project.Subdomain, "error", err)
+			w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to update environment variables: "+err.Error())
+		} else {
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
+		}
+		return
 	}
 
 	if job.Type == "rollback" {

@@ -197,20 +197,93 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		slog.Warn("Failed to update database instance password in GORM", "error", err)
 	}
 
-	// 3. Trigger Environment hot-swap redeployment job in Redis
-	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
-	if err != nil {
-		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "partially_completed", "Failed to queue update_env: "+err.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials updated, but failed to queue zero-downtime hot-swap: " + err.Error()})
+	// 2.5 Rewrite database credentials to the project's .env file on host directly
+	if envContent, err := h.projectService.GetEnv(project.Subdomain); err == nil {
+		updatedEnv := updateEnvPassword(envContent, newPassword, project.DatabaseName, instance.Engine)
+		if err := h.projectService.SaveEnv(project.Subdomain, updatedEnv); err != nil {
+			slog.Warn("Failed to write rotated password to .env file", "subdomain", project.Subdomain, "error", err)
+		} else {
+			slog.Info("Successfully wrote rotated database password to .env file", "subdomain", project.Subdomain)
+		}
+	}
+
+	// 3. Trigger Environment hot-swap redeployment job in Redis only if container is running
+	if project.ContainerID != nil && *project.ContainerID != "" {
+		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
+		if err != nil {
+			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "partially_completed", "Failed to queue update_env: "+err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials updated, but failed to queue zero-downtime hot-swap: " + err.Error()})
+		}
+
+		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
+
+		return c.JSON(fiber.Map{
+			"success": true,
+			"message": "Database credentials rotated successfully. Zero-downtime environment update queued.",
+			"job_id":  jobID,
+		})
 	}
 
 	h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"message": "Database credentials rotated successfully. Zero-downtime environment update queued.",
-		"job_id":  jobID,
+		"message": "Database credentials rotated successfully. Environment updated (container is currently stopped).",
 	})
+}
+
+func updateEnvPassword(content, newPassword, dbName, engine string) string {
+	lines := strings.Split(content, "\n")
+	
+	// Prepare DB connection details
+	var dbHost, dbPort, dbConnection, dbURL string
+	if engine == "postgresql" {
+		dbConnection = "pgsql"
+		dbHost = "paas-user-postgres"
+		dbPort = "5432"
+		dbURL = fmt.Sprintf("postgres://%s:%s@paas-user-postgres:5432/%s?sslmode=disable", dbName, newPassword, dbName)
+	} else {
+		dbConnection = "mysql"
+		dbHost = "paas-mysql"
+		dbPort = "3306"
+		dbURL = fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", dbName, newPassword, dbName)
+	}
+
+	updates := map[string]string{
+		"DB_CONNECTION": dbConnection,
+		"DB_HOST":       dbHost,
+		"DB_PORT":       dbPort,
+		"DB_DATABASE":   dbName,
+		"DB_USERNAME":   dbName,
+		"DB_PASSWORD":   newPassword,
+		"DATABASE_URL":  dbURL,
+	}
+
+	seen := make(map[string]bool)
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			if val, ok := updates[key]; ok {
+				lines[i] = fmt.Sprintf("%s=%s", key, val)
+				seen[key] = true
+			}
+		}
+	}
+
+	// Append any missing keys
+	for key, val := range updates {
+		if !seen[key] {
+			lines = append(lines, fmt.Sprintf("%s=%s", key, val))
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // RestartDatabase resets connection pool and tests ping

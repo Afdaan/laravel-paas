@@ -132,9 +132,34 @@ func (s *StorageService) GetEnvFile(subdomain string) (string, error) {
 	return string(content), nil
 }
 
-// SaveEnvFile updates the .env file for a project
+// SaveEnvFile updates the .env file for a project using an atomic write pattern (write temp -> fsync -> rename)
 func (s *StorageService) SaveEnvFile(subdomain, content string) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
-	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(content), 0644)
+	envPath := filepath.Join(projectPath, ".env")
+	tempPath := envPath + ".tmp"
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempPath)
+
+	if _, err := f.Write([]byte(content)); err != nil {
+		f.Close()
+		return err
+	}
+
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	return os.Rename(tempPath, envPath)
 }
 
