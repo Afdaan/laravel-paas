@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import {
   TrendingUp,
@@ -12,7 +12,6 @@ import {
   Eye,
   ArrowRightLeft,
   Terminal,
-  Plus,
   ArrowRight
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -45,6 +44,16 @@ export function StudioDashboardTab() {
     setActiveTab,
     t
   } = useStudio()
+
+  const pollIntervalRef = useRef<any>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+    }
+  }, [])
 
   const [credentialsTab, setCredentialsTab] = useState<'env' | 'uri' | 'pdo'>('env')
   const [userProjects, setUserProjects] = useState<Project[]>([])
@@ -107,14 +116,66 @@ export function StudioDashboardTab() {
       type: 'danger',
       confirmText: t('databaseStudio.dashboard.actions.rotateCredentials'),
       onConfirm: async () => {
+        if (isActionLoading) return
         setIsActionLoading(true)
         try {
           const res = await databaseAPI.rotateCredentials(id)
-          toast.success(res.data.message)
-          loadStudioData()
+          const jobId = res.data.job_id
+
+          if (jobId) {
+            toast.info(t('databaseStudio.dashboard.actions.rotatingInProgress') || "Rotation in progress. Zero-downtime container swap is executing...")
+            
+            let attempts = 0
+            // Poll project deployment status until completion
+            pollIntervalRef.current = setInterval(async () => {
+              attempts++
+              if (attempts > 40) { // 40 attempts * 1.5s = 60s max polling timeout
+                if (pollIntervalRef.current) {
+                  clearInterval(pollIntervalRef.current)
+                  pollIntervalRef.current = null
+                }
+                setIsActionLoading(false)
+                toast.warning(t('databaseStudio.dashboard.actions.rotateTimeout') || "Operation is taking longer than expected. Please check the project status panel.")
+                loadStudioData()
+                return
+              }
+              try {
+                const projRes = await projectsAPI.get(id)
+                const project = projRes.data.data
+                
+                if (project) {
+                  const status = project.deployment_status
+                  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+                    if (pollIntervalRef.current) {
+                      clearInterval(pollIntervalRef.current)
+                      pollIntervalRef.current = null
+                    }
+                    setIsActionLoading(false)
+                    if (status === 'completed') {
+                      toast.success(t('databaseStudio.dashboard.actions.rotateSuccess') || "Database credentials rotated and container swapped successfully!")
+                    } else {
+                      toast.error(t('databaseStudio.dashboard.actions.rotateJobFailed') || "Container swap failed. Please check build/deployment logs.")
+                    }
+                    loadStudioData()
+                  }
+                }
+              } catch (e) {
+                if (pollIntervalRef.current) {
+                  clearInterval(pollIntervalRef.current)
+                  pollIntervalRef.current = null
+                }
+                setIsActionLoading(false)
+                loadStudioData()
+              }
+            }, 1500)
+          } else {
+            toast.success(res.data.message)
+            setIsActionLoading(false)
+            loadStudioData()
+          }
         } catch (error) {
-          toast.error(t('databaseStudio.errors.rotateFailed'))
-        } finally {
+          const err = error as { response?: { data?: { error?: string } } }
+          toast.error(err.response?.data?.error || t('databaseStudio.errors.rotateFailed'))
           setIsActionLoading(false)
         }
       }
@@ -299,7 +360,7 @@ export function StudioDashboardTab() {
               className="font-bold border-primary/20 hover:border-primary shrink-0 gap-1.5 h-8 text-xs cursor-pointer"
               style={{ cursor: 'pointer' }}
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className={cn("w-3.5 h-3.5", isActionLoading && "animate-spin")} />
               {t('databaseStudio.dashboard.actions.rotateCredentials')}
             </Button>
           </div>

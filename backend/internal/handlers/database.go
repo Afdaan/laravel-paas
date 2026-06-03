@@ -170,6 +170,18 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 
 	newPassword := utils.GeneratePassword(16)
 
+	// Guard against concurrent operations to enforce safety and prevent race-triggered corruption
+	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
+	if isQueued {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Project has an active operation in the deployment queue. Please wait."})
+	}
+
+	if project.DeploymentStatus != models.DepStatusCompleted &&
+		project.DeploymentStatus != models.DepStatusFailed &&
+		project.DeploymentStatus != models.DepStatusCancelled {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Project deployment or operation is currently in progress. Please wait for it to complete."})
+	}
+
 	// 1. Update password inside container engine
 	if instance.Engine == "postgresql" {
 		pgService := infrastructure.NewPostgreSQLService()
@@ -213,6 +225,10 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		if err != nil {
 			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "partially_completed", "Failed to queue update_env: "+err.Error())
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials updated, but failed to queue zero-downtime hot-swap: " + err.Error()})
+		}
+
+		if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Credentials rotation env update", 0, jobID); err != nil {
+			slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
 		}
 
 		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
