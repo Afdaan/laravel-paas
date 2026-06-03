@@ -123,7 +123,7 @@ export function StudioDashboardTab() {
           const jobId = res.data.job_id
 
           if (jobId) {
-            toast.info(t('databaseStudio.dashboard.actions.rotatingInProgress') || "Rotation in progress. Zero-downtime container swap is executing...")
+            toast.info(t('databaseStudio.dashboard.actions.rotatingInProgress') || "Rotation in progress. Applying configuration changes...")
             
             let attempts = 0
             // Poll project deployment status until completion

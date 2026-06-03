@@ -409,37 +409,33 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog = func(msg string) {
 				logFileMu.Lock()
 				defer logFileMu.Unlock()
-				timestamp := time.Now().Format("15:04:05")
-				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
-				_, _ = logFile.WriteString(logMsg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+				_, _ = logFile.WriteString(msg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		} else {
 			appendLog = func(msg string) {
-				timestamp := time.Now().Format("15:04:05")
-				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
-				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
 
 		if project.ContainerID == nil || *project.ContainerID == "" {
-			appendLog("[INFO] Project container is stopped. Skipping container restart.")
-			appendLog("[SUCCESS] Environment variables updated on disk successfully.")
+			appendLog(">> Project is stopped. Skipping hot-swap environment update.")
+			appendLog("✓ Environment configuration updated successfully.")
 			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
 			return
 		}
 
-		appendLog("[INFO] Starting database credentials rotation environment update...")
+		appendLog(">> Preparing database credentials rotation...")
 		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Updating environment and restarting container")
 		
 		if err := w.instantUpdateEnv(project, appendLog); err != nil {
-			appendLog("[ERROR] Instant environment update failed: " + err.Error())
+			appendLog("✗ Environment update failed: " + err.Error())
 			slog.Error("Instant update failed", "subdomain", project.Subdomain, "error", err)
 			w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to update environment variables: "+err.Error())
 		} else {
-			appendLog("[SUCCESS] Environment variables updated and container hot-swapped successfully.")
+			appendLog("✓ Environment update completed successfully!")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
 		}
 		return
@@ -459,28 +455,24 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog = func(msg string) {
 				logFileMu.Lock()
 				defer logFileMu.Unlock()
-				timestamp := time.Now().Format("15:04:05")
-				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
-				_, _ = logFile.WriteString(logMsg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+				_, _ = logFile.WriteString(msg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		} else {
 			appendLog = func(msg string) {
-				timestamp := time.Now().Format("15:04:05")
-				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
-				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
 
-		appendLog(fmt.Sprintf("[INFO] Performing instant rollback to commit %s...", project.LastCommitHash))
+		appendLog(fmt.Sprintf(">> Preparing rollback to commit %s...", project.LastCommitHash))
 		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
 		if err := w.redeployExistingImage(project, appendLog); err == nil {
-			appendLog("[SUCCESS] Instant rollback completed successfully.")
+			appendLog("✓ Rollback completed successfully.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
 			return
 		}
-		appendLog("[WARNING] Instant rollback failed, falling back to full build rebuild.")
+		appendLog("✗ Rollback failed. Falling back to full rebuild.")
 		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
 	}

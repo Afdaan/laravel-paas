@@ -262,14 +262,14 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 	if isRunning {
 		return c.JSON(fiber.Map{
 			"success": true,
-			"message": "Database credentials rotated successfully. Zero-downtime environment update queued.",
+			"message": "Database credentials rotated successfully. Environment update queued.",
 			"job_id":  jobID,
 		})
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"message": "Database credentials rotated successfully. Environment updated (container is currently stopped).",
+		"message": "Database credentials rotated successfully. Environment updated.",
 	})
 }
 

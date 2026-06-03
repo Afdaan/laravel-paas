@@ -223,7 +223,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 		return nil
 	}
 
-	logFunc("[INFO] Executing zero-downtime container recreation with health guard")
+	logFunc(">> Initiating application hot-swap...")
 	slog.Info("Executing zero-downtime container recreation with health guard",
 		"subdomain", project.Subdomain,
 		"projectId", project.ID)
@@ -231,29 +231,29 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 	oldWebID := *project.ContainerID
 	oldWorkerID := project.WorkerContainerID
 
-	logFunc("[INFO] Starting new container with updated environment variables...")
+	logFunc(">> Starting new application instance...")
 	newID, err := s.dockerService.StartExistingImage(project, projectDomain)
 	if err != nil {
-		logFunc("[ERROR] Failed to start new container: " + err.Error())
+		logFunc("✗ Failed to start new application instance: " + err.Error())
 		slog.Error("Failed to start new container during recreation", "subdomain", project.Subdomain, "error", err)
 		return err
 	}
-	logFunc(fmt.Sprintf("[SUCCESS] Started new container: %s", newID[:12]))
+	logFunc("✓ New application instance started.")
 
 	_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"rollout_container_id": newID,
 	})
 
-	logFunc("[INFO] Running advanced health checks on new container...")
+	logFunc(">> Running application health checks...")
 	// Run Advanced 2-step Healthcheck with timeout context
 	hcCtx, hcCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer hcCancel()
 
 	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID); err != nil {
-		logFunc("[ERROR] New container failed advanced healthcheck, rolling back...")
+		logFunc("✗ Health checks failed. Rolling back configuration changes...")
 		slog.Error("New container failed advanced healthcheck, rolling back", "subdomain", project.Subdomain, "newID", newID, "error", err)
 
-		logFunc("[INFO] Cleaning up failed container...")
+		logFunc(">> Rolling back release...")
 		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
 		}
@@ -263,34 +263,34 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 
 		return fmt.Errorf("recreation failed: %w", err)
 	}
-	logFunc("[SUCCESS] Advanced health checks passed successfully.")
+	logFunc("✓ Health checks passed successfully.")
 
-	logFunc("[INFO] Swapping container routing (promoting rollout)...")
+	logFunc(">> Swapping application routing...")
 	if err := s.PromoteRolloutContainer(project.ID, newID); err != nil {
-		logFunc("[WARNING] Failed to promote rollout container: " + err.Error())
+		logFunc("✗ Failed to route traffic to the new instance: " + err.Error())
 		slog.Error("Failed to promote rollout container during recreation", "id", project.ID, "error", err)
 	} else {
-		logFunc("[SUCCESS] Container routing swapped successfully.")
+		logFunc("✓ Application routing updated successfully.")
 	}
 	project.ContainerID = &newID
 	project.RolloutContainerID = nil
 
 	time.Sleep(2 * time.Second)
 
-	logFunc("[INFO] Cleaning up legacy container...")
+	logFunc(">> Cleaning up legacy resources...")
 	slog.Info("Cleaning up legacy containers",
 		"subdomain", project.Subdomain,
 		"oldWebID", oldWebID)
 
 	if err := s.dockerService.RemoveContainer(oldWebID, oldWorkerID); err != nil {
-		logFunc("[WARNING] Failed to remove legacy container: " + err.Error())
+		logFunc("✗ Failed to prune legacy resources: " + err.Error())
 		slog.Warn("Failed to remove old containers after successful swap", "error", err)
 	} else {
-		logFunc("[SUCCESS] Legacy container removed.")
+		logFunc("✓ Legacy resources cleaned up.")
 	}
 
 	s.dockerService.CleanupLegacyContainers(project.Subdomain, newID, project.WorkerContainerID)
-	logFunc("[SUCCESS] Zero-downtime container hot-swap and cleanup completed.")
+	logFunc("✓ Hot-swap completed.")
 
 	return nil
 }

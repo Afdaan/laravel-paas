@@ -525,7 +525,7 @@ export const translations = {
           },
           transferred: {
             title: "Domain Ownership Transferred",
-            desc: "Domain access rights and traffic routes were successfully migrated to the target project with zero-downtime."
+            desc: "Domain access rights and traffic routes were successfully migrated to the target project."
           },
           healthcheck_recovered: {
             title: "Health Check Succeeded (Healthy)",
@@ -547,7 +547,7 @@ export const translations = {
           },
           cleanup_step: {
             title: "Nginx Gateway Configured",
-            desc: "Proxy configuration and custom domain route bindings have been successfully updated and reloaded with zero-downtime."
+            desc: "Proxy configuration and custom domain route bindings have been successfully updated and reloaded."
           },
           cleanup_failed: {
             title: "Routing Purge Delayed",
@@ -673,7 +673,7 @@ export const translations = {
         rollbackBtn: "Rollback",
         rollbackTooltip: "Rollback container image to this commit version",
         confirmRollback: "Confirm Rollback",
-        confirmRollbackMsg: "Are you sure you want to rollback to this commit? If the image is cached locally, it will perform a zero-downtime hot-swap. Otherwise, it will trigger an automated rebuild.",
+        confirmRollbackMsg: "Are you sure you want to rollback to this commit? If the image is cached locally, it will perform an instant swap. Otherwise, it will trigger an automated rebuild.",
         cancel: "Cancel",
         triggering: "Initiating rollback...",
         rollbackSuccess: "Rollback initiated successfully ({{type}})",
@@ -971,7 +971,7 @@ export const translations = {
         suspendedTitle: "Database Instance Suspended",
         suspendedDesc: "Connect privileges have been actively revoked and all active backend connections have been forcefully terminated to secure resources. Restart or resume the instance to restore full data access.",
         connecting: "Connecting to Managed Database Studio...",
-        confirmRotate: "Are you sure you want to rotate credentials? This will trigger an instant, zero-downtime hot-swap environment restart.",
+        confirmRotate: "Are you sure you want to rotate credentials? This will trigger an instant environment restart.",
         confirmSuspend: "Suspend database? This revokes connect privileges and forcefully terminates all active tenant connections immediately.",
         confirmResume: "Resume database? This restores connection access.",
         metrics: {
@@ -999,8 +999,8 @@ export const translations = {
           rotating: "Processing...",
           testing: "Testing...",
           updating: "Updating...",
-          rotatingInProgress: "Rotation in progress. Zero-downtime container swap is executing...",
-          rotateSuccess: "Database credentials rotated and container swapped successfully!",
+          rotatingInProgress: "Rotation in progress. Applying configuration changes...",
+          rotateSuccess: "Database credentials rotated and environment updated successfully!",
           rotateJobFailed: "Container swap failed. Please check build/deployment logs.",
           rotateTimeout: "Operation is taking longer than expected. Please check the project status panel."
         },
@@ -2025,7 +2025,7 @@ export const translations = {
         rollbackBtn: "Rollback",
         rollbackTooltip: "Kembalikan image container ke versi commit ini",
         confirmRollback: "Konfirmasi Rollback",
-        confirmRollbackMsg: "Apakah Anda yakin ingin melakukan rollback ke commit ini? Jika image tersedia di lokal, sistem akan melakukan hot-swap tanpa downtime. Jika tidak, sistem akan memicu build otomatis.",
+        confirmRollbackMsg: "Apakah Anda yakin ingin melakukan rollback ke commit ini? Jika image tersedia di lokal, sistem akan melakukan pemindahan instan. Jika tidak, sistem akan memicu build otomatis.",
         cancel: "Batal",
         triggering: "Memulai rollback...",
         rollbackSuccess: "Rollback berhasil dimulai ({{type}})",
@@ -2323,7 +2323,7 @@ export const translations = {
         suspendedTitle: "Database Instance Suspended",
         suspendedDesc: "Hak koneksi dicabut secara aktif dan seluruh koneksi backend diputus secara paksa untuk mengamankan resources. Aktifkan kembali database instance untuk memulihkan akses data penuh.",
         connecting: "Menghubungkan ke Managed Database Studio...",
-        confirmRotate: "Yakin ingin merotasi kredensial? Tindakan ini akan merestart koneksi secara aman tanpa downtime.",
+        confirmRotate: "Yakin ingin merotasi kredensial? Tindakan ini akan memicu restart koneksi secara aman.",
         confirmSuspend: "Tangguhkan database? Tindakan ini akan mencabut hak koneksi dan memutus seluruh koneksi aktif.",
         confirmResume: "Aktifkan kembali database? Tindakan ini akan memulihkan akses koneksi.",
         metrics: {
@@ -2352,8 +2352,8 @@ export const translations = {
           testing: "Menguji...",
           updating: "Memperbarui...",
           rotatingInProgress: "Rotasi password sedang berjalan. Silahkan tunggu proses selesai.",
-          rotateSuccess: "Kredensial database berhasil dirotasi dan container berhasil direstart secara aman!",
-          rotateJobFailed: "Restart container gagal. Silakan periksa log build/deployment.",
+          rotateSuccess: "Kredensial database berhasil dirotasi dan lingkungan proyek berhasil diperbarui!",
+          rotateJobFailed: "Pembaruan lingkungan proyek gagal. Silakan periksa log build/deployment.",
           rotateTimeout: "Proses memakan waktu lebih lama dari yang diperkirakan. Silakan periksa panel status proyek."
         },
         credentials: {

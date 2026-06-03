@@ -312,7 +312,7 @@ function UserProjectDetail() {
   const triggerRollbackConfirm = (commitSHA: string) => {
     setConfirmModal({
       title: t('projectDetail.runtime.confirmRollback') || 'Confirm Rollback',
-      message: t('projectDetail.runtime.confirmRollbackMsg') || 'Are you sure you want to rollback to this commit? If the image is cached locally, it will perform a zero-downtime hot-swap. Otherwise, it will trigger an automated rebuild.',
+      message: t('projectDetail.runtime.confirmRollbackMsg') || 'Are you sure you want to rollback to this commit? If the image is cached locally, it will perform an instant swap. Otherwise, it will trigger an automated rebuild.',
       type: 'warning',
       confirmText: t('projectDetail.runtime.rollbackBtn') || 'Rollback',
       isOpen: true,
