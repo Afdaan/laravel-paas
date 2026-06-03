@@ -15,8 +15,8 @@ import (
 // AddDomain adds a new custom domain for a project
 func (s *DomainService) AddDomain(projectID uint, domainName string) (*models.CustomDomain, error) {
 	domainName = strings.ToLower(strings.TrimSpace(domainName))
-	if domainName == "" || strings.Contains(domainName, "/") || strings.Contains(domainName, " ") {
-		return nil, apperr.New(400, "INVALID_DOMAIN", "Invalid domain format")
+	if domainName == "" || strings.Contains(domainName, "/") || strings.Contains(domainName, " ") || strings.Contains(domainName, ":") {
+		return nil, apperr.New(400, "INVALID_DOMAIN", "Invalid domain format. Domain cannot contain ports or colons.")
 	}
 
 	token, err := s.redisService.AcquireProjectDomainLock(projectID, 15*time.Second)

@@ -389,11 +389,19 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newDomain.trim()) return
+    const trimmedDomain = newDomain.trim()
+    if (!trimmedDomain) return
+
+    if (trimmedDomain.includes(':')) {
+      toast.error(t('domains.errors.invalidFormat') || 'Invalid Domain Format', {
+        description: t('domains.errors.noPort') || 'Domain names cannot contain ports or colons.'
+      })
+      return
+    }
 
     setIsAdding(true)
     try {
-      const res = await projectsAPI.addDomain(projectId, newDomain.trim())
+      const res = await projectsAPI.addDomain(projectId, trimmedDomain)
       setNewDomain('')
       fetchDomains()
       onDomainsChanged?.()
