@@ -396,31 +396,91 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
 	if job.Type == "update_env" {
+		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		var appendLog func(string)
+		if errLog == nil {
+			defer logFile.Close()
+			var logFileMu sync.Mutex
+			appendLog = func(msg string) {
+				logFileMu.Lock()
+				defer logFileMu.Unlock()
+				timestamp := time.Now().Format("15:04:05")
+				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
+				_, _ = logFile.WriteString(logMsg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+			}
+		} else {
+			appendLog = func(msg string) {
+				timestamp := time.Now().Format("15:04:05")
+				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
+				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+			}
+		}
+
 		if project.ContainerID == nil || *project.ContainerID == "" {
+			appendLog("[INFO] Project container is stopped. Skipping container restart.")
+			appendLog("[SUCCESS] Environment variables updated on disk successfully.")
 			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
 			return
 		}
 
+		appendLog("[INFO] Starting database credentials rotation environment update...")
 		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Updating environment and restarting container")
 		
-		if err := w.instantUpdateEnv(project); err != nil {
+		if err := w.instantUpdateEnv(project, appendLog); err != nil {
+			appendLog("[ERROR] Instant environment update failed: " + err.Error())
 			slog.Error("Instant update failed", "subdomain", project.Subdomain, "error", err)
 			w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to update environment variables: "+err.Error())
 		} else {
+			appendLog("[SUCCESS] Environment variables updated and container hot-swapped successfully.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
 		}
 		return
 	}
 
 	if job.Type == "rollback" {
+		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		var appendLog func(string)
+		if errLog == nil {
+			defer logFile.Close()
+			var logFileMu sync.Mutex
+			appendLog = func(msg string) {
+				logFileMu.Lock()
+				defer logFileMu.Unlock()
+				timestamp := time.Now().Format("15:04:05")
+				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
+				_, _ = logFile.WriteString(logMsg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+			}
+		} else {
+			appendLog = func(msg string) {
+				timestamp := time.Now().Format("15:04:05")
+				logMsg := fmt.Sprintf("[%s] %s", timestamp, msg)
+				_ = w.redisService.PublishBuildLog(project.ID, logMsg)
+			}
+		}
+
+		appendLog(fmt.Sprintf("[INFO] Performing instant rollback to commit %s...", project.LastCommitHash))
 		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
-		if err := w.redeployExistingImage(project); err == nil {
+		if err := w.redeployExistingImage(project, appendLog); err == nil {
+			appendLog("[SUCCESS] Instant rollback completed successfully.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
 			return
 		}
+		appendLog("[WARNING] Instant rollback failed, falling back to full build rebuild.")
 		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
 	}
@@ -504,7 +564,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if len(checkImg) > 0 {
 			slog.Info("Valid image found, skipping build", "subdomain", project.Subdomain)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_skipped_existing_image", latestHash)
-			if err := w.redeployExistingImage(project); err == nil {
+			if err := w.redeployExistingImage(project, appendLog); err == nil {
 				return
 			}
 		}
@@ -1142,33 +1202,47 @@ func (w *DeploymentWorker) checkDiskSpace() {
 	}
 }
 
-func (w *DeploymentWorker) instantUpdateEnv(project *models.Project) error {
+func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc func(string)) error {
+	if logFunc == nil {
+		logFunc = func(string) {}
+	}
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
+	logFunc("[INFO] Regenerating project environment configuration file...")
 	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
+		logFunc("[ERROR] Failed to generate environment file: " + err.Error())
 		return err
 	}
+	logFunc("[SUCCESS] Environment variables generated successfully.")
 
-	// Ensure rotated database credentials take effect if they were changed
+	logFunc("[INFO] Updating database password configuration in environment...")
 	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
+		logFunc("[WARNING] Failed to update database credentials in env: " + err.Error())
 		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
+	} else {
+		logFunc("[SUCCESS] Database password configuration updated in env.")
 	}
 
-	return w.projectService.RecreateProjectZeroDowntime(project)
+	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
 }
 
-func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error {
+func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFunc func(string)) error {
+	if logFunc == nil {
+		logFunc = func(string) {}
+	}
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
-	// Refresh .env before restart
+	logFunc("[INFO] Refreshing environment configuration file during rollback...")
 	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
+		logFunc("[WARNING] Failed to refresh environment file during redeploy: " + err.Error())
 		slog.Warn("Failed to refresh environment file during redeploy", "id", project.ID, "error", err)
 	}
 
-	// Ensure rotated database credentials take effect if they were changed
+	logFunc("[INFO] Updating database password configuration in environment...")
 	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
+		logFunc("[WARNING] Failed to update database credentials in env: " + err.Error())
 		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
 	}
 
-	return w.projectService.RecreateProjectZeroDowntime(project)
+	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
 }
