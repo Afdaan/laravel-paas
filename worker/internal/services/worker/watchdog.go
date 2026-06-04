@@ -78,6 +78,7 @@ func (w *CentralWatchdog) Start() {
 	w.StartStaleBuildWatchdog()
 	w.StartDelayedJobScheduler()
 	w.StartAutoHealingWatchdog()
+	w.StartGitHubStatusReconciler()
 }
 
 // Stop cleanly terminates all supervisory routines
@@ -311,15 +312,30 @@ func (w *CentralWatchdog) updateGitHubCommitStatus(project *models.Project, stat
 	commitHash := project.LastCommitHash
 	projectID := project.ID
 	
-	go func() {
-		err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
-		if err != nil {
-			slog.Warn("Watchdog: failed to update GitHub commit status", "project_id", projectID, "error", err)
+	createdAt := time.Now().UnixNano()
+	statusPayload := &infrastructure.GithubStatusPayload{
+		InstallationID: instID,
+		Owner:          owner,
+		Repo:           repo,
+		SHA:            commitHash,
+		State:          ghState,
+		TargetURL:      targetURL,
+		Description:    desc,
+		CreatedAt:      createdAt,
+	}
+	if err := w.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+		slog.Warn("Watchdog: failed to set desired commit status in Redis", "project_id", projectID, "error", err)
+	}
 
-			logMsg := fmt.Sprintf("[%s] System Warning (Watchdog): Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
-			_ = w.redisService.PublishBuildLog(projectID, logMsg)
-		}
-	}()
+	err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
+	if err == nil {
+		_, _ = w.redisService.RemoveCommitStatusSyncIfMatched(commitHash, createdAt)
+	} else {
+		slog.Warn("Watchdog: failed to update GitHub commit status, queued for reconciler", "project_id", projectID, "error", err)
+
+		logMsg := fmt.Sprintf("[%s] System Warning (Watchdog): Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
+		_ = w.redisService.PublishBuildLog(projectID, logMsg)
+	}
 }
 
 // StartDelayedJobScheduler launches a background daemon that migrates ready delayed jobs into the active deployment queue.
@@ -533,4 +549,45 @@ func (w *CentralWatchdog) autoHealingCheck() {
 			}
 		}
 	}
+}
+
+// StartGitHubStatusReconciler runs a background loop that periodically synchronizes any failed or pending GitHub commit statuses.
+func (w *CentralWatchdog) StartGitHubStatusReconciler() {
+	go func() {
+		// Wait 10 seconds before starting
+		time.Sleep(10 * time.Second)
+
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
+		for w.running {
+			select {
+			case <-ticker.C:
+				shas, err := w.redisService.GetPendingCommitStatusSHAs()
+				if err != nil {
+					continue
+				}
+
+				for _, sha := range shas {
+					payload, err := w.redisService.GetDesiredCommitStatus(sha)
+					if err != nil {
+						// Desired status data missing, clean up sync set to prevent stuck entries
+						_ = w.redisService.RemoveCommitStatusSync(sha)
+						continue
+					}
+
+					slog.Info("Central watchdog: retrying failed GitHub commit status update", "sha", sha, "state", payload.State)
+					err = w.githubService.UpdateCommitStatus(payload.InstallationID, payload.Owner, payload.Repo, payload.SHA, payload.State, payload.TargetURL, payload.Description)
+					if err == nil {
+						slog.Info("Central watchdog: successfully synchronized GitHub commit status", "sha", sha, "state", payload.State)
+						_, _ = w.redisService.RemoveCommitStatusSyncIfMatched(sha, payload.CreatedAt)
+					} else {
+						slog.Warn("Central watchdog: failed to reconcile GitHub commit status, will retry", "sha", sha, "error", err)
+					}
+				}
+			case <-w.stopChan:
+				return
+			}
+		}
+	}()
 }

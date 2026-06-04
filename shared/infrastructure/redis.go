@@ -1174,3 +1174,104 @@ func (r *RedisService) GetDomainMetrics() (map[string]interface{}, error) {
 	}
 	return res, nil
 }
+
+// GithubStatusPayload represents the desired commit status payload stored in Redis for eventual consistency reconciliation.
+type GithubStatusPayload struct {
+	InstallationID int64  `json:"installation_id"`
+	Owner          string `json:"owner"`
+	Repo           string `json:"repo"`
+	SHA            string `json:"sha"`
+	State          string `json:"state"`
+	TargetURL      string `json:"target_url"`
+	Description    string `json:"description"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
+// SetDesiredCommitStatus stores the latest desired GitHub commit status for a commit hash.
+func (r *RedisService) SetDesiredCommitStatus(payload *GithubStatusPayload) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	pipe := r.client.Pipeline()
+	pipe.HSet(r.ctx, "github:status:desired", payload.SHA, data)
+	pipe.SAdd(r.ctx, "github:status:sync_set", payload.SHA)
+	_, err = pipe.Exec(r.ctx)
+	return err
+}
+
+// GetPendingCommitStatusSHAs returns all commit hashes that need their status synchronized.
+func (r *RedisService) GetPendingCommitStatusSHAs() ([]string, error) {
+	return r.client.SMembers(r.ctx, "github:status:sync_set").Result()
+}
+
+// GetDesiredCommitStatus retrieves the desired status for a specific commit hash.
+func (r *RedisService) GetDesiredCommitStatus(sha string) (*GithubStatusPayload, error) {
+	data, err := r.client.HGet(r.ctx, "github:status:desired", sha).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	var payload GithubStatusPayload
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+// RemoveCommitStatusSync removes a commit hash from the sync set and deletes its desired status.
+func (r *RedisService) RemoveCommitStatusSync(sha string) error {
+	pipe := r.client.Pipeline()
+	pipe.HDel(r.ctx, "github:status:desired", sha)
+	pipe.SRem(r.ctx, "github:status:sync_set", sha)
+	_, err := pipe.Exec(r.ctx)
+	return err
+}
+
+// RemoveCommitStatusSyncIfMatched transactionally removes a commit hash from the sync set only if the stored payload's CreatedAt timestamp matches.
+func (r *RedisService) RemoveCommitStatusSyncIfMatched(sha string, createdAt int64) (bool, error) {
+	keyDesired := "github:status:desired"
+	keySet := "github:status:sync_set"
+
+	txf := func(tx *redis.Tx) error {
+		data, err := tx.HGet(r.ctx, keyDesired, sha).Result()
+		if err == redis.Nil {
+			_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+				pipe.SRem(r.ctx, keySet, sha)
+				return nil
+			})
+			return err
+		} else if err != nil {
+			return err
+		}
+
+		var payload GithubStatusPayload
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+				pipe.HDel(r.ctx, keyDesired, sha)
+				pipe.SRem(r.ctx, keySet, sha)
+				return nil
+			})
+			return err
+		}
+
+		if payload.CreatedAt == createdAt {
+			_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+				pipe.HDel(r.ctx, keyDesired, sha)
+				pipe.SRem(r.ctx, keySet, sha)
+				return nil
+			})
+			return err
+		}
+
+		return nil
+	}
+
+	err := r.client.Watch(r.ctx, txf, keyDesired)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+

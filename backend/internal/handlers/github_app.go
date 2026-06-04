@@ -135,9 +135,27 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				}
 				targetURL := fmt.Sprintf("%s/projects/%s?tab=build", h.cfg.FrontendURL, projectUID)
 				desc := "Build queued. Waiting for an available worker slot..."
+
+				createdAt := time.Now().UnixNano()
+				statusPayload := &infrastructure.GithubStatusPayload{
+					InstallationID: *p.GithubInstallationID,
+					Owner:          p.GithubRepoOwner,
+					Repo:           p.GithubRepoName,
+					SHA:            commitSHA,
+					State:          "pending",
+					TargetURL:      targetURL,
+					Description:    desc,
+					CreatedAt:      createdAt,
+				}
+				if err := h.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+					slog.Warn("Failed to set initial desired commit status in Redis", "project_id", p.ID, "error", err)
+				}
+
 				err := h.githubService.UpdateCommitStatus(*p.GithubInstallationID, p.GithubRepoOwner, p.GithubRepoName, commitSHA, "pending", targetURL, desc)
-				if err != nil {
-					slog.Warn("Failed to update initial GitHub commit status to pending", "project_id", p.ID, "error", err)
+				if err == nil {
+					_, _ = h.redisService.RemoveCommitStatusSyncIfMatched(commitSHA, createdAt)
+				} else {
+					slog.Warn("Failed to update initial GitHub commit status to pending, queued for reconciler", "project_id", p.ID, "error", err)
 					initLogContent = []byte(fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to pending: %s\n", time.Now().Format("2006-01-02 15:04:05"), err.Error()))
 				}
 			}

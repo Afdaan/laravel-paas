@@ -1278,22 +1278,38 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	projectID := project.ID
 	subdomain := project.Subdomain
 
-	go func() {
-		err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
-		if err != nil {
-			slog.Warn("Failed to update GitHub commit status", "project_id", projectID, "error", err)
+	// Save desired status to Redis first to enable background retry/reconciliation
+	createdAt := time.Now().UnixNano()
+	statusPayload := &infrastructure.GithubStatusPayload{
+		InstallationID: instID,
+		Owner:          owner,
+		Repo:           repo,
+		SHA:            commitHash,
+		State:          ghState,
+		TargetURL:      targetURL,
+		Description:    desc,
+		CreatedAt:      createdAt,
+	}
+	if err := w.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+		slog.Warn("Failed to set desired commit status in Redis", "project_id", projectID, "error", err)
+	}
 
-			logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
-			_ = w.redisService.PublishBuildLog(projectID, logMsg)
+	err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
+	if err == nil {
+		_, _ = w.redisService.RemoveCommitStatusSyncIfMatched(commitHash, createdAt)
+	} else {
+		slog.Warn("Failed to update GitHub commit status, queued for reconciler", "project_id", projectID, "error", err)
 
-			projectPath := filepath.Join(w.cfg.ProjectsPath, subdomain)
-			buildLogPath := filepath.Join(projectPath, "build.log")
-			if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
-				_, _ = f.WriteString(logMsg + "\n")
-				f.Close()
-			}
+		logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
+		_ = w.redisService.PublishBuildLog(projectID, logMsg)
+
+		projectPath := filepath.Join(w.cfg.ProjectsPath, subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
+			_, _ = f.WriteString(logMsg + "\n")
+			f.Close()
 		}
-	}()
+	}
 }
 
 func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, jobID string) {

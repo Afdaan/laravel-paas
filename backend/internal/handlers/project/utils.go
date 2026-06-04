@@ -668,10 +668,27 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 		repo := project.GithubRepoName
 		commitHash := project.LastCommitHash
 		
+		createdAt := time.Now().UnixNano()
+		statusPayload := &infrastructure.GithubStatusPayload{
+			InstallationID: instID,
+			Owner:          owner,
+			Repo:           repo,
+			SHA:            commitHash,
+			State:          "error",
+			TargetURL:      targetURL,
+			Description:    "Deployment cancelled by user.",
+			CreatedAt:      createdAt,
+		}
+		if err := h.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+			slog.Warn("Failed to set desired commit status in Redis on cancellation", "project_id", projectID, "error", err)
+		}
+
 		go func() {
 			errStatus := githubService.UpdateCommitStatus(instID, owner, repo, commitHash, "error", targetURL, "Deployment cancelled by user.")
-			if errStatus != nil {
-				slog.Warn("Failed to update GitHub commit status on cancellation", "project_id", projectID, "error", errStatus)
+			if errStatus == nil {
+				_, _ = h.redisService.RemoveCommitStatusSyncIfMatched(commitHash, createdAt)
+			} else {
+				slog.Warn("Failed to update GitHub commit status on cancellation, queued for reconciler", "project_id", projectID, "error", errStatus)
 			}
 		}()
 	}
