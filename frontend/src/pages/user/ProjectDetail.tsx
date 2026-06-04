@@ -141,6 +141,7 @@ function UserProjectDetail() {
   const [logs, setLogs] = useState('')
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || (() => {
     const hash = window.location.hash.replace('#', '')
@@ -412,7 +413,7 @@ function UserProjectDetail() {
   }, [uid, t])
 
   const fetchProject = useCallback(async (forceUpdate = false) => {
-    if (!uid) return
+    if (!uid || isDeleting) return
     try {
       const response = await projectsAPI.get(uid)
       // Prevent stale polling overwrites during optimistic action phases unless explicitly forced
@@ -429,6 +430,7 @@ function UserProjectDetail() {
       }
 
       if (axiosError.response?.status === 404) {
+        if (isDeleting) return
         toast.error(t('projectDetail.messages.notFound') || 'Project not found')
         // Permission checks
         navigate('/projects')
@@ -444,7 +446,7 @@ function UserProjectDetail() {
     } finally {
       setIsLoading(false)
     }
-  }, [uid, navigate, t, consecutiveErrors])
+  }, [uid, navigate, t, consecutiveErrors, isDeleting])
 
   const handleDeploymentEvent = useCallback(() => {
     fetchProject(true)
@@ -477,6 +479,7 @@ function UserProjectDetail() {
 
 
   usePolling(() => {
+    if (isDeleting) return
     if (consecutiveErrors < 3) {
       fetchProject()
       if (project?.status === 'running') {
@@ -805,15 +808,23 @@ function UserProjectDetail() {
       confirmText: t('projectDetail.actions.delete'),
       isOpen: true,
       onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }))
+        setIsDeleting(true)
         toast.promise(
-          projectsAPI.delete(uid),
+          projectsAPI.delete(uid)
+            .then(() => {
+              navigate('/projects')
+            })
+            .catch((err) => {
+              setIsDeleting(false)
+              throw err
+            }),
           {
-            loading: t('common.loading'),
-            success: t('common.success'),
-            error: t('common.error'),
+            loading: t('projectDetail.messages.deleting') || 'Deleting project...',
+            success: t('projectDetail.messages.deleteSuccess') || 'Project deleted successfully',
+            error: t('projectDetail.messages.deleteFailed') || 'Failed to delete project',
           }
         )
-        navigate('/projects')
       }
     })
   }
