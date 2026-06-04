@@ -32,6 +32,7 @@ NGINX_LIMIT_CONF = os.path.join(os.path.dirname(NGINX_CONF_DIR), "paas-rate-limi
 SSL_EMAIL = os.environ.get("SSL_EMAIL", "admin@example.com")
 WEBHOOK_KEY = os.environ.get("WEBHOOK_KEY", "change-this-key")
 LISTEN_PORT = 49512
+NGINX_CUSTOM_ERRORS_ENABLED = os.environ.get("NGINX_CUSTOM_ERRORS_ENABLED", "false").lower() in ("true", "1", "yes")
 
 # --- Logging Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -218,6 +219,7 @@ PROXY_DIRECTIVES_TEMPLATE = """
         proxy_busy_buffers_size 256k;
 
         # Proxy settings to internal IP
+{custom_errors_directive}
         proxy_pass http://{internal_ip}:{port};
         
         # HTTPS Detection for Backend (Laravel)
@@ -306,13 +308,21 @@ def get_file_sha256(filepath):
 
 def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False, primary_domain=None):
     """Generates the full Nginx configuration string."""
-    proxy_config = PROXY_DIRECTIVES_TEMPLATE.format(internal_ip=internal_ip, port=port)
+    custom_errors_directive = "        proxy_intercept_errors on;" if NGINX_CUSTOM_ERRORS_ENABLED else ""
+    proxy_config = PROXY_DIRECTIVES_TEMPLATE.format(
+        internal_ip=internal_ip,
+        port=port,
+        custom_errors_directive=custom_errors_directive
+    )
+    
+    custom_errors_include = "    include snippets/custom-errors.conf;" if NGINX_CUSTOM_ERRORS_ENABLED else ""
     
     if not ssl_enabled:
         return f"""server {{
     listen 80;
     server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
+{custom_errors_include}
 
     location /.well-known/acme-challenge/ {{
         root /var/www/html;
@@ -334,6 +344,7 @@ server {{
     listen 443 ssl;
     server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
+{custom_errors_include}
 
     ssl_certificate /etc/letsencrypt/live/{primary_domain}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{primary_domain}/privkey.pem;
