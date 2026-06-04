@@ -13,6 +13,7 @@ var allowedTransitions = map[models.CustomDomainStatus]map[models.CustomDomainSt
 		models.DomainStatusActive:         true,
 		models.DomainStatusDisabled:       true,
 		models.DomainStatusPendingCleanup: true,
+		models.DomainStatusDegraded:       true,
 	},
 	models.DomainStatusPendingDNS: {
 		models.DomainStatusPendingDNS:     true,
@@ -20,6 +21,7 @@ var allowedTransitions = map[models.CustomDomainStatus]map[models.CustomDomainSt
 		models.DomainStatusActive:         true,
 		models.DomainStatusDisabled:       true,
 		models.DomainStatusPendingCleanup: true,
+		models.DomainStatusDegraded:       true,
 	},
 	models.DomainStatusDNSVerified: {
 		models.DomainStatusSSLQueued:      true,
@@ -34,12 +36,14 @@ var allowedTransitions = map[models.CustomDomainStatus]map[models.CustomDomainSt
 		models.DomainStatusSSLFailed:       true,
 		models.DomainStatusDisabled:        true,
 		models.DomainStatusPendingCleanup:  true,
+		models.DomainStatusDegraded:        true,
 	},
 	models.DomainStatusSSLProvisioning: {
 		models.DomainStatusActive:         true,
 		models.DomainStatusSSLFailed:       true,
 		models.DomainStatusDisabled:        true,
 		models.DomainStatusPendingCleanup: true,
+		models.DomainStatusDegraded:       true,
 	},
 	models.DomainStatusSSLActive: {
 		models.DomainStatusActive:         true,
