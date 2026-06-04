@@ -628,7 +628,7 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 	idVal := c.Params("id")
 	projectID, _ := strconv.Atoi(idVal)
 
-	_, err := h.projectService.GetProjectByID(uint(projectID))
+	project, err := h.projectService.GetProjectByID(uint(projectID))
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
@@ -642,8 +642,39 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 	// 3. Release Redis Lock
 	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID), "User cancelled deployment")
 
-	// 4. Update project status to Failed
+	// 4. Update project deployment status to Cancelled
+	jobID := ""
+	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+		jobID = *project.DeploymentJobID
+	}
+	if _, errTransition := h.projectService.TransitionDeploymentState(c.Context(), uint(projectID), jobID, models.DepStatusCancelled, project.DeploymentProgress, "user_cancelled", "Deployment cancelled by user request"); errTransition != nil {
+		slog.Warn("Failed to transition deployment state to cancelled", "project_id", projectID, "error", errTransition)
+	}
+
+	// 5. Update project status to Failed
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusFailed)
+
+	// 6. Update GitHub commit status to error/failure immediately so it doesn't get stuck
+	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 && project.GithubRepoOwner != "" && project.GithubRepoName != "" && project.LastCommitHash != "" {
+		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
+		projectUID := project.UID
+		if projectUID == "" {
+			projectUID = fmt.Sprintf("%d", project.ID)
+		}
+		targetURL := fmt.Sprintf("%s/projects/%s?tab=build", h.cfg.FrontendURL, projectUID)
+		
+		instID := *project.GithubInstallationID
+		owner := project.GithubRepoOwner
+		repo := project.GithubRepoName
+		commitHash := project.LastCommitHash
+		
+		go func() {
+			errStatus := githubService.UpdateCommitStatus(instID, owner, repo, commitHash, "error", targetURL, "Deployment cancelled by user.")
+			if errStatus != nil {
+				slog.Warn("Failed to update GitHub commit status on cancellation", "project_id", projectID, "error", errStatus)
+			}
+		}()
+	}
 
 	return c.JSON(fiber.Map{"message": "Deployment cancelled successfully"})
 }

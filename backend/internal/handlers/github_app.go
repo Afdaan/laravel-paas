@@ -125,6 +125,8 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				continue
 			}
 
+			var initLogContent []byte
+
 			// Update GitHub commit status to pending immediately (synchronous to prevent race conditions with the worker)
 			if p.GithubInstallationID != nil && *p.GithubInstallationID != 0 && p.GithubRepoOwner != "" && p.GithubRepoName != "" && commitSHA != "" {
 				projectUID := p.UID
@@ -136,6 +138,7 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				err := h.githubService.UpdateCommitStatus(*p.GithubInstallationID, p.GithubRepoOwner, p.GithubRepoName, commitSHA, "pending", targetURL, desc)
 				if err != nil {
 					slog.Warn("Failed to update initial GitHub commit status to pending", "project_id", p.ID, "error", err)
+					initLogContent = []byte(fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to pending: %s\n", time.Now().Format("2006-01-02 15:04:05"), err.Error()))
 				}
 			}
 
@@ -151,7 +154,7 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 			projectPath := filepath.Join(h.cfg.ProjectsPath, p.Subdomain)
 			buildLogPath := filepath.Join(projectPath, "build.log")
 			_ = os.MkdirAll(projectPath, 0755)
-			_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+			_ = os.WriteFile(buildLogPath, initLogContent, 0644)
 
 			if err := h.projectService.UpdateDeploymentStatus(p.ID, models.DepStatusQueued, "GitHub Push trigger: "+payload.HeadCommit.Message, 0, jobID); err != nil {
 				slog.Warn("Failed to update status", "id", p.ID, "error", err)

@@ -42,6 +42,7 @@ type ProjectRepository interface {
 	UpdateDeploymentHeartbeat(id uint) error
 	PromoteRolloutContainer(id uint, newContainerID string) error
 	ResolveInstallationID(userID uint, owner string) (int64, error)
+	VerifyInstallationID(installationID int64, owner string) (bool, error)
 	SaveDatabaseInstance(instance *models.DatabaseInstance) error
 }
 
@@ -326,21 +327,32 @@ func (r *projectRepository) UpdateDeploymentHeartbeat(id uint) error {
 func (r *projectRepository) ResolveInstallationID(userID uint, owner string) (int64, error) {
 	var inst models.GithubAppInstallation
 	if owner != "" {
+		// 1. Try to find the installation belonging to the repository owner for this specific user
 		err := r.db.Where("user_id = ? AND LOWER(account_name) = ?", userID, strings.ToLower(owner)).First(&inst).Error
 		if err == nil && inst.InstallationID != 0 {
 			return inst.InstallationID, nil
 		}
 	}
-	// Fallback to the sole installation if they only have one
+	// 2. Fallback to the sole installation if they only have one
 	var count int64
 	r.db.Model(&models.GithubAppInstallation{}).Where("user_id = ?", userID).Count(&count)
 	if count == 1 {
 		err := r.db.Where("user_id = ?", userID).First(&inst).Error
 		if err == nil && inst.InstallationID != 0 {
-			return inst.InstallationID, nil
+			if owner == "" || strings.ToLower(inst.AccountName) == strings.ToLower(owner) {
+				return inst.InstallationID, nil
+			}
 		}
 	}
 	return 0, errors.New("installation not found")
+}
+
+func (r *projectRepository) VerifyInstallationID(installationID int64, owner string) (bool, error) {
+	var count int64
+	err := r.db.Model(&models.GithubAppInstallation{}).
+		Where("installation_id = ? AND LOWER(account_name) = ?", installationID, strings.ToLower(owner)).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (r *projectRepository) SaveDatabaseInstance(instance *models.DatabaseInstance) error {

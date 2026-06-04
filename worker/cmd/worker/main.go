@@ -87,7 +87,8 @@ func main() {
 		domainWorker := workers.NewDomainWorker(db, domainService, projectService, redisService)
 		go domainWorker.Start(managerCtx)
 
-		watchdog := workerPkg.NewCentralWatchdog(projectRepo, redisService, dockerService, projectService, settingService)
+		githubService := infrastructure.NewGithubService(cfg, redisService)
+		watchdog := workerPkg.NewCentralWatchdog(cfg, projectRepo, redisService, dockerService, projectService, settingService, githubService)
 		watchdog.Start()
 
 		workerManager := workerPkg.NewWorkerManager(cfg, dockerService, redisService, settingService)

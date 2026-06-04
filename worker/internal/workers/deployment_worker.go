@@ -293,6 +293,9 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	if err != nil {
 		slog.Error("Failed to acquire lock for project", "id", job.ProjectID, "error", err)
 		w.redisService.IncrementDeploymentCounter("failed")
+		if project, errRepo := w.projectRepo.GetByID(job.ProjectID); errRepo == nil {
+			w.updateProjectError(project, job.JobID, "Deployment failed: worker failed to acquire project build lock: "+err.Error())
+		}
 		return
 	}
 
@@ -693,19 +696,28 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	// Obtain GitHub App installation token for authenticating private repositories
 	authURL := project.GithubURL
 	var installationID int64
+	
+	owner := ""
+	trimmed := strings.TrimPrefix(authURL, "https://github.com/")
+	trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) > 0 {
+		owner = parts[0]
+	}
+
+	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
+		// Verify if the stored installation matches the repository owner
+		if matches, err := w.projectRepo.VerifyInstallationID(*project.GithubInstallationID, owner); err == nil && !matches {
+			slog.Warn("GitHub Installation ID mismatch detected for project, forcing re-resolution", "projectId", project.ID, "storedID", *project.GithubInstallationID, "owner", owner)
+			project.GithubInstallationID = nil
+		}
+	}
+
 	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
 		installationID = *project.GithubInstallationID
 	} else {
 		// Dynamic Self-Healing: Attempt to resolve missing installation ID from owner or user's account
-		owner := ""
-		trimmed := strings.TrimPrefix(authURL, "https://github.com/")
-		trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
-		trimmed = strings.TrimSuffix(trimmed, "/")
-		parts := strings.Split(trimmed, "/")
-		if len(parts) > 0 {
-			owner = parts[0]
-		}
-		
 		if resolvedID, err := w.projectRepo.ResolveInstallationID(project.UserID, owner); err == nil && resolvedID != 0 {
 			installationID = resolvedID
 			slog.Info("Self-healed and dynamically resolved GitHub Installation ID for project", "projectId", project.ID, "owner", owner, "resolvedID", resolvedID)
@@ -1258,10 +1270,28 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	targetURL := fmt.Sprintf("%s/projects/%s?tab=build", w.cfg.FrontendURL, projectUID)
 
 	slog.Info("Updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
+
+	instID := *project.GithubInstallationID
+	owner := project.GithubRepoOwner
+	repo := project.GithubRepoName
+	commitHash := project.LastCommitHash
+	projectID := project.ID
+	subdomain := project.Subdomain
+
 	go func() {
-		err := w.githubService.UpdateCommitStatus(*project.GithubInstallationID, project.GithubRepoOwner, project.GithubRepoName, project.LastCommitHash, ghState, targetURL, desc)
+		err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
 		if err != nil {
-			slog.Warn("Failed to update GitHub commit status", "project_id", project.ID, "error", err)
+			slog.Warn("Failed to update GitHub commit status", "project_id", projectID, "error", err)
+
+			logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
+			_ = w.redisService.PublishBuildLog(projectID, logMsg)
+
+			projectPath := filepath.Join(w.cfg.ProjectsPath, subdomain)
+			buildLogPath := filepath.Join(projectPath, "build.log")
+			if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
+				_, _ = f.WriteString(logMsg + "\n")
+				f.Close()
+			}
 		}
 	}()
 }

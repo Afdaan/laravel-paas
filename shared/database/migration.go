@@ -311,6 +311,9 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile DatabaseInstance
 	_ = EnsureConstraint(db, &models.DatabaseInstance{}, "uni_database_instances_project_id", "UNIQUE (project_id)")
 
+	// Reconcile GithubAppInstallation
+	_ = EnsureIndex(db, &models.GithubAppInstallation{}, "idx_gh_install_acc", "account_name", false)
+
 	return nil
 }
 

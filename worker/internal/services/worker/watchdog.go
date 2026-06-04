@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
@@ -27,29 +28,35 @@ import (
 
 // CentralWatchdog oversees system consistency and maintenance tasks
 type CentralWatchdog struct {
+	cfg            *config.Config
 	projectRepo    repositories.ProjectRepository
 	redisService   *infrastructure.RedisService
 	dockerService  *docker.DockerService
 	projectService *projectServicePkg.ProjectService
 	settingService *setting.SettingService
+	githubService  *infrastructure.GithubService
 	running        bool
 	stopChan       chan struct{}
 }
 
 // NewCentralWatchdog creates a new CentralWatchdog instance
 func NewCentralWatchdog(
+	cfg *config.Config,
 	projectRepo repositories.ProjectRepository,
 	redisService *infrastructure.RedisService,
 	dockerService *docker.DockerService,
 	projectService *projectServicePkg.ProjectService,
 	settingService *setting.SettingService,
+	githubService *infrastructure.GithubService,
 ) *CentralWatchdog {
 	return &CentralWatchdog{
+		cfg:            cfg,
 		projectRepo:    projectRepo,
 		redisService:   redisService,
 		dockerService:  dockerService,
 		projectService: projectService,
 		settingService: settingService,
+		githubService:  githubService,
 		running:        false,
 		stopChan:       make(chan struct{}),
 	}
@@ -235,6 +242,7 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 						"error_log": sanitizedMsg,
 					})
+					w.updateGitHubCommitStatus(&project, models.DepStatusFailed, sanitizedMsg)
 
 					if lockMeta != nil {
 						if err := w.redisService.ForceReleaseDeploymentLock(project.ID, fmt.Sprintf("Watchdog cleaning up stale deployment: %s", reason)); err != nil {
@@ -253,6 +261,63 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 			}
 
 			time.Sleep(1 * time.Minute)
+		}
+	}()
+}
+
+func (w *CentralWatchdog) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
+	if project.GithubInstallationID == nil || *project.GithubInstallationID == 0 || project.GithubRepoOwner == "" || project.GithubRepoName == "" || project.LastCommitHash == "" {
+		return
+	}
+
+	ghState := "pending"
+	desc := ""
+
+	switch state {
+	case models.DepStatusCompleted:
+		ghState = "success"
+		desc = "Deployment successful. Application is live."
+	case models.DepStatusFailed:
+		ghState = "failure"
+		desc = "Deployment failed. View build logs in the dashboard for details."
+	case models.DepStatusRollback:
+		ghState = "failure"
+		desc = "Deployment failed. Rolled back to previous stable version."
+	case models.DepStatusCancelled:
+		ghState = "error"
+		desc = "Deployment cancelled by user."
+	default:
+		desc = description
+		if desc == "" {
+			desc = string(state)
+		}
+	}
+
+	if len(desc) > 140 {
+		desc = desc[:137] + "..."
+	}
+
+	projectUID := project.UID
+	if projectUID == "" {
+		projectUID = fmt.Sprintf("%d", project.ID)
+	}
+	targetURL := fmt.Sprintf("%s/projects/%s?tab=build", w.cfg.FrontendURL, projectUID)
+
+	slog.Info("Watchdog: updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
+	
+	instID := *project.GithubInstallationID
+	owner := project.GithubRepoOwner
+	repo := project.GithubRepoName
+	commitHash := project.LastCommitHash
+	projectID := project.ID
+	
+	go func() {
+		err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
+		if err != nil {
+			slog.Warn("Watchdog: failed to update GitHub commit status", "project_id", projectID, "error", err)
+
+			logMsg := fmt.Sprintf("[%s] System Warning (Watchdog): Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
+			_ = w.redisService.PublishBuildLog(projectID, logMsg)
 		}
 	}()
 }
