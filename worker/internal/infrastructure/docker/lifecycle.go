@@ -51,9 +51,13 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 	// Append custom worker command
 	runArgs = append(runArgs, "sh", "-c", project.WorkerCommand)
 
-	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
+	res, err := utils.Run(3*time.Minute, "docker", runArgs...)
 	if err != nil {
-		return "", fmt.Errorf("worker start failed: %s", res.Stderr)
+		errMsg := res.Stderr
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("worker start failed: %s", errMsg)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
@@ -207,9 +211,13 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		imageName,
 	}
 
-	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
+	res, err := utils.Run(3*time.Minute, "docker", runArgs...)
 	if err != nil {
-		return "", fmt.Errorf("failed to start container: %s", res.Stderr)
+		errMsg := res.Stderr
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("failed to start container: %s", errMsg)
 	}
 
 	mainContainerID := strings.TrimSpace(res.Stdout)

@@ -339,7 +339,7 @@ func (r *projectRepository) ResolveInstallationID(userID uint, owner string) (in
 	if count == 1 {
 		err := r.db.Where("user_id = ?", userID).First(&inst).Error
 		if err == nil && inst.InstallationID != 0 {
-			if owner == "" || strings.ToLower(inst.AccountName) == strings.ToLower(owner) {
+			if owner == "" || strings.EqualFold(inst.AccountName, owner) {
 				return inst.InstallationID, nil
 			}
 		}

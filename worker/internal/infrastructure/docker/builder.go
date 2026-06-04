@@ -170,9 +170,13 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		runArgs = append(runArgs, "sh", "-c", cmdStr)
 	}
 
-	res, runErr := utils.RunCtx(ctx, 1*time.Minute, "docker", runArgs...)
+	res, runErr := utils.RunCtx(ctx, 3*time.Minute, "docker", runArgs...)
 	if runErr != nil {
-		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, res.Stderr))
+		errMsg := res.Stderr
+		if errMsg == "" {
+			errMsg = runErr.Error()
+		}
+		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, errMsg))
 	}
 
 	mainContainerID := strings.TrimSpace(res.Stdout)

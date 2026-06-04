@@ -337,7 +337,14 @@ def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False, prim
     return f"""server {{
     listen 80;
     server_name {all_domains_str};
-    return 301 https://$host$request_uri;
+
+    location /.well-known/acme-challenge/ {{
+        root /var/www/html;
+    }}
+
+    location / {{
+        return 301 https://$host$request_uri;
+    }}
 }}
 
 server {{
@@ -478,7 +485,10 @@ def sync_project(subdomain, domain, custom_domains, internal_ip, port, project_d
     
     needs_ssl_expansion = not cert_covers_all(domain, all_domains_list)
     has_ssl_options = os.path.exists("/etc/letsencrypt/options-ssl-nginx.conf")
-    use_ssl = (not needs_ssl_expansion) and has_ssl_options
+    
+    # Avoid dropping HTTPS for existing working domains if Let's Encrypt expansion is queued or fails
+    primary_cert_exists = os.path.exists(f"/etc/letsencrypt/live/{domain}/fullchain.pem")
+    use_ssl = (primary_cert_exists or not needs_ssl_expansion) and has_ssl_options
 
     success, msg, conf_hash = _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port, project_dir, ssl_enabled=use_ssl)
     if not success:

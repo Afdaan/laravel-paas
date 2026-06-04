@@ -180,6 +180,31 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 
 		if payload.Action == "deleted" {
 			slog.Info("GitHub App uninstalled", "installation_id", payload.Installation.ID)
+
+			// Clean up user profile picture if this was their last/active GitHub integration
+			var inst models.GithubAppInstallation
+			if err := h.db.Where("installation_id = ?", payload.Installation.ID).First(&inst).Error; err == nil {
+				var count int64
+				h.db.Model(&models.GithubAppInstallation{}).
+					Where("user_id = ? AND installation_id != ?", inst.UserID, payload.Installation.ID).
+					Count(&count)
+
+				if count == 0 {
+					// Clear the user's avatar URL as no active integrations remain
+					if err := h.db.Model(&models.User{}).Where("id = ?", inst.UserID).Update("avatar_url", "").Error; err != nil {
+						slog.Warn("Failed to clear user avatar URL on uninstallation", "user_id", inst.UserID, "error", err)
+					}
+				} else {
+					// Fallback to one of the remaining connected installations
+					var remainingInst models.GithubAppInstallation
+					if err := h.db.Where("user_id = ? AND installation_id != ?", inst.UserID, payload.Installation.ID).First(&remainingInst).Error; err == nil {
+						if err := h.db.Model(&models.User{}).Where("id = ?", inst.UserID).Update("avatar_url", remainingInst.AvatarURL).Error; err != nil {
+							slog.Warn("Failed to update user avatar fallback URL on uninstallation", "user_id", inst.UserID, "error", err)
+						}
+					}
+				}
+			}
+
 			h.db.Where("installation_id = ?", payload.Installation.ID).Delete(&models.GithubAppInstallation{})
 			h.db.Model(&models.Project{}).Where("github_installation_id = ?", payload.Installation.ID).
 				Updates(map[string]interface{}{
