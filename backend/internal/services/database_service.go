@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -965,7 +964,9 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 		if txErr != nil {
 			return txErr
 		}
-		defer tx.Rollback()
+		defer func() {
+			_ = tx.Rollback()
+		}()
 		execer = tx
 	} else {
 		// Enforce a strict 2-second lock wait timeout to prevent DDL from causing a metadata lock DoS
@@ -1561,7 +1562,7 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 	}
 
 	// Write file
-	if err := ioutil.WriteFile(backupPath, []byte(dumpContent), 0644); err != nil {
+	if err := os.WriteFile(backupPath, []byte(dumpContent), 0644); err != nil {
 		backup.Status = models.BackupStatusFailed
 		s.db.Save(backup)
 		return nil, fmt.Errorf("failed to save backup file: %w", err)
@@ -1622,7 +1623,7 @@ func (s *DatabaseService) RestoreBackup(projectID uint, backupID uint) error {
 		return err
 	}
 
-	sqlBytes, err := ioutil.ReadFile(backup.Path)
+	sqlBytes, err := os.ReadFile(backup.Path)
 	if err != nil {
 		return fmt.Errorf("unable to read backup file: %w", err)
 	}

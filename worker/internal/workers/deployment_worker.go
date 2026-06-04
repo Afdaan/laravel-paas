@@ -481,6 +481,186 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
 	}
 
+	if job.Type == "stop" {
+		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		var appendLog func(string)
+		if errLog == nil {
+			defer logFile.Close()
+			var logFileMu sync.Mutex
+			appendLog = func(msg string) {
+				logFileMu.Lock()
+				defer logFileMu.Unlock()
+				_, _ = logFile.WriteString(msg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
+			}
+		} else {
+			appendLog = func(msg string) {
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
+			}
+		}
+
+		slog.Info("Performing container stop action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "stop_started", "Stopping application container(s)")
+		appendLog(">> Stopping application container(s)...")
+
+		if project.ContainerID != nil && *project.ContainerID != "" {
+			appendLog(fmt.Sprintf("Stopping main container: %s", *project.ContainerID))
+			if err := w.dockerService.StopContainer(*project.ContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to stop main container: %v", err))
+			}
+		}
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			appendLog(fmt.Sprintf("Stopping worker container: %s", *project.WorkerContainerID))
+			if err := w.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to stop worker container: %v", err))
+			}
+		}
+
+		project.Status = models.StatusStopped
+		if err := w.projectRepo.UpdateStatus(project.ID, models.StatusStopped); err != nil {
+			slog.Error("Failed to update project status to stopped", "id", project.ID, "error", err)
+		}
+
+		if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
+		}
+
+		appendLog("✓ Container(s) stopped successfully.")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "stop_completed", "Container stopped successfully")
+		return
+	}
+
+	if job.Type == "start" {
+		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		var appendLog func(string)
+		if errLog == nil {
+			defer logFile.Close()
+			var logFileMu sync.Mutex
+			appendLog = func(msg string) {
+				logFileMu.Lock()
+				defer logFileMu.Unlock()
+				_, _ = logFile.WriteString(msg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
+			}
+		} else {
+			appendLog = func(msg string) {
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
+			}
+		}
+
+		slog.Info("Performing container start action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "start_started", "Starting application container(s)")
+		appendLog(">> Starting application container(s)...")
+
+		if project.ContainerID != nil && *project.ContainerID != "" {
+			appendLog(fmt.Sprintf("Starting main container: %s", *project.ContainerID))
+			if err := w.dockerService.StartContainer(*project.ContainerID); err != nil {
+				appendLog(fmt.Sprintf("Error starting main container: %v", err))
+				w.updateProjectError(project, job.JobID, "Failed to start main container: "+err.Error())
+				return
+			}
+		}
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			appendLog(fmt.Sprintf("Starting worker container: %s", *project.WorkerContainerID))
+			if err := w.dockerService.StartContainer(*project.WorkerContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to start worker container: %v", err))
+			}
+		}
+
+		project.Status = models.StatusRunning
+		if err := w.projectRepo.UpdateStatus(project.ID, models.StatusRunning); err != nil {
+			slog.Error("Failed to update project status to running", "id", project.ID, "error", err)
+		}
+
+		if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
+		}
+
+		appendLog("✓ Container(s) started successfully.")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "start_completed", "Container started successfully")
+		return
+	}
+
+	if job.Type == "restart" {
+		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		buildLogPath := filepath.Join(projectPath, "build.log")
+		_ = os.MkdirAll(projectPath, 0755)
+		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+
+		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		var appendLog func(string)
+		if errLog == nil {
+			defer logFile.Close()
+			var logFileMu sync.Mutex
+			appendLog = func(msg string) {
+				logFileMu.Lock()
+				defer logFileMu.Unlock()
+				_, _ = logFile.WriteString(msg + "\n")
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
+			}
+		} else {
+			appendLog = func(msg string) {
+				_ = w.redisService.PublishBuildLog(project.ID, msg)
+			}
+		}
+
+		slog.Info("Performing container restart action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "restart_started", "Restarting application container(s)")
+		appendLog(">> Restarting application container(s)...")
+
+		if project.ContainerID != nil && *project.ContainerID != "" {
+			appendLog(fmt.Sprintf("Restarting main container: %s", *project.ContainerID))
+			if err := w.dockerService.RestartContainer(*project.ContainerID); err != nil {
+				appendLog(fmt.Sprintf("Error restarting main container: %v", err))
+				w.updateProjectError(project, job.JobID, "Failed to restart main container: "+err.Error())
+				return
+			}
+		}
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			appendLog(fmt.Sprintf("Restarting worker container: %s", *project.WorkerContainerID))
+			if err := w.dockerService.RestartContainer(*project.WorkerContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to restart worker container: %v", err))
+			}
+		}
+
+		project.Status = models.StatusRunning
+		if err := w.projectRepo.UpdateStatus(project.ID, models.StatusRunning); err != nil {
+			slog.Error("Failed to update project status to running", "id", project.ID, "error", err)
+		}
+
+		if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
+		}
+
+		appendLog("✓ Container(s) restarted successfully.")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "restart_completed", "Container restarted successfully")
+		return
+	}
+
+	if job.Type == "delete" {
+		slog.Info("Performing project background deletion", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "delete_started", "Purging project from system")
+		
+		if err := w.projectService.DeleteProject(project); err != nil {
+			slog.Error("Failed to purge project during background delete job", "projectId", project.ID, "error", err)
+			return
+		}
+		
+		// The project is hard-deleted from database inside DeleteProject, so we do not transition deployment state,
+		// as the row is gone. Just return.
+		return
+	}
+
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
 	project.ErrorLog = nil
 	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{

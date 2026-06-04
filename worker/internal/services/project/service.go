@@ -110,9 +110,21 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 
 	// Drop User Database
 	if project.DatabaseName != "" {
-		slog.Debug("Dropping database", "db", project.DatabaseName)
-		if err := s.mysqlService.DropDatabase(project.DatabaseName); err != nil {
-			slog.Warn("Failed to drop database, might be already gone", "db", project.DatabaseName, "error", err)
+		engine := "mysql"
+		if project.DatabaseInstance != nil {
+			engine = project.DatabaseInstance.Engine
+		}
+
+		slog.Debug("Dropping database", "db", project.DatabaseName, "engine", engine)
+		if engine == "postgresql" {
+			pgService := infrastructure.NewPostgreSQLService()
+			if err := pgService.DropDatabase(project.DatabaseName); err != nil {
+				slog.Warn("Failed to drop PostgreSQL database, might be already gone", "db", project.DatabaseName, "error", err)
+			}
+		} else {
+			if err := s.mysqlService.DropDatabase(project.DatabaseName); err != nil {
+				slog.Warn("Failed to drop MySQL database, might be already gone", "db", project.DatabaseName, "error", err)
+			}
 		}
 	}
 

@@ -192,7 +192,39 @@ func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOl
 }
 
 func (r *projectRepository) Delete(id uint) error {
-	return r.db.Unscoped().Delete(&models.Project{}, id).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// Delete associated custom domains
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.CustomDomain{}).Error; err != nil {
+			return err
+		}
+		
+		// Delete associated database backups
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseBackup{}).Error; err != nil {
+			return err
+		}
+		
+		// Delete associated database instances
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseInstance{}).Error; err != nil {
+			return err
+		}
+		
+		// Delete associated deployment events
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DeploymentEvent{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated resource logs
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.ResourceLog{}).Error; err != nil {
+			return err
+		}
+
+		// Delete the project itself
+		if err := tx.Unscoped().Delete(&models.Project{}, id).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func (r *projectRepository) UpdateActivity(id uint) error {
