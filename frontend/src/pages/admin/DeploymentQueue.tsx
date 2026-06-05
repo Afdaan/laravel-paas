@@ -55,7 +55,7 @@ const DeploymentQueue = () => {
       setActiveBuilds(response.data.active || [])
       setQueuedJobs(response.data.queued || [])
     } catch (error) {
-      toast.error(t('common.loadError'))
+      toast.error(t('common.loadError'), { id: 'queue-load-error' })
     } finally {
       setIsLoading(false)
     }

@@ -77,7 +77,7 @@ function UserDashboard() {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error(t('common.loadError'))
+      toast.error(t('common.loadError'), { id: 'dashboard-load-error' })
     } finally {
       setIsLoading(false)
       isFirstLoad.current = false

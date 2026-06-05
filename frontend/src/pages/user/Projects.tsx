@@ -83,7 +83,7 @@ const UserProjects = () => {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error(t('common.loadError'))
+      toast.error(t('common.loadError'), { id: 'projects-load-error' })
     } finally {
       setIsLoading(false)
       isFirstLoad.current = false
