@@ -148,6 +148,7 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 	var bindings []models.SecretStoreBinding
 	if err := s.db.Where("project_id = ? AND (environment = ? OR environment = 'all' OR environment = '')", projectID, envName).Order("created_at ASC").Find(&bindings).Error; err == nil {
 		stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+		legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
 
 		for _, b := range bindings {
 			var items []models.SecretStoreItem
@@ -163,7 +164,7 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 					}
 
 					if latestVal != nil {
-						decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey)
+						decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
 						if err == nil {
 							envMap[item.Key] = decrypted
 						}

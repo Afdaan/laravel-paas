@@ -184,7 +184,7 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"logs": "Deployment is queued. Waiting for worker to start..."})
 	}
 
-	logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
+	logPath := filepath.Join(project.GetProjectPath(h.cfg.ProjectsPath), "build.log")
 	f, err := os.Open(logPath)
 	if err != nil {
 		// Log not available yet or project not building
@@ -233,7 +233,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		// 1. Read existing log file if it exists and write it as a single initial_logs event
-		logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
+		logPath := filepath.Join(project.GetProjectPath(h.cfg.ProjectsPath), "build.log")
 		if logBytes, err := os.ReadFile(logPath); err == nil && len(logBytes) > 0 {
 			// Limit to a reasonable size to avoid giant SSE messages, e.g. last 1MB
 			const maxInitialBytes = 1 * 1024 * 1024

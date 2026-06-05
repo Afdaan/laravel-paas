@@ -207,7 +207,8 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 	}
 
 	stretchedKey := utils.DeriveKey(h.cfg.CredentialEncryptionKey)
-	decryptedVal, errDec := utils.Decrypt(latestVal.EncryptedValue, stretchedKey)
+	legacyKey := utils.DeriveKeyLegacy(h.cfg.CredentialEncryptionKey)
+	decryptedVal, errDec := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
 	if errDec != nil {
 		return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
 	}
@@ -258,30 +259,9 @@ func (h *SecretStoreHandler) Unbind(c *fiber.Ctx) error {
 		return apperr.New(400, "INVALID_BINDING_ID", "Invalid Binding ID")
 	}
 
-	// Verify that the SecretStore belongs to this user
-	var store models.SecretStore
-	if err := h.db.Where("id = ? AND user_id = ?", id, userID).First(&store).Error; err != nil {
-		return apperr.New(404, "SECRET_STORE_NOT_FOUND", "SecretStore not found")
-	}
-
-	// Find the binding and verify it belongs to this SecretStore
-	var binding models.SecretStoreBinding
-	if err := h.db.Where("id = ? AND secret_store_id = ?", bindingID, id).First(&binding).Error; err != nil {
-		return apperr.New(404, "BINDING_NOT_FOUND", "Binding not found")
-	}
-
-	// Delete the binding
-	if err := h.db.Delete(&binding).Error; err != nil {
+	if err := h.secretStoreService.UnbindSecretStore(userID, uint(id), uint(bindingID), c.IP(), c.Get("User-Agent")); err != nil {
 		return err
 	}
-
-	h.secretStoreService.LogActivity(userID, &store.ID, nil, &binding.ProjectID, "unbind_secretstore", "Unbound secret store container from project", c.IP(), c.Get("User-Agent"))
-
-	// Trigger env propagation to clear unbound keys for remaining projects and the unbound project.
-	go func(storeID, projectID, uID uint) {
-		h.secretStoreService.PropagateSecretStoreUpdates(storeID)
-		h.secretStoreService.PropagateProjectEnvUpdate(projectID, uID)
-	}(store.ID, binding.ProjectID, userID)
 
 	return c.JSON(fiber.Map{"message": "SecretStore unbound successfully"})
 }
@@ -299,6 +279,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 	}
 
 	stretchedKey := utils.DeriveKey(h.cfg.CredentialEncryptionKey)
+	legacyKey := utils.DeriveKeyLegacy(h.cfg.CredentialEncryptionKey)
 	secretsMap := make(map[string]string)
 
 	for _, item := range store.Items {
@@ -312,7 +293,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 		}
 
 		if latestVal != nil {
-			decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey)
+			decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
 			if err == nil {
 				secretsMap[item.Key] = decrypted
 			}

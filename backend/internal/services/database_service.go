@@ -1533,7 +1533,7 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 	backupName := fmt.Sprintf("%s_backup_%s.sql", project.DatabaseName, timestamp)
 
 	// Check folders
-	backupDir := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "backups")
+	backupDir := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), "backups")
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return nil, err
 	}

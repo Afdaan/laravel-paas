@@ -77,16 +77,22 @@ func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint, ipAddr
 	}
 
 	// Remove bindings and clean up GORM models inside transaction.
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	errTx := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("secret_store_id = ?", storeID).Delete(&models.SecretStoreBinding{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Delete(store).Error; err != nil {
 			return err
 		}
-		s.LogActivity(userID, &storeID, nil, nil, "delete_secretstore", "Soft-deleted secret store container", ipAddress, userAgent)
 		return nil
 	})
+
+	if errTx != nil {
+		return errTx
+	}
+
+	s.LogActivity(userID, &storeID, nil, nil, "delete_secretstore", "Soft-deleted secret store container", ipAddress, userAgent)
+	return nil
 }
 
 func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
@@ -104,8 +110,8 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 		return nil, fmt.Errorf("failed to encrypt value: %w", errEnc)
 	}
 
+	var version int = 1
 	errTx := s.db.Transaction(func(tx *gorm.DB) error {
-		var version int = 1
 		if errors.Is(errItem, gorm.ErrRecordNotFound) {
 			item = models.SecretStoreItem{
 				SecretStoreID:         store.ID,
@@ -135,13 +141,14 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 			return err
 		}
 
-		s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
 		return nil
 	})
 
 	if errTx != nil {
 		return nil, errTx
 	}
+
+	s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
 
 	// Propagate updates asynchronously to any active projects.
 	go s.PropagateSecretStoreUpdates(storeID)
@@ -164,8 +171,8 @@ func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint
 		return nil, fmt.Errorf("failed to encrypt value: %w", errEnc)
 	}
 
+	var version int = 1
 	errTx := s.db.Transaction(func(tx *gorm.DB) error {
-		var version int = 1
 		if errors.Is(errItem, gorm.ErrRecordNotFound) {
 			item = models.SecretStoreItem{
 				SecretStoreID:         store.ID,
@@ -195,13 +202,14 @@ func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint
 			return err
 		}
 
-		s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
 		return nil
 	})
 
 	if errTx != nil {
 		return nil, errTx
 	}
+
+	s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
 
 	return &item, nil
 }
@@ -279,27 +287,30 @@ func (s *SecretStoreService) BindSecretStore(userID uint, storeID, projectID uin
 	return binding, nil
 }
 
-func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, projectID uint, ipAddress, userAgent string) error {
-	var project models.Project
-	if err := s.db.Where("id = ? AND user_id = ?", projectID, userID).First(&project).Error; err != nil {
-		return errors.New("project not found or unauthorized")
+func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, bindingID uint, ipAddress, userAgent string) error {
+	// Verify that the SecretStore belongs to this user
+	var store models.SecretStore
+	if err := s.db.Where("id = ? AND user_id = ?", storeID, userID).First(&store).Error; err != nil {
+		return errors.New("secret store not found or unauthorized")
 	}
 
+	// Find the binding and verify it belongs to this SecretStore
 	var binding models.SecretStoreBinding
-	if err := s.db.Where("secret_store_id = ? AND project_id = ?", storeID, projectID).First(&binding).Error; err != nil {
-		return err
+	if err := s.db.Where("id = ? AND secret_store_id = ?", bindingID, storeID).First(&binding).Error; err != nil {
+		return errors.New("binding not found")
 	}
 
+	// Delete the binding
 	if err := s.db.Delete(&binding).Error; err != nil {
 		return err
 	}
 
-	s.LogActivity(userID, &storeID, nil, &projectID, "unbind_secretstore", "Unbound secret store container from project", ipAddress, userAgent)
+	s.LogActivity(userID, &storeID, nil, &binding.ProjectID, "unbind_secretstore", "Unbound secret store container from project", ipAddress, userAgent)
 
 	// Trigger env propagation to clear unbound keys for remaining projects and the unbound project.
 	go func() {
 		s.PropagateSecretStoreUpdates(storeID)
-		s.PropagateProjectEnvUpdate(projectID, userID)
+		s.PropagateProjectEnvUpdate(binding.ProjectID, userID)
 	}()
 
 	return nil
@@ -401,6 +412,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	}
 
 	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+	legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
 
 	for _, b := range bindings {
 		var items []models.SecretStoreItem
@@ -419,7 +431,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 			}
 
 			if latestVal != nil {
-				decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey)
+				decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
 				if err != nil {
 					slog.Error("Failed to decrypt secret value during env compilation", "item_id", item.ID, "error", err)
 					continue

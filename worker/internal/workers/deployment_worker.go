@@ -1512,6 +1512,7 @@ func (w *DeploymentWorker) getSecretsToRedact(project *models.Project) []string 
 		var bindings []models.SecretStoreBinding
 		if err := db.Where("project_id = ?", project.ID).Find(&bindings).Error; err == nil {
 			stretchedKey := utils.DeriveKey(w.cfg.CredentialEncryptionKey)
+			legacyKey := utils.DeriveKeyLegacy(w.cfg.CredentialEncryptionKey)
 			for _, b := range bindings {
 				var items []models.SecretStoreItem
 				if err := db.Where("secret_store_id = ?", b.SecretStoreID).Preload("Values").Find(&items).Error; err == nil {
@@ -1525,7 +1526,7 @@ func (w *DeploymentWorker) getSecretsToRedact(project *models.Project) []string 
 							}
 						}
 						if latestVal != nil {
-							decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey)
+							decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
 							if err == nil && len(decrypted) > 4 {
 								secrets = append(secrets, decrypted)
 							}

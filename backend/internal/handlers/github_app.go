@@ -169,7 +169,7 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				continue
 			}
 
-			projectPath := filepath.Join(h.cfg.ProjectsPath, p.Subdomain)
+			projectPath := p.GetProjectPath(h.cfg.ProjectsPath)
 			buildLogPath := filepath.Join(projectPath, "build.log")
 			_ = os.MkdirAll(projectPath, 0755)
 			_ = os.WriteFile(buildLogPath, initLogContent, 0644)

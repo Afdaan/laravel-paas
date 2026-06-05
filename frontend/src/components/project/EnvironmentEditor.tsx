@@ -19,7 +19,11 @@ import {
   Grid,
   FileText,
   Copy,
-  Check
+  Check,
+  Pencil,
+  Trash2,
+  Plus,
+  Lock
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
@@ -66,6 +70,11 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   // Modals state
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false)
   const [linkForm, setLinkForm] = useState({ storeId: '', environment: 'all' })
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [editForm, setEditForm] = useState({ key: '', value: '' })
+  const [addForm, setAddForm] = useState({ key: '', value: '' })
+  const [isSavingSingle, setIsSavingSingle] = useState(false)
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -101,7 +110,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           items.push({
             Key: key,
             Value: val,
-            Source: key.startsWith('DB_') || key === 'DATABASE_URL' ? 'Database Auto-Provision' : 'Secret Store / Config'
+            Source: key.startsWith('DB_') || key === 'DATABASE_URL' ? 'db_auto' : 'secret_store'
           })
         }
       })
@@ -151,6 +160,91 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
 
   const toggleRevealKey = (key: string) => {
     setRevealedKeys(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const handleEditVariable = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editForm.key) return
+    setIsSavingSingle(true)
+    try {
+      // Find the item in gridItems and update its value
+      const updatedItems = gridItems.map(item => {
+        if (item.Key === editForm.key) {
+          return { ...item, Value: editForm.value }
+        }
+        return item
+      })
+      
+      // Compile back to dotenv
+      const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
+      await projectsAPI.updateEnv(uid, newContent)
+      toast.success(t('common.success'))
+      setIsEditModalOpen(false)
+      loadEnv()
+      if (onSave) onSave()
+    } catch (error) {
+      toast.error(t('common.error'))
+    } finally {
+      setIsSavingSingle(false)
+    }
+  }
+
+  const handleAddVariable = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!addForm.key) return
+    setIsSavingSingle(true)
+    try {
+      // Check if key already exists
+      const exists = gridItems.some(item => item.Key.toUpperCase() === addForm.key.toUpperCase())
+      if (exists) {
+        toast.error(t('projectDetail.secrets.keyExists'))
+        setIsSavingSingle(false)
+        return
+      }
+
+      const newItem = {
+        Key: addForm.key.trim().toUpperCase(),
+        Value: addForm.value,
+        Source: 'secret_store'
+      }
+      
+      const updatedItems = [...gridItems, newItem]
+      
+      // Compile back to dotenv
+      const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
+      await projectsAPI.updateEnv(uid, newContent)
+      toast.success(t('common.success'))
+      setIsAddModalOpen(false)
+      setAddForm({ key: '', value: '' })
+      loadEnv()
+      if (onSave) onSave()
+    } catch (error) {
+      toast.error(t('common.error'))
+    } finally {
+      setIsSavingSingle(false)
+    }
+  }
+
+  const handleDeleteVariable = (keyToDelete: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: t('common.confirm'),
+      message: t('projectDetail.secrets.deleteConfirm', { key: keyToDelete }),
+      type: 'danger',
+      confirmText: t('common.delete'),
+      onConfirm: async () => {
+        try {
+          const updatedItems = gridItems.filter(item => item.Key !== keyToDelete)
+          const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
+          await projectsAPI.updateEnv(uid, newContent)
+          toast.success(t('common.deleteSuccess'))
+          loadEnv()
+          if (onSave) onSave()
+        } catch (error) {
+          toast.error(t('common.error'))
+        }
+      }
+    })
   }
 
   // Save dotenv content bulk
@@ -204,7 +298,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
     setConfirmModal({
       isOpen: true,
       title: t('common.confirm'),
-      message: 'Unlinking this store will remove its variables from your project upon next rebuild. Proceed?',
+      message: t('projectDetail.secrets.unlinkConfirm'),
       type: 'danger',
       confirmText: t('common.delete'),
       onConfirm: async () => {
@@ -279,7 +373,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                 className="h-9 font-semibold text-[10px] uppercase tracking-wider"
               >
                 <Link2 className="w-3.5 h-3.5 mr-1.5" />
-                Link SecretStore
+                {t('projectDetail.secrets.linkModalTitle')}
               </Button>
             )}
           </div>
@@ -293,21 +387,21 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                 className="px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
               >
                 <Grid className="w-3.5 h-3.5 mr-1.5" />
-                Variables Grid
+                {t('projectDetail.secrets.gridTab')}
               </TabsTrigger>
               <TabsTrigger 
                 value="bulk" 
                 className="px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
               >
                 <FileText className="w-3.5 h-3.5 mr-1.5" />
-                Bulk Editor (Dotenv)
+                {t('projectDetail.secrets.bulkTab')}
               </TabsTrigger>
               <TabsTrigger 
                 value="stores" 
                 className="px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
               >
                 <Link2 className="w-3.5 h-3.5 mr-1.5" />
-                Linked SecretStores
+                {t('projectDetail.secrets.storesTab')}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -315,19 +409,36 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-card">
             {/* Resolved Variables Grid */}
             <TabsContent value="grid" className="m-0 outline-none space-y-4">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                  {t('projectDetail.secrets.gridDesc')}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setAddForm({ key: '', value: '' })
+                    setIsAddModalOpen(true)
+                  }}
+                  className="h-8 text-[10px] font-bold uppercase tracking-wider hover:bg-muted/10"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  {t('projectDetail.secrets.addVariable')}
+                </Button>
+              </div>
               {gridItems.length === 0 ? (
                 <div className="text-center py-20 border border-dashed border-border/50 rounded-lg text-xs text-muted-foreground">
-                  No environment variables defined. Add them using the Bulk Editor or link a SecretStore.
+                  {t('projectDetail.secrets.noVariables')}
                 </div>
               ) : (
                 <div className="border border-border/50 rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader className="bg-muted/20">
                       <TableRow>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/3">Key</TableHead>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/2">Resolved Value</TableHead>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px]">Source Layer</TableHead>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">Actions</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/3">{t('secretstore.key')}</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/2">{t('projectDetail.secrets.resolvedValue')}</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px]">{t('projectDetail.secrets.sourceLayer')}</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">{t('common.actions')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -347,11 +458,11 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 ${
-                                item.Source.includes('Auto-Provision')
+                                item.Source === 'db_auto'
                                   ? 'text-primary border-primary/20 bg-primary/5'
                                   : 'text-zinc-400 border-border bg-muted/20'
                               }`}>
-                                {item.Source}
+                                {item.Source === 'db_auto' ? t('projectDetail.secrets.dbAutoProvision') : t('projectDetail.secrets.secretStoreConfig')}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right">
@@ -374,6 +485,41 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                                     title={t('common.copy')}
                                   >
                                     {copiedKey === item.Key ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </Button>
+                                )}
+                                 {item.Source === 'secret_store' ? (
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                      onClick={() => {
+                                        setEditForm({ key: item.Key, value: item.Value })
+                                        setIsEditModalOpen(true)
+                                      }}
+                                      title={t('common.edit')}
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => handleDeleteVariable(item.Key)}
+                                      title={t('common.delete')}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    disabled
+                                    className="h-8 w-8 text-muted-foreground/30 border-border/40 bg-muted/5 cursor-not-allowed"
+                                    title={t('projectDetail.secrets.lockTooltip')}
+                                  >
+                                    <Lock className="w-3.5 h-3.5" />
                                   </Button>
                                 )}
                               </div>
@@ -422,17 +568,17 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
             <TabsContent value="stores" className="m-0 outline-none space-y-4">
               {boundStores.length === 0 ? (
                 <div className="text-center py-20 border border-dashed border-border/50 rounded-lg text-xs text-muted-foreground">
-                  No SecretStores bound to this project. Bind global user SecretStores to automatically inject credentials.
+                  {t('projectDetail.secrets.noBoundStores')}
                 </div>
               ) : (
                 <div className="border border-border/50 rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader className="bg-muted/20">
                       <TableRow>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/3">Store Name</TableHead>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/2">Description</TableHead>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px]">Scope Environment</TableHead>
-                        <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">Actions</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/3">{t('secretstore.storeName')}</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/2">{t('secretstore.description')}</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px]">{t('projectDetail.secrets.scopeEnv')}</TableHead>
+                        <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">{t('common.actions')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -442,13 +588,17 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                             {store.name}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {store.description || 'No description'}
+                            {store.description || '-'}
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary" className="font-bold text-[9px] uppercase tracking-wider px-2 py-0.5">
-                              {store.environment === 'all' || store.environment === ''
-                                ? 'All Environments'
-                                : store.environment}
+                              {store.environment === 'production'
+                                ? t('secretstore.prod')
+                                : store.environment === 'staging'
+                                  ? t('secretstore.staging')
+                                  : store.environment === 'development'
+                                    ? t('secretstore.dev')
+                                    : t('secretstore.allEnvs')}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
@@ -459,7 +609,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                               onClick={() => handleUnlinkStore(store)}
                             >
                               <Link2Off className="w-3.5 h-3.5 mr-1" />
-                              Unlink
+                              {t('projectDetail.secrets.unlinkBtn')}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -484,18 +634,18 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2">
               <Link2 className="w-4 h-4 text-primary" />
-              Link SecretStore
+              {t('projectDetail.secrets.linkModalTitle')}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Bind a global secret container to this project environment.
+              {t('projectDetail.secrets.linkModalDesc')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleLinkStore} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="link-store" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Store</Label>
+              <Label htmlFor="link-store" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('projectDetail.secrets.selectStore')}</Label>
               {linkableStores.length === 0 ? (
                 <div className="text-xs text-muted-foreground py-2 border rounded-md px-3 bg-muted/10">
-                  No other stores available. Create a new store in the Secret Store dashboard.
+                  {t('projectDetail.secrets.noOtherStores')}
                 </div>
               ) : (
                 <Select
@@ -509,7 +659,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                         return s ? (
                           <span className="truncate font-semibold text-foreground/90">{s.name}</span>
                         ) : (
-                          <span className="text-muted-foreground/60">Choose a SecretStore...</span>
+                          <span className="text-muted-foreground/60">{t('projectDetail.secrets.chooseStore')}</span>
                         )
                       })()}
                     </div>
@@ -553,7 +703,104 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                 {t('common.cancel')}
               </Button>
               <Button type="submit" size="sm" disabled={!linkForm.storeId} className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
-                Link Store
+                {t('projectDetail.secrets.linkStoreBtn')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Variable Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-primary" />
+              {t('projectDetail.secrets.editVariable')}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {t('projectDetail.secrets.editVariableDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditVariable} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('projectDetail.secrets.variableKey')}</Label>
+              <input
+                id="edit-key"
+                type="text"
+                readOnly
+                value={editForm.key}
+                className="w-full h-9 px-3 text-xs bg-muted/20 border border-border rounded-lg text-muted-foreground outline-none cursor-not-allowed font-mono"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-value" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('projectDetail.secrets.variableValue')}</Label>
+              <input
+                id="edit-value"
+                type="text"
+                value={editForm.value}
+                onChange={e => setEditForm(prev => ({ ...prev, value: e.target.value }))}
+                placeholder={t('secretstore.valuePlaceholder')}
+                className="w-full h-9 px-3 text-xs bg-background/50 border border-border rounded-lg text-foreground outline-none hover:border-border/80 focus:border-primary/50 font-mono"
+              />
+            </div>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" className="h-9 font-semibold uppercase tracking-wider text-[10px]" onClick={() => setIsEditModalOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" size="sm" disabled={isSavingSingle} className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
+                {isSavingSingle && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}
+                {t('common.save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Variable Modal */}
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Plus className="w-4 h-4 text-primary" />
+              {t('projectDetail.secrets.addVariable')}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {t('projectDetail.secrets.addVariableDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddVariable} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="add-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('projectDetail.secrets.variableKey')}</Label>
+              <input
+                id="add-key"
+                type="text"
+                required
+                value={addForm.key}
+                onChange={e => setAddForm(prev => ({ ...prev, key: e.target.value }))}
+                placeholder={t('projectDetail.secrets.keyPlaceholder')}
+                className="w-full h-9 px-3 text-xs bg-background/50 border border-border rounded-lg text-foreground outline-none hover:border-border/80 focus:border-primary/50 font-mono uppercase"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="add-value" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('projectDetail.secrets.variableValue')}</Label>
+              <input
+                id="add-value"
+                type="text"
+                required
+                value={addForm.value}
+                onChange={e => setAddForm(prev => ({ ...prev, value: e.target.value }))}
+                placeholder={t('secretstore.valuePlaceholder')}
+                className="w-full h-9 px-3 text-xs bg-background/50 border border-border rounded-lg text-foreground outline-none hover:border-border/80 focus:border-primary/50 font-mono"
+              />
+            </div>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" className="h-9 font-semibold uppercase tracking-wider text-[10px]" onClick={() => setIsAddModalOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" size="sm" disabled={isSavingSingle || !addForm.key || !addForm.value} className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
+                {isSavingSingle && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}
+                {t('projectDetail.secrets.addVariable')}
               </Button>
             </DialogFooter>
           </form>

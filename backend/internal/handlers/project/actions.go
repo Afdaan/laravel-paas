@@ -141,7 +141,7 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	}
 
 	// Truncate the build log immediately to prevent old logs from displaying
-	projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+	projectPath := project.GetProjectPath(h.cfg.ProjectsPath)
 	buildLogPath := filepath.Join(projectPath, "build.log")
 	_ = os.MkdirAll(projectPath, 0755)
 	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -332,7 +332,7 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue redeploy fallback"})
 		}
 
-		projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(h.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
