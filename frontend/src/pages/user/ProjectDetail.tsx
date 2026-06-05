@@ -1400,7 +1400,7 @@ function UserProjectDetail() {
         <TabsContent value="environment" className="pt-0">
           <EnvironmentEditor 
             uid={uid || ''} 
-            onSave={() => projectsAPI.redeploy(uid || '').then(() => fetchProject())} 
+            onSave={() => fetchProject()} 
           />
         </TabsContent>
 

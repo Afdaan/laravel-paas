@@ -130,6 +130,7 @@ func SanitizeLogOutput(logStr string) string {
 }
 
 // FormatEnvMap serializes a map of environment variables into a grouped, sorted dotenv string.
+// Values containing spaces or special characters are safely quoted and escaped.
 func FormatEnvMap(envMap map[string]string) string {
 	keys := make([]string, 0, len(envMap))
 	for k := range envMap {
@@ -147,9 +148,53 @@ func FormatEnvMap(envMap map[string]string) string {
 
 	var builder strings.Builder
 	for _, k := range keys {
-		builder.WriteString(fmt.Sprintf("%s=%s\n", k, envMap[k]))
+		builder.WriteString(fmt.Sprintf("%s=%s\n", k, quoteEnvValue(envMap[k])))
 	}
 	return builder.String()
+}
+
+func quoteEnvValue(val string) string {
+	if len(val) >= 2 {
+		if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
+			return val
+		}
+	}
+
+	needsQuotes := false
+	if val == "" {
+		needsQuotes = true
+	} else {
+		for i := 0; i < len(val); i++ {
+			c := val[i]
+			if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '#' || c == '$' || c == '\'' || c == '"' || c == '=' {
+				needsQuotes = true
+				break
+			}
+		}
+	}
+
+	if !needsQuotes {
+		return val
+	}
+
+	var escaped strings.Builder
+	escaped.WriteByte('"')
+	for i := 0; i < len(val); i++ {
+		c := val[i]
+		if c == '"' {
+			escaped.WriteString(`\"`)
+		} else if c == '\\' {
+			escaped.WriteString(`\\`)
+		} else if c == '\n' {
+			escaped.WriteString(`\n`)
+		} else if c == '\r' {
+			escaped.WriteString(`\r`)
+		} else {
+			escaped.WriteByte(c)
+		}
+	}
+	escaped.WriteByte('"')
+	return escaped.String()
 }
 
 func getEnvKeyPriority(key string) int {
