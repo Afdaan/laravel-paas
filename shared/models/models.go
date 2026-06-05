@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -240,15 +239,8 @@ func NormalizeSlug(s string) string {
 	return res
 }
 
-var userSlugCache sync.Map
-
 // GetUserDirName retrieves a clean, human-readable directory name for a user (e.g., "afdaan-1").
-// It caches the result in memory to avoid repeated DB queries.
 func GetUserDirName(db *gorm.DB, userID uint) string {
-	if val, ok := userSlugCache.Load(userID); ok {
-		return val.(string)
-	}
-
 	defaultName := fmt.Sprintf("user-%d", userID)
 	if db == nil {
 		return defaultName
@@ -270,9 +262,7 @@ func GetUserDirName(db *gorm.DB, userID uint) string {
 		slug = "user"
 	}
 
-	dirName := fmt.Sprintf("%s-%d", slug, userID)
-	userSlugCache.Store(userID, dirName)
-	return dirName
+	return fmt.Sprintf("%s-%d", slug, userID)
 }
 
 

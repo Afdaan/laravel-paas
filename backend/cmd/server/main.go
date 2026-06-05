@@ -11,18 +11,18 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	"github.com/laravel-paas/backend/internal/routes"
+	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/database"
-	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/logger"
 	"github.com/laravel-paas/shared/repositories"
-	"github.com/laravel-paas/backend/internal/routes"
-	"github.com/laravel-paas/backend/internal/services"
 	"github.com/laravel-paas/shared/services/deployment"
 	domainServicePkg "github.com/laravel-paas/shared/services/domain"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/services/setting"
 )
 

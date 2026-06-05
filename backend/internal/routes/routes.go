@@ -218,11 +218,17 @@ func Setup(
 	secretstores.Put("/:id", secretStoreHandler.Update)
 	secretstores.Delete("/:id", secretStoreHandler.Delete)
 	secretstores.Post("/:id/secrets", secretStoreHandler.SetSecret)
-	secretstores.Get("/:id/secrets/:itemID/reveal", secretStoreHandler.RevealSecret)
+	secretstores.Get("/:id/items/:itemID/reveal", secretStoreHandler.RevealSecret)
 	secretstores.Post("/:id/bindings", secretStoreHandler.Bind)
 	secretstores.Delete("/:id/bindings/:bindingID", secretStoreHandler.Unbind)
 	secretstores.Get("/:id/export", secretStoreHandler.Export)
 	secretstores.Post("/:id/import", secretStoreHandler.Import)
+
+	// SecretStore Item Management (Milestone 2)
+	secretstores.Post("/:id/items", secretStoreHandler.CreateItem)
+	secretstores.Put("/:id/items/:itemID", secretStoreHandler.UpdateItem)
+	secretstores.Delete("/:id/items/:itemID", secretStoreHandler.DeleteItem)
+	secretstores.Get("/:id/items/:itemID/history", secretStoreHandler.History)
 
 	// -----------------------------
 	// Project Routes (Users)

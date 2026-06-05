@@ -312,7 +312,14 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
               <ShieldAlert className="w-5 h-5 text-primary" />
               {t('projectDetail.tabs.secrets')}
             </CardTitle>
-            <CardDescription className="text-xs">{t('projectDetail.secrets.desc')}</CardDescription>
+            <CardDescription className="text-xs flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span>{t('projectDetail.secrets.desc')}</span>
+              <span className="hidden sm:inline text-muted-foreground/50">|</span>
+              <span className="text-[10px] text-amber-600 dark:text-amber-500/80 font-bold uppercase tracking-wider flex items-center gap-1">
+                <AlertTriangle size={12} className="shrink-0" />
+                {t('projectDetail.secrets.redeployNote')}
+              </span>
+            </CardDescription>
           </div>
           <div className="flex items-center gap-3">
             {activeSubTab === 'bulk' && (
@@ -583,15 +590,11 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
             </TabsContent>
           </div>
 
-          <div className="p-3 bg-amber-500/5 text-amber-600 dark:text-amber-500/80 text-[9px] font-bold uppercase tracking-[0.15em] border-t border-border/50 flex items-center justify-center gap-3">
-            <AlertTriangle size={14} className="animate-pulse" /> 
-            {t('projectDetail.secrets.redeployNote')}
-          </div>
         </Tabs>
 
         {/* Floating Unsaved Changes Banner */}
         {hasChanges && (activeSubTab === 'grid' || activeSubTab === 'bulk') && (
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 bg-background/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 bg-background/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-3 duration-300">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               {t('projectDetail.secrets.unsavedChanges')}

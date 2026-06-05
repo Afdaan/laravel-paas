@@ -61,6 +61,11 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 			v := strings.TrimSpace(parts[1])
 			if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
 				v = v[1 : len(v)-1]
+			} else {
+				// Strip unquoted trailing comments
+				if idx := strings.Index(v, "#"); idx != -1 {
+					v = strings.TrimSpace(v[:idx])
+				}
 			}
 			parsedSecrets[k] = v
 		}

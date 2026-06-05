@@ -642,100 +642,103 @@ func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error 
 
 // BackfillLaravelAppKeys ensures all existing Laravel projects have an APP_KEY in their secret store.
 func BackfillLaravelAppKeys(db *gorm.DB, cfg *config.Config) error {
-	var projects []models.Project
-	if err := db.Where("framework = 'Laravel'").Find(&projects).Error; err != nil {
-		return err
-	}
-
 	backfilled := 0
 	stretchedKey := utils.DeriveKey(cfg.CredentialEncryptionKey)
 
-	for _, p := range projects {
-		var bindings []models.SecretStoreBinding
-		if err := db.Where("project_id = ?", p.ID).Find(&bindings).Error; err != nil {
-			continue
-		}
-
-		appKeyExists := false
-		var storeID uint
-		if len(bindings) > 0 {
-			storeID = bindings[0].SecretStoreID
-			var storeIDs []uint
-			for _, b := range bindings {
-				storeIDs = append(storeIDs, b.SecretStoreID)
-			}
-			var count int64
-			db.Model(&models.SecretStoreItem{}).Where("secret_store_id IN (?) AND key = ?", storeIDs, "APP_KEY").Count(&count)
-			if count > 0 {
-				appKeyExists = true
-			}
-		}
-
-		if appKeyExists {
-			continue
-		}
-
-		// Create store and binding if none exist.
-		if storeID == 0 {
-			store := models.SecretStore{
-				UserID:      p.UserID,
-				Name:        fmt.Sprintf("Environment Secrets (%s)", p.Name),
-				Description: "Managed variables for project " + p.Name,
-			}
-			if err := db.Create(&store).Error; err != nil {
-				slog.Warn("Failed to create secret store during backfill", "projectID", p.ID, "error", err)
+	var projects []models.Project
+	err := db.Where("framework = 'Laravel'").FindInBatches(&projects, 100, func(tx *gorm.DB, batch int) error {
+		for _, p := range projects {
+			var bindings []models.SecretStoreBinding
+			if err := tx.Where("project_id = ?", p.ID).Find(&bindings).Error; err != nil {
 				continue
 			}
-			storeID = store.ID
 
-			newBinding := models.SecretStoreBinding{
-				ProjectID:     p.ID,
-				SecretStoreID: store.ID,
-				Environment:   "production",
+			appKeyExists := false
+			var storeID uint
+			if len(bindings) > 0 {
+				storeID = bindings[0].SecretStoreID
+				var storeIDs []uint
+				for _, b := range bindings {
+					storeIDs = append(storeIDs, b.SecretStoreID)
+				}
+				var count int64
+				tx.Model(&models.SecretStoreItem{}).Where("secret_store_id IN (?) AND key = ?", storeIDs, "APP_KEY").Count(&count)
+				if count > 0 {
+					appKeyExists = true
+				}
 			}
-			if err := db.Create(&newBinding).Error; err != nil {
-				slog.Warn("Failed to bind secret store during backfill", "projectID", p.ID, "error", err)
+
+			if appKeyExists {
 				continue
 			}
-		}
 
-		keyBytes := make([]byte, 32)
-		if _, err := rand.Read(keyBytes); err != nil {
-			slog.Warn("Failed to generate random key bytes during backfill", "error", err)
-			continue
-		}
+			// Create store and binding if none exist.
+			if storeID == 0 {
+				store := models.SecretStore{
+					UserID:      p.UserID,
+					Name:        fmt.Sprintf("Environment Secrets (%s)", p.Name),
+					Description: "Managed variables for project " + p.Name,
+				}
+				if err := tx.Create(&store).Error; err != nil {
+					slog.Warn("Failed to create secret store during backfill", "projectID", p.ID, "error", err)
+					continue
+				}
+				storeID = store.ID
 
-		appKey := "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
-		encryptedVal, err := utils.Encrypt(appKey, stretchedKey)
-		if err != nil {
-			slog.Warn("Failed to encrypt APP_KEY during backfill", "error", err)
-			continue
-		}
-
-		errTx := db.Transaction(func(tx *gorm.DB) error {
-			item := models.SecretStoreItem{
-				SecretStoreID:         storeID,
-				Key:                   "APP_KEY",
-				LatestSnapshotVersion: 1,
+				newBinding := models.SecretStoreBinding{
+					ProjectID:     p.ID,
+					SecretStoreID: store.ID,
+					Environment:   "production",
+				}
+				if err := tx.Create(&newBinding).Error; err != nil {
+					slog.Warn("Failed to bind secret store during backfill", "projectID", p.ID, "error", err)
+					continue
+				}
 			}
-			if err := tx.Create(&item).Error; err != nil {
-				return err
-			}
-			itemValue := models.SecretStoreItemValue{
-				SecretStoreItemID: item.ID,
-				Version:           1,
-				EncryptedValue:    encryptedVal,
-				CreatedBy:         p.UserID,
-			}
-			return tx.Create(&itemValue).Error
-		})
 
-		if errTx != nil {
-			slog.Warn("Failed to save APP_KEY during backfill", "projectID", p.ID, "error", errTx)
-			continue
+			keyBytes := make([]byte, 32)
+			if _, err := rand.Read(keyBytes); err != nil {
+				slog.Warn("Failed to generate random key bytes during backfill", "error", err)
+				continue
+			}
+
+			appKey := "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
+			encryptedVal, err := utils.Encrypt(appKey, stretchedKey)
+			if err != nil {
+				slog.Warn("Failed to encrypt APP_KEY during backfill", "error", err)
+				continue
+			}
+
+			errTx := tx.Transaction(func(txInner *gorm.DB) error {
+				item := models.SecretStoreItem{
+					SecretStoreID:         storeID,
+					Key:                   "APP_KEY",
+					LatestSnapshotVersion: 1,
+				}
+				if err := txInner.Create(&item).Error; err != nil {
+					return err
+				}
+				itemValue := models.SecretStoreItemValue{
+					SecretStoreItemID: item.ID,
+					Version:           1,
+					EncryptedValue:    encryptedVal,
+					CreatedBy:         p.UserID,
+				}
+				return txInner.Create(&itemValue).Error
+			})
+
+			if errTx != nil {
+				slog.Warn("Failed to save APP_KEY during backfill", "projectID", p.ID, "error", errTx)
+				continue
+			}
+
+			backfilled++
 		}
+		return nil
+	}).Error
 
-		backfilled++
+	if err != nil {
+		return err
 	}
 
 	if backfilled > 0 {

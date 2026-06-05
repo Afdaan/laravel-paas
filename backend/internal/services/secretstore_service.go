@@ -104,17 +104,18 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 		return nil, err
 	}
 
-	var item models.SecretStoreItem
-	errItem := s.db.Where("secret_store_id = ? AND key = ?", store.ID, key).First(&item).Error
-
 	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
 	encryptedVal, errEnc := utils.Encrypt(value, stretchedKey)
 	if errEnc != nil {
 		return nil, fmt.Errorf("failed to encrypt value: %w", errEnc)
 	}
 
+	var item models.SecretStoreItem
 	var version int = 1
 	errTx := s.db.Transaction(func(tx *gorm.DB) error {
+		// Query inside the transaction with pessimistic locking to prevent race conditions
+		errItem := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("secret_store_id = ? AND key = ?", store.ID, key).First(&item).Error
+
 		if errors.Is(errItem, gorm.ErrRecordNotFound) {
 			item = models.SecretStoreItem{
 				SecretStoreID:         store.ID,
@@ -124,6 +125,7 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 			if err := tx.Create(&item).Error; err != nil {
 				return err
 			}
+			version = 1
 		} else if errItem == nil {
 			version = item.LatestSnapshotVersion + 1
 			item.LatestSnapshotVersion = version
@@ -153,8 +155,10 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 
 	s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
 
-	// Propagate updates asynchronously to any active projects.
-	go s.PropagateSecretStoreUpdates(storeID)
+	// Propagate updates asynchronously using safe panic recovery wrapper.
+	utils.SafeGo(func() {
+		s.PropagateSecretStoreUpdates(storeID)
+	})
 
 	return &item, nil
 }
@@ -165,17 +169,18 @@ func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint
 		return nil, err
 	}
 
-	var item models.SecretStoreItem
-	errItem := s.db.Where("secret_store_id = ? AND key = ?", store.ID, key).First(&item).Error
-
 	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
 	encryptedVal, errEnc := utils.Encrypt(value, stretchedKey)
 	if errEnc != nil {
 		return nil, fmt.Errorf("failed to encrypt value: %w", errEnc)
 	}
 
+	var item models.SecretStoreItem
 	var version int = 1
 	errTx := s.db.Transaction(func(tx *gorm.DB) error {
+		// Query inside the transaction with pessimistic locking to prevent race conditions
+		errItem := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("secret_store_id = ? AND key = ?", store.ID, key).First(&item).Error
+
 		if errors.Is(errItem, gorm.ErrRecordNotFound) {
 			item = models.SecretStoreItem{
 				SecretStoreID:         store.ID,
@@ -185,6 +190,7 @@ func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint
 			if err := tx.Create(&item).Error; err != nil {
 				return err
 			}
+			version = 1
 		} else if errItem == nil {
 			version = item.LatestSnapshotVersion + 1
 			item.LatestSnapshotVersion = version
@@ -285,7 +291,9 @@ func (s *SecretStoreService) BindSecretStore(userID uint, storeID, projectID uin
 	s.LogActivity(userID, &storeID, nil, &projectID, "bind_secretstore", fmt.Sprintf("Bound secret store container to project environment %s", environment), ipAddress, userAgent)
 
 	// Trigger env propagation for the newly bound project.
-	go s.PropagateSecretStoreUpdates(storeID)
+	utils.SafeGo(func() {
+		s.PropagateSecretStoreUpdates(storeID)
+	})
 
 	return binding, nil
 }
@@ -311,10 +319,10 @@ func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, bindingID u
 	s.LogActivity(userID, &storeID, nil, &binding.ProjectID, "unbind_secretstore", "Unbound secret store container from project", ipAddress, userAgent)
 
 	// Trigger env propagation to clear unbound keys for remaining projects and the unbound project.
-	go func() {
+	utils.SafeGo(func() {
 		s.PropagateSecretStoreUpdates(storeID)
 		s.PropagateProjectEnvUpdate(binding.ProjectID, userID)
-	}()
+	})
 
 	return nil
 }

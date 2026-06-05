@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/services"
@@ -216,7 +217,7 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 	// Write audited activity log entry for tracking.
 	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", "Revealed plaintext value of secret key: "+targetItem.Key, c.IP(), c.Get("User-Agent"))
 
-	return c.JSON(fiber.Map{"value": decryptedVal})
+	return c.JSON(fiber.Map{"data": fiber.Map{"value": decryptedVal}})
 }
 
 func (h *SecretStoreHandler) Bind(c *fiber.Ctx) error {
@@ -332,7 +333,9 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 	h.secretStoreService.LogActivity(userID, &storeID, nil, nil, "import_secrets", "Imported secrets into store container", c.IP(), c.Get("User-Agent"))
 
 	// Propagate updates exactly once after bulk import
-	go h.secretStoreService.PropagateSecretStoreUpdates(storeID)
+	utils.SafeGo(func() {
+		h.secretStoreService.PropagateSecretStoreUpdates(storeID)
+	})
 
 	return c.JSON(fiber.Map{"message": "Secrets imported successfully"})
 }
@@ -385,5 +388,187 @@ func (h *SecretStoreHandler) AdminListLogs(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"data": logs})
 }
+
+// CreateItem creates a new secret item in the store (aliased to SetSecret)
+func (h *SecretStoreHandler) CreateItem(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
+	}
+
+	var req struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.New(400, "BAD_REQUEST", "Invalid request body")
+	}
+
+	if req.Key == "" {
+		return apperr.New(400, "VALIDATION_FAILED", "Secret key cannot be empty")
+	}
+
+	// Verify ownership of the secret store
+	store, err := h.secretStoreService.GetSecretStore(userID, uint(id))
+	if err != nil {
+		return apperr.New(404, "NOT_FOUND", "SecretStore not found")
+	}
+
+	// Check for key collision dynamically to enforce standard RESTful creation rules
+	var count int64
+	if err := h.db.Model(&models.SecretStoreItem{}).Where("secret_store_id = ? AND key = ?", store.ID, req.Key).Count(&count).Error; err == nil && count > 0 {
+		return apperr.New(409, "KEY_COLLISION", "Secret key already exists in this store")
+	}
+
+	item, err := h.secretStoreService.SetSecretValue(userID, store.ID, req.Key, req.Value, c.IP(), c.Get("User-Agent"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{"data": item})
+}
+
+// UpdateItem updates an existing secret item's value by creating a new version
+func (h *SecretStoreHandler) UpdateItem(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
+	}
+
+	itemID, err := strconv.ParseUint(c.Params("itemID"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ITEM_ID", "Invalid SecretStore Item ID")
+	}
+
+	var req struct {
+		Value string `json:"value"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.New(400, "BAD_REQUEST", "Invalid request body")
+	}
+
+	// Verify ownership of the secret store
+	store, err := h.secretStoreService.GetSecretStore(userID, uint(id))
+	if err != nil {
+		return apperr.New(404, "NOT_FOUND", "SecretStore not found")
+	}
+
+	// Resolve target item to verify key
+	var item models.SecretStoreItem
+	if err := h.db.Where("id = ? AND secret_store_id = ?", itemID, store.ID).First(&item).Error; err != nil {
+		return apperr.New(404, "ITEM_NOT_FOUND", "SecretStore Item not found")
+	}
+
+	// Update the secret value using SetSecretValue (handles versioning, encryption, audit log and propagation)
+	updatedItem, err := h.secretStoreService.SetSecretValue(userID, store.ID, item.Key, req.Value, c.IP(), c.Get("User-Agent"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{"data": updatedItem})
+}
+
+// DeleteItem soft-deletes a secret item and propagates updates to bound projects
+func (h *SecretStoreHandler) DeleteItem(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
+	}
+
+	itemID, err := strconv.ParseUint(c.Params("itemID"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ITEM_ID", "Invalid SecretStore Item ID")
+	}
+
+	// Verify ownership of the secret store
+	store, err := h.secretStoreService.GetSecretStore(userID, uint(id))
+	if err != nil {
+		return apperr.New(404, "NOT_FOUND", "SecretStore not found")
+	}
+
+	// Retrieve target item
+	var item models.SecretStoreItem
+	if err := h.db.Where("id = ? AND secret_store_id = ?", itemID, store.ID).First(&item).Error; err != nil {
+		return apperr.New(404, "ITEM_NOT_FOUND", "SecretStore Item not found")
+	}
+
+	// Perform GORM soft delete
+	if err := h.db.Delete(&item).Error; err != nil {
+		return err
+	}
+
+	// Log activity
+	h.secretStoreService.LogActivity(
+		userID,
+		&store.ID,
+		&item.ID,
+		nil,
+		"delete_secret_item",
+		fmt.Sprintf("Deleted secret key: %s", item.Key),
+		c.IP(),
+		c.Get("User-Agent"),
+	)
+
+	// Propagate updates asynchronously using safe panic recovery wrapper
+	utils.SafeGo(func() {
+		h.secretStoreService.PropagateSecretStoreUpdates(store.ID)
+	})
+
+	return c.JSON(fiber.Map{"message": "SecretStore Item deleted successfully"})
+}
+
+// History returns version history details for a secret item
+func (h *SecretStoreHandler) History(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+	id, err := strconv.ParseUint(c.Params("id"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
+	}
+
+	itemID, err := strconv.ParseUint(c.Params("itemID"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_ITEM_ID", "Invalid SecretStore Item ID")
+	}
+
+	// Verify ownership of the secret store
+	store, err := h.secretStoreService.GetSecretStore(userID, uint(id))
+	if err != nil {
+		return apperr.New(404, "NOT_FOUND", "SecretStore not found")
+	}
+
+	// Retrieve target item
+	var item models.SecretStoreItem
+	if err := h.db.Where("id = ? AND secret_store_id = ?", itemID, store.ID).First(&item).Error; err != nil {
+		return apperr.New(404, "ITEM_NOT_FOUND", "SecretStore Item not found")
+	}
+
+	// Retrieve history values ordered by version desc
+	var values []models.SecretStoreItemValue
+	if err := h.db.Where("secret_store_item_id = ?", item.ID).Order("version DESC").Find(&values).Error; err != nil {
+		return err
+	}
+
+	// Format response array of {id, version, created_at}
+	type HistoryItemResponse struct {
+		ID        uint      `json:"id"`
+		Version   int       `json:"version"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	data := make([]HistoryItemResponse, len(values))
+	for i, val := range values {
+		data[i] = HistoryItemResponse{
+			ID:        val.ID,
+			Version:   val.Version,
+			CreatedAt: val.CreatedAt,
+		}
+	}
+
+	return c.JSON(fiber.Map{"data": data})
+}
+
 
 
