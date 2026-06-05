@@ -68,7 +68,7 @@ func main() {
 	slog.Info("Redis connected successfully")
 
 	// Initialize Infrastructure Services
-	storageService := infrastructure.NewStorageService(cfg)
+	storageService := infrastructure.NewStorageService(cfg, db)
 	dockerService := docker.NewDockerService(cfg, storageService, db)
 	mysqlService := infrastructure.NewMySQLService()
 

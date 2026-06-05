@@ -163,7 +163,7 @@ func (h *ProjectHandler) ListBranches(c *fiber.Ctx) error {
 		}
 	} else if project.GithubURL != "" {
 		// Manual Git connected project
-		gitService := infrastructure.NewGitService(h.cfg)
+		gitService := infrastructure.NewGitService(h.cfg, h.db)
 		remoteBranches, err := gitService.GetRemoteBranches(project.GithubURL)
 		if err != nil {
 			slog.Error("Failed to list remote branches via git ls-remote", "project_id", project.ID, "url", project.GithubURL, "error", err)

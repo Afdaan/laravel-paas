@@ -18,12 +18,15 @@ import (
 
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"gorm.io/gorm"
 )
 
 // GitService handles Git repository operations
 type GitService struct {
 	cfg *config.Config
+	db  *gorm.DB
 }
 
 var gitCredentialPattern = regexp.MustCompile(`(?i)(https?://)([^/\s:@]+:)?[^/\s@]+@`)
@@ -36,9 +39,10 @@ esac
 `
 
 // NewGitService creates a new Git service
-func NewGitService(cfg *config.Config) *GitService {
+func NewGitService(cfg *config.Config, db *gorm.DB) *GitService {
 	return &GitService{
 		cfg: cfg,
+		db:  db,
 	}
 }
 
@@ -101,7 +105,7 @@ func gitAuthEnv(githubURL string) (string, []string, func(), error) {
 
 // CloneRepository clones a GitHub repository using a non-destructive sync strategy to a multi-tenant subdirectory.
 func (s *GitService) CloneRepository(userID uint, githubURL, branch, subdomain string) (string, string, error) {
-	userDirName := fmt.Sprintf("user-%d", userID)
+	userDirName := models.GetUserDirName(s.db, userID)
 	userPath := filepath.Join(s.cfg.ProjectsPath, userDirName)
 	projectPath := filepath.Join(userPath, subdomain)
 

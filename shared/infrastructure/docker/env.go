@@ -1,15 +1,21 @@
 package docker
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// CreateEnvFile compiles the environment configuration from SecretStore and writes it atomically to the project directory.
+// CreateEnvFile compiles the environment configurati		on from SecretStore and writes it atomically to the project directory.
 func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string, isInitial bool) error {
 	projectPath := project.GetProjectPath(s.cfg.ProjectsPath)
 	envPath := filepath.Join(projectPath, ".env")
@@ -50,7 +56,7 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 
 // GetEnvFile reads the .env file for a project.
 func (s *DockerService) GetEnvFile(userID uint, subdomain string) (string, error) {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, fmt.Sprintf("user-%d", userID), subdomain)
+	projectPath := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 	content, err := os.ReadFile(filepath.Join(projectPath, ".env"))
 	if err != nil {
 		return "", err
@@ -60,7 +66,7 @@ func (s *DockerService) GetEnvFile(userID uint, subdomain string) (string, error
 
 // SaveEnvFile updates the .env file for a project using an atomic write pattern.
 func (s *DockerService) SaveEnvFile(userID uint, subdomain, content string) error {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, fmt.Sprintf("user-%d", userID), subdomain)
+	projectPath := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 	envPath := filepath.Join(projectPath, ".env")
 	tempPath := envPath + ".tmp"
 
@@ -170,6 +176,106 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 						}
 					}
 				}
+			}
+		}
+	}
+
+	// Layer 4: Laravel APP_KEY auto-provisioning
+	if framework == "Laravel" {
+		if _, ok := envMap["APP_KEY"]; !ok {
+			var appKey string
+			errTx := s.db.Transaction(func(tx *gorm.DB) error {
+				// Lock project to prevent concurrent creation of duplicate SecretStores.
+				var project models.Project
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&project, projectID).Error; err != nil {
+					return err
+				}
+
+				var binding models.SecretStoreBinding
+				err := tx.Where("project_id = ?", projectID).First(&binding).Error
+				var storeID uint
+				if err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						// No binding exists. Create a new SecretStore and bind it.
+						store := models.SecretStore{
+							UserID:      userID,
+							Name:        fmt.Sprintf("Environment Secrets (%s)", subdomain),
+							Description: "Managed variables for project " + subdomain,
+						}
+						if err := tx.Create(&store).Error; err != nil {
+							return err
+						}
+						storeID = store.ID
+						newBinding := models.SecretStoreBinding{
+							ProjectID:     projectID,
+							SecretStoreID: store.ID,
+							Environment:   "production",
+						}
+						if err := tx.Create(&newBinding).Error; err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					storeID = binding.SecretStoreID
+				}
+
+				var item models.SecretStoreItem
+				errItem := tx.Where("secret_store_id = ? AND key = ?", storeID, "APP_KEY").First(&item).Error
+				stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+
+				if errItem != nil {
+					if errors.Is(errItem, gorm.ErrRecordNotFound) {
+						// APP_KEY not found in DB, generate one.
+						keyBytes := make([]byte, 32)
+						if _, randErr := rand.Read(keyBytes); randErr == nil {
+							return randErr
+						}
+						appKey = "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
+						encryptedVal, encErr := utils.Encrypt(appKey, stretchedKey)
+						if encErr == nil {
+							newItem := models.SecretStoreItem{
+								SecretStoreID:         storeID,
+								Key:                   "APP_KEY",
+								LatestSnapshotVersion: 1,
+							}
+							if err := tx.Create(&newItem).Error; err != nil {
+								return err
+							}
+							itemVal := models.SecretStoreItemValue{
+								SecretStoreItemID: newItem.ID,
+								Version:           1,
+								EncryptedValue:    encryptedVal,
+								CreatedBy:         userID,
+							}
+							if err := tx.Create(&itemVal).Error; err != nil {
+								return err
+							}
+						}
+					} else {
+						return errItem
+					}
+				} else {
+					// APP_KEY item exists, retrieve and decrypt its value.
+					var val models.SecretStoreItemValue
+					if errVal := tx.Where("secret_store_item_id = ? AND version = ?", item.ID, item.LatestSnapshotVersion).First(&val).Error; errVal != nil {
+						return errVal
+					}
+					legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
+					decrypted, decErr := utils.Decrypt(val.EncryptedValue, stretchedKey, legacyKey)
+					if decErr != nil {
+						return decErr
+					}
+					appKey = decrypted
+				}
+				return nil
+			})
+
+			if errTx == nil && appKey != "" {
+				envMap["APP_KEY"] = appKey
+			} else if errTx != nil {
+				slog.Error("Failed to auto-provision APP_KEY for Laravel project", "projectID", projectID, "error", errTx)
 			}
 		}
 	}

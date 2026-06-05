@@ -7,6 +7,8 @@
 package database
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -107,6 +110,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	// Backfill DatabaseInstance records for existing projects that have MySQL databases.
 	if err := BackfillDatabaseInstances(db); err != nil {
 		slog.Warn("Failed to backfill database instances", "error", err)
+	}
+
+	// Backfill Laravel APP_KEY for existing Laravel projects.
+	if err := BackfillLaravelAppKeys(db, cfg); err != nil {
+		slog.Warn("Failed to backfill Laravel app keys", "error", err)
 	}
 
 	return nil
@@ -494,35 +502,93 @@ func BackfillDatabaseInstances(db *gorm.DB) error {
 
 // MigrateProjectsFilesToTenantLayout re-arranges legacy project files into multi-tenant user-based folders.
 func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error {
-	slog.Info("Checking if filesystem migration to multi-tenant layout is needed...", "projects_path", projectsPath)
+	cfg := config.Load()
+	dataPath := cfg.DataPath
 
-	var projects []models.Project
-	if err := db.Find(&projects).Error; err != nil {
-		return fmt.Errorf("failed to fetch projects: %w", err)
+	slog.Info("Starting database UserSlug population and filesystem tenant layout migration...")
+
+	// 1. Populate UserSlug in the database for any legacy projects
+	var allProjects []models.Project
+	if err := db.Preload("User").Find(&allProjects).Error; err == nil {
+		for _, p := range allProjects {
+			if p.UserSlug == "" || p.UserSlug == "user-unknown" {
+				slug := models.NormalizeSlug(p.User.Name)
+				if slug == "" {
+					parts := strings.Split(p.User.Email, "@")
+					if len(parts) > 0 {
+						slug = models.NormalizeSlug(parts[0])
+					}
+				}
+				if slug == "" {
+					slug = "user"
+				}
+				p.UserSlug = fmt.Sprintf("%s-%d", slug, p.UserID)
+				if err := db.Model(&p).Update("user_slug", p.UserSlug).Error; err != nil {
+					slog.Error("Failed to update user_slug for project", "id", p.ID, "error", err)
+				}
+			}
+		}
 	}
 
+	// 2. Fetch projects again to ensure we have updated slugs
+	var projects []models.Project
+	if err := db.Find(&projects).Error; err != nil {
+		return fmt.Errorf("failed to fetch projects for file migration: %w", err)
+	}
+
+	// Track parent migrations we have performed to avoid duplicate log spams
+	migratedParents := make(map[string]bool)
+
 	for _, p := range projects {
+		userFolder := p.UserSlug
+		if userFolder == "" {
+			userFolder = fmt.Sprintf("user-%d", p.UserID)
+		}
+
+		// A. Rename projects/user-<id> to projects/<slug>-<id>
+		legacyParentPath := filepath.Join(projectsPath, fmt.Sprintf("user-%d", p.UserID))
+		newParentPath := filepath.Join(projectsPath, userFolder)
+
+		if !migratedParents[legacyParentPath] && legacyParentPath != newParentPath {
+			if info, err := os.Stat(legacyParentPath); err == nil && info.IsDir() {
+				slog.Info("Migrating projects parent directory to named user slug", "from", legacyParentPath, "to", newParentPath)
+				if err := os.Rename(legacyParentPath, newParentPath); err != nil {
+					slog.Error("Failed to rename legacy projects user folder", "from", legacyParentPath, "to", newParentPath, "error", err)
+				}
+			}
+			migratedParents[legacyParentPath] = true
+		}
+
+		// B. Rename data/user-<id> to data/<slug>-<id> (for backups and storage volumes)
+		legacyDataParentPath := filepath.Join(dataPath, fmt.Sprintf("user-%d", p.UserID))
+		newDataParentPath := filepath.Join(dataPath, userFolder)
+
+		if !migratedParents[legacyDataParentPath] && legacyDataParentPath != newDataParentPath {
+			if info, err := os.Stat(legacyDataParentPath); err == nil && info.IsDir() {
+				slog.Info("Migrating data parent directory to named user slug", "from", legacyDataParentPath, "to", newDataParentPath)
+				if err := os.Rename(legacyDataParentPath, newDataParentPath); err != nil {
+					slog.Error("Failed to rename legacy data user folder", "from", legacyDataParentPath, "to", newDataParentPath, "error", err)
+				}
+			}
+			migratedParents[legacyDataParentPath] = true
+		}
+
+		// C. Handle old flat-layout to tenant-layout fallback migrations (if any old files exist)
 		legacyPath := filepath.Join(projectsPath, p.Subdomain)
-		newParentPath := filepath.Join(projectsPath, fmt.Sprintf("user-%d", p.UserID))
 		newPath := filepath.Join(newParentPath, p.Subdomain)
-
-		// Move directory to nested tenant path if it still exists in the flat format.
 		if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
-			slog.Info("Migrating project directory to user tenant folder", "project", p.Name, "legacy", legacyPath, "new", newPath)
-
+			slog.Info("Migrating project directory from legacy flat format to named user tenant folder", "project", p.Name, "legacy", legacyPath, "new", newPath)
 			if err := os.MkdirAll(newParentPath, 0755); err != nil {
 				slog.Error("Failed to create user directory", "path", newParentPath, "error", err)
 				continue
 			}
-
 			if err := os.Rename(legacyPath, newPath); err != nil {
 				slog.Error("Failed to rename project directory", "from", legacyPath, "to", newPath, "error", err)
 				continue
 			}
-			slog.Info("Successfully migrated project directory", "subdomain", p.Subdomain)
 		}
 
-		// Cleanup legacy and new backup environment files to protect secret data.
+		// Cleanup env backup files to protect secrets
 		legacyBakFile := filepath.Join(projectsPath, p.Subdomain+".env.bak")
 		if _, err := os.Stat(legacyBakFile); err == nil {
 			_ = os.Remove(legacyBakFile)
@@ -541,6 +607,111 @@ func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error 
 				_ = os.Remove(filepath.Join(projectsPath, f.Name()))
 			}
 		}
+	}
+
+	return nil
+}
+
+// BackfillLaravelAppKeys ensures all existing Laravel projects have an APP_KEY in their secret store.
+func BackfillLaravelAppKeys(db *gorm.DB, cfg *config.Config) error {
+	var projects []models.Project
+	if err := db.Where("framework = 'Laravel'").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	backfilled := 0
+	stretchedKey := utils.DeriveKey(cfg.CredentialEncryptionKey)
+
+	for _, p := range projects {
+		var bindings []models.SecretStoreBinding
+		if err := db.Where("project_id = ?", p.ID).Find(&bindings).Error; err != nil {
+			continue
+		}
+
+		appKeyExists := false
+		var storeID uint
+		if len(bindings) > 0 {
+			storeID = bindings[0].SecretStoreID
+			var storeIDs []uint
+			for _, b := range bindings {
+				storeIDs = append(storeIDs, b.SecretStoreID)
+			}
+			var count int64
+			db.Model(&models.SecretStoreItem{}).Where("secret_store_id IN (?) AND key = ?", storeIDs, "APP_KEY").Count(&count)
+			if count > 0 {
+				appKeyExists = true
+			}
+		}
+
+		if appKeyExists {
+			continue
+		}
+
+		// Create store and binding if none exist.
+		if storeID == 0 {
+			store := models.SecretStore{
+				UserID:      p.UserID,
+				Name:        fmt.Sprintf("Environment Secrets (%s)", p.Name),
+				Description: "Managed variables for project " + p.Name,
+			}
+			if err := db.Create(&store).Error; err != nil {
+				slog.Warn("Failed to create secret store during backfill", "projectID", p.ID, "error", err)
+				continue
+			}
+			storeID = store.ID
+
+			newBinding := models.SecretStoreBinding{
+				ProjectID:     p.ID,
+				SecretStoreID: store.ID,
+				Environment:   "production",
+			}
+			if err := db.Create(&newBinding).Error; err != nil {
+				slog.Warn("Failed to bind secret store during backfill", "projectID", p.ID, "error", err)
+				continue
+			}
+		}
+
+		keyBytes := make([]byte, 32)
+		if _, err := rand.Read(keyBytes); err != nil {
+			slog.Warn("Failed to generate random key bytes during backfill", "error", err)
+			continue
+		}
+
+		appKey := "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
+		encryptedVal, err := utils.Encrypt(appKey, stretchedKey)
+		if err != nil {
+			slog.Warn("Failed to encrypt APP_KEY during backfill", "error", err)
+			continue
+		}
+
+		errTx := db.Transaction(func(tx *gorm.DB) error {
+			item := models.SecretStoreItem{
+				SecretStoreID:         storeID,
+				Key:                   "APP_KEY",
+				LatestSnapshotVersion: 1,
+			}
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+			itemValue := models.SecretStoreItemValue{
+				SecretStoreItemID: item.ID,
+				Version:           1,
+				EncryptedValue:    encryptedVal,
+				CreatedBy:         p.UserID,
+			}
+			return tx.Create(&itemValue).Error
+		})
+
+		if errTx != nil {
+			slog.Warn("Failed to save APP_KEY during backfill", "projectID", p.ID, "error", errTx)
+			continue
+		}
+
+		backfilled++
+	}
+
+	if backfilled > 0 {
+		slog.Info("Backfilled APP_KEY for existing Laravel projects", "count", backfilled)
 	}
 
 	return nil

@@ -8,6 +8,8 @@ package models
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -100,6 +102,7 @@ type Project struct {
 	ID                    uint             `gorm:"primaryKey" json:"id"`
 	UserID                uint             `gorm:"not null;index" json:"user_id"`
 	User                  User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	UserSlug              string           `gorm:"size:255;not null;default:'user-unknown'" json:"user_slug"`
 	Name                  string           `gorm:"size:255;not null" json:"name"`
 	GithubURL             string           `gorm:"size:500;not null" json:"github_url"`
 	Branch                string           `gorm:"size:200;not null;default:main" json:"branch"`
@@ -189,7 +192,87 @@ func (p *Project) GetHealthCheckPath() string {
 
 // GetProjectPath returns the multi-tenant directory path for the project on the host or inside the workspace.
 func (p *Project) GetProjectPath(basePath string) string {
-	return filepath.Join(basePath, fmt.Sprintf("user-%d", p.UserID), p.Subdomain)
+	userFolder := p.UserSlug
+	if userFolder == "" || userFolder == "user-unknown" {
+		userFolder = fmt.Sprintf("user-%d", p.UserID)
+	}
+	return filepath.Join(basePath, userFolder, p.Subdomain)
+}
+
+// BeforeCreate hooks into GORM's creation cycle to auto-populate UserSlug.
+func (p *Project) BeforeCreate(tx *gorm.DB) error {
+	var user User
+	if err := tx.Select("name, email").First(&user, p.UserID).Error; err == nil {
+		slug := NormalizeSlug(user.Name)
+		if slug == "" {
+			parts := strings.Split(user.Email, "@")
+			if len(parts) > 0 {
+				slug = NormalizeSlug(parts[0])
+			}
+		}
+		if slug == "" {
+			slug = "user"
+		}
+		p.UserSlug = fmt.Sprintf("%s-%d", slug, p.UserID)
+	} else {
+		p.UserSlug = fmt.Sprintf("user-%d", p.UserID)
+	}
+	return nil
+}
+
+// NormalizeSlug converts a string (like name or email prefix) to a clean, safe slug.
+func NormalizeSlug(s string) string {
+	s = strings.ToLower(s)
+	var sb strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			sb.WriteByte(c)
+		} else {
+			sb.WriteByte('-')
+		}
+	}
+	res := sb.String()
+	for strings.Contains(res, "--") {
+		res = strings.ReplaceAll(res, "--", "-")
+	}
+	res = strings.Trim(res, "-")
+	return res
+}
+
+var userSlugCache sync.Map
+
+// GetUserDirName retrieves a clean, human-readable directory name for a user (e.g., "afdaan-1").
+// It caches the result in memory to avoid repeated DB queries.
+func GetUserDirName(db *gorm.DB, userID uint) string {
+	if val, ok := userSlugCache.Load(userID); ok {
+		return val.(string)
+	}
+
+	defaultName := fmt.Sprintf("user-%d", userID)
+	if db == nil {
+		return defaultName
+	}
+
+	var user User
+	if err := db.Select("name, email").First(&user, userID).Error; err != nil {
+		return defaultName
+	}
+
+	slug := NormalizeSlug(user.Name)
+	if slug == "" {
+		parts := strings.Split(user.Email, "@")
+		if len(parts) > 0 {
+			slug = NormalizeSlug(parts[0])
+		}
+	}
+	if slug == "" {
+		slug = "user"
+	}
+
+	dirName := fmt.Sprintf("%s-%d", slug, userID)
+	userSlugCache.Store(userID, dirName)
+	return dirName
 }
 
 

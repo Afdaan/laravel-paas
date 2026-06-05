@@ -248,9 +248,12 @@ func (s *NginxWebhookService) sendRequest(payload WebhookPayload) (string, error
 	return webhookResp.ConfigHash, nil
 }
 
-// getUserFolderName generates a predictable, POSIX-compliant directory name based on the user's email.
-// It strips all special characters and appends the user ID to guarantee uniqueness and prevent directory traversal or collision issues.
+// getUserFolderName generates a predictable, POSIX-compliant directory name based on the user's email or UserSlug.
 func (s *NginxWebhookService) getUserFolderName(project *models.Project) string {
+	if project.UserSlug != "" && project.UserSlug != "user-unknown" {
+		return project.UserSlug
+	}
+
 	if project.User.Email == "" {
 		return fmt.Sprintf("user-%d", project.UserID)
 	}

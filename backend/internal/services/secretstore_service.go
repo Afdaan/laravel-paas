@@ -1,6 +1,8 @@
 package services
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +12,7 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SecretStoreService handles secure business logic for secret stores.
@@ -437,6 +440,104 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 					continue
 				}
 				envMap[item.Key] = decrypted
+			}
+		}
+	}
+
+	// Layer 4: Laravel APP_KEY auto-provisioning
+	if project.Framework == "Laravel" {
+		if _, ok := envMap["APP_KEY"]; !ok {
+			var appKey string
+			errTx := s.db.Transaction(func(tx *gorm.DB) error {
+				// Lock project to prevent concurrent creation of duplicate SecretStores.
+				var proj models.Project
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&proj, project.ID).Error; err != nil {
+					return err
+				}
+
+				var binding models.SecretStoreBinding
+				err := tx.Where("project_id = ?", project.ID).First(&binding).Error
+				var storeID uint
+				if err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						// No binding exists. Create a new SecretStore and bind it.
+						store := models.SecretStore{
+							UserID:      project.UserID,
+							Name:        fmt.Sprintf("Environment Secrets (%s)", project.Subdomain),
+							Description: "Managed variables for project " + project.Subdomain,
+						}
+						if err := tx.Create(&store).Error; err != nil {
+							return err
+						}
+						storeID = store.ID
+						newBinding := models.SecretStoreBinding{
+							ProjectID:     project.ID,
+							SecretStoreID: store.ID,
+							Environment:   "production",
+						}
+						if err := tx.Create(&newBinding).Error; err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					storeID = binding.SecretStoreID
+				}
+
+				var item models.SecretStoreItem
+				errItem := tx.Where("secret_store_id = ? AND key = ?", storeID, "APP_KEY").First(&item).Error
+				stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+
+				if errItem != nil {
+					if errors.Is(errItem, gorm.ErrRecordNotFound) {
+						// APP_KEY not found in DB, generate one.
+						keyBytes := make([]byte, 32)
+						if _, randErr := rand.Read(keyBytes); randErr == nil {
+							appKey = "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
+							encryptedVal, encErr := utils.Encrypt(appKey, stretchedKey)
+							if encErr == nil {
+								newItem := models.SecretStoreItem{
+									SecretStoreID:         storeID,
+									Key:                   "APP_KEY",
+									LatestSnapshotVersion: 1,
+								}
+								if err := tx.Create(&newItem).Error; err != nil {
+									return err
+								}
+								itemVal := models.SecretStoreItemValue{
+									SecretStoreItemID: newItem.ID,
+									Version:           1,
+									EncryptedValue:    encryptedVal,
+									CreatedBy:         project.UserID,
+								}
+								if err := tx.Create(&itemVal).Error; err != nil {
+									return err
+								}
+							}
+						}
+					} else {
+						return errItem
+					}
+				} else {
+					// APP_KEY item exists, retrieve and decrypt its value.
+					var val models.SecretStoreItemValue
+					if errVal := tx.Where("secret_store_item_id = ? AND version = ?", item.ID, item.LatestSnapshotVersion).First(&val).Error; errVal != nil {
+						return errVal
+					}
+					legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
+					decrypted, decErr := utils.Decrypt(val.EncryptedValue, stretchedKey, legacyKey)
+					if decErr == nil {
+						appKey = decrypted
+					}
+				}
+				return nil
+			})
+
+			if errTx == nil && appKey != "" {
+				envMap["APP_KEY"] = appKey
+			} else if errTx != nil {
+				slog.Error("Failed to auto-provision APP_KEY for Laravel project", "projectID", project.ID, "error", errTx)
 			}
 		}
 	}
