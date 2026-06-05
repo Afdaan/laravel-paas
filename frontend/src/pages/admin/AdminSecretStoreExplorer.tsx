@@ -1,19 +1,14 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { secretStoreAPI } from '@/services/api'
 import {
-  Shield,
-  ShieldAlert,
+  Vault,
   Loader2,
   Search,
   User,
-  History,
-  Activity,
-  FileText
+  Activity
 } from 'lucide-react'
-import useTranslation from '@/lib/useTranslation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -135,7 +130,7 @@ export default function AdminSecretStoreExplorer() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-border/60">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
-            <ShieldAlert className="w-7 h-7 text-primary" />
+            <Vault className="w-7 h-7 text-primary" />
             {t('secretstore.title')}
           </h1>
           <p className="text-sm text-muted-foreground">{t('secretstore.desc')}</p>
@@ -144,12 +139,12 @@ export default function AdminSecretStoreExplorer() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2 border-b border-border/60">
-          <TabsList className="bg-transparent h-10 p-0 gap-6">
+          <TabsList variant="line" className="bg-transparent h-10 p-0 gap-6">
             <TabsTrigger
               value="stores"
               className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent h-full px-0 font-bold uppercase tracking-widest text-[9px] text-muted-foreground data-[state=active]:text-foreground"
             >
-              <Shield className="w-3.5 h-3.5 mr-1.5" />
+              <Vault className="w-3.5 h-3.5 mr-1.5" />
               Credential Containers
             </TabsTrigger>
             <TabsTrigger

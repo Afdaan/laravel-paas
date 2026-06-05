@@ -27,7 +27,8 @@ import {
   Globe,
   PanelLeftClose,
   PanelLeftOpen,
-  ChevronDown
+  ChevronDown,
+  Vault
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
@@ -53,7 +54,7 @@ const Icons = {
   Volumes: HardDrive,
   Feedback: MessageSquare,
   Domains: Globe,
-  SecretStore: ShieldCheck,
+  SecretStore: Vault,
 }
 
 interface DashboardLayoutProps {

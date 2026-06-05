@@ -287,7 +287,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
 
         <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="px-6 border-b border-border bg-muted/10">
-            <TabsList className="bg-transparent h-12 p-0 gap-6">
+            <TabsList variant="line" className="bg-transparent h-12 p-0 gap-6">
               <TabsTrigger 
                 value="grid" 
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent h-full px-0 font-bold uppercase tracking-widest text-[9px] text-muted-foreground data-[state=active]:text-foreground"
@@ -504,7 +504,14 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                 >
                   <SelectTrigger id="link-store" className="w-full h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
                     <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
-                      <SelectValue placeholder="Choose a SecretStore..." />
+                      {(() => {
+                        const s = linkableStores.find(store => String(store.id) === linkForm.storeId)
+                        return s ? (
+                          <span className="truncate font-semibold text-foreground/90">{s.name}</span>
+                        ) : (
+                          <span className="text-muted-foreground/60">Choose a SecretStore...</span>
+                        )
+                      })()}
                     </div>
                   </SelectTrigger>
                   <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">

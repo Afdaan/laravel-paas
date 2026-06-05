@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { secretStoreAPI, projectsAPI } from '@/services/api'
 import {
   Plus,
-  Shield,
+  Vault,
   Key,
   Trash2,
   Eye,
@@ -427,7 +427,7 @@ export default function SecretStoreDashboard() {
                 }`}
               >
                 <div className="flex items-center gap-3 truncate">
-                  <Shield className={`w-4 h-4 shrink-0 ${selectedStore?.id === store.id ? 'text-primary' : 'opacity-60'}`} />
+                  <Vault className={`w-4 h-4 shrink-0 ${selectedStore?.id === store.id ? 'text-primary' : 'opacity-60'}`} />
                   <div className="truncate">
                     <p className="font-bold text-xs truncate">{store.name}</p>
                     <p className="text-[10px] text-muted-foreground truncate">{store.description || 'No description'}</p>
@@ -448,7 +448,7 @@ export default function SecretStoreDashboard() {
               <CardHeader className="pb-4 border-b border-border bg-card flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-primary" />
+                    <Vault className="w-4 h-4 text-primary" />
                     {selectedStore.name}
                   </CardTitle>
                   <CardDescription className="text-xs">{selectedStore.description || 'No description provided'}</CardDescription>
@@ -479,7 +479,7 @@ export default function SecretStoreDashboard() {
 
               <Tabs defaultValue="variables" className="w-full">
                 <div className="px-6 border-b border-border bg-muted/10">
-                  <TabsList className="bg-transparent h-12 p-0 gap-6">
+                  <TabsList variant="line" className="bg-transparent h-12 p-0 gap-6">
                     <TabsTrigger 
                       value="variables" 
                       className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent h-full px-0 font-bold uppercase tracking-widest text-[9px] text-muted-foreground data-[state=active]:text-foreground"
@@ -737,7 +737,7 @@ export default function SecretStoreDashboard() {
             </Card>
           ) : (
             <Card className="flex flex-col items-center justify-center h-[500px] border-dashed border-border/60 text-center p-8 bg-muted/5">
-              <Shield className="w-12 h-12 text-muted-foreground opacity-30 mb-4" />
+              <Vault className="w-12 h-12 text-muted-foreground opacity-30 mb-4" />
               <h3 className="font-bold text-base mb-1">{t('secretstore.noStores')}</h3>
               <p className="text-xs text-muted-foreground max-w-xs mb-6">{t('secretstore.noStoresDesc')}</p>
               <Button 
@@ -761,7 +761,7 @@ export default function SecretStoreDashboard() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary" />
+              <Vault className="w-4 h-4 text-primary" />
               {editingStoreId ? t('secretstore.editStore') : t('secretstore.newStore')}
             </DialogTitle>
             <DialogDescription className="text-xs">
@@ -874,7 +874,14 @@ export default function SecretStoreDashboard() {
               >
                 <SelectTrigger id="bind-project" className="w-full h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
                   <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
-                    <SelectValue placeholder="Choose a project..." />
+                    {(() => {
+                      const p = projects.find(proj => proj.uid === bindingForm.projectUid)
+                      return p ? (
+                        <span className="truncate font-semibold text-foreground/90">{p.name}</span>
+                      ) : (
+                        <span className="text-muted-foreground/60">Choose a project...</span>
+                      )
+                    })()}
                   </div>
                 </SelectTrigger>
                 <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">
