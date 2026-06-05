@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react'
  */
 export function usePolling(callback: () => void, delay: number | null) {
   const savedCallback = useRef(callback)
+  const lastRun = useRef<number>(0)
 
   // Remember the latest callback
   useEffect(() => {
@@ -19,11 +20,14 @@ export function usePolling(callback: () => void, delay: number | null) {
 
     let intervalId: ReturnType<typeof setInterval> | null = null
 
+    const runCallback = () => {
+      savedCallback.current()
+      lastRun.current = Date.now()
+    }
+
     const startInterval = () => {
       if (!intervalId) {
-        intervalId = setInterval(() => {
-          savedCallback.current()
-        }, delay)
+        intervalId = setInterval(runCallback, delay)
       }
     }
 
@@ -36,8 +40,11 @@ export function usePolling(callback: () => void, delay: number | null) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Refresh immediately on tab focus, then resume interval
-        savedCallback.current()
+        // Refresh immediately on tab focus only if it hasn't run within 2 seconds
+        const now = Date.now()
+        if (now - lastRun.current > 2000) {
+          runCallback()
+        }
         startInterval()
       } else {
         stopInterval()

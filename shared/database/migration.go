@@ -330,8 +330,8 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile SecretStoreItem unique index
 	if isPostgres(db) {
 		if !hasIndexSafe(db, &models.SecretStoreItem{}, "idx_secret_store_items_key_active") {
-			slog.Info("Creating missing partial unique index idx_secret_store_items_key_active")
-			if err := db.Exec("CREATE UNIQUE INDEX idx_secret_store_items_key_active ON secret_store_items (secret_store_id, key) WHERE deleted_at IS NULL;").Error; err != nil {
+			slog.Info("Creating missing partial unique index idx_secret_store_items_key_active concurrently")
+			if err := db.Exec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_secret_store_items_key_active ON secret_store_items (secret_store_id, key) WHERE deleted_at IS NULL;").Error; err != nil {
 				slog.Error("Failed to create idx_secret_store_items_key_active", "error", err)
 			}
 		}
