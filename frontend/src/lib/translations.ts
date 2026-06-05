@@ -750,6 +750,8 @@ export const translations = {
       secrets: {
         desc: "Application environment configuration (.env)",
         redeployNote: "Saving secrets will trigger an immediate redeployment.",
+        unsavedChanges: "Unsaved Changes",
+        resetBtn: "Reset",
         locked: "Secret View Locked",
         placeholder: "# Environment variables here...",
         gridTab: "Variables Grid",
@@ -2188,6 +2190,8 @@ export const translations = {
       secrets: {
         desc: "Konfigurasi environment aplikasi (.env)",
         redeployNote: "Menyimpan secret akan memicu redeploy instan.",
+        unsavedChanges: "Perubahan Belum Disimpan",
+        resetBtn: "Reset",
         locked: "Secret View Terkunci",
         placeholder: "# Variabel environment...",
         gridTab: "Grid Variabel",

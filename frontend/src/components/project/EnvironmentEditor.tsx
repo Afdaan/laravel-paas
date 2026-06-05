@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -52,7 +52,6 @@ interface VariableGridItem {
 
 export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   const { t } = useTranslation()
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   // State variables
   const [activeSubTab, setActiveSubTab] = useState('grid')
@@ -60,7 +59,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
   const [initialContent, setInitialContent] = useState('')
-  const [gridItems, setGridItems] = useState<VariableGridItem[]>([])
+  const [currentDotenv, setCurrentDotenv] = useState('')
   const [boundStores, setBoundStores] = useState<BoundStore[]>([])
   const [allStores, setAllStores] = useState<any[]>([])
   
@@ -74,7 +73,6 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editForm, setEditForm] = useState({ key: '', value: '' })
   const [addForm, setAddForm] = useState({ key: '', value: '' })
-  const [isSavingSingle, setIsSavingSingle] = useState(false)
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -84,6 +82,33 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
     confirmText: t('common.confirm')
   })
 
+  // Memoized grid items parsed from currentDotenv
+  const gridItems = useMemo(() => {
+    const lines = currentDotenv.split('\n')
+    const items: VariableGridItem[] = []
+    lines.forEach((line: string) => {
+      const trimmed = line.trim()
+      if (trimmed === '' || trimmed.startsWith('#')) return
+      const parts = trimmed.split('=')
+      if (parts.length >= 2) {
+        const key = parts[0].trim()
+        let val = parts.slice(1).join('=').trim()
+        // Trim surrounding quotes
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.substring(1, val.length - 1)
+        }
+        items.push({
+          Key: key,
+          Value: val,
+          Source: key.startsWith('DB_') || key === 'DATABASE_URL' ? 'db_auto' : 'secret_store'
+        })
+      }
+    })
+    return items
+  }, [currentDotenv])
+
+  const hasChanges = currentDotenv !== initialContent
+
   // Load environment dotenv content and parse to grid items
   const loadEnv = useCallback(async () => {
     setIsLoading(true)
@@ -92,29 +117,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
       const response = await projectsAPI.getEnv(uid)
       const content = response.data.content || ''
       setInitialContent(content)
-      
-      // Parse dotenv to key-value grid items
-      const lines = content.split('\n')
-      const items: VariableGridItem[] = []
-      lines.forEach((line: string) => {
-        const trimmed = line.trim()
-        if (trimmed === '' || trimmed.startsWith('#')) return
-        const parts = trimmed.split('=')
-        if (parts.length >= 2) {
-          const key = parts[0].trim()
-          let val = parts.slice(1).join('=').trim()
-          // Trim surrounding quotes
-          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-            val = val.substring(1, val.length - 1)
-          }
-          items.push({
-            Key: key,
-            Value: val,
-            Source: key.startsWith('DB_') || key === 'DATABASE_URL' ? 'db_auto' : 'secret_store'
-          })
-        }
-      })
-      setGridItems(items)
+      setCurrentDotenv(content)
 
       // 2. Load SecretStores list to inspect which ones are bound to this project
       const storesRes = await secretStoreAPI.list()
@@ -162,100 +165,65 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
     setRevealedKeys(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const handleEditVariable = async (e: React.FormEvent) => {
+  const handleEditVariable = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editForm.key) return
-    setIsSavingSingle(true)
-    try {
-      // Find the item in gridItems and update its value
-      const updatedItems = gridItems.map(item => {
-        if (item.Key === editForm.key) {
-          return { ...item, Value: editForm.value }
-        }
-        return item
-      })
-      
-      // Compile back to dotenv
-      const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
-      await projectsAPI.updateEnv(uid, newContent)
-      toast.success(t('common.success'))
-      setIsEditModalOpen(false)
-      loadEnv()
-      if (onSave) onSave()
-    } catch (error) {
-      toast.error(t('common.error'))
-    } finally {
-      setIsSavingSingle(false)
-    }
+
+    // Find the item in gridItems and update its value
+    const updatedItems = gridItems.map(item => {
+      if (item.Key === editForm.key) {
+        return { ...item, Value: editForm.value }
+      }
+      return item
+    })
+    
+    // Compile back to dotenv
+    const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
+    setCurrentDotenv(newContent)
+    setIsEditModalOpen(false)
   }
 
-  const handleAddVariable = async (e: React.FormEvent) => {
+  const handleAddVariable = (e: React.FormEvent) => {
     e.preventDefault()
     if (!addForm.key) return
-    setIsSavingSingle(true)
-    try {
-      // Check if key already exists
-      const exists = gridItems.some(item => item.Key.toUpperCase() === addForm.key.toUpperCase())
-      if (exists) {
-        toast.error(t('projectDetail.secrets.keyExists'))
-        setIsSavingSingle(false)
-        return
-      }
 
-      const newItem = {
-        Key: addForm.key.trim().toUpperCase(),
-        Value: addForm.value,
-        Source: 'secret_store'
-      }
-      
-      const updatedItems = [...gridItems, newItem]
-      
-      // Compile back to dotenv
-      const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
-      await projectsAPI.updateEnv(uid, newContent)
-      toast.success(t('common.success'))
-      setIsAddModalOpen(false)
-      setAddForm({ key: '', value: '' })
-      loadEnv()
-      if (onSave) onSave()
-    } catch (error) {
-      toast.error(t('common.error'))
-    } finally {
-      setIsSavingSingle(false)
+    // Check if key already exists
+    const exists = gridItems.some(item => item.Key.toUpperCase() === addForm.key.toUpperCase())
+    if (exists) {
+      toast.error(t('projectDetail.secrets.keyExists'))
+      return
     }
+
+    const newItem = {
+      Key: addForm.key.trim().toUpperCase(),
+      Value: addForm.value,
+      Source: 'secret_store'
+    }
+    
+    const updatedItems = [...gridItems, newItem]
+    
+    // Compile back to dotenv
+    const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
+    setCurrentDotenv(newContent)
+    setIsAddModalOpen(false)
+    setAddForm({ key: '', value: '' })
   }
 
   const handleDeleteVariable = (keyToDelete: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: t('common.confirm'),
-      message: t('projectDetail.secrets.deleteConfirm', { key: keyToDelete }),
-      type: 'danger',
-      confirmText: t('common.delete'),
-      onConfirm: async () => {
-        try {
-          const updatedItems = gridItems.filter(item => item.Key !== keyToDelete)
-          const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
-          await projectsAPI.updateEnv(uid, newContent)
-          toast.success(t('common.deleteSuccess'))
-          loadEnv()
-          if (onSave) onSave()
-        } catch (error) {
-          toast.error(t('common.error'))
-        }
-      }
-    })
+    const updatedItems = gridItems.filter(item => item.Key !== keyToDelete)
+    const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
+    setCurrentDotenv(newContent)
+    toast.success(t('common.deleteSuccess'))
   }
 
   // Save dotenv content bulk
   const handleSaveEnv = async () => {
-    const content = textareaRef.current?.value || ''
     setIsSavingEnv(true)
     try {
-      await projectsAPI.updateEnv(uid, content)
+      await projectsAPI.updateEnv(uid, currentDotenv)
       toast.success(t('common.success'))
       if (onSave) onSave()
-      loadEnv()
+      await loadEnv()
     } catch (error) {
       toast.error(t('common.error'))
     } finally {
@@ -272,6 +240,11 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
       isOpen: true,
       onConfirm: handleSaveEnv
     })
+  }
+
+  const handleReset = () => {
+    setCurrentDotenv(initialContent)
+    toast.success(t('projectDetail.secrets.resetSuccess', { defaultValue: 'Changes reset successfully' }))
   }
 
   // Link / Unlink SecretStore
@@ -332,7 +305,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
-      <Card className="flex flex-col h-[600px] overflow-hidden border-border/50 shadow-sm bg-card">
+      <Card className="relative flex flex-col h-[600px] overflow-hidden border-border/50 shadow-sm bg-card">
         <CardHeader className="pb-4 flex flex-row items-center justify-between border-b border-border bg-card">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -343,28 +316,17 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
           </div>
           <div className="flex items-center gap-3">
             {activeSubTab === 'bulk' && (
-              <>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setIsEnvHidden(!isEnvHidden)} 
-                  className="h-9"
-                >
-                  {isEnvHidden ? <Eye className="w-3.5 h-3.5 mr-2" /> : <EyeOff className="w-3.5 h-3.5 mr-2" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider">
-                    {isEnvHidden ? t('projectDetail.actions.reveal') : t('projectDetail.actions.hide')}
-                  </span>
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={triggerSave}
-                  disabled={isSavingEnv || isEnvHidden}
-                  className="h-9 px-6 bg-primary hover:bg-primary/90"
-                >
-                  {isSavingEnv ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-2" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t('common.save')}</span>
-                </Button>
-              </>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsEnvHidden(!isEnvHidden)} 
+                className="h-9"
+              >
+                {isEnvHidden ? <Eye className="w-3.5 h-3.5 mr-2" /> : <EyeOff className="w-3.5 h-3.5 mr-2" />}
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  {isEnvHidden ? t('projectDetail.actions.reveal') : t('projectDetail.actions.hide')}
+                </span>
+              </Button>
             )}
             {activeSubTab === 'stores' && (
               <Button
@@ -536,8 +498,8 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
             {/* Bulk Editor Dotenv */}
             <TabsContent value="bulk" className="m-0 outline-none h-full flex flex-col relative bg-zinc-950 rounded-lg overflow-hidden border border-border/50">
               <textarea
-                ref={textareaRef}
-                defaultValue={initialContent}
+                value={currentDotenv}
+                onChange={e => setCurrentDotenv(e.target.value)}
                 readOnly={isEnvHidden}
                 spellCheck={false}
                 autoComplete="off"
@@ -626,6 +588,40 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
             {t('projectDetail.secrets.redeployNote')}
           </div>
         </Tabs>
+
+        {/* Floating Unsaved Changes Banner */}
+        {hasChanges && (activeSubTab === 'grid' || activeSubTab === 'bulk') && (
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 bg-background/95 backdrop-blur-md border border-border/80 shadow-2xl rounded-full px-5 py-2.5 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-3 duration-300">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 select-none">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              {t('projectDetail.secrets.unsavedChanges')}
+            </span>
+            <div className="w-px h-4 bg-border/60" />
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleReset}
+                className="h-8 px-4 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-muted/10 cursor-pointer"
+              >
+                {t('projectDetail.secrets.resetBtn')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={triggerSave}
+                disabled={isSavingEnv}
+                className="h-8 px-5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-1.5 cursor-pointer shadow-md"
+              >
+                {isSavingEnv ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Save className="w-3 h-3" />
+                )}
+                {t('common.save')}
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* dialog for Link SecretStore */}
@@ -748,8 +744,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
               <Button type="button" variant="outline" size="sm" className="h-9 font-semibold uppercase tracking-wider text-[10px]" onClick={() => setIsEditModalOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" size="sm" disabled={isSavingSingle} className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
-                {isSavingSingle && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}
+              <Button type="submit" size="sm" className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
                 {t('common.save')}
               </Button>
             </DialogFooter>
@@ -798,8 +793,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
               <Button type="button" variant="outline" size="sm" className="h-9 font-semibold uppercase tracking-wider text-[10px]" onClick={() => setIsAddModalOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" size="sm" disabled={isSavingSingle || !addForm.key || !addForm.value} className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
-                {isSavingSingle && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}
+              <Button type="submit" size="sm" disabled={!addForm.key || !addForm.value} className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
                 {t('projectDetail.secrets.addVariable')}
               </Button>
             </DialogFooter>

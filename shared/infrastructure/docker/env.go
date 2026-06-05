@@ -229,29 +229,30 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 					if errors.Is(errItem, gorm.ErrRecordNotFound) {
 						// APP_KEY not found in DB, generate one.
 						keyBytes := make([]byte, 32)
-						if _, randErr := rand.Read(keyBytes); randErr == nil {
+						if _, randErr := rand.Read(keyBytes); randErr != nil {
 							return randErr
 						}
 						appKey = "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
 						encryptedVal, encErr := utils.Encrypt(appKey, stretchedKey)
-						if encErr == nil {
-							newItem := models.SecretStoreItem{
-								SecretStoreID:         storeID,
-								Key:                   "APP_KEY",
-								LatestSnapshotVersion: 1,
-							}
-							if err := tx.Create(&newItem).Error; err != nil {
-								return err
-							}
-							itemVal := models.SecretStoreItemValue{
-								SecretStoreItemID: newItem.ID,
-								Version:           1,
-								EncryptedValue:    encryptedVal,
-								CreatedBy:         userID,
-							}
-							if err := tx.Create(&itemVal).Error; err != nil {
-								return err
-							}
+						if encErr != nil {
+							return encErr
+						}
+						newItem := models.SecretStoreItem{
+							SecretStoreID:         storeID,
+							Key:                   "APP_KEY",
+							LatestSnapshotVersion: 1,
+						}
+						if err := tx.Create(&newItem).Error; err != nil {
+							return err
+						}
+						itemVal := models.SecretStoreItemValue{
+							SecretStoreItemID: newItem.ID,
+							Version:           1,
+							EncryptedValue:    encryptedVal,
+							CreatedBy:         userID,
+						}
+						if err := tx.Create(&itemVal).Error; err != nil {
+							return err
 						}
 					} else {
 						return errItem

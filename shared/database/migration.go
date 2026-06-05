@@ -553,7 +553,21 @@ func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error 
 			if info, err := os.Stat(legacyParentPath); err == nil && info.IsDir() {
 				slog.Info("Migrating projects parent directory to named user slug", "from", legacyParentPath, "to", newParentPath)
 				if err := os.Rename(legacyParentPath, newParentPath); err != nil {
-					slog.Error("Failed to rename legacy projects user folder", "from", legacyParentPath, "to", newParentPath, "error", err)
+					slog.Warn("Failed to rename legacy projects user folder, attempting subfolder-level migration", "from", legacyParentPath, "to", newParentPath, "error", err)
+					files, readErr := os.ReadDir(legacyParentPath)
+					if readErr == nil {
+						_ = os.MkdirAll(newParentPath, 0755)
+						for _, f := range files {
+							oldSub := filepath.Join(legacyParentPath, f.Name())
+							newSub := filepath.Join(newParentPath, f.Name())
+							if renameErr := os.Rename(oldSub, newSub); renameErr != nil {
+								slog.Error("Failed to migrate project subfolder during fallback", "from", oldSub, "to", newSub, "error", renameErr)
+							} else {
+								slog.Info("Migrated project subfolder during fallback", "from", oldSub, "to", newSub)
+							}
+						}
+						_ = os.Remove(legacyParentPath)
+					}
 				}
 			}
 			migratedParents[legacyParentPath] = true
@@ -567,7 +581,21 @@ func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error 
 			if info, err := os.Stat(legacyDataParentPath); err == nil && info.IsDir() {
 				slog.Info("Migrating data parent directory to named user slug", "from", legacyDataParentPath, "to", newDataParentPath)
 				if err := os.Rename(legacyDataParentPath, newDataParentPath); err != nil {
-					slog.Error("Failed to rename legacy data user folder", "from", legacyDataParentPath, "to", newDataParentPath, "error", err)
+					slog.Warn("Failed to rename legacy data user folder, attempting subfolder-level migration", "from", legacyDataParentPath, "to", newDataParentPath, "error", err)
+					files, readErr := os.ReadDir(legacyDataParentPath)
+					if readErr == nil {
+						_ = os.MkdirAll(newDataParentPath, 0755)
+						for _, f := range files {
+							oldSub := filepath.Join(legacyDataParentPath, f.Name())
+							newSub := filepath.Join(newDataParentPath, f.Name())
+							if renameErr := os.Rename(oldSub, newSub); renameErr != nil {
+								slog.Error("Failed to migrate data subfolder during fallback", "from", oldSub, "to", newSub, "error", renameErr)
+							} else {
+								slog.Info("Migrated data subfolder during fallback", "from", oldSub, "to", newSub)
+							}
+						}
+						_ = os.Remove(legacyDataParentPath)
+					}
 				}
 			}
 			migratedParents[legacyDataParentPath] = true
