@@ -92,7 +92,7 @@ func (h *SecretStoreHandler) Create(c *fiber.Ctx) error {
 		return apperr.New(400, "VALIDATION_FAILED", "Name is required")
 	}
 
-	store, err := h.secretStoreService.CreateSecretStore(userID, req.Name, req.Description)
+	store, err := h.secretStoreService.CreateSecretStore(userID, req.Name, req.Description, c.IP(), c.Get("User-Agent"))
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (h *SecretStoreHandler) Update(c *fiber.Ctx) error {
 		return apperr.New(400, "BAD_REQUEST", "Invalid request body")
 	}
 
-	store, err := h.secretStoreService.UpdateSecretStore(userID, uint(id), req.Name, req.Description)
+	store, err := h.secretStoreService.UpdateSecretStore(userID, uint(id), req.Name, req.Description, c.IP(), c.Get("User-Agent"))
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (h *SecretStoreHandler) Delete(c *fiber.Ctx) error {
 		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
 	}
 
-	if err := h.secretStoreService.DeleteSecretStore(userID, uint(id)); err != nil {
+	if err := h.secretStoreService.DeleteSecretStore(userID, uint(id), c.IP(), c.Get("User-Agent")); err != nil {
 		return err
 	}
 
@@ -156,7 +156,7 @@ func (h *SecretStoreHandler) SetSecret(c *fiber.Ctx) error {
 		return apperr.New(400, "VALIDATION_FAILED", "Secret key cannot be empty")
 	}
 
-	item, err := h.secretStoreService.SetSecretValue(userID, uint(id), req.Key, req.Value)
+	item, err := h.secretStoreService.SetSecretValue(userID, uint(id), req.Key, req.Value, c.IP(), c.Get("User-Agent"))
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 	}
 
 	// Write audited activity log entry for tracking.
-	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", "Revealed plaintext value of secret key: "+targetItem.Key)
+	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", "Revealed plaintext value of secret key: "+targetItem.Key, c.IP(), c.Get("User-Agent"))
 
 	return c.JSON(fiber.Map{"value": decryptedVal})
 }
@@ -238,7 +238,7 @@ func (h *SecretStoreHandler) Bind(c *fiber.Ctx) error {
 		return apperr.New(404, "PROJECT_NOT_FOUND", "Project not found")
 	}
 
-	binding, err := h.secretStoreService.BindSecretStore(userID, uint(id), project.ID, req.Environment)
+	binding, err := h.secretStoreService.BindSecretStore(userID, uint(id), project.ID, req.Environment, c.IP(), c.Get("User-Agent"))
 	if err != nil {
 		return err
 	}
@@ -253,19 +253,35 @@ func (h *SecretStoreHandler) Unbind(c *fiber.Ctx) error {
 		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
 	}
 
-	projectUID := c.Params("projectUID")
-	if projectUID == "" {
-		return apperr.New(400, "INVALID_PROJECT_UID", "Project UID is required")
+	bindingID, err := strconv.ParseUint(c.Params("bindingID"), 10, 32)
+	if err != nil {
+		return apperr.New(400, "INVALID_BINDING_ID", "Invalid Binding ID")
 	}
 
-	var project models.Project
-	if err := h.db.Where("uid = ? AND user_id = ?", projectUID, userID).First(&project).Error; err != nil {
-		return apperr.New(404, "PROJECT_NOT_FOUND", "Project not found")
+	// Verify that the SecretStore belongs to this user
+	var store models.SecretStore
+	if err := h.db.Where("id = ? AND user_id = ?", id, userID).First(&store).Error; err != nil {
+		return apperr.New(404, "SECRET_STORE_NOT_FOUND", "SecretStore not found")
 	}
 
-	if err := h.secretStoreService.UnbindSecretStore(userID, uint(id), project.ID); err != nil {
+	// Find the binding and verify it belongs to this SecretStore
+	var binding models.SecretStoreBinding
+	if err := h.db.Where("id = ? AND secret_store_id = ?", bindingID, id).First(&binding).Error; err != nil {
+		return apperr.New(404, "BINDING_NOT_FOUND", "Binding not found")
+	}
+
+	// Delete the binding
+	if err := h.db.Delete(&binding).Error; err != nil {
 		return err
 	}
+
+	h.secretStoreService.LogActivity(userID, &store.ID, nil, &binding.ProjectID, "unbind_secretstore", "Unbound secret store container from project", c.IP(), c.Get("User-Agent"))
+
+	// Trigger env propagation to clear unbound keys for remaining projects and the unbound project.
+	go func(storeID, projectID, uID uint) {
+		h.secretStoreService.PropagateSecretStoreUpdates(storeID)
+		h.secretStoreService.PropagateProjectEnvUpdate(projectID, uID)
+	}(store.ID, binding.ProjectID, userID)
 
 	return c.JSON(fiber.Map{"message": "SecretStore unbound successfully"})
 }
@@ -303,7 +319,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 		}
 	}
 
-	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data")
+	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent"))
 
 	return c.JSON(fiber.Map{"secrets": secretsMap})
 }
@@ -322,17 +338,20 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 		return apperr.New(400, "BAD_REQUEST", "Invalid request body")
 	}
 
+	storeID := uint(id)
 	for k, v := range req.Secrets {
 		if k == "" {
 			continue
 		}
-		if _, err := h.secretStoreService.SetSecretValue(userID, uint(id), k, v); err != nil {
+		if _, err := h.secretStoreService.SetSecretValueNoPropagate(userID, storeID, k, v, c.IP(), c.Get("User-Agent")); err != nil {
 			return err
 		}
 	}
 
-	storeID := uint(id)
-	h.secretStoreService.LogActivity(userID, &storeID, nil, nil, "import_secrets", "Imported secrets into store container")
+	h.secretStoreService.LogActivity(userID, &storeID, nil, nil, "import_secrets", "Imported secrets into store container", c.IP(), c.Get("User-Agent"))
+
+	// Propagate updates exactly once after bulk import
+	go h.secretStoreService.PropagateSecretStoreUpdates(storeID)
 
 	return c.JSON(fiber.Map{"message": "Secrets imported successfully"})
 }
@@ -373,7 +392,7 @@ func (h *SecretStoreHandler) AdminDisable(c *fiber.Ctx) error {
 	if req.Disable {
 		action = "disable_secretstore"
 	}
-	h.secretStoreService.LogActivity(adminUserID, &store.ID, nil, nil, action, fmt.Sprintf("Admin toggled disable state to %t", req.Disable))
+	h.secretStoreService.LogActivity(adminUserID, &store.ID, nil, nil, action, fmt.Sprintf("Admin toggled disable state to %t", req.Disable), c.IP(), c.Get("User-Agent"))
 
 	return c.JSON(fiber.Map{"message": "SecretStore disabled status updated"})
 }

@@ -219,8 +219,8 @@ func Setup(
 	secretstores.Delete("/:id", secretStoreHandler.Delete)
 	secretstores.Post("/:id/secrets", secretStoreHandler.SetSecret)
 	secretstores.Get("/:id/secrets/:itemID/reveal", secretStoreHandler.RevealSecret)
-	secretstores.Post("/:id/bind", secretStoreHandler.Bind)
-	secretstores.Delete("/:id/bind/:projectUID", secretStoreHandler.Unbind)
+	secretstores.Post("/:id/bindings", secretStoreHandler.Bind)
+	secretstores.Delete("/:id/bindings/:bindingID", secretStoreHandler.Unbind)
 	secretstores.Get("/:id/export", secretStoreHandler.Export)
 	secretstores.Post("/:id/import", secretStoreHandler.Import)
 

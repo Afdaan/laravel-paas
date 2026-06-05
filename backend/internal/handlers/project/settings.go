@@ -73,13 +73,13 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	errBinding := h.db.Where("project_id = ?", project.ID).First(&binding).Error
 	var storeID uint
 	if errBinding != nil {
-		store, errStore := h.secretStoreService.CreateSecretStore(project.UserID, fmt.Sprintf("Environment Secrets (%s)", project.Name), "Managed variables for project "+project.Name)
+		store, errStore := h.secretStoreService.CreateSecretStore(project.UserID, fmt.Sprintf("Environment Secrets (%s)", project.Name), "Managed variables for project "+project.Name, c.IP(), c.Get("User-Agent"))
 		if errStore != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create secret store container"})
 		}
 		storeID = store.ID
 
-		_, errBind := h.secretStoreService.BindSecretStore(project.UserID, storeID, project.ID, "production")
+		_, errBind := h.secretStoreService.BindSecretStore(project.UserID, storeID, project.ID, "production", c.IP(), c.Get("User-Agent"))
 		if errBind != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to bind secret store container"})
 		}
@@ -87,12 +87,12 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		storeID = binding.SecretStoreID
 	}
 
-	// Set or update secret variables.
+	// Set or update secret variables without individual propagation triggers.
 	for k, v := range parsedSecrets {
 		if k == "" {
 			continue
 		}
-		if _, errSet := h.secretStoreService.SetSecretValue(project.UserID, storeID, k, v); errSet != nil {
+		if _, errSet := h.secretStoreService.SetSecretValueNoPropagate(project.UserID, storeID, k, v, c.IP(), c.Get("User-Agent")); errSet != nil {
 			slog.Error("Failed to set secret value from env update", "key", k, "error", errSet)
 		}
 	}
@@ -103,10 +103,14 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		for _, item := range items {
 			if _, exists := parsedSecrets[item.Key]; !exists {
 				h.db.Delete(&item)
-				h.secretStoreService.LogActivity(project.UserID, &storeID, &item.ID, &project.ID, "delete_secret_key", "Removed secret key: "+item.Key)
+				h.secretStoreService.LogActivity(project.UserID, &storeID, &item.ID, &project.ID, "delete_secret_key", "Removed secret key: "+item.Key, c.IP(), c.Get("User-Agent"))
 			}
 		}
 	}
+
+	// Propagate updates to all other projects bound to this store, skipping the current project
+	// since we explicitly queue a redeployment for it at the end of this handler.
+	go h.secretStoreService.PropagateSecretStoreUpdatesExcept(storeID, project.ID)
 
 	h.projectService.UpdateActivity(project.ID)
 

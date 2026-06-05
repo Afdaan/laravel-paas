@@ -327,6 +327,19 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile GithubAppInstallation
 	_ = EnsureIndex(db, &models.GithubAppInstallation{}, "idx_gh_install_acc", "account_name", false)
 
+	// Reconcile SecretStoreItem unique index
+	if isPostgres(db) {
+		if !hasIndexSafe(db, &models.SecretStoreItem{}, "idx_secret_store_items_key_active") {
+			slog.Info("Creating missing partial unique index idx_secret_store_items_key_active")
+			if err := db.Exec("CREATE UNIQUE INDEX idx_secret_store_items_key_active ON secret_store_items (secret_store_id, key) WHERE deleted_at IS NULL;").Error; err != nil {
+				slog.Error("Failed to create idx_secret_store_items_key_active", "error", err)
+			}
+		}
+	}
+
+	// Reconcile SecretStoreBinding unique constraint
+	_ = EnsureConstraint(db, &models.SecretStoreBinding{}, "uni_secret_store_bindings_proj_store_env", "UNIQUE (project_id, secret_store_id, environment)")
+
 	return nil
 }
 

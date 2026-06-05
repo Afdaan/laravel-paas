@@ -27,7 +27,7 @@ func NewSecretStoreService(db *gorm.DB, cfg *config.Config, redisService *infras
 	}
 }
 
-func (s *SecretStoreService) CreateSecretStore(userID uint, name, description string) (*models.SecretStore, error) {
+func (s *SecretStoreService) CreateSecretStore(userID uint, name, description string, ipAddress, userAgent string) (*models.SecretStore, error) {
 	store := &models.SecretStore{
 		UserID:      userID,
 		Name:        name,
@@ -36,13 +36,13 @@ func (s *SecretStoreService) CreateSecretStore(userID uint, name, description st
 	if err := s.db.Create(store).Error; err != nil {
 		return nil, err
 	}
-	s.LogActivity(userID, &store.ID, nil, nil, "create_secretstore", "Created secret store container")
+	s.LogActivity(userID, &store.ID, nil, nil, "create_secretstore", "Created secret store container", ipAddress, userAgent)
 	return store, nil
 }
 
 func (s *SecretStoreService) GetSecretStore(userID uint, storeID uint) (*models.SecretStore, error) {
 	var store models.SecretStore
-	if err := s.db.Preload("Items.Values").Where("id = ? AND user_id = ?", storeID, userID).First(&store).Error; err != nil {
+	if err := s.db.Preload("Items.Values").Preload("Bindings.Project").Where("id = ? AND user_id = ?", storeID, userID).First(&store).Error; err != nil {
 		return nil, err
 	}
 	return &store, nil
@@ -56,7 +56,7 @@ func (s *SecretStoreService) ListSecretStores(userID uint) ([]models.SecretStore
 	return stores, nil
 }
 
-func (s *SecretStoreService) UpdateSecretStore(userID uint, storeID uint, name, description string) (*models.SecretStore, error) {
+func (s *SecretStoreService) UpdateSecretStore(userID uint, storeID uint, name, description string, ipAddress, userAgent string) (*models.SecretStore, error) {
 	store, err := s.GetSecretStore(userID, storeID)
 	if err != nil {
 		return nil, err
@@ -66,11 +66,11 @@ func (s *SecretStoreService) UpdateSecretStore(userID uint, storeID uint, name, 
 	if err := s.db.Save(store).Error; err != nil {
 		return nil, err
 	}
-	s.LogActivity(userID, &storeID, nil, nil, "update_secretstore", "Updated secret store container metadata")
+	s.LogActivity(userID, &storeID, nil, nil, "update_secretstore", "Updated secret store container metadata", ipAddress, userAgent)
 	return store, nil
 }
 
-func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint) error {
+func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint, ipAddress, userAgent string) error {
 	store, err := s.GetSecretStore(userID, storeID)
 	if err != nil {
 		return err
@@ -84,12 +84,12 @@ func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint) error 
 		if err := tx.Delete(store).Error; err != nil {
 			return err
 		}
-		s.LogActivity(userID, &storeID, nil, nil, "delete_secretstore", "Soft-deleted secret store container")
+		s.LogActivity(userID, &storeID, nil, nil, "delete_secretstore", "Soft-deleted secret store container", ipAddress, userAgent)
 		return nil
 	})
 }
 
-func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string) (*models.SecretStoreItem, error) {
+func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
 	store, err := s.GetSecretStore(userID, storeID)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 			return err
 		}
 
-		s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version))
+		s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
 		return nil
 	})
 
@@ -145,6 +145,63 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 
 	// Propagate updates asynchronously to any active projects.
 	go s.PropagateSecretStoreUpdates(storeID)
+
+	return &item, nil
+}
+
+func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	store, err := s.GetSecretStore(userID, storeID)
+	if err != nil {
+		return nil, err
+	}
+
+	var item models.SecretStoreItem
+	errItem := s.db.Where("secret_store_id = ? AND key = ?", store.ID, key).First(&item).Error
+
+	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+	encryptedVal, errEnc := utils.Encrypt(value, stretchedKey)
+	if errEnc != nil {
+		return nil, fmt.Errorf("failed to encrypt value: %w", errEnc)
+	}
+
+	errTx := s.db.Transaction(func(tx *gorm.DB) error {
+		var version int = 1
+		if errors.Is(errItem, gorm.ErrRecordNotFound) {
+			item = models.SecretStoreItem{
+				SecretStoreID:         store.ID,
+				Key:                   key,
+				LatestSnapshotVersion: 1,
+			}
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+		} else if errItem == nil {
+			version = item.LatestSnapshotVersion + 1
+			item.LatestSnapshotVersion = version
+			if err := tx.Save(&item).Error; err != nil {
+				return err
+			}
+		} else {
+			return errItem
+		}
+
+		itemValue := models.SecretStoreItemValue{
+			SecretStoreItemID: item.ID,
+			Version:           version,
+			EncryptedValue:    encryptedVal,
+			CreatedBy:         userID,
+		}
+		if err := tx.Create(&itemValue).Error; err != nil {
+			return err
+		}
+
+		s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
+		return nil
+	})
+
+	if errTx != nil {
+		return nil, errTx
+	}
 
 	return &item, nil
 }
@@ -189,11 +246,11 @@ func (s *SecretStoreService) SetSecretValueInternal(userID uint, storeID uint, k
 		return nil, err
 	}
 
-	s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set database credentials key %s (version %d)", key, version))
+	s.LogActivity(userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set database credentials key %s (version %d)", key, version), "", "")
 	return &item, nil
 }
 
-func (s *SecretStoreService) BindSecretStore(userID uint, storeID, projectID uint, environment string) (*models.SecretStoreBinding, error) {
+func (s *SecretStoreService) BindSecretStore(userID uint, storeID, projectID uint, environment string, ipAddress, userAgent string) (*models.SecretStoreBinding, error) {
 	var project models.Project
 	if err := s.db.Where("id = ? AND user_id = ?", projectID, userID).First(&project).Error; err != nil {
 		return nil, errors.New("project not found or unauthorized")
@@ -214,7 +271,7 @@ func (s *SecretStoreService) BindSecretStore(userID uint, storeID, projectID uin
 		return nil, err
 	}
 
-	s.LogActivity(userID, &storeID, nil, &projectID, "bind_secretstore", fmt.Sprintf("Bound secret store container to project environment %s", environment))
+	s.LogActivity(userID, &storeID, nil, &projectID, "bind_secretstore", fmt.Sprintf("Bound secret store container to project environment %s", environment), ipAddress, userAgent)
 
 	// Trigger env propagation for the newly bound project.
 	go s.PropagateSecretStoreUpdates(storeID)
@@ -222,7 +279,7 @@ func (s *SecretStoreService) BindSecretStore(userID uint, storeID, projectID uin
 	return binding, nil
 }
 
-func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, projectID uint) error {
+func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, projectID uint, ipAddress, userAgent string) error {
 	var project models.Project
 	if err := s.db.Where("id = ? AND user_id = ?", projectID, userID).First(&project).Error; err != nil {
 		return errors.New("project not found or unauthorized")
@@ -237,10 +294,13 @@ func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, projectID u
 		return err
 	}
 
-	s.LogActivity(userID, &storeID, nil, &projectID, "unbind_secretstore", "Unbound secret store container from project")
+	s.LogActivity(userID, &storeID, nil, &projectID, "unbind_secretstore", "Unbound secret store container from project", ipAddress, userAgent)
 
-	// Trigger env propagation to clear unbound keys.
-	go s.PropagateSecretStoreUpdates(storeID)
+	// Trigger env propagation to clear unbound keys for remaining projects and the unbound project.
+	go func() {
+		s.PropagateSecretStoreUpdates(storeID)
+		s.PropagateProjectEnvUpdate(projectID, userID)
+	}()
 
 	return nil
 }
@@ -373,9 +433,16 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 }
 
 func (s *SecretStoreService) PropagateSecretStoreUpdates(storeID uint) {
+	s.PropagateSecretStoreUpdatesExcept(storeID, 0)
+}
+
+func (s *SecretStoreService) PropagateSecretStoreUpdatesExcept(storeID uint, skipProjectID uint) {
 	var bindings []models.SecretStoreBinding
 	if err := s.db.Where("secret_store_id = ?", storeID).Find(&bindings).Error; err == nil {
 		for _, b := range bindings {
+			if skipProjectID > 0 && b.ProjectID == skipProjectID {
+				continue
+			}
 			var project models.Project
 			if err := s.db.First(&project, b.ProjectID).Error; err == nil {
 				jobID, errQueue := s.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
@@ -389,7 +456,16 @@ func (s *SecretStoreService) PropagateSecretStoreUpdates(storeID uint) {
 	}
 }
 
-func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID *uint, action, details string) {
+func (s *SecretStoreService) PropagateProjectEnvUpdate(projectID, userID uint) {
+	jobID, errQueue := s.redisService.EnqueueDeployment(projectID, userID, "update_env")
+	if errQueue == nil {
+		slog.Info("Successfully enqueued update_env job for project", "project_id", projectID, "job_id", jobID)
+	} else {
+		slog.Error("Failed to enqueue update_env job for project", "project_id", projectID, "error", errQueue)
+	}
+}
+
+func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID *uint, action, details string, ipAddress, userAgent string) {
 	log := models.SecretStoreActivityLog{
 		UserID:            userID,
 		SecretStoreID:     storeID,
@@ -397,6 +473,8 @@ func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID
 		ProjectID:         projectID,
 		Action:            action,
 		Details:           details,
+		IpAddress:         ipAddress,
+		UserAgent:         userAgent,
 	}
 	if err := s.db.Create(&log).Error; err != nil {
 		slog.Error("Failed to write secret store activity log", "error", err)
