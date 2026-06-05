@@ -339,7 +339,7 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 
 func (h *SecretStoreHandler) AdminListAll(c *fiber.Ctx) error {
 	var stores []models.SecretStore
-	if err := h.db.Preload("User").Find(&stores).Error; err != nil {
+	if err := h.db.Preload("User").Preload("Items").Preload("Bindings").Find(&stores).Error; err != nil {
 		return err
 	}
 	return c.JSON(fiber.Map{"data": stores})

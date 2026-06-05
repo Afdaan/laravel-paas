@@ -17,8 +17,6 @@ import {
   Loader2,
   Copy,
   Check,
-  AlertTriangle,
-  ExternalLink,
   ChevronRight,
   Info
 } from 'lucide-react'
@@ -35,37 +33,37 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import ConfirmationModal from '@/components/ConfirmationModal'
 
 interface SecretStore {
-  ID: number
-  UserID: number
-  Name: string
-  Description: string
-  IsDisabled: boolean
-  CreatedAt: string
-  UpdatedAt: string
+  id: number
+  user_id: number
+  name: string
+  description: string
+  is_disabled: boolean
+  created_at: string
+  updated_at: string
 }
 
 interface SecretStoreItem {
-  ID: number
-  Key: string
-  LatestSnapshotVersion: number
-  CreatedAt: string
-  UpdatedAt: string
+  id: number
+  key: string
+  latest_snapshot_version: number
+  created_at: string
+  updated_at: string
 }
 
 interface SecretStoreItemValue {
-  ID: number
-  SecretStoreItemID: number
-  Version: number
-  CreatedAt: string
+  id: number
+  secret_store_item_id: number
+  version: number
+  created_at: string
 }
 
 interface SecretStoreBinding {
-  ID: number
-  SecretStoreID: number
-  ProjectID: number
-  Environment: string
-  CreatedAt: string
-  Project: {
+  id: number
+  secret_store_id: number
+  project_id: number
+  environment: string
+  created_at: string
+  project: {
     name: string
     subdomain: string
     uid: string
@@ -131,7 +129,7 @@ export default function SecretStoreDashboard() {
       setStores(data)
       
       if (selectId) {
-        const found = data.find((s: SecretStore) => s.ID === selectId)
+        const found = data.find((s: SecretStore) => s.id === selectId)
         if (found) setSelectedStore(found)
       } else if (data.length > 0 && !selectedStore) {
         setSelectedStore(data[0])
@@ -164,10 +162,10 @@ export default function SecretStoreDashboard() {
     setIsLoadingDetails(true)
     setRevealedValues({})
     try {
-      const response = await secretStoreAPI.get(selectedStore.ID)
+      const response = await secretStoreAPI.get(selectedStore.id)
       const data = response.data.data
-      setItems(data.Items || [])
-      setBindings(data.Bindings || [])
+      setItems(data.items || [])
+      setBindings(data.bindings || [])
     } catch (error) {
       toast.error(t('common.loadError'))
     } finally {
@@ -199,7 +197,7 @@ export default function SecretStoreDashboard() {
       } else {
         const res = await secretStoreAPI.create(storeForm)
         toast.success(t('secretstore.createSuccess'))
-        await fetchStores(res.data.data.ID)
+        await fetchStores(res.data.data.id)
       }
       setIsStoreModalOpen(false)
       setStoreForm({ name: '', description: '' })
@@ -218,7 +216,7 @@ export default function SecretStoreDashboard() {
       confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
-          await secretStoreAPI.delete(store.ID)
+          await secretStoreAPI.delete(store.id)
           toast.success(t('secretstore.deleteSuccess'))
           setSelectedStore(null)
           fetchStores()
@@ -236,10 +234,10 @@ export default function SecretStoreDashboard() {
 
     try {
       if (editingVarId) {
-        await secretStoreAPI.updateItem(selectedStore.ID, editingVarId, { value: varForm.value })
+        await secretStoreAPI.updateItem(selectedStore.id, editingVarId, { value: varForm.value })
         toast.success(t('secretstore.saveSuccess'))
       } else {
-        await secretStoreAPI.createItem(selectedStore.ID, varForm)
+        await secretStoreAPI.createItem(selectedStore.id, varForm)
         toast.success(t('secretstore.saveSuccess'))
       }
       setIsVarModalOpen(false)
@@ -252,10 +250,10 @@ export default function SecretStoreDashboard() {
   }
 
   const handleRevealValue = async (item: SecretStoreItem) => {
-    if (revealedValues[item.ID]) {
+    if (revealedValues[item.id]) {
       setRevealedValues(prev => {
         const copy = { ...prev }
-        delete copy[item.ID]
+        delete copy[item.id]
         return copy
       })
       return
@@ -263,8 +261,8 @@ export default function SecretStoreDashboard() {
 
     try {
       if (!selectedStore) return
-      const res = await secretStoreAPI.revealItemValue(selectedStore.ID, item.ID)
-      setRevealedValues(prev => ({ ...prev, [item.ID]: res.data.data.value }))
+      const res = await secretStoreAPI.revealItemValue(selectedStore.id, item.id)
+      setRevealedValues(prev => ({ ...prev, [item.id]: res.data.data.value }))
     } catch (error) {
       toast.error(t('common.error'))
     }
@@ -280,7 +278,7 @@ export default function SecretStoreDashboard() {
       confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
-          await secretStoreAPI.deleteItem(selectedStore.ID, item.ID)
+          await secretStoreAPI.deleteItem(selectedStore.id, item.id)
           toast.success(t('common.deleteSuccess'))
           fetchStoreDetails()
         } catch (error) {
@@ -294,7 +292,7 @@ export default function SecretStoreDashboard() {
   const handleViewHistory = async (item: SecretStoreItem) => {
     if (!selectedStore) return
     try {
-      const res = await secretStoreAPI.getItemHistory(selectedStore.ID, item.ID)
+      const res = await secretStoreAPI.getItemHistory(selectedStore.id, item.id)
       setSelectedItemHistory(res.data.data || [])
       setActiveHistoryItem(item)
       setIsHistoryModalOpen(true)
@@ -309,7 +307,7 @@ export default function SecretStoreDashboard() {
     if (!selectedStore || !bindingForm.projectUid) return
 
     try {
-      await secretStoreAPI.addBinding(selectedStore.ID, {
+      await secretStoreAPI.addBinding(selectedStore.id, {
         project_uid: bindingForm.projectUid,
         environment: bindingForm.environment
       })
@@ -332,7 +330,7 @@ export default function SecretStoreDashboard() {
       confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
-          await secretStoreAPI.removeBinding(selectedStore.ID, binding.ID)
+          await secretStoreAPI.removeBinding(selectedStore.id, binding.id)
           toast.success(t('common.deleteSuccess'))
           fetchStoreDetails()
         } catch (error) {
@@ -346,11 +344,11 @@ export default function SecretStoreDashboard() {
   const handleExportStore = async () => {
     if (!selectedStore) return
     try {
-      const res = await secretStoreAPI.exportStore(selectedStore.ID)
+      const res = await secretStoreAPI.exportStore(selectedStore.id)
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res.data.data, null, 2))
       const downloadAnchor = document.createElement('a')
       downloadAnchor.setAttribute("href", dataStr)
-      downloadAnchor.setAttribute("download", `secretstore_${selectedStore.Name.toLowerCase().replace(/\s+/g, '_')}_backup.json`)
+      downloadAnchor.setAttribute("download", `secretstore_${selectedStore.name.toLowerCase().replace(/\s+/g, '_')}_backup.json`)
       document.body.appendChild(downloadAnchor)
       downloadAnchor.click()
       downloadAnchor.remove()
@@ -367,7 +365,7 @@ export default function SecretStoreDashboard() {
 
     try {
       const parsed = JSON.parse(importText)
-      await secretStoreAPI.importStore(selectedStore.ID, { secrets: parsed })
+      await secretStoreAPI.importStore(selectedStore.id, { secrets: parsed })
       toast.success(t('secretstore.importSuccess'))
       setIsImportModalOpen(false)
       setImportText('')
@@ -420,23 +418,23 @@ export default function SecretStoreDashboard() {
           ) : (
             stores.map(store => (
               <button
-                key={store.ID}
+                key={store.id}
                 onClick={() => setSelectedStore(store)}
                 className={`w-full text-left px-4 py-3 rounded-lg border flex items-center justify-between transition-all group ${
-                  selectedStore?.ID === store.ID
+                  selectedStore?.id === store.id
                     ? 'bg-secondary/40 border-primary/20 text-foreground'
                     : 'border-border/50 hover:bg-muted/30 text-muted-foreground hover:text-foreground'
                 }`}
               >
                 <div className="flex items-center gap-3 truncate">
-                  <Shield className={`w-4 h-4 shrink-0 ${selectedStore?.ID === store.ID ? 'text-primary' : 'opacity-60'}`} />
+                  <Shield className={`w-4 h-4 shrink-0 ${selectedStore?.id === store.id ? 'text-primary' : 'opacity-60'}`} />
                   <div className="truncate">
-                    <p className="font-bold text-xs truncate">{store.Name}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{store.Description || 'No description'}</p>
+                    <p className="font-bold text-xs truncate">{store.name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{store.description || 'No description'}</p>
                   </div>
                 </div>
                 <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 ${
-                  selectedStore?.ID === store.ID ? 'opacity-80' : 'opacity-0 group-hover:opacity-65'
+                  selectedStore?.id === store.id ? 'opacity-80' : 'opacity-0 group-hover:opacity-65'
                 }`} />
               </button>
             ))
@@ -451,9 +449,9 @@ export default function SecretStoreDashboard() {
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Shield className="w-4 h-4 text-primary" />
-                    {selectedStore.Name}
+                    {selectedStore.name}
                   </CardTitle>
-                  <CardDescription className="text-xs">{selectedStore.Description || 'No description provided'}</CardDescription>
+                  <CardDescription className="text-xs">{selectedStore.description || 'No description provided'}</CardDescription>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -542,12 +540,12 @@ export default function SecretStoreDashboard() {
                           </TableHeader>
                           <TableBody>
                             {items.map(item => {
-                              const isRevealed = !!revealedValues[item.ID]
-                              const rawVal = revealedValues[item.ID] || ''
+                              const isRevealed = !!revealedValues[item.id]
+                              const rawVal = revealedValues[item.id] || ''
                               return (
-                                <TableRow key={item.ID} className="hover:bg-muted/10">
+                                <TableRow key={item.id} className="hover:bg-muted/10">
                                   <TableCell className="font-mono text-xs font-semibold text-foreground">
-                                    {item.Key}
+                                    {item.key}
                                   </TableCell>
                                   <TableCell className="font-mono text-xs text-muted-foreground select-none">
                                     {isRevealed ? (
@@ -573,27 +571,27 @@ export default function SecretStoreDashboard() {
                                           variant="outline"
                                           size="icon"
                                           className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                          onClick={() => copyToClipboard(rawVal, item.ID)}
+                                          onClick={() => copyToClipboard(rawVal, item.id)}
                                           title={t('common.copy')}
                                         >
-                                          {copiedKey === item.ID ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                          {copiedKey === item.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                                         </Button>
                                       )}
-
+ 
                                       <Button
                                         variant="outline"
                                         size="icon"
                                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                         onClick={() => {
-                                          setEditingVarId(item.ID)
-                                          setVarForm({ key: item.Key, value: '' })
+                                          setEditingVarId(item.id)
+                                          setVarForm({ key: item.key, value: '' })
                                           setIsVarModalOpen(true)
                                         }}
                                         title={t('secretstore.rotate')}
                                       >
                                         <History className="w-3.5 h-3.5" />
                                       </Button>
-
+ 
                                       <Button
                                         variant="outline"
                                         size="icon"
@@ -603,7 +601,7 @@ export default function SecretStoreDashboard() {
                                       >
                                         <Info className="w-3.5 h-3.5" />
                                       </Button>
-
+ 
                                       <Button
                                         variant="outline"
                                         size="icon"
@@ -662,18 +660,18 @@ export default function SecretStoreDashboard() {
                           </TableHeader>
                           <TableBody>
                             {bindings.map(binding => (
-                              <TableRow key={binding.ID} className="hover:bg-muted/10">
+                              <TableRow key={binding.id} className="hover:bg-muted/10">
                                 <TableCell className="font-semibold text-xs text-foreground">
-                                  {binding.Project?.name || `Project (ID: ${binding.ProjectID})`}
+                                  {binding.project?.name || `Project (ID: ${binding.project_id})`}
                                 </TableCell>
                                 <TableCell className="font-mono text-xs text-muted-foreground">
-                                  {binding.Project?.subdomain || '-'}
+                                  {binding.project?.subdomain || '-'}
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="secondary" className="font-bold text-[9px] uppercase tracking-wider px-2 py-0.5">
-                                    {binding.Environment === 'all' || binding.Environment === '' 
+                                    {binding.environment === 'all' || binding.environment === '' 
                                       ? t('secretstore.allEnvs') 
-                                      : binding.Environment}
+                                      : binding.environment}
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
@@ -707,8 +705,8 @@ export default function SecretStoreDashboard() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              setEditingStoreId(selectedStore.ID)
-                              setStoreForm({ name: selectedStore.Name, description: selectedStore.Description })
+                              setEditingStoreId(selectedStore.id)
+                              setStoreForm({ name: selectedStore.name, description: selectedStore.description })
                               setIsStoreModalOpen(true)
                             }}
                             className="h-9 px-4 font-bold text-[10px] uppercase tracking-wider"
@@ -872,7 +870,7 @@ export default function SecretStoreDashboard() {
               <Label htmlFor="bind-project" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Project</Label>
               <Select
                 value={bindingForm.projectUid}
-                onValueChange={val => setBindingForm(prev => ({ ...prev, projectUid: val }))}
+                onValueChange={val => setBindingForm(prev => ({ ...prev, projectUid: val || '' }))}
               >
                 <SelectTrigger id="bind-project" className="h-9">
                   <SelectValue placeholder="Choose a project..." />
@@ -890,7 +888,7 @@ export default function SecretStoreDashboard() {
               <Label htmlFor="bind-env" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('secretstore.environment')}</Label>
               <Select
                 value={bindingForm.environment}
-                onValueChange={val => setBindingForm(prev => ({ ...prev, environment: val }))}
+                onValueChange={val => setBindingForm(prev => ({ ...prev, environment: val || 'all' }))}
               >
                 <SelectTrigger id="bind-env" className="h-9">
                   <SelectValue />
@@ -960,7 +958,7 @@ export default function SecretStoreDashboard() {
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2">
               <History className="w-4 h-4 text-primary" />
-              {t('secretstore.history')}: {activeHistoryItem?.Key}
+              {t('secretstore.history')}: {activeHistoryItem?.key}
             </DialogTitle>
             <DialogDescription className="text-xs">
               Timeline of credentials versions and historical update timestamps.
@@ -976,16 +974,16 @@ export default function SecretStoreDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {selectedItemHistory.map(hVal => (
-                  <TableRow key={hVal.ID}>
+                 {selectedItemHistory.map(hVal => (
+                  <TableRow key={hVal.id}>
                     <TableCell className="font-semibold text-xs">
-                      v{hVal.Version}
+                      v{hVal.version}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(hVal.CreatedAt).toLocaleString()}
+                      {new Date(hVal.created_at).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right">
-                      {hVal.Version === activeHistoryItem?.LatestSnapshotVersion ? (
+                      {hVal.version === activeHistoryItem?.latest_snapshot_version ? (
                         <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5">
                           Active
                         </Badge>

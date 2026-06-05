@@ -21,36 +21,36 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface AdminSecretStore {
-  ID: number
-  UserID: number
-  Name: string
-  Description: string
-  IsDisabled: boolean
-  CreatedAt: string
-  UpdatedAt: string
-  Owner: {
+  id: number
+  user_id: number
+  name: string
+  description: string
+  is_disabled: boolean
+  created_at: string
+  updated_at: string
+  user: {
     name: string
     email: string
   }
-  ItemsCount: number
-  BindingsCount: number
+  items?: any[]
+  bindings?: any[]
 }
 
 interface SecretStoreActivityLog {
-  ID: number
-  SecretStoreID: number
-  UserID: number
-  ProjectID: number
-  Action: string
-  IpAddress: string
-  UserAgent: string
-  Details: string
-  CreatedAt: string
-  User: {
+  id: number
+  secret_store_id: number
+  user_id: number
+  project_id: number
+  action: string
+  ip_address: string
+  user_agent: string
+  details: string
+  created_at: string
+  user: {
     name: string
     email: string
   }
-  Project: {
+  project: {
     name: string
   }
 }
@@ -83,10 +83,10 @@ export default function AdminSecretStoreExplorer() {
   const fetchData = async () => {
     setIsLoading(true)
     try {
-      const res = await secretStoreAPI.adminListAll()
-      const data = res.data.data
-      setStores(data.Stores || [])
-      setLogs(data.Logs || [])
+      const storesRes = await secretStoreAPI.adminListAll()
+      const logsRes = await secretStoreAPI.adminListLogs()
+      setStores(storesRes.data.data || [])
+      setLogs(logsRes.data.data || [])
     } catch (error) {
       toast.error(t('common.error'))
     } finally {
@@ -100,13 +100,13 @@ export default function AdminSecretStoreExplorer() {
 
   const handleToggleDisable = async (store: AdminSecretStore) => {
     try {
-      const response = await fetch(`/api/admin/secretstores/${store.ID}/disable`, {
+      const response = await fetch(`/api/admin/secretstores/${store.id}/disable`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ disable: !store.IsDisabled })
+        body: JSON.stringify({ disable: !store.is_disabled })
       })
       if (!response.ok) throw new Error()
       
@@ -118,15 +118,15 @@ export default function AdminSecretStoreExplorer() {
   }
 
   const filteredStores = stores.filter(store => 
-    store.Name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (store.Owner?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (store.Owner?.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+    store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (store.user?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (store.user?.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const filteredLogs = logs.filter(log =>
-    log.Action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (log.User?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (log.Details || '').toLowerCase().includes(searchQuery.toLowerCase())
+    log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (log.user?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (log.details || '').toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   return (
@@ -197,44 +197,44 @@ export default function AdminSecretStoreExplorer() {
                 </TableHeader>
                 <TableBody>
                   {filteredStores.map(store => (
-                    <TableRow key={store.ID} className="hover:bg-muted/10">
+                    <TableRow key={store.id} className="hover:bg-muted/10">
                       <TableCell className="font-bold text-xs text-foreground">
                         <div>
-                          <p>{store.Name}</p>
-                          <p className="text-[10px] font-normal text-muted-foreground">{store.Description || 'No description'}</p>
+                          <p>{store.name}</p>
+                          <p className="text-[10px] font-normal text-muted-foreground">{store.description || 'No description'}</p>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs">
                         <div className="flex items-center gap-2">
                           <User className="w-3.5 h-3.5 text-muted-foreground" />
                           <div>
-                            <p className="font-medium">{store.Owner?.name || 'Unknown'}</p>
-                            <p className="text-[10px] text-muted-foreground">{store.Owner?.email || '-'}</p>
+                            <p className="font-medium">{store.user?.name || 'Unknown'}</p>
+                            <p className="text-[10px] text-muted-foreground">{store.user?.email || '-'}</p>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className="font-mono text-[10px] bg-muted/40 font-semibold">
-                          {store.ItemsCount} keys
+                          {(store.items?.length || 0)} keys
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className="font-mono text-[10px] bg-muted/40 font-semibold">
-                          {store.BindingsCount} projects
+                          {(store.bindings?.length || 0)} projects
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {new Date(store.CreatedAt).toLocaleDateString()}
+                        {new Date(store.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-3">
                           <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                            store.IsDisabled ? 'text-destructive' : 'text-emerald-500'
+                            store.is_disabled ? 'text-destructive' : 'text-emerald-500'
                           }`}>
-                            {store.IsDisabled ? 'Disabled' : 'Operational'}
+                            {store.is_disabled ? 'Disabled' : 'Operational'}
                           </span>
                           <Switch
-                            checked={!store.IsDisabled}
+                            checked={!store.is_disabled}
                             onCheckedChange={() => handleToggleDisable(store)}
                           />
                         </div>
@@ -271,13 +271,13 @@ export default function AdminSecretStoreExplorer() {
                 </TableHeader>
                 <TableBody>
                   {filteredLogs.map(log => (
-                    <TableRow key={log.ID} className="hover:bg-muted/10">
+                    <TableRow key={log.id} className="hover:bg-muted/10">
                       <TableCell className="text-xs">
                         <div className="flex items-center gap-2">
                           <User className="w-3.5 h-3.5 text-muted-foreground" />
                           <div>
-                            <p className="font-semibold">{log.User?.name || 'Unknown'}</p>
-                            <p className="text-[10px] text-muted-foreground">{log.User?.email || '-'}</p>
+                            <p className="font-semibold">{log.user?.name || 'Unknown'}</p>
+                            <p className="text-[10px] text-muted-foreground">{log.user?.email || '-'}</p>
                           </div>
                         </div>
                       </TableCell>
@@ -285,30 +285,30 @@ export default function AdminSecretStoreExplorer() {
                         <Badge 
                           variant="outline" 
                           className={`font-mono text-[9px] uppercase tracking-wider font-bold ${
-                            log.Action.includes('reveal')
+                            log.action.includes('reveal')
                               ? 'text-rose-500 border-rose-500/20 bg-rose-500/5'
-                              : log.Action.includes('rotate') || log.Action.includes('update')
+                              : log.action.includes('rotate') || log.action.includes('update')
                               ? 'text-amber-500 border-amber-500/20 bg-amber-500/5'
                               : 'text-blue-500 border-blue-500/20 bg-blue-500/5'
                           }`}
                         >
-                          {log.Action}
+                          {log.action}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-foreground font-medium">
-                        {log.Details}
-                        {log.Project && (
+                        {log.details}
+                        {log.project && (
                           <span className="text-[10px] text-muted-foreground block font-normal">
-                            Bound Project: {log.Project.name}
+                            Bound Project: {log.project.name}
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={`${log.IpAddress} - ${log.UserAgent}`}>
-                        <p className="font-mono">{log.IpAddress}</p>
-                        <p className="text-[9px] truncate">{log.UserAgent}</p>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={`${log.ip_address} - ${log.user_agent}`}>
+                        <p className="font-mono">{log.ip_address}</p>
+                        <p className="text-[9px] truncate">{log.user_agent}</p>
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground">
-                        {new Date(log.CreatedAt).toLocaleString()}
+                        {new Date(log.created_at).toLocaleString()}
                       </TableCell>
                     </TableRow>
                   ))}

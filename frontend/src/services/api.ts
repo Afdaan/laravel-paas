@@ -419,6 +419,9 @@ export const secretStoreAPI = {
   // Admin audit logs
   adminListAll: () =>
     api.get('/admin/secretstores'),
+
+  adminListLogs: () =>
+    api.get('/admin/secretstores/logs'),
 }
 
 export const systemAPI = {

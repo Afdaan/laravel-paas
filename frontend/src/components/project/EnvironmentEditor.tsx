@@ -33,11 +33,11 @@ interface EnvironmentEditorProps {
 }
 
 interface BoundStore {
-  ID: number
-  Name: string
-  Description: string
-  Environment: string
-  BindingID: number
+  id: number
+  name: string
+  description: string
+  environment: string
+  bindingId: number
 }
 
 interface VariableGridItem {
@@ -114,19 +114,19 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
 
       const bounds: BoundStore[] = []
       for (const store of stores) {
-        const detailRes = await secretStoreAPI.get(store.ID)
+        const detailRes = await secretStoreAPI.get(store.id)
         const storeDetails = detailRes.data.data
-        const storeBindings = storeDetails.Bindings || []
+        const storeBindings = storeDetails.bindings || []
         
         // Find matching binding for this project uid
-        const match = storeBindings.find((b: any) => b.Project?.uid === uid)
+        const match = storeBindings.find((b: any) => b.project?.uid === uid)
         if (match) {
           bounds.push({
-            ID: store.ID,
-            Name: store.Name,
-            Description: store.Description,
-            Environment: match.Environment,
-            BindingID: match.ID
+            id: store.id,
+            name: store.name,
+            description: store.description,
+            environment: match.environment,
+            bindingId: match.id
           })
         }
       }
@@ -209,7 +209,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
       confirmText: t('common.delete'),
       onConfirm: async () => {
         try {
-          await secretStoreAPI.removeBinding(store.ID, store.BindingID)
+          await secretStoreAPI.removeBinding(store.id, store.bindingId)
           toast.success(t('common.deleteSuccess'))
           loadEnv()
           if (onSave) onSave()
@@ -221,7 +221,7 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
   }
 
   const linkableStores = allStores.filter(
-    store => !boundStores.some(bs => bs.ID === store.ID)
+    store => !boundStores.some(bs => bs.id === store.id)
   )
 
   if (isLoading) {
@@ -437,18 +437,18 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                     </TableHeader>
                     <TableBody>
                       {boundStores.map(store => (
-                        <TableRow key={store.ID} className="hover:bg-muted/10">
+                        <TableRow key={store.id} className="hover:bg-muted/10">
                           <TableCell className="font-bold text-xs text-foreground">
-                            {store.Name}
+                            {store.name}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {store.Description || 'No description'}
+                            {store.description || 'No description'}
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary" className="font-bold text-[9px] uppercase tracking-wider px-2 py-0.5">
-                              {store.Environment === 'all' || store.Environment === ''
+                              {store.environment === 'all' || store.environment === ''
                                 ? 'All Environments'
-                                : store.Environment}
+                                : store.environment}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
@@ -507,8 +507,8 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
                   </SelectTrigger>
                   <SelectContent>
                     {linkableStores.map(store => (
-                      <SelectItem key={store.ID} value={String(store.ID)}>
-                        {store.Name}
+                      <SelectItem key={store.id} value={String(store.id)}>
+                        {store.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
