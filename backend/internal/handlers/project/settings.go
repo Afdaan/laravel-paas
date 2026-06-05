@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 )
 
 // GetEnv returns the compiled dotenv environment variables for the project from SecretStore
@@ -22,14 +23,11 @@ func (h *ProjectHandler) GetEnv(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to compile environment variables"})
 	}
 
-	var builder strings.Builder
-	for k, v := range envMap {
-		builder.WriteString(fmt.Sprintf("%s=%s\n", k, v))
-	}
+	envContent := utils.FormatEnvMap(envMap)
 
 	h.projectService.UpdateActivity(project.ID)
 
-	return c.JSON(fiber.Map{"content": builder.String()})
+	return c.JSON(fiber.Map{"content": envContent})
 }
 
 // UpdateEnvRequest represents env update payload

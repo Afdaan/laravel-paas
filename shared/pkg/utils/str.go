@@ -8,8 +8,10 @@ package utils
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -125,4 +127,79 @@ func SanitizeLogOutput(logStr string) string {
 	logStr = accessDeniedRegex.ReplaceAllString(logStr, "Access denied for user '[USER_REDACTED]'@'[HOST_REDACTED]'")
 
 	return logStr
+}
+
+// FormatEnvMap serializes a map of environment variables into a grouped, sorted dotenv string.
+func FormatEnvMap(envMap map[string]string) string {
+	keys := make([]string, 0, len(envMap))
+	for k := range envMap {
+		keys = append(keys, k)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		pI := getEnvKeyPriority(keys[i])
+		pJ := getEnvKeyPriority(keys[j])
+		if pI != pJ {
+			return pI < pJ
+		}
+		return keys[i] < keys[j]
+	})
+
+	var builder strings.Builder
+	for _, k := range keys {
+		builder.WriteString(fmt.Sprintf("%s=%s\n", k, envMap[k]))
+	}
+	return builder.String()
+}
+
+func getEnvKeyPriority(key string) int {
+	if strings.HasPrefix(key, "APP_") {
+		switch key {
+		case "APP_NAME":
+			return 10
+		case "APP_ENV":
+			return 11
+		case "APP_DEBUG":
+			return 12
+		case "APP_URL":
+			return 13
+		case "APP_KEY":
+			return 14
+		default:
+			return 19
+		}
+	}
+	if strings.HasPrefix(key, "DB_") || strings.HasPrefix(key, "DATABASE_") {
+		switch key {
+		case "DB_CONNECTION":
+			return 20
+		case "DB_HOST":
+			return 21
+		case "DB_PORT":
+			return 22
+		case "DB_DATABASE":
+			return 23
+		case "DB_USERNAME":
+			return 24
+		case "DB_PASSWORD":
+			return 25
+		case "DATABASE_URL":
+			return 26
+		default:
+			return 29
+		}
+	}
+	if strings.HasPrefix(key, "LOG_") {
+		switch key {
+		case "LOG_CHANNEL":
+			return 30
+		case "LOG_LEVEL":
+			return 31
+		case "LOG_DEPRECATIONS_CHANNEL":
+			return 32
+		default:
+			return 39
+		}
+	}
+	return 100
 }

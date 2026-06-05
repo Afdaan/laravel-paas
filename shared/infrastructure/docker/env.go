@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
@@ -22,10 +21,7 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 		return fmt.Errorf("failed to compile env for project %s: %w", project.Name, err)
 	}
 
-	var builder strings.Builder
-	for k, v := range envMap {
-		builder.WriteString(fmt.Sprintf("%s=%s\n", k, v))
-	}
+	envContent := utils.FormatEnvMap(envMap)
 
 	// Ensure parent directories exist before writing.
 	if err := os.MkdirAll(projectPath, 0755); err != nil {
@@ -38,7 +34,7 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	}
 	defer os.Remove(tempPath)
 
-	if _, err := f.Write([]byte(builder.String())); err != nil {
+	if _, err := f.Write([]byte(envContent)); err != nil {
 		f.Close()
 		return err
 	}
