@@ -581,19 +581,8 @@ func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 	idParam := c.Params("id")
 
-	var project *models.Project
-	var err error
-
-	// 1. Try to fetch by UID column first (Standard)
-	project, err = h.projectService.GetProjectByUID(idParam)
-	if err != nil {
-		// 2. Fallback: Check if it's a numeric ID (for admins or transition)
-		id, errConv := strconv.Atoi(idParam)
-		if errConv == nil {
-			project, err = h.projectService.GetProjectByID(uint(id))
-		}
-	}
-
+	// Query project strictly by string UID.
+	project, err := h.projectService.GetProjectByUID(idParam)
 	if err != nil || project == nil {
 		return nil, fmt.Errorf("project not found")
 	}
@@ -625,13 +614,11 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 
 // CancelQueueJob cancels a queued or building deployment (Admin only)
 func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
-	idVal := c.Params("id")
-	projectID, _ := strconv.Atoi(idVal)
-
-	project, err := h.projectService.GetProjectByID(uint(projectID))
+	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	projectID := project.ID
 
 	// 1. Broadcast cancellation across distributed worker cluster
 	_ = h.redisService.PublishCancellation(c.Context(), uint(projectID))
@@ -698,13 +685,11 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 
 // RequeueJob forcefully re-enqueues a stuck deployment (Admin only)
 func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
-	idVal := c.Params("id")
-	projectID, _ := strconv.Atoi(idVal)
-
-	project, err := h.projectService.GetProjectByID(uint(projectID))
+	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	projectID := project.ID
 
 	// 1. Remove from queue if duplicate
 	_ = h.redisService.RemoveFromQueue(uint(projectID))

@@ -399,7 +399,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
 	if job.Type == "update_env" {
-		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -420,6 +420,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
+		appendLog = w.makeRedactingLogger(project, appendLog)
 
 		if project.ContainerID == nil || *project.ContainerID == "" {
 			appendLog(">> Project is stopped. Skipping hot-swap environment update.")
@@ -447,7 +448,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "rollback" {
-		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -468,6 +469,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
+		appendLog = w.makeRedactingLogger(project, appendLog)
 
 		appendLog(fmt.Sprintf(">> Preparing rollback to commit %s...", project.LastCommitHash))
 		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
@@ -485,7 +487,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "stop" {
-		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -506,6 +508,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
+		appendLog = w.makeRedactingLogger(project, appendLog)
 
 		slog.Info("Performing container stop action", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "stop_started", "Stopping application container(s)")
@@ -539,7 +542,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "start" {
-		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -560,6 +563,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
+		appendLog = w.makeRedactingLogger(project, appendLog)
 
 		slog.Info("Performing container start action", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "start_started", "Starting application container(s)")
@@ -595,7 +599,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "restart" {
-		projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -616,6 +620,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.redisService.PublishBuildLog(project.ID, msg)
 			}
 		}
+		appendLog = w.makeRedactingLogger(project, appendLog)
 
 		slog.Info("Performing container restart action", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "restart_started", "Restarting application container(s)")
@@ -670,7 +675,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"error_log": nil,
 	})
 
-	projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
+	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 	buildLogPath := filepath.Join(projectPath, "build.log")
 	if err := os.MkdirAll(projectPath, 0755); err == nil {
 		if err := os.WriteFile(buildLogPath, []byte(""), 0644); err != nil {
@@ -690,6 +695,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 		_ = w.redisService.PublishBuildLog(project.ID, msg)
 	}
+	appendLog = w.makeRedactingLogger(project, appendLog)
 
 	w.checkDiskSpace()
 
@@ -768,7 +774,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(authURL, project.Branch, project.Subdomain)
+		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.UserID, authURL, project.Branch, project.Subdomain)
 		if cloneErr != nil && installationID != 0 && (strings.Contains(cloneErr.Error(), "Authentication failed") || strings.Contains(cloneErr.Error(), "Invalid username or token") || strings.Contains(cloneErr.Error(), "could not read Username")) {
 			slog.Warn("Git clone failed due to authentication issue, invalidating cached token and retrying...", "projectId", project.ID, "installationId", installationID)
 			w.githubService.InvalidateInstallationToken(installationID)
@@ -782,7 +788,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 					retryURL = "https://x-access-token:" + newToken + "@" + strings.TrimPrefix(retryURL, "https://")
 				}
 				slog.Info("Retrying Git clone with a fresh token...", "projectId", project.ID)
-				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(retryURL, project.Branch, project.Subdomain)
+				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.UserID, retryURL, project.Branch, project.Subdomain)
 			}
 		}
 	}()
@@ -1276,7 +1282,6 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	repo := project.GithubRepoName
 	commitHash := project.LastCommitHash
 	projectID := project.ID
-	subdomain := project.Subdomain
 
 	// Save desired status to Redis first to enable background retry/reconciliation
 	createdAt := time.Now().UnixNano()
@@ -1303,7 +1308,7 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
 		_ = w.redisService.PublishBuildLog(projectID, logMsg)
 
-		projectPath := filepath.Join(w.cfg.ProjectsPath, subdomain)
+		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
 			_, _ = f.WriteString(logMsg + "\n")
@@ -1478,3 +1483,89 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFun
 	logFunc("")
 	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
 }
+
+// getSecretsToRedact compiles a list of decrypted secrets linked to the project.
+// Any secret value returned here (if length > 4) will be redacted in the build logs.
+func (w *DeploymentWorker) getSecretsToRedact(project *models.Project) []string {
+	var secrets []string
+
+	// 1. Add DB password
+	if len(project.DatabasePassword) > 4 {
+		secrets = append(secrets, project.DatabasePassword)
+	}
+
+	// 2. Fetch compile map
+	envMap, err := w.dockerService.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.DatabaseName, project.DatabasePassword, project.Framework, "production")
+	if err == nil {
+		// Explicitly add DB_PASSWORD and DATABASE_URL
+		if val, ok := envMap["DB_PASSWORD"]; ok && len(val) > 4 {
+			secrets = append(secrets, val)
+		}
+		if val, ok := envMap["DATABASE_URL"]; ok && len(val) > 4 {
+			secrets = append(secrets, val)
+		}
+	}
+
+	// 3. Query all SecretStoreItemValue linked to the project's active bindings
+	db := w.dockerService.GetDB()
+	if db != nil {
+		var bindings []models.SecretStoreBinding
+		if err := db.Where("project_id = ?", project.ID).Find(&bindings).Error; err == nil {
+			stretchedKey := utils.DeriveKey(w.cfg.CredentialEncryptionKey)
+			for _, b := range bindings {
+				var items []models.SecretStoreItem
+				if err := db.Where("secret_store_id = ?", b.SecretStoreID).Preload("Values").Find(&items).Error; err == nil {
+					for _, item := range items {
+						var latestVal *models.SecretStoreItemValue
+						for i := range item.Values {
+							val := &item.Values[i]
+							if val.Version == item.LatestSnapshotVersion {
+								latestVal = val
+								break
+							}
+						}
+						if latestVal != nil {
+							decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey)
+							if err == nil && len(decrypted) > 4 {
+								secrets = append(secrets, decrypted)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// De-duplicate secrets and remove empty/short strings
+	uniqueSecrets := make(map[string]bool)
+	var filtered []string
+	for _, s := range secrets {
+		s = strings.TrimSpace(s)
+		if len(s) > 4 && !uniqueSecrets[s] {
+			uniqueSecrets[s] = true
+			filtered = append(filtered, s)
+		}
+	}
+
+	return filtered
+}
+
+// makeRedactingLogger wraps a log callback function to redact sensitive values
+func (w *DeploymentWorker) makeRedactingLogger(project *models.Project, rawLogger func(string)) func(string) {
+	if rawLogger == nil {
+		return func(string) {}
+	}
+	secrets := w.getSecretsToRedact(project)
+	if len(secrets) == 0 {
+		return rawLogger
+	}
+
+	return func(msg string) {
+		redacted := msg
+		for _, secret := range secrets {
+			redacted = strings.ReplaceAll(redacted, secret, "[REDACTED_SECRET]")
+		}
+		rawLogger(redacted)
+	}
+}
+

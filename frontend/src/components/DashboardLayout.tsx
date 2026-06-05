@@ -53,6 +53,7 @@ const Icons = {
   Volumes: HardDrive,
   Feedback: MessageSquare,
   Domains: Globe,
+  SecretStore: ShieldCheck,
 }
 
 interface DashboardLayoutProps {
@@ -141,6 +142,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/admin/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/admin/databases', icon: Icons.Database, label: t('common.databases') },
           { to: '/admin/domains', icon: Icons.Domains, label: t('common.domains') },
+          { to: '/admin/secretstores', icon: Icons.SecretStore, label: t('common.secretStore') },
           { to: '/admin/settings', icon: Icons.Settings, label: t('common.settings') },
         ],
         resources: [
@@ -157,6 +159,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/databases', icon: Icons.Database, label: t('common.databases') },
           { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
+          { to: '/secretstores', icon: Icons.SecretStore, label: t('common.secretStore') },
         ]
       }
 

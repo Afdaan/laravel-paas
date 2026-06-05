@@ -9,6 +9,7 @@ import (
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"gorm.io/gorm"
 )
 
 // ===========================================
@@ -20,6 +21,7 @@ import (
 type DockerService struct {
 	cfg     *config.Config
 	storage *infrastructure.StorageService
+	db      *gorm.DB
 }
 
 // ResolveBuildPath picks a safe build root under a project's folder.
@@ -50,11 +52,16 @@ func (s *DockerService) ResolveBuildPath(projectPath string, baseDirectory strin
 }
 
 // NewDockerService creates a new Docker service
-func NewDockerService(cfg *config.Config, storage *infrastructure.StorageService) *DockerService {
+func NewDockerService(cfg *config.Config, storage *infrastructure.StorageService, db *gorm.DB) *DockerService {
 	return &DockerService{
 		cfg:     cfg,
 		storage: storage,
+		db:      db,
 	}
+}
+
+func (s *DockerService) GetDB() *gorm.DB {
+	return s.db
 }
 
 // GetBuildPath recursively finds the first directory containing project markers

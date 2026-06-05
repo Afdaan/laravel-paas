@@ -33,13 +33,14 @@ import (
 
 // DatabaseHandler handles database management endpoints
 type DatabaseHandler struct {
-	db              *gorm.DB
-	cfg             *config.Config
-	databaseService *services.DatabaseService
-	projectService  *projectServicePkg.ProjectService
-	redisService    *infrastructure.RedisService
-	localIPs        []string
-	ipsOnce         sync.Once
+	db                 *gorm.DB
+	cfg                *config.Config
+	databaseService    *services.DatabaseService
+	projectService     *projectServicePkg.ProjectService
+	redisService       *infrastructure.RedisService
+	secretStoreService *services.SecretStoreService
+	localIPs           []string
+	ipsOnce            sync.Once
 }
 
 // NewDatabaseHandler creates a new database handler
@@ -49,13 +50,15 @@ func NewDatabaseHandler(
 	databaseService *services.DatabaseService,
 	projectService *projectServicePkg.ProjectService,
 	redisService *infrastructure.RedisService,
+	secretStoreService *services.SecretStoreService,
 ) *DatabaseHandler {
 	return &DatabaseHandler{
-		db:              db,
-		cfg:             cfg,
-		databaseService: databaseService,
-		projectService:  projectService,
-		redisService:    redisService,
+		db:                 db,
+		cfg:                cfg,
+		databaseService:    databaseService,
+		projectService:     projectService,
+		redisService:       redisService,
+		secretStoreService: secretStoreService,
 	}
 }
 
@@ -63,19 +66,8 @@ func NewDatabaseHandler(
 func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, error) {
 	idParam := c.Params("id")
 
-	var project *models.Project
-	var err error
-
-	// 1. Try to fetch by UID column first (Standard for frontend)
-	project, err = h.projectService.GetProjectByUID(idParam)
-	if err != nil {
-		// 2. Fallback: Check if it's a numeric ID (for transition/admin)
-		id, errConv := strconv.Atoi(idParam)
-		if errConv == nil {
-			project, err = h.projectService.GetProjectByID(uint(id))
-		}
-	}
-
+	// Query project strictly by string UID.
+	project, err := h.projectService.GetProjectByUID(idParam)
 	if err != nil || project == nil {
 		return nil, fmt.Errorf("project not found")
 	}
@@ -215,12 +207,9 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 
 		lockedProject.DatabasePassword = newPassword
 
-		// 3. Rewrite database credentials to the project's .env file on host directly
-		if envContent, err := h.projectService.GetEnv(lockedProject.Subdomain); err == nil {
-			updatedEnv := updateEnvPassword(envContent, newPassword, lockedProject.DatabaseName, instance.Engine)
-			if err := h.projectService.SaveEnv(lockedProject.Subdomain, updatedEnv); err != nil {
-				return fmt.Errorf("failed to rewrite .env file: %w", err)
-			}
+		// 3. Write rotated credentials into the project's SecretStore container
+		if err := h.secretStoreService.UpdateDatabaseSecrets(&lockedProject, instance.Username, newPassword); err != nil {
+			return fmt.Errorf("failed to update database credentials in SecretStore: %w", err)
 		}
 
 		isRunning = lockedProject.ContainerID != nil && *lockedProject.ContainerID != ""
@@ -273,59 +262,7 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 	})
 }
 
-func updateEnvPassword(content, newPassword, dbName, engine string) string {
-	lines := strings.Split(content, "\n")
-	
-	// Prepare DB connection details
-	var dbHost, dbPort, dbConnection, dbURL string
-	if engine == "postgresql" {
-		dbConnection = "pgsql"
-		dbHost = "paas-user-postgres"
-		dbPort = "5432"
-		dbURL = fmt.Sprintf("postgres://%s:%s@paas-user-postgres:5432/%s?sslmode=disable", dbName, newPassword, dbName)
-	} else {
-		dbConnection = "mysql"
-		dbHost = "paas-mysql"
-		dbPort = "3306"
-		dbURL = fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", dbName, newPassword, dbName)
-	}
 
-	updates := map[string]string{
-		"DB_CONNECTION": dbConnection,
-		"DB_HOST":       dbHost,
-		"DB_PORT":       dbPort,
-		"DB_DATABASE":   dbName,
-		"DB_USERNAME":   dbName,
-		"DB_PASSWORD":   newPassword,
-		"DATABASE_URL":  dbURL,
-	}
-
-	seen := make(map[string]bool)
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(trimmed, "=", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			if val, ok := updates[key]; ok {
-				lines[i] = fmt.Sprintf("%s=%s", key, val)
-				seen[key] = true
-			}
-		}
-	}
-
-	// Append any missing keys
-	for key, val := range updates {
-		if !seen[key] {
-			lines = append(lines, fmt.Sprintf("%s=%s", key, val))
-		}
-	}
-
-	return strings.Join(lines, "\n")
-}
 
 // RestartDatabase resets connection pool and tests ping
 func (h *DatabaseHandler) RestartDatabase(c *fiber.Ctx) error {
@@ -801,14 +738,7 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 	}
 
 	// 3. Fetch target project
-	var targetProject *models.Project
-	targetProject, err = h.projectService.GetProjectByUID(req.TargetProjectID)
-	if err != nil {
-		id, errConv := strconv.Atoi(req.TargetProjectID)
-		if errConv == nil {
-			targetProject, err = h.projectService.GetProjectByID(uint(id))
-		}
-	}
+	targetProject, err := h.projectService.GetProjectByUID(req.TargetProjectID)
 	if err != nil || targetProject == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Target project not found"})
 	}

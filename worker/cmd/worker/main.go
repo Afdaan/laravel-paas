@@ -54,7 +54,7 @@ func main() {
 	defer redisService.Close()
 
 	storageService := infrastructure.NewStorageService(cfg)
-	dockerService := docker.NewDockerService(cfg, storageService)
+	dockerService := docker.NewDockerService(cfg, storageService, db)
 	gitService := infrastructure.NewGitService(cfg)
 	versionService := infrastructure.NewVersionService()
 	mysqlService := infrastructure.NewMySQLService()

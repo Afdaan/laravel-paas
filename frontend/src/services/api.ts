@@ -284,8 +284,8 @@ export const databaseAPI = {
     api.get(`/projects/${projectId}/database/metrics`),
 
   // Transfer database ownership to another project
-  transfer: (projectId: number | string, targetProjectId: number | string) => 
-    api.post(`/projects/${projectId}/database/transfer`, { target_project_id: targetProjectId }),
+  transfer: (projectId: number | string, targetProjectUid: string) => 
+    api.post(`/projects/${projectId}/database/transfer`, { target_project_id: targetProjectUid }),
 
   // List all tables (Fallback/Legacy)
   listTables: (projectId: number | string) => 
@@ -363,8 +363,62 @@ export const domainsAPI = {
   listAll: () =>
     api.get('/admin/domains'),
 
-  transfer: (projectId: number | string, domainId: number | string, targetProjectId: number | string) =>
-    api.post(`/projects/${projectId}/domains/${domainId}/transfer`, { target_project_id: Number(targetProjectId) }),
+  transfer: (projectId: number | string, domainId: number | string, targetProjectUid: string) =>
+    api.post(`/projects/${projectId}/domains/${domainId}/transfer`, { target_project_uid: targetProjectUid }),
+}
+
+export const secretStoreAPI = {
+  list: () =>
+    api.get('/secretstores'),
+
+  get: (id: number | string) =>
+    api.get(`/secretstores/${id}`),
+
+  create: (data: { name: string; description?: string }) =>
+    api.post('/secretstores', data),
+
+  update: (id: number | string, data: { name: string; description?: string }) =>
+    api.put(`/secretstores/${id}`, data),
+
+  delete: (id: number | string) =>
+    api.delete(`/secretstores/${id}`),
+
+  // Variable Items inside store
+  createItem: (storeId: number | string, data: { key: string; value: string }) =>
+    api.post(`/secretstores/${storeId}/items`, data),
+
+  updateItem: (storeId: number | string, itemId: number | string, data: { value: string }) =>
+    api.put(`/secretstores/${storeId}/items/${itemId}`, data),
+
+  deleteItem: (storeId: number | string, itemId: number | string) =>
+    api.delete(`/secretstores/${storeId}/items/${itemId}`),
+
+  revealItemValue: (storeId: number | string, itemId: number | string) =>
+    api.get(`/secretstores/${storeId}/items/${itemId}/reveal`),
+
+  getItemHistory: (storeId: number | string, itemId: number | string) =>
+    api.get(`/secretstores/${storeId}/items/${itemId}/history`),
+
+  // Bindings
+  listBindings: (storeId: number | string) =>
+    api.get(`/secretstores/${storeId}/bindings`),
+
+  addBinding: (storeId: number | string, data: { project_uid: string; environment: string }) =>
+    api.post(`/secretstores/${storeId}/bindings`, data),
+
+  removeBinding: (storeId: number | string, bindingId: number | string) =>
+    api.delete(`/secretstores/${storeId}/bindings/${bindingId}`),
+
+  // Import/Export
+  exportStore: (storeId: number | string) =>
+    api.get(`/secretstores/${storeId}/export`),
+
+  importStore: (storeId: number | string, data: { secrets: Record<string, string> }) =>
+    api.post(`/secretstores/${storeId}/import`, data),
+
+  // Admin audit logs
+  adminListAll: () =>
+    api.get('/admin/secretstores'),
 }
 
 export const systemAPI = {

@@ -128,8 +128,8 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		}
 	}
 
-	// Cleanup Filesystem (Source Code & Persistent Data)
-	if err := s.dockerService.CleanupProject(project.Subdomain); err != nil {
+	// CleanupFilesystem (Source Code & Persistent Data)
+	if err := s.dockerService.CleanupProject(project.UserID, project.Subdomain); err != nil {
 		slog.Warn("Failed to cleanup project filesystem", "subdomain", project.Subdomain, "error", err)
 	}
 	s.storageService.CleanupPersistentData(project)

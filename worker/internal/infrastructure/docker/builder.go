@@ -20,7 +20,7 @@ import (
 // ===========================================
 // BuildAndRun builds and starts a container for a project using Railpack with cancellation context
 func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool, noCache bool, logCallback func(string)) (string, error) {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain)
+	projectPath := project.GetProjectPath(s.cfg.ProjectsPath)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
 	buildPath := s.ResolveBuildPath(projectPath, project.BaseDirectory)
@@ -127,7 +127,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
-		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
+		"--env-file", filepath.Join(projectPath, ".env"),
 	}
 
 	if isWebFacing {
@@ -302,7 +302,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		"PAAS_BUILD_ID":               fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
-	projectEnvPath := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env")
+	projectEnvPath := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env")
 	if envVars, err := s.parseProjectEnv(projectEnvPath); err == nil {
 		for key, value := range envVars {
 			envs[key] = value

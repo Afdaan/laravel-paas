@@ -7,6 +7,7 @@ package models
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"gorm.io/gorm"
@@ -184,6 +185,11 @@ func (p *Project) GetHealthCheckPath() string {
 		return "/health"
 	}
 	return "/"
+}
+
+// GetProjectPath returns the multi-tenant directory path for the project on the host or inside the workspace.
+func (p *Project) GetProjectPath(basePath string) string {
+	return filepath.Join(basePath, fmt.Sprintf("user-%d", p.UserID), p.Subdomain)
 }
 
 
@@ -598,4 +604,77 @@ type DatabaseBackup struct {
 	Size               string               `gorm:"size:50" json:"size"`
 	Status             DatabaseBackupStatus `gorm:"size:20;not null;default:pending" json:"status"`
 	CreatedAt          time.Time            `json:"created_at"`
+}
+
+// ===========================================
+// SecretStore Models
+// ===========================================
+
+// SecretStore represents a credentials container that can be linked to multiple projects.
+type SecretStore struct {
+	ID          uint                 `gorm:"primaryKey" json:"id"`
+	UserID      uint                 `gorm:"not null;index" json:"user_id"`
+	User        User                 `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Name        string               `gorm:"size:255;not null" json:"name"`
+	Description string               `gorm:"size:500" json:"description,omitempty"`
+	IsDisabled  bool                 `gorm:"default:false" json:"is_disabled"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   time.Time            `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt       `gorm:"index" json:"-"`
+	Items       []SecretStoreItem    `gorm:"foreignKey:SecretStoreID" json:"items,omitempty"`
+	Bindings    []SecretStoreBinding `gorm:"foreignKey:SecretStoreID" json:"bindings,omitempty"`
+}
+
+// SecretStoreItem represents an environment variable key within a SecretStore.
+type SecretStoreItem struct {
+	ID                    uint                   `gorm:"primaryKey" json:"id"`
+	SecretStoreID         uint                   `gorm:"not null;index" json:"secret_store_id"`
+	SecretStore           SecretStore            `gorm:"foreignKey:SecretStoreID" json:"-"`
+	Key                   string                 `gorm:"size:255;not null;index" json:"key"`
+	LatestSnapshotVersion int                    `gorm:"default:1" json:"latest_snapshot_version"`
+	CreatedAt             time.Time              `json:"created_at"`
+	UpdatedAt             time.Time              `json:"updated_at"`
+	DeletedAt             gorm.DeletedAt         `gorm:"index" json:"-"`
+	Values                []SecretStoreItemValue `gorm:"foreignKey:SecretStoreItemID" json:"values,omitempty"`
+}
+
+// SecretStoreItemValue stores the encrypted credentials of a secret item version.
+type SecretStoreItemValue struct {
+	ID                uint            `gorm:"primaryKey" json:"id"`
+	SecretStoreItemID uint            `gorm:"not null;index" json:"secret_store_item_id"`
+	SecretStoreItem   SecretStoreItem `gorm:"foreignKey:SecretStoreItemID" json:"-"`
+	Version           int             `gorm:"not null;default:1" json:"version"`
+	EncryptedValue    string          `gorm:"type:text;not null" json:"-"`
+	CreatedBy         uint            `gorm:"not null" json:"created_by"`
+	CreatedAt         time.Time       `json:"created_at"`
+}
+
+// SecretStoreBinding binds a SecretStore container to a project environment.
+type SecretStoreBinding struct {
+	ID            uint        `gorm:"primaryKey" json:"id"`
+	ProjectID     uint        `gorm:"not null;index" json:"project_id"`
+	Project       Project     `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	SecretStoreID uint        `gorm:"not null;index" json:"secret_store_id"`
+	SecretStore   SecretStore `gorm:"foreignKey:SecretStoreID" json:"secret_store,omitempty"`
+	Environment   string      `gorm:"size:50;not null;default:'production'" json:"environment"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}
+
+// SecretStoreActivityLog logs auditing actions on SecretStores.
+type SecretStoreActivityLog struct {
+	ID                uint             `gorm:"primaryKey" json:"id"`
+	SecretStoreID     *uint            `gorm:"index" json:"secret_store_id,omitempty"`
+	SecretStore       *SecretStore     `gorm:"foreignKey:SecretStoreID" json:"secret_store,omitempty"`
+	SecretStoreItemID *uint            `gorm:"index" json:"secret_store_item_id,omitempty"`
+	SecretStoreItem   *SecretStoreItem `gorm:"foreignKey:SecretStoreItemID" json:"secret_store_item,omitempty"`
+	UserID            uint             `gorm:"not null;index" json:"user_id"`
+	User              User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	ProjectID         *uint            `gorm:"index" json:"project_id,omitempty"`
+	Project           *Project         `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Action            string           `gorm:"size:100;not null" json:"action"`
+	IpAddress         string           `gorm:"size:45" json:"ip_address"`
+	UserAgent         string           `gorm:"size:500" json:"user_agent"`
+	Details           string           `gorm:"type:text" json:"details"`
+	CreatedAt         time.Time        `json:"created_at"`
 }

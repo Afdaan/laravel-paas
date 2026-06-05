@@ -11,6 +11,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	sharedDocker "github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"gorm.io/gorm"
 )
 
 // ===========================================
@@ -53,9 +54,9 @@ func (s *DockerService) ResolveBuildPath(projectPath string, baseDirectory strin
 }
 
 // NewDockerService creates a new Docker service
-func NewDockerService(cfg *config.Config, storage *infrastructure.StorageService) *DockerService {
+func NewDockerService(cfg *config.Config, storage *infrastructure.StorageService, db *gorm.DB) *DockerService {
 	s := &DockerService{
-		DockerService: sharedDocker.NewDockerService(cfg, storage),
+		DockerService: sharedDocker.NewDockerService(cfg, storage, db),
 		cfg:           cfg,
 		storage:       storage,
 	}

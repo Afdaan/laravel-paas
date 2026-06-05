@@ -29,9 +29,7 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	}
 	// Logic: Sync new files from Git Source to Persistent Storage
 	// We use 'cp -an' to copy non-existing files and preserve attributes
-	// projectSourceStorage = /home/afdaan/projects/subdomain/storage/app/
-	// path = /home/afdaan/data/user-1/subdomain/storage/
-	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "storage", "app")
+	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage", "app")
 
 	if _, err := os.Stat(projectSourceStorage); err == nil {
 		slog.Info("Syncing source assets to persistent storage", "subdomain", project.Subdomain)
@@ -89,8 +87,8 @@ func (s *StorageService) GetPersistentHostPath(project *models.Project) string {
 }
 
 // GetProjectsHostPath returns the project path as seen by the Host OS
-func (s *StorageService) GetProjectsHostPath(subdomain string) string {
-	return filepath.Join(s.cfg.HostProjectsPath, subdomain)
+func (s *StorageService) GetProjectsHostPath(userID uint, subdomain string) string {
+	return filepath.Join(s.cfg.HostProjectsPath, fmt.Sprintf("user-%d", userID), subdomain)
 }
 
 // CleanupPersistentData removes project storage folders
@@ -123,8 +121,8 @@ func (s *StorageService) CopyFile(src, dst string) error {
 }
 
 // GetEnvFile reads the .env file for a project
-func (s *StorageService) GetEnvFile(subdomain string) (string, error) {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+func (s *StorageService) GetEnvFile(userID uint, subdomain string) (string, error) {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, fmt.Sprintf("user-%d", userID), subdomain)
 	content, err := os.ReadFile(filepath.Join(projectPath, ".env"))
 	if err != nil {
 		return "", err
@@ -133,8 +131,8 @@ func (s *StorageService) GetEnvFile(subdomain string) (string, error) {
 }
 
 // SaveEnvFile updates the .env file for a project using an atomic write pattern (write temp -> fsync -> rename)
-func (s *StorageService) SaveEnvFile(subdomain, content string) error {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+func (s *StorageService) SaveEnvFile(userID uint, subdomain, content string) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, fmt.Sprintf("user-%d", userID), subdomain)
 	envPath := filepath.Join(projectPath, ".env")
 	tempPath := envPath + ".tmp"
 

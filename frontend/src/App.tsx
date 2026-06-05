@@ -44,6 +44,9 @@ const AdminDeploymentQueue = lazy(() => import('./pages/admin/DeploymentQueue'))
 const UserDomains = lazy(() => import('./pages/user/Domains'))
 const AdminDomains = lazy(() => import('./pages/admin/Domains'))
 const UserSettings = lazy(() => import('./pages/user/Settings').then(module => ({ default: module.UserSettings })))
+const UserSecretStore = lazy(() => import('./pages/user/SecretStoreDashboard'))
+const AdminSecretStore = lazy(() => import('./pages/admin/AdminSecretStoreExplorer'))
+
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -223,6 +226,7 @@ function App() {
           <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<UserFeedback />} />
           <Route path="/settings" element={<UserSettings />} />
+          <Route path="/secretstores" element={<UserSecretStore />} />
         </Route>
 
         {/* Admin Routes */}
@@ -244,6 +248,7 @@ function App() {
           <Route path="databases" element={<AdminDatabases />} />
           <Route path="domains" element={<AdminDomains />} />
           <Route path="queue" element={<AdminDeploymentQueue />} />
+          <Route path="secretstores" element={<AdminSecretStore />} />
         </Route>
 
         {/* Fallback */}

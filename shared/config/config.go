@@ -80,6 +80,9 @@ type Config struct {
 	GithubAppID             string
 	GithubAppPrivateKeyPath string
 	GithubAppWebhookSecret  string
+
+	// SecretStore Credentials Encryption
+	CredentialEncryptionKey string
 }
 
 // Load reads configuration from environment variables
@@ -187,6 +190,9 @@ func Load() *Config {
 		GithubAppID:             getEnv("GITHUB_APP_ID", ""),
 		GithubAppPrivateKeyPath: getEnv("GITHUB_APP_PRIVATE_KEY_PATH", ""),
 		GithubAppWebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
+
+		// SecretStore Credentials Encryption
+		CredentialEncryptionKey: getEnv("CREDENTIAL_ENCRYPTION_KEY", "default-fallback-encryption-key-for-dev"),
 	}
 
 	// Ensure host paths are absolute to prevent Docker volume naming errors

@@ -24,23 +24,25 @@ import (
 // ===========================================
 // ProjectHandler handles project endpoints
 type ProjectHandler struct {
-	cfg            *config.Config
-	db             *gorm.DB
-	redisService   *infrastructure.RedisService
-	projectService *projectServicePkg.ProjectService
-	userService    *services.UserService
-	dockerService  *docker.DockerService
+	cfg                *config.Config
+	db                 *gorm.DB
+	redisService       *infrastructure.RedisService
+	projectService     *projectServicePkg.ProjectService
+	userService        *services.UserService
+	dockerService      *docker.DockerService
+	secretStoreService *services.SecretStoreService
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, projectService *projectServicePkg.ProjectService, userService *services.UserService, dockerService *docker.DockerService) *ProjectHandler {
+func NewProjectHandler(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, projectService *projectServicePkg.ProjectService, userService *services.UserService, dockerService *docker.DockerService, secretStoreService *services.SecretStoreService) *ProjectHandler {
 	return &ProjectHandler{
-		cfg:            cfg,
-		db:             db,
-		projectService: projectService,
-		userService:    userService,
-		redisService:   redisService,
-		dockerService:  dockerService,
+		cfg:                cfg,
+		db:                 db,
+		projectService:     projectService,
+		userService:        userService,
+		redisService:       redisService,
+		dockerService:      dockerService,
+		secretStoreService: secretStoreService,
 	}
 }
 

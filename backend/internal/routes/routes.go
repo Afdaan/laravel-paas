@@ -39,6 +39,7 @@ func Setup(
 	databaseService *services.DatabaseService,
 	feedbackService *services.FeedbackService,
 	domainHandler *domainHandlerPkg.DomainHandler,
+	secretStoreService *services.SecretStoreService,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
@@ -103,13 +104,14 @@ func Setup(
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
 	userHandler := handlers.NewUserHandler(userService)
-	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, db, redisService, projectService, userService, dockerService)
+	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, db, redisService, projectService, userService, dockerService, secretStoreService)
 	settingHandler := handlers.NewSettingHandler(settingService)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
-	databaseHandler := handlers.NewDatabaseHandler(db, cfg, databaseService, projectService, redisService)
+	databaseHandler := handlers.NewDatabaseHandler(db, cfg, databaseService, projectService, redisService, secretStoreService)
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
+	secretStoreHandler := handlers.NewSecretStoreHandler(db, cfg, secretStoreService)
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
@@ -202,6 +204,25 @@ func Setup(
 	// System monitoring (PaaS style)
 	admin.Get("/system/stats", systemHandler.GetStats)
 	admin.Post("/system/prune", systemHandler.PruneSystem)
+
+	// SecretStore (Admin)
+	admin.Get("/secretstores", secretStoreHandler.AdminListAll)
+	admin.Put("/secretstores/:id/disable", secretStoreHandler.AdminDisable)
+	admin.Get("/secretstores/logs", secretStoreHandler.AdminListLogs)
+
+	// SecretStore (User)
+	secretstores := protected.Group("/secretstores")
+	secretstores.Get("/", secretStoreHandler.List)
+	secretstores.Post("/", secretStoreHandler.Create)
+	secretstores.Get("/:id", secretStoreHandler.Get)
+	secretstores.Put("/:id", secretStoreHandler.Update)
+	secretstores.Delete("/:id", secretStoreHandler.Delete)
+	secretstores.Post("/:id/secrets", secretStoreHandler.SetSecret)
+	secretstores.Get("/:id/secrets/:itemID/reveal", secretStoreHandler.RevealSecret)
+	secretstores.Post("/:id/bind", secretStoreHandler.Bind)
+	secretstores.Delete("/:id/bind/:projectUID", secretStoreHandler.Unbind)
+	secretstores.Get("/:id/export", secretStoreHandler.Export)
+	secretstores.Post("/:id/import", secretStoreHandler.Import)
 
 	// -----------------------------
 	// Project Routes (Users)

@@ -2083,7 +2083,7 @@ function UserProjectDetail() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {project && <CustomDomainManager projectId={project.id} subdomain={project.subdomain!} projectUrl={project.url} onDomainsChanged={fetchProject} />}
+              {project && <CustomDomainManager projectId={project.uid} subdomain={project.subdomain!} projectUrl={project.url} onDomainsChanged={fetchProject} />}
             </CardContent>
           </Card>
         </TabsContent>

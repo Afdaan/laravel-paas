@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/laravel-paas/shared/config"
@@ -69,6 +70,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.GithubAppInstallation{},
 		&models.DatabaseInstance{},
 		&models.DatabaseBackup{},
+		&models.SecretStore{},
+		&models.SecretStoreItem{},
+		&models.SecretStoreItemValue{},
+		&models.SecretStoreBinding{},
+		&models.SecretStoreActivityLog{},
 	}
 
 	for _, m := range modelsList {
@@ -85,6 +91,13 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	}
 
 	slog.Info("Defensive migration bootstrap completed successfully.")
+
+	cfg := config.Load()
+
+	// Perform filesystem migration to user tenant subdirectories.
+	if err := MigrateProjectsFilesToTenantLayout(db, cfg.ProjectsPath); err != nil {
+		slog.Error("Filesystem tenant migration failed", "error", err)
+	}
 
 	// Backfill UIDs for projects that don't have one.
 	if err := BackfillUIDs(db, &config.Config{UIDSalt: os.Getenv("UID_SALT")}); err != nil {
@@ -463,5 +476,59 @@ func BackfillDatabaseInstances(db *gorm.DB) error {
 	if backfilled > 0 {
 		slog.Info("Backfilled database instances for legacy projects", "count", backfilled)
 	}
+	return nil
+}
+
+// MigrateProjectsFilesToTenantLayout re-arranges legacy project files into multi-tenant user-based folders.
+func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error {
+	slog.Info("Checking if filesystem migration to multi-tenant layout is needed...", "projects_path", projectsPath)
+
+	var projects []models.Project
+	if err := db.Find(&projects).Error; err != nil {
+		return fmt.Errorf("failed to fetch projects: %w", err)
+	}
+
+	for _, p := range projects {
+		legacyPath := filepath.Join(projectsPath, p.Subdomain)
+		newParentPath := filepath.Join(projectsPath, fmt.Sprintf("user-%d", p.UserID))
+		newPath := filepath.Join(newParentPath, p.Subdomain)
+
+		// Move directory to nested tenant path if it still exists in the flat format.
+		if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
+			slog.Info("Migrating project directory to user tenant folder", "project", p.Name, "legacy", legacyPath, "new", newPath)
+
+			if err := os.MkdirAll(newParentPath, 0755); err != nil {
+				slog.Error("Failed to create user directory", "path", newParentPath, "error", err)
+				continue
+			}
+
+			if err := os.Rename(legacyPath, newPath); err != nil {
+				slog.Error("Failed to rename project directory", "from", legacyPath, "to", newPath, "error", err)
+				continue
+			}
+			slog.Info("Successfully migrated project directory", "subdomain", p.Subdomain)
+		}
+
+		// Cleanup legacy and new backup environment files to protect secret data.
+		legacyBakFile := filepath.Join(projectsPath, p.Subdomain+".env.bak")
+		if _, err := os.Stat(legacyBakFile); err == nil {
+			_ = os.Remove(legacyBakFile)
+		}
+		newBakFile := filepath.Join(newPath, ".env.bak")
+		if _, err := os.Stat(newBakFile); err == nil {
+			_ = os.Remove(newBakFile)
+		}
+	}
+
+	// Delete any stray backup files in the root projects path.
+	files, err := os.ReadDir(projectsPath)
+	if err == nil {
+		for _, f := range files {
+			if !f.IsDir() && strings.HasSuffix(f.Name(), ".bak") {
+				_ = os.Remove(filepath.Join(projectsPath, f.Name()))
+			}
+		}
+	}
+
 	return nil
 }

@@ -643,8 +643,8 @@ func (s *DockerService) PruneImages() error {
 }
 
 // CleanupProject removes project files
-func (s *DockerService) CleanupProject(subdomain string) error {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+func (s *DockerService) CleanupProject(userID uint, subdomain string) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, fmt.Sprintf("user-%d", userID), subdomain)
 	return os.RemoveAll(projectPath)
 }
 

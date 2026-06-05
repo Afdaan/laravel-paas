@@ -298,10 +298,10 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 
 	// Automate Laravel .env QUEUE_CONNECTION update if queue status changes
 	if project.Framework == "Laravel" && project.QueueEnabled != queueEnabled {
-		if content, err := s.storageService.GetEnvFile(project.Subdomain); err == nil {
+		if content, err := s.storageService.GetEnvFile(project.UserID, project.Subdomain); err == nil {
 			updatedContent := updateEnvQueueConnection(content, queueEnabled)
 			if updatedContent != content {
-				if err := s.storageService.SaveEnvFile(project.Subdomain, updatedContent); err != nil {
+				if err := s.storageService.SaveEnvFile(project.UserID, project.Subdomain, updatedContent); err != nil {
 					slog.Warn("Failed to automatically update QUEUE_CONNECTION in .env file on settings update", "subdomain", project.Subdomain, "error", err)
 				} else {
 					slog.Info("Automatically updated QUEUE_CONNECTION in .env file", "subdomain", project.Subdomain, "queue_enabled", queueEnabled)
