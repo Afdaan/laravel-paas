@@ -872,13 +872,18 @@ export default function SecretStoreDashboard() {
                 value={bindingForm.projectUid}
                 onValueChange={val => setBindingForm(prev => ({ ...prev, projectUid: val || '' }))}
               >
-                <SelectTrigger id="bind-project" className="h-9">
-                  <SelectValue placeholder="Choose a project..." />
+                <SelectTrigger id="bind-project" className="w-full h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
+                  <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
+                    <SelectValue placeholder="Choose a project..." />
+                  </div>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">
                   {projects.map(p => (
-                    <SelectItem key={p.uid} value={p.uid}>
-                      {p.name} ({p.subdomain})
+                    <SelectItem key={p.uid} value={p.uid} className="rounded-lg py-2 px-3 cursor-pointer">
+                      <div className="flex flex-col text-left">
+                        <span className="font-semibold text-foreground text-xs">{p.name}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{p.subdomain}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -890,14 +895,16 @@ export default function SecretStoreDashboard() {
                 value={bindingForm.environment}
                 onValueChange={val => setBindingForm(prev => ({ ...prev, environment: val || 'all' }))}
               >
-                <SelectTrigger id="bind-env" className="h-9">
-                  <SelectValue />
+                <SelectTrigger id="bind-env" className="w-full h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
+                  <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
+                    <SelectValue />
+                  </div>
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t('secretstore.allEnvs')}</SelectItem>
-                  <SelectItem value="production">{t('secretstore.prod')}</SelectItem>
-                  <SelectItem value="staging">{t('secretstore.staging')}</SelectItem>
-                  <SelectItem value="development">{t('secretstore.dev')}</SelectItem>
+                <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">
+                  <SelectItem value="all" className="rounded-lg py-2 px-3 cursor-pointer text-xs">{t('secretstore.allEnvs')}</SelectItem>
+                  <SelectItem value="production" className="rounded-lg py-2 px-3 cursor-pointer text-xs">{t('secretstore.prod')}</SelectItem>
+                  <SelectItem value="staging" className="rounded-lg py-2 px-3 cursor-pointer text-xs">{t('secretstore.staging')}</SelectItem>
+                  <SelectItem value="development" className="rounded-lg py-2 px-3 cursor-pointer text-xs">{t('secretstore.dev')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
