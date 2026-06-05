@@ -69,7 +69,7 @@ func main() {
 
 	// Initialize Infrastructure Services
 	storageService := infrastructure.NewStorageService(cfg)
-	dockerService := docker.NewDockerService(cfg, storageService)
+	dockerService := docker.NewDockerService(cfg, storageService, db)
 	mysqlService := infrastructure.NewMySQLService()
 
 	// Initialize Repositories
@@ -88,9 +88,10 @@ func main() {
 	databaseService := services.NewDatabaseService(db, cfg)
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
 	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, db, redisService, domainService, projectService)
+	secretStoreService := services.NewSecretStoreService(db, cfg, redisService)
 
 	// Initialize server
-	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)
+	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler, secretStoreService)
 
 	port := os.Getenv("PORT")
 	if port == "" {
