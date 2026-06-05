@@ -427,8 +427,27 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                       {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 leading-relaxed font-sans break-words">
-                    {ev.message || ev.payload || ev.error || ''}
+                  <p className="text-[11px] text-zinc-400 leading-relaxed font-sans break-words font-medium">
+                    {(() => {
+                      if (ev.error) return ev.error;
+                      const type = ev.event_type || '';
+                      const payload = ev.payload || '';
+                      
+                      if (type === 'deployment_completed') {
+                        const shortHash = payload && payload.length >= 7 ? payload.substring(0, 7) : payload;
+                        return `Deployment completed successfully. Active commit: ${shortHash}`;
+                      }
+                      if (type === 'rollback_completed') {
+                        const shortHash = payload && payload.length >= 7 ? payload.substring(0, 7) : payload;
+                        return `Rollback completed. Reverted to commit: ${shortHash}`;
+                      }
+                      if (type === 'deployment_skipped_existing_image') {
+                        const shortHash = payload && payload.length >= 7 ? payload.substring(0, 7) : payload;
+                        return `Deployment skipped. Image is already up to date for commit: ${shortHash}`;
+                      }
+                      
+                      return ev.message || payload || '';
+                    })()}
                   </p>
                 </div>
               ))}
