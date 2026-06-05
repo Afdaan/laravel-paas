@@ -1083,39 +1083,39 @@ function UserProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="w-full overflow-x-auto pb-2 -mb-2 custom-scrollbar hide-scrollbar-on-mobile">
           <TabsList className="bg-muted/40 p-1.5 rounded-xl border border-border/40 inline-flex min-w-max shadow-sm mb-1">
-            <TabsTrigger value="project" className="flex items-center gap-2">
+            <TabsTrigger value="project" className="flex items-center gap-2 data-active:!text-primary">
               <LayoutGrid className="w-4 h-4" />
               {t('projectDetail.tabs.overview')}
             </TabsTrigger>
-            <TabsTrigger value="runtime" className="flex items-center gap-2">
+            <TabsTrigger value="runtime" className="flex items-center gap-2 data-active:!text-primary">
               <Cpu className="w-4 h-4" />
               {t('projectDetail.tabs.runtime')}
             </TabsTrigger>
-            <TabsTrigger value="console" className="flex items-center gap-2">
+            <TabsTrigger value="console" className="flex items-center gap-2 data-active:!text-primary">
               <TerminalIcon className="w-4 h-4" />
               {t('projectDetail.tabs.console')}
             </TabsTrigger>
-            <TabsTrigger value="environment" className="flex items-center gap-2">
+            <TabsTrigger value="environment" className="flex items-center gap-2 data-active:!text-primary">
               <Key className="w-4 h-4" />
               {t('projectDetail.tabs.secrets')}
             </TabsTrigger>
-            <TabsTrigger value="database" className="flex items-center gap-2">
+            <TabsTrigger value="database" className="flex items-center gap-2 data-active:!text-primary">
               <DatabaseIcon className="w-4 h-4" />
               {t('projectDetail.tabs.database')}
             </TabsTrigger>
-            <TabsTrigger value="logs" className="flex items-center gap-2">
+            <TabsTrigger value="logs" className="flex items-center gap-2 data-active:!text-primary">
               <Scroll className="w-4 h-4" />
               {t('projectDetail.tabs.logs')}
             </TabsTrigger>
-            <TabsTrigger value="build" className="flex items-center gap-2">
+            <TabsTrigger value="build" className="flex items-center gap-2 data-active:!text-primary">
               <Hammer className="w-4 h-4" />
               {t('projectDetail.tabs.build')}
             </TabsTrigger>
-            <TabsTrigger value="domains" className="flex items-center gap-2">
+            <TabsTrigger value="domains" className="flex items-center gap-2 data-active:!text-primary">
               <Globe className="w-4 h-4" />
               {t('projectDetail.tabs.domains')}
             </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
+            <TabsTrigger value="settings" className="flex items-center gap-2 data-active:!text-primary">
               <Settings className="w-4 h-4" />
               {t('projectDetail.tabs.settings')}
             </TabsTrigger>
