@@ -235,7 +235,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 		return nil
 	}
 
-	logFunc(">> Initiating application hot-swap...")
+	logFunc(">> Initiating application transition...")
 	slog.Info("Executing zero-downtime container recreation with health guard",
 		"subdomain", project.Subdomain,
 		"projectId", project.ID)
@@ -308,7 +308,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 	s.dockerService.CleanupLegacyContainers(project.Subdomain, newID, project.WorkerContainerID)
 	
 	logFunc("")
-	logFunc("✓ Hot-swap completed.")
+	logFunc("✓ Transition completed.")
 
 	return nil
 }

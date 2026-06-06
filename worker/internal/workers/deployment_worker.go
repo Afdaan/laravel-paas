@@ -423,7 +423,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		appendLog = w.makeRedactingLogger(project, appendLog)
 
 		if project.ContainerID == nil || *project.ContainerID == "" {
-			appendLog(">> Project is stopped. Skipping hot-swap environment update.")
+			appendLog(">> Project is stopped. Skipping environment propagation.")
 			appendLog("✓ Environment configuration updated successfully.")
 			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
