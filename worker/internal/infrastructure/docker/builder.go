@@ -324,10 +324,42 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 	}
 
-	// Dynamic detection of package.json to identify static frontend apps in monorepos
-	packageJSONPath := s.findFileRecursively(buildPath, "package.json", 1, 3)
-	if packageJSONPath != "" && project.StartCommand == "" {
-		packageDir := filepath.Dir(packageJSONPath)
+	// Find all package.json files up to depth 3 to support monorepos
+	packageJSONs := s.findNestedPackageJSONs(buildPath, 1, 3)
+	var targetPackageJSON string
+	if len(packageJSONs) == 1 {
+		targetPackageJSON = packageJSONs[0]
+	} else if len(packageJSONs) > 1 {
+		// Monorepo: Prioritize directories named web, frontend, client, or spa
+		for _, pPath := range packageJSONs {
+			dirName := filepath.Base(filepath.Dir(pPath))
+			if dirName == "web" || dirName == "frontend" || dirName == "client" || dirName == "spa" {
+				targetPackageJSON = pPath
+				break
+			}
+		}
+		// Fallback to the first nested package.json if no specific match
+		if targetPackageJSON == "" {
+			for _, pPath := range packageJSONs {
+				if filepath.Dir(pPath) != buildPath {
+					targetPackageJSON = pPath
+					break
+				}
+			}
+		}
+		// Fallback to root package.json
+		if targetPackageJSON == "" {
+			targetPackageJSON = packageJSONs[0]
+		}
+	}
+
+	if targetPackageJSON != "" && project.StartCommand == "" {
+		packageDir := filepath.Dir(targetPackageJSON)
+		relDir, errRel := filepath.Rel(buildPath, packageDir)
+		if errRel != nil {
+			relDir = "."
+		}
+
 		hasViteConfig := false
 		for _, vf := range []string{"vite.config.ts", "vite.config.js", "nuxt.config.js", "nuxt.config.ts", "svelte.config.js"} {
 			if _, err := os.Stat(filepath.Join(packageDir, vf)); err == nil {
@@ -337,25 +369,41 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 
 		isStaticNode := false
-		data, err := os.ReadFile(packageJSONPath)
+		isNextJS := false
+		hasStartScript := false
+		data, err := os.ReadFile(targetPackageJSON)
 		if err == nil {
 			content := string(data)
-			hasStartScript := strings.Contains(content, "\"start\"") || strings.Contains(content, "'start'")
+			hasStartScript = strings.Contains(content, "\"start\"") || strings.Contains(content, "'start'")
 			hasBuildScript := strings.Contains(content, "\"build\"") || strings.Contains(content, "'build'")
-			
+			isNextJS = strings.Contains(content, "\"next\"")
+
 			if !hasStartScript && (hasBuildScript || hasViteConfig) {
 				isStaticNode = true
 			}
 		}
 
+		// Resolve correct package manager based on lockfiles
+		pkgManager := "npm"
+		if _, errLock := os.Stat(filepath.Join(buildPath, "bun.lock")); errLock == nil {
+			pkgManager = "bun"
+		} else if _, errLock := os.Stat(filepath.Join(packageDir, "bun.lock")); errLock == nil {
+			pkgManager = "bun"
+		} else if _, errLock := os.Stat(filepath.Join(buildPath, "pnpm-lock.yaml")); errLock == nil {
+			pkgManager = "pnpm"
+		} else if _, errLock := os.Stat(filepath.Join(packageDir, "pnpm-lock.yaml")); errLock == nil {
+			pkgManager = "pnpm"
+		} else if _, errLock := os.Stat(filepath.Join(buildPath, "yarn.lock")); errLock == nil {
+			pkgManager = "yarn"
+		} else if _, errLock := os.Stat(filepath.Join(packageDir, "yarn.lock")); errLock == nil {
+			pkgManager = "yarn"
+		}
+
 		if isStaticNode || isStaticFramework {
 			isStaticFramework = true
-			outputDir := s.detectStaticOutputDir(packageJSONPath)
-			
-			// Compute output directory relative to the build root
-			relDir, errRel := filepath.Rel(buildPath, packageDir)
+			outputDir := s.detectStaticOutputDir(targetPackageJSON)
 			finalOutputDir := outputDir
-			if errRel == nil && relDir != "." {
+			if relDir != "." {
 				finalOutputDir = filepath.Join(relDir, outputDir)
 			}
 
@@ -365,23 +413,29 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			slog.Info("Auto-configuring static SPA hosting", "subdomain", project.Subdomain, "outputDir", finalOutputDir)
 			envs["RAILPACK_SPA_OUTPUT_DIR"] = finalOutputDir
 
-			// Inject a default build command if build command is empty
 			if project.BuildCommand == "" {
-				baseCmd := "npm run build"
-				if _, errLock := os.Stat(filepath.Join(packageDir, "bun.lock")); errLock == nil {
-					baseCmd = "bun run build"
-				} else if _, errLock := os.Stat(filepath.Join(packageDir, "pnpm-lock.yaml")); errLock == nil {
-					baseCmd = "pnpm run build"
-				} else if _, errLock := os.Stat(filepath.Join(packageDir, "yarn.lock")); errLock == nil {
-					baseCmd = "yarn run build"
-				}
-				
-				// Execute the build within the subdirectory if package.json is nested
-				if errRel == nil && relDir != "." {
+				baseCmd := fmt.Sprintf("%s run build", pkgManager)
+				if relDir != "." {
 					envs["RAILPACK_BUILD_CMD"] = fmt.Sprintf("cd %s && %s", relDir, baseCmd)
 				} else {
 					envs["RAILPACK_BUILD_CMD"] = baseCmd
 				}
+			}
+		} else if relDir != "." {
+			// Monorepo dynamic app auto-detection (e.g. Next.js standalone or Express/Hono workspace)
+			if isNextJS || hasStartScript {
+				isStaticFramework = false
+				
+				if project.BuildCommand == "" {
+					envs["RAILPACK_BUILD_CMD"] = fmt.Sprintf("cd %s && %s run build", relDir, pkgManager)
+				}
+				if project.StartCommand == "" {
+					envs["RAILPACK_START_CMD"] = fmt.Sprintf("cd %s && %s run start", relDir, pkgManager)
+				}
+				if logCallback != nil {
+					logCallback(fmt.Sprintf(">> INFO: Monorepo workspace app detected at '%s'. Automatically configuring build command ('cd %s && %s run build') and start command ('cd %s && %s run start').", relDir, relDir, pkgManager, relDir, pkgManager))
+				}
+				slog.Info("Auto-configuring monorepo workspace app", "subdomain", project.Subdomain, "relDir", relDir, "pkgManager", pkgManager)
 			}
 		}
 	}
@@ -423,7 +477,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 
 	// Verify if build output indicates missing start command for a non-static project (Smart Fail-Fast)
 	combinedOutput := res.Stdout + "\n" + res.Stderr
-	if strings.Contains(combinedOutput, "No start command detected") && project.StartCommand == "" && !isStaticFramework {
+	if strings.Contains(combinedOutput, "No start command detected") && project.StartCommand == "" && envs["RAILPACK_START_CMD"] == "" && !isStaticFramework {
 		slog.Warn("Railpack build finished but no start command was configured, failing early", "subdomain", project.Subdomain)
 		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
 		return apperr.New(400, "NO_START_COMMAND", "Build succeeded, but no start command or static/SPA output directory was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings.")
@@ -695,4 +749,36 @@ func (s *DockerService) findFileRecursively(dir string, filename string, current
 		}
 	}
 	return ""
+}
+
+// findNestedPackageJSONs searches for all package.json files up to maxDepth, ignoring common build and dependency folders
+func (s *DockerService) findNestedPackageJSONs(dir string, currentDepth, maxDepth int) []string {
+	if currentDepth > maxDepth {
+		return nil
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var results []string
+	// First pass: collect package.json in current directory
+	for _, f := range files {
+		if !f.IsDir() && f.Name() == "package.json" {
+			results = append(results, filepath.Join(dir, f.Name()))
+		}
+	}
+
+	// Second pass: recursively walk subdirectories
+	for _, f := range files {
+		if f.IsDir() {
+			name := f.Name()
+			if name == "node_modules" || name == ".git" || name == "dist" || name == "build" || name == ".next" || name == "vendor" {
+				continue
+			}
+			subResults := s.findNestedPackageJSONs(filepath.Join(dir, name), currentDepth+1, maxDepth)
+			results = append(results, subResults...)
+		}
+	}
+	return results
 }
