@@ -266,7 +266,7 @@ func RedactInfrastructureDetails(errorMsg string, sensitiveValues []string) stri
 	// Redact DB Hostnames
 	errorMsg = strings.ReplaceAll(errorMsg, "paas-mysql", "database-host")
 	errorMsg = strings.ReplaceAll(errorMsg, "paas-user-postgres", "database-host")
-	
+
 	// Redact absolute server directory paths
 	pathRegex := regexp.MustCompile(`/(home|var|app|etc|usr|nix)/[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.-]+)*`)
 	errorMsg = pathRegex.ReplaceAllString(errorMsg, "[internal_path]")
@@ -300,40 +300,40 @@ func RedactInfrastructureDetails(errorMsg string, sensitiveValues []string) stri
 // GetSmartSuggestion parses raw deployment error messages and returns highly actionable suggestions.
 func GetSmartSuggestion(errorMsg string) string {
 	// 1. Database Connection Failures
-	if strings.Contains(errorMsg, "connection refused") || 
-	   strings.Contains(errorMsg, "Access denied for user") || 
-	   strings.Contains(errorMsg, "dial tcp: lookup") || 
-	   strings.Contains(errorMsg, "driver: bad connection") {
+	if strings.Contains(errorMsg, "connection refused") ||
+		strings.Contains(errorMsg, "Access denied for user") ||
+		strings.Contains(errorMsg, "dial tcp: lookup") ||
+		strings.Contains(errorMsg, "driver: bad connection") {
 		return "Database connection failed. Please check if your database credentials in the Environment Variables (.env) tab are correct and that the database service is running."
 	}
 
 	// 2. Out of Memory (OOM) Crashes
-	if strings.Contains(errorMsg, "JavaScript heap out of memory") || 
-	   strings.Contains(errorMsg, "Allowed memory size exhausted") || 
-	   strings.Contains(errorMsg, "Killed") || 
-	   strings.Contains(errorMsg, "exit status 137") {
+	if strings.Contains(errorMsg, "JavaScript heap out of memory") ||
+		strings.Contains(errorMsg, "Allowed memory size exhausted") ||
+		strings.Contains(errorMsg, "Killed") ||
+		strings.Contains(errorMsg, "exit status 137") {
 		return "Application ran out of memory (OOM). Please try increasing the RAM limit of your project in the Resource Settings tab."
 	}
 
 	// 3. Compilation & Syntax Errors
 	tsErrorRegex := regexp.MustCompile(`\berror TS[0-9]+:`)
-	if tsErrorRegex.MatchString(errorMsg) || 
-	   strings.Contains(errorMsg, "syntax error") || 
-	   strings.Contains(errorMsg, "Failed to compile") || 
-	   strings.Contains(errorMsg, "Rollup failed") {
+	if tsErrorRegex.MatchString(errorMsg) ||
+		strings.Contains(errorMsg, "syntax error") ||
+		strings.Contains(errorMsg, "Failed to compile") ||
+		strings.Contains(errorMsg, "Rollup failed") {
 		return "A syntax error or compilation failure was detected in your codebase. Please inspect the detailed log output above for the exact file and line numbers."
 	}
 
 	// 4. Dependency & Lockfile Conflicts
-	if strings.Contains(errorMsg, "npm ERR! code ERESOLVE") || 
-	   strings.Contains(errorMsg, "composer.lock was created for") || 
-	   strings.Contains(errorMsg, "Could not find a version that satisfies the requirement") {
+	if strings.Contains(errorMsg, "npm ERR! code ERESOLVE") ||
+		strings.Contains(errorMsg, "composer.lock was created for") ||
+		strings.Contains(errorMsg, "Could not find a version that satisfies the requirement") {
 		return "A dependency conflict was encountered. Please verify your package.json/composer.json/requirements.txt file or run a local installation to resolve conflicts."
 	}
 
 	// 5. Missing Start Command
-	if strings.Contains(errorMsg, "NO_START_COMMAND") || 
-	   strings.Contains(errorMsg, "No start command detected") {
+	if strings.Contains(errorMsg, "NO_START_COMMAND") ||
+		strings.Contains(errorMsg, "No start command detected") {
 		return "No start command was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings."
 	}
 

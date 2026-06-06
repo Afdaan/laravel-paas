@@ -35,21 +35,21 @@ func (s *DockerService) probeHTTP(ctx context.Context, url string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 	}
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("server error status code: %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 

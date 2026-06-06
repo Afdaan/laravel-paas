@@ -3,12 +3,12 @@ package domain
 type FailureClass string
 
 const (
-	FailureTransient        FailureClass = "TRANSIENT"
-	FailureRetryable        FailureClass = "RETRYABLE"
-	FailurePermanent        FailureClass = "PERMANENT"
-	FailureDependencyOutage FailureClass = "DEPENDENCY_OUTAGE"
+	FailureTransient         FailureClass = "TRANSIENT"
+	FailureRetryable         FailureClass = "RETRYABLE"
+	FailurePermanent         FailureClass = "PERMANENT"
+	FailureDependencyOutage  FailureClass = "DEPENDENCY_OUTAGE"
 	FailureUserConfiguration FailureClass = "USER_CONFIGURATION"
-	FailureFatal            FailureClass = "FATAL"
+	FailureFatal             FailureClass = "FATAL"
 )
 
 func ClassifyError(err error) FailureClass {

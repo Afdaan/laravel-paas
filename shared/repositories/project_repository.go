@@ -7,9 +7,9 @@ package repositories
 
 import (
 	"errors"
-	"strings"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
+	"strings"
 )
 
 type ProjectRepository interface {
@@ -198,17 +198,17 @@ func (r *projectRepository) Delete(id uint) error {
 		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.CustomDomain{}).Error; err != nil {
 			return err
 		}
-		
+
 		// Delete associated database backups
 		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseBackup{}).Error; err != nil {
 			return err
 		}
-		
+
 		// Delete associated database instances
 		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseInstance{}).Error; err != nil {
 			return err
 		}
-		
+
 		// Delete associated deployment events
 		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DeploymentEvent{}).Error; err != nil {
 			return err

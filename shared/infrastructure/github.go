@@ -59,7 +59,7 @@ func (s *GithubService) doRequestWithRetry(req *http.Request) (*http.Response, e
 				if remaining == "0" || resp.StatusCode == http.StatusTooManyRequests {
 					resetHeader := resp.Header.Get("X-RateLimit-Reset")
 					retryAfterHeader := resp.Header.Get("Retry-After")
-					
+
 					var waitDuration time.Duration
 					if retryAfterHeader != "" {
 						if sec, convErr := strconv.Atoi(retryAfterHeader); convErr == nil {
@@ -74,11 +74,11 @@ func (s *GithubService) doRequestWithRetry(req *http.Request) (*http.Response, e
 					if waitDuration <= 0 {
 						waitDuration = backoff
 					}
-					
+
 					if waitDuration > 10*time.Second {
 						waitDuration = 10 * time.Second
 					}
-					
+
 					slog.Warn("GitHub API rate limit hit, backing off", "url", req.URL.String(), "wait", waitDuration, "attempt", attempt)
 					if attempt < maxRetries {
 						resp.Body.Close()

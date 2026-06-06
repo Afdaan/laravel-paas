@@ -19,7 +19,6 @@ import (
 func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain string, isInitial bool) error {
 	projectPath := project.GetProjectPath(s.cfg.ProjectsPath)
 	envPath := filepath.Join(projectPath, ".env")
-	tempPath := envPath + ".tmp"
 
 	// Compile the complete env key-value map.
 	envMap, err := s.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.DatabaseName, project.DatabasePassword, project.Framework, "production")
@@ -34,24 +33,7 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 		return err
 	}
 
-	f, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tempPath)
-
-	if _, err := f.Write([]byte(envContent)); err != nil {
-		f.Close()
-		return err
-	}
-
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	return os.Rename(tempPath, envPath)
+	return utils.WriteFileAtomic(envPath, []byte(envContent), 0644)
 }
 
 // GetEnvFile reads the .env file for a project.
@@ -68,30 +50,12 @@ func (s *DockerService) GetEnvFile(userID uint, subdomain string) (string, error
 func (s *DockerService) SaveEnvFile(userID uint, subdomain, content string) error {
 	projectPath := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 	envPath := filepath.Join(projectPath, ".env")
-	tempPath := envPath + ".tmp"
 
 	if err := os.MkdirAll(projectPath, 0755); err != nil {
 		return err
 	}
 
-	f, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tempPath)
-
-	if _, err := f.Write([]byte(content)); err != nil {
-		f.Close()
-		return err
-	}
-
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	return os.Rename(tempPath, envPath)
+	return utils.WriteFileAtomic(envPath, []byte(content), 0644)
 }
 
 // UpdateDatabaseCredentialsInEnv is now a no-op as all environment variables are compiled directly from GORM.

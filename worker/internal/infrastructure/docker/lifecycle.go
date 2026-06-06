@@ -67,7 +67,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 // and returns only the lines that are actionable by the end user using regex error classifiers.
 func sanitizeBuildError(stderr string) string {
 	lines := strings.Split(stderr, "\n")
-	
+
 	// Define actionable error patterns
 	patterns := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\[vite\]:\s*Rollup\s*failed`),
@@ -93,7 +93,7 @@ func sanitizeBuildError(stderr string) string {
 				if end >= len(lines) {
 					end = len(lines) - 1
 				}
-				
+
 				var contextLines []string
 				for idx := start; idx <= end; idx++ {
 					trimmed := strings.TrimSpace(lines[idx])
@@ -294,8 +294,6 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 	}
 	return status == "healthy"
 }
-
-
 
 // parseArtisanMigrationCommand deterministically inspects an artisan command string.
 // If the command is an operational database migration or seed command, it enforces non-interactive and force execution flags.

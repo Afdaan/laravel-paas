@@ -172,18 +172,18 @@ func (h *ProjectHandler) ListBranches(c *fiber.Ctx) error {
 	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 && project.GithubRepoOwner != "" && project.GithubRepoName != "" {
 		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
 		instID := *project.GithubInstallationID
-		
+
 		ghBranches, err := githubService.ListBranches(instID, project.GithubRepoOwner, project.GithubRepoName)
 		if err != nil && (strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401")) {
 			githubService.InvalidateInstallationToken(instID)
 			ghBranches, err = githubService.ListBranches(instID, project.GithubRepoOwner, project.GithubRepoName)
 		}
-		
+
 		if err != nil {
 			slog.Error("Failed to list branches via GitHub App", "project_id", project.ID, "installation_id", instID, "error", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch branches from GitHub"})
 		}
-		
+
 		for _, b := range ghBranches {
 			branches = append(branches, b.Name)
 		}
@@ -204,4 +204,3 @@ func (h *ProjectHandler) ListBranches(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"data": branches})
 }
-

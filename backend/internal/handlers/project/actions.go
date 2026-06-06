@@ -306,7 +306,7 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 
 	if imageExists {
 		slog.Info("Performing instant rollback using existing local image", "project", project.Subdomain, "commit", req.CommitSHA)
-		
+
 		project.LastCommitHash = req.CommitSHA
 		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
 
@@ -316,14 +316,14 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 		}
 
 		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Instant rollback to "+req.CommitSHA, 0, jobID)
-		
+
 		return c.JSON(fiber.Map{
 			"message": "Instant rollback initiated successfully",
-			"type": "instant",
+			"type":    "instant",
 		})
 	} else {
 		slog.Info("Image not found locally, performing rebuild/redeploy fallback", "project", project.Subdomain, "commit", req.CommitSHA)
-		
+
 		project.LastCommitHash = req.CommitSHA
 		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
 
@@ -341,8 +341,7 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 
 		return c.JSON(fiber.Map{
 			"message": "Rebuild rollback initiated successfully",
-			"type": "rebuild",
+			"type":    "rebuild",
 		})
 	}
 }
-

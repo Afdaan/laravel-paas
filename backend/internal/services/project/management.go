@@ -168,8 +168,6 @@ func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, 
 	return s.nginxService.GetSSLStatus(domain)
 }
 
-
-
 // ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
 	projects, total, err := s.projectRepo.List(page, limit, userID, status, search)
@@ -433,16 +431,16 @@ func updateEnvQueueConnection(content string, queueEnabled bool) string {
 	found := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		cleanLine := trimmed
 		if strings.HasPrefix(trimmed, "#") {
 			cleanLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
 		}
-		
+
 		if strings.HasPrefix(cleanLine, "QUEUE_CONNECTION=") {
 			parts := strings.SplitN(cleanLine, "=", 2)
 			currentVal := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-			
+
 			newVal := currentVal
 			if queueEnabled {
 				if currentVal == "sync" || currentVal == "" {
@@ -453,19 +451,19 @@ func updateEnvQueueConnection(content string, queueEnabled bool) string {
 					newVal = "sync"
 				}
 			}
-			
+
 			lines[i] = "QUEUE_CONNECTION=" + newVal
 			found = true
 			break
 		}
 	}
-	
+
 	if !found && queueEnabled {
 		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
 			lines = append(lines, "")
 		}
 		lines = append(lines, "QUEUE_CONNECTION=database")
 	}
-	
+
 	return strings.Join(lines, "\n")
 }

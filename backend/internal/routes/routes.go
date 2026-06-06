@@ -12,16 +12,16 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"gorm.io/gorm"
 
-	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/backend/internal/handlers"
 	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
-	"github.com/laravel-paas/shared/infrastructure"
-	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/backend/internal/middleware"
-	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/backend/internal/services"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
+	"github.com/laravel-paas/shared/infrastructure/docker"
+	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/services/setting"
 )
 

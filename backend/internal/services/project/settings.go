@@ -18,4 +18,3 @@ func (s *ProjectService) GetEnv(userID uint, subdomain string) (string, error) {
 func (s *ProjectService) SaveEnv(userID uint, subdomain string, content string) error {
 	return s.storageService.SaveEnvFile(userID, subdomain, content)
 }
-

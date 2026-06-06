@@ -649,12 +649,12 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 			projectUID = fmt.Sprintf("%d", project.ID)
 		}
 		targetURL := fmt.Sprintf("%s/projects/%s?tab=build", h.cfg.FrontendURL, projectUID)
-		
+
 		instID := *project.GithubInstallationID
 		owner := project.GithubRepoOwner
 		repo := project.GithubRepoName
 		commitHash := project.LastCommitHash
-		
+
 		createdAt := time.Now().UnixNano()
 		statusPayload := &infrastructure.GithubStatusPayload{
 			InstallationID: instID,

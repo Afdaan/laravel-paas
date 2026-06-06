@@ -162,4 +162,3 @@ func (s *StorageService) SaveEnvFile(userID uint, subdomain, content string) err
 
 	return os.Rename(tempPath, envPath)
 }
-

@@ -22,16 +22,16 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
-	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 	sharedDocker "github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"github.com/laravel-paas/shared/repositories"
-	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 	"github.com/laravel-paas/shared/services/setting"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/laravel-paas/worker/internal/infrastructure/docker"
+	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
@@ -433,7 +433,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		appendLog(">> Preparing database credentials rotation...")
 		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Updating environment and restarting container")
-		
+
 		if err := w.instantUpdateEnv(project, appendLog); err != nil {
 			appendLog("")
 			appendLog("✗ Environment update failed: " + err.Error())
@@ -658,12 +658,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if job.Type == "delete" {
 		slog.Info("Performing project background deletion", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "delete_started", "Purging project from system")
-		
+
 		if err := w.projectService.DeleteProject(project); err != nil {
 			slog.Error("Failed to purge project during background delete job", "projectId", project.ID, "error", err)
 			return
 		}
-		
+
 		// The project is hard-deleted from database inside DeleteProject, so we do not transition deployment state,
 		// as the row is gone. Just return.
 		return
@@ -702,7 +702,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	// Obtain GitHub App installation token for authenticating private repositories
 	authURL := project.GithubURL
 	var installationID int64
-	
+
 	owner := ""
 	trimmed := strings.TrimPrefix(authURL, "https://github.com/")
 	trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
@@ -727,7 +727,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if resolvedID, err := w.projectRepo.ResolveInstallationID(project.UserID, owner); err == nil && resolvedID != 0 {
 			installationID = resolvedID
 			slog.Info("Self-healed and dynamically resolved GitHub Installation ID for project", "projectId", project.ID, "owner", owner, "resolvedID", resolvedID)
-			
+
 			// Persist the resolved installation ID to prevent future slow resolution runs
 			project.GithubInstallationID = &resolvedID
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -778,7 +778,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if cloneErr != nil && installationID != 0 && (strings.Contains(cloneErr.Error(), "Authentication failed") || strings.Contains(cloneErr.Error(), "Invalid username or token") || strings.Contains(cloneErr.Error(), "could not read Username")) {
 			slog.Warn("Git clone failed due to authentication issue, invalidating cached token and retrying...", "projectId", project.ID, "installationId", installationID)
 			w.githubService.InvalidateInstallationToken(installationID)
-			
+
 			// Fetch a fresh token
 			newToken, err := w.githubService.GetInstallationToken(installationID)
 			if err == nil && newToken != "" {
@@ -954,9 +954,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		{"index.html", "Static"},
 	}
 
+	oldFramework := project.Framework
 	project.Framework = "Other"
 	for _, m := range markers {
-		if _, err := os.Stat(filepath.Join(buildPath, m.file)); err == nil {
+		if foundPath := w.dockerService.FindFileRecursively(buildPath, m.file, 1, 3); foundPath != "" {
 			project.Framework = m.name
 			break
 		}
@@ -1002,6 +1003,22 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if project.LaravelVersion != "" {
 		updates["laravel_version"] = project.LaravelVersion
 	}
+
+	// Reset stale metadata if framework changed to prevent cross-framework configuration leakage (SRE guard)
+	if project.Framework != oldFramework {
+		project.Port = nil
+		project.NodeVersion = ""
+		project.PHPVersion = ""
+		project.LaravelVersion = ""
+		project.LanguageVersion = ""
+
+		updates["port"] = nil
+		updates["node_version"] = ""
+		updates["php_version"] = ""
+		updates["laravel_version"] = ""
+		updates["language_version"] = ""
+	}
+
 	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
 		slog.Warn("Failed to update project metadata", "id", project.ID, "error", err)
 	}
@@ -1030,7 +1047,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	memoryMB := w.getSetting(models.SettingMemoryLimit, models.DefaultMemoryLimit)
 	memoryLimit := memoryMB + "m"
-
 
 	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
 	if err != nil || buildTimeoutSec <= 0 {
@@ -1187,7 +1203,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
 		w.forceDeploymentCompleted(project, job.JobID)
 	}
-	
+
 	appendLog("")
 	appendLog("========================================================================")
 	appendLog("✓ Deployment completed successfully! Application is live.")
@@ -1390,7 +1406,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
 	msg := sanitizedMsg
 	project.ErrorLog = &msg
-	
+
 	// Determine the correct project status after a failure
 	statusUpdate := models.StatusFailed
 	if project.ContainerID != nil && *project.ContainerID != "" {
@@ -1398,7 +1414,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 		statusUpdate = models.StatusRunning
 	}
 	project.Status = statusUpdate
-	
+
 	if err := w.projectRepo.UpdateStatus(project.ID, statusUpdate); err != nil {
 		slog.Error("Failed to update project runtime status on error", "id", project.ID, "status", statusUpdate, "error", err)
 	}
@@ -1594,4 +1610,3 @@ func (w *DeploymentWorker) makeRedactingLogger(project *models.Project, rawLogge
 		rawLogger(redacted)
 	}
 }
-

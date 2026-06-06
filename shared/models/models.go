@@ -172,8 +172,11 @@ func (p *Project) GetInternalPort() string {
 	if p.Port != nil {
 		return fmt.Sprintf("%d", *p.Port)
 	}
-	if p.Framework == "Laravel" {
+	if strings.EqualFold(p.Framework, "Laravel") {
 		return "80"
+	}
+	if strings.EqualFold(p.Framework, "Next.js") || strings.EqualFold(p.Framework, "Nuxt.js") {
+		return "3000"
 	}
 	return "8080"
 }
@@ -183,7 +186,7 @@ func (p *Project) GetHealthCheckPath() string {
 	if p.HealthCheckPath != "" {
 		return p.HealthCheckPath
 	}
-	if p.Framework == "Laravel" {
+	if strings.EqualFold(p.Framework, "Laravel") {
 		return "/health"
 	}
 	return "/"
@@ -264,7 +267,6 @@ func GetUserDirName(db *gorm.DB, userID uint) string {
 
 	return fmt.Sprintf("%s-%d", slug, userID)
 }
-
 
 // ===========================================
 // Setting Model
@@ -430,23 +432,23 @@ const (
 	ErrLockAcquisitionFailed DomainErrorCode = "LOCK_ACQUISITION_FAILED"
 
 	// Explicit Degraded Reason Codes
-	ErrRedisUnavailable      DomainErrorCode = "redis_unavailable"
-	ErrNginxReloadFailed     DomainErrorCode = "nginx_reload_failed"
-	ErrSSLExpired            DomainErrorCode = "ssl_expired"
+	ErrRedisUnavailable       DomainErrorCode = "redis_unavailable"
+	ErrNginxReloadFailed      DomainErrorCode = "nginx_reload_failed"
+	ErrSSLExpired             DomainErrorCode = "ssl_expired"
 	ErrPublicRouteUnreachable DomainErrorCode = "public_route_unreachable"
-	ErrUpstreamTimeout       DomainErrorCode = "upstream_timeout"
-	ErrIntegrityCheckFailed  DomainErrorCode = "integrity_check_failed"
-	ErrReconciliationStalled DomainErrorCode = "reconciliation_stalled"
+	ErrUpstreamTimeout        DomainErrorCode = "upstream_timeout"
+	ErrIntegrityCheckFailed   DomainErrorCode = "integrity_check_failed"
+	ErrReconciliationStalled  DomainErrorCode = "reconciliation_stalled"
 )
 
 // CustomDomain represents a custom domain mapped to a project, tracking both its lifecycle state and operational health overlay.
 type CustomDomain struct {
-	ID        uint               `gorm:"primaryKey" json:"id"`
-	ProjectID uint               `gorm:"not null;index" json:"project_id"`
-	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
-	Domain    string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
-	IsPrimary bool               `gorm:"not null;default:false;index" json:"is_primary"`
-	Status    CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
+	ID            uint               `gorm:"primaryKey" json:"id"`
+	ProjectID     uint               `gorm:"not null;index" json:"project_id"`
+	Project       Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Domain        string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
+	IsPrimary     bool               `gorm:"not null;default:false;index" json:"is_primary"`
+	Status        CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
 	DesiredStatus CustomDomainStatus `gorm:"size:30;not null;default:active" json:"desired_status"`
 
 	// SSL & Certificate Lifecycle
@@ -470,11 +472,11 @@ type CustomDomain struct {
 	SnapshotVersion   int                `gorm:"default:0" json:"snapshot_version"`
 
 	// Granular Layered Health Validation
-	Layer1DNSReachable           bool `gorm:"default:false" json:"layer1_dns_reachable"`
-	Layer2PublicAccessReachable  bool `gorm:"default:false" json:"layer2_public_access_reachable"`
-	Layer3SSLValid               bool `gorm:"default:false" json:"layer3_ssl_valid"`
-	Layer4UpstreamReachable      bool `gorm:"default:false" json:"layer4_upstream_reachable"`
-	Layer5ResponseIntegrity      bool `gorm:"default:false" json:"layer5_response_integrity"`
+	Layer1DNSReachable          bool `gorm:"default:false" json:"layer1_dns_reachable"`
+	Layer2PublicAccessReachable bool `gorm:"default:false" json:"layer2_public_access_reachable"`
+	Layer3SSLValid              bool `gorm:"default:false" json:"layer3_ssl_valid"`
+	Layer4UpstreamReachable     bool `gorm:"default:false" json:"layer4_upstream_reachable"`
+	Layer5ResponseIntegrity     bool `gorm:"default:false" json:"layer5_response_integrity"`
 
 	// Staged Cleanup & Tombstone Metadata
 	CleanupRetryCount int    `gorm:"default:0" json:"cleanup_retry_count"`

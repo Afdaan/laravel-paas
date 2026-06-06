@@ -66,7 +66,7 @@ func (r *Reconciler) ReconcileOne(ctx context.Context, domainID uint, cause stri
 		_ = r.leaseProvider.Release(context.Background(), domainID, token)
 	}()
 
-	// 4. Setup heartbeat lease renewal loop. Long-running tasks (like DNS/Let's Encrypt validations) 
+	// 4. Setup heartbeat lease renewal loop. Long-running tasks (like DNS/Let's Encrypt validations)
 	// can outlive leaseTTL. Periodic renewals prevent premature lease expiration.
 	reconcileCtx, cancelReconcile := context.WithCancel(ctx)
 	defer cancelReconcile()

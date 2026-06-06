@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -370,6 +372,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 
 		isStaticNode := false
 		isNextJS := false
+		isNuxtJS := false
 		hasStartScript := false
 		data, err := os.ReadFile(targetPackageJSON)
 		if err == nil {
@@ -377,9 +380,27 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			hasStartScript = strings.Contains(content, "\"start\"") || strings.Contains(content, "'start'")
 			hasBuildScript := strings.Contains(content, "\"build\"") || strings.Contains(content, "'build'")
 			isNextJS = strings.Contains(content, "\"next\"")
+			isNuxtJS = strings.Contains(content, "\"nuxt\"")
 
 			if !hasStartScript && (hasBuildScript || hasViteConfig) {
 				isStaticNode = true
+			}
+
+			// Parse package.json start script to detect custom port configurations (SRE/Infrastructure Improvement)
+			type PackageJSON struct {
+				Scripts map[string]string `json:"scripts"`
+			}
+			var pkgJSON PackageJSON
+			if json.Unmarshal(data, &pkgJSON) == nil {
+				if startScript, exists := pkgJSON.Scripts["start"]; exists {
+					portRegex := regexp.MustCompile(`(?i)(?:\bport\b|PORT\s*=\s*|\b-p\b)\s*=?\s*(\d+)`)
+					if matches := portRegex.FindStringSubmatch(startScript); len(matches) > 1 {
+						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 {
+							project.Port = &pVal
+							slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal)
+						}
+					}
+				}
 			}
 		}
 
@@ -423,9 +444,9 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			}
 		} else if relDir != "." {
 			// Monorepo dynamic app auto-detection (e.g. Next.js standalone or Express/Hono workspace)
-			if isNextJS || hasStartScript {
+			if isNextJS || isNuxtJS || hasStartScript {
 				isStaticFramework = false
-				
+
 				if project.BuildCommand == "" {
 					envs["RAILPACK_BUILD_CMD"] = fmt.Sprintf("cd %s && %s run build", relDir, pkgManager)
 				}
@@ -605,9 +626,10 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string) {
 		}
 	}
 
-	// 3. Finalize: Write the refined railpack.json to the build directory
-	if err := os.WriteFile(railpackConfigPath, templateData, 0644); err != nil {
-		slog.Error("Failed to write railpack.json", "path", railpackConfigPath, "error", err)
+	// 3. Finalize: Write the refined railpack.json atomically to avoid race conditions
+	// during parallel deployments and ensure we never leave a corrupted config on disk.
+	if err := utils.WriteFileAtomic(railpackConfigPath, templateData, 0644); err != nil {
+		slog.Error("Failed to write railpack.json atomically", "path", railpackConfigPath, "error", err)
 	} else {
 		slog.Info("Successfully injected optimized railpack.json", "path", railpackConfigPath)
 	}
@@ -632,8 +654,9 @@ func (s *DockerService) injectDockerIgnore(projectPath string) {
 		return
 	}
 
-	if err := os.WriteFile(ignorePath, data, 0644); err != nil {
-		slog.Warn("Failed to write .dockerignore to project", "path", ignorePath, "error", err)
+	// Write the default .dockerignore atomically to prevent half-written files from being read.
+	if err := utils.WriteFileAtomic(ignorePath, data, 0644); err != nil {
+		slog.Warn("Failed to write .dockerignore atomically to project", "path", ignorePath, "error", err)
 		return
 	}
 
@@ -718,8 +741,8 @@ func (s *DockerService) detectStaticOutputDir(packageJSONPath string) string {
 	return "dist"
 }
 
-// findFileRecursively searches for a file in the directory up to maxDepth, ignoring common build and dependency folders
-func (s *DockerService) findFileRecursively(dir string, filename string, currentDepth, maxDepth int) string {
+// FindFileRecursively searches for a file in the directory up to maxDepth, ignoring common build and dependency folders
+func (s *DockerService) FindFileRecursively(dir string, filename string, currentDepth, maxDepth int) string {
 	if currentDepth > maxDepth {
 		return ""
 	}
@@ -742,7 +765,7 @@ func (s *DockerService) findFileRecursively(dir string, filename string, current
 			if name == "node_modules" || name == ".git" || name == "dist" || name == "build" || name == ".next" || name == "vendor" {
 				continue
 			}
-			found := s.findFileRecursively(filepath.Join(dir, name), filename, currentDepth+1, maxDepth)
+			found := s.FindFileRecursively(filepath.Join(dir, name), filename, currentDepth+1, maxDepth)
 			if found != "" {
 				return found
 			}

@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
-	"github.com/laravel-paas/shared/services/domain"
 	"github.com/laravel-paas/shared/pkg/traefik"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/shared/services/domain"
 	"gorm.io/gorm"
 )
 
@@ -625,9 +625,9 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 	}
 
 	type TraefikHTTP struct {
-		Routers     map[string]TraefikRouter     `json:"routers"`
-		Middlewares map[string]interface{}        `json:"middlewares,omitempty"`
-		Services    map[string]TraefikService    `json:"services"`
+		Routers     map[string]TraefikRouter  `json:"routers"`
+		Middlewares map[string]interface{}    `json:"middlewares,omitempty"`
+		Services    map[string]TraefikService `json:"services"`
 	}
 
 	type TraefikConfigResponse struct {

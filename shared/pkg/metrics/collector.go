@@ -63,11 +63,11 @@ type MetricsCollector struct {
 	unhealthyDomainsTotal    int64
 
 	// Domain Hardening
-	domainPanicRecoveryTotal       int64
-	domainPollerStartedTotal       int64
-	domainPollerStoppedTotal       int64
-	domainTransitionRejectedTotal  int64
-	domainStaleWriteRejectedTotal  int64
+	domainPanicRecoveryTotal      int64
+	domainPollerStartedTotal      int64
+	domainPollerStoppedTotal      int64
+	domainTransitionRejectedTotal int64
+	domainStaleWriteRejectedTotal int64
 
 	// GitHub Integration Metrics
 	githubWebhooksReceivedTotal  int64

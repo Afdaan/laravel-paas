@@ -65,7 +65,6 @@ func (w *streamWriter) Flush() {
 // DefaultTimeout is the standard deadline for shell commands
 const DefaultTimeout = 2 * time.Minute
 
-
 // Result holds the output of an executed command
 type Result struct {
 	Stdout string
@@ -211,7 +210,6 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%.1fs", seconds)
 }
-
 
 func runInDirWithEnv(parentCtx context.Context, timeout time.Duration, dir string, env []string, silent bool, name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)

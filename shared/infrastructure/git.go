@@ -227,4 +227,3 @@ func (s *GitService) GetRemoteBranches(githubURL string) ([]string, error) {
 	}
 	return branches, nil
 }
-

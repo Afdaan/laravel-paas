@@ -1274,4 +1274,3 @@ func (r *RedisService) RemoveCommitStatusSyncIfMatched(sha string, createdAt int
 	}
 	return true, nil
 }
-

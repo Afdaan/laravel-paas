@@ -407,7 +407,6 @@ func (s *DatabaseService) GetTableForeignKeys(dbName, password, tableName string
 	return fks, nil
 }
 
-
 // GetTableData supports paginated data retrieval from a table
 func (s *DatabaseService) GetTableData(dbName, password, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
 	if !s.isValidIdentifier(tableName) {
@@ -1146,7 +1145,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 			escapedTargetCol := s.escapeIdentifier(engine, req.Column.FkColumn)
 			fkName := fmt.Sprintf("fk_%s_%s", req.TableName, req.Column.Name)
 			escapedFk := s.escapeIdentifier(engine, fkName)
-			
+
 			onDelete := "NO ACTION"
 			switch strings.ToUpper(req.Column.FkOnDelete) {
 			case "CASCADE":
@@ -1162,11 +1161,11 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 			var fkSql string
 			if engine == "postgresql" {
 				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", escapedTable, escapedFk))
-				fkSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+				fkSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;",
 					escapedTable, escapedFk, escapedCol, escapedTargetTable, escapedTargetCol, onDelete)
 			} else {
 				_, _ = execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s;", escapedTable, escapedFk))
-				fkSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+				fkSql = fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;",
 					escapedTable, escapedFk, escapedCol, escapedTargetTable, escapedTargetCol, onDelete)
 			}
 			if _, err = execer.ExecContext(ctx, fkSql); err != nil {
@@ -1331,7 +1330,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 				escapedTargetTable := s.escapeIdentifier(engine, req.Column.FkTable)
 				escapedTargetCol := s.escapeIdentifier(engine, req.Column.FkColumn)
 				newFkName := s.escapeIdentifier(engine, fmt.Sprintf("fk_%s_%s", req.TableName, colNameAfterRename))
-				
+
 				onDelete := "NO ACTION"
 				switch strings.ToUpper(req.Column.FkOnDelete) {
 				case "CASCADE":
@@ -1344,7 +1343,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 					onDelete = "NO ACTION"
 				}
 
-				fkSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+				fkSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;",
 					escapedTable, newFkName, escapedColAfterRename, escapedTargetTable, escapedTargetCol, onDelete)
 				if _, err = execer.ExecContext(ctx, fkSql); err != nil {
 					return err
@@ -1450,7 +1449,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 					onDelete = "NO ACTION"
 				}
 
-				fkSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;", 
+				fkSql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s) ON DELETE %s;",
 					escapedTable, newFkName, escapedColAfterRename, escapedTargetTable, escapedTargetCol, onDelete)
 				if _, err = execer.ExecContext(ctx, fkSql); err != nil {
 					return err

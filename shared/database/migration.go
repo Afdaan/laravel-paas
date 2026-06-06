@@ -776,4 +776,3 @@ func BackfillPrimaryDomains(db *gorm.DB) error {
 
 	return err
 }
-

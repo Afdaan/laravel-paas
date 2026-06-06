@@ -569,6 +569,3 @@ func (h *SecretStoreHandler) History(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"data": data})
 }
-
-
-

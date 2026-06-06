@@ -10,11 +10,11 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/nginx"
 	"github.com/laravel-paas/shared/models"
-	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/traefik"
+	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/services/deployment"
 	"github.com/laravel-paas/shared/services/setting"
-	"github.com/laravel-paas/shared/pkg/traefik"
 	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 )
 
@@ -306,7 +306,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 	}
 
 	s.dockerService.CleanupLegacyContainers(project.Subdomain, newID, project.WorkerContainerID)
-	
+
 	logFunc("")
 	logFunc("✓ Transition completed.")
 
@@ -328,5 +328,3 @@ func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error) {
 	return s.nginxService.GetSSLStatus(domain)
 }
-
-

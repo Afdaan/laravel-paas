@@ -305,13 +305,13 @@ func (w *CentralWatchdog) updateGitHubCommitStatus(project *models.Project, stat
 	targetURL := fmt.Sprintf("%s/projects/%s?tab=build", w.cfg.FrontendURL, projectUID)
 
 	slog.Info("Watchdog: updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
-	
+
 	instID := *project.GithubInstallationID
 	owner := project.GithubRepoOwner
 	repo := project.GithubRepoName
 	commitHash := project.LastCommitHash
 	projectID := project.ID
-	
+
 	createdAt := time.Now().UnixNano()
 	statusPayload := &infrastructure.GithubStatusPayload{
 		InstallationID: instID,

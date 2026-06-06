@@ -144,7 +144,7 @@ func GetHTTPClient() *http.Client {
 
 					dialIP := targetIP
 					// SSRF Protection: Only permit loopback/gateway rewrite for standard web ports (80 and 443).
-					// This prevents attackers from mapping a domain to the local public IP and proxying requests 
+					// This prevents attackers from mapping a domain to the local public IP and proxying requests
 					// to internal databases/services on unexposed ports (e.g. 6379, 5432).
 					if isLocalPublic && (port == "80" || port == "443") {
 						if getAppMode() == "local" {

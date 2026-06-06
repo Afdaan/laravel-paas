@@ -20,13 +20,13 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
-	"github.com/laravel-paas/backend/internal/services"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -261,8 +261,6 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		"message": "Database credentials rotated successfully. Environment updated.",
 	})
 }
-
-
 
 // RestartDatabase resets connection pool and tests ping
 func (h *DatabaseHandler) RestartDatabase(c *fiber.Ctx) error {
@@ -655,14 +653,14 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 			// Exclude connections originating from the PaaS backend itself (using secure salted app name)
 			appHash := sha256.Sum256([]byte(h.cfg.UIDSalt))
 			appName := fmt.Sprintf("paas-backend-%x", appHash[:8])
-			
+
 			_ = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_stat_activity WHERE datname = $1 AND application_name != $2", instance.Name, appName).Scan(&activeConnections)
 		} else {
 			// MySQL: Exclude connections originating from the backend container IP
 			rows, queryErr := db.QueryContext(ctx, "SELECT HOST FROM information_schema.processlist WHERE db = ?", instance.Name)
 			if queryErr == nil {
 				defer rows.Close()
-				
+
 				// Thread-safely cache backend IPs to avoid costly interface lookups on every poll
 				h.ipsOnce.Do(func() {
 					if addrs, errIP := net.InterfaceAddrs(); errIP == nil {
@@ -675,7 +673,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 						}
 					}
 				})
-				
+
 				for rows.Next() {
 					var host string
 					if errScan := rows.Scan(&host); errScan == nil {
@@ -683,7 +681,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 						if idx := strings.Index(host, ":"); idx != -1 {
 							clientIP = host[:idx]
 						}
-						
+
 						isBackend := false
 						if clientIP == "localhost" || clientIP == "127.0.0.1" {
 							isBackend = true
@@ -695,13 +693,13 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 								}
 							}
 						}
-						
+
 						if !isBackend {
 							activeConnections++
 						}
 					}
 				}
-				
+
 				// Verify if any connection error occurred during iteration
 				if errErr := rows.Err(); errErr != nil {
 					slog.Warn("Error occurred during processlist iteration", "db", instance.Name, "error", errErr)

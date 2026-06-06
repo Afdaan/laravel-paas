@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
-	"github.com/laravel-paas/backend/internal/services"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"gorm.io/gorm"
 )
 
@@ -145,4 +145,3 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 
 	return nil
 }
-

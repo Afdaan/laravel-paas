@@ -50,3 +50,48 @@ func IsSymlink(path string) bool {
 	}
 	return info.Mode()&os.ModeSymlink != 0
 }
+
+// WriteFileAtomic writes data to a file atomically by writing to a temporary file,
+// performing fsync, and then doing an atomic rename to the target path.
+func WriteFileAtomic(filename string, data []byte, perm os.FileMode) (err error) {
+	dir := filepath.Dir(filename)
+	// Create a temp file in the same directory to guarantee atomic rename (same mount/device)
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(filename)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	defer func() {
+		// Clean up the temp file if any error occurs
+		if err != nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if err = tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	if _, err = tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	// Perform fsync to ensure persistence
+	if err = tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	if err = tmpFile.Close(); err != nil {
+		return err
+	}
+
+	// Atomic rename replaces the target file atomically on Unix systems
+	if err = os.Rename(tmpName, filename); err != nil {
+		return err
+	}
+
+	return nil
+}
