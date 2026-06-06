@@ -269,7 +269,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
     setIsSavingEnv(true)
     try {
       await projectsAPI.updateEnv(uid, currentDotenv)
-      toast.success(t('common.success'))
+      toast.success(t('projectDetail.secrets.saveSuccess', { defaultValue: 'Environment variables updated and container restart initiated.' }))
       if (onSave) onSave()
       await loadEnv()
     } catch (error) {
@@ -282,7 +282,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
   const triggerSave = () => {
     setConfirmModal({
       title: t('common.confirm'),
-      message: t('projectDetail.settings.redeployWarning'),
+      message: t('projectDetail.secrets.restartWarning', { defaultValue: 'Saving environment variables will trigger a container restart.' }),
       type: 'warning',
       confirmText: t('common.save'),
       isOpen: true,

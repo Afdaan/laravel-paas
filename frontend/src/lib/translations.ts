@@ -787,6 +787,8 @@ export const translations = {
         lockTooltip: "Auto-provisioned database variables cannot be modified here.",
         resetSuccess: "Changes reset successfully",
         cannotHideUnsaved: "Cannot hide unsaved changes",
+        restartWarning: "Saving environment variables will trigger a container restart.",
+        saveSuccess: "Environment variables updated and container restart initiated.",
       },
       database: {
         creds: "Database Credentials",
@@ -2230,6 +2232,8 @@ export const translations = {
         lockTooltip: "Variabel database auto-provision tidak dapat diubah di sini.",
         resetSuccess: "Perubahan berhasil di-reset",
         cannotHideUnsaved: "Tidak dapat menyembunyikan perubahan yang belum disimpan",
+        restartWarning: "Menyimpan variabel environment akan memicu restart container.",
+        saveSuccess: "Variabel environment berhasil diperbarui dan restart container dimulai.",
       },
       database: {
         creds: "Kredensial Database",

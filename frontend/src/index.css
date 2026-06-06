@@ -234,13 +234,13 @@
   margin-right: 14px !important;
 }
 
-/* Align close button to the top right matching toast padding */
+/* Align close button to the middle right of the toast (vertically centered) */
 [data-sonner-toast] [data-close-button] {
   position: absolute !important;
-  top: 16px !important;
+  top: 50% !important;
   right: 16px !important;
   left: auto !important;
-  transform: none !important;
+  transform: translateY(-50%) !important;
 }
 
 /* Allow Sonner toast titles to wrap and break properly for long text */
