@@ -99,6 +99,15 @@ func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint, ipAddr
 }
 
 func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if s.IsBaselineMatchForStore(storeID, key, value) {
+		var item models.SecretStoreItem
+		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
+			s.db.Delete(&item)
+			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed baseline-matching secret key: "+key, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: key, SecretStoreID: storeID}, nil
+	}
+
 	store, err := s.GetSecretStore(userID, storeID)
 	if err != nil {
 		return nil, err
@@ -164,6 +173,15 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 }
 
 func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if s.IsBaselineMatchForStore(storeID, key, value) {
+		var item models.SecretStoreItem
+		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
+			s.db.Delete(&item)
+			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed baseline-matching secret key: "+key, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: key, SecretStoreID: storeID}, nil
+	}
+
 	store, err := s.GetSecretStore(userID, storeID)
 	if err != nil {
 		return nil, err
@@ -330,53 +348,21 @@ func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, bindingID u
 func (s *SecretStoreService) UpdateDatabaseSecrets(project *models.Project, username, password string) error {
 	var binding models.SecretStoreBinding
 	err := s.db.Where("project_id = ?", project.ID).First(&binding).Error
-	var storeID uint
-	if err != nil {
-		store := models.SecretStore{
-			UserID:      project.UserID,
-			Name:        fmt.Sprintf("Database Credentials (%s)", project.Name),
-			Description: "System-generated credentials for database instance",
-		}
-		if err := s.db.Create(&store).Error; err != nil {
-			return err
-		}
-		storeID = store.ID
-
-		newBinding := models.SecretStoreBinding{
-			ProjectID:     project.ID,
-			SecretStoreID: storeID,
-			Environment:   "all",
-		}
-		if err := s.db.Create(&newBinding).Error; err != nil {
-			return err
-		}
+	if err == nil {
+		utils.SafeGo(func() {
+			s.PropagateSecretStoreUpdates(binding.SecretStoreID)
+		})
 	} else {
-		storeID = binding.SecretStoreID
+		utils.SafeGo(func() {
+			s.PropagateProjectEnvUpdate(project.ID, project.UserID)
+		})
 	}
-
-	if _, err := s.SetSecretValueInternal(project.UserID, storeID, "DB_PASSWORD", password); err != nil {
-		return err
-	}
-
-	if project.DatabaseInstance != nil {
-		inst := project.DatabaseInstance
-		var dbURL string
-		if inst.Engine == "mysql" {
-			dbURL = fmt.Sprintf("mysql://%s:%s@%s:%d/%s", username, password, inst.Host, inst.Port, inst.Name)
-		} else {
-			dbURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", username, password, inst.Host, inst.Port, inst.Name)
-		}
-		if _, err := s.SetSecretValueInternal(project.UserID, storeID, "DATABASE_URL", dbURL); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
 func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment string) (map[string]string, error) {
 	var project models.Project
-	if err := s.db.Preload("DatabaseInstance").First(&project, projectID).Error; err != nil {
+	if err := s.db.Preload("DatabaseInstance").Preload("CustomDomains").First(&project, projectID).Error; err != nil {
 		return nil, err
 	}
 
@@ -386,7 +372,29 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	envMap["APP_NAME"] = project.Name
 	envMap["APP_ENV"] = environment
 	envMap["APP_DEBUG"] = "false"
-	envMap["APP_URL"] = fmt.Sprintf("http://%s", project.Subdomain)
+
+	// Resolve APP_URL dynamically based on custom domains
+	appURL := fmt.Sprintf("http://%s", project.Subdomain)
+	var primaryDomain string
+	var firstActiveDomain string
+	for _, d := range project.CustomDomains {
+		if d.Status == models.DomainStatusActive || d.Status == models.DomainStatusSSLActive {
+			if d.IsPrimary {
+				primaryDomain = d.Domain
+				break
+			}
+			if firstActiveDomain == "" {
+				firstActiveDomain = d.Domain
+			}
+		}
+	}
+	if primaryDomain != "" {
+		appURL = fmt.Sprintf("https://%s", primaryDomain)
+	} else if firstActiveDomain != "" {
+		appURL = fmt.Sprintf("https://%s", firstActiveDomain)
+	}
+	envMap["APP_URL"] = appURL
+
 	if project.Framework == "Laravel" {
 		envMap["LOG_CHANNEL"] = "stack"
 		envMap["LOG_DEPRECATIONS_CHANNEL"] = "null"
@@ -602,4 +610,98 @@ func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID
 	if err := s.db.Create(&log).Error; err != nil {
 		slog.Error("Failed to write secret store activity log", "error", err)
 	}
+}
+
+// GetBaselineEnvMap generates Layer 1 + Layer 2 environment map for comparison.
+func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[string]string {
+	baseline := make(map[string]string)
+	baseline["APP_NAME"] = project.Name
+	baseline["APP_ENV"] = "production"
+	baseline["APP_DEBUG"] = "false"
+
+	appURL := fmt.Sprintf("http://%s", project.Subdomain)
+	var primaryDomain string
+	var firstActiveDomain string
+	for _, d := range project.CustomDomains {
+		if d.Status == models.DomainStatusActive || d.Status == models.DomainStatusSSLActive {
+			if d.IsPrimary {
+				primaryDomain = d.Domain
+				break
+			}
+			if firstActiveDomain == "" {
+				firstActiveDomain = d.Domain
+			}
+		}
+	}
+	if primaryDomain != "" {
+		appURL = fmt.Sprintf("https://%s", primaryDomain)
+	} else if firstActiveDomain != "" {
+		appURL = fmt.Sprintf("https://%s", firstActiveDomain)
+	}
+	baseline["APP_URL"] = appURL
+
+	if project.Framework == "Laravel" {
+		baseline["LOG_CHANNEL"] = "stack"
+		baseline["LOG_DEPRECATIONS_CHANNEL"] = "null"
+		baseline["LOG_LEVEL"] = "debug"
+	}
+
+	if project.DatabaseInstance != nil && project.DatabaseInstance.Status == models.DBStatusActive {
+		inst := project.DatabaseInstance
+		switch inst.Engine {
+		case "mysql":
+			baseline["DB_CONNECTION"] = "mysql"
+			baseline["DB_HOST"] = inst.Host
+			baseline["DB_PORT"] = fmt.Sprintf("%d", inst.Port)
+			baseline["DB_DATABASE"] = inst.Name
+			baseline["DB_USERNAME"] = inst.Username
+			baseline["DB_PASSWORD"] = inst.Password
+		case "postgresql":
+			baseline["DB_CONNECTION"] = "pgsql"
+			baseline["DB_HOST"] = inst.Host
+			baseline["DB_PORT"] = fmt.Sprintf("%d", inst.Port)
+			baseline["DB_DATABASE"] = inst.Name
+			baseline["DB_USERNAME"] = inst.Username
+			baseline["DB_PASSWORD"] = inst.Password
+			baseline["DATABASE_URL"] = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+				inst.Username, inst.Password, inst.Host, inst.Port, inst.Name)
+		}
+	}
+	return baseline
+}
+
+// IsBaselineMatchForStore checks if key and value match any project's baseline bounds.
+func (s *SecretStoreService) IsBaselineMatchForStore(storeID uint, key, value string) bool {
+	var bindings []models.SecretStoreBinding
+	if err := s.db.Where("secret_store_id = ?", storeID).Find(&bindings).Error; err != nil {
+		return false
+	}
+	if len(bindings) == 0 {
+		globalDefaults := map[string]string{
+			"APP_ENV":                  "production",
+			"APP_DEBUG":                "false",
+			"LOG_CHANNEL":              "stack",
+			"LOG_DEPRECATIONS_CHANNEL": "null",
+			"LOG_LEVEL":                "debug",
+		}
+		if val, exists := globalDefaults[key]; exists && val == value {
+			return true
+		}
+		return false
+	}
+	var projectIDs []uint
+	for _, b := range bindings {
+		projectIDs = append(projectIDs, b.ProjectID)
+	}
+	var projects []models.Project
+	if err := s.db.Preload("DatabaseInstance").Preload("CustomDomains").Where("id IN (?)", projectIDs).Find(&projects).Error; err != nil {
+		return false
+	}
+	for _, p := range projects {
+		baseline := s.GetBaselineEnvMap(&p)
+		if val, exists := baseline[key]; exists && val == value {
+			return true
+		}
+	}
+	return false
 }

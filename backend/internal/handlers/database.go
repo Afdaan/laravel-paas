@@ -1007,7 +1007,7 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "SQL content is required"})
 	}
 
-	statements := strings.Split(req.SQL, ";")
+	statements := services.SplitSQLStatements(req.SQL)
 	successCount := 0
 	var errors []string
 

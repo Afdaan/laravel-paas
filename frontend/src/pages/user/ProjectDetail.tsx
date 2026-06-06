@@ -1401,6 +1401,7 @@ function UserProjectDetail() {
           <EnvironmentEditor 
             uid={uid || ''} 
             onSave={() => fetchProject()} 
+            hasDatabaseInstance={!!project?.database_instance}
           />
         </TabsContent>
 

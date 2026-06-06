@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -584,9 +585,20 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 		return nil, apperr.New(400, "EMPTY_QUERY", "Query cannot be empty")
 	}
 
-	upperQuery := strings.ToUpper(query)
+	// Reject multi-statement queries to prevent PostgreSQL semicolon bypasses.
+	statements := SplitSQLStatements(query)
+	if len(statements) > 1 {
+		return nil, apperr.New(403, "SQL_MULTIPLE_STATEMENTS", "Executing multiple SQL statements in a single query is not permitted")
+	} else if len(statements) == 0 {
+		return nil, apperr.New(400, "EMPTY_QUERY", "Query cannot be empty")
+	}
 
-	// Block dangerous operations
+	// Enforce the single parsed statement.
+	query = statements[0]
+	upperQuery := strings.ToUpper(query)
+	normalizedQuery := normalizeSQLForCheck(query)
+
+	// Block dangerous operations (normalized in UPPERCASE)
 	blockedPatterns := []string{
 		"DROP DATABASE",
 		"CREATE DATABASE",
@@ -608,22 +620,33 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 		"\\! ",
 		"EXEC ",
 		"EXECUTE ",
-		"xp_",
+		"XP_",
 		"INFORMATION_SCHEMA.PROCESSLIST",
-		"mysql.",
-		"performance_schema.",
-		"sys.",
+		"MYSQL.",
+		"PERFORMANCE_SCHEMA.",
+		"SYS.",
 		"UNION SELECT",
 		"SELECT.*INTO",
 	}
 
 	for _, pattern := range blockedPatterns {
-		if strings.Contains(upperQuery, pattern) {
-			slog.Warn("Blocked forbidden SQL operation attempt",
-				"query", query[:min(len(query), 100)],
-				"pattern", pattern,
-			)
-			return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
+		if strings.Contains(pattern, ".*") {
+			re, err := regexp.Compile(pattern)
+			if err == nil && re.MatchString(normalizedQuery) {
+				slog.Warn("Blocked forbidden SQL operation attempt",
+					"query", query[:min(len(query), 100)],
+					"pattern", pattern,
+				)
+				return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
+			}
+		} else {
+			if strings.Contains(normalizedQuery, pattern) {
+				slog.Warn("Blocked forbidden SQL operation attempt",
+					"query", query[:min(len(query), 100)],
+					"pattern", pattern,
+				)
+				return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
+			}
 		}
 	}
 
@@ -631,7 +654,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	allowedPrefixes := []string{"SELECT", "SHOW", "DESCRIBE", "DESC", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP"}
 	allowed := false
 	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(upperQuery, prefix) {
+		if strings.HasPrefix(normalizedQuery, prefix) {
 			allowed = true
 			break
 		}
@@ -642,13 +665,15 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	}
 
 	// Block cross-database queries
-	if strings.Contains(query, ".") && !strings.Contains(upperQuery, "INFORMATION_SCHEMA") && !strings.Contains(upperQuery, "PG_") {
+	if strings.Contains(query, ".") && !strings.Contains(normalizedQuery, "INFORMATION_SCHEMA") && !strings.Contains(normalizedQuery, "PG_") {
 		parts := strings.Split(query, ".")
 		for _, part := range parts {
 			part = strings.TrimSpace(part)
 			part = strings.Trim(part, "`\"")
-			if part != dbName && part != "information_schema" && part != "public" && len(part) > 0 && !strings.HasPrefix(strings.ToUpper(part), "SELECT") {
-				if strings.Contains(upperQuery, "`"+part+"`") || strings.Contains(upperQuery, "\""+part+"\"") || strings.Contains(upperQuery, part+".") {
+			partUpper := strings.ToUpper(part)
+			dbNameUpper := strings.ToUpper(dbName)
+			if partUpper != dbNameUpper && partUpper != "INFORMATION_SCHEMA" && partUpper != "PUBLIC" && len(part) > 0 && !strings.HasPrefix(partUpper, "SELECT") {
+				if strings.Contains(normalizedQuery, "`"+partUpper+"`") || strings.Contains(normalizedQuery, "\""+partUpper+"\"") || strings.Contains(normalizedQuery, partUpper+".") {
 					slog.Warn("Blocked cross-database query attempt",
 						"query", query[:min(len(query), 100)],
 						"target_db", part,
@@ -1904,4 +1929,172 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// SplitSQLStatements splits a SQL string into individual statements by semicolon,
+// respecting single-quoted strings, double-quoted strings, and SQL comments.
+func SplitSQLStatements(sql string) []string {
+	var statements []string
+	var current strings.Builder
+	inSingleQuote := false
+	inDoubleQuote := false
+	inLineComment := false
+	inBlockComment := false
+	length := len(sql)
+
+	for i := 0; i < length; i++ {
+		ch := sql[i]
+
+		// Handle comments
+		if inLineComment {
+			if ch == '\n' {
+				inLineComment = false
+				current.WriteByte(ch)
+			} else {
+				current.WriteByte(ch)
+			}
+			continue
+		}
+
+		if inBlockComment {
+			if ch == '*' && i+1 < length && sql[i+1] == '/' {
+				inBlockComment = false
+				current.WriteByte('*')
+				current.WriteByte('/')
+				i++ // Skip '/'
+			} else {
+				current.WriteByte(ch)
+			}
+			continue
+		}
+
+		// Check for comments start
+		if !inSingleQuote && !inDoubleQuote {
+			if ch == '-' && i+1 < length && sql[i+1] == '-' {
+				inLineComment = true
+				current.WriteByte('-')
+				current.WriteByte('-')
+				i++
+				continue
+			}
+			if ch == '/' && i+1 < length && sql[i+1] == '*' {
+				inBlockComment = true
+				current.WriteByte('/')
+				current.WriteByte('*')
+				i++
+				continue
+			}
+		}
+
+		// Handle string quotes
+		if ch == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+			current.WriteByte(ch)
+			continue
+		}
+		if ch == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			current.WriteByte(ch)
+			continue
+		}
+
+		// Handle semicolon
+		if ch == ';' && !inSingleQuote && !inDoubleQuote {
+			stmt := strings.TrimSpace(current.String())
+			if stmt != "" {
+				statements = append(statements, stmt)
+			}
+			current.Reset()
+			continue
+		}
+
+		current.WriteByte(ch)
+	}
+
+	stmt := strings.TrimSpace(current.String())
+	if stmt != "" {
+		statements = append(statements, stmt)
+	}
+
+	return statements
+}
+
+// normalizeSQLForCheck strips comments, removes spaces around dots, normalizes other whitespaces,
+// and returns the UPPERCASE query for secure block list matching.
+func normalizeSQLForCheck(query string) string {
+	var result strings.Builder
+	inSingleQuote := false
+	inDoubleQuote := false
+	inLineComment := false
+	inBlockComment := false
+	length := len(query)
+
+	for i := 0; i < length; i++ {
+		ch := query[i]
+
+		if inLineComment {
+			if ch == '\n' {
+				inLineComment = false
+				result.WriteByte(' ') // Replace comment line with a space
+			}
+			continue
+		}
+
+		if inBlockComment {
+			if ch == '*' && i+1 < length && query[i+1] == '/' {
+				inBlockComment = false
+				result.WriteByte(' ') // Replace block comment with a space
+				i++
+			}
+			continue
+		}
+
+		if !inSingleQuote && !inDoubleQuote {
+			if ch == '-' && i+1 < length && query[i+1] == '-' {
+				inLineComment = true
+				i++
+				continue
+			}
+			if ch == '/' && i+1 < length && query[i+1] == '*' {
+				inBlockComment = true
+				i++
+				continue
+			}
+		}
+
+		if ch == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+		}
+		if ch == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+		}
+
+		result.WriteByte(ch)
+	}
+
+	// Convert to UPPERCASE
+	upper := strings.ToUpper(result.String())
+
+	// Strip spaces around dots '.' to prevent whitespace obfuscation like 'mysql . user'
+	for strings.Contains(upper, " .") || strings.Contains(upper, ". ") {
+		upper = strings.ReplaceAll(upper, " .", ".")
+		upper = strings.ReplaceAll(upper, ". ", ".")
+	}
+
+	// Normalize whitespaces: replace tabs, newlines, and multiple spaces with a single space
+	var normalized strings.Builder
+	lastWasSpace := false
+	for _, r := range upper {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			if !lastWasSpace {
+				normalized.WriteRune(' ')
+				lastWasSpace = true
+			}
+		} else {
+			normalized.WriteRune(r)
+			lastWasSpace = false
+		}
+	}
+
+	return strings.TrimSpace(normalized.String())
 }

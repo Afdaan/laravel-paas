@@ -111,7 +111,30 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 	envMap["APP_NAME"] = subdomain
 	envMap["APP_ENV"] = envName
 	envMap["APP_DEBUG"] = "false"
-	envMap["APP_URL"] = fmt.Sprintf("http://%s", subdomain)
+
+	// Resolve APP_URL dynamically based on custom domains
+	appURL := fmt.Sprintf("http://%s", subdomain)
+	var domains []models.CustomDomain
+	if err := s.db.Where("project_id = ? AND status IN (?)", projectID, []string{string(models.DomainStatusActive), string(models.DomainStatusSSLActive)}).Order("created_at ASC").Find(&domains).Error; err == nil {
+		var primaryDomain string
+		var firstActiveDomain string
+		for _, d := range domains {
+			if d.IsPrimary {
+				primaryDomain = d.Domain
+				break
+			}
+			if firstActiveDomain == "" {
+				firstActiveDomain = d.Domain
+			}
+		}
+		if primaryDomain != "" {
+			appURL = fmt.Sprintf("https://%s", primaryDomain)
+		} else if firstActiveDomain != "" {
+			appURL = fmt.Sprintf("https://%s", firstActiveDomain)
+		}
+	}
+	envMap["APP_URL"] = appURL
+
 	if framework == "Laravel" {
 		envMap["LOG_CHANNEL"] = "stack"
 		envMap["LOG_DEPRECATIONS_CHANNEL"] = "null"

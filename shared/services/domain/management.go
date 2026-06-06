@@ -10,6 +10,7 @@ import (
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"gorm.io/gorm"
 )
 
 // AddDomain adds a new custom domain for a project
@@ -66,6 +67,7 @@ func (s *DomainService) AddDomain(projectID uint, domainName string) (*models.Cu
 	domain := &models.CustomDomain{
 		ProjectID:    projectID,
 		Domain:       domainName,
+		IsPrimary:    currentDomainsCount == 0,
 		Status:       models.DomainStatusPending,
 		HealthStatus: models.DomainHealthUnknown,
 	}
@@ -107,7 +109,28 @@ func (s *DomainService) RemoveDomain(domainID uint, projectID uint) error {
 		_ = s.redisService.ReleaseDomainLock(domain.ID, token)
 	}()
 
-	_ = s.db.Model(&domain).Update("cleanup_checkpoint", "init")
+	wasPrimary := domain.IsPrimary
+	errTx := s.db.Transaction(func(tx *gorm.DB) error {
+		domain.IsPrimary = false
+		if err := tx.Model(&domain).Updates(map[string]interface{}{"cleanup_checkpoint": "init", "is_primary": false}).Error; err != nil {
+			return err
+		}
+
+		if wasPrimary {
+			var nextDomain models.CustomDomain
+			if errNext := tx.Where("project_id = ? AND id != ? AND status NOT IN (?)", projectID, domain.ID, []string{string(models.DomainStatusPendingCleanup), string(models.DomainStatusDisabled)}).Order("created_at ASC").First(&nextDomain).Error; errNext == nil {
+				nextDomain.IsPrimary = true
+				if errSave := tx.Save(&nextDomain).Error; errSave != nil {
+					return errSave
+				}
+			}
+		}
+		return nil
+	})
+	if errTx != nil {
+		return errTx
+	}
+
 	_ = s.TransitionState(&domain, models.DomainStatusPendingCleanup, models.ErrNone, "Domain scheduled for deletion")
 
 	project, err := s.projectRepo.GetByID(projectID)
@@ -221,10 +244,33 @@ func (s *DomainService) TransferDomain(userID uint, domainID uint, targetProject
 		return apperr.New(400, "DOMAIN_LIMIT_REACHED", fmt.Sprintf("Target project has reached the maximum limit of %d domains", maxDomains))
 	}
 
-	// 4. Update project ID of custom domain
-	domain.ProjectID = targetProjectID
-	if err := s.db.Model(&models.CustomDomain{}).Where("id = ?", domain.ID).Update("project_id", targetProjectID).Error; err != nil {
-		return err
+	wasPrimaryOnSource := domain.IsPrimary
+	isPrimaryOnTarget := currentDomainsCount == 0
+
+	// 4. Update project ID and primary status of custom domain inside a transaction
+	errTx := s.db.Transaction(func(tx *gorm.DB) error {
+		domain.ProjectID = targetProjectID
+		domain.IsPrimary = isPrimaryOnTarget
+		if err := tx.Model(&models.CustomDomain{}).Where("id = ?", domain.ID).Updates(map[string]interface{}{
+			"project_id": targetProjectID,
+			"is_primary": isPrimaryOnTarget,
+		}).Error; err != nil {
+			return err
+		}
+
+		if wasPrimaryOnSource {
+			var nextDomain models.CustomDomain
+			if errNext := tx.Where("project_id = ? AND id != ? AND status NOT IN (?)", sourceProjectID, domain.ID, []string{string(models.DomainStatusPendingCleanup), string(models.DomainStatusDisabled)}).Order("created_at ASC").First(&nextDomain).Error; errNext == nil {
+				nextDomain.IsPrimary = true
+				if errSave := tx.Save(&nextDomain).Error; errSave != nil {
+					return errSave
+				}
+			}
+		}
+		return nil
+	})
+	if errTx != nil {
+		return errTx
 	}
 
 	sourceProjectName := fmt.Sprintf("%d", sourceProjectID)

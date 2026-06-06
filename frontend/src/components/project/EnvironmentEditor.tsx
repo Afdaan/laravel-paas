@@ -34,6 +34,7 @@ import ConfirmationModal from '@/components/ConfirmationModal'
 interface EnvironmentEditorProps {
   uid: string
   onSave?: () => void
+  hasDatabaseInstance?: boolean
 }
 
 interface BoundStore {
@@ -50,7 +51,7 @@ interface VariableGridItem {
   Source: string
 }
 
-export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
+export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: EnvironmentEditorProps) {
   const { t } = useTranslation()
   
   // State variables
@@ -97,15 +98,18 @@ export function EnvironmentEditor({ uid, onSave }: EnvironmentEditorProps) {
         if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
           val = val.substring(1, val.length - 1)
         }
+        const isDBKey = key.startsWith('DB_') || key === 'DATABASE_URL'
+        const isPlatformKey = key === 'APP_NAME' || key === 'APP_URL'
+        const isLocked = hasDatabaseInstance && (isDBKey || isPlatformKey)
         items.push({
           Key: key,
           Value: val,
-          Source: key.startsWith('DB_') || key === 'DATABASE_URL' ? 'db_auto' : 'secret_store'
+          Source: isLocked ? 'db_auto' : 'secret_store'
         })
       }
     })
     return items
-  }, [currentDotenv])
+  }, [currentDotenv, hasDatabaseInstance])
 
   const hasChanges = currentDotenv !== initialContent
 

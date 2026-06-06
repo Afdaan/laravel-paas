@@ -117,6 +117,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		slog.Warn("Failed to backfill Laravel app keys", "error", err)
 	}
 
+	// Backfill Primary Custom Domains for existing projects.
+	if err := BackfillPrimaryDomains(db); err != nil {
+		slog.Warn("Failed to backfill primary custom domains", "error", err)
+	}
+
 	return nil
 }
 
@@ -747,3 +752,28 @@ func BackfillLaravelAppKeys(db *gorm.DB, cfg *config.Config) error {
 
 	return nil
 }
+
+// BackfillPrimaryDomains sets IsPrimary = true for the first custom domain of existing projects
+func BackfillPrimaryDomains(db *gorm.DB) error {
+	var projects []models.Project
+	err := db.FindInBatches(&projects, 100, func(tx *gorm.DB, batch int) error {
+		for _, p := range projects {
+			var firstDomain models.CustomDomain
+			errFirst := tx.Where("project_id = ?", p.ID).Order("created_at ASC").First(&firstDomain).Error
+			if errFirst == nil {
+				var count int64
+				tx.Model(&models.CustomDomain{}).Where("project_id = ? AND is_primary = ?", p.ID, true).Count(&count)
+				if count == 0 {
+					firstDomain.IsPrimary = true
+					if errSave := tx.Save(&firstDomain).Error; errSave != nil {
+						slog.Warn("Failed to save primary domain during backfill", "projectID", p.ID, "domain", firstDomain.Domain, "error", errSave)
+					}
+				}
+			}
+		}
+		return nil
+	}).Error
+
+	return err
+}
+

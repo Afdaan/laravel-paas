@@ -71,19 +71,34 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		}
 	}
 
+	tx := h.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var lockedProject models.Project
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedProject, project.ID).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to lock project"})
+	}
+
 	// Locate or create the project's SecretStore container.
 	var binding models.SecretStoreBinding
-	errBinding := h.db.Where("project_id = ?", project.ID).First(&binding).Error
+	errBinding := tx.Where("project_id = ?", lockedProject.ID).First(&binding).Error
 	var storeID uint
 	if errBinding != nil {
-		store, errStore := h.secretStoreService.CreateSecretStore(project.UserID, fmt.Sprintf("Environment Secrets (%s)", project.Name), "Managed variables for project "+project.Name, c.IP(), c.Get("User-Agent"))
+		store, errStore := h.secretStoreService.CreateSecretStore(lockedProject.UserID, fmt.Sprintf("Environment Secrets (%s)", lockedProject.Name), "Managed variables for project "+lockedProject.Name, c.IP(), c.Get("User-Agent"))
 		if errStore != nil {
+			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create secret store container"})
 		}
 		storeID = store.ID
 
-		_, errBind := h.secretStoreService.BindSecretStore(project.UserID, storeID, project.ID, "production", c.IP(), c.Get("User-Agent"))
+		_, errBind := h.secretStoreService.BindSecretStore(lockedProject.UserID, storeID, lockedProject.ID, "production", c.IP(), c.Get("User-Agent"))
 		if errBind != nil {
+			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to bind secret store container"})
 		}
 	} else {
@@ -95,42 +110,46 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		if k == "" {
 			continue
 		}
-		if _, errSet := h.secretStoreService.SetSecretValueNoPropagate(project.UserID, storeID, k, v, c.IP(), c.Get("User-Agent")); errSet != nil {
+		if _, errSet := h.secretStoreService.SetSecretValueNoPropagate(lockedProject.UserID, storeID, k, v, c.IP(), c.Get("User-Agent")); errSet != nil {
 			slog.Error("Failed to set secret value from env update", "key", k, "error", errSet)
 		}
 	}
 
 	// Safely clean up variables removed from the dotenv text area.
 	var items []models.SecretStoreItem
-	if errItems := h.db.Where("secret_store_id = ?", storeID).Find(&items).Error; errItems == nil {
+	if errItems := tx.Where("secret_store_id = ?", storeID).Find(&items).Error; errItems == nil {
 		for _, item := range items {
 			if _, exists := parsedSecrets[item.Key]; !exists {
-				h.db.Delete(&item)
-				h.secretStoreService.LogActivity(project.UserID, &storeID, &item.ID, &project.ID, "delete_secret_key", "Removed secret key: "+item.Key, c.IP(), c.Get("User-Agent"))
+				tx.Delete(&item)
+				h.secretStoreService.LogActivity(lockedProject.UserID, &storeID, &item.ID, &lockedProject.ID, "delete_secret_key", "Removed secret key: "+item.Key, c.IP(), c.Get("User-Agent"))
 			}
 		}
 	}
 
-	// Propagate updates to all other projects bound to this store, skipping the current project
-	// since we explicitly queue a redeployment for it at the end of this handler.
-	go h.secretStoreService.PropagateSecretStoreUpdatesExcept(storeID, project.ID)
-
-	h.projectService.UpdateActivity(project.ID)
-
-	if err := h.projectService.UpdateProjectStatus(project.ID, models.StatusQueued); err != nil {
-		slog.Warn("Failed to update project status after env update", "id", project.ID, "error", err)
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to commit transaction"})
 	}
 
-	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
+	// Propagate updates to all other projects bound to this store, skipping the current project
+	// since we explicitly queue a redeployment for it at the end of this handler.
+	go h.secretStoreService.PropagateSecretStoreUpdatesExcept(storeID, lockedProject.ID)
+
+	h.projectService.UpdateActivity(lockedProject.ID)
+
+	if err := h.projectService.UpdateProjectStatus(lockedProject.ID, models.StatusQueued); err != nil {
+		slog.Warn("Failed to update project status after env update", "id", lockedProject.ID, "error", err)
+	}
+
+	jobID, err := h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
 	if err != nil {
-		slog.Error("Failed to enqueue redeployment after env update", "project_id", project.ID, "error", err)
+		slog.Error("Failed to enqueue redeployment after env update", "project_id", lockedProject.ID, "error", err)
 		return c.JSON(fiber.Map{
 			"message": "Environment variables saved, but failed to queue auto-redeploy. Please redeploy manually.",
 		})
 	}
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Auto-redeploy triggered by environment update", 0, jobID); err != nil {
-		slog.Warn("Failed to update deployment status on env update", "id", project.ID, "error", err)
+	if err := h.projectService.UpdateDeploymentStatus(lockedProject.ID, models.DepStatusQueued, "Auto-redeploy triggered by environment update", 0, jobID); err != nil {
+		slog.Warn("Failed to update deployment status on env update", "id", lockedProject.ID, "error", err)
 	}
 
 	return c.JSON(fiber.Map{

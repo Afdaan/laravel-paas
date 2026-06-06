@@ -445,6 +445,7 @@ type CustomDomain struct {
 	ProjectID uint               `gorm:"not null;index" json:"project_id"`
 	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	Domain    string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
+	IsPrimary bool               `gorm:"not null;default:false;index" json:"is_primary"`
 	Status    CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
 	DesiredStatus CustomDomainStatus `gorm:"size:30;not null;default:active" json:"desired_status"`
 
