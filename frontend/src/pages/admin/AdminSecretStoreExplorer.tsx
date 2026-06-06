@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { secretStoreAPI } from '@/services/api'
 import {
-  Vault,
+  FolderKey,
   Loader2,
   Search,
   User,
@@ -130,7 +130,7 @@ export default function AdminSecretStoreExplorer() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-border/60">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
-            <Vault className="w-7 h-7 text-primary" />
+            <FolderKey className="w-7 h-7 text-primary" />
             {t('secretstore.title')}
           </h1>
           <p className="text-sm text-muted-foreground">{t('secretstore.desc')}</p>
@@ -144,7 +144,7 @@ export default function AdminSecretStoreExplorer() {
               value="stores"
               className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent h-full px-0 font-bold uppercase tracking-widest text-[9px] text-muted-foreground data-[state=active]:text-foreground"
             >
-              <Vault className="w-3.5 h-3.5 mr-1.5" />
+              <FolderKey className="w-3.5 h-3.5 mr-1.5" />
               Credential Containers
             </TabsTrigger>
             <TabsTrigger

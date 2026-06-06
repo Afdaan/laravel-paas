@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { secretStoreAPI, projectsAPI } from '@/services/api'
 import {
   Plus,
-  Vault,
+  FolderKey,
   Key,
   Trash2,
   Eye,
@@ -427,7 +427,7 @@ export default function SecretStoreDashboard() {
                 }`}
               >
                 <div className="flex items-center gap-3 truncate">
-                  <Vault className={`w-4 h-4 shrink-0 ${selectedStore?.id === store.id ? 'text-primary' : 'opacity-60'}`} />
+                  <FolderKey className={`w-4 h-4 shrink-0 ${selectedStore?.id === store.id ? 'text-primary' : 'opacity-60'}`} />
                   <div className="truncate">
                     <p className="font-bold text-xs truncate">{store.name}</p>
                     <p className="text-[10px] text-muted-foreground truncate">{store.description || 'No description'}</p>
@@ -448,7 +448,7 @@ export default function SecretStoreDashboard() {
               <CardHeader className="pb-4 border-b border-border bg-card flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Vault className="w-4 h-4 text-primary" />
+                    <FolderKey className="w-4 h-4 text-primary" />
                     {selectedStore.name}
                   </CardTitle>
                   <CardDescription className="text-xs">{selectedStore.description || 'No description provided'}</CardDescription>
@@ -737,7 +737,7 @@ export default function SecretStoreDashboard() {
             </Card>
           ) : (
             <Card className="flex flex-col items-center justify-center h-[500px] border-dashed border-border/60 text-center p-8 bg-muted/5">
-              <Vault className="w-12 h-12 text-muted-foreground opacity-30 mb-4" />
+              <FolderKey className="w-12 h-12 text-muted-foreground opacity-30 mb-4" />
               <h3 className="font-bold text-base mb-1">{t('secretstore.noStores')}</h3>
               <p className="text-xs text-muted-foreground max-w-xs mb-6">{t('secretstore.noStoresDesc')}</p>
               <Button 
@@ -761,7 +761,7 @@ export default function SecretStoreDashboard() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2">
-              <Vault className="w-4 h-4 text-primary" />
+              <FolderKey className="w-4 h-4 text-primary" />
               {editingStoreId ? t('secretstore.editStore') : t('secretstore.newStore')}
             </DialogTitle>
             <DialogDescription className="text-xs">
