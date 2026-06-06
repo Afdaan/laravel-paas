@@ -198,22 +198,15 @@ func quoteEnvValue(val string) string {
 }
 
 func getEnvKeyPriority(key string) int {
-	if strings.HasPrefix(key, "APP_") {
-		switch key {
-		case "APP_NAME":
-			return 10
-		case "APP_ENV":
-			return 11
-		case "APP_DEBUG":
-			return 12
-		case "APP_URL":
-			return 13
-		case "APP_KEY":
-			return 14
-		default:
-			return 19
-		}
+	// Group 1: Platform Managed / Locked variables
+	if key == "APP_NAME" {
+		return 10
 	}
+	if key == "APP_URL" {
+		return 11
+	}
+
+	// Group 2: Database Auto-Provisioned / Locked variables
 	if strings.HasPrefix(key, "DB_") || strings.HasPrefix(key, "DATABASE_") {
 		switch key {
 		case "DB_CONNECTION":
@@ -234,17 +227,35 @@ func getEnvKeyPriority(key string) int {
 			return 29
 		}
 	}
+
+	// Group 3: Unlocked platform keys
+	if strings.HasPrefix(key, "APP_") {
+		switch key {
+		case "APP_ENV":
+			return 50
+		case "APP_DEBUG":
+			return 51
+		case "APP_KEY":
+			return 52
+		default:
+			return 59
+		}
+	}
+
+	// Group 4: Log keys
 	if strings.HasPrefix(key, "LOG_") {
 		switch key {
 		case "LOG_CHANNEL":
-			return 30
+			return 60
 		case "LOG_LEVEL":
-			return 31
+			return 61
 		case "LOG_DEPRECATIONS_CHANNEL":
-			return 32
+			return 62
 		default:
-			return 39
+			return 69
 		}
 	}
+
+	// Group 5: All other custom keys
 	return 100
 }

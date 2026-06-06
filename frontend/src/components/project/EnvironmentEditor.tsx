@@ -100,14 +100,38 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
         }
         const isDBKey = key.startsWith('DB_') || key === 'DATABASE_URL'
         const isPlatformKey = key === 'APP_NAME' || key === 'APP_URL'
-        const isLocked = hasDatabaseInstance && (isDBKey || isPlatformKey)
+        
+        let source = 'secret_store'
+        if (isPlatformKey) {
+          source = 'system'
+        } else if (hasDatabaseInstance && isDBKey) {
+          source = 'db_auto'
+        }
+
         items.push({
           Key: key,
           Value: val,
-          Source: isLocked ? 'db_auto' : 'secret_store'
+          Source: source
         })
       }
     })
+
+    // Sort items: locked (system & db_auto) first, then unlocked (secret_store). Alphabetically within groups.
+    items.sort((a, b) => {
+      const aLocked = a.Source === 'system' || a.Source === 'db_auto'
+      const bLocked = b.Source === 'system' || b.Source === 'db_auto'
+      if (aLocked && !bLocked) return -1
+      if (!aLocked && bLocked) return 1
+      
+      // If both are locked, prioritize system first, then db_auto
+      if (aLocked && bLocked) {
+        if (a.Source === 'system' && b.Source !== 'system') return -1
+        if (a.Source !== 'system' && b.Source === 'system') return 1
+      }
+      
+      return a.Key.localeCompare(b.Key)
+    })
+
     return items
   }, [currentDotenv, hasDatabaseInstance])
 
@@ -431,11 +455,17 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 ${
-                                item.Source === 'db_auto'
-                                  ? 'text-primary border-primary/20 bg-primary/5'
-                                  : 'text-zinc-400 border-border bg-muted/20'
+                                item.Source === 'system'
+                                  ? 'text-indigo-500 border-indigo-500/20 bg-indigo-500/5 dark:text-indigo-400 dark:border-indigo-400/20 dark:bg-indigo-400/5'
+                                  : item.Source === 'db_auto'
+                                    ? 'text-primary border-primary/20 bg-primary/5'
+                                    : 'text-zinc-400 border-border bg-muted/20'
                               }`}>
-                                {item.Source === 'db_auto' ? t('projectDetail.secrets.dbAutoProvision') : t('projectDetail.secrets.secretStoreConfig')}
+                                {item.Source === 'system'
+                                  ? t('projectDetail.secrets.platformManaged')
+                                  : item.Source === 'db_auto'
+                                    ? t('projectDetail.secrets.dbAutoProvision')
+                                    : t('projectDetail.secrets.secretStoreConfig')}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right">
