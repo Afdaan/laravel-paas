@@ -57,6 +57,12 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^\s+\$\s+[a-z]+\s+(run\s+(dev|start|serve|watch|preview)|test|lint|format)\s`),
 			// Hide build steps
 			regexp.MustCompile(`^\s*(↳|▸|Steps)`),
+			// Hide Railpack start command warnings and configuration instructions
+			regexp.MustCompile(`(?i)(no start command detected|specify a start command|to configure your start command|railpack will check)`),
+			regexp.MustCompile(`(?i)(a "start" script in your package\.json|a "main" field in your package\.json|an index\.js or index\.ts file in your project root)`),
+			regexp.MustCompile(`(?i)(if you have a static site, you can set the RAILPACK_SPA_OUTPUT_DIR|containing the directory of your built static files)`),
+			regexp.MustCompile(`(?i)(^\s*"scripts":\s*\{\s*$|^\s*"start":\s*"node\s+index\.js"\s*$|^\s*\}\s*$)`),
+			regexp.MustCompile(`(?i)(^\s*"main":\s*"src/server\.js"\s*$)`),
 
 			// 6. Hide final Docker metadata (Except the build time which we will transform)
 			regexp.MustCompile(`(Loaded image:|Run with \x60docker run)`),

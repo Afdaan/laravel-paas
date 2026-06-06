@@ -1361,7 +1361,32 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	// Log the raw error for administrator diagnostics
 	slog.Error("Deployment failure with raw diagnostic details", "projectId", project.ID, "jobId", jobID, "error", errorMsg)
 
-	sanitizedMsg := utils.SanitizeError(errorMsg)
+	// Gather sensitive values dynamically from database config and .env variables
+	var sensitiveValues []string
+	if project.DatabaseName != "" {
+		sensitiveValues = append(sensitiveValues, project.DatabaseName)
+	}
+	if project.DatabasePassword != "" {
+		sensitiveValues = append(sensitiveValues, project.DatabasePassword)
+	}
+
+	projectEnvPath := filepath.Join(project.GetProjectPath(w.cfg.ProjectsPath), ".env")
+	if envVars, err := w.dockerService.ParseProjectEnv(projectEnvPath); err == nil {
+		for _, val := range envVars {
+			sensitiveValues = append(sensitiveValues, val)
+		}
+	}
+
+	// Clean up internal infrastructure credentials and paths using centralized utility functions
+	redactedErrorMsg := utils.RedactInfrastructureDetails(errorMsg, sensitiveValues)
+	sanitizedMsg := utils.SanitizeError(redactedErrorMsg)
+
+	// Get smart suggestion based on centralized utility classifiers
+	suggestion := utils.GetSmartSuggestion(errorMsg)
+	if suggestion != "" {
+		sanitizedMsg = fmt.Sprintf("%s\n\n💡 PaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
+	}
+
 	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
 	msg := sanitizedMsg
 	project.ErrorLog = &msg

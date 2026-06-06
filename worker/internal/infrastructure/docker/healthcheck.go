@@ -78,6 +78,13 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 		default:
 		}
 
+		// Fail fast if the container crashed or stopped running during the check
+		running, runErr := s.IsContainerRunning(containerID)
+		if runErr == nil && !running {
+			logs, _ := s.GetLogs(containerID, 15)
+			return fmt.Errorf("[RUNTIME_FAILED] Container stopped unexpectedly. Last logs:\n%s", logs)
+		}
+
 		if s.IsContainerHealthy(containerID) {
 			if isWebFacing {
 				ip, ipErr := s.GetContainerIP(containerID)
@@ -140,6 +147,15 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 
 	slog.Info("Advanced healthcheck completed successfully", "containerId", containerID)
 	return nil
+}
+
+// IsContainerRunning inspects if the container is currently running.
+func (s *DockerService) IsContainerRunning(containerID string) (bool, error) {
+	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}", containerID)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(res.Stdout) == "true", nil
 }
 
 // IsSystemOverloaded checks if host memory or CPU pressure is too high for safe builds.

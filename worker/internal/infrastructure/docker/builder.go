@@ -303,7 +303,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	projectEnvPath := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env")
-	if envVars, err := s.parseProjectEnv(projectEnvPath); err == nil {
+	if envVars, err := s.ParseProjectEnv(projectEnvPath); err == nil {
 		for key, value := range envVars {
 			envs[key] = value
 		}
@@ -311,6 +311,40 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 
 	if project.NodeVersion != "" {
 		envs["NIXPACKS_NODE_VERSION"] = project.NodeVersion
+	}
+
+	// Auto-detect SPA / Static hosting if start command is empty
+	isStaticFramework := false
+	staticFrameworks := []string{"Vite", "React", "Vue", "Svelte", "Static", "Angular"}
+	for _, f := range staticFrameworks {
+		if project.Framework == f {
+			isStaticFramework = true
+			break
+		}
+	}
+
+	if isStaticFramework && project.StartCommand == "" {
+		outputDir := s.detectStaticOutputDir(buildPath)
+		if logCallback != nil {
+			logCallback(fmt.Sprintf(">> WARNING: No start command detected for frontend project. Automatically configuring static SPA hosting (serving '%s' directory).", outputDir))
+		}
+		slog.Info("Auto-configuring static SPA hosting", "subdomain", project.Subdomain, "outputDir", outputDir)
+		envs["RAILPACK_SPA_OUTPUT_DIR"] = outputDir
+
+		// Inject a default build command if build command is empty
+		if project.BuildCommand == "" {
+			if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
+				if _, errLock := os.Stat(filepath.Join(buildPath, "bun.lock")); errLock == nil {
+					envs["NIXPACKS_BUILD_CMD"] = "bun run build"
+				} else if _, errLock := os.Stat(filepath.Join(buildPath, "pnpm-lock.yaml")); errLock == nil {
+					envs["NIXPACKS_BUILD_CMD"] = "pnpm run build"
+				} else if _, errLock := os.Stat(filepath.Join(buildPath, "yarn.lock")); errLock == nil {
+					envs["NIXPACKS_BUILD_CMD"] = "yarn run build"
+				} else {
+					envs["NIXPACKS_BUILD_CMD"] = "npm run build"
+				}
+			}
+		}
 	}
 
 	if project.BuildCommand != "" {
@@ -321,19 +355,20 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		envs["NIXPACKS_START_CMD"] = project.StartCommand
 	}
 
-	// Append all envs to buildArgs
-	for key, value := range envs {
-		buildArgs = append(buildArgs, "--env", fmt.Sprintf("%s=%s", key, value))
-	}
-
 	// Finalize build command with path
 	buildArgs = append(buildArgs, buildPath)
 
-	res, err := utils.RunWithRefinedLogCtx(ctx, 30*time.Minute, logFilePath, logCallback, "railpack", buildArgs...)
+	// Collect env variables in KEY=VALUE format for secure OS-level injection
+	var envSlice []string
+	for key, value := range envs {
+		envSlice = append(envSlice, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Securely run build by passing secrets through OS process environment rather than command args
+	res, err := utils.RunWithRefinedLogAndEnvCtx(ctx, 30*time.Minute, envSlice, logFilePath, logCallback, "railpack", buildArgs...)
 
 	if err != nil {
 		// Cleanup: Remove failed image and prune cache if it looks like a corruption issue.
-		// We use RunSilent for cleanup to prevent cluttering the main logic with non-fatal errors.
 		slog.Warn("Railpack build failed, performing cleanup", "subdomain", project.Subdomain, "error", err)
 
 		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
@@ -343,10 +378,16 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=0s")
 		}
 
-		// Extract only the actionable error lines from stderr, discarding internal
-		// Railpack/BuildKit noise that is not meaningful to the end user.
 		userMessage := sanitizeBuildError(res.Stderr)
 		return apperr.New(500, "BUILD_FAILED", userMessage)
+	}
+
+	// Verify if build output indicates missing start command for a non-static project (Smart Fail-Fast)
+	combinedOutput := res.Stdout + "\n" + res.Stderr
+	if strings.Contains(combinedOutput, "No start command detected") && project.StartCommand == "" && !isStaticFramework {
+		slog.Warn("Railpack build finished but no start command was configured, failing early", "subdomain", project.Subdomain)
+		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
+		return apperr.New(400, "NO_START_COMMAND", "Build succeeded, but no start command or static/SPA output directory was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings.")
 	}
 
 	return nil
@@ -569,4 +610,18 @@ func (s *DockerService) PruneProjectImages(subdomain string, maxRetention int) {
 			}
 		}
 	}
+}
+
+// detectStaticOutputDir inspects the package.json to decide if the build output dir is "build" or "dist"
+func (s *DockerService) detectStaticOutputDir(buildPath string) string {
+	packageJSONPath := filepath.Join(buildPath, "package.json")
+	data, err := os.ReadFile(packageJSONPath)
+	if err == nil {
+		content := string(data)
+		// Classic React (create-react-app) uses "build" as output directory by default
+		if strings.Contains(content, "react-scripts build") {
+			return "build"
+		}
+	}
+	return "dist"
 }

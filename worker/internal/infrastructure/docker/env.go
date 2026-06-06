@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// parseProjectEnv reads a .env file and returns a map of key-values.
+// ParseProjectEnv reads a .env file and returns a map of key-values.
 // It handles basic environment variable parsing including comments and quotes.
-func (s *DockerService) parseProjectEnv(path string) (map[string]string, error) {
+func (s *DockerService) ParseProjectEnv(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

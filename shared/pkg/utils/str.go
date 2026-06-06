@@ -181,15 +181,16 @@ func quoteEnvValue(val string) string {
 	escaped.WriteByte('"')
 	for i := 0; i < len(val); i++ {
 		c := val[i]
-		if c == '"' {
+		switch c {
+		case '"':
 			escaped.WriteString(`\"`)
-		} else if c == '\\' {
+		case '\\':
 			escaped.WriteString(`\\`)
-		} else if c == '\n' {
+		case '\n':
 			escaped.WriteString(`\n`)
-		} else if c == '\r' {
+		case '\r':
 			escaped.WriteString(`\r`)
-		} else {
+		default:
 			escaped.WriteByte(c)
 		}
 	}
@@ -258,4 +259,83 @@ func getEnvKeyPriority(key string) int {
 
 	// Group 5: All other custom keys
 	return 100
+}
+
+// RedactInfrastructureDetails removes database hosts, database names, container IDs, and path traces from error logs.
+func RedactInfrastructureDetails(errorMsg string, sensitiveValues []string) string {
+	// Redact DB Hostnames
+	errorMsg = strings.ReplaceAll(errorMsg, "paas-mysql", "database-host")
+	errorMsg = strings.ReplaceAll(errorMsg, "paas-user-postgres", "database-host")
+	
+	// Redact absolute server directory paths
+	pathRegex := regexp.MustCompile(`/(home|var|app|etc|usr|nix)/[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.-]+)*`)
+	errorMsg = pathRegex.ReplaceAllString(errorMsg, "[internal_path]")
+
+	// Redact Container ID references and names
+	containerRegex := regexp.MustCompile(`paas-project-[a-zA-Z0-9_-]+-[0-9]+`)
+	errorMsg = containerRegex.ReplaceAllString(errorMsg, "[web_container]")
+	workerRegex := regexp.MustCompile(`paas-worker-[a-zA-Z0-9_-]+-[0-9]+`)
+	errorMsg = workerRegex.ReplaceAllString(errorMsg, "[worker_container]")
+
+	// Clean up hex container hashes (12 chars or 64 chars)
+	hexRegex := regexp.MustCompile(`\b[a-f0-9]{12}\b|\b[a-f0-9]{64}\b`)
+	errorMsg = hexRegex.ReplaceAllString(errorMsg, "[container_id]")
+
+	// Strip Nixpacks/Railpack internal path prefixes
+	errorMsg = strings.ReplaceAll(errorMsg, "railpack", "builder")
+	errorMsg = strings.ReplaceAll(errorMsg, "nixpacks", "builder")
+
+	// Dynamically redact sensitive secrets/values from environment configurations
+	for _, val := range sensitiveValues {
+		valClean := strings.TrimSpace(val)
+		// Prevent redacting short keywords or standard flags to avoid breaking normal log phrases
+		if len(valClean) > 3 && valClean != "true" && valClean != "false" && valClean != "local" {
+			errorMsg = strings.ReplaceAll(errorMsg, valClean, "[redacted]")
+		}
+	}
+
+	return errorMsg
+}
+
+// GetSmartSuggestion parses raw deployment error messages and returns highly actionable suggestions.
+func GetSmartSuggestion(errorMsg string) string {
+	// 1. Database Connection Failures
+	if strings.Contains(errorMsg, "connection refused") || 
+	   strings.Contains(errorMsg, "Access denied for user") || 
+	   strings.Contains(errorMsg, "dial tcp: lookup") || 
+	   strings.Contains(errorMsg, "driver: bad connection") {
+		return "Database connection failed. Please check if your database credentials in the Environment Variables (.env) tab are correct and that the database service is running."
+	}
+
+	// 2. Out of Memory (OOM) Crashes
+	if strings.Contains(errorMsg, "JavaScript heap out of memory") || 
+	   strings.Contains(errorMsg, "Allowed memory size exhausted") || 
+	   strings.Contains(errorMsg, "Killed") || 
+	   strings.Contains(errorMsg, "exit status 137") {
+		return "Application ran out of memory (OOM). Please try increasing the RAM limit of your project in the Resource Settings tab."
+	}
+
+	// 3. Compilation & Syntax Errors
+	tsErrorRegex := regexp.MustCompile(`\berror TS[0-9]+:`)
+	if tsErrorRegex.MatchString(errorMsg) || 
+	   strings.Contains(errorMsg, "syntax error") || 
+	   strings.Contains(errorMsg, "Failed to compile") || 
+	   strings.Contains(errorMsg, "Rollup failed") {
+		return "A syntax error or compilation failure was detected in your codebase. Please inspect the detailed log output above for the exact file and line numbers."
+	}
+
+	// 4. Dependency & Lockfile Conflicts
+	if strings.Contains(errorMsg, "npm ERR! code ERESOLVE") || 
+	   strings.Contains(errorMsg, "composer.lock was created for") || 
+	   strings.Contains(errorMsg, "Could not find a version that satisfies the requirement") {
+		return "A dependency conflict was encountered. Please verify your package.json/composer.json/requirements.txt file or run a local installation to resolve conflicts."
+	}
+
+	// 5. Missing Start Command
+	if strings.Contains(errorMsg, "NO_START_COMMAND") || 
+	   strings.Contains(errorMsg, "No start command detected") {
+		return "No start command was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings."
+	}
+
+	return ""
 }

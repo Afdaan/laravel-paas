@@ -247,6 +247,11 @@ func RunWithRefinedLogCtx(parentCtx context.Context, timeout time.Duration, logF
 	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", nil, logFilePath, true, logCallback, name, args...)
 }
 
+// RunWithRefinedLogAndEnvCtx executes a command with a parent context, timeout, custom environment variables, and writes filtered output to a log file.
+func RunWithRefinedLogAndEnvCtx(parentCtx context.Context, timeout time.Duration, env []string, logFilePath string, logCallback func(string), name string, args ...string) (*Result, error) {
+	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", env, logFilePath, true, logCallback, name, args...)
+}
+
 func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, logFilePath string, refined bool, logCallback func(string), name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
