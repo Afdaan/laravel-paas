@@ -672,8 +672,16 @@ func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[stri
 
 // IsBaselineMatchForStore checks if key and value match any project's baseline bounds.
 func (s *SecretStoreService) IsBaselineMatchForStore(storeID uint, key, value string) bool {
+	return s.IsBaselineMatchForStoreTx(s.db, storeID, key, value)
+}
+
+// IsBaselineMatchForStoreTx checks if key and value match baseline within the given transaction context.
+func (s *SecretStoreService) IsBaselineMatchForStoreTx(db *gorm.DB, storeID uint, key, value string) bool {
+	if db == nil {
+		db = s.db
+	}
 	var bindings []models.SecretStoreBinding
-	if err := s.db.Where("secret_store_id = ?", storeID).Find(&bindings).Error; err != nil {
+	if err := db.Where("secret_store_id = ?", storeID).Find(&bindings).Error; err != nil {
 		return false
 	}
 	if len(bindings) == 0 {
@@ -694,7 +702,7 @@ func (s *SecretStoreService) IsBaselineMatchForStore(storeID uint, key, value st
 		projectIDs = append(projectIDs, b.ProjectID)
 	}
 	var projects []models.Project
-	if err := s.db.Preload("DatabaseInstance").Preload("CustomDomains").Where("id IN (?)", projectIDs).Find(&projects).Error; err != nil {
+	if err := db.Preload("DatabaseInstance").Preload("CustomDomains").Where("id IN (?)", projectIDs).Find(&projects).Error; err != nil {
 		return false
 	}
 	for _, p := range projects {
@@ -704,4 +712,162 @@ func (s *SecretStoreService) IsBaselineMatchForStore(storeID uint, key, value st
 		}
 	}
 	return false
+}
+
+// GetSecretStoreTx retrieves secret store metadata inside a transaction context.
+func (s *SecretStoreService) GetSecretStoreTx(db *gorm.DB, userID uint, storeID uint) (*models.SecretStore, error) {
+	if db == nil {
+		db = s.db
+	}
+	var store models.SecretStore
+	if err := db.Preload("Items.Values").Preload("Bindings.Project").Where("id = ? AND user_id = ?", storeID, userID).First(&store).Error; err != nil {
+		return nil, err
+	}
+	return &store, nil
+}
+
+// CreateSecretStoreTx creates a new secret store container within a transaction context.
+func (s *SecretStoreService) CreateSecretStoreTx(db *gorm.DB, userID uint, name, description string, ipAddress, userAgent string) (*models.SecretStore, error) {
+	if db == nil {
+		db = s.db
+	}
+	store := &models.SecretStore{
+		UserID:      userID,
+		Name:        name,
+		Description: description,
+	}
+	if err := db.Create(store).Error; err != nil {
+		return nil, err
+	}
+	s.LogActivityTx(db, userID, &store.ID, nil, nil, "create_secretstore", "Created secret store container", ipAddress, userAgent)
+	return store, nil
+}
+
+// BindSecretStoreTx binds a secret store container to a project environment within a transaction context.
+func (s *SecretStoreService) BindSecretStoreTx(db *gorm.DB, userID uint, storeID, projectID uint, environment string, ipAddress, userAgent string) (*models.SecretStoreBinding, error) {
+	if db == nil {
+		db = s.db
+	}
+	var project models.Project
+	if err := db.Where("id = ? AND user_id = ?", projectID, userID).First(&project).Error; err != nil {
+		return nil, errors.New("project not found or unauthorized")
+	}
+
+	var store models.SecretStore
+	if err := db.Where("id = ? AND user_id = ?", storeID, userID).First(&store).Error; err != nil {
+		return nil, errors.New("secret store not found or unauthorized")
+	}
+
+	binding := &models.SecretStoreBinding{
+		ProjectID:     projectID,
+		SecretStoreID: storeID,
+		Environment:   environment,
+	}
+	if err := db.Create(binding).Error; err != nil {
+		return nil, err
+	}
+
+	s.LogActivityTx(db, userID, &storeID, nil, &projectID, "bind_secretstore", fmt.Sprintf("Bound secret store container to project environment %s", environment), ipAddress, userAgent)
+
+	// Avoid asynchronous race conditions by only propagating if not in an uncommitted transaction.
+	// If inside a transaction, the caller must manually call propagation after tx.Commit().
+	if db == s.db {
+		utils.SafeGo(func() {
+			s.PropagateSecretStoreUpdates(storeID)
+		})
+	}
+
+	return binding, nil
+}
+
+// SetSecretValueNoPropagateTx sets a secret variable inside a transaction without triggering automatic propagation.
+func (s *SecretStoreService) SetSecretValueNoPropagateTx(db *gorm.DB, userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if db == nil {
+		db = s.db
+	}
+	if s.IsBaselineMatchForStoreTx(db, storeID, key, value) {
+		var item models.SecretStoreItem
+		if errItem := db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
+			db.Delete(&item)
+			s.LogActivityTx(db, userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed baseline-matching secret key: "+key, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: key, SecretStoreID: storeID}, nil
+	}
+
+	store, err := s.GetSecretStoreTx(db, userID, storeID)
+	if err != nil {
+		return nil, err
+	}
+
+	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+	encryptedVal, errEnc := utils.Encrypt(value, stretchedKey)
+	if errEnc != nil {
+		return nil, fmt.Errorf("failed to encrypt value: %w", errEnc)
+	}
+
+	var item models.SecretStoreItem
+	var version int = 1
+	errTx := db.Transaction(func(tx *gorm.DB) error {
+		errItem := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("secret_store_id = ? AND key = ?", store.ID, key).First(&item).Error
+
+		if errors.Is(errItem, gorm.ErrRecordNotFound) {
+			item = models.SecretStoreItem{
+				SecretStoreID:         store.ID,
+				Key:                   key,
+				LatestSnapshotVersion: 1,
+			}
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+			version = 1
+		} else if errItem == nil {
+			version = item.LatestSnapshotVersion + 1
+			item.LatestSnapshotVersion = version
+			if err := tx.Save(&item).Error; err != nil {
+				return err
+			}
+		} else {
+			return errItem
+		}
+
+		itemValue := models.SecretStoreItemValue{
+			SecretStoreItemID: item.ID,
+			Version:           version,
+			EncryptedValue:    encryptedVal,
+			CreatedBy:         userID,
+		}
+		if err := tx.Create(&itemValue).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if errTx != nil {
+		return nil, errTx
+	}
+
+	s.LogActivityTx(db, userID, &storeID, &item.ID, nil, "set_secret_value", fmt.Sprintf("Set value for key %s (version %d)", key, version), ipAddress, userAgent)
+
+	return &item, nil
+}
+
+// LogActivityTx writes a secret store activity log inside the transaction context.
+func (s *SecretStoreService) LogActivityTx(db *gorm.DB, userID uint, storeID, itemID, projectID *uint, action, details string, ipAddress, userAgent string) {
+	if db == nil {
+		db = s.db
+	}
+	log := models.SecretStoreActivityLog{
+		UserID:            userID,
+		SecretStoreID:     storeID,
+		SecretStoreItemID: itemID,
+		ProjectID:         projectID,
+		Action:            action,
+		Details:           details,
+		IpAddress:         ipAddress,
+		UserAgent:         userAgent,
+	}
+	if err := db.Create(&log).Error; err != nil {
+		slog.Error("Failed to write secret store activity log", "error", err)
+	}
 }

@@ -89,14 +89,14 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	errBinding := tx.Where("project_id = ?", lockedProject.ID).First(&binding).Error
 	var storeID uint
 	if errBinding != nil {
-		store, errStore := h.secretStoreService.CreateSecretStore(lockedProject.UserID, fmt.Sprintf("Environment Secrets (%s)", lockedProject.Name), "Managed variables for project "+lockedProject.Name, c.IP(), c.Get("User-Agent"))
+		store, errStore := h.secretStoreService.CreateSecretStoreTx(tx, lockedProject.UserID, fmt.Sprintf("Environment Secrets (%s)", lockedProject.Name), "Managed variables for project "+lockedProject.Name, c.IP(), c.Get("User-Agent"))
 		if errStore != nil {
 			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create secret store container"})
 		}
 		storeID = store.ID
 
-		_, errBind := h.secretStoreService.BindSecretStore(lockedProject.UserID, storeID, lockedProject.ID, "production", c.IP(), c.Get("User-Agent"))
+		_, errBind := h.secretStoreService.BindSecretStoreTx(tx, lockedProject.UserID, storeID, lockedProject.ID, "production", c.IP(), c.Get("User-Agent"))
 		if errBind != nil {
 			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to bind secret store container"})
@@ -110,8 +110,10 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		if k == "" {
 			continue
 		}
-		if _, errSet := h.secretStoreService.SetSecretValueNoPropagate(lockedProject.UserID, storeID, k, v, c.IP(), c.Get("User-Agent")); errSet != nil {
+		if _, errSet := h.secretStoreService.SetSecretValueNoPropagateTx(tx, lockedProject.UserID, storeID, k, v, c.IP(), c.Get("User-Agent")); errSet != nil {
 			slog.Error("Failed to set secret value from env update", "key", k, "error", errSet)
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save variable: " + k})
 		}
 	}
 
@@ -121,7 +123,7 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		for _, item := range items {
 			if _, exists := parsedSecrets[item.Key]; !exists {
 				tx.Delete(&item)
-				h.secretStoreService.LogActivity(lockedProject.UserID, &storeID, &item.ID, &lockedProject.ID, "delete_secret_key", "Removed secret key: "+item.Key, c.IP(), c.Get("User-Agent"))
+				h.secretStoreService.LogActivityTx(tx, lockedProject.UserID, &storeID, &item.ID, &lockedProject.ID, "delete_secret_key", "Removed secret key: "+item.Key, c.IP(), c.Get("User-Agent"))
 			}
 		}
 	}
