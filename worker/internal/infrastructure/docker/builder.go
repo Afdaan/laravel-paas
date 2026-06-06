@@ -310,10 +310,11 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	if project.NodeVersion != "" {
-		envs["NIXPACKS_NODE_VERSION"] = project.NodeVersion
+		// Set target Node.js version for Railpack compilation.
+		envs["RAILPACK_NODE_VERSION"] = project.NodeVersion
 	}
 
-	// Auto-detect SPA / Static hosting if start command is empty
+	// Auto-detect SPA / Static hosting recursively if start command is empty
 	isStaticFramework := false
 	staticFrameworks := []string{"Vite", "React", "Vue", "Svelte", "Static", "Angular"}
 	for _, f := range staticFrameworks {
@@ -323,36 +324,74 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 	}
 
-	if isStaticFramework && project.StartCommand == "" {
-		outputDir := s.detectStaticOutputDir(buildPath)
-		if logCallback != nil {
-			logCallback(fmt.Sprintf(">> WARNING: No start command detected for frontend project. Automatically configuring static SPA hosting (serving '%s' directory).", outputDir))
+	// Dynamic detection of package.json to identify static frontend apps in monorepos
+	packageJSONPath := s.findFileRecursively(buildPath, "package.json", 1, 3)
+	if packageJSONPath != "" && project.StartCommand == "" {
+		packageDir := filepath.Dir(packageJSONPath)
+		hasViteConfig := false
+		for _, vf := range []string{"vite.config.ts", "vite.config.js", "nuxt.config.js", "nuxt.config.ts", "svelte.config.js"} {
+			if _, err := os.Stat(filepath.Join(packageDir, vf)); err == nil {
+				hasViteConfig = true
+				break
+			}
 		}
-		slog.Info("Auto-configuring static SPA hosting", "subdomain", project.Subdomain, "outputDir", outputDir)
-		envs["RAILPACK_SPA_OUTPUT_DIR"] = outputDir
 
-		// Inject a default build command if build command is empty
-		if project.BuildCommand == "" {
-			if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
-				if _, errLock := os.Stat(filepath.Join(buildPath, "bun.lock")); errLock == nil {
-					envs["NIXPACKS_BUILD_CMD"] = "bun run build"
-				} else if _, errLock := os.Stat(filepath.Join(buildPath, "pnpm-lock.yaml")); errLock == nil {
-					envs["NIXPACKS_BUILD_CMD"] = "pnpm run build"
-				} else if _, errLock := os.Stat(filepath.Join(buildPath, "yarn.lock")); errLock == nil {
-					envs["NIXPACKS_BUILD_CMD"] = "yarn run build"
+		isStaticNode := false
+		data, err := os.ReadFile(packageJSONPath)
+		if err == nil {
+			content := string(data)
+			hasStartScript := strings.Contains(content, "\"start\"") || strings.Contains(content, "'start'")
+			hasBuildScript := strings.Contains(content, "\"build\"") || strings.Contains(content, "'build'")
+			
+			if !hasStartScript && (hasBuildScript || hasViteConfig) {
+				isStaticNode = true
+			}
+		}
+
+		if isStaticNode || isStaticFramework {
+			isStaticFramework = true
+			outputDir := s.detectStaticOutputDir(packageJSONPath)
+			
+			// Compute output directory relative to the build root
+			relDir, errRel := filepath.Rel(buildPath, packageDir)
+			finalOutputDir := outputDir
+			if errRel == nil && relDir != "." {
+				finalOutputDir = filepath.Join(relDir, outputDir)
+			}
+
+			if logCallback != nil {
+				logCallback(fmt.Sprintf(">> WARNING: No start command detected for frontend project. Automatically configuring static SPA hosting (serving '%s' directory).", finalOutputDir))
+			}
+			slog.Info("Auto-configuring static SPA hosting", "subdomain", project.Subdomain, "outputDir", finalOutputDir)
+			envs["RAILPACK_SPA_OUTPUT_DIR"] = finalOutputDir
+
+			// Inject a default build command if build command is empty
+			if project.BuildCommand == "" {
+				baseCmd := "npm run build"
+				if _, errLock := os.Stat(filepath.Join(packageDir, "bun.lock")); errLock == nil {
+					baseCmd = "bun run build"
+				} else if _, errLock := os.Stat(filepath.Join(packageDir, "pnpm-lock.yaml")); errLock == nil {
+					baseCmd = "pnpm run build"
+				} else if _, errLock := os.Stat(filepath.Join(packageDir, "yarn.lock")); errLock == nil {
+					baseCmd = "yarn run build"
+				}
+				
+				// Execute the build within the subdirectory if package.json is nested
+				if errRel == nil && relDir != "." {
+					envs["RAILPACK_BUILD_CMD"] = fmt.Sprintf("cd %s && %s", relDir, baseCmd)
 				} else {
-					envs["NIXPACKS_BUILD_CMD"] = "npm run build"
+					envs["RAILPACK_BUILD_CMD"] = baseCmd
 				}
 			}
 		}
 	}
 
 	if project.BuildCommand != "" {
-		envs["NIXPACKS_BUILD_CMD"] = project.BuildCommand
+		envs["RAILPACK_BUILD_CMD"] = project.BuildCommand
 	}
 
 	if project.StartCommand != "" {
-		envs["NIXPACKS_START_CMD"] = project.StartCommand
+		envs["RAILPACK_START_CMD"] = project.StartCommand
 	}
 
 	// Finalize build command with path
@@ -613,8 +652,7 @@ func (s *DockerService) PruneProjectImages(subdomain string, maxRetention int) {
 }
 
 // detectStaticOutputDir inspects the package.json to decide if the build output dir is "build" or "dist"
-func (s *DockerService) detectStaticOutputDir(buildPath string) string {
-	packageJSONPath := filepath.Join(buildPath, "package.json")
+func (s *DockerService) detectStaticOutputDir(packageJSONPath string) string {
 	data, err := os.ReadFile(packageJSONPath)
 	if err == nil {
 		content := string(data)
@@ -624,4 +662,37 @@ func (s *DockerService) detectStaticOutputDir(buildPath string) string {
 		}
 	}
 	return "dist"
+}
+
+// findFileRecursively searches for a file in the directory up to maxDepth, ignoring common build and dependency folders
+func (s *DockerService) findFileRecursively(dir string, filename string, currentDepth, maxDepth int) string {
+	if currentDepth > maxDepth {
+		return ""
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	// First pass: check files in current directory
+	for _, f := range files {
+		if !f.IsDir() && f.Name() == filename {
+			return filepath.Join(dir, f.Name())
+		}
+	}
+
+	// Second pass: traverse subdirectories
+	for _, f := range files {
+		if f.IsDir() {
+			name := f.Name()
+			if name == "node_modules" || name == ".git" || name == "dist" || name == "build" || name == ".next" || name == "vendor" {
+				continue
+			}
+			found := s.findFileRecursively(filepath.Join(dir, name), filename, currentDepth+1, maxDepth)
+			if found != "" {
+				return found
+			}
+		}
+	}
+	return ""
 }

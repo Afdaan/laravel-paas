@@ -159,7 +159,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^\s*transformed\.\s*$`),
 
 			// 22. Hide internal env vars but ALLOW package manager summaries
-			regexp.MustCompile(`(NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
+			regexp.MustCompile(`(RAILPACK_|NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),

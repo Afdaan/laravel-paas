@@ -1384,7 +1384,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	// Get smart suggestion based on centralized utility classifiers
 	suggestion := utils.GetSmartSuggestion(errorMsg)
 	if suggestion != "" {
-		sanitizedMsg = fmt.Sprintf("%s\n\n💡 PaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
+		sanitizedMsg = fmt.Sprintf("%s\n\nPaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
 	}
 
 	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
