@@ -135,6 +135,26 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
     return items
   }, [currentDotenv, hasDatabaseInstance])
 
+  // Memoized map of initial values to track dirty/unsaved state per variable
+  const initialMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    const lines = initialContent.split('\n')
+    lines.forEach((line: string) => {
+      const trimmed = line.trim()
+      if (trimmed === '' || trimmed.startsWith('#')) return
+      const parts = trimmed.split('=')
+      if (parts.length >= 2) {
+        const key = parts[0].trim()
+        let val = parts.slice(1).join('=').trim()
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.substring(1, val.length - 1)
+        }
+        map[key] = val
+      }
+    })
+    return map
+  }, [initialContent])
+
   const hasChanges = currentDotenv !== initialContent
 
   // Load environment dotenv content and parse to grid items
@@ -440,15 +460,32 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
                     </TableHeader>
                     <TableBody>
                       {gridItems.map(item => {
-                        const isRevealed = !!revealedKeys[item.Key]
+                        const isDirty = !initialMap.hasOwnProperty(item.Key) || initialMap[item.Key] !== item.Value
+                        const isRevealed = !!revealedKeys[item.Key] || isDirty
                         return (
-                          <TableRow key={item.Key} className="hover:bg-muted/10">
+                          <TableRow 
+                            key={item.Key} 
+                            className={cn(
+                              "hover:bg-muted/10 transition-colors",
+                              isDirty && "bg-amber-500/[0.03] dark:bg-amber-500/[0.02] hover:bg-amber-500/[0.05]"
+                            )}
+                          >
                             <TableCell className="font-mono text-xs font-semibold text-foreground">
-                              {item.Key}
+                              <div className="flex items-center gap-2">
+                                {isDirty && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" title="Unsaved changes" />
+                                )}
+                                <span>{item.Key}</span>
+                              </div>
                             </TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground select-none">
                               {isRevealed ? (
-                                <span className="text-foreground font-medium select-text">{item.Value}</span>
+                                <span className={cn(
+                                  "font-medium select-text",
+                                  isDirty ? "text-amber-500 dark:text-amber-400 font-semibold" : "text-foreground"
+                                )}>
+                                  {item.Value}
+                                </span>
                               ) : (
                                 <span className="tracking-widest">••••••••••••••••</span>
                               )}
@@ -473,9 +510,13 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
                                 <Button
                                   variant="outline"
                                   size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  disabled={isDirty}
+                                  className={cn(
+                                    "h-8 w-8 text-muted-foreground hover:text-foreground",
+                                    isDirty && "opacity-50 cursor-not-allowed hover:text-muted-foreground"
+                                  )}
                                   onClick={() => toggleRevealKey(item.Key)}
-                                  title={isRevealed ? t('secretstore.hide') : t('secretstore.reveal')}
+                                  title={isDirty ? t('projectDetail.secrets.cannotHideUnsaved') : (isRevealed ? t('secretstore.hide') : t('secretstore.reveal'))}
                                 >
                                   {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                                 </Button>

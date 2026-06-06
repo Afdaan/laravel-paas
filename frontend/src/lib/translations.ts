@@ -785,6 +785,8 @@ export const translations = {
         unlinkBtn: "Unlink",
         keyExists: "Variable key already exists.",
         lockTooltip: "Auto-provisioned database variables cannot be modified here.",
+        resetSuccess: "Changes reset successfully",
+        cannotHideUnsaved: "Cannot hide unsaved changes",
       },
       database: {
         creds: "Database Credentials",
@@ -2226,6 +2228,8 @@ export const translations = {
         unlinkBtn: "Putuskan Hubungan",
         keyExists: "Key variabel sudah ada.",
         lockTooltip: "Variabel database auto-provision tidak dapat diubah di sini.",
+        resetSuccess: "Perubahan berhasil di-reset",
+        cannotHideUnsaved: "Tidak dapat menyembunyikan perubahan yang belum disimpan",
       },
       database: {
         creds: "Kredensial Database",
