@@ -278,8 +278,6 @@ stdout_logfile_maxbytes=0
 
 // railpackBuild handles all other languages using Nixpacks-style auto-detection with cancellation context
 func (s *DockerService) railpackBuild(ctx context.Context, project *models.Project, buildPath, imageName, logFilePath string, noCache bool, logCallback func(string)) error {
-	s.injectDefaultRailpackConfig(buildPath)
-
 	// Strip strict lockfiles before Railpack runs.
 	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {
 		if err := os.Remove(filepath.Join(buildPath, lockfile)); err == nil {
@@ -395,7 +393,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 				if startScript, exists := pkgJSON.Scripts["start"]; exists {
 					portRegex := regexp.MustCompile(`(?i)(?:\bport\b|PORT\s*=\s*|\b-p\b)\s*=?\s*(\d+)`)
 					if matches := portRegex.FindStringSubmatch(startScript); len(matches) > 1 {
-						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 {
+						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 && pVal <= 65535 {
 							project.Port = &pVal
 							slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal)
 						}
@@ -468,6 +466,9 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	if project.StartCommand != "" {
 		envs["RAILPACK_START_CMD"] = project.StartCommand
 	}
+
+	// Inject optimized railpack.json configuration using resolved commands
+	s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"])
 
 	// Finalize build command with path
 	buildArgs = append(buildArgs, buildPath)
@@ -544,8 +545,8 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 
 // injectDefaultRailpackConfig writes an optimized railpack.json for the project.
 // It uses a single unified template and dynamically adjusts phases.
-func (s *DockerService) injectDefaultRailpackConfig(buildPath string) {
-	slog.Info("Injecting optimized Railpack configuration", "buildPath", buildPath)
+func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, startCmd string) {
+	slog.Info("Injecting optimized Railpack configuration", "buildPath", buildPath, "buildCmd", buildCmd, "startCmd", startCmd)
 	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
 
 	// 1. Resolve template path (we now use a single unified template)
@@ -609,7 +610,51 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string) {
 			slog.Debug("Applied non-Node optimizations", "path", buildPath)
 		}
 
-		// 2.2 Cache Busting: Inject a unique build ID
+		// 2.2 Inject resolved build and start commands
+		if buildCmd != "" {
+			if _, exists := config["phases"]; !exists {
+				config["phases"] = make(map[string]interface{})
+			}
+			if phases, ok := config["phases"].(map[string]interface{}); ok {
+				if _, exists := phases["build"]; !exists {
+					phases["build"] = make(map[string]interface{})
+				}
+				if buildPhase, ok := phases["build"].(map[string]interface{}); ok {
+					if cmds, ok := buildPhase["cmds"].([]interface{}); ok && len(cmds) > 0 {
+						// Preserve pruning and cleanup commands, only override the main build compile command
+						cmds[0] = buildCmd
+
+						// If the build command specifies a subdirectory (e.g. monorepo cd apps/web && ...),
+						// adapt the pruning command (cmds[1]) to run in the subdirectory as well.
+						if len(cmds) > 1 && strings.HasPrefix(buildCmd, "cd ") {
+							if idx := strings.Index(buildCmd, " && "); idx != -1 {
+								cdPrefix := buildCmd[:idx+4] // includes "cd <dir> && "
+								if _, ok := cmds[1].(string); ok {
+									cmds[1] = fmt.Sprintf("(%snpm prune --omit=dev) || yarn workspaces focus --production || (%spnpm prune --prod) || (%sbun pm untrust) || true", cdPrefix, cdPrefix, cdPrefix)
+								}
+							}
+						}
+
+						buildPhase["cmds"] = cmds
+					} else {
+						buildPhase["cmds"] = []interface{}{buildCmd}
+					}
+					modified = true
+				}
+			}
+		}
+
+		if startCmd != "" {
+			if _, exists := config["deploy"]; !exists {
+				config["deploy"] = make(map[string]interface{})
+			}
+			if deploy, ok := config["deploy"].(map[string]interface{}); ok {
+				deploy["startCommand"] = startCmd
+				modified = true
+			}
+		}
+
+		// 2.3 Cache Busting: Inject a unique build ID
 		if _, exists := config["variables"]; !exists {
 			config["variables"] = make(map[string]interface{})
 		}
