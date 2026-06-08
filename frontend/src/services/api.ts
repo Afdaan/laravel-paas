@@ -393,8 +393,8 @@ export const secretStoreAPI = {
   deleteItem: (storeId: number | string, itemId: number | string) =>
     api.delete(`/secretstores/${storeId}/items/${itemId}`),
 
-  revealItemValue: (storeId: number | string, itemId: number | string) =>
-    api.get(`/secretstores/${storeId}/items/${itemId}/reveal`),
+  revealItemValue: (storeId: number | string, itemId: number | string, version?: number | string) =>
+    api.get(`/secretstores/${storeId}/items/${itemId}/reveal`, { params: version ? { version } : {} }),
 
   getItemHistory: (storeId: number | string, itemId: number | string) =>
     api.get(`/secretstores/${storeId}/items/${itemId}/history`),

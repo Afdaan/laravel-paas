@@ -90,7 +90,42 @@ export default function SecretStoreDashboard() {
   const [isLoadingStores, setIsLoadingStores] = useState(true)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
   const [revealedValues, setRevealedValues] = useState<Record<number, string>>({})
+  const [revealedHistoryValues, setRevealedHistoryValues] = useState<Record<number, string>>({})
   const [copiedKey, setCopiedKey] = useState<number | null>(null)
+
+  const showError = (error: unknown, fallbackKey: string) => {
+    const err = error as { response?: { data?: { code?: string; error?: string } } }
+    const errorCode = err.response?.data?.code
+
+    if (errorCode) {
+      switch (errorCode) {
+        case 'KEY_COLLISION':
+          toast.error(t('secretstore.errors.collision'))
+          return
+        case 'NOT_FOUND':
+          toast.error(t('secretstore.errors.notFound'))
+          return
+        case 'INVALID_ID':
+          toast.error(t('secretstore.errors.invalidId'))
+          return
+        case 'INVALID_ITEM_ID':
+        case 'ITEM_NOT_FOUND':
+          toast.error(t('secretstore.errors.itemNotFound'))
+          return
+        case 'VALUE_NOT_FOUND':
+          toast.error(t('secretstore.errors.valueNotFound'))
+          return
+        case 'DECRYPTION_FAILED':
+          toast.error(t('secretstore.errors.decryptionFailed'))
+          return
+        case 'PROJECT_NOT_FOUND':
+          toast.error(t('secretstore.errors.projectNotFound'))
+          return
+      }
+    }
+
+    toast.error(t(fallbackKey))
+  }
   
   // Modals state
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false)
@@ -203,7 +238,7 @@ export default function SecretStoreDashboard() {
       setStoreForm({ name: '', description: '' })
       setEditingStoreId(null)
     } catch (error) {
-      toast.error(t('common.error'))
+      showError(error, 'common.error')
     }
   }
 
@@ -221,7 +256,7 @@ export default function SecretStoreDashboard() {
           setSelectedStore(null)
           fetchStores()
         } catch (error) {
-          toast.error(t('common.error'))
+          showError(error, 'common.error')
         }
       }
     })
@@ -245,7 +280,7 @@ export default function SecretStoreDashboard() {
       setEditingVarId(null)
       fetchStoreDetails()
     } catch (error) {
-      toast.error(t('common.error'))
+      showError(error, 'common.error')
     }
   }
 
@@ -264,7 +299,7 @@ export default function SecretStoreDashboard() {
       const res = await secretStoreAPI.revealItemValue(selectedStore.id, item.id)
       setRevealedValues(prev => ({ ...prev, [item.id]: res.data.data.value }))
     } catch (error) {
-      toast.error(t('common.error'))
+      showError(error, 'common.error')
     }
   }
 
@@ -282,7 +317,7 @@ export default function SecretStoreDashboard() {
           toast.success(t('common.deleteSuccess'))
           fetchStoreDetails()
         } catch (error) {
-          toast.error(t('common.error'))
+          showError(error, 'common.error')
         }
       }
     })
@@ -291,13 +326,33 @@ export default function SecretStoreDashboard() {
   // Variable version history
   const handleViewHistory = async (item: SecretStoreItem) => {
     if (!selectedStore) return
+    setRevealedHistoryValues({})
     try {
       const res = await secretStoreAPI.getItemHistory(selectedStore.id, item.id)
       setSelectedItemHistory(res.data.data || [])
       setActiveHistoryItem(item)
       setIsHistoryModalOpen(true)
     } catch (error) {
-      toast.error(t('common.loadError'))
+      showError(error, 'common.loadError')
+    }
+  }
+
+  const handleRevealHistoryValue = async (hVal: SecretStoreItemValue) => {
+    if (revealedHistoryValues[hVal.id]) {
+      setRevealedHistoryValues(prev => {
+        const copy = { ...prev }
+        delete copy[hVal.id]
+        return copy
+      })
+      return
+    }
+
+    try {
+      if (!selectedStore || !activeHistoryItem) return
+      const res = await secretStoreAPI.revealItemValue(selectedStore.id, activeHistoryItem.id, hVal.version)
+      setRevealedHistoryValues(prev => ({ ...prev, [hVal.id]: res.data.data.value }))
+    } catch (error) {
+      showError(error, 'common.error')
     }
   }
 
@@ -316,7 +371,7 @@ export default function SecretStoreDashboard() {
       setBindingForm({ projectUid: '', environment: 'all' })
       fetchStoreDetails()
     } catch (error) {
-      toast.error(t('common.error'))
+      showError(error, 'common.error')
     }
   }
 
@@ -334,7 +389,7 @@ export default function SecretStoreDashboard() {
           toast.success(t('common.deleteSuccess'))
           fetchStoreDetails()
         } catch (error) {
-          toast.error(t('common.error'))
+          showError(error, 'common.error')
         }
       }
     })
@@ -345,7 +400,7 @@ export default function SecretStoreDashboard() {
     if (!selectedStore) return
     try {
       const res = await secretStoreAPI.exportStore(selectedStore.id)
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res.data.data, null, 2))
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res.data.secrets, null, 2))
       const downloadAnchor = document.createElement('a')
       downloadAnchor.setAttribute("href", dataStr)
       downloadAnchor.setAttribute("download", `secretstore_${selectedStore.name.toLowerCase().replace(/\s+/g, '_')}_backup.json`)
@@ -371,7 +426,7 @@ export default function SecretStoreDashboard() {
       setImportText('')
       fetchStoreDetails()
     } catch (error) {
-      toast.error(t('common.error') + ': Invalid JSON format')
+      toast.error(t('secretstore.errors.invalidJson'))
     }
   }
 
@@ -430,7 +485,7 @@ export default function SecretStoreDashboard() {
                   <FolderKey className={`w-4 h-4 shrink-0 ${selectedStore?.id === store.id ? 'text-primary' : 'opacity-60'}`} />
                   <div className="truncate">
                     <p className="font-bold text-xs truncate">{store.name}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{store.description || 'No description'}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{store.description || t('secretstore.noDescription')}</p>
                   </div>
                 </div>
                 <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 ${
@@ -451,7 +506,7 @@ export default function SecretStoreDashboard() {
                     <FolderKey className="w-4 h-4 text-primary" />
                     {selectedStore.name}
                   </CardTitle>
-                  <CardDescription className="text-xs">{selectedStore.description || 'No description provided'}</CardDescription>
+                  <CardDescription className="text-xs">{selectedStore.description || t('secretstore.noDescriptionProvided')}</CardDescription>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -505,7 +560,7 @@ export default function SecretStoreDashboard() {
                   {/* Variables Tab */}
                   <TabsContent value="variables" className="space-y-4 m-0 outline-none">
                     <div className="flex justify-between items-center pb-2">
-                      <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">Store Variables</h3>
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">{t('secretstore.storeVariables')}</h3>
                       <Button
                         size="sm"
                         onClick={() => {
@@ -526,16 +581,16 @@ export default function SecretStoreDashboard() {
                       </div>
                     ) : items.length === 0 ? (
                       <div className="text-center py-20 border border-dashed border-border/50 rounded-lg text-xs text-muted-foreground">
-                        No variables stored. Click "Add Variable" to store your first key-value pair.
+                        {t('secretstore.noVariablesStored')}
                       </div>
                     ) : (
                       <div className="border border-border/50 rounded-lg overflow-hidden">
                         <Table>
                           <TableHeader className="bg-muted/20">
                             <TableRow>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/3">Key</TableHead>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/2">Value</TableHead>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">Actions</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/3">{t('secretstore.key')}</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/2">{t('secretstore.value')}</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">{t('common.actions')}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -566,17 +621,18 @@ export default function SecretStoreDashboard() {
                                         {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                                       </Button>
                                       
-                                      {isRevealed && (
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                          onClick={() => copyToClipboard(rawVal, item.id)}
-                                          title={t('common.copy')}
-                                        >
-                                          {copiedKey === item.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                        </Button>
-                                      )}
+                                      <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className={`h-8 w-8 text-muted-foreground hover:text-foreground ${
+                                          !isRevealed ? 'opacity-40 cursor-not-allowed hover:text-muted-foreground' : ''
+                                        }`}
+                                        onClick={() => isRevealed && copyToClipboard(rawVal, item.id)}
+                                        disabled={!isRevealed}
+                                        title={isRevealed ? t('common.copy') : t('secretstore.revealToCopy')}
+                                      >
+                                        {copiedKey === item.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                      </Button>
  
                                       <Button
                                         variant="outline"
@@ -645,17 +701,17 @@ export default function SecretStoreDashboard() {
                       </div>
                     ) : bindings.length === 0 ? (
                       <div className="text-center py-20 border border-dashed border-border/50 rounded-lg text-xs text-muted-foreground">
-                        No projects linked. Link this SecretStore to a project to inject these secrets at container runtime.
+                        {t('secretstore.noProjectsLinked')}
                       </div>
                     ) : (
                       <div className="border border-border/50 rounded-lg overflow-hidden">
                         <Table>
                           <TableHeader className="bg-muted/20">
                             <TableRow>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px]">Project</TableHead>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px]">Subdomain</TableHead>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px]">Environment</TableHead>
-                              <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">Actions</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px]">{t('common.projectName')}</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px]">{t('common.url')}</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px]">{t('secretstore.environment')}</TableHead>
+                              <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">{t('common.actions')}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -682,7 +738,7 @@ export default function SecretStoreDashboard() {
                                     onClick={() => handleRemoveBinding(binding)}
                                   >
                                     <Link2Off className="w-3.5 h-3.5 mr-1" />
-                                    Unlink
+                                    {t('projectDetail.secrets.unlinkBtn')}
                                   </Button>
                                 </TableCell>
                               </TableRow>
@@ -696,11 +752,11 @@ export default function SecretStoreDashboard() {
                   {/* Settings Tab */}
                   <TabsContent value="settings" className="space-y-6 m-0 outline-none">
                     <div className="space-y-4 max-w-xl">
-                      <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">Manage Store Properties</h3>
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">{t('secretstore.manageProperties')}</h3>
                       <div className="space-y-4 border border-border/60 rounded-lg p-5 bg-muted/10">
                         <div>
-                          <p className="font-semibold text-xs mb-1">Rename or Update Store</p>
-                          <p className="text-[11px] text-muted-foreground mb-4">Modify store identity parameters.</p>
+                          <p className="font-semibold text-xs mb-1">{t('secretstore.renameOrUpdate')}</p>
+                          <p className="text-[11px] text-muted-foreground mb-4">{t('secretstore.modifyParams')}</p>
                           <Button
                             variant="outline"
                             size="sm"
@@ -717,8 +773,8 @@ export default function SecretStoreDashboard() {
                         </div>
 
                         <div className="border-t border-border/50 pt-4 mt-4">
-                          <p className="font-semibold text-xs mb-1 text-destructive">Danger Zone</p>
-                          <p className="text-[11px] text-muted-foreground mb-4">Permanently delete this secret container. All linked projects will immediately lose access to these values upon next rebuild.</p>
+                          <p className="font-semibold text-xs mb-1 text-destructive">{t('secretstore.dangerZone')}</p>
+                          <p className="text-[11px] text-muted-foreground mb-4">{t('secretstore.deleteWarning')}</p>
                           <Button
                             variant="destructive"
                             size="sm"
@@ -765,7 +821,7 @@ export default function SecretStoreDashboard() {
               {editingStoreId ? t('secretstore.editStore') : t('secretstore.newStore')}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Enter name and description parameters.
+              {t('secretstore.enterParams')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveStore} className="space-y-4 py-2">
@@ -812,8 +868,8 @@ export default function SecretStoreDashboard() {
             </DialogTitle>
             <DialogDescription className="text-xs">
               {editingVarId 
-                ? 'Rotating variables will preserve previous snapshots in database records.'
-                : 'Variables are encrypted with AES-256-GCM prior to database insertion.'}
+                ? t('secretstore.rotateNotice')
+                : t('secretstore.encryptionNotice')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveVariable} className="space-y-4 py-2">
@@ -862,12 +918,12 @@ export default function SecretStoreDashboard() {
               {t('secretstore.addBinding')}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Inject this SecretStore into the project environment dynamically.
+              {t('secretstore.injectNotice')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddBinding} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="bind-project" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Project</Label>
+              <Label htmlFor="bind-project" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('secretstore.selectProject')}</Label>
               <Select
                 value={bindingForm.projectUid}
                 onValueChange={val => setBindingForm(prev => ({ ...prev, projectUid: val || '' }))}
@@ -879,7 +935,7 @@ export default function SecretStoreDashboard() {
                       return p ? (
                         <span className="truncate font-semibold text-foreground/90">{p.name}</span>
                       ) : (
-                        <span className="text-muted-foreground/60">Choose a project...</span>
+                        <span className="text-muted-foreground/60">{t('secretstore.chooseProject')}</span>
                       )
                     })()}
                   </div>
@@ -920,7 +976,7 @@ export default function SecretStoreDashboard() {
                 {t('common.cancel')}
               </Button>
               <Button type="submit" size="sm" className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
-                Link Project
+                {t('secretstore.linkProjectBtn')}
               </Button>
             </DialogFooter>
           </form>
@@ -936,12 +992,12 @@ export default function SecretStoreDashboard() {
               {t('secretstore.import')}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Paste JSON object format mapping variables. Overwrites matching existing keys.
+              {t('secretstore.pasteJsonNotice')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleImportStore} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="import-data" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">JSON payload</Label>
+              <Label htmlFor="import-data" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('secretstore.jsonPayload')}</Label>
               <textarea
                 id="import-data"
                 value={importText}
@@ -959,7 +1015,7 @@ export default function SecretStoreDashboard() {
                 {t('common.cancel')}
               </Button>
               <Button type="submit" size="sm" className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]">
-                Import JSON
+                {t('secretstore.importJsonBtn')}
               </Button>
             </DialogFooter>
           </form>
@@ -975,44 +1031,67 @@ export default function SecretStoreDashboard() {
               {t('secretstore.history')}: {activeHistoryItem?.key}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Timeline of credentials versions and historical update timestamps.
+              {t('secretstore.timelineNotice')}
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-60 overflow-y-auto custom-scrollbar border border-border/60 rounded-lg">
             <Table>
               <TableHeader className="bg-muted/20">
                 <TableRow>
-                  <TableHead className="font-bold uppercase tracking-widest text-[9px]">Version</TableHead>
-                  <TableHead className="font-bold uppercase tracking-widest text-[9px]">Timestamp</TableHead>
-                  <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">Status</TableHead>
+                  <TableHead className="font-bold uppercase tracking-widest text-[9px] w-1/5">{t('projectDetail.settings.version')}</TableHead>
+                  <TableHead className="font-bold uppercase tracking-widest text-[9px] w-2/5">{t('secretstore.value')}</TableHead>
+                  <TableHead className="font-bold uppercase tracking-widest text-[9px] w-2/5">{t('common.date')}</TableHead>
+                  <TableHead className="font-bold uppercase tracking-widest text-[9px] text-right">{t('common.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                 {selectedItemHistory.map(hVal => (
-                  <TableRow key={hVal.id}>
-                    <TableCell className="font-semibold text-xs">
-                      v{hVal.version}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(hVal.created_at).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {hVal.version === activeHistoryItem?.latest_snapshot_version ? (
-                        <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5">
-                          Active
-                        </Badge>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Archived</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                 {selectedItemHistory.map(hVal => {
+                  const isHistoryRevealed = !!revealedHistoryValues[hVal.id]
+                  const historyRawVal = revealedHistoryValues[hVal.id] || ''
+                  return (
+                    <TableRow key={hVal.id} className="hover:bg-muted/10">
+                      <TableCell className="font-semibold text-xs">
+                        v{hVal.version}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground select-none">
+                        <div className="flex items-center justify-between gap-2">
+                          {isHistoryRevealed ? (
+                            <span className="text-foreground font-medium select-text">{historyRawVal}</span>
+                          ) : (
+                            <span className="tracking-widest">••••••••••••••••</span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                            onClick={() => handleRevealHistoryValue(hVal)}
+                            title={isHistoryRevealed ? t('secretstore.hide') : t('secretstore.reveal')}
+                          >
+                            {isHistoryRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(hVal.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {hVal.version === activeHistoryItem?.latest_snapshot_version ? (
+                          <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5">
+                            {t('secretstore.active')}
+                          </Badge>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground uppercase font-semibold">{t('secretstore.archived')}</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
           <DialogFooter className="pt-2">
             <Button type="button" size="sm" className="h-9 px-6 font-semibold uppercase tracking-wider text-[10px]" onClick={() => setIsHistoryModalOpen(false)}>
-              Close
+              {t('common.btnClose')}
             </Button>
           </DialogFooter>
         </DialogContent>

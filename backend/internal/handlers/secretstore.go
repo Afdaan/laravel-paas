@@ -194,28 +194,46 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 		return apperr.New(404, "ITEM_NOT_FOUND", "SecretStore Item not found")
 	}
 
-	var latestVal *models.SecretStoreItemValue
-	for i := range targetItem.Values {
-		val := &targetItem.Values[i]
-		if val.Version == targetItem.LatestSnapshotVersion {
-			latestVal = val
-			break
+	var targetVal *models.SecretStoreItemValue
+	versionStr := c.Query("version")
+	if versionStr != "" {
+		if version, err := strconv.Atoi(versionStr); err == nil {
+			for i := range targetItem.Values {
+				if targetItem.Values[i].Version == version {
+					targetVal = &targetItem.Values[i]
+					break
+				}
+			}
 		}
 	}
 
-	if latestVal == nil {
+	if targetVal == nil {
+		for i := range targetItem.Values {
+			val := &targetItem.Values[i]
+			if val.Version == targetItem.LatestSnapshotVersion {
+				targetVal = val
+				break
+			}
+		}
+	}
+
+	if targetVal == nil {
 		return apperr.New(404, "VALUE_NOT_FOUND", "No values set for this secret key")
 	}
 
 	stretchedKey := utils.DeriveKey(h.cfg.CredentialEncryptionKey)
 	legacyKey := utils.DeriveKeyLegacy(h.cfg.CredentialEncryptionKey)
-	decryptedVal, errDec := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
+	decryptedVal, errDec := utils.Decrypt(targetVal.EncryptedValue, stretchedKey, legacyKey)
 	if errDec != nil {
 		return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
 	}
 
 	// Write audited activity log entry for tracking.
-	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", "Revealed plaintext value of secret key: "+targetItem.Key, c.IP(), c.Get("User-Agent"))
+	details := "Revealed plaintext value of secret key: " + targetItem.Key
+	if versionStr != "" {
+		details = fmt.Sprintf("Revealed plaintext value of secret key %s version %s", targetItem.Key, versionStr)
+	}
+	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", details, c.IP(), c.Get("User-Agent"))
 
 	return c.JSON(fiber.Map{"data": fiber.Map{"value": decryptedVal}})
 }
