@@ -520,17 +520,16 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
                                 >
                                   {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                                 </Button>
-                                {isRevealed && (
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                    onClick={() => copyToClipboard(item.Value, item.Key)}
-                                    title={t('common.copy')}
-                                  >
-                                    {copiedKey === item.Key ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                  </Button>
-                                )}
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className={`h-8 w-8 text-muted-foreground hover:text-foreground ${!isRevealed ? 'opacity-40 cursor-not-allowed hover:text-muted-foreground' : ''}`}
+                                  onClick={() => isRevealed && copyToClipboard(item.Value, item.Key)}
+                                  disabled={!isRevealed}
+                                  title={isRevealed ? t('common.copy') : t('secretstore.revealToCopy')}
+                                >
+                                  {copiedKey === item.Key ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                </Button>
                                  {item.Source === 'secret_store' ? (
                                   <>
                                     <Button
