@@ -393,6 +393,20 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
                 {t('projectDetail.secrets.linkModalTitle')}
               </Button>
             )}
+            {activeSubTab === 'grid' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setAddForm({ key: '', value: '' })
+                  setIsAddModalOpen(true)
+                }}
+                className="h-9 text-[10px] font-bold uppercase tracking-wider hover:bg-muted/10"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                {t('projectDetail.secrets.addVariable')}
+              </Button>
+            )}
           </div>
         </CardHeader>
 
@@ -430,18 +444,6 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
                 <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
                   {t('projectDetail.secrets.gridDesc')}
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setAddForm({ key: '', value: '' })
-                    setIsAddModalOpen(true)
-                  }}
-                  className="h-8 text-[10px] font-bold uppercase tracking-wider hover:bg-muted/10"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  {t('projectDetail.secrets.addVariable')}
-                </Button>
               </div>
               {gridItems.length === 0 ? (
                 <div className="text-center py-20 border border-dashed border-border/50 rounded-lg text-xs text-muted-foreground">
