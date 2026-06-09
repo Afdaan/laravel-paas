@@ -9,7 +9,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
-      closeButton={true}
+      closeButton={false}
       icons={{
         success: (
           <div className="flex shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 p-1.5 border border-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
@@ -49,7 +49,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
           info: "!bg-blue-950/20 dark:!bg-blue-950/30 !border-blue-500/20 !text-blue-200 [box-shadow:0_12px_40px_rgba(59,130,246,0.06),inset_0_0_12px_rgba(59,130,246,0.02)]",
           actionButton: "!bg-primary !text-primary-foreground !rounded-lg !font-semibold !text-xs !px-4 !py-2 !transition-all hover:!bg-primary/90 active:!scale-95 !mt-3 !justify-self-start !shrink-0 cursor-pointer",
           cancelButton: "!bg-muted !text-muted-foreground !rounded-lg !font-medium !text-xs !px-4 !py-2 !transition-all hover:!bg-muted/80 active:!scale-95 !mt-3 !justify-self-start !shrink-0 cursor-pointer",
-          closeButton: "!absolute !top-2.5 !right-2.5 !bg-transparent hover:!bg-white/10 !border-transparent hover:!text-foreground !text-muted-foreground/50 hover:!text-muted-foreground !rounded-lg !p-1.5 !h-7 !w-7 !flex !items-center !justify-center !transition-all cursor-pointer z-50 hover:!scale-110",
         },
       }}
       {...props}
