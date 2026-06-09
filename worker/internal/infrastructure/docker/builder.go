@@ -276,7 +276,7 @@ stdout_logfile_maxbytes=0
 	return nil
 }
 
-// railpackBuild handles all other languages using Nixpacks-style auto-detection with cancellation context
+// railpackBuild handles all other languages using railpacks-style auto-detection with cancellation context
 func (s *DockerService) railpackBuild(ctx context.Context, project *models.Project, buildPath, imageName, logFilePath string, noCache bool, logCallback func(string)) error {
 	// Strip strict lockfiles before Railpack runs.
 	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {

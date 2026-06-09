@@ -39,17 +39,17 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       toastOptions={{
         classNames: {
-          toast: "group rounded-2xl !p-4 !pr-12 !grid !grid-cols-[auto_1fr] !gap-x-3.5 !gap-y-2 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 w-[380px] shadow-2xl !items-start",
-          content: "flex flex-col justify-center !min-w-0 !pr-8",
-          title: "text-[13px] font-bold tracking-tight text-foreground leading-none",
-          description: "text-xs text-muted-foreground/90 leading-relaxed mt-1.5 whitespace-pre-wrap break-words",
+          toast: "group rounded-2xl !p-4 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 min-w-[280px] max-w-[480px] shadow-2xl !items-start flex !flex-col",
+          content: "flex flex-col justify-center !min-w-0",
+          title: "text-[13px] font-bold tracking-tight text-foreground leading-snug",
+          description: "text-xs text-muted-foreground/90 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto",
           success: "!bg-emerald-950/20 dark:!bg-emerald-950/30 !border-emerald-500/20 !text-emerald-200 [box-shadow:0_12px_40px_rgba(16,185,129,0.06),inset_0_0_12px_rgba(16,185,129,0.02)]",
           error: "!bg-rose-950/25 dark:!bg-rose-950/35 !border-rose-500/20 !text-rose-200 [box-shadow:0_12px_40px_rgba(244,63,94,0.08),inset_0_0_12px_rgba(244,63,94,0.03)]",
           warning: "!bg-amber-950/20 dark:!bg-amber-950/30 !border-amber-500/20 !text-amber-200 [box-shadow:0_12px_40px_rgba(245,158,11,0.06),inset_0_0_12px_rgba(245,158,11,0.02)]",
           info: "!bg-blue-950/20 dark:!bg-blue-950/30 !border-blue-500/20 !text-blue-200 [box-shadow:0_12px_40px_rgba(59,130,246,0.06),inset_0_0_12px_rgba(59,130,246,0.02)]",
-          actionButton: "!bg-primary !text-primary-foreground !rounded-lg !font-medium !text-xs !px-3.5 !py-1.5 !transition-colors hover:!bg-primary/90 !col-start-2 !justify-self-start !mt-2 !shrink-0",
-          cancelButton: "!bg-muted !text-muted-foreground !rounded-lg !font-medium !text-xs !px-3.5 !py-1.5 !transition-colors hover:!bg-muted/80 !col-start-2 !justify-self-start !mt-2 !shrink-0",
-          closeButton: "!absolute !top-4 !right-3 !bg-transparent hover:!bg-white/10 !border-transparent hover:!text-foreground !text-muted-foreground/60 !rounded-lg !p-1 !h-6 !w-6 !flex !items-center !justify-center !transition-all cursor-pointer z-50",
+          actionButton: "!bg-primary !text-primary-foreground !rounded-lg !font-semibold !text-xs !px-4 !py-2 !transition-all hover:!bg-primary/90 active:!scale-95 !mt-3 !justify-self-start !shrink-0 cursor-pointer",
+          cancelButton: "!bg-muted !text-muted-foreground !rounded-lg !font-medium !text-xs !px-4 !py-2 !transition-all hover:!bg-muted/80 active:!scale-95 !mt-3 !justify-self-start !shrink-0 cursor-pointer",
+          closeButton: "!absolute !top-2.5 !right-2.5 !bg-transparent hover:!bg-white/10 !border-transparent hover:!text-foreground !text-muted-foreground/50 hover:!text-muted-foreground !rounded-lg !p-1.5 !h-7 !w-7 !flex !items-center !justify-center !transition-all cursor-pointer z-50 hover:!scale-110",
         },
       }}
       {...props}

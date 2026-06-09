@@ -59,9 +59,9 @@ TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynam
 
 # Ensure directories exist and have correct permissions
 mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-sudo mkdir -p /nix /var/cache/nixpacks
+sudo mkdir -p /nix /var/cache/railpacks
 sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-sudo chmod 777 /nix /var/cache/nixpacks
+sudo chmod 777 /nix /var/cache/railpacks
 
 # Helper to get next numeric tag for a service
 get_next_service_tag() {
