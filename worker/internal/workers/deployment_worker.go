@@ -407,32 +407,84 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
+	if job.Type == "delete" {
+		slog.Info("Performing project background deletion", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "delete_started", "Purging project from system")
+
+		if err := w.projectService.DeleteProject(project); err != nil {
+			slog.Error("Failed to purge project during background delete job", "projectId", project.ID, "error", err)
+			return
+		}
+		return
+	}
+
 	previousCommitHash := project.LastCommitHash
+	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	logsDir := filepath.Join(projectPath, "logs")
+	_ = os.MkdirAll(logsDir, 0755)
+
+	// 1. Register log pruning and size truncation defer block first.
+	// Because of LIFO execution of defers, this runs LAST (after log files have been cleanly closed).
+	defer func() {
+		if err := utils.PruneJobLogs(logsDir, "build-*.log", 5); err != nil {
+			slog.Warn("Failed to prune build logs", "projectId", project.ID, "error", err)
+		}
+		if err := utils.PruneJobLogs(logsDir, "infra-*.log", 5); err != nil {
+			slog.Warn("Failed to prune infra logs", "projectId", project.ID, "error", err)
+		}
+		infraLogPath := filepath.Join(logsDir, "infra.log")
+		if err := utils.TruncateFileIfNeeded(infraLogPath, 5*1024*1024); err != nil {
+			slog.Warn("Failed to truncate infra.log", "projectId", project.ID, "error", err)
+		}
+	}()
+
+	isDeployment := job.Type == "deploy" || job.Type == "redeploy" || job.Type == "redeploy_clean"
+
+	// 2. Open persistent infra.log once at start to avoid repeated open/close I/O performance bottleneck
+	var infraLogFile *os.File
+	if !isDeployment {
+		infraLogPath := filepath.Join(logsDir, "infra.log")
+		var errOpen error
+		infraLogFile, errOpen = os.OpenFile(infraLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if errOpen != nil {
+			slog.Error("Failed to open persistent infra log file", "path", infraLogPath, "error", errOpen)
+		} else {
+			defer infraLogFile.Close()
+		}
+	}
+
+	logFilePrefix := "infra"
+	if isDeployment {
+		logFilePrefix = "build"
+	}
+	buildLogPath := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", logFilePrefix, job.JobID))
+
+	// 3. Open job-specific log file next
+	logFile, logOpenErr := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if logOpenErr != nil {
+		slog.Error("Failed to open job log file", "path", buildLogPath, "error", logOpenErr)
+	} else {
+		defer logFile.Close()
+	}
+
+	var logFileMu sync.Mutex
+	appendLog := func(msg string) {
+		logFileMu.Lock()
+		defer logFileMu.Unlock()
+
+		if logFile != nil {
+			_, _ = logFile.WriteString(msg + "\n")
+		}
+		_ = w.redisService.PublishBuildLog(project.ID, msg)
+
+		if !isDeployment && infraLogFile != nil {
+			timestamp := time.Now().Format("2006-01-02 15:04:05")
+			_, _ = infraLogFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+		}
+	}
+	appendLog = w.makeRedactingLogger(project, appendLog)
 
 	if job.Type == "update_env" {
-		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
-		_ = os.MkdirAll(projectPath, 0755)
-		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-
-		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		var appendLog func(string)
-		if errLog == nil {
-			defer logFile.Close()
-			var logFileMu sync.Mutex
-			appendLog = func(msg string) {
-				logFileMu.Lock()
-				defer logFileMu.Unlock()
-				_, _ = logFile.WriteString(msg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		} else {
-			appendLog = func(msg string) {
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		}
-		appendLog = w.makeRedactingLogger(project, appendLog)
-
 		if project.ContainerID == nil || *project.ContainerID == "" {
 			appendLog(">> Project is stopped. Skipping environment propagation.")
 			appendLog("✓ Environment configuration updated successfully.")
@@ -461,29 +513,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "rollback" {
-		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
-		_ = os.MkdirAll(projectPath, 0755)
-		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-
-		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		var appendLog func(string)
-		if errLog == nil {
-			defer logFile.Close()
-			var logFileMu sync.Mutex
-			appendLog = func(msg string) {
-				logFileMu.Lock()
-				defer logFileMu.Unlock()
-				_, _ = logFile.WriteString(msg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		} else {
-			appendLog = func(msg string) {
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		}
-		appendLog = w.makeRedactingLogger(project, appendLog)
-
 		appendLog(fmt.Sprintf(">> Preparing rollback to commit %s...", project.LastCommitHash))
 		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
@@ -500,29 +529,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "stop" {
-		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
-		_ = os.MkdirAll(projectPath, 0755)
-		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-
-		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		var appendLog func(string)
-		if errLog == nil {
-			defer logFile.Close()
-			var logFileMu sync.Mutex
-			appendLog = func(msg string) {
-				logFileMu.Lock()
-				defer logFileMu.Unlock()
-				_, _ = logFile.WriteString(msg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		} else {
-			appendLog = func(msg string) {
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		}
-		appendLog = w.makeRedactingLogger(project, appendLog)
-
 		slog.Info("Performing container stop action", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "stop_started", "Stopping application container(s)")
 		appendLog(">> Stopping application container(s)...")
@@ -555,29 +561,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "start" {
-		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
-		_ = os.MkdirAll(projectPath, 0755)
-		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-
-		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		var appendLog func(string)
-		if errLog == nil {
-			defer logFile.Close()
-			var logFileMu sync.Mutex
-			appendLog = func(msg string) {
-				logFileMu.Lock()
-				defer logFileMu.Unlock()
-				_, _ = logFile.WriteString(msg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		} else {
-			appendLog = func(msg string) {
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		}
-		appendLog = w.makeRedactingLogger(project, appendLog)
-
 		slog.Info("Performing container start action", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "start_started", "Starting application container(s)")
 		appendLog(">> Starting application container(s)...")
@@ -612,29 +595,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "restart" {
-		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
-		_ = os.MkdirAll(projectPath, 0755)
-		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-
-		logFile, errLog := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		var appendLog func(string)
-		if errLog == nil {
-			defer logFile.Close()
-			var logFileMu sync.Mutex
-			appendLog = func(msg string) {
-				logFileMu.Lock()
-				defer logFileMu.Unlock()
-				_, _ = logFile.WriteString(msg + "\n")
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		} else {
-			appendLog = func(msg string) {
-				_ = w.redisService.PublishBuildLog(project.ID, msg)
-			}
-		}
-		appendLog = w.makeRedactingLogger(project, appendLog)
-
 		slog.Info("Performing container restart action", "subdomain", project.Subdomain)
 		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_started", "Restarting application container(s)")
 		appendLog(">> Restarting application container(s)...")
@@ -653,47 +613,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	if job.Type == "delete" {
-		slog.Info("Performing project background deletion", "subdomain", project.Subdomain)
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "delete_started", "Purging project from system")
-
-		if err := w.projectService.DeleteProject(project); err != nil {
-			slog.Error("Failed to purge project during background delete job", "projectId", project.ID, "error", err)
-			return
-		}
-
-		// The project is hard-deleted from database inside DeleteProject, so we do not transition deployment state,
-		// as the row is gone. Just return.
-		return
-	}
-
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
 	project.ErrorLog = nil
 	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"error_log": nil,
 	})
-
-	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-	buildLogPath := filepath.Join(projectPath, "build.log")
-	if err := os.MkdirAll(projectPath, 0755); err == nil {
-		if err := os.WriteFile(buildLogPath, []byte(""), 0644); err != nil {
-			slog.Warn("Failed to clear build log", "path", buildLogPath, "error", err)
-		}
-	}
-
-	var logFile *os.File
-
-	var logFileMu sync.Mutex
-	appendLog := func(msg string) {
-		logFileMu.Lock()
-		defer logFileMu.Unlock()
-
-		if logFile != nil {
-			_, _ = logFile.WriteString(msg + "\n")
-		}
-		_ = w.redisService.PublishBuildLog(project.ID, msg)
-	}
-	appendLog = w.makeRedactingLogger(project, appendLog)
 
 	w.checkDiskSpace()
 
@@ -880,14 +804,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	// Open build log file after repository has been successfully synced/cloned
-	var logOpenErr error
-	logFile, logOpenErr = os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if logOpenErr != nil {
-		slog.Error("Failed to open build log file", "path", buildLogPath, "error", logOpenErr)
-	} else {
-		defer logFile.Close()
-	}
+
 
 	project.LastCommitHash = cloneHash
 	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -1290,6 +1207,22 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 	return true
 }
 
+func (w *DeploymentWorker) getActiveLogPath(project *models.Project) string {
+	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+		jobID := *project.DeploymentJobID
+		buildPath := filepath.Join(projectPath, "logs", fmt.Sprintf("build-%s.log", jobID))
+		if _, err := os.Stat(buildPath); err == nil {
+			return buildPath
+		}
+		infraPath := filepath.Join(projectPath, "logs", fmt.Sprintf("infra-%s.log", jobID))
+		if _, err := os.Stat(infraPath); err == nil {
+			return infraPath
+		}
+	}
+	return filepath.Join(projectPath, "build.log")
+}
+
 func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
 	if project.GithubInstallationID == nil || *project.GithubInstallationID == 0 || project.GithubRepoOwner == "" || project.GithubRepoName == "" || project.LastCommitHash == "" {
 		return
@@ -1320,7 +1253,7 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	case models.DepStatusBuilding:
 		desc = "Building container image using BuildKit..."
 	case models.DepStatusStarting:
-		desc = "Provisioning container instance..."
+		desc = "Deploying container release onto system..."
 	case models.DepStatusHealthchecking:
 		desc = "Running health checks and readiness probes..."
 	case models.DepStatusMigrating:
@@ -1334,6 +1267,10 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		if desc == "" {
 			desc = string(state)
 		}
+	}
+
+	if description != "" {
+		desc = description
 	}
 
 	if len(desc) > 140 {
@@ -1379,8 +1316,7 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
 		_ = w.redisService.PublishBuildLog(projectID, logMsg)
 
-		projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
+		buildLogPath := w.getActiveLogPath(project)
 		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
 			_, _ = f.WriteString(logMsg + "\n")
 			f.Close()

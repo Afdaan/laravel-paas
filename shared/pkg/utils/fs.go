@@ -7,9 +7,12 @@
 package utils
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 // IsPathWithinRoot verifies that a candidate path is physically located
@@ -94,4 +97,93 @@ func WriteFileAtomic(filename string, data []byte, perm os.FileMode) (err error)
 	}
 
 	return nil
+}
+
+// PruneJobLogs finds all files matching the pattern in logsDir and removes the oldest ones,
+// keeping only the maxKeep most recent files (based on modification time).
+func PruneJobLogs(logsDir string, pattern string, maxKeep int) error {
+	if maxKeep <= 0 {
+		return nil
+	}
+
+	matches, err := filepath.Glob(filepath.Join(logsDir, pattern))
+	if err != nil {
+		return err
+	}
+
+	if len(matches) <= maxKeep {
+		return nil
+	}
+
+	type fileInfo struct {
+		path    string
+		modTime time.Time
+	}
+
+	files := make([]fileInfo, 0, len(matches))
+	for _, path := range matches {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{
+			path:    path,
+			modTime: info.ModTime(),
+		})
+	}
+
+	// Sort descending (newest first)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+
+	// Remove older files
+	for i := maxKeep; i < len(files); i++ {
+		_ = os.Remove(files[i].path)
+	}
+
+	return nil
+}
+
+// TruncateFileIfNeeded checks if the file at path exceeds maxSizeBytes.
+// If it does, it keeps the last 50% of the maxSizeBytes bytes of the file and truncates the rest.
+func TruncateFileIfNeeded(path string, maxSizeBytes int64) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	if info.Size() <= maxSizeBytes {
+		return nil
+	}
+
+	// Keep the last 50% of the maxSizeBytes
+	keepBytes := maxSizeBytes / 2
+	if keepBytes <= 0 {
+		return os.Truncate(path, 0)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Read last keepBytes
+	offset := info.Size() - keepBytes
+	if offset < 0 {
+		offset = 0
+	}
+
+	buf := make([]byte, keepBytes)
+	n, err := f.ReadAt(buf, offset)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	// Write back atomically
+	return WriteFileAtomic(path, buf[:n], info.Mode())
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 )
 
 // CreateProjectRequest represents project creation payload
@@ -174,6 +175,54 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"logs": logs})
 }
 
+func getActiveOrLatestLogPath(projectPath string, jobID string) string {
+	logsDir := filepath.Join(projectPath, "logs")
+	if jobID != "" {
+		buildPath := filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
+		if utils.IsPathWithinRoot(projectPath, buildPath) {
+			if _, err := os.Stat(buildPath); err == nil {
+				return buildPath
+			}
+		}
+		infraPath := filepath.Join(logsDir, fmt.Sprintf("infra-%s.log", jobID))
+		if utils.IsPathWithinRoot(projectPath, infraPath) {
+			if _, err := os.Stat(infraPath); err == nil {
+				return infraPath
+			}
+		}
+	}
+
+	// Fallback to most recent file in logsDir
+	if matches, err := filepath.Glob(filepath.Join(logsDir, "build-*.log")); err == nil && len(matches) > 0 {
+		var newestFile string
+		var newestTime time.Time
+		for _, m := range matches {
+			if info, err := os.Stat(m); err == nil {
+				if info.ModTime().After(newestTime) {
+					newestTime = info.ModTime()
+					newestFile = m
+				}
+			}
+		}
+		if infraMatches, err := filepath.Glob(filepath.Join(logsDir, "infra-*.log")); err == nil {
+			for _, m := range infraMatches {
+				if info, err := os.Stat(m); err == nil {
+					if info.ModTime().After(newestTime) {
+						newestTime = info.ModTime()
+						newestFile = m
+					}
+				}
+			}
+		}
+		if newestFile != "" {
+			return newestFile
+		}
+	}
+
+	// Final fallback to legacy build.log
+	return filepath.Join(projectPath, "build.log")
+}
+
 // BuildLogs returns the railpack build log output
 func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
@@ -184,7 +233,11 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"logs": "Deployment is queued. Waiting for worker to start..."})
 	}
 
-	logPath := filepath.Join(project.GetProjectPath(h.cfg.ProjectsPath), "build.log")
+	jobID := ""
+	if project.DeploymentJobID != nil {
+		jobID = *project.DeploymentJobID
+	}
+	logPath := getActiveOrLatestLogPath(project.GetProjectPath(h.cfg.ProjectsPath), jobID)
 	f, err := os.Open(logPath)
 	if err != nil {
 		// Log not available yet or project not building
@@ -233,7 +286,11 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		// 1. Read existing log file if it exists and write it as a single initial_logs event
-		logPath := filepath.Join(project.GetProjectPath(h.cfg.ProjectsPath), "build.log")
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
+		logPath := getActiveOrLatestLogPath(project.GetProjectPath(h.cfg.ProjectsPath), jobID)
 		if logBytes, err := os.ReadFile(logPath); err == nil && len(logBytes) > 0 {
 			// Limit to a reasonable size to avoid giant SSE messages, e.g. last 1MB
 			const maxInitialBytes = 1 * 1024 * 1024
@@ -303,11 +360,17 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 
 	containerID := *project.ContainerID
 	logType := c.Query("type", "web")
+	var workerLogPath string
 	if logType == "worker" {
-		if project.WorkerContainerID == nil || *project.WorkerContainerID == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Worker container not running"})
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			containerID = *project.WorkerContainerID
+		} else {
+			res, err := utils.Run(15*time.Second, "docker", "exec", *project.ContainerID, "sh", "-c",
+				`for f in /var/www/html/storage/logs/laravel-worker.log /var/www/html/storage/logs/worker.log /app/storage/logs/worker.log /app/worker.log /var/log/worker.log; do if [ -f "$f" ]; then echo "$f"; break; fi; done`)
+			if err == nil {
+				workerLogPath = strings.TrimSpace(res.Stdout)
+			}
 		}
-		containerID = *project.WorkerContainerID
 	}
 
 	c.Set("Content-Type", "text/event-stream")
@@ -323,7 +386,14 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 		cmdCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		cmd := exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
+		var cmd *exec.Cmd
+		if logType == "worker" && workerLogPath != "" {
+			// Use -t to ensure pseudo-TTY signal mapping for clean termination inside the container
+			cmd = exec.CommandContext(cmdCtx, "docker", "exec", "-t", *project.ContainerID, "tail", "-f", "-n", "100", workerLogPath)
+		} else {
+			cmd = exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
+		}
+
 		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			return

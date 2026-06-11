@@ -240,8 +240,9 @@ autorestart=true
 user=www-data
 numprocs=1
 redirect_stderr=true
-stdout_logfile=/dev/stdout
-stdout_logfile_maxbytes=0
+stdout_logfile=/var/www/html/storage/logs/laravel-worker.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=5
 `
 		f, _ := os.OpenFile(filepath.Join(dockerDir, "supervisord.conf"), os.O_APPEND|os.O_WRONLY, 0644)
 		if f != nil {
