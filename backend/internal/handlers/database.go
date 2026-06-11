@@ -262,37 +262,6 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 	})
 }
 
-// RestartDatabase resets connection pool and tests ping
-func (h *DatabaseHandler) RestartDatabase(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
-	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
-	}
-
-	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
-	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
-	}
-
-	// Test connection ping
-	db, err := h.databaseService.ConnectToProjectDB(instance.Name, instance.Password)
-	if err != nil {
-		h.recordAuditLog(c, project.ID, "db_restart", "active", "active", "failed", err.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Database is unreachable: " + err.Error()})
-	}
-
-	if err := db.Ping(); err != nil {
-		h.recordAuditLog(c, project.ID, "db_restart", "active", "active", "failed", err.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Database connection is unhealthy: " + err.Error()})
-	}
-
-	h.recordAuditLog(c, project.ID, "db_restart", "active", "active", "completed", "")
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"message": "Database connection pool refreshed and verified healthy.",
-	})
-}
 
 // UpdateStatus suspends or resumes database instance
 func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {

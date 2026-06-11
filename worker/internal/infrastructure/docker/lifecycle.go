@@ -324,6 +324,41 @@ func parseArtisanMigrationCommand(cmdStr string) string {
 	return result
 }
 
+// RunMigrations runs `php artisan migrate --force --no-interaction` inside a specific container.
+// Unlike ExecProjectCommand which uses the project's current ContainerID, this method targets
+// a specific container (typically a rollout container that hasn't been promoted yet).
+// Returns the combined stdout+stderr output and any error encountered.
+func (s *DockerService) RunMigrations(containerID string) (string, error) {
+	if containerID == "" {
+		return "", fmt.Errorf("container ID is empty")
+	}
+
+	// Detect the correct user to run artisan commands as
+	user := "root"
+	if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
+		user = "www-data"
+
+		// Fix permissions before running as www-data to prevent storage/cache write errors
+		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", "www-data:www-data", "storage", "bootstrap/cache"); err != nil {
+			slog.Warn("Failed to fix permissions before migration", "containerID", containerID, "error", err, "stderr", res.Stderr)
+		}
+	}
+
+	// Run artisan migrate with --force (required in production) and --no-interaction (non-interactive)
+	// 5-minute timeout accommodates large migrations but prevents indefinite hangs
+	res, err := utils.Run(5*time.Minute, "docker", "exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
+
+	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+	if err != nil {
+		if output == "" {
+			output = "Migration command failed with no output"
+		}
+		return output, fmt.Errorf("migration failed: %w", err)
+	}
+
+	return output, nil
+}
+
 // ExecProjectCommand runs commands inside container (artisan for Laravel, direct binary execution for others)
 // Tokenized arguments bypass intermediate shells (sh -c) to eliminate command injection vulnerabilities.
 func (s *DockerService) ExecProjectCommand(project *models.Project, command string) (string, error) {

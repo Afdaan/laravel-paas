@@ -142,8 +142,8 @@ export const projectsAPI = {
   get: (id: number | string) => 
     api.get(`/projects/${id}`),
   
-  redeploy: (id: number | string) => 
-    api.post(`/projects/${id}/redeploy`),
+  redeploy: (id: number | string, clean?: boolean) => 
+    api.post(`/projects/${id}/redeploy`, null, { params: { clean: clean ? 'true' : 'false' } }),
   
   stop: (id: number | string) =>
     api.post(`/projects/${id}/stop`),
@@ -239,9 +239,6 @@ export const databaseAPI = {
   rotateCredentials: (projectId: number | string) => 
     api.post(`/projects/${projectId}/database/rotate-credentials`),
 
-  // Restart database connection pool
-  restartDatabase: (projectId: number | string) => 
-    api.post(`/projects/${projectId}/database/restart`),
 
   // Suspend or resume database status
   updateStatus: (projectId: number | string, suspend: boolean) => 

@@ -299,7 +299,6 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		"NPM_CONFIG_JOBS":             "2",
 		"NPM_CONFIG_LEGACY_PEER_DEPS": "true",
 		"PYTHONUNBUFFERED":            "1",
-		"PAAS_BUILD_ID":               fmt.Sprintf("%d", time.Now().Unix()),
 	}
 
 	projectEnvPath := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env")
@@ -309,9 +308,39 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 	}
 
-	if project.NodeVersion != "" {
-		// Set target Node.js version for Railpack compilation.
-		envs["RAILPACK_NODE_VERSION"] = project.NodeVersion
+	if noCache {
+		envs["NO_CACHE"] = "1"
+		envs["RAILPACK_DISABLE_CACHES"] = "*"
+	}
+
+	// Dynamically inject runtime version overrides based on project.Framework and LanguageVersion
+	switch project.Framework {
+	case "Go", "Golang":
+		if project.LanguageVersion != "" {
+			envs["RAILPACK_GO_VERSION"] = project.LanguageVersion
+		}
+	case "Python":
+		if project.LanguageVersion != "" {
+			envs["RAILPACK_PYTHON_VERSION"] = project.LanguageVersion
+		}
+	default:
+		// Default / Node runtime version overrides
+		if project.NodeVersion != "" {
+			envs["RAILPACK_NODE_VERSION"] = project.NodeVersion
+		} else if project.LanguageVersion != "" {
+			envs["RAILPACK_NODE_VERSION"] = project.LanguageVersion
+		}
+	}
+
+	// Fallback check if framework is empty but language version is provided
+	if project.Framework == "" && project.LanguageVersion != "" {
+		if _, err := os.Stat(filepath.Join(buildPath, "go.mod")); err == nil {
+			envs["RAILPACK_GO_VERSION"] = project.LanguageVersion
+		} else if _, err := os.Stat(filepath.Join(buildPath, "requirements.txt")); err == nil {
+			envs["RAILPACK_PYTHON_VERSION"] = project.LanguageVersion
+		} else if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
+			envs["RAILPACK_NODE_VERSION"] = project.LanguageVersion
+		}
 	}
 
 	// Auto-detect SPA / Static hosting recursively if start command is empty
@@ -353,6 +382,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 	}
 
+	var staticDir string
 	if targetPackageJSON != "" && project.StartCommand == "" {
 		packageDir := filepath.Dir(targetPackageJSON)
 		relDir, errRel := filepath.Rel(buildPath, packageDir)
@@ -431,6 +461,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			}
 			slog.Info("Auto-configuring static SPA hosting", "subdomain", project.Subdomain, "outputDir", finalOutputDir)
 			envs["RAILPACK_SPA_OUTPUT_DIR"] = finalOutputDir
+			staticDir = finalOutputDir
 
 			if project.BuildCommand == "" {
 				baseCmd := fmt.Sprintf("%s run build", pkgManager)
@@ -467,8 +498,43 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		envs["RAILPACK_START_CMD"] = project.StartCommand
 	}
 
-	// Inject optimized railpack.json configuration using resolved commands
-	s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"])
+	// Detect runtime technology stack based on files and project models
+	stack := "nodejs" // default
+	if project.Framework == "Go" || project.Framework == "Golang" {
+		stack = "golang"
+	} else if project.Framework == "Python" {
+		stack = "python"
+	} else if isStaticFramework {
+		stack = "static"
+	} else {
+		// File-based auto-detection fallback
+		if _, err := os.Stat(filepath.Join(buildPath, "go.mod")); err == nil {
+			stack = "golang"
+		} else if _, err := os.Stat(filepath.Join(buildPath, "requirements.txt")); err == nil {
+			stack = "python"
+		} else if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
+			if isStaticFramework {
+				stack = "static"
+			} else {
+				stack = "nodejs"
+			}
+		}
+	}
+
+	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
+	_, hasUserRailpack := os.Stat(railpackConfigPath)
+	userRailpackExists := hasUserRailpack == nil
+
+	// Defer cleanup of dynamically generated config files
+	defer func() {
+		if !userRailpackExists {
+			_ = os.Remove(railpackConfigPath)
+		}
+		_ = os.Remove(filepath.Join(buildPath, "Caddyfile"))
+	}()
+
+	// Inject optimized railpack.json configuration using resolved commands and stack type
+	s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"], stack, project, staticDir, noCache)
 
 	// Finalize build command with path
 	buildArgs = append(buildArgs, buildPath)
@@ -508,137 +574,62 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	return nil
 }
 
-// RunMigrations executes artisan migrate inside the container
-func (s *DockerService) RunMigrations(containerID string) (string, error) {
-	// Infrastructure buffer: Wait for the container network stack and internal services
-	// (like PHP-FPM or the application server) to fully initialize before executing
-	// migration commands. This prevents "connection refused" or "socket not found" errors.
-	time.Sleep(5 * time.Second)
-
-	// Determine the best user to run the command (prefer www-data, fallback to root)
-	user := "root"
-	if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
-		user = "www-data"
-	}
-
-	// Ensure permissions for the web user before migration
-	if user != "root" {
-		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
-			slog.Warn("Failed to fix permissions before migration", "error", err, "stderr", res.Stderr)
-		}
-	}
-
-	// We use the detected user to ensure that any log files or cache files created during migration
-	// are owned by the web user, preventing permission issues later.
-	res, err := utils.Run(2*time.Minute, "docker", "exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
-
-	if err != nil {
-		output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
-		if output == "" {
-			output = "(No output from migration command)"
-		}
-		return output, fmt.Errorf("migration failed: %s", output)
-	}
-
-	return res.Stdout, nil
-}
-
 // injectDefaultRailpackConfig writes an optimized railpack.json for the project.
-// It uses a single unified template and dynamically adjusts phases.
-func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, startCmd string) {
-	slog.Info("Injecting optimized Railpack configuration", "buildPath", buildPath, "buildCmd", buildCmd, "startCmd", startCmd)
+func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, startCmd string, stack string, project *models.Project, staticDir string, noCache bool) {
+	slog.Info("Injecting optimized Railpack configuration", "buildPath", buildPath, "stack", stack, "buildCmd", buildCmd, "startCmd", startCmd)
 	railpackConfigPath := filepath.Join(buildPath, "railpack.json")
 
-	// 1. Resolve template path (we now use a single unified template)
-	possiblePaths := []string{
-		filepath.Join("/app/docker/templates", "railpack.json"),
-		filepath.Join("docker/templates", "railpack.json"),
-		filepath.Join("../docker/templates", "railpack.json"),
+	// 1. Check if railpack.json already exists in user's repo. If yes, skip config injection completely.
+	if _, err := os.Stat(railpackConfigPath); err == nil {
+		slog.Info("User-provided railpack.json detected, skipping template injection", "path", railpackConfigPath)
+		return
 	}
 
-	var templateData []byte
-	var finalTemplatePath string
-
-	for _, p := range possiblePaths {
-		if data, err := os.ReadFile(p); err == nil {
-			templateData = data
-			finalTemplatePath = p
-			break
-		}
-	}
-
-	if templateData == nil {
-		slog.Error("CRITICAL: Failed to find railpack templates in any location")
+	// 2. Load the corresponding railpack.json from the stack directory under cfg.RailpacksPath
+	templatePath := filepath.Join(s.cfg.RailpacksPath, stack, "railpack.json")
+	templateData, err := os.ReadFile(templatePath)
+	if err != nil {
+		slog.Error("Failed to read railpack template, using minimal fallback", "path", templatePath, "error", err)
 		templateData = []byte(`{"deploy":{"base":{"image":"debian:bookworm-slim"}}}`)
-	} else {
-		slog.Info("Loaded railpack template", "path", finalTemplatePath)
 	}
 
-	// 2. Refine configuration based on project contents
+	// 3. Perform version substitution
+	version := "20" // default Node
+	switch stack {
+	case "golang":
+		version = "latest"
+	case "python":
+		version = "3.11"
+	}
+
+	// Use project's specified version if provided
+	if project.LanguageVersion != "" {
+		version = project.LanguageVersion
+	} else if stack == "nodejs" && project.NodeVersion != "" {
+		version = project.NodeVersion
+	}
+
+	configStr := string(templateData)
+	configStr = strings.ReplaceAll(configStr, "{{VERSION}}", version)
+	if stack == "static" {
+		configStr = strings.ReplaceAll(configStr, "{{STATIC_DIR}}", staticDir)
+	}
+
 	var config map[string]interface{}
-	if err := json.Unmarshal(templateData, &config); err == nil {
+	if err := json.Unmarshal([]byte(configStr), &config); err == nil {
 		modified := false
 
-		hasPackageJson := false
-		if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
-			hasPackageJson = true
-		}
-
-		// 2.1 Framework-Specific Optimizations
-		if !hasPackageJson {
-			// Remove Node-specific phases and variables for non-Node projects
-			if phases, ok := config["phases"].(map[string]interface{}); ok {
-				if _, exists := phases["install"]; exists {
-					delete(phases, "install")
-					modified = true
-				}
-				if _, exists := phases["build"]; exists {
-					delete(phases, "build")
-					modified = true
-				}
-			}
-
-			if variables, ok := config["variables"].(map[string]interface{}); ok {
-				nodeVars := []string{"NPM_CONFIG_LEGACY_PEER_DEPS", "BUN_INSTALL_FROZEN_LOCKFILE", "NODE_ENV"}
-				for _, v := range nodeVars {
-					if _, exists := variables[v]; exists {
-						delete(variables, v)
-						modified = true
-					}
-				}
-			}
-			slog.Debug("Applied non-Node optimizations", "path", buildPath)
-		}
-
-		// 2.2 Inject resolved build and start commands
+		// 4. Overwrite steps.build.commands and deploy.startCommand with user custom inputs if configured
 		if buildCmd != "" {
-			if _, exists := config["phases"]; !exists {
-				config["phases"] = make(map[string]interface{})
+			if _, exists := config["steps"]; !exists {
+				config["steps"] = make(map[string]interface{})
 			}
-			if phases, ok := config["phases"].(map[string]interface{}); ok {
-				if _, exists := phases["build"]; !exists {
-					phases["build"] = make(map[string]interface{})
+			if steps, ok := config["steps"].(map[string]interface{}); ok {
+				if _, exists := steps["build"]; !exists {
+					steps["build"] = make(map[string]interface{})
 				}
-				if buildPhase, ok := phases["build"].(map[string]interface{}); ok {
-					if cmds, ok := buildPhase["cmds"].([]interface{}); ok && len(cmds) > 0 {
-						// Preserve pruning and cleanup commands, only override the main build compile command
-						cmds[0] = buildCmd
-
-						// If the build command specifies a subdirectory (e.g. monorepo cd apps/web && ...),
-						// adapt the pruning command (cmds[1]) to run in the subdirectory as well.
-						if len(cmds) > 1 && strings.HasPrefix(buildCmd, "cd ") {
-							if idx := strings.Index(buildCmd, " && "); idx != -1 {
-								cdPrefix := buildCmd[:idx+4] // includes "cd <dir> && "
-								if _, ok := cmds[1].(string); ok {
-									cmds[1] = fmt.Sprintf("(%snpm prune --omit=dev) || yarn workspaces focus --production || (%spnpm prune --prod) || (%sbun pm untrust) || true", cdPrefix, cdPrefix, cdPrefix)
-								}
-							}
-						}
-
-						buildPhase["cmds"] = cmds
-					} else {
-						buildPhase["cmds"] = []interface{}{buildCmd}
-					}
+				if buildStep, ok := steps["build"].(map[string]interface{}); ok {
+					buildStep["commands"] = []interface{}{buildCmd}
 					modified = true
 				}
 			}
@@ -654,14 +645,15 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 			}
 		}
 
-		// 2.3 Cache Busting: Inject a unique build ID
-		if _, exists := config["variables"]; !exists {
-			config["variables"] = make(map[string]interface{})
-		}
-
-		if vars, ok := config["variables"].(map[string]interface{}); ok {
-			vars["PAAS_BUILD_ID"] = fmt.Sprintf("%d", time.Now().Unix())
-			modified = true
+		// 5. Cache Busting: Inject a unique build ID only when noCache = true
+		if noCache {
+			if _, exists := config["variables"]; !exists {
+				config["variables"] = make(map[string]interface{})
+			}
+			if vars, ok := config["variables"].(map[string]interface{}); ok {
+				vars["PAAS_BUILD_ID"] = fmt.Sprintf("%d", time.Now().Unix())
+				modified = true
+			}
 		}
 
 		if modified {
@@ -671,12 +663,29 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 		}
 	}
 
-	// 3. Finalize: Write the refined railpack.json atomically to avoid race conditions
-	// during parallel deployments and ensure we never leave a corrupted config on disk.
+	// 6. Write the refined railpack.json atomically to avoid race conditions
 	if err := utils.WriteFileAtomic(railpackConfigPath, templateData, 0644); err != nil {
 		slog.Error("Failed to write railpack.json atomically", "path", railpackConfigPath, "error", err)
 	} else {
 		slog.Info("Successfully injected optimized railpack.json", "path", railpackConfigPath)
+	}
+
+	// 7. If stack is static, write the Caddyfile dynamically to buildPath
+	if stack == "static" {
+		caddyfilePath := filepath.Join(s.cfg.RailpacksPath, "static", "Caddyfile")
+		caddyfileData, err := os.ReadFile(caddyfilePath)
+		if err != nil {
+			slog.Error("Failed to read Caddyfile template", "path", caddyfilePath, "error", err)
+		} else {
+			caddyfileStr := string(caddyfileData)
+			caddyfileStr = strings.ReplaceAll(caddyfileStr, "{{STATIC_DIR}}", staticDir)
+			err = utils.WriteFileAtomic(filepath.Join(buildPath, "Caddyfile"), []byte(caddyfileStr), 0644)
+			if err != nil {
+				slog.Error("Failed to write Caddyfile dynamically", "error", err)
+			} else {
+				slog.Info("Successfully injected Caddyfile", "path", filepath.Join(buildPath, "Caddyfile"))
+			}
+		}
 	}
 }
 

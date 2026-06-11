@@ -1,0 +1,16 @@
+{
+  "caches": {
+    "pip-cache": {
+      "directory": "/root/.cache/pip"
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "python:{{VERSION}}-slim"
+    },
+    "variables": {
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1"
+    }
+  }
+}

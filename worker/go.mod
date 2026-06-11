@@ -3,6 +3,7 @@ module github.com/laravel-paas/worker
 go 1.22
 
 require (
+	github.com/go-sql-driver/mysql v1.7.0
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/laravel-paas/shared v0.0.0

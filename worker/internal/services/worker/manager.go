@@ -180,6 +180,7 @@ func (m *WorkerManager) manageWorkers() {
 			projectsHostPath := m.cfg.HostProjectsPath
 			dataHostPath := m.cfg.HostDataPath
 			templatesHostPath := m.cfg.HostTemplatesPath
+			railpacksHostPath := m.cfg.HostRailpacksPath
 			dockerSock := m.cfg.DockerSocket
 
 			runArgs := []string{
@@ -196,10 +197,12 @@ func (m *WorkerManager) manageWorkers() {
 				"-v", fmt.Sprintf("%s:/app/storage/projects", projectsHostPath),
 				"-v", fmt.Sprintf("%s:/app/data", dataHostPath),
 				"-v", fmt.Sprintf("%s:/app/docker/templates:ro", templatesHostPath),
+				"-v", fmt.Sprintf("%s:/app/railpacks:ro", railpacksHostPath),
 				"-v", fmt.Sprintf("%s/.env:/app/.env:ro", m.cfg.HostRootPath),
 				"-v", fmt.Sprintf("%s:%s", dockerSock, dockerSock),
 				"-e", "APP_MODE=docker",
 				"-e", "PROJECTS_PATH=/app/storage/projects",
+				"-e", "RAILPACKS_PATH=/app/railpacks",
 				"-e", fmt.Sprintf("SLOT=%d", slot),
 				"-e", fmt.Sprintf("VERSION=%s", targetVersion),
 				"-e", fmt.Sprintf("PG_HOST=%s", m.cfg.PGHost),

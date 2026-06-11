@@ -1,0 +1,14 @@
+{
+  "deploy": {
+    "base": {
+      "image": "caddy:2-alpine"
+    },
+    "inputs": [
+      {
+        "step": "build",
+        "include": ["{{STATIC_DIR}}", "Caddyfile"]
+      }
+    ],
+    "startCommand": "caddy run --config /app/Caddyfile --adapter caddyfile"
+  }
+}

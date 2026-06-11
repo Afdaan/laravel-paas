@@ -59,6 +59,6 @@ WORKDIR /app
 
 COPY --from=builder /app/worker .
 
-RUN mkdir -p /app/storage/projects /app/docker/templates
+RUN mkdir -p /app/storage/projects /app/docker/templates /app/railpacks
 
 CMD ["./worker"]

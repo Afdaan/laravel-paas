@@ -213,6 +213,7 @@ deploy_backend() {
         -v "$PROJECTS_PATH:/app/storage/projects" \
         -v "$DATA_PATH:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+        -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
         -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE="$APP_MODE" \
@@ -220,6 +221,7 @@ deploy_backend() {
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
         -e HOST_DATA_PATH="$DATA_PATH" \
         -e HOST_TEMPLATES_PATH="${PROJECT_ROOT}/docker/templates" \
+        -e HOST_RAILPACKS_PATH="${PROJECT_ROOT}/railpacks" \
         -e PG_HOST=paas-postgres \
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
@@ -272,6 +274,7 @@ deploy_worker() {
         -v "${PROJECTS_PATH}:/app/storage/projects" \
         -v "${DATA_PATH}:/app/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
+        -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
         -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
@@ -280,6 +283,7 @@ deploy_worker() {
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
         -e HOST_DATA_PATH="$DATA_PATH" \
         -e HOST_TEMPLATES_PATH="${PROJECT_ROOT}/docker/templates" \
+        -e HOST_RAILPACKS_PATH="${PROJECT_ROOT}/railpacks" \
         -e DOCKER_SOCKET=/var/run/docker.sock \
         -e PG_HOST=paas-postgres \
         -e PG_PORT=5432 \

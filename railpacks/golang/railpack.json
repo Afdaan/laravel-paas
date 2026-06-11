@@ -1,0 +1,22 @@
+{
+  "steps": {
+    "build": {
+      "variables": {
+        "CGO_ENABLED": "0"
+      }
+    }
+  },
+  "caches": {
+    "go-build": {
+      "directory": "/root/.cache/go-build"
+    },
+    "go-mod": {
+      "directory": "/go/pkg/mod"
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "alpine:latest"
+    }
+  }
+}

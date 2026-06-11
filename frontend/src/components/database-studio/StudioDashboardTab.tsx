@@ -182,19 +182,6 @@ export function StudioDashboardTab() {
     })
   }
 
-  const handleRestartPool = async () => {
-    if (!id) return
-    setIsActionLoading(true)
-    try {
-      const res = await databaseAPI.restartDatabase(id)
-      toast.success(res.data.message)
-    } catch (error) {
-      const err = error as { response?: { data?: { error?: string } }; message?: string }
-      toast.error(t('databaseStudio.errors.testConnectionFailed') + ': ' + (err.response?.data?.error || err.message))
-    } finally {
-      setIsActionLoading(false)
-    }
-  }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -582,16 +569,6 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
 
             {/* Operations Buttons */}
             <div className="space-y-2 border-t pt-4">
-              <Button
-                variant="outline"
-                className="w-full text-xs font-bold gap-2 hover:bg-muted cursor-pointer"
-                style={{ cursor: 'pointer' }}
-                onClick={handleRestartPool}
-                disabled={isActionLoading || isSuspended}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                {t('databaseStudio.dashboard.actions.testConnection')}
-              </Button>
 
               <Button
                 variant="outline"

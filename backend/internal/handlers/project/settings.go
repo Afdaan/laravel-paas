@@ -138,24 +138,20 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 
 	h.projectService.UpdateActivity(lockedProject.ID)
 
-	if err := h.projectService.UpdateProjectStatus(lockedProject.ID, models.StatusQueued); err != nil {
+	if err := h.projectService.UpdateProjectStatus(lockedProject.ID, models.StatusRestarting); err != nil {
 		slog.Warn("Failed to update project status after env update", "id", lockedProject.ID, "error", err)
 	}
 
-	jobID, err := h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
+	_, err = h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
 	if err != nil {
 		slog.Error("Failed to enqueue redeployment after env update", "project_id", lockedProject.ID, "error", err)
 		return c.JSON(fiber.Map{
-			"message": "Environment variables saved, but failed to queue auto-redeploy. Please redeploy manually.",
+			"message": "Environment variables saved, but failed to queue environment propagation. Please restart the project manually.",
 		})
 	}
 
-	if err := h.projectService.UpdateDeploymentStatus(lockedProject.ID, models.DepStatusQueued, "Auto-redeploy triggered by environment update", 0, jobID); err != nil {
-		slog.Warn("Failed to update deployment status on env update", "id", lockedProject.ID, "error", err)
-	}
-
 	return c.JSON(fiber.Map{
-		"message": "Environment variables updated. A new build has been queued to apply changes.",
+		"message": "Environment variables updated. Propagating updates to the container.",
 	})
 }
 

@@ -264,7 +264,6 @@ func Setup(
 	// -----------------------------
 	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
 	projects.Post("/:id/database/rotate-credentials", databaseHandler.RotateCredentials)
-	projects.Post("/:id/database/restart", databaseHandler.RestartDatabase)
 	projects.Post("/:id/database/status", databaseHandler.UpdateStatus)
 	projects.Get("/:id/database/overview", databaseHandler.GetOverview)
 	projects.Get("/:id/database/schema", databaseHandler.GetSchema)

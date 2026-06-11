@@ -32,11 +32,11 @@ var commandRegistry = map[string]frameworkCommands{
 			"storage:link":     true,
 			"key:generate":     true,
 			"migrate":          true,
+			"migrate:fresh":    true,
 			"db:seed":          true,
 			"livewire:publish": true,
 		},
 		BlockedPatterns: []string{
-			"migrate:fresh",
 			"migrate:reset",
 			"migrate:rollback",
 			"tinker",

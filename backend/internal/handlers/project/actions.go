@@ -131,8 +131,16 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		})
 	}
 
+	clean := c.Query("clean")
+	jobType := "redeploy"
+	statusMsg := "Redeployment requested by user"
+	if clean == "true" {
+		jobType = "redeploy_clean"
+		statusMsg = "Clean rebuild requested by user"
+	}
+
 	// Enqueue redeployment job to Redis
-	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, jobType)
 	if err != nil {
 		slog.Error("Failed to enqueue redeployment", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -146,7 +154,7 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	_ = os.MkdirAll(projectPath, 0755)
 	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, jobID); err != nil {
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, statusMsg, 0, jobID); err != nil {
 		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
 	}
 	h.projectService.UpdateActivity(project.ID)

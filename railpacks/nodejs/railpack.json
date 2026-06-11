@@ -1,0 +1,21 @@
+{
+  "caches": {
+    "npm-cache": {
+      "directory": "/root/.npm"
+    },
+    "yarn-cache": {
+      "directory": "/usr/local/share/.cache/yarn"
+    },
+    "pnpm-store": {
+      "directory": "/root/.local/share/pnpm/store"
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "node:{{VERSION}}-slim"
+    },
+    "variables": {
+      "NODE_ENV": "production"
+    }
+  }
+}
