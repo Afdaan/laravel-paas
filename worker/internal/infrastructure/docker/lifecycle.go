@@ -13,6 +13,17 @@ import (
 	"github.com/laravel-paas/shared/pkg/utils"
 )
 
+var (
+	rxDockerDaemonErr     = regexp.MustCompile(`(?s)docker: Error response from daemon: `)
+	rxDockerSeeHelp       = regexp.MustCompile(`(?s)See 'docker run --help'.*`)
+	rxDockerRunHelp       = regexp.MustCompile(`(?s)Run 'docker run --help'.*`)
+	rxPaasImageWithHash   = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:[a-f0-9]+`)
+	rxPaasImageWithLatest = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:latest`)
+	rxPaasImageBase       = regexp.MustCompile(`paas-[a-zA-Z0-9-]+`)
+	rxStorageProjectsPath = regexp.MustCompile(`/[a-zA-Z0-9_-]+/storage/projects/[a-zA-Z0-9_-]+`)
+	rxStorageAppPath      = regexp.MustCompile(`/[a-zA-Z0-9_-]+/storage/app/[a-zA-Z0-9_-]+`)
+)
+
 // StartWorkerContainer starts a secondary container for background tasks.
 // Architectural Note on Multi-Tenant Isolation:
 // To prevent noisy-neighbor attacks and privilege escalation across tenant containers,
@@ -346,9 +357,24 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 		}
 	}
 
-	// Run artisan migrate with --force (required in production) and --no-interaction (non-interactive)
+	// Check if --isolated flag is supported by artisan (Laravel 9+)
+	useIsolated := false
+	if helpRes, errHelp := utils.Run(5*time.Second, "docker", "exec", containerID, "php", "artisan", "migrate", "--help"); errHelp == nil {
+		if strings.Contains(helpRes.Stdout, "--isolated") {
+			useIsolated = true
+			slog.Info("Detected Laravel 9+ with migration isolation support. Appending --isolated flag.", "containerID", containerID)
+		}
+	}
+
+	// Build the migration command arguments
+	migrationArgs := []string{"exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction"}
+	if useIsolated {
+		migrationArgs = append(migrationArgs, "--isolated")
+	}
+
+	// Run artisan migrate
 	// 5-minute timeout accommodates large migrations but prevents indefinite hangs
-	res, err := utils.Run(5*time.Minute, "docker", "exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction")
+	res, err := utils.Run(5*time.Minute, "docker", migrationArgs...)
 
 	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
 	if err != nil {
@@ -445,14 +471,18 @@ func sanitizeDockerRunError(stderr string) string {
 
 	// 3. Clean up generic docker prefix and help suffix
 	cleaned := stderr
-	cleaned = regexp.MustCompile(`(?s)docker: Error response from daemon: `).ReplaceAllString(cleaned, "")
-	cleaned = regexp.MustCompile(`(?s)See 'docker run --help'.*`).ReplaceAllString(cleaned, "")
-	cleaned = regexp.MustCompile(`(?s)Run 'docker run --help'.*`).ReplaceAllString(cleaned, "")
+	cleaned = rxDockerDaemonErr.ReplaceAllString(cleaned, "")
+	cleaned = rxDockerSeeHelp.ReplaceAllString(cleaned, "")
+	cleaned = rxDockerRunHelp.ReplaceAllString(cleaned, "")
+
+	// Strip absolute storage paths to prevent internal host directory disclosure
+	cleaned = rxStorageProjectsPath.ReplaceAllString(cleaned, "project-storage")
+	cleaned = rxStorageAppPath.ReplaceAllString(cleaned, "project-storage")
 
 	// Strip internal image name tag leaks if any (e.g. paas-porttofolio-hcn5qa:latest)
-	cleaned = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:[a-f0-9]+`).ReplaceAllString(cleaned, "application-image")
-	cleaned = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:latest`).ReplaceAllString(cleaned, "application-image")
-	cleaned = regexp.MustCompile(`paas-[a-zA-Z0-9-]+`).ReplaceAllString(cleaned, "application-image")
+	cleaned = rxPaasImageWithHash.ReplaceAllString(cleaned, "application-image")
+	cleaned = rxPaasImageWithLatest.ReplaceAllString(cleaned, "application-image")
+	cleaned = rxPaasImageBase.ReplaceAllString(cleaned, "application-image")
 
 	cleaned = strings.TrimSpace(cleaned)
 	if cleaned == "" {
