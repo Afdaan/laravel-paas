@@ -1219,6 +1219,7 @@ func (w *DeploymentWorker) getActiveLogPath(project *models.Project) string {
 		if _, err := os.Stat(infraPath); err == nil {
 			return infraPath
 		}
+		return buildPath
 	}
 	return filepath.Join(projectPath, "build.log")
 }

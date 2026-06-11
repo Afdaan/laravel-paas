@@ -52,6 +52,11 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	logFilePath := filepath.Join(projectPath, "build.log")
+	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+		logsDir := filepath.Join(projectPath, "logs")
+		_ = os.MkdirAll(logsDir, 0755)
+		logFilePath = filepath.Join(logsDir, fmt.Sprintf("build-%s.log", *project.DeploymentJobID))
+	}
 
 	// Set BuildKit host to use the remote BuildKit container
 	os.Setenv("BUILDKIT_HOST", "tcp://paas-buildkit:1234")
