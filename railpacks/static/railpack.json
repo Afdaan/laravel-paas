@@ -1,7 +1,7 @@
 {
   "deploy": {
     "base": {
-      "image": "caddy:2-alpine"
+      "image": "caddy:2"
     },
     "inputs": [
       {

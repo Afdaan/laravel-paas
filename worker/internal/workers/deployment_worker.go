@@ -752,8 +752,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Commit hash unchanged, checking for existing image", "subdomain", project.Subdomain, "hash", latestHash)
 
 		imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-		checkImg, _ := exec.Command("docker", "image", "inspect", imageName).Output()
-		if len(checkImg) > 0 {
+		checkImg, err := exec.Command("docker", "image", "inspect", imageName).Output()
+		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			slog.Info("Valid image found, skipping build", "subdomain", project.Subdomain)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_skipped_existing_image", latestHash)
 			if err := w.redeployExistingImage(project, appendLog); err == nil {

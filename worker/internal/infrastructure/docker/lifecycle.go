@@ -57,7 +57,9 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
-		return "", fmt.Errorf("worker start failed: %s", errMsg)
+		cleanedErr := sanitizeDockerRunError(errMsg)
+		cleanedErr = strings.TrimPrefix(cleanedErr, "failed to start container: ")
+		return "", fmt.Errorf("worker start failed: %s", cleanedErr)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
@@ -154,8 +156,8 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	if project.LastCommitHash != "" {
 		tagToCheck := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
-		checkImg, _ := exec.Command("docker", "image", "inspect", tagToCheck).Output()
-		if len(checkImg) > 0 {
+		checkImg, err := exec.Command("docker", "image", "inspect", tagToCheck).Output()
+		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			imageName = tagToCheck
 			slog.Info("Using specific commit tag image for startup", "tag", tagToCheck)
 		}
@@ -217,7 +219,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
-		return "", fmt.Errorf("failed to start container: %s", errMsg)
+		return "", fmt.Errorf("%s", sanitizeDockerRunError(errMsg))
 	}
 
 	mainContainerID := strings.TrimSpace(res.Stdout)
@@ -423,4 +425,38 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 	}
 
 	return output, nil
+}
+
+// sanitizeDockerRunError refines raw Docker daemon execution errors to prevent infrastructure leakage.
+func sanitizeDockerRunError(stderr string) string {
+	if stderr == "" {
+		return "failed to start application container"
+	}
+
+	// 1. Image not found / pull denied (broken / missing image tag)
+	if strings.Contains(stderr, "Unable to find image") || strings.Contains(stderr, "pull access denied") || strings.Contains(stderr, "repository does not exist") {
+		return "failed to start container: application build image not found. Please trigger a new clean build first."
+	}
+
+	// 2. Port collision
+	if strings.Contains(stderr, "port is already allocated") || strings.Contains(stderr, "address already in use") {
+		return "failed to start container: network port collision detected."
+	}
+
+	// 3. Clean up generic docker prefix and help suffix
+	cleaned := stderr
+	cleaned = regexp.MustCompile(`(?s)docker: Error response from daemon: `).ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile(`(?s)See 'docker run --help'.*`).ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile(`(?s)Run 'docker run --help'.*`).ReplaceAllString(cleaned, "")
+
+	// Strip internal image name tag leaks if any (e.g. paas-porttofolio-hcn5qa:latest)
+	cleaned = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:[a-f0-9]+`).ReplaceAllString(cleaned, "application-image")
+	cleaned = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:latest`).ReplaceAllString(cleaned, "application-image")
+	cleaned = regexp.MustCompile(`paas-[a-zA-Z0-9-]+`).ReplaceAllString(cleaned, "application-image")
+
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return "failed to start container: internal daemon execution error"
+	}
+	return "failed to start container: " + cleaned
 }

@@ -178,7 +178,9 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		if errMsg == "" {
 			errMsg = runErr.Error()
 		}
-		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, errMsg))
+		cleanedErr := sanitizeDockerRunError(errMsg)
+		cleanedErr = strings.TrimPrefix(cleanedErr, "failed to start container: ")
+		return "", apperr.New(500, "DOCKER_RUN_FAILED", fmt.Sprintf("Failed to start container for %s: %s", project.Subdomain, cleanedErr))
 	}
 
 	mainContainerID := strings.TrimSpace(res.Stdout)
