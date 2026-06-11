@@ -616,6 +616,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 	if stack == "static" {
 		configStr = strings.ReplaceAll(configStr, "{{STATIC_DIR}}", staticDir)
 	}
+	templateData = []byte(configStr)
 
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(configStr), &config); err == nil {
