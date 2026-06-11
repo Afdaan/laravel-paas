@@ -224,6 +224,53 @@ func getActiveOrLatestLogPath(projectPath string, jobID string) string {
 	return filepath.Join(projectPath, "build.log")
 }
 
+// resolveLogPath searches multiple path options (with/without user folder, host/container configurations)
+// to resolve the authoritative build log location.
+func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) string {
+	// 1. Primary path: using configured ProjectsPath with user folder (multi-tenant layout)
+	primaryPath := project.GetProjectPath(h.cfg.ProjectsPath)
+	logPath := getActiveOrLatestLogPath(primaryPath, jobID)
+	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, primaryPath) {
+		if _, err := os.Stat(logPath); err == nil {
+			return logPath
+		}
+	}
+
+	// 2. Fallback: try without user folder (legacy direct layout)
+	legacyPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, legacyPath) {
+		logPathFallback := getActiveOrLatestLogPath(legacyPath, jobID)
+		if _, err := os.Stat(logPathFallback); err == nil {
+			return logPathFallback
+		}
+	}
+
+	// 3. Fallback: if PROJECTS_PATH is set to host path in .env, try standard container mount /app/storage/projects
+	const defaultContainerPath = "/app/storage/projects"
+	if h.cfg.ProjectsPath != defaultContainerPath {
+		// With user folder
+		containerPath := project.GetProjectPath(defaultContainerPath)
+		if utils.IsPathWithinRoot(defaultContainerPath, containerPath) {
+			logPathFallback := getActiveOrLatestLogPath(containerPath, jobID)
+			if _, err := os.Stat(logPathFallback); err == nil {
+				return logPathFallback
+			}
+		}
+
+		// Without user folder
+		containerLegacyPath := filepath.Join(defaultContainerPath, project.Subdomain)
+		if utils.IsPathWithinRoot(defaultContainerPath, containerLegacyPath) {
+			logPathFallback := getActiveOrLatestLogPath(containerLegacyPath, jobID)
+			if _, err := os.Stat(logPathFallback); err == nil {
+				return logPathFallback
+			}
+		}
+	}
+
+	// 4. Default: return primary path (so standard file-open handling propagates any errors naturally)
+	return logPath
+}
+
 // BuildLogs returns the railpack build log output
 func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
@@ -238,9 +285,12 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	if project.DeploymentJobID != nil {
 		jobID = *project.DeploymentJobID
 	}
-	logPath := getActiveOrLatestLogPath(project.GetProjectPath(h.cfg.ProjectsPath), jobID)
+	logPath := h.resolveLogPath(project, jobID)
 	f, err := os.Open(logPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("Failed to open build log file", "projectId", project.ID, "subdomain", project.Subdomain, "jobID", jobID, "path", logPath, "error", err.Error())
+		}
 		// Log not available yet or project not building
 		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
 	}
@@ -291,7 +341,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 		if project.DeploymentJobID != nil {
 			jobID = *project.DeploymentJobID
 		}
-		logPath := getActiveOrLatestLogPath(project.GetProjectPath(h.cfg.ProjectsPath), jobID)
+		logPath := h.resolveLogPath(project, jobID)
 		if logBytes, err := os.ReadFile(logPath); err == nil && len(logBytes) > 0 {
 			// Limit to a reasonable size to avoid giant SSE messages, e.g. last 1MB
 			const maxInitialBytes = 1 * 1024 * 1024
