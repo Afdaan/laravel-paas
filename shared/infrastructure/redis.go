@@ -633,7 +633,7 @@ func (r *RedisService) PublishDeploymentEvent(projectID uint, eventJSON string) 
 // SubscribeBuildLogs subscribes to a build log channel and returns a Go channel of messages
 func (r *RedisService) SubscribeBuildLogs(ctx context.Context, projectID uint) (<-chan string, error) {
 	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
-	sub := r.client.Subscribe(r.ctx, channel)
+	sub := r.client.Subscribe(ctx, channel)
 
 	msgChan := make(chan string, 100)
 	go func() {
@@ -662,7 +662,7 @@ func (r *RedisService) SubscribeBuildLogs(ctx context.Context, projectID uint) (
 // SubscribeDeploymentEvents subscribes to a deployment lifecycle events channel and returns a Go channel of messages
 func (r *RedisService) SubscribeDeploymentEvents(ctx context.Context, projectID uint) (<-chan string, error) {
 	channel := fmt.Sprintf("channel:deployment_events:%d", projectID)
-	sub := r.client.Subscribe(r.ctx, channel)
+	sub := r.client.Subscribe(ctx, channel)
 
 	msgChan := make(chan string, 100)
 	go func() {

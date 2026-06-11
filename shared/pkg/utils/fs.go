@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -148,11 +149,25 @@ func PruneJobLogs(logsDir string, pattern string, maxKeep int) error {
 // TruncateFileIfNeeded checks if the file at path exceeds maxSizeBytes.
 // If it does, it keeps the last 50% of the maxSizeBytes bytes of the file and truncates the rest.
 func TruncateFileIfNeeded(path string, maxSizeBytes int64) error {
-	info, err := os.Stat(path)
+	f, err := os.OpenFile(path, os.O_RDWR, 0644)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
+		return err
+	}
+	defer f.Close()
+
+	// Acquire exclusive file lock to prevent race conditions during truncation
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	}()
+
+	info, err := f.Stat()
+	if err != nil {
 		return err
 	}
 
@@ -163,14 +178,8 @@ func TruncateFileIfNeeded(path string, maxSizeBytes int64) error {
 	// Keep the last 50% of the maxSizeBytes
 	keepBytes := maxSizeBytes / 2
 	if keepBytes <= 0 {
-		return os.Truncate(path, 0)
+		return f.Truncate(0)
 	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 
 	// Read last keepBytes
 	offset := info.Size() - keepBytes
@@ -184,6 +193,16 @@ func TruncateFileIfNeeded(path string, maxSizeBytes int64) error {
 		return err
 	}
 
-	// Write back atomically
-	return WriteFileAtomic(path, buf[:n], info.Mode())
+	// Seek to the beginning, truncate, and write back in-place
+	if _, err := f.Seek(0, 0); err != nil {
+		return err
+	}
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Write(buf[:n]); err != nil {
+		return err
+	}
+	// Sync changes to disk
+	return f.Sync()
 }

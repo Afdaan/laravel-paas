@@ -54,7 +54,10 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	logFilePath := filepath.Join(projectPath, "build.log")
 	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
 		logsDir := filepath.Join(projectPath, "logs")
-		_ = os.MkdirAll(logsDir, 0755)
+		if err := os.MkdirAll(logsDir, 0755); err != nil {
+			slog.Error("Failed to create logs directory", "path", logsDir, "error", err)
+			return "", fmt.Errorf("failed to create logs directory: %w", err)
+		}
 		logFilePath = filepath.Join(logsDir, fmt.Sprintf("build-%s.log", *project.DeploymentJobID))
 	}
 
