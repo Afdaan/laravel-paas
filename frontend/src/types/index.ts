@@ -16,6 +16,7 @@ export interface CustomDomain {
   id: number;
   domain: string;
   status: string;
+  is_primary?: boolean;
   health_status?: string;
   last_healthcheck_at?: string;
   error_code?: string;

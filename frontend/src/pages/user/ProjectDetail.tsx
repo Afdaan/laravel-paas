@@ -1296,6 +1296,7 @@ function UserProjectDetail() {
             uid={uid || ''} 
             onSave={() => fetchProject()} 
             hasDatabaseInstance={!!project?.database_instance}
+            project={project}
           />
         </TabsContent>
 

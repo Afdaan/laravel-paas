@@ -30,11 +30,13 @@ import useTranslation from '@/lib/useTranslation'
 import { projectsAPI, secretStoreAPI } from '@/services/api'
 import { toast } from 'sonner'
 import ConfirmationModal from '@/components/ConfirmationModal'
+import { Project } from '@/types'
 
 interface EnvironmentEditorProps {
   uid: string
   onSave?: () => void
   hasDatabaseInstance?: boolean
+  project?: Project
 }
 
 interface BoundStore {
@@ -51,7 +53,7 @@ interface VariableGridItem {
   Source: string
 }
 
-export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: EnvironmentEditorProps) {
+export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, project }: EnvironmentEditorProps) {
   const { t } = useTranslation()
   
   // State variables
@@ -83,6 +85,61 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
     confirmText: t('common.confirm')
   })
 
+  // Memoized baseline values to identify overridden auto-provisioned variables
+  const baselineValues = useMemo(() => {
+    const baseline: Record<string, string> = {}
+    if (!project) return baseline
+
+    baseline["APP_NAME"] = project.name
+    baseline["APP_ENV"] = "production"
+    baseline["APP_DEBUG"] = "false"
+    
+    // APP_URL
+    let appURL = `http://${project.subdomain}`
+    let primaryDomain = ''
+    let firstActiveDomain = ''
+    if (project.custom_domains) {
+      for (const d of project.custom_domains) {
+        if (d.status === 'active' || d.status === 'ssl_active') {
+          if (d.is_primary) {
+            primaryDomain = d.domain
+            break
+          }
+          if (!firstActiveDomain) {
+            firstActiveDomain = d.domain
+          }
+        }
+      }
+    }
+    if (primaryDomain) {
+      appURL = `https://${primaryDomain}`
+    } else if (firstActiveDomain) {
+      appURL = `https://${firstActiveDomain}`
+    }
+    baseline["APP_URL"] = appURL
+
+    if (project.framework === 'Laravel') {
+      baseline["LOG_CHANNEL"] = "stack"
+      baseline["LOG_DEPRECATIONS_CHANNEL"] = "null"
+      baseline["LOG_LEVEL"] = "debug"
+    }
+
+    if (project.database_instance && project.database_instance.status === 'active') {
+      const inst = project.database_instance
+      const isPg = inst.engine === 'postgresql'
+      baseline["DB_CONNECTION"] = isPg ? "pgsql" : "mysql"
+      baseline["DB_HOST"] = inst.host
+      baseline["DB_PORT"] = String(inst.port)
+      baseline["DB_DATABASE"] = inst.name
+      baseline["DB_USERNAME"] = inst.username
+      baseline["DB_PASSWORD"] = inst.password || ""
+      if (isPg) {
+        baseline["DATABASE_URL"] = `postgres://${inst.username}:${inst.password || ""}@${inst.host}:${inst.port}/${inst.name}?sslmode=disable`
+      }
+    }
+    return baseline
+  }, [project])
+
   // Memoized grid items parsed from currentDotenv
   const gridItems = useMemo(() => {
     const lines = currentDotenv.split('\n')
@@ -105,7 +162,14 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
         if (isPlatformKey) {
           source = 'system'
         } else if (hasDatabaseInstance && isDBKey) {
-          source = 'db_auto'
+          const isOverridden = baselineValues.hasOwnProperty(key) && baselineValues[key] !== val
+          const isNotBaseline = !baselineValues.hasOwnProperty(key)
+          
+          if (isOverridden || isNotBaseline) {
+            source = 'secret_store'
+          } else {
+            source = 'db_auto'
+          }
         }
 
         items.push({
@@ -133,7 +197,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false }: 
     })
 
     return items
-  }, [currentDotenv, hasDatabaseInstance])
+  }, [currentDotenv, hasDatabaseInstance, baselineValues])
 
   // Memoized map of initial values to track dirty/unsaved state per variable
   const initialMap = useMemo(() => {
