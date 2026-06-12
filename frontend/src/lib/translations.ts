@@ -620,7 +620,9 @@ export const translations = {
       actions: {
         redeploy: "Redeploy",
         redeployFast: "Redeploy (Fast)",
+        redeployFastDesc: "Reuse build cache for a faster deploy",
         redeployClean: "Clean Rebuild",
+        redeployCleanDesc: "Bypass cache and rebuild from scratch",
         redeployCleanStarted: "Clean rebuild initiated",
         redeployStarted: "Redeploy initiated",
         restart: "Restart Container",
@@ -2109,7 +2111,9 @@ export const translations = {
       actions: {
         redeploy: "Redeploy",
         redeployFast: "Redeploy (Cepat)",
+        redeployFastDesc: "Gunakan cache build agar lebih cepat",
         redeployClean: "Build Ulang Bersih",
+        redeployCleanDesc: "Lewati cache dan build ulang dari awal",
         redeployCleanStarted: "Build ulang bersih dimulai",
         redeployStarted: "Redeploy dimulai",
         restart: "Restart Container",
