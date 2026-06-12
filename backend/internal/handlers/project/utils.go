@@ -416,7 +416,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 					return
 				}
 				var liveLog infrastructure.BuildLogMessage
-				if err := json.Unmarshal([]byte(line), &liveLog); err == nil && liveLog.Line != "" {
+				if err := json.Unmarshal([]byte(line), &liveLog); err == nil && (liveLog.Line != "" || liveLog.JobID != "") {
 					if liveLog.JobID != "" && jobID != "" && liveLog.JobID != jobID {
 						continue
 					}

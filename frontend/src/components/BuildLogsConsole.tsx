@@ -379,8 +379,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             const newLogLine = JSON.parse(e.data) as string | LiveBuildLogPayload
             const incomingJobId = typeof newLogLine === 'string' ? undefined : newLogLine.job_id
             if (!isBuildLogForActiveJob(incomingJobId, activeJobId)) return
-            const rawLine = typeof newLogLine === 'string' ? newLogLine : newLogLine.line || ''
-            if (!rawLine) return
+            const rawLine = typeof newLogLine === 'string' 
+              ? newLogLine 
+              : (typeof newLogLine?.line === 'string' ? newLogLine.line : undefined)
+            if (rawLine === undefined || rawLine === null) return
             const lines = rawLine.split('\n')
             dispatchLogs({ type: 'append_lines', lines })
           } catch (err) {
