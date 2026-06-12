@@ -12,6 +12,7 @@ import {
   appendBuildLogLines,
   clearVisibleBuildLogs,
   initialBuildLogsState,
+  MAX_RETAINED_BUILD_LOG_LINES,
   mergeBuildLogSnapshot,
   splitLogSnapshot,
   type BuildLogsSnapshot,
@@ -118,6 +119,7 @@ type BuildLogsResponse = {
 
 type BuildLogsAction =
   | { type: 'reset' }
+  | { type: 'hydrate'; state: BuildLogsState }
   | { type: 'merge_snapshot'; snapshot: BuildLogsSnapshot }
   | { type: 'append_lines'; lines: string[] }
   | { type: 'clear_visible' }
@@ -126,12 +128,49 @@ const buildLogsReducer = (state: BuildLogsState, action: BuildLogsAction): Build
   switch (action.type) {
     case 'reset':
       return initialBuildLogsState
+    case 'hydrate':
+      return action.state
     case 'merge_snapshot':
       return mergeBuildLogSnapshot(state, action.snapshot)
     case 'append_lines':
       return appendBuildLogLines(state, action.lines)
     case 'clear_visible':
       return clearVisibleBuildLogs(state)
+  }
+}
+
+const getBuildLogsCacheKey = (projectId: string | number, jobId?: string) => {
+  return `build-logs:${String(projectId)}:${jobId || 'latest'}`
+}
+
+const readCachedBuildLogs = (cacheKey: string): BuildLogsState | null => {
+  try {
+    const value = window.sessionStorage.getItem(cacheKey)
+    if (!value) return null
+
+    const parsed = JSON.parse(value) as Partial<BuildLogsState>
+    if (!Array.isArray(parsed.lines)) return null
+
+    const lines = parsed.lines
+      .filter((line): line is string => typeof line === 'string')
+      .slice(-MAX_RETAINED_BUILD_LOG_LINES)
+    const droppedCount = parsed.lines.length - lines.length
+    const clearedCount = typeof parsed.clearedCount === 'number' ? parsed.clearedCount : 0
+
+    return {
+      lines,
+      clearedCount: Math.max(0, clearedCount - droppedCount),
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeCachedBuildLogs = (cacheKey: string, state: BuildLogsState) => {
+  try {
+    window.sessionStorage.setItem(cacheKey, JSON.stringify(state))
+  } catch {
+    // Storage can be unavailable or full; the API/SSE rehydration path remains authoritative.
   }
 }
 
@@ -152,6 +191,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isTimelineConfirmOpen, setIsTimelineConfirmOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const logsCacheKey = useMemo(
+    () => getBuildLogsCacheKey(projectId, project?.deployment_job_id),
+    [projectId, project?.deployment_job_id]
+  )
 
   // Limit to last 500 lines for performance
   const logLines = useMemo(() => {
@@ -182,10 +225,23 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }, [project?.deployment_status])
 
   useEffect(() => {
-    dispatchLogs({ type: 'reset' })
+    const cachedState = readCachedBuildLogs(logsCacheKey)
+    dispatchLogs(cachedState ? { type: 'hydrate', state: cachedState } : { type: 'reset' })
     setEvents([])
     setClearedEventMaxId(-1)
-  }, [projectId, project?.deployment_job_id])
+  }, [logsCacheKey])
+
+  useEffect(() => {
+    if (logState.lines.length === 0) return
+
+    const timeout = window.setTimeout(() => {
+      writeCachedBuildLogs(logsCacheKey, logState)
+    }, 500)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [logsCacheKey, logState])
 
   // 1. Fetch static logs once if deployment is NOT active
   useEffect(() => {

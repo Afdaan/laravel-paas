@@ -190,7 +190,6 @@ func getActiveOrLatestLogPath(projectPath string, jobID string) string {
 				return infraPath
 			}
 		}
-		return buildPath
 	}
 
 	// Fallback to most recent file in logsDir
