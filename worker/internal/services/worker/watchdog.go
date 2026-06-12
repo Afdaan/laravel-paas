@@ -334,7 +334,11 @@ func (w *CentralWatchdog) updateGitHubCommitStatus(project *models.Project, stat
 		slog.Warn("Watchdog: failed to update GitHub commit status, queued for reconciler", "project_id", projectID, "error", err)
 
 		logMsg := fmt.Sprintf("[%s] System Warning (Watchdog): Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
-		_ = w.redisService.PublishBuildLog(projectID, logMsg)
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
+		_ = w.redisService.PublishBuildLogForJob(projectID, jobID, logMsg)
 	}
 }
 

@@ -460,7 +460,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	buildLogPath := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", logFilePrefix, job.JobID))
 
 	// 3. Open job-specific log file next
-	logFile, logOpenErr := os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, logOpenErr := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if logOpenErr != nil {
 		slog.Error("Failed to open job log file", "path", buildLogPath, "error", logOpenErr)
 	} else {
@@ -475,7 +475,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if logFile != nil {
 			_, _ = logFile.WriteString(msg + "\n")
 		}
-		_ = w.redisService.PublishBuildLog(project.ID, msg)
+		_ = w.redisService.PublishBuildLogForJob(project.ID, job.JobID, msg)
 
 		if !isDeployment && infraLogFile != nil {
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
@@ -1289,6 +1289,10 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	repo := project.GithubRepoName
 	commitHash := project.LastCommitHash
 	projectID := project.ID
+	jobID := ""
+	if project.DeploymentJobID != nil {
+		jobID = *project.DeploymentJobID
+	}
 
 	// Save desired status to Redis first to enable background retry/reconciliation
 	createdAt := time.Now().UnixNano()
@@ -1313,7 +1317,7 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		slog.Warn("Failed to update GitHub commit status, queued for reconciler", "project_id", projectID, "error", err)
 
 		logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
-		_ = w.redisService.PublishBuildLog(projectID, logMsg)
+		_ = w.redisService.PublishBuildLogForJob(projectID, jobID, logMsg)
 
 		buildLogPath := w.getActiveLogPath(project)
 		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {

@@ -113,8 +113,15 @@ interface BuildLogsConsoleProps {
 
 type BuildLogsResponse = {
   logs?: string
+  job_id?: string
   available?: boolean
   placeholder?: boolean
+}
+
+type LiveBuildLogPayload = {
+  job_id?: string
+  line?: string
+  logs?: string
 }
 
 type BuildLogsAction =
@@ -174,7 +181,19 @@ const writeCachedBuildLogs = (cacheKey: string, state: BuildLogsState) => {
   }
 }
 
-const toBuildLogsSnapshot = (data?: BuildLogsResponse): BuildLogsSnapshot => {
+// Realtime Safeguard: Reject stale logs from previous jobs to prevent console pollution.
+const isBuildLogForActiveJob = (incomingJobId?: string, activeJobId?: string) => {
+  return !incomingJobId || !activeJobId || incomingJobId === activeJobId
+}
+
+const toBuildLogsSnapshot = (data?: BuildLogsResponse, activeJobId?: string): BuildLogsSnapshot => {
+  if (!isBuildLogForActiveJob(data?.job_id, activeJobId)) {
+    return {
+      lines: [],
+      available: false,
+    }
+  }
+
   const rawLogs = data?.logs || ''
 
   return {
@@ -195,6 +214,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     () => getBuildLogsCacheKey(projectId, project?.deployment_job_id),
     [projectId, project?.deployment_job_id]
   )
+  const activeJobId = project?.deployment_job_id || ''
 
   // Limit to last 500 lines for performance
   const logLines = useMemo(() => {
@@ -258,7 +278,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         
         if (!isMounted) return
         
-        dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data) })
+        dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data, activeJobId) })
         if (Array.isArray(eventsRes.data)) {
           setEvents(eventsRes.data)
           if (eventsRes.data.length > 0 && onDeploymentEvent) {
@@ -278,7 +298,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     return () => {
       isMounted = false
     }
-  }, [projectId, project?.deployment_job_id, isDeploying, onDeploymentEvent])
+  }, [projectId, project?.deployment_job_id, activeJobId, isDeploying, onDeploymentEvent])
 
   // 2. Stream logs/events if deployment is active
   useEffect(() => {
@@ -303,7 +323,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
           ])
           if (!isMounted) return
-          dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data) })
+          dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data, activeJobId) })
           if (Array.isArray(eventsRes.data)) setEvents(eventsRes.data)
         } catch (error) {
           console.error('Failed to fetch build data during polling:', error)
@@ -337,12 +357,15 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         logsEventSource.addEventListener('initial_logs', (e) => {
           if (!isMounted) return
           try {
-            const initialLogs = JSON.parse(e.data)
+            const initialLogs = JSON.parse(e.data) as string | LiveBuildLogPayload
+            const incomingJobId = typeof initialLogs === 'string' ? undefined : initialLogs.job_id
+            if (!isBuildLogForActiveJob(incomingJobId, activeJobId)) return
+            const rawLogs = typeof initialLogs === 'string' ? initialLogs : initialLogs.logs || ''
             dispatchLogs({
               type: 'merge_snapshot',
               snapshot: {
-                lines: typeof initialLogs === 'string' ? splitLogSnapshot(initialLogs) : [],
-                available: typeof initialLogs === 'string' && initialLogs.length > 0,
+                lines: rawLogs ? splitLogSnapshot(rawLogs) : [],
+                available: rawLogs.length > 0,
               },
             })
           } catch (err) {
@@ -353,10 +376,12 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         logsEventSource.addEventListener('log', (e) => {
           if (!isMounted) return
           try {
-            const newLogLine = JSON.parse(e.data)
-            const lines = typeof newLogLine === 'string'
-              ? newLogLine.split('\n')
-              : [newLogLine]
+            const newLogLine = JSON.parse(e.data) as string | LiveBuildLogPayload
+            const incomingJobId = typeof newLogLine === 'string' ? undefined : newLogLine.job_id
+            if (!isBuildLogForActiveJob(incomingJobId, activeJobId)) return
+            const rawLine = typeof newLogLine === 'string' ? newLogLine : newLogLine.line || ''
+            if (!rawLine) return
+            const lines = rawLine.split('\n')
             dispatchLogs({ type: 'append_lines', lines })
           } catch (err) {
             console.error('Failed to parse log line:', err)

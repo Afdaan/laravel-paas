@@ -618,10 +618,34 @@ func (r *RedisService) IsDeploymentLocked(projectID uint) bool {
 	return err == nil && exists > 0
 }
 
-// PublishBuildLog streams a build log line to a Redis Pub/Sub channel
+// BuildLogMessage carries a log line with optional JobID for client-side filtering.
+type BuildLogMessage struct {
+	JobID string `json:"job_id,omitempty"`
+	Line  string `json:"line"`
+}
+
+// PublishBuildLog streams a build log line to a Redis Pub/Sub channel.
 func (r *RedisService) PublishBuildLog(projectID uint, msg string) error {
 	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
 	return r.client.Publish(r.ctx, channel, msg).Err()
+}
+
+// PublishBuildLogForJob streams a log line with JobID to filter stale events.
+func (r *RedisService) PublishBuildLogForJob(projectID uint, jobID, msg string) error {
+	if jobID == "" {
+		return r.PublishBuildLog(projectID, msg)
+	}
+
+	payload, err := json.Marshal(BuildLogMessage{
+		JobID: jobID,
+		Line:  msg,
+	})
+	if err != nil {
+		return err
+	}
+
+	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
+	return r.client.Publish(r.ctx, channel, string(payload)).Err()
 }
 
 // PublishDeploymentEvent streams a deployment lifecycle event to a Redis Pub/Sub channel

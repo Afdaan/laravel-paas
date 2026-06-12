@@ -190,6 +190,8 @@ func getActiveOrLatestLogPath(projectPath string, jobID string) string {
 				return infraPath
 			}
 		}
+		// SRE Guard: Prevent fallback to stale log files when the requested job log does not exist yet.
+		return buildPath
 	}
 
 	// Fallback to most recent file in logsDir
@@ -277,8 +279,13 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 	if project.DeploymentStatus == models.DepStatusQueued {
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
 		return c.JSON(fiber.Map{
 			"logs":        "Deployment is queued. Waiting for worker to start...",
+			"job_id":      jobID,
 			"available":   false,
 			"placeholder": true,
 		})
@@ -297,6 +304,7 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		// Log not available yet or project not building
 		return c.JSON(fiber.Map{
 			"logs":        "Initializing build environment...",
+			"job_id":      jobID,
 			"available":   false,
 			"placeholder": true,
 		})
@@ -307,6 +315,7 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	if err != nil {
 		return c.JSON(fiber.Map{
 			"logs":        "Initializing build environment...",
+			"job_id":      jobID,
 			"available":   false,
 			"placeholder": true,
 		})
@@ -329,6 +338,7 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"logs":        string(buf),
+		"job_id":      jobID,
 		"available":   size > 0,
 		"placeholder": false,
 	})
@@ -357,18 +367,38 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 			jobID = *project.DeploymentJobID
 		}
 		logPath := h.resolveLogPath(project, jobID)
-		if logBytes, err := os.ReadFile(logPath); err == nil && len(logBytes) > 0 {
-			// Limit to a reasonable size to avoid giant SSE messages, e.g. last 1MB
-			const maxInitialBytes = 1 * 1024 * 1024
-			if len(logBytes) > maxInitialBytes {
-				logBytes = logBytes[len(logBytes)-maxInitialBytes:]
+		if f, err := os.Open(logPath); err == nil {
+			st, statErr := f.Stat()
+			if statErr == nil && st.Size() > 0 {
+				const maxInitialBytes = 1 * 1024 * 1024 // Limit to last 1MB
+				size := st.Size()
+				readSize := int64(maxInitialBytes)
+				if size < readSize {
+					readSize = size
+				}
+				buf := make([]byte, readSize)
+				off := size - readSize
+				if off < 0 {
+					off = 0
+				}
+				n, _ := f.ReadAt(buf, off)
+				f.Close() // Close immediately to release the file descriptor
+
+				if n > 0 {
+					logBytes := buf[:n]
+					dataBytes, _ := json.Marshal(fiber.Map{
+						"job_id": jobID,
+						"logs":   string(logBytes),
+					})
+					_, err = w.WriteString(fmt.Sprintf("event: initial_logs\ndata: %s\n\n", string(dataBytes)))
+					if err != nil {
+						return
+					}
+					_ = w.Flush()
+				}
+			} else {
+				f.Close()
 			}
-			dataBytes, _ := json.Marshal(string(logBytes))
-			_, err = w.WriteString(fmt.Sprintf("event: initial_logs\ndata: %s\n\n", string(dataBytes)))
-			if err != nil {
-				return
-			}
-			_ = w.Flush()
 		}
 
 		// 2. Subscribe to Redis build logs Pub/Sub for new logs
@@ -376,9 +406,6 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 		if err != nil {
 			return
 		}
-
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
 
 		keepAliveTicker := time.NewTicker(15 * time.Second)
 		defer keepAliveTicker.Stop()
@@ -391,7 +418,11 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 				if !ok {
 					return
 				}
-				dataBytes, _ := json.Marshal(line)
+				var liveLog infrastructure.BuildLogMessage
+				if err := json.Unmarshal([]byte(line), &liveLog); err != nil || liveLog.Line == "" {
+					liveLog = infrastructure.BuildLogMessage{Line: line}
+				}
+				dataBytes, _ := json.Marshal(liveLog)
 				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
 				if err != nil {
 					return
@@ -402,10 +433,6 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 					return
 				}
 				_ = w.Flush()
-			case <-ticker.C:
-				if err := w.Flush(); err != nil {
-					return
-				}
 			}
 		}
 	})
