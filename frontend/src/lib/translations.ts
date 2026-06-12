@@ -816,6 +816,8 @@ export const translations = {
         waiting: "Waiting for logs...",
         web: "Web Logs",
         worker: "Worker Logs",
+        copy: "Copy logs",
+        scrollToBottom: "Scroll to bottom",
       }
     },
     user: {
@@ -2310,6 +2312,8 @@ export const translations = {
         waiting: "Menunggu log...",
         web: "Web Logs",
         worker: "Worker Logs",
+        copy: "Salin log",
+        scrollToBottom: "Scroll ke bawah",
       }
     },
     user: {

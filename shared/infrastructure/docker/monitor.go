@@ -25,7 +25,7 @@ func (s *DockerService) GetLogs(containerID string, lines int) (string, error) {
 		return "", fmt.Errorf("failed to get logs for %s: %s", containerID, res.Stderr)
 	}
 
-	return res.Stdout + res.Stderr, nil
+	return utils.StripLogControlSequences(res.Stdout + res.Stderr), nil
 }
 
 // ContainerStats represents resource usage

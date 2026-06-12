@@ -15,6 +15,8 @@ import (
 	"strings"
 )
 
+var ansiEscapePattern = regexp.MustCompile(`(?:\x1B\[[0-?]*[ -/]*[@-~]|\x1B[@-_])`)
+
 // GenerateRandom creates a random alphanumeric string of given length using CSPRNG
 func GenerateRandom(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -49,6 +51,16 @@ func GenerateSubdomain(name string) string {
 	}
 
 	return clean + "-" + GenerateRandom(6)
+}
+
+// StripLogControlSequences removes terminal-only formatting before logs leave the backend.
+func StripLogControlSequences(logStr string) string {
+	if logStr == "" {
+		return ""
+	}
+
+	logStr = ansiEscapePattern.ReplaceAllString(logStr, "")
+	return strings.ReplaceAll(logStr, "\r", "")
 }
 
 // SanitizeError redacts internal infrastructure names, registry URLs, container names,
@@ -108,6 +120,8 @@ func SanitizeLogOutput(logStr string) string {
 	if logStr == "" {
 		return ""
 	}
+
+	logStr = StripLogControlSequences(logStr)
 
 	// 1. Redact IP Addresses (e.g., 172.18.0.11)
 	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)

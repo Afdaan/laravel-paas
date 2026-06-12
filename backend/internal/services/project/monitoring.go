@@ -2,8 +2,8 @@ package project
 
 import (
 	"fmt"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/infrastructure/docker"
@@ -31,16 +31,15 @@ func (s *ProjectService) GetLogs(project *models.Project, logType string, lines 
 		if project.ContainerID != nil && *project.ContainerID != "" {
 			res, err := utils.Run(15*time.Second, "docker", "exec", *project.ContainerID, "sh", "-c",
 				`for f in /var/www/html/storage/logs/laravel-worker.log /var/www/html/storage/logs/worker.log /app/storage/logs/worker.log /app/worker.log /var/log/worker.log; do if [ -f "$f" ]; then echo "$f"; break; fi; done`)
-			
+
 			if err == nil {
 				logPath := strings.TrimSpace(res.Stdout)
 				if logPath != "" {
-					// Use -t (pseudo-TTY) flag to ensure clean termination signal propagation to tail process inside container
-					resTail, errTail := utils.Run(15*time.Second, "docker", "exec", "-t", *project.ContainerID, "tail", "-n", strconv.Itoa(lines), logPath)
+					resTail, errTail := utils.Run(15*time.Second, "docker", "exec", *project.ContainerID, "tail", "-n", strconv.Itoa(lines), logPath)
 					if errTail != nil {
 						return "", fmt.Errorf("failed to get worker logs: %s", resTail.Stderr)
 					}
-					return resTail.Stdout + resTail.Stderr, nil
+					return utils.StripLogControlSequences(resTail.Stdout + resTail.Stderr), nil
 				}
 			}
 			return "No worker logs found yet.\n", nil

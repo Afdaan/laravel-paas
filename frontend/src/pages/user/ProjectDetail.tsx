@@ -25,6 +25,7 @@ import {
   Copy,
   Blocks,
   ArrowUpRight,
+  ChevronsDown,
   Code2,
   Key,
   Scroll,
@@ -88,6 +89,11 @@ const Github = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 )
 
+const ANSI_ESCAPE_PATTERN = /(?:\x1B\[[0-?]*[ -/]*[@-~]|\x1B[@-_])/g
+
+function normalizeLogLine(line: string) {
+  return line.replace(ANSI_ESCAPE_PATTERN, '').replace(/\r/g, '')
+}
 
 // Status Indicator Component
 function StatusIndicator({ status }: { status: string }) {
@@ -547,12 +553,14 @@ function UserProjectDetail() {
       visibleLogs = currentLines.slice(overlapLines).join('\n')
     }
 
-    const lines = visibleLogs.split('\n').filter(l => l.trim() !== '' || l === '')
+    const lines = visibleLogs.split('\n').map(normalizeLogLine).filter(l => l.trim() !== '' || l === '')
     const slicedLines = lines.length > 500 ? lines.slice(-500) : lines
     const offset = lines.length > 500 ? lines.length - 500 : 0
     
     return { visibleLogLines: slicedLines, logOffset: offset }
   }, [logs, clearedLogsMap, logType])
+
+  const visibleLogsText = useMemo(() => visibleLogLines.join('\n'), [visibleLogLines])
 
 
 
@@ -1376,9 +1384,9 @@ function UserProjectDetail() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => { navigator.clipboard.writeText(logs); toast.success(t('common.copySuccess')) }}
+                  onClick={() => { navigator.clipboard.writeText(visibleLogsText); toast.success(t('common.copySuccess')) }}
                   className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
-                  title="Copy Logs"
+                  title={t('projectDetail.logs.copy')}
                 >
                   <Copy className="w-3.5 h-3.5" />
                 </button>
@@ -1388,9 +1396,9 @@ function UserProjectDetail() {
                     if (el) el.scrollTop = el.scrollHeight;
                   }}
                   className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
-                  title="Scroll to Bottom"
+                  title={t('projectDetail.logs.scrollToBottom')}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5" /><path d="m7 9 5 5 5-5" /></svg>
+                  <ChevronsDown className="w-3.5 h-3.5" />
                 </button>
                 <div className="w-px h-3 bg-white/10 mx-1" />
                 <Button variant="ghost" size="xs" onClick={handleClearLogs} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>

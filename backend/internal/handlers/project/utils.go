@@ -454,8 +454,12 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 
 		var cmd *exec.Cmd
 		if logType == "worker" && workerLogPath != "" {
-			// Use -t to ensure pseudo-TTY signal mapping for clean termination inside the container
-			cmd = exec.CommandContext(cmdCtx, "docker", "exec", "-t", *project.ContainerID, "tail", "-f", "-n", "100", workerLogPath)
+			cmd = exec.CommandContext(cmdCtx, "docker", "exec", *project.ContainerID, "tail", "-f", "-n", "100", workerLogPath)
+		} else if logType == "worker" {
+			dataBytes, _ := json.Marshal("No worker logs found yet.")
+			_, _ = w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
+			_ = w.Flush()
+			return
 		} else {
 			cmd = exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
 		}
@@ -509,6 +513,7 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 				if !ok {
 					return
 				}
+				line = utils.StripLogControlSequences(line)
 				dataBytes, _ := json.Marshal(line)
 				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
 				if err != nil {
