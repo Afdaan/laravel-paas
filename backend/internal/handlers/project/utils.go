@@ -386,10 +386,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 
 				if n > 0 {
 					logBytes := buf[:n]
-					dataBytes, _ := json.Marshal(fiber.Map{
-						"job_id": jobID,
-						"logs":   string(logBytes),
-					})
+					dataBytes, _ := json.Marshal(string(logBytes))
 					_, err = w.WriteString(fmt.Sprintf("event: initial_logs\ndata: %s\n\n", string(dataBytes)))
 					if err != nil {
 						return
@@ -419,10 +416,13 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 					return
 				}
 				var liveLog infrastructure.BuildLogMessage
-				if err := json.Unmarshal([]byte(line), &liveLog); err != nil || liveLog.Line == "" {
-					liveLog = infrastructure.BuildLogMessage{Line: line}
+				if err := json.Unmarshal([]byte(line), &liveLog); err == nil && liveLog.Line != "" {
+					if liveLog.JobID != "" && jobID != "" && liveLog.JobID != jobID {
+						continue
+					}
+					line = liveLog.Line
 				}
-				dataBytes, _ := json.Marshal(liveLog)
+				dataBytes, _ := json.Marshal(line)
 				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
 				if err != nil {
 					return

@@ -89,7 +89,8 @@ const Github = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 )
 
-const ANSI_ESCAPE_PATTERN = /(?:\x1B\[[0-?]*[ -/]*[@-~]|\x1B[@-_])/g
+const ESCAPE_CHAR = String.fromCharCode(27)
+const ANSI_ESCAPE_PATTERN = new RegExp(`(?:${ESCAPE_CHAR}\\[[0-?]*[ -/]*[@-~]|${ESCAPE_CHAR}[@-_])`, 'g')
 
 function normalizeLogLine(line: string) {
   return line.replace(ANSI_ESCAPE_PATTERN, '').replace(/\r/g, '')

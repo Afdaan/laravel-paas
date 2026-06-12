@@ -465,7 +465,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         clearInterval(pollingInterval)
       }
     }
-  }, [projectId, onDeploymentEvent, project?.deployment_job_id, isDeploying])
+  }, [projectId, onDeploymentEvent, project?.deployment_job_id, activeJobId, isDeploying])
 
   useEffect(() => {
     // Auto scroll to bottom when logs update
