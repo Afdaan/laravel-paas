@@ -359,7 +359,16 @@ function UserProjectDetail() {
   const activeCommit = useMemo(() => {
     if (!project?.last_commit_hash) return null
 
-    const checkpoint = checkpoints.find(cp => cp.sha === project.last_commit_hash)
+    const activeSha = project.last_commit_hash.trim().toLowerCase()
+    const checkpoint = checkpoints.find(cp => {
+      const checkpointSha = cp.sha.trim().toLowerCase()
+      return (
+        checkpointSha === activeSha ||
+        checkpointSha.startsWith(activeSha) ||
+        activeSha.startsWith(checkpointSha) ||
+        checkpointSha.substring(0, 7) === activeSha.substring(0, 7)
+      )
+    })
 
     return {
       sha: project.last_commit_hash,
