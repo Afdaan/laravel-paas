@@ -597,6 +597,43 @@ func (r *RedisService) RemoveFromQueue(projectID uint) error {
 	return nil
 }
 
+// RemoveDeploymentJob removes a specific queued deployment job without touching newer jobs for the same project.
+func (r *RedisService) RemoveDeploymentJob(jobID string) error {
+	if jobID == "" {
+		return nil
+	}
+
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("failed to inspect deployment queue: %w", err)
+	}
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil && job.JobID == jobID {
+			if err := r.client.LRem(r.ctx, deploymentQueueKey, 1, res).Err(); err != nil {
+				return fmt.Errorf("failed to remove queued deployment job: %w", err)
+			}
+			return nil
+		}
+	}
+
+	delayedResults, err := r.client.ZRange(r.ctx, deploymentDelayedQueueKey, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("failed to inspect delayed deployment queue: %w", err)
+	}
+	for _, res := range delayedResults {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil && job.JobID == jobID {
+			if err := r.client.ZRem(r.ctx, deploymentDelayedQueueKey, res).Err(); err != nil {
+				return fmt.Errorf("failed to remove delayed deployment job: %w", err)
+			}
+			return nil
+		}
+	}
+
+	return nil
+}
+
 // RenewDeploymentLock resets the TTL of an active deployment lock verifying the unique token and updating heartbeat metadata
 func (r *RedisService) RenewDeploymentLock(projectID uint, token string, ttl time.Duration) error {
 	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)

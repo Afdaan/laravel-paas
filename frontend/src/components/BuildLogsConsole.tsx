@@ -202,6 +202,26 @@ const toBuildLogsSnapshot = (data?: BuildLogsResponse, activeJobId?: string): Bu
   }
 }
 
+const pendingDeploymentLogCopy = {
+  queued: [
+    'Redeployment request accepted.',
+    'Waiting for an available worker slot.',
+    'Build output will appear here as soon as the worker starts.',
+  ],
+  preparing: [
+    'Preparing build environment.',
+    'Build output will appear here as soon as the worker starts.',
+  ],
+  cloning: [
+    'Retrieving project source code and configuration.',
+    'Build output will appear here as soon as the worker starts.',
+  ],
+  initializing: [
+    'Initializing deployment log stream.',
+    'Build output will appear here as soon as the worker starts.',
+  ],
+}
+
 const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: BuildLogsConsoleProps) => {
   const { t } = useTranslation()
   const [logState, dispatchLogs] = useReducer(buildLogsReducer, initialBuildLogsState)
@@ -244,6 +264,29 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   const isDeploying = useMemo(() => {
     return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   }, [project?.deployment_status])
+
+  const pendingDeploymentLogLines = useMemo(() => {
+    const deploymentStatus = project?.deployment_status
+    const isWaitingForDeploymentLogs = isDeploying || status === 'queued' || status === 'building'
+
+    if (!isWaitingForDeploymentLogs) {
+      return []
+    }
+
+    if (deploymentStatus === 'queued') {
+      return pendingDeploymentLogCopy.queued
+    }
+
+    if (deploymentStatus === 'preparing') {
+      return pendingDeploymentLogCopy.preparing
+    }
+
+    if (deploymentStatus === 'cloning') {
+      return pendingDeploymentLogCopy.cloning
+    }
+
+    return pendingDeploymentLogCopy.initializing
+  }, [isDeploying, project?.deployment_status, status])
 
   useEffect(() => {
     const cachedState = readCachedBuildLogs(logsCacheKey)
@@ -656,16 +699,16 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                 <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{lineOffset + i + 1}</span>
                 <span className="whitespace-pre-wrap break-all">{renderLogLine(line)}</span>
               </div>
-            )) : (status === 'queued' || status === 'building') ? (
+            )) : pendingDeploymentLogLines.length > 0 ? (
               <div className="flex flex-col gap-1 opacity-70 mt-2">
-                <div className="flex gap-4 group py-0.5 px-2 rounded -mx-2">
-                  <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">1</span>
-                  <span className="text-blue-400">System <span className="text-zinc-500">Preparing build environment...</span></span>
-                </div>
-                <div className="flex gap-4 group py-0.5 px-2 rounded -mx-2">
-                  <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">2</span>
-                  <span className="text-blue-400 animate-pulse">System <span className="text-zinc-500">Retrieving project source code and configuration...</span></span>
-                </div>
+                {pendingDeploymentLogLines.map((line, index) => (
+                  <div key={line} className="flex gap-4 group py-0.5 px-2 rounded -mx-2">
+                    <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{index + 1}</span>
+                    <span className={cn("text-blue-400", index === pendingDeploymentLogLines.length - 1 && "animate-pulse")}>
+                      System <span className="text-zinc-500">{line}</span>
+                    </span>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4">

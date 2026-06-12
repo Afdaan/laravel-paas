@@ -19,6 +19,7 @@ interface RedeployButtonProps {
   status: string
   deploymentStatus?: string
   onStarted?: () => void
+  onQueued?: (deployment: { jobId: string }) => void
   onSuccess?: () => void
   onError?: (error: unknown) => void
   className?: string
@@ -31,6 +32,7 @@ export function RedeployButton({
   status,
   deploymentStatus,
   onStarted,
+  onQueued,
   onSuccess,
   onError,
   className,
@@ -40,9 +42,10 @@ export function RedeployButton({
   const { t } = useTranslation()
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isClean, setIsClean] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   
   const isCurrentlyDeploying = Boolean(deploymentStatus && !['completed', 'failed', 'rollback', 'cancelled'].includes(deploymentStatus))
-  const deployLocked = isCurrentlyDeploying || status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
+  const deployLocked = isSubmitting || isCurrentlyDeploying || status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
   const handleRedeploy = async (e: React.MouseEvent, clean: boolean = false) => {
     e.preventDefault()
@@ -62,20 +65,26 @@ export function RedeployButton({
 
   const confirmRedeploy = async () => {
     setIsConfirmOpen(false)
+    setIsSubmitting(true)
     if (onStarted) onStarted()
 
     try {
-      await toast.promise(
-        projectsAPI.redeploy(projectId, isClean),
-        {
-          loading: t('common.loading'),
-          success: isClean ? t('projectDetail.actions.redeployCleanStarted') : t('projectDetail.actions.redeployStarted'),
-          error: t('common.error'),
-        }
-      )
+      const redeployRequest = projectsAPI.redeploy(projectId, isClean)
+      toast.promise(redeployRequest, {
+        loading: t('common.loading'),
+        success: isClean ? t('projectDetail.actions.redeployCleanStarted') : t('projectDetail.actions.redeployStarted'),
+        error: t('common.error'),
+      })
+      const response = await redeployRequest
+      const jobId = typeof response.data?.job_id === 'string' ? response.data.job_id : undefined
+      if (jobId && onQueued) {
+        onQueued({ jobId })
+      }
       if (onSuccess) onSuccess()
     } catch (error: unknown) {
       if (onError) onError(error)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -101,7 +110,7 @@ export function RedeployButton({
               : t('projectDetail.actions.redeploy')
           }
         >
-          <RefreshCw className={cn("w-4 h-4", status === 'building' && "animate-spin")} />
+          <RefreshCw className={cn("w-4 h-4", (isSubmitting || status === 'building') && "animate-spin")} />
           <span className={cn(size === 'icon' && 'sr-only')}>
             {t('projectDetail.actions.redeploy')}
           </span>

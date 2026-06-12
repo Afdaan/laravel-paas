@@ -696,7 +696,19 @@ function UserProjectDetail() {
 
   const onDeployStarted = () => {
     isActionPendingRef.current = true
-    setProject(prev => prev ? ({ ...prev, status: 'building', deployment_status: 'queued', deployment_progress: 0 }) : null)
+    setProject(prev => prev ? ({
+      ...prev,
+      status: 'building',
+      deployment_status: 'queued',
+      deployment_progress: 0,
+    }) : null)
+  }
+
+  const onDeployQueued = ({ jobId }: { jobId: string }) => {
+    setProject(prev => prev ? ({
+      ...prev,
+      deployment_job_id: jobId,
+    }) : null)
   }
 
   const handleStop = async () => {
@@ -1103,6 +1115,7 @@ function UserProjectDetail() {
             status={project.status}
             deploymentStatus={project.deployment_status}
             onStarted={onDeployStarted}
+            onQueued={onDeployQueued}
             onSuccess={() => {
               isActionPendingRef.current = false
               fetchProject(true)

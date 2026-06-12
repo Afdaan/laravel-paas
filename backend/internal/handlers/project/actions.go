@@ -125,9 +125,15 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
 	if isQueued {
 		queueLength, _ := h.redisService.GetQueueLength()
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
 		return c.JSON(fiber.Map{
-			"message":        "Project is already in queue",
-			"queue_position": queueLength,
+			"message":           "Project is already in queue",
+			"job_id":            jobID,
+			"deployment_status": project.DeploymentStatus,
+			"queue_position":    queueLength,
 		})
 	}
 
@@ -155,7 +161,22 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
 
 	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, statusMsg, 0, jobID); err != nil {
-		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
+		if cleanupErr := h.redisService.RemoveDeploymentJob(jobID); cleanupErr != nil {
+			slog.Error("Failed to remove queued redeployment after state transition failure",
+				"project_id", project.ID,
+				"job_id", jobID,
+				"transition_error", err,
+				"cleanup_error", cleanupErr,
+			)
+		}
+		slog.Error("Failed to update project deployment status to queued",
+			"project_id", project.ID,
+			"job_id", jobID,
+			"error", err,
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to queue redeployment",
+		})
 	}
 	h.projectService.UpdateActivity(project.ID)
 
@@ -163,8 +184,10 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	queueLength, _ := h.redisService.GetQueueLength()
 
 	return c.JSON(fiber.Map{
-		"message":        "Redeployment queued successfully",
-		"queue_position": queueLength,
+		"message":           "Redeployment queued successfully",
+		"job_id":            jobID,
+		"deployment_status": models.DepStatusQueued,
+		"queue_position":    queueLength,
 	})
 }
 
