@@ -1572,12 +1572,22 @@ func (w *DeploymentWorker) getSecretsToRedact(project *models.Project) []string 
 		}
 	}
 
-	// De-duplicate secrets and remove empty/short strings
+	// De-duplicate secrets and remove empty/short strings, ignoring common non-sensitive environment values
+	nonSensitiveBlocklist := map[string]bool{
+		"production":  true,
+		"development": true,
+		"staging":     true,
+		"testing":     true,
+		"local":       true,
+		"true":        true,
+		"false":       true,
+	}
+
 	uniqueSecrets := make(map[string]bool)
 	var filtered []string
 	for _, s := range secrets {
 		s = strings.TrimSpace(s)
-		if len(s) > 4 && !uniqueSecrets[s] {
+		if len(s) > 4 && !uniqueSecrets[s] && !nonSensitiveBlocklist[strings.ToLower(s)] {
 			uniqueSecrets[s] = true
 			filtered = append(filtered, s)
 		}
