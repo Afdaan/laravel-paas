@@ -448,8 +448,10 @@ export const githubAPI = {
   listRepositories: (installationId: number | string) =>
     api.get(`/github/installations/${installationId}/repositories`),
   
-  listBranches: (owner: string, repo: string) =>
-    api.get(`/github/repositories/${owner}/${repo}/branches`),
+  listBranches: (owner: string, repo: string, installationId?: number | string) =>
+    api.get(`/github/repositories/${owner}/${repo}/branches`, {
+      params: installationId ? { installation_id: installationId } : undefined,
+    }),
 }
 
 export default api

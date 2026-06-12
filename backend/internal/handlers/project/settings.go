@@ -170,14 +170,18 @@ func (h *ProjectHandler) ListBranches(c *fiber.Ctx) error {
 		instID := *project.GithubInstallationID
 
 		ghBranches, err := githubService.ListBranches(instID, project.GithubRepoOwner, project.GithubRepoName)
-		if err != nil && (strings.Contains(err.Error(), "status=404") || strings.Contains(err.Error(), "status=401")) {
+		// Only 401 means revoked credentials — retry once with a fresh token.
+		if err != nil && strings.Contains(err.Error(), "status=401") {
 			githubService.InvalidateInstallationToken(instID)
 			ghBranches, err = githubService.ListBranches(instID, project.GithubRepoOwner, project.GithubRepoName)
 		}
 
 		if err != nil {
 			slog.Error("Failed to list branches via GitHub App", "project_id", project.ID, "installation_id", instID, "error", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch branches from GitHub"})
+			return c.JSON(fiber.Map{
+				"data":    []string{},
+				"warning": "Failed to fetch branches from GitHub. Please check your GitHub App connection.",
+			})
 		}
 
 		for _, b := range ghBranches {
@@ -189,7 +193,10 @@ func (h *ProjectHandler) ListBranches(c *fiber.Ctx) error {
 		remoteBranches, err := gitService.GetRemoteBranches(project.GithubURL)
 		if err != nil {
 			slog.Error("Failed to list remote branches via git ls-remote", "project_id", project.ID, "url", project.GithubURL, "error", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch remote branches"})
+			return c.JSON(fiber.Map{
+				"data":    []string{},
+				"warning": "Failed to fetch remote branches. Please check your Git URL.",
+			})
 		}
 		branches = remoteBranches
 	} else {

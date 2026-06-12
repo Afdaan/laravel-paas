@@ -198,6 +198,44 @@ function UserProjectDetail() {
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([])
   const [isGithubReposLoading, setIsGithubReposLoading] = useState(false)
 
+  // Prepend current installation to dropdown items so that it shows as selected even if loading connected installations fails.
+  const memoizedGithubInstallations = useMemo<GitHubInstallation[]>(() => {
+    if (!project || !project.github_installation_id) {
+      return githubInstallations
+    }
+    const instId = project.github_installation_id
+    const alreadyExists = githubInstallations.some(i => i.installation_id === instId)
+    if (alreadyExists) {
+      return githubInstallations
+    }
+    const synthesized: GitHubInstallation = {
+      installation_id: instId,
+      // avatar_url intentionally omitted — this is a degraded-state entry shown when
+      // installation listing fails. The Github icon fallback is correct here.
+      account_name: project.github_repo_owner || 'Connected Account',
+    }
+    return [synthesized, ...githubInstallations]
+  }, [githubInstallations, project])
+
+  // Prepend current repository to dropdown items so that it remains selected and visible if repository fetching fails.
+  const memoizedGithubRepos = useMemo<GitHubRepo[]>(() => {
+    if (!project || !project.github_repo_owner || !project.github_repo_name) {
+      return githubRepos
+    }
+    const fullName = `${project.github_repo_owner}/${project.github_repo_name}`
+    const alreadyExists = githubRepos.some(r => r.full_name.toLowerCase() === fullName.toLowerCase())
+    if (alreadyExists) {
+      return githubRepos
+    }
+    const synthesized: GitHubRepo = {
+      id: -1,
+      name: project.github_repo_name,
+      full_name: fullName,
+      html_url: project.github_url || `https://github.com/${fullName}`,
+    }
+    return [synthesized, ...githubRepos]
+  }, [githubRepos, project])
+
   const [clearedLogsMap, setClearedLogsMap] = useState<Record<string, string>>({})
 
   const [runtimeEvents, setRuntimeEvents] = useState<DeploymentEvent[]>([])
@@ -260,9 +298,13 @@ function UserProjectDetail() {
       let cancelled = false
 
       setIsFetchingBranches(true)
-      githubAPI.listBranches(githubRepoOwnerInput, githubRepoNameInput)
+      githubAPI.listBranches(githubRepoOwnerInput, githubRepoNameInput, githubInstallationIdInput || undefined)
         .then(res => {
           if (cancelled) return
+
+          if (res.data.warning) {
+            toast.warning(res.data.warning)
+          }
 
           const raw = res.data.data || []
           setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
@@ -282,7 +324,7 @@ function UserProjectDetail() {
         cancelled = true
       }
     }
-  }, [gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput])
+  }, [gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput, githubInstallationIdInput])
 
   const fetchRuntimeEvents = useCallback(async () => {
     if (!uid) return
@@ -451,6 +493,10 @@ function UserProjectDetail() {
     try {
       const response = await projectsAPI.listBranches(requestedUid)
       if (activeProjectUidRef.current !== requestedUid) return
+
+      if (response.data.warning) {
+        toast.warning(response.data.warning)
+      }
 
       const raw = response.data.data || []
       setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
@@ -796,7 +842,7 @@ function UserProjectDetail() {
     setIsLoading(true)
     fetchProject(true)
     fetchBranches(false)
-  }, [uid])
+  }, [uid, fetchProject, fetchBranches])
 
   useEffect(() => {
     if (project && settingsProjectUidRef.current !== project.uid) {
@@ -1825,13 +1871,13 @@ function UserProjectDetail() {
                       {isGithubInstallationsLoading ? (
                         <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
                           <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span className="text-xs">Loading accounts...</span>
+                          <span className="text-xs">{t('projectDetail.settings.loadingAccounts')}</span>
                         </div>
-                      ) : githubInstallations.length > 0 ? (
+                      ) : memoizedGithubInstallations.length > 0 ? (
                         <div className="space-y-4">
                           {/* Installation Select */}
                           <div className="space-y-2">
-                            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">GitHub Account / Org</Label>
+                            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.githubAccount')}</Label>
                             <Select
                               value={githubInstallationIdInput ? String(githubInstallationIdInput) : ''}
                               onValueChange={(val) => {
@@ -1845,7 +1891,7 @@ function UserProjectDetail() {
                               <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs">
                                 <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
                                   {(() => {
-                                    const inst = githubInstallations.find(i => i.installation_id === githubInstallationIdInput)
+                                    const inst = memoizedGithubInstallations.find(i => i.installation_id === githubInstallationIdInput)
                                     if (inst) {
                                       return (
                                         <>
@@ -1858,12 +1904,12 @@ function UserProjectDetail() {
                                         </>
                                       )
                                     }
-                                    return <span className="text-muted-foreground/60">Select connected account</span>
+                                    return <span className="text-muted-foreground/60">{t('projectDetail.settings.selectAccount')}</span>
                                   })()}
                                 </div>
                               </SelectTrigger>
                               <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
-                                {githubInstallations.map((inst) => (
+                                {memoizedGithubInstallations.map((inst) => (
                                   <SelectItem key={inst.installation_id} value={String(inst.installation_id)} className="rounded-lg py-2 cursor-pointer">
                                     <div className="flex items-center gap-2">
                                       {inst.avatar_url ? (
@@ -1882,13 +1928,13 @@ function UserProjectDetail() {
                           {/* Repository Select */}
                           {githubInstallationIdInput && (
                             <div className="space-y-2">
-                              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Repository</Label>
+                              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.repositoryLabel')}</Label>
                               {isGithubReposLoading ? (
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground py-2 pl-1">
                                   <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                                  <span>Loading repositories...</span>
+                                  <span>{t('projectDetail.settings.loadingRepos')}</span>
                                 </div>
-                              ) : githubRepos.length > 0 ? (
+                              ) : memoizedGithubRepos.length > 0 ? (
                                 <Select
                                   value={githubRepoNameInput ? `${githubRepoOwnerInput}/${githubRepoNameInput}` : ''}
                                   onValueChange={(val) => {
@@ -1899,7 +1945,7 @@ function UserProjectDetail() {
                                       setGithubRepoNameInput(parts[1])
                                       
                                       // Find selected repo details to set URL
-                                      const repoDetail = githubRepos.find(r => r.full_name === val)
+                                      const repoDetail = memoizedGithubRepos.find(r => r.full_name === val)
                                       if (repoDetail) {
                                         setGithubUrlInput(repoDetail.html_url)
                                       }
@@ -1907,10 +1953,10 @@ function UserProjectDetail() {
                                   }}
                                 >
                                   <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs font-mono">
-                                    <SelectValue placeholder="Select repository" />
+                                    <SelectValue placeholder={t('projectDetail.settings.selectRepo')} />
                                   </SelectTrigger>
                                   <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
-                                    {githubRepos.map((repo) => (
+                                    {memoizedGithubRepos.map((repo) => (
                                       <SelectItem key={repo.id} value={repo.full_name} className="rounded-lg py-2 cursor-pointer font-mono text-xs">
                                         <span>{repo.name}</span>
                                       </SelectItem>
@@ -1918,7 +1964,7 @@ function UserProjectDetail() {
                                   </SelectContent>
                                 </Select>
                               ) : (
-                                <p className="text-xs text-muted-foreground italic pl-1">No repositories found in this account.</p>
+                                <p className="text-xs text-muted-foreground italic pl-1">{t('projectDetail.settings.noRepos')}</p>
                               )}
                             </div>
                           )}
@@ -1926,7 +1972,7 @@ function UserProjectDetail() {
                       ) : (
                         <div className="border border-dashed border-border rounded-xl p-6 text-center space-y-3 bg-muted/5">
                           <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                            No GitHub accounts connected. Please configure your GitHub App to easily link repositories.
+                            {t('projectDetail.settings.noAccounts')}
                           </p>
                           <Button
                             type="button"

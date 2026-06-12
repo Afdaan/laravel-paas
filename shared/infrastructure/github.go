@@ -240,8 +240,10 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 	cacheKey := fmt.Sprintf("github:token:%d", installationID)
 
 	// Try to get cached token from Redis
-	if cachedToken, err := s.redisService.GetString(cacheKey); err == nil && cachedToken != "" {
-		return cachedToken, nil
+	if s.redisService != nil {
+		if cachedToken, err := s.redisService.GetString(cacheKey); err == nil && cachedToken != "" {
+			return cachedToken, nil
+		}
 	}
 
 	// Generate App JWT
@@ -270,7 +272,9 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		// Evict any stale cached token so the next call forces a fresh exchange
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized {
-			_ = s.redisService.DeleteCache(cacheKey)
+			if s.redisService != nil {
+				_ = s.redisService.DeleteCache(cacheKey)
+			}
 		}
 		return "", fmt.Errorf("failed to exchange installation token, status=%d, response=%s", resp.StatusCode, string(bodyBytes))
 	}
@@ -287,7 +291,7 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 
 	// Cache in Redis leaving a 5-minute buffer
 	ttl := time.Until(expiresTime) - 5*time.Minute
-	if ttl > 0 {
+	if ttl > 0 && s.redisService != nil {
 		_ = s.redisService.SetCache(cacheKey, tokenResp.Token, ttl)
 	}
 
@@ -298,7 +302,9 @@ func (s *GithubService) GetInstallationToken(installationID int64) (string, erro
 // Used by handlers to bust a stale cache before retrying API calls.
 func (s *GithubService) InvalidateInstallationToken(installationID int64) {
 	cacheKey := fmt.Sprintf("github:token:%d", installationID)
-	_ = s.redisService.DeleteCache(cacheKey)
+	if s.redisService != nil {
+		_ = s.redisService.DeleteCache(cacheKey)
+	}
 }
 
 type GithubRepository struct {

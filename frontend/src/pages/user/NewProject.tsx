@@ -272,8 +272,11 @@ function UserNewProject() {
     const currentSeq = ++branchQuerySeq.current
     setIsGithubLoading(true)
     try {
-      const response = await githubAPI.listBranches(owner, repo)
+      const response = await githubAPI.listBranches(owner, repo, selectedInstallationId)
       if (currentSeq === branchQuerySeq.current) {
+        if (response.data.warning) {
+          toast.warning(response.data.warning)
+        }
         const raw = response.data.data || []
         const normalized = raw.map((b: string | { name: string }) => {
           if (typeof b === 'string') {
@@ -300,6 +303,7 @@ function UserNewProject() {
           }
           loadInstallations(false)
         } else {
+          setBranches([])
           toast.error(t('newProject.errors.failedToLoadBranches'))
         }
       }

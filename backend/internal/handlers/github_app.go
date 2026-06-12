@@ -320,7 +320,10 @@ func (h *GithubAppHandler) ListRepositories(c *fiber.Ctx) error {
 			})
 		}
 		slog.Error("Failed to list repositories", "installation_id", instID, "error", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch repositories from GitHub"})
+		return c.JSON(fiber.Map{
+			"data":    []interface{}{},
+			"warning": "Failed to fetch repositories from GitHub.",
+		})
 	}
 
 	return c.JSON(fiber.Map{"data": repos})
@@ -332,13 +335,25 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 
 	var inst models.GithubAppInstallation
-	if err := h.db.Where("user_id = ? AND account_name = ?", userID, owner).First(&inst).Error; err != nil {
-		if err := h.db.Where("user_id = ?", userID).First(&inst).Error; err != nil {
+
+	// Prefer explicit installation_id to avoid ambiguous owner-based matching.
+	if instIDStr := c.Query("installation_id"); instIDStr != "" {
+		instID, parseErr := strconv.ParseInt(instIDStr, 10, 64)
+		if parseErr != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid installation_id"})
+		}
+		if err := h.db.Where("user_id = ? AND installation_id = ?", userID, instID).First(&inst).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "No GitHub App installation found"})
+		}
+	} else {
+		// Fall back to matching by account name only — no catch-all by user_id.
+		if err := h.db.Where("user_id = ? AND account_name = ?", userID, owner).First(&inst).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "No GitHub App installation found for this owner"})
 		}
 	}
 
 	branches, err := h.githubService.ListBranches(inst.InstallationID, owner, repo)
+	// Only 401 means revoked credentials — retry once with a fresh token.
 	if err != nil && isGitHubAuthError(err) {
 		slog.Warn("GitHub API auth error on branch fetch, retrying with fresh token", "installation_id", inst.InstallationID)
 		h.githubService.InvalidateInstallationToken(inst.InstallationID)
@@ -346,14 +361,24 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		if isGitHubAuthError(err) {
-			slog.Warn("GitHub installation confirmed revoked after retry (branches)", "installation_id", inst.InstallationID)
+			slog.Warn("GitHub installation confirmed revoked after retry", "installation_id", inst.InstallationID)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "This GitHub installation is unauthorized or has been uninstalled.",
 				"code":  "INSTALLATION_REVOKED",
 			})
 		}
+		if strings.Contains(err.Error(), "status=404") {
+			slog.Warn("Repository not accessible via GitHub App", "installation_id", inst.InstallationID, "owner", owner, "repo", repo)
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Repository not found or the GitHub App does not have access to it.",
+				"code":  "REPO_NOT_ACCESSIBLE",
+			})
+		}
 		slog.Error("Failed to list branches", "installation_id", inst.InstallationID, "owner", owner, "repo", repo, "error", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch branches from GitHub"})
+		return c.JSON(fiber.Map{
+			"data":    []string{},
+			"warning": "Failed to fetch branches from GitHub.",
+		})
 	}
 
 	branchNames := make([]string, 0, len(branches))
@@ -364,8 +389,8 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"data": branchNames})
 }
 
-// isGitHubAuthError checks whether a GitHub API error indicates a stale/revoked credential.
+// isGitHubAuthError returns true only for 401 — revoked or expired installation credentials.
+// 404 means the repo is inaccessible, not that the token is invalid.
 func isGitHubAuthError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "status=404") || strings.Contains(msg, "status=401")
+	return strings.Contains(err.Error(), "status=401")
 }
