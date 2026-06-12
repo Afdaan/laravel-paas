@@ -804,8 +804,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-
-
 	project.LastCommitHash = cloneHash
 	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"last_commit_hash": cloneHash,
@@ -1172,14 +1170,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
-		w.forceDeploymentCompleted(project, job.JobID)
-	}
-
 	appendLog("")
 	appendLog("========================================================================")
 	appendLog("✓ Deployment completed successfully! Application is live.")
 	appendLog("========================================================================")
+
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
+		w.forceDeploymentCompleted(project, job.JobID)
+	}
 
 	go func() {
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")

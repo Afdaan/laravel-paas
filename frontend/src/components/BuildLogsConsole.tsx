@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useReducer } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { projectsAPI } from '../services/api'
@@ -8,6 +8,15 @@ import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from './ConfirmationModal'
 import { cn } from '@/lib/utils'
 import { Project, DeploymentEvent } from '@/types'
+import {
+  appendBuildLogLines,
+  clearVisibleBuildLogs,
+  initialBuildLogsState,
+  mergeBuildLogSnapshot,
+  splitLogSnapshot,
+  type BuildLogsSnapshot,
+  type BuildLogsState,
+} from '@/lib/buildLogsState'
 
 const renderLogLine = (line: string) => {
   const trimmed = line.trim()
@@ -101,11 +110,44 @@ interface BuildLogsConsoleProps {
   onDeploymentEvent?: (event: DeploymentEvent) => void
 }
 
+type BuildLogsResponse = {
+  logs?: string
+  available?: boolean
+  placeholder?: boolean
+}
+
+type BuildLogsAction =
+  | { type: 'reset' }
+  | { type: 'merge_snapshot'; snapshot: BuildLogsSnapshot }
+  | { type: 'append_lines'; lines: string[] }
+  | { type: 'clear_visible' }
+
+const buildLogsReducer = (state: BuildLogsState, action: BuildLogsAction): BuildLogsState => {
+  switch (action.type) {
+    case 'reset':
+      return initialBuildLogsState
+    case 'merge_snapshot':
+      return mergeBuildLogSnapshot(state, action.snapshot)
+    case 'append_lines':
+      return appendBuildLogLines(state, action.lines)
+    case 'clear_visible':
+      return clearVisibleBuildLogs(state)
+  }
+}
+
+const toBuildLogsSnapshot = (data?: BuildLogsResponse): BuildLogsSnapshot => {
+  const rawLogs = data?.logs || ''
+
+  return {
+    lines: rawLogs ? splitLogSnapshot(rawLogs) : [],
+    available: data?.available === true || (data?.available === undefined && rawLogs.length > 0 && data?.placeholder !== true),
+  }
+}
+
 const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: BuildLogsConsoleProps) => {
   const { t } = useTranslation()
-  const [logs, setLogs] = useState<string[]>([])
+  const [logState, dispatchLogs] = useReducer(buildLogsReducer, initialBuildLogsState)
   const [events, setEvents] = useState<DeploymentEvent[]>([])
-  const [clearedCount, setClearedCount] = useState(0)
   const [clearedEventMaxId, setClearedEventMaxId] = useState<number>(-1)
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isTimelineConfirmOpen, setIsTimelineConfirmOpen] = useState(false)
@@ -113,14 +155,14 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
   // Limit to last 500 lines for performance
   const logLines = useMemo(() => {
-    const visibleLogs = clearedCount > 0 ? logs.slice(clearedCount) : logs
+    const visibleLogs = logState.clearedCount > 0 ? logState.lines.slice(logState.clearedCount) : logState.lines
     return visibleLogs.length > 500 ? visibleLogs.slice(-500) : visibleLogs
-  }, [logs, clearedCount])
+  }, [logState])
 
   const lineOffset = useMemo(() => {
-    const visibleLogs = clearedCount > 0 ? logs.slice(clearedCount) : logs
+    const visibleLogs = logState.clearedCount > 0 ? logState.lines.slice(logState.clearedCount) : logState.lines
     return visibleLogs.length > 500 ? visibleLogs.length - 500 : 0
-  }, [logs, clearedCount])
+  }, [logState])
 
   const visibleEvents = useMemo(() => {
     return events.filter(ev => {
@@ -139,6 +181,12 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   }, [project?.deployment_status])
 
+  useEffect(() => {
+    dispatchLogs({ type: 'reset' })
+    setEvents([])
+    setClearedEventMaxId(-1)
+  }, [projectId, project?.deployment_job_id])
+
   // 1. Fetch static logs once if deployment is NOT active
   useEffect(() => {
     if (isDeploying) return
@@ -154,12 +202,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         
         if (!isMounted) return
         
-        if (logsRes.data?.logs) {
-          const lines = logsRes.data.logs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
-          setLogs(lines)
-        } else {
-          setLogs([])
-        }
+        dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data) })
         if (Array.isArray(eventsRes.data)) {
           setEvents(eventsRes.data)
           if (eventsRes.data.length > 0 && onDeploymentEvent) {
@@ -188,10 +231,13 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     let isMounted = true
     let logsEventSource: EventSource | null = null
     let eventsEventSource: EventSource | null = null
-    let pollingInterval: NodeJS.Timeout | null = null
+    let pollingInterval: ReturnType<typeof setInterval> | null = null
+    let isPollingFallbackActive = false
 
     // Fallback: standard API polling
     const startPollingFallback = () => {
+      if (isPollingFallbackActive) return
+      isPollingFallbackActive = true
       if (pollingInterval) clearInterval(pollingInterval)
       
       const fetchData = async () => {
@@ -201,10 +247,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
           ])
           if (!isMounted) return
-          if (logsRes.data?.logs) {
-            const lines = logsRes.data.logs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
-            setLogs(lines)
-          }
+          dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data) })
           if (Array.isArray(eventsRes.data)) setEvents(eventsRes.data)
         } catch (error) {
           console.error('Failed to fetch build data during polling:', error)
@@ -239,10 +282,13 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
           if (!isMounted) return
           try {
             const initialLogs = JSON.parse(e.data)
-            const lines = typeof initialLogs === 'string'
-              ? initialLogs.split('\n').filter((l: string) => l.trim() !== '' || l === '')
-              : []
-            setLogs(lines)
+            dispatchLogs({
+              type: 'merge_snapshot',
+              snapshot: {
+                lines: typeof initialLogs === 'string' ? splitLogSnapshot(initialLogs) : [],
+                available: typeof initialLogs === 'string' && initialLogs.length > 0,
+              },
+            })
           } catch (err) {
             console.error('Failed to parse initial logs:', err)
           }
@@ -255,7 +301,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             const lines = typeof newLogLine === 'string'
               ? newLogLine.split('\n')
               : [newLogLine]
-            setLogs(prev => [...prev, ...lines])
+            dispatchLogs({ type: 'append_lines', lines })
           } catch (err) {
             console.error('Failed to parse log line:', err)
           }
@@ -264,6 +310,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         logsEventSource.onerror = (err) => {
           console.warn('Logs SSE connection error, falling back to polling:', err)
           if (isMounted) {
+            logsEventSource?.close()
+            logsEventSource = null
             startPollingFallback()
           }
         }
@@ -308,6 +356,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         eventsEventSource.onerror = (err) => {
           console.warn('Events SSE connection error, falling back to polling:', err)
           if (isMounted) {
+            eventsEventSource?.close()
+            eventsEventSource = null
             startPollingFallback()
           }
         }
@@ -344,7 +394,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }, [logLines])
 
   const copyToClipboard = () => {
-    const visibleLogs = clearedCount > 0 ? logs.slice(clearedCount) : logs
+    const visibleLogs = logState.clearedCount > 0 ? logState.lines.slice(logState.clearedCount) : logState.lines
     navigator.clipboard.writeText(visibleLogs.join('\n'))
     toast.success(t('common.copySuccess'))
   }
@@ -360,7 +410,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }
 
   const confirmClear = () => {
-    setClearedCount(logs.length)
+    dispatchLogs({ type: 'clear_visible' })
     toast.success(t('common.success'))
   }
 

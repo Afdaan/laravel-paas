@@ -1427,7 +1427,7 @@ function UserProjectDetail() {
         <TabsContent value="build" className="pt-0">
           {activeTab === 'build' && project && (
             <BuildLogsConsole 
-              key={project.deployment_job_id || 'no-job'} 
+              key={`${project.uid}:${project.deployment_job_id || 'no-job'}`}
               projectId={project.uid} 
               status={project.status} 
               project={project} 

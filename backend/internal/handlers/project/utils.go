@@ -278,7 +278,11 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 	if project.DeploymentStatus == models.DepStatusQueued {
-		return c.JSON(fiber.Map{"logs": "Deployment is queued. Waiting for worker to start..."})
+		return c.JSON(fiber.Map{
+			"logs":        "Deployment is queued. Waiting for worker to start...",
+			"available":   false,
+			"placeholder": true,
+		})
 	}
 
 	jobID := ""
@@ -292,13 +296,21 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 			slog.Warn("Failed to open build log file", "projectId", project.ID, "subdomain", project.Subdomain, "jobID", jobID, "path", logPath, "error", err.Error())
 		}
 		// Log not available yet or project not building
-		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
+		return c.JSON(fiber.Map{
+			"logs":        "Initializing build environment...",
+			"available":   false,
+			"placeholder": true,
+		})
 	}
 	defer f.Close()
 
 	st, err := f.Stat()
 	if err != nil {
-		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
+		return c.JSON(fiber.Map{
+			"logs":        "Initializing build environment...",
+			"available":   false,
+			"placeholder": true,
+		})
 	}
 
 	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
@@ -316,7 +328,11 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	}
 	_, _ = f.ReadAt(buf, off)
 
-	return c.JSON(fiber.Map{"logs": string(buf)})
+	return c.JSON(fiber.Map{
+		"logs":        string(buf),
+		"available":   size > 0,
+		"placeholder": false,
+	})
 }
 
 // StreamBuildLogs streams live build log output using Server-Sent Events (SSE)
