@@ -210,6 +210,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isTimelineConfirmOpen, setIsTimelineConfirmOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const lastProcessedEventIdRef = useRef<number>(-1)
   const logsCacheKey = useMemo(
     () => getBuildLogsCacheKey(projectId, project?.deployment_job_id),
     [projectId, project?.deployment_job_id]
@@ -249,6 +250,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
     dispatchLogs(cachedState ? { type: 'hydrate', state: cachedState } : { type: 'reset' })
     setEvents([])
     setClearedEventMaxId(-1)
+    lastProcessedEventIdRef.current = -1
   }, [logsCacheKey])
 
   useEffect(() => {
@@ -283,6 +285,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
           setEvents(eventsRes.data)
           if (eventsRes.data.length > 0 && onDeploymentEvent) {
             const sorted = [...eventsRes.data].sort((a, b) => (b.id || 0) - (a.id || 0))
+            lastProcessedEventIdRef.current = sorted[0].id || 0
             onDeploymentEvent(sorted[0])
           }
         } else {
@@ -324,7 +327,18 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
           ])
           if (!isMounted) return
           dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data, activeJobId) })
-          if (Array.isArray(eventsRes.data)) setEvents(eventsRes.data)
+          if (Array.isArray(eventsRes.data)) {
+            setEvents(eventsRes.data)
+            if (eventsRes.data.length > 0 && onDeploymentEvent) {
+              const sorted = [...eventsRes.data].sort((a, b) => (b.id || 0) - (a.id || 0))
+              const latestEvent = sorted[0]
+              const latestId = latestEvent.id || 0
+              if (latestId > lastProcessedEventIdRef.current) {
+                lastProcessedEventIdRef.current = latestId
+                onDeploymentEvent(latestEvent)
+              }
+            }
+          }
         } catch (error) {
           console.error('Failed to fetch build data during polling:', error)
         }
@@ -410,6 +424,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             setEvents(initialEvents)
             if (initialEvents.length > 0 && onDeploymentEvent) {
               const sorted = [...initialEvents].sort((a, b) => (b.id || 0) - (a.id || 0))
+              lastProcessedEventIdRef.current = sorted[0].id || 0
               onDeploymentEvent(sorted[0])
             }
           } catch (err) {
@@ -427,7 +442,11 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
               }
               const updated = [...prev, newEvent]
               if (onDeploymentEvent) {
-                onDeploymentEvent(newEvent)
+                const newId = newEvent.id || 0
+                if (newId > lastProcessedEventIdRef.current) {
+                  lastProcessedEventIdRef.current = newId
+                  onDeploymentEvent(newEvent)
+                }
               }
               return updated
             })

@@ -169,6 +169,7 @@ function UserProjectDetail() {
   const logsEndRef = useRef<HTMLDivElement>(null)
   const isActionPendingRef = useRef(false)
   const activeProjectUidRef = useRef<string | null>(uid || null)
+  const fetchProjectSeqRef = useRef(0)
 
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
@@ -357,6 +358,8 @@ function UserProjectDetail() {
     }
   }, [setActiveTab])
 
+
+
   const handleRollback = async (commitSHA: string) => {
     if (!uid) return
     setIsRollingBack(true)
@@ -494,7 +497,7 @@ function UserProjectDetail() {
       const response = await projectsAPI.listBranches(requestedUid)
       if (activeProjectUidRef.current !== requestedUid) return
 
-      if (response.data.warning) {
+      if (response.data.warning && showToast) {
         toast.warning(response.data.warning)
       }
 
@@ -520,9 +523,11 @@ function UserProjectDetail() {
   const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid || isDeleting) return
     const requestedUid = uid
+    const currentSeq = ++fetchProjectSeqRef.current
     try {
       const response = await projectsAPI.get(requestedUid)
       if (activeProjectUidRef.current !== requestedUid) return
+      if (currentSeq !== fetchProjectSeqRef.current) return
 
       // Prevent stale polling overwrites during optimistic action phases unless explicitly forced
       if (typeof forceUpdate !== 'boolean') forceUpdate = false // Handle accidental event objects
@@ -532,6 +537,7 @@ function UserProjectDetail() {
       setConsecutiveErrors(0)
     } catch (error: unknown) {
       if (activeProjectUidRef.current !== requestedUid) return
+      if (currentSeq !== fetchProjectSeqRef.current) return
 
       const axiosError = error as AxiosError<{ error: string }>
       if (axiosError.response?.status === 401) {
@@ -554,7 +560,7 @@ function UserProjectDetail() {
         description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
       })
     } finally {
-      if (activeProjectUidRef.current === requestedUid) {
+      if (activeProjectUidRef.current === requestedUid && currentSeq === fetchProjectSeqRef.current) {
         setIsLoading(false)
       }
     }
@@ -563,6 +569,19 @@ function UserProjectDetail() {
   const handleDeploymentEvent = useCallback(() => {
     fetchProject(true)
   }, [fetchProject])
+
+  // Poll project details periodically during active deployments/restarts
+  useEffect(() => {
+    if (!project) return
+    const isDeploying = ['queued', 'pending', 'building', 'restarting'].includes(project.status) || 
+      Boolean(project.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+    if (isDeploying) {
+      const interval = setInterval(() => {
+        fetchProject(true)
+      }, 4000)
+      return () => clearInterval(interval)
+    }
+  }, [project, fetchProject])
 
   const fetchLogs = useCallback(async () => {
     if (!uid) return
