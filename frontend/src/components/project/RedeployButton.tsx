@@ -83,7 +83,7 @@ export function RedeployButton({
     <>
       <div className={cn(
         "inline-flex items-center rounded-lg bg-background/95 shadow-sm shadow-black/5 ring-1 ring-border/80 transition-colors dark:bg-input/20 dark:ring-white/10",
-        variant !== "ghost" && "border border-input",
+        variant === "ghost" && "ring-transparent shadow-none",
         className
       )}>
         <Button
@@ -92,7 +92,7 @@ export function RedeployButton({
           onClick={(e) => handleRedeploy(e, false)}
           disabled={deployLocked}
           className={cn(
-            "h-9 rounded-none rounded-l-lg border-r border-border/80 px-3 gap-2 hover:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-white/10",
+            "h-8 rounded-none rounded-l-lg border-r border-border/80 px-3 gap-2 hover:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-white/10",
             deployLocked && "opacity-40"
           )}
           title={
@@ -112,53 +112,53 @@ export function RedeployButton({
             disabled={deployLocked}
             className={cn(
               buttonVariants({ variant: "ghost", size: "icon" }),
-              "h-9 w-8 rounded-none rounded-r-lg px-0 cursor-pointer hover:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 data-[popup-open]:bg-muted/80",
+              "h-8 w-8 rounded-none rounded-r-lg px-0 cursor-pointer hover:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 data-[popup-open]:bg-muted/80",
               deployLocked && "opacity-40"
             )}
             aria-label={t('projectDetail.actions.redeploy')}
           >
-            <ChevronDown className="h-4 w-4 opacity-70 transition-transform duration-200 group-aria-expanded/button:rotate-180" />
+            <ChevronDown className="h-4 w-4 opacity-70 transition-transform duration-200 group-data-[popup-open]/button:rotate-180" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            sideOffset={8}
-            className="w-[246px] rounded-xl border border-border/70 bg-popover/95 p-1.5 shadow-xl shadow-black/10 ring-1 ring-white/10 backdrop-blur-xl dark:border-white/10 dark:shadow-black/40"
+            sideOffset={6}
+            className="w-56 rounded-lg border border-border/70 bg-popover p-1 shadow-lg shadow-black/10 dark:border-white/10 dark:shadow-black/40"
           >
             <DropdownMenuItem 
               onClick={(e) => {
                 const mouseEvent = e as unknown as React.MouseEvent;
                 handleRedeploy(mouseEvent, false);
               }}
-              className="cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2.5 transition-colors focus:bg-primary/10 focus:text-foreground"
+              className="cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 transition-colors focus:bg-primary/10 focus:text-foreground"
             >
-              <span className="mt-0.5 flex size-8 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10 text-emerald-500">
-                <Zap className="size-4" />
+              <span className="mt-0.5 flex size-7 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10 text-emerald-500">
+                <Zap className="size-3.5" />
               </span>
               <span className="flex min-w-0 flex-col">
-                <span className="text-sm font-semibold leading-none text-foreground">
+                <span className="text-[13px] font-semibold leading-none text-foreground">
                   {t('projectDetail.actions.redeployFast') || 'Redeploy (Cached)'}
                 </span>
-                <span className="mt-1 text-xs leading-4 text-muted-foreground">
+                <span className="mt-1 text-xs leading-3.5 text-muted-foreground">
                   {t('projectDetail.actions.redeployFastDesc') || 'Reuse build cache for a faster deploy'}
                 </span>
               </span>
             </DropdownMenuItem>
-            <DropdownMenuSeparator className="mx-2 my-1 bg-border/70" />
+            <DropdownMenuSeparator className="mx-2 my-0.5 bg-border/70" />
             <DropdownMenuItem 
               onClick={(e) => {
                 const mouseEvent = e as unknown as React.MouseEvent;
                 handleRedeploy(mouseEvent, true);
               }}
-              className="cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2.5 transition-colors focus:bg-amber-500/10 focus:text-foreground"
+              className="cursor-pointer items-start gap-2.5 rounded-md px-2 py-2 transition-colors focus:bg-amber-500/10 focus:text-foreground"
             >
-              <span className="mt-0.5 flex size-8 items-center justify-center rounded-md border border-amber-500/25 bg-amber-500/10 text-amber-500">
-                <Sparkles className="size-4" />
+              <span className="mt-0.5 flex size-7 items-center justify-center rounded-md border border-amber-500/25 bg-amber-500/10 text-amber-500">
+                <Sparkles className="size-3.5" />
               </span>
               <span className="flex min-w-0 flex-col">
-                <span className="text-sm font-semibold leading-none text-foreground">
+                <span className="text-[13px] font-semibold leading-none text-foreground">
                   {t('projectDetail.actions.redeployClean') || 'Clean Rebuild'}
                 </span>
-                <span className="mt-1 text-xs leading-4 text-muted-foreground">
+                <span className="mt-1 text-xs leading-3.5 text-muted-foreground">
                   {t('projectDetail.actions.redeployCleanDesc') || 'Bypass cache and rebuild from scratch'}
                 </span>
               </span>
