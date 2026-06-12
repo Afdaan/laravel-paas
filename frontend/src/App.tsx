@@ -109,7 +109,7 @@ function App() {
   }, [token, user])
 
   useEffect(() => {
-    let idleTimer: NodeJS.Timeout
+    let idleTimer: ReturnType<typeof setTimeout>
     const timeoutMinutes = settings?.admin_idle_timeout ? parseInt(settings.admin_idle_timeout) : 15
     const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
 

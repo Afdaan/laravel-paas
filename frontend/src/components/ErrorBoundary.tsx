@@ -81,7 +81,7 @@ class ErrorBoundary extends React.Component<Props, State> {
             Stuck at: {window.location.pathname}
           </div>
 
-          {process.env.NODE_ENV === 'development' && (
+          {import.meta.env.DEV && (
             <div className="mt-16 w-full max-w-2xl overflow-hidden bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm border-rose-500/20 bg-rose-500/5">
               <div className="px-6 py-3 border-b border-rose-500/10 bg-rose-500/5 text-rose-400 text-[10px] font-black uppercase tracking-widest">Debug Stream</div>
               <pre className="p-8 font-mono text-xs text-rose-400/80 overflow-auto whitespace-pre-wrap">

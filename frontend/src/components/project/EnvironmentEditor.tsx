@@ -47,6 +47,20 @@ interface BoundStore {
   bindingId: number
 }
 
+interface SecretStoreSummary {
+  id: number
+  name: string
+  description: string
+}
+
+interface SecretStoreProjectBinding {
+  id: number
+  environment: string
+  project?: {
+    uid?: string
+  }
+}
+
 interface VariableGridItem {
   Key: string
   Value: string
@@ -64,7 +78,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
   const [initialContent, setInitialContent] = useState('')
   const [currentDotenv, setCurrentDotenv] = useState('')
   const [boundStores, setBoundStores] = useState<BoundStore[]>([])
-  const [allStores, setAllStores] = useState<any[]>([])
+  const [allStores, setAllStores] = useState<SecretStoreSummary[]>([])
   
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({})
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
@@ -162,8 +176,9 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
         if (isPlatformKey) {
           source = 'system'
         } else if (hasDatabaseInstance && isDBKey) {
-          const isOverridden = baselineValues.hasOwnProperty(key) && baselineValues[key] !== val
-          const isNotBaseline = !baselineValues.hasOwnProperty(key)
+          const isBaselineKey = Object.prototype.hasOwnProperty.call(baselineValues, key)
+          const isOverridden = isBaselineKey && baselineValues[key] !== val
+          const isNotBaseline = !isBaselineKey
           
           if (isOverridden || isNotBaseline) {
             source = 'secret_store'
@@ -233,17 +248,17 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
 
       // 2. Load SecretStores list to inspect which ones are bound to this project
       const storesRes = await secretStoreAPI.list()
-      const stores = storesRes.data.data || []
+      const stores: SecretStoreSummary[] = storesRes.data.data || []
       setAllStores(stores)
 
       const bounds: BoundStore[] = []
       for (const store of stores) {
         const detailRes = await secretStoreAPI.get(store.id)
         const storeDetails = detailRes.data.data
-        const storeBindings = storeDetails.bindings || []
+        const storeBindings: SecretStoreProjectBinding[] = storeDetails.bindings || []
         
         // Find matching binding for this project uid
-        const match = storeBindings.find((b: any) => b.project?.uid === uid)
+        const match = storeBindings.find((b) => b.project?.uid === uid)
         if (match) {
           bounds.push({
             id: store.id,
@@ -526,7 +541,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
                     </TableHeader>
                     <TableBody>
                       {gridItems.map(item => {
-                        const isDirty = !initialMap.hasOwnProperty(item.Key) || initialMap[item.Key] !== item.Value
+                        const isDirty = !Object.prototype.hasOwnProperty.call(initialMap, item.Key) || initialMap[item.Key] !== item.Value
                         const isRevealed = !!revealedKeys[item.Key] || isDirty
                         return (
                           <TableRow 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { secretStoreAPI } from '@/services/api'
 import {
@@ -27,8 +27,8 @@ interface AdminSecretStore {
     name: string
     email: string
   }
-  items?: any[]
-  bindings?: any[]
+  items?: Record<string, unknown>[]
+  bindings?: Record<string, unknown>[]
 }
 
 interface SecretStoreActivityLog {
@@ -51,23 +51,21 @@ interface SecretStoreActivityLog {
 }
 
 export default function AdminSecretStoreExplorer() {
-  const { t } = {
-    t: (key: string) => {
-      const parts = key.split('.')
-      if (parts[0] === 'secretstore' && parts[1] === 'title') return 'Secret Store Audit Explorer'
-      if (parts[0] === 'secretstore' && parts[1] === 'desc') return 'Global governance console monitoring all encrypted credentials containers, bindings, and audit activities.'
-      if (parts[0] === 'common') {
-        if (parts[1] === 'loading') return 'Syncing database...'
-        if (parts[1] === 'search') return 'Search...'
-        if (parts[1] === 'name') return 'Name'
-        if (parts[1] === 'status') return 'Status'
-        if (parts[1] === 'date') return 'Date'
-        if (parts[1] === 'actions') return 'Actions'
-        if (parts[1] === 'error') return 'Operation failed'
-      }
-      return key
+  const t = useCallback((key: string) => {
+    const parts = key.split('.')
+    if (parts[0] === 'secretstore' && parts[1] === 'title') return 'Secret Store Audit Explorer'
+    if (parts[0] === 'secretstore' && parts[1] === 'desc') return 'Global governance console monitoring all encrypted credentials containers, bindings, and audit activities.'
+    if (parts[0] === 'common') {
+      if (parts[1] === 'loading') return 'Syncing database...'
+      if (parts[1] === 'search') return 'Search...'
+      if (parts[1] === 'name') return 'Name'
+      if (parts[1] === 'status') return 'Status'
+      if (parts[1] === 'date') return 'Date'
+      if (parts[1] === 'actions') return 'Actions'
+      if (parts[1] === 'error') return 'Operation failed'
     }
-  }
+    return key
+  }, [])
 
   const [stores, setStores] = useState<AdminSecretStore[]>([])
   const [logs, setLogs] = useState<SecretStoreActivityLog[]>([])
@@ -75,7 +73,7 @@ export default function AdminSecretStoreExplorer() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState('stores')
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
       const storesRes = await secretStoreAPI.adminListAll()
@@ -87,11 +85,11 @@ export default function AdminSecretStoreExplorer() {
     } finally {
       setIsLoading(false)
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
 
   const handleToggleDisable = async (store: AdminSecretStore) => {
     try {

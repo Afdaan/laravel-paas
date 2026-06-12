@@ -194,7 +194,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         return domainList.map((newD: CustomDomain) => {
           const existing = prev.find(d => d.id === newD.id)
           if (existing && existing.current_sequence != null && newD.current_sequence != null && newD.current_sequence < existing.current_sequence) {
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
               console.log("Ignoring stale domain list fetch for", newD.id, newD.current_sequence, "vs existing", existing.current_sequence)
             }
             return existing
@@ -228,7 +228,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     let isSubscribed = true;
     let reconnectDelay = 1000;
     const maxReconnectDelay = 30000;
-    let reconnectTimer: NodeJS.Timeout | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const scheduleReconnect = () => {
       if (!isSubscribed) return;
@@ -283,7 +283,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
               return prevDomains.map(d => {
                 if (d.id === updatedDomainId) {
                   if (eventData.sequence_number != null && d.current_sequence != null && eventData.sequence_number < d.current_sequence) {
-                    if (process.env.NODE_ENV === 'development') {
+                    if (import.meta.env.DEV) {
                       console.log("Ignoring stale SSE domain event for", d.id, eventData.sequence_number, "vs existing", d.current_sequence);
                     }
                     return d;
@@ -334,7 +334,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         });
 
         eventSource.addEventListener('overflow', () => {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.warn("Subscriber buffer overflow detected, initiating SSE reconnection");
           }
           eventSource?.close();
@@ -342,7 +342,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         });
 
         eventSource.onerror = (err) => {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.error("Project SSE connection error", err);
           }
           eventSource?.close();

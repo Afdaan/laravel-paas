@@ -166,15 +166,15 @@ export default function SecretStoreDashboard() {
       if (selectId) {
         const found = data.find((s: SecretStore) => s.id === selectId)
         if (found) setSelectedStore(found)
-      } else if (data.length > 0 && !selectedStore) {
-        setSelectedStore(data[0])
+      } else if (data.length > 0) {
+        setSelectedStore(prev => prev || data[0])
       }
     } catch (error) {
       toast.error(t('common.loadError'))
     } finally {
       setIsLoadingStores(false)
     }
-  }, [selectedStore, t])
+  }, [t])
 
   // Load select projects list for binding options
   const fetchProjects = useCallback(async () => {
@@ -189,7 +189,7 @@ export default function SecretStoreDashboard() {
   useEffect(() => {
     fetchStores()
     fetchProjects()
-  }, []) // Run once on load
+  }, [fetchStores, fetchProjects])
 
   // Load active details when store changes
   const fetchStoreDetails = useCallback(async () => {
@@ -210,7 +210,7 @@ export default function SecretStoreDashboard() {
 
   useEffect(() => {
     fetchStoreDetails()
-  }, [selectedStore])
+  }, [fetchStoreDetails])
 
   const copyToClipboard = (text: string, itemId: number) => {
     navigator.clipboard.writeText(text)
