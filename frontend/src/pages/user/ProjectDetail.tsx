@@ -248,8 +248,11 @@ function UserProjectDetail() {
     try {
       const response = await githubAPI.listInstallations()
       setGithubInstallations(response.data.data || [])
-    } catch (err) {
-      console.error('Failed to load GitHub installations', err)
+    } catch (err: any) {
+      const status = err?.response?.status
+      if (status !== 404 && status !== 403) {
+        console.error('Failed to load GitHub installations', err)
+      }
     } finally {
       setIsGithubInstallationsLoading(false)
     }
@@ -262,7 +265,7 @@ function UserProjectDetail() {
   }, [activeTab])
 
   useEffect(() => {
-    if (githubInstallationIdInput) {
+    if (activeTab === 'settings' && githubInstallationIdInput) {
       const requestedInstallationId = githubInstallationIdInput
       let cancelled = false
 
@@ -276,7 +279,10 @@ function UserProjectDetail() {
         .catch(err => {
           if (cancelled) return
 
-          console.error('Failed to load GitHub repositories', err)
+          const status = err?.response?.status
+          if (status !== 404 && status !== 403) {
+            console.error('Failed to load GitHub repositories', err)
+          }
           setGithubRepos([])
         })
         .finally(() => {
@@ -292,20 +298,16 @@ function UserProjectDetail() {
 
     setGithubRepos([])
     setIsGithubReposLoading(false)
-  }, [githubInstallationIdInput])
+  }, [activeTab, githubInstallationIdInput])
 
   useEffect(() => {
-    if (gitConnectionMode === 'github_app' && githubRepoOwnerInput && githubRepoNameInput) {
+    if (activeTab === 'settings' && gitConnectionMode === 'github_app' && githubRepoOwnerInput && githubRepoNameInput) {
       let cancelled = false
 
       setIsFetchingBranches(true)
       githubAPI.listBranches(githubRepoOwnerInput, githubRepoNameInput, githubInstallationIdInput || undefined)
         .then(res => {
           if (cancelled) return
-
-          if (res.data.warning) {
-            toast.warning(res.data.warning)
-          }
 
           const raw = res.data.data || []
           setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
@@ -325,7 +327,7 @@ function UserProjectDetail() {
         cancelled = true
       }
     }
-  }, [gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput, githubInstallationIdInput])
+  }, [activeTab, gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput, githubInstallationIdInput])
 
   const fetchRuntimeEvents = useCallback(async () => {
     if (!uid) return
@@ -578,7 +580,7 @@ function UserProjectDetail() {
     if (isDeploying) {
       const interval = setInterval(() => {
         fetchProject(true)
-      }, 4000)
+      }, 10000)
       return () => clearInterval(interval)
     }
   }, [project, fetchProject])

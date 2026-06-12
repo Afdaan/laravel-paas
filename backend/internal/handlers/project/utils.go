@@ -427,6 +427,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 				if err != nil {
 					return
 				}
+				_ = w.Flush()
 			case <-keepAliveTicker.C:
 				_, err := w.WriteString(":\n\n")
 				if err != nil {
