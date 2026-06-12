@@ -168,6 +168,7 @@ function UserProjectDetail() {
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
   const isActionPendingRef = useRef(false)
+  const activeProjectUidRef = useRef<string | null>(uid || null)
 
   const [branchInput, setBranchInput] = useState('')
   const [baseDirInput, setBaseDirInput] = useState('')
@@ -178,6 +179,8 @@ function UserProjectDetail() {
   const [workerCommandInput, setWorkerCommandInput] = useState('')
   const [queueEnabledInput, setQueueEnabledInput] = useState(false)
   const [languageVersionInput, setLanguageVersionInput] = useState('')
+  const [settingsProjectUid, setSettingsProjectUid] = useState<string | null>(null)
+  const settingsProjectUidRef = useRef<string | null>(null)
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   const [branchesList, setBranchesList] = useState<string[]>([])
   const [isFetchingBranches, setIsFetchingBranches] = useState(false)
@@ -213,19 +216,6 @@ function UserProjectDetail() {
     }
   }
 
-  const loadGithubRepos = async (installationId: number | string) => {
-    setIsGithubReposLoading(true)
-    try {
-      const response = await githubAPI.listRepositories(installationId)
-      setGithubRepos(response.data.data || [])
-    } catch (err) {
-      console.error('Failed to load GitHub repositories', err)
-      setGithubRepos([])
-    } finally {
-      setIsGithubReposLoading(false)
-    }
-  }
-
   useEffect(() => {
     if (activeTab === 'settings') {
       loadGithubInstallations()
@@ -234,26 +224,63 @@ function UserProjectDetail() {
 
   useEffect(() => {
     if (githubInstallationIdInput) {
-      loadGithubRepos(githubInstallationIdInput)
-    } else {
-      setGithubRepos([])
+      const requestedInstallationId = githubInstallationIdInput
+      let cancelled = false
+
+      setIsGithubReposLoading(true)
+      githubAPI.listRepositories(requestedInstallationId)
+        .then(response => {
+          if (cancelled) return
+
+          setGithubRepos(response.data.data || [])
+        })
+        .catch(err => {
+          if (cancelled) return
+
+          console.error('Failed to load GitHub repositories', err)
+          setGithubRepos([])
+        })
+        .finally(() => {
+          if (cancelled) return
+
+          setIsGithubReposLoading(false)
+        })
+
+      return () => {
+        cancelled = true
+      }
     }
+
+    setGithubRepos([])
+    setIsGithubReposLoading(false)
   }, [githubInstallationIdInput])
 
   useEffect(() => {
     if (gitConnectionMode === 'github_app' && githubRepoOwnerInput && githubRepoNameInput) {
+      let cancelled = false
+
       setIsFetchingBranches(true)
       githubAPI.listBranches(githubRepoOwnerInput, githubRepoNameInput)
         .then(res => {
+          if (cancelled) return
+
           const raw = res.data.data || []
           setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
         })
         .catch(() => {
+          if (cancelled) return
+
           setBranchesList([])
         })
         .finally(() => {
+          if (cancelled) return
+
           setIsFetchingBranches(false)
         })
+
+      return () => {
+        cancelled = true
+      }
     }
   }, [gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput])
 
@@ -419,28 +446,38 @@ function UserProjectDetail() {
 
   const fetchBranches = useCallback(async (showToast = false) => {
     if (!uid) return
+    const requestedUid = uid
     setIsFetchingBranches(true)
     try {
-      const response = await projectsAPI.listBranches(uid)
+      const response = await projectsAPI.listBranches(requestedUid)
+      if (activeProjectUidRef.current !== requestedUid) return
+
       const raw = response.data.data || []
       setBranchesList(raw.map((b: string | { name: string }) => typeof b === 'string' ? b : b.name))
       if (showToast) {
         toast.success(t('projectDetail.settings.syncSuccess') || 'Branches synchronized successfully')
       }
     } catch {
+      if (activeProjectUidRef.current !== requestedUid) return
+
       setBranchesList([]) // Fallback to manual text input on failure
       if (showToast) {
         toast.error(t('projectDetail.settings.syncFailed') || 'Failed to synchronize branches')
       }
     } finally {
-      setIsFetchingBranches(false)
+      if (activeProjectUidRef.current === requestedUid) {
+        setIsFetchingBranches(false)
+      }
     }
   }, [uid, t])
 
   const fetchProject = useCallback(async (forceUpdate = false) => {
     if (!uid || isDeleting) return
+    const requestedUid = uid
     try {
-      const response = await projectsAPI.get(uid)
+      const response = await projectsAPI.get(requestedUid)
+      if (activeProjectUidRef.current !== requestedUid) return
+
       // Prevent stale polling overwrites during optimistic action phases unless explicitly forced
       if (typeof forceUpdate !== 'boolean') forceUpdate = false // Handle accidental event objects
       if (!forceUpdate && isActionPendingRef.current) return
@@ -448,6 +485,8 @@ function UserProjectDetail() {
       setProject(response.data)
       setConsecutiveErrors(0)
     } catch (error: unknown) {
+      if (activeProjectUidRef.current !== requestedUid) return
+
       const axiosError = error as AxiosError<{ error: string }>
       if (axiosError.response?.status === 401) {
         navigate('/login')
@@ -469,7 +508,9 @@ function UserProjectDetail() {
         description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
       })
     } finally {
-      setIsLoading(false)
+      if (activeProjectUidRef.current === requestedUid) {
+        setIsLoading(false)
+      }
     }
   }, [uid, navigate, t, consecutiveErrors, isDeleting])
 
@@ -636,8 +677,29 @@ function UserProjectDetail() {
   }
 
 
+  const applyProjectSettings = useCallback((nextProject: Project) => {
+    setBranchInput(nextProject.branch || '')
+    setBaseDirInput(nextProject.base_directory || '')
+    setBuildCommandInput(nextProject.build_command || '')
+    setStartCommandInput(nextProject.start_command || '')
+    setNodeVersionInput(nextProject.node_version || '20')
+    setPhpVersionInput(nextProject.php_version || '8.2')
+    setWorkerCommandInput(nextProject.worker_command || '')
+    setQueueEnabledInput(nextProject.queue_enabled || false)
+    setLanguageVersionInput(nextProject.language_version || '')
+    setGithubUrlInput(nextProject.github_url || '')
+    setGithubInstallationIdInput(nextProject.github_installation_id || null)
+    setGithubRepoOwnerInput(nextProject.github_repo_owner || '')
+    setGithubRepoNameInput(nextProject.github_repo_name || '')
+    setGitConnectionMode(nextProject.github_installation_id ? 'github_app' : 'manual')
+    settingsProjectUidRef.current = nextProject.uid
+    setSettingsProjectUid(nextProject.uid)
+  }, [])
+
   const isSettingsDirty = useMemo(() => {
     if (!project) return false
+    if (settingsProjectUid !== project.uid) return false
+
     return branchInput !== (project.branch || '') ||
       baseDirInput !== (project.base_directory || '') ||
       buildCommandInput !== (project.build_command || '') ||
@@ -652,27 +714,14 @@ function UserProjectDetail() {
       githubRepoOwnerInput !== (project.github_repo_owner || '') ||
       githubRepoNameInput !== (project.github_repo_name || '')
   }, [
-    project, branchInput, baseDirInput, buildCommandInput, startCommandInput,
+    project, settingsProjectUid, branchInput, baseDirInput, buildCommandInput, startCommandInput,
     nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput,
     languageVersionInput, githubUrlInput, githubInstallationIdInput, githubRepoOwnerInput, githubRepoNameInput
   ])
 
   const handleResetSettings = () => {
     if (!project) return
-    setBranchInput(project.branch || '')
-    setBaseDirInput(project.base_directory || '')
-    setBuildCommandInput(project.build_command || '')
-    setStartCommandInput(project.start_command || '')
-    setNodeVersionInput(project.node_version || '20')
-    setPhpVersionInput(project.php_version || '8.2')
-    setWorkerCommandInput(project.worker_command || '')
-    setQueueEnabledInput(project.queue_enabled || false)
-    setLanguageVersionInput(project.language_version || '')
-    setGithubUrlInput(project.github_url || '')
-    setGithubInstallationIdInput(project.github_installation_id || null)
-    setGithubRepoOwnerInput(project.github_repo_owner || '')
-    setGithubRepoNameInput(project.github_repo_name || '')
-    setGitConnectionMode(project.github_installation_id ? 'github_app' : 'manual')
+    applyProjectSettings(project)
     toast.info(t('common.resetSuccess') || 'Settings reset to original values')
   }
 
@@ -716,12 +765,20 @@ function UserProjectDetail() {
     })
   }
 
-  const settingsInitialized = useRef(false)
-
   useEffect(() => {
-    settingsInitialized.current = false
-    // Clear stale data from previous project immediately to prevent dirty-state false positives
+    activeProjectUidRef.current = uid || null
+    settingsProjectUidRef.current = null
+    setSettingsProjectUid(null)
+
+    // Clear stale data from previous project immediately so settings never render with
+    // another project's branch, commands, Git source, or runtime defaults.
+    setProject(null)
+    setStats(null)
+    setLogs('')
+    setRuntimeEvents([])
     setBranchesList([])
+    setGithubRepos([])
+    setForceManualInput(false)
     setBranchInput('')
     setBaseDirInput('')
     setBuildCommandInput('')
@@ -739,47 +796,20 @@ function UserProjectDetail() {
     setIsLoading(true)
     fetchProject(true)
     fetchBranches(false)
-  }, [uid, fetchProject, fetchBranches])
+  }, [uid])
 
   useEffect(() => {
-    if (project && !settingsInitialized.current) {
-      setBranchInput(project.branch || '')
-      setBaseDirInput(project.base_directory || '')
-      setBuildCommandInput(project.build_command || '')
-      setStartCommandInput(project.start_command || '')
-      setNodeVersionInput(project.node_version || '20')
-      setPhpVersionInput(project.php_version || '8.2')
-      setWorkerCommandInput(project.worker_command || '')
-      setQueueEnabledInput(project.queue_enabled || false)
-      setLanguageVersionInput(project.language_version || '')
-      setGithubUrlInput(project.github_url || '')
-      setGithubInstallationIdInput(project.github_installation_id || null)
-      setGithubRepoOwnerInput(project.github_repo_owner || '')
-      setGithubRepoNameInput(project.github_repo_name || '')
-      setGitConnectionMode(project.github_installation_id ? 'github_app' : 'manual')
-      settingsInitialized.current = true
+    if (project && settingsProjectUidRef.current !== project.uid) {
+      applyProjectSettings(project)
       fetchBranches()
     }
-  }, [project, fetchBranches])
+  }, [project, applyProjectSettings, fetchBranches])
 
   useEffect(() => {
-    if (project && !isSettingsDirty && settingsInitialized.current) {
-      setBranchInput(project.branch || '')
-      setBaseDirInput(project.base_directory || '')
-      setBuildCommandInput(project.build_command || '')
-      setStartCommandInput(project.start_command || '')
-      setNodeVersionInput(project.node_version || '20')
-      setPhpVersionInput(project.php_version || '8.2')
-      setWorkerCommandInput(project.worker_command || '')
-      setQueueEnabledInput(project.queue_enabled || false)
-      setLanguageVersionInput(project.language_version || '')
-      setGithubUrlInput(project.github_url || '')
-      setGithubInstallationIdInput(project.github_installation_id || null)
-      setGithubRepoOwnerInput(project.github_repo_owner || '')
-      setGithubRepoNameInput(project.github_repo_name || '')
-      setGitConnectionMode(project.github_installation_id ? 'github_app' : 'manual')
+    if (project && !isSettingsDirty && settingsProjectUid === project.uid) {
+      applyProjectSettings(project)
     }
-  }, [project, isSettingsDirty])
+  }, [project, isSettingsDirty, settingsProjectUid, applyProjectSettings])
 
   const handleDelete = () => {
     if (!uid) return
