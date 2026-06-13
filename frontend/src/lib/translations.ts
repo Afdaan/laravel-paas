@@ -815,7 +815,7 @@ export const translations = {
         loadFailedTitle: "Unable to Load Environment",
         loadBlockedTitle: "Environment Locked",
         loadBlockedDesc: "The environment cannot be loaded because a protected secret could not be decrypted.",
-        loadBlockedAction: "Add the old key to CREDENTIAL_ENCRYPTION_KEY_PREVIOUS, restart backend and worker, then retry. For legacy installs that used the built-in fallback key, enable CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS only during migration.",
+        loadBlockedAction: "Contact an administrator to recover or reset the affected environment secrets.",
       },
       database: {
         creds: "Database Credentials",
@@ -1501,7 +1501,7 @@ export const translations = {
         invalidId: "Invalid SecretStore ID",
         itemNotFound: "SecretStore Item not found",
         valueNotFound: "No values set for this secret key",
-        decryptionFailed: "Failed to decrypt secret value",
+        decryptionFailed: "This secret is unavailable and needs administrator attention.",
         projectNotFound: "Project not found",
         invalidJson: "Invalid JSON format"
       }
@@ -2323,7 +2323,7 @@ export const translations = {
         loadFailedTitle: "Environment Tidak Dapat Dimuat",
         loadBlockedTitle: "Environment Terkunci",
         loadBlockedDesc: "Environment tidak dapat dimuat karena secret terproteksi tidak bisa didekripsi.",
-        loadBlockedAction: "Tambahkan key lama ke CREDENTIAL_ENCRYPTION_KEY_PREVIOUS, restart backend dan worker, lalu retry. Untuk instalasi lama yang memakai fallback key bawaan, aktifkan CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS hanya selama migrasi.",
+        loadBlockedAction: "Hubungi administrator untuk memulihkan atau mereset secret environment yang terdampak.",
       },
       database: {
         creds: "Kredensial Database",
@@ -2998,7 +2998,7 @@ export const translations = {
         invalidId: "ID SecretStore tidak valid",
         itemNotFound: "Item SecretStore tidak ditemukan",
         valueNotFound: "Nilai rahasia untuk key ini belum diatur",
-        decryptionFailed: "Gagal mendekripsi nilai rahasia",
+        decryptionFailed: "Secret ini tidak tersedia dan perlu ditangani administrator.",
         projectNotFound: "Project tidak ditemukan",
         invalidJson: "Format JSON tidak valid"
       }

@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
@@ -19,7 +20,8 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	code := "INTERNAL_ERROR"
 	message := "An unexpected error occurred"
 	// 1. Check for custom AppError
-	if ae, ok := err.(*apperr.AppError); ok {
+	var ae *apperr.AppError
+	if errors.As(err, &ae) {
 		status = ae.HTTPStatus
 		code = ae.Code
 		message = ae.Message
@@ -33,12 +35,20 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	if status >= 500 {
 		slog.Error("Critical System Error", "error", err, "path", c.Path())
 	} else {
-		slog.Warn("Request Error", "status", status, "message", message, "path", c.Path())
+		// Log full error for 4xx as well so cryptographic and logical failures aren't blindly swallowed
+		slog.Warn("Request Error", "status", status, "message", message, "path", c.Path(), "error", err)
 	}
 
 	// Standardize the response
-	return c.Status(status).JSON(fiber.Map{
+	response := fiber.Map{
 		"error": message,
 		"code":  code,
-	})
+	}
+	
+	// Include structured details if present for API consumers
+	if ae != nil && ae.Details != nil {
+		response["details"] = ae.Details
+	}
+
+	return c.Status(status).JSON(response)
 }

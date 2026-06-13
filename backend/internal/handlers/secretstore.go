@@ -235,7 +235,11 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 	decryptionKeys := utils.CredentialDecryptionKeys(h.cfg.CredentialEncryptionKey, h.cfg.CredentialEncryptionPreviousKeys)
 	decryptedVal, errDec := utils.Decrypt(targetVal.EncryptedValue, decryptionKeys...)
 	if errDec != nil {
-		return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
+		if h.cfg.CredentialEncryptionAllowInsecurePrevious {
+			decryptedVal = targetVal.EncryptedValue
+		} else {
+			return apperr.NewSecretDecryptionUnavailable(errDec)
+		}
 	}
 
 	// Write audited activity log entry for tracking.
@@ -327,7 +331,11 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 
 		decrypted, err := utils.Decrypt(latestVal.EncryptedValue, decryptionKeys...)
 		if err != nil {
-			return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
+			if h.cfg.CredentialEncryptionAllowInsecurePrevious {
+				decrypted = latestVal.EncryptedValue
+			} else {
+				return apperr.NewSecretDecryptionUnavailable(err)
+			}
 		}
 		secretsMap[item.Key] = normalizeSecretStoreValue(item.Key, decrypted)
 	}

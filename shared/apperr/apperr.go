@@ -65,3 +65,7 @@ func NewSecretDecryptionFailed(message string, cause error) *AppError {
 	err.Cause = cause
 	return err
 }
+
+func NewSecretDecryptionUnavailable(cause error) *AppError {
+	return NewSecretDecryptionFailed("This secret is unavailable and needs administrator attention.", cause)
+}

@@ -280,6 +280,7 @@ export default function SecretStoreDashboard() {
           toast.error(t('secretstore.errors.valueNotFound'))
           return
         case 'DECRYPTION_FAILED':
+        case 'SECRET_DECRYPTION_FAILED':
           toast.error(t('secretstore.errors.decryptionFailed'))
           return
         case 'PROJECT_NOT_FOUND':

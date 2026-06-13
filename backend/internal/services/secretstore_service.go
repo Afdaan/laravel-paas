@@ -452,7 +452,11 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 			if latestVal != nil {
 				result, err := utils.DecryptWithResult(latestVal.EncryptedValue, decryptionKeys...)
 				if err != nil {
-					return nil, secretDecryptError(project.ID, b.SecretStoreID, item.ID, err)
+					if s.cfg.CredentialEncryptionAllowInsecurePrevious {
+						result = utils.DecryptionResult{Plaintext: latestVal.EncryptedValue, UsedFallbackKey: true}
+					} else {
+						return nil, secretDecryptError(project.ID, b.SecretStoreID, item.ID, err)
+					}
 				}
 				envMap[item.Key] = result.Plaintext
 				if result.UsedFallbackKey {
@@ -554,7 +558,11 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 					}
 					result, decErr := utils.DecryptWithResult(val.EncryptedValue, decryptionKeys...)
 					if decErr != nil {
-						return secretDecryptError(project.ID, storeID, item.ID, decErr)
+						if s.cfg.CredentialEncryptionAllowInsecurePrevious {
+							result = utils.DecryptionResult{Plaintext: val.EncryptedValue, UsedFallbackKey: true}
+						} else {
+							return secretDecryptError(project.ID, storeID, item.ID, decErr)
+						}
 					}
 					appKey = result.Plaintext
 					if result.UsedFallbackKey {
@@ -581,8 +589,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 }
 
 func secretDecryptError(projectID uint, storeID uint, itemID uint, err error) error {
-	message := "A protected environment secret cannot be decrypted. Configure CREDENTIAL_ENCRYPTION_KEY_PREVIOUS with the old key, restore the previous CREDENTIAL_ENCRYPTION_KEY, or re-encrypt the SecretStore before deploying."
-	appErr := apperr.NewSecretDecryptionFailed(message, err)
+	appErr := apperr.NewSecretDecryptionUnavailable(err)
 	appErr.Details = map[string]uint{
 		"project_id":      projectID,
 		"secret_store_id": storeID,

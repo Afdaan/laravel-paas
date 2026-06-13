@@ -159,7 +159,11 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 					if latestVal != nil {
 						result, err := utils.DecryptWithResult(latestVal.EncryptedValue, decryptionKeys...)
 						if err != nil {
-							return nil, secretDecryptError(projectID, b.SecretStoreID, item.ID, err)
+							if s.cfg.CredentialEncryptionAllowInsecurePrevious {
+								result = utils.DecryptionResult{Plaintext: latestVal.EncryptedValue, UsedFallbackKey: true}
+							} else {
+								return nil, secretDecryptError(projectID, b.SecretStoreID, item.ID, err)
+							}
 						}
 						envMap[item.Key] = result.Plaintext
 						if result.UsedFallbackKey {
@@ -266,7 +270,11 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 					}
 					result, decErr := utils.DecryptWithResult(val.EncryptedValue, decryptionKeys...)
 					if decErr != nil {
-						return secretDecryptError(projectID, storeID, item.ID, decErr)
+						if s.cfg.CredentialEncryptionAllowInsecurePrevious {
+							result = utils.DecryptionResult{Plaintext: val.EncryptedValue, UsedFallbackKey: true}
+						} else {
+							return secretDecryptError(projectID, storeID, item.ID, decErr)
+						}
 					}
 					appKey = result.Plaintext
 					if result.UsedFallbackKey {
@@ -293,8 +301,7 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 }
 
 func secretDecryptError(projectID uint, storeID uint, itemID uint, err error) error {
-	message := "A protected environment secret cannot be decrypted. Configure CREDENTIAL_ENCRYPTION_KEY_PREVIOUS with the old key, restore the previous CREDENTIAL_ENCRYPTION_KEY, or re-encrypt the SecretStore before deploying."
-	appErr := apperr.NewSecretDecryptionFailed(message, err)
+	appErr := apperr.NewSecretDecryptionUnavailable(err)
 	appErr.Details = map[string]uint{
 		"project_id":      projectID,
 		"secret_store_id": storeID,
