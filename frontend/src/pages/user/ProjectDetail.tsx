@@ -341,8 +341,11 @@ function UserProjectDetail() {
   }, [uid])
 
   useEffect(() => {
+    fetchRuntimeEvents()
+  }, [fetchRuntimeEvents, project?.last_commit_hash])
+
+  useEffect(() => {
     if (activeTab === 'runtime') {
-      fetchRuntimeEvents()
       const interval = setInterval(fetchRuntimeEvents, 5000)
       return () => clearInterval(interval)
     }
@@ -762,11 +765,16 @@ function UserProjectDetail() {
     setBaseDirInput(nextProject.base_directory || '')
     setBuildCommandInput(nextProject.build_command || '')
     setStartCommandInput(nextProject.start_command || '')
-    setNodeVersionInput(nextProject.node_version || '20')
-    setPhpVersionInput(nextProject.php_version || '8.2')
+    setNodeVersionInput(nextProject.node_version || DEFAULT_RUNTIME_VERSIONS.node)
+    setPhpVersionInput(nextProject.php_version || DEFAULT_RUNTIME_VERSIONS.php)
+    
+    let defaultLangVersion = ''
+    if (nextProject.framework === 'Python') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.python
+    else if (nextProject.framework === 'Go') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.go
+    setLanguageVersionInput(nextProject.language_version || defaultLangVersion)
+    
     setWorkerCommandInput(nextProject.worker_command || '')
     setQueueEnabledInput(nextProject.queue_enabled || false)
-    setLanguageVersionInput(nextProject.language_version || '')
     setGithubUrlInput(nextProject.github_url || '')
     setGithubInstallationIdInput(nextProject.github_installation_id || null)
     setGithubRepoOwnerInput(nextProject.github_repo_owner || '')
@@ -780,15 +788,19 @@ function UserProjectDetail() {
     if (!project) return false
     if (settingsProjectUid !== project.uid) return false
 
+    let defaultLangVersion = ''
+    if (project.framework === 'Python') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.python
+    else if (project.framework === 'Go') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.go
+
     return branchInput !== (project.branch || '') ||
       baseDirInput !== (project.base_directory || '') ||
       buildCommandInput !== (project.build_command || '') ||
       startCommandInput !== (project.start_command || '') ||
-      nodeVersionInput !== (project.node_version || '20') ||
-      phpVersionInput !== (project.php_version || '8.2') ||
+      nodeVersionInput !== (project.node_version || DEFAULT_RUNTIME_VERSIONS.node) ||
+      phpVersionInput !== (project.php_version || DEFAULT_RUNTIME_VERSIONS.php) ||
       workerCommandInput !== (project.worker_command || '') ||
       queueEnabledInput !== (project.queue_enabled || false) ||
-      languageVersionInput !== (project.language_version || '') ||
+      languageVersionInput !== (project.language_version || defaultLangVersion) ||
       githubUrlInput !== (project.github_url || '') ||
       githubInstallationIdInput !== (project.github_installation_id || null) ||
       githubRepoOwnerInput !== (project.github_repo_owner || '') ||
@@ -863,8 +875,8 @@ function UserProjectDetail() {
     setBaseDirInput('')
     setBuildCommandInput('')
     setStartCommandInput('')
-    setNodeVersionInput('20')
-    setPhpVersionInput('8.2')
+    setNodeVersionInput(DEFAULT_RUNTIME_VERSIONS.node)
+    setPhpVersionInput(DEFAULT_RUNTIME_VERSIONS.php)
     setWorkerCommandInput('')
     setQueueEnabledInput(false)
     setLanguageVersionInput('')
