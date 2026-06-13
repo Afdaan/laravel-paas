@@ -62,8 +62,8 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 
 	// Remove hardcoded startup grace period - rely on polling instead
 	
-	maxAttempts := 15 // Increased attempts since we poll faster
-	currentInterval := 500 * time.Millisecond
+	maxAttempts := 30 // Restored to give larger total readiness budget
+	currentInterval := 200 * time.Millisecond
 	isReady := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -111,8 +111,8 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 
 		// Exponential backoff, but cap it faster
 		currentInterval = time.Duration(float64(currentInterval) * 1.5)
-		if currentInterval > 3*time.Second {
-			currentInterval = 3 * time.Second
+		if currentInterval > 2*time.Second {
+			currentInterval = 2 * time.Second
 		}
 	}
 

@@ -312,6 +312,8 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 		project.Name = name
 	}
 	project.Branch = branch
+	
+
 	project.PHPVersion = phpVersion
 	project.BaseDirectory = baseDirectory
 	project.QueueEnabled = queueEnabled

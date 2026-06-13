@@ -885,7 +885,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
-	if langVersion != "" {
+	if langVersion != "" && !project.IsManualVersion {
 		project.LanguageVersion = langVersion
 	}
 
@@ -893,7 +893,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		laravelVersion, phpVersion, err := w.versionService.DetectVersions(buildPath)
 		if err == nil {
 			project.LaravelVersion = laravelVersion
-			project.PHPVersion = phpVersion
+			if !project.IsManualVersion {
+				project.PHPVersion = phpVersion
+			}
 		} else if project.PHPVersion == "" {
 			project.PHPVersion = "8.4"
 		}
@@ -907,7 +909,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 		}
 		if isJS {
-			if langVersion != "" {
+			if langVersion != "" && !project.IsManualVersion {
 				project.NodeVersion = langVersion
 			}
 		}
@@ -936,12 +938,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		project.PHPVersion = ""
 		project.LaravelVersion = ""
 		project.LanguageVersion = ""
+		project.IsManualVersion = false
 
 		updates["port"] = nil
 		updates["node_version"] = ""
 		updates["php_version"] = ""
 		updates["laravel_version"] = ""
 		updates["language_version"] = ""
+		updates["is_manual_version"] = false
 	}
 
 	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {

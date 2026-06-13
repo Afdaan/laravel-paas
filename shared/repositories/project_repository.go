@@ -194,6 +194,30 @@ func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOl
 
 func (r *projectRepository) Delete(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 1. Fetch associated custom domains to clean up domain-specific children first
+		var domainIDs []uint
+		if err := tx.Model(&models.CustomDomain{}).Where("project_id = ?", id).Pluck("id", &domainIDs).Error; err != nil {
+			return err
+		}
+
+		if len(domainIDs) > 0 {
+			// Delete domain-specific events and logs
+			if err := tx.Unscoped().Where("domain_id IN ?", domainIDs).Delete(&models.DomainEvent{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("domain_id IN ?", domainIDs).Delete(&models.PendingReconcile{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("domain_id IN ?", domainIDs).Delete(&models.AuditLog{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// Delete associated outbox events (MUST be before CustomDomain since it references DomainID)
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.OutboxEvent{}).Error; err != nil {
+			return err
+		}
+
 		// Delete associated custom domains
 		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.CustomDomain{}).Error; err != nil {
 			return err
@@ -216,6 +240,16 @@ func (r *projectRepository) Delete(id uint) error {
 
 		// Delete associated resource logs
 		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.ResourceLog{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated secret store bindings
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.SecretStoreBinding{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated secret store activity logs
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.SecretStoreActivityLog{}).Error; err != nil {
 			return err
 		}
 

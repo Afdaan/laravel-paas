@@ -6,31 +6,16 @@ import {
   RefreshCw,
   ExternalLink,
   Trash2,
-  Cpu,
-  Activity,
   Play,
   Power,
-  LayoutGrid,
-  Terminal as TerminalIcon,
-  Code,
-  Globe,
-  Database as DatabaseIcon,
-  ShieldAlert,
   Box,
   AlertTriangle,
-  GitBranch,
-  Settings,
   Loader2,
-  Save,
-  Copy,
-  Blocks,
-  ArrowUpRight,
-  ChevronsDown,
-  Code2,
-  Key,
-  Scroll,
-  Hammer,
-  MemoryStick
+  MemoryStick,
+  Terminal as TerminalIcon,
+  Globe,
+  Cpu,
+  Database as DatabaseIcon
 } from 'lucide-react'
 import axios, { AxiosError } from 'axios'
 import { projectsAPI, githubAPI } from '../../services/api'
@@ -51,44 +36,25 @@ interface GitHubRepo {
 import ConfirmationModal from '../../components/ConfirmationModal'
 import DatabaseStudio from './DatabaseStudio'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
-import { RUNTIME_VERSIONS, DEFAULT_RUNTIME_VERSIONS } from '@/lib/runtimes'
-import { Switch } from '@/components/ui/switch'
+import { DEFAULT_RUNTIME_VERSIONS } from '@/lib/runtimes'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
-import BuildLogsConsole from '@/components/BuildLogsConsole'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import ProjectConsole from '../../components/project/ProjectConsole'
 import { RestartButton } from '../../components/project/RestartButton'
 import { EnvironmentEditor } from '../../components/project/EnvironmentEditor'
-import { CustomDomainManager } from '../../components/project/CustomDomainManager'
 import { RuntimeTab } from '../../components/project/RuntimeTab'
+import { OverviewTab } from '../../components/project/detail/OverviewTab'
+import { LogsTab } from '../../components/project/detail/LogsTab'
+import { BuildTab } from '../../components/project/detail/BuildTab'
+import { DomainsTab } from '../../components/project/detail/DomainsTab'
+import { SettingsTab } from '../../components/project/detail/SettingsTab'
+import { PROJECT_DETAIL_TABS, isProjectDetailTab } from '../../components/project/detail/tabs'
 
-const Github = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={props.className}
-    style={props.style}
-    width={props.width || "1em"}
-    height={props.height || "1em"}
-    {...props}
-  >
-    <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
-    <path d="M9 18c-4.51 2-5-2-7-2" />
-  </svg>
-)
 
 const ESCAPE_CHAR = String.fromCharCode(27)
 const ANSI_ESCAPE_PATTERN = new RegExp(`(?:${ESCAPE_CHAR}\\[[0-?]*[ -/]*[@-~]|${ESCAPE_CHAR}[@-_])`, 'g')
@@ -154,8 +120,7 @@ function UserProjectDetail() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || (() => {
     const hash = window.location.hash.replace('#', '')
-    const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
-    return (hash && allowedTabs.includes(hash)) ? hash : 'project'
+    return isProjectDetailTab(hash) ? hash : 'project'
   })()
   const setActiveTab = useCallback((tab: string) => {
     setSearchParams(prev => {
@@ -254,7 +219,7 @@ function UserProjectDetail() {
           if (cancelled) return
           setGithubInstallations(response.data.data || [])
         })
-        .catch((err: any) => {
+        .catch((err: AxiosError) => {
           if (cancelled) return
           const status = err?.response?.status
           if (status !== 404 && status !== 403) {
@@ -374,8 +339,7 @@ function UserProjectDetail() {
     const tabParam = params.get('tab')
     if (!tabParam) {
       const hash = window.location.hash.replace('#', '')
-      const allowedTabs = ['project', 'runtime', 'console', 'environment', 'database', 'logs', 'build', 'domains', 'settings']
-      if (hash && allowedTabs.includes(hash)) {
+      if (isProjectDetailTab(hash)) {
         setActiveTab(hash)
       }
     }
@@ -457,7 +421,7 @@ function UserProjectDetail() {
       }
     })
     return list
-  }, [runtimeEvents])
+  }, [runtimeEvents, t])
 
   const activeCommit = useMemo(() => {
     if (!project?.last_commit_hash) return null
@@ -1225,249 +1189,26 @@ function UserProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="w-full overflow-x-auto pb-2 -mb-2 custom-scrollbar hide-scrollbar-on-mobile">
           <TabsList className="bg-muted/40 p-1.5 rounded-xl border border-border/40 inline-flex min-w-max shadow-sm mb-1">
-            <TabsTrigger value="project" className="flex items-center gap-2 data-active:!text-primary">
-              <LayoutGrid className="w-4 h-4" />
-              {t('projectDetail.tabs.overview')}
-            </TabsTrigger>
-            <TabsTrigger value="runtime" className="flex items-center gap-2 data-active:!text-primary">
-              <Cpu className="w-4 h-4" />
-              {t('projectDetail.tabs.runtime')}
-            </TabsTrigger>
-            <TabsTrigger value="console" className="flex items-center gap-2 data-active:!text-primary">
-              <TerminalIcon className="w-4 h-4" />
-              {t('projectDetail.tabs.console')}
-            </TabsTrigger>
-            <TabsTrigger value="environment" className="flex items-center gap-2 data-active:!text-primary">
-              <Key className="w-4 h-4" />
-              {t('projectDetail.tabs.secrets')}
-            </TabsTrigger>
-            <TabsTrigger value="database" className="flex items-center gap-2 data-active:!text-primary">
-              <DatabaseIcon className="w-4 h-4" />
-              {t('projectDetail.tabs.database')}
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="flex items-center gap-2 data-active:!text-primary">
-              <Scroll className="w-4 h-4" />
-              {t('projectDetail.tabs.logs')}
-            </TabsTrigger>
-            <TabsTrigger value="build" className="flex items-center gap-2 data-active:!text-primary">
-              <Hammer className="w-4 h-4" />
-              {t('projectDetail.tabs.build')}
-            </TabsTrigger>
-            <TabsTrigger value="domains" className="flex items-center gap-2 data-active:!text-primary">
-              <Globe className="w-4 h-4" />
-              {t('projectDetail.tabs.domains')}
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2 data-active:!text-primary">
-              <Settings className="w-4 h-4" />
-              {t('projectDetail.tabs.settings')}
-            </TabsTrigger>
+            {PROJECT_DETAIL_TABS.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-2 data-active:!text-primary">
+                  <Icon className="w-4 h-4" />
+                  {t(tab.labelKey)}
+                </TabsTrigger>
+              )
+            })}
           </TabsList>
         </div>
 
         <TabsContent value="project" className="pt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-2">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
-                  <LayoutGrid className="w-4 h-4 text-primary" />
-                  {t('projectDetail.overview.connectionInfo')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Production / Subdomain URL */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-muted/50 rounded-xl border gap-4 group hover:border-primary/20 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-emerald-500/10 rounded-lg text-emerald-600 border border-emerald-500/20">
-                      <Globe className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-sm">{t('projectDetail.overview.productionUrl')}</div>
-                      <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.overview.webAccess')} · SSL Enabled</div>
-                    </div>
-                  </div>
-                  <a
-                    href={projectUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
-                  >
-                    {projectUrl}
-                    <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
-                  </a>
-                </div>
-
-                {/* Custom Domains */}
-                {project.custom_domains && project.custom_domains.length > 0 && (
-                  <div className="space-y-2">
-                    {project.custom_domains
-                      .filter((d) => ['active', 'ssl_active', 'dns_verified'].includes(d.status))
-                      .map((d) => (
-                        <div
-                          key={d.id}
-                          className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/15 gap-4 group hover:border-primary/30 hover:bg-primary/10 transition-colors"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="p-2.5 bg-primary/10 rounded-lg text-primary border border-primary/20">
-                              <Globe className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-sm">{d.domain}</span>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0 h-4 text-primary border-primary/30 bg-primary/10"
-                                >
-                                  Custom Domain
-                                </Badge>
-                              </div>
-                              <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
-                                {d.status === 'ssl_active' ? 'SSL Active' : 'Active'} · Verified
-                              </div>
-                            </div>
-                          </div>
-                          <a
-                            href={`https://${d.domain}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
-                          >
-                            https://{d.domain}
-                            <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
-                          </a>
-                        </div>
-                      ))}
-
-                    {/* Pending domains hint */}
-                    {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 0 && (
-                      <button
-                        onClick={() => setActiveTab('domains')}
-                        className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30 transition-colors cursor-pointer group"
-                      >
-                        <span className="text-[11px] font-semibold">
-                          {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length} domain
-                          {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 1 ? 's' : ''} pending verification
-                        </span>
-                        <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Empty state: invite to add domains */}
-                {(!project.custom_domains || project.custom_domains.length === 0) && (
-                  <button
-                    onClick={() => setActiveTab('domains')}
-                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-muted-foreground/15 bg-muted/20 text-muted-foreground hover:border-primary/20 hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer group"
-                  >
-                    <span className="text-[11px] font-medium">Add a custom domain</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-40 group-hover:opacity-80 transition-opacity" />
-                  </button>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
-                  <Code className="w-4 h-4 text-primary" />
-                  {t('projectDetail.overview.repository')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-3 rounded-lg bg-muted border">
-                  <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.uri')}</label>
-                  <div className="text-xs font-mono truncate">{project.github_url || project.repository_url}</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-muted border flex items-center justify-between">
-                    <div>
-                      <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.overview.branch')}</label>
-                      <div className="flex items-center gap-1.5 font-bold text-xs">
-                        <GitBranch className="w-3 h-3 text-primary" />
-                        {project.branch || 'main'}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7 hover:bg-muted-foreground/10 text-muted-foreground hover:text-primary transition-colors"
-                      onClick={() => setActiveTab('settings')}
-                      title={t('projectDetail.actions.changeBranch') || 'Change Branch'}
-                    >
-                      <Settings className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted border">
-                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.settings.version')}</label>
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase">
-                      <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
-                      {isLaravelProject 
-                        ? (project.laravel_version || 'Laravel 10')
-                        : (project.framework && project.framework !== 'Other' ? `${project.framework} ${project.language_version || ''}` : t('common.general'))}
-                    </div>
-                  </div>
-                </div>
-                {activeCommit && (
-                  <div className="p-3 rounded-lg bg-muted border">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest block">
-                        {t('projectDetail.runtime.activeCommit') || 'Active Commit'}
-                      </label>
-                      <button
-                        onClick={() => setActiveTab('runtime')}
-                        className="text-[10px] font-bold text-primary hover:text-primary/80 hover:underline flex items-center gap-0.5 transition-all group cursor-pointer"
-                        title={t('projectDetail.runtime.goToCheckpointsTooltip') || 'Go to Deployment Checkpoints'}
-                      >
-                        {t('projectDetail.runtime.goToCheckpoints') || 'Go to Checkpoints'}
-                        <ArrowUpRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                      </button>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <button
-                        onClick={() => setActiveTab('runtime')}
-                        className="group flex shrink-0 items-center gap-1 font-mono font-bold text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-1.5 py-0.5 rounded border border-primary/20 transition-all hover:scale-105"
-                        title={t('projectDetail.runtime.goToCheckpointsTooltip') || 'View in Deployment Checkpoints'}
-                      >
-                        {activeCommit.shortSha}
-                        <ArrowUpRight className="w-3 h-3 text-primary/70 group-hover:text-primary transition-colors" />
-                      </button>
-                      {activeCommit.message ? (
-                        <span className="min-w-0 text-[11px] leading-5 text-foreground/85 font-medium break-words" title={activeCommit.message}>
-                          {activeCommit.message}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground italic">
-                          {t('projectDetail.runtime.noCommitMessage') || 'No commit message found'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5">
-                      <div className="mb-0.5 text-[8px] font-bold uppercase tracking-widest text-muted-foreground">
-                        {t('projectDetail.runtime.fullCommitSha') || 'Full Commit SHA'}
-                      </div>
-                      <code className="block break-all text-[10px] leading-4 text-foreground/80">
-                        {activeCommit.sha}
-                      </code>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {project.error_log && (
-            <Card className="border-destructive/20 bg-destructive/5 overflow-hidden">
-              <CardHeader className="bg-destructive/10 py-3">
-                <CardTitle className="text-xs font-bold text-destructive flex items-center gap-2 uppercase tracking-widest">
-                  <ShieldAlert className="w-4 h-4" />
-                  {t('projectDetail.overview.deployError')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <pre className="text-[11px] text-destructive/90 overflow-auto max-h-48 whitespace-pre-wrap font-mono leading-relaxed bg-black/5 p-4 rounded-lg">{project.error_log}</pre>
-              </CardContent>
-            </Card>
-          )}
+          <OverviewTab
+            project={project}
+            projectUrl={projectUrl}
+            isLaravelProject={isLaravelProject}
+            activeCommit={activeCommit}
+            onTabChange={setActiveTab}
+          />
         </TabsContent>
 
         <TabsContent value="console" className="pt-0">
@@ -1488,644 +1229,76 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="logs" className="pt-0">
-          <Card className="bg-zinc-950 text-zinc-300 border-none overflow-hidden flex flex-col h-[600px] gap-0 py-0 shadow-2xl">
-            <CardHeader className="bg-zinc-900/50 px-4 py-3 border-b border-white/5 flex flex-row items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1.5 mr-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80 shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                </div>
-                <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5 text-primary" />
-                  {t('projectDetail.logs.header')}
-                </div>
-                <div className="h-4 w-px bg-white/10 mx-2" />
-                <div className="flex bg-zinc-950 p-0.5 rounded-md border border-white/5">
-                  <button
-                    onClick={() => setLogType('web')}
-                    className={cn(
-                      "px-3 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
-                      logType === 'web' ? "bg-primary text-primary-foreground shadow-lg" : "text-zinc-500 hover:text-zinc-300"
-                    )}
-                  >
-                    {t('projectDetail.logs.web')}
-                  </button>
-                  <button
-                    onClick={() => setLogType('worker')}
-                    disabled={!project.worker_container_id && !project.queue_enabled}
-                    className={cn(
-                      "px-3 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
-                      logType === 'worker' ? "bg-primary text-primary-foreground shadow-lg" : "text-zinc-500 hover:text-zinc-300",
-                      (!project.worker_container_id && !project.queue_enabled) && "opacity-30 cursor-not-allowed"
-                    )}
-                  >
-                    {t('projectDetail.logs.worker')}
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { navigator.clipboard.writeText(visibleLogsText); toast.success(t('common.copySuccess')) }}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
-                  title={t('projectDetail.logs.copy')}
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => {
-                    const el = document.getElementById('runtime-logs-scroll');
-                    if (el) el.scrollTop = el.scrollHeight;
-                  }}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
-                  title={t('projectDetail.logs.scrollToBottom')}
-                >
-                  <ChevronsDown className="w-3.5 h-3.5" />
-                </button>
-                <div className="w-px h-3 bg-white/10 mx-1" />
-                <Button variant="ghost" size="xs" onClick={handleClearLogs} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
-                <Button variant="ghost" size="xs" onClick={fetchLogs} className="h-6 w-6 cursor-pointer"><RefreshCw size={12} /></Button>
-              </div>
-            </CardHeader>
-            <div id="runtime-logs-scroll" className="flex-1 p-6 overflow-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-zinc-950">
-              {visibleLogLines.length > 0 ? visibleLogLines.map((line: string, i: number) => {
-                const isTimestamp = /^\d{4}-\d{2}-\d{2}/.test(line) || /^\[\d{2}-\w{3}-\d{4}/.test(line)
-                return (
-                  <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
-                    <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{logOffset + i + 1}</span>
-                    <span className="whitespace-pre-wrap font-mono">
-                      {isTimestamp ? (
-                        <>
-                          <span className="text-zinc-600 mr-2">{line.split(' ')[0]}</span>
-                          <span>{line.split(' ').slice(1).join(' ')}</span>
-                        </>
-                      ) : line}
-                    </span>
-                  </div>
-                )
-              }) : (
-                <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4">
-                  <Activity size={48} />
-                  <p className="uppercase tracking-[0.4em] font-bold text-xs">{t('projectDetail.logs.waiting')}</p>
-                </div>
-              )}
-              <div ref={logsEndRef} />
-            </div>
-          </Card>
+          <LogsTab
+            project={project}
+            logType={logType}
+            setLogType={setLogType}
+            visibleLogLines={visibleLogLines}
+            visibleLogsText={visibleLogsText}
+            logOffset={logOffset}
+            logsEndRef={logsEndRef}
+            onClearLogs={handleClearLogs}
+            onRefreshLogs={fetchLogs}
+          />
         </TabsContent>
 
         <TabsContent value="build" className="pt-0">
           {activeTab === 'build' && project && (
-            <BuildLogsConsole 
-              key={`${project.uid}:${project.deployment_job_id || 'no-job'}`}
-              projectId={project.uid} 
-              status={project.status} 
-              project={project} 
-              onDeploymentEvent={handleDeploymentEvent} 
+            <BuildTab
+              project={project}
+              onDeploymentEvent={handleDeploymentEvent}
             />
           )}
         </TabsContent>
 
         <TabsContent value="settings" className="pt-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                    {project.framework === 'Laravel' ? <Code2 className="w-5 h-5" /> : <Blocks className="w-5 h-5" />}
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">
-                      {project.framework === 'Laravel' ? t('projectDetail.settings.phpTitle') : t('projectDetail.settings.frameworkStack', { framework: frameworkLabel })}
-                    </CardTitle>
-                    <CardDescription>
-                      {project.framework === 'Laravel' ? t('projectDetail.settings.phpVersion') : 'Configure your application environment'}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {project.framework === 'Laravel' ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.version')}</Label>
-                      <Select
-                        value={phpVersionInput}
-                        onValueChange={(val) => setPhpVersionInput(val || DEFAULT_RUNTIME_VERSIONS.php)}
-                      >
-                        <SelectTrigger className="h-12 border-muted-foreground/20">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                          {RUNTIME_VERSIONS.php.map(v => (
-                            <SelectItem key={v.value} value={v.value}>{v.label} {v.isLatest ? t('projectDetail.settings.latest') : ''}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-xl border bg-muted/20">
-                      <div className="space-y-1">
-                        <Label className="text-sm font-bold">{t('projectDetail.metrics.queue')}</Label>
-                        <p className="text-[10px] text-muted-foreground leading-relaxed">
-                          {t('projectDetail.settings.queueHandles')}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={queueEnabledInput}
-                        onCheckedChange={setQueueEnabledInput}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-6">
-                    {isNodeRelated && (
-                      <div className="space-y-2">
-                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.nodeVersion')}</Label>
-                        <Select
-                          value={nodeVersionInput}
-                          onValueChange={(val) => setNodeVersionInput(val || DEFAULT_RUNTIME_VERSIONS.node)}
-                        >
-                          <SelectTrigger className="h-12 border-muted-foreground/20">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                            {RUNTIME_VERSIONS.node.map(item => (
-                              <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    {project.framework === 'Go' && (
-                      <div className="space-y-2">
-                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">Go Version</Label>
-                        <Select
-                          value={languageVersionInput}
-                          onValueChange={(val) => setLanguageVersionInput(val || DEFAULT_RUNTIME_VERSIONS.go)}
-                        >
-                          <SelectTrigger className="h-12 border-muted-foreground/20">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                            {RUNTIME_VERSIONS.go.map(v => (
-                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    {project.framework === 'Python' && (
-                      <div className="space-y-2">
-                        <Label className="text-xs uppercase tracking-widest text-muted-foreground">Python Version</Label>
-                        <Select
-                          value={languageVersionInput}
-                          onValueChange={(val) => setLanguageVersionInput(val || DEFAULT_RUNTIME_VERSIONS.python)}
-                        >
-                          <SelectTrigger className="h-12 border-muted-foreground/20">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                            {RUNTIME_VERSIONS.python.map(v => (
-                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    <div className="p-4 rounded-xl border bg-muted/20 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <Label className="text-sm font-bold">{t('projectDetail.metrics.backgroundService')}</Label>
-                          <p className="text-[10px] text-muted-foreground leading-relaxed">
-                            Run a secondary process for background tasks
-                          </p>
-                        </div>
-                        <Switch
-                          checked={workerCommandInput !== ''}
-                          onCheckedChange={(checked: boolean) => !checked && setWorkerCommandInput('')}
-                        />
-                      </div>
-
-                      {workerCommandInput !== undefined && (
-                        <div className="space-y-2 pt-2 border-t border-border">
-                          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('projectDetail.metrics.customCommand')}</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              value={workerCommandInput}
-                              onChange={(e) => setWorkerCommandInput(e.target.value)}
-                              placeholder="e.g. npm run worker"
-                              className="h-9 text-xs font-mono"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-
-                  </div>
-                )}
-
-
-                <p className="text-[10px] text-muted-foreground italic pl-1 flex items-center gap-1.5 mt-2">
-                  <AlertTriangle size={10} className="text-amber-500" /> {t('projectDetail.settings.redeployWarning')}
-                </p>
-
-                {/* Common Custom Commands Area */}
-                <div className="space-y-4 pt-6 mt-6 border-t border-dashed">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <Code2 size={14} className="text-primary" />
-                      {t('projectDetail.settings.buildCommand')}
-                    </Label>
-                    <Textarea
-                      value={buildCommandInput}
-                      onChange={(e) => setBuildCommandInput(e.target.value)}
-                      placeholder="e.g. npm install && npm run build"
-                      className="min-h-[80px] text-xs font-mono border-muted-foreground/20"
-                    />
-                    <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.buildCommandDesc')}</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <Play size={14} className="text-primary" />
-                      {t('projectDetail.settings.startCommand')}
-                    </Label>
-                    <Input
-                      value={startCommandInput}
-                      onChange={(e) => setStartCommandInput(e.target.value)}
-                      placeholder={project.framework === 'Laravel' ? 'Leave empty for default PHP-FPM' : 'e.g. node dist/main.js'}
-                      className="h-10 text-xs font-mono border-muted-foreground/20"
-                    />
-                    <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
-                  </div>
-                </div>
-
-              </CardContent>
-            </Card>
-
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
-                      <RefreshCw className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
-                      <CardDescription>{t('projectDetail.settings.branchDesc')}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.branchTitle')}</Label>
-                    <div className="flex items-center gap-2 max-w-[290px]">
-                      {branchesList.length > 0 && !forceManualInput ? (
-                        <div className="relative flex-1">
-                          <Select
-                            value={branchInput}
-                            onValueChange={(val) => setBranchInput(val || '')}
-                          >
-                            <SelectTrigger className="w-full h-9 px-3 rounded-lg border border-muted-foreground/15 hover:border-muted-foreground/30 bg-muted/5 hover:bg-muted/10 text-xs font-mono transition-all duration-200 outline-none focus:outline-none focus:ring-1 focus:ring-primary/20 focus:border-primary cursor-pointer flex items-center justify-between data-[size=default]:h-9 data-[size=default]:py-0 data-[size=default]:pr-3 data-[size=default]:pl-3">
-                              <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
-                                <GitBranch className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate text-foreground/90 font-medium">{branchInput || t('newProject.selectBranch') || 'Select a branch'}</span>
-                              </div>
-                            </SelectTrigger>
-                            <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                              {branchesList.map(branchName => (
-                                <SelectItem key={branchName} value={branchName} className="rounded-lg py-2 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40">
-                                  <div className="flex items-center gap-2">
-                                    <GitBranch className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                    <span className="font-mono text-xs text-foreground/90">{branchName}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <Input
-                          value={branchInput}
-                          onChange={(e) => setBranchInput(e.target.value)}
-                          placeholder={t('projectDetail.settings.branchPlaceholder')}
-                          className="h-9 flex-1 bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs font-mono"
-                        />
-                      )}
-                      
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => fetchBranches(true)}
-                        disabled={isFetchingBranches}
-                        className="h-9 w-9 shrink-0 rounded-lg hover:bg-muted/10 transition-all cursor-pointer flex items-center justify-center border border-muted-foreground/10"
-                        title={t('projectDetail.settings.syncBranches') || 'Sync Branches'}
-                      >
-                        <RefreshCw className={cn("w-3.5 h-3.5 text-muted-foreground", isFetchingBranches && "animate-spin text-primary")} />
-                      </Button>
-                    </div>
-                    {branchesList.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setForceManualInput(!forceManualInput)}
-                        className="text-[9px] text-primary hover:underline font-semibold cursor-pointer block mt-1 pl-0.5"
-                      >
-                        {forceManualInput 
-                          ? t('projectDetail.settings.useDropdown') || 'Select branch from list'
-                          : t('projectDetail.settings.typeManually') || 'Use manual text input'
-                        }
-                      </button>
-                    )}
-                    <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
-                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarningBranch')}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-muted/50 rounded-lg flex items-center justify-center text-muted-foreground">
-                      <LayoutGrid className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{t('newProject.baseDir')}</CardTitle>
-                      <CardDescription>{t('newProject.baseDirDesc')}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('newProject.baseDir')}</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={baseDirInput}
-                        onChange={(e) => setBaseDirInput(e.target.value)}
-                        placeholder={t('newProject.baseDirPlaceholder')}
-                        className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
-                      />
-                    </div>
-                    <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
-                      <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarningDirectory')}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                      <Github className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{t('user.settings.gitConfigTitle')}</CardTitle>
-                      <CardDescription>{t('user.settings.gitConfigDesc')}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Connection Mode Toggle */}
-                  <div className="flex rounded-lg p-1 bg-muted/20 border border-muted-foreground/10 gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setGitConnectionMode('github_app')}
-                      className={cn(
-                        "flex-1 py-2 px-3 text-xs font-bold rounded-md transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 h-auto hover:bg-transparent",
-                        gitConnectionMode === 'github_app'
-                          ? "bg-card text-primary shadow-sm border border-border/40 font-extrabold hover:text-primary hover:bg-card"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <Github className="w-3.5 h-3.5" />
-                      GitHub App
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setGitConnectionMode('manual')}
-                      className={cn(
-                        "flex-1 py-2 px-3 text-xs font-bold rounded-md transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 h-auto hover:bg-transparent",
-                        gitConnectionMode === 'manual'
-                          ? "bg-card text-primary shadow-sm border border-border/40 font-extrabold hover:text-primary hover:bg-card"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      Manual Git URL
-                    </Button>
-                  </div>
-
-                  {/* Mode 1: GitHub App */}
-                  {gitConnectionMode === 'github_app' && (
-                    <div className="space-y-4">
-                      {isGithubInstallationsLoading ? (
-                        <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span className="text-xs">{t('projectDetail.settings.loadingAccounts')}</span>
-                        </div>
-                      ) : memoizedGithubInstallations.length > 0 ? (
-                        <div className="space-y-4">
-                          {/* Installation Select */}
-                          <div className="space-y-2">
-                            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.githubAccount')}</Label>
-                            <Select
-                              value={githubInstallationIdInput ? String(githubInstallationIdInput) : ''}
-                              onValueChange={(val) => {
-                                const idNum = Number(val)
-                                setGithubInstallationIdInput(idNum)
-                                setGithubRepoOwnerInput('')
-                                setGithubRepoNameInput('')
-                                setGithubUrlInput('')
-                              }}
-                            >
-                              <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs">
-                                <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
-                                  {(() => {
-                                    const inst = memoizedGithubInstallations.find(i => i.installation_id === githubInstallationIdInput)
-                                    if (inst) {
-                                      return (
-                                        <>
-                                          {inst.avatar_url ? (
-                                            <img src={inst.avatar_url} alt={inst.account_name} className="w-4 h-4 rounded-full border border-border/40 shrink-0" />
-                                          ) : (
-                                            <Github className="w-4 h-4 text-muted-foreground shrink-0" />
-                                          )}
-                                          <span className="truncate text-foreground/90 font-medium">{inst.account_name}</span>
-                                        </>
-                                      )
-                                    }
-                                    return <span className="text-muted-foreground/60">{t('projectDetail.settings.selectAccount')}</span>
-                                  })()}
-                                </div>
-                              </SelectTrigger>
-                              <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
-                                {memoizedGithubInstallations.map((inst) => (
-                                  <SelectItem key={inst.installation_id} value={String(inst.installation_id)} className="rounded-lg py-2 cursor-pointer">
-                                    <div className="flex items-center gap-2">
-                                      {inst.avatar_url ? (
-                                        <img src={inst.avatar_url} alt={inst.account_name} className="w-4 h-4 rounded-full" />
-                                      ) : (
-                                        <Github className="w-4 h-4" />
-                                      )}
-                                      <span>{inst.account_name}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Repository Select */}
-                          {githubInstallationIdInput && (
-                            <div className="space-y-2">
-                              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{t('projectDetail.settings.repositoryLabel')}</Label>
-                              {isGithubReposLoading ? (
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2 pl-1">
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                                  <span>{t('projectDetail.settings.loadingRepos')}</span>
-                                </div>
-                              ) : memoizedGithubRepos.length > 0 ? (
-                                <Select
-                                  value={githubRepoNameInput ? `${githubRepoOwnerInput}/${githubRepoNameInput}` : ''}
-                                  onValueChange={(val) => {
-                                    if (!val) return
-                                    const parts = val.split('/')
-                                    if (parts.length === 2) {
-                                      setGithubRepoOwnerInput(parts[0])
-                                      setGithubRepoNameInput(parts[1])
-                                      
-                                      // Find selected repo details to set URL
-                                      const repoDetail = memoizedGithubRepos.find(r => r.full_name === val)
-                                      if (repoDetail) {
-                                        setGithubUrlInput(repoDetail.html_url)
-                                      }
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="w-full h-10 px-3 bg-muted/20 border-muted-foreground/15 text-xs font-mono">
-                                    <SelectValue placeholder={t('projectDetail.settings.selectRepo')} />
-                                  </SelectTrigger>
-                                  <SelectContent align="start" className="bg-popover border border-border rounded-xl shadow-2xl p-1 max-h-72">
-                                    {memoizedGithubRepos.map((repo) => (
-                                      <SelectItem key={repo.id} value={repo.full_name} className="rounded-lg py-2 cursor-pointer font-mono text-xs">
-                                        <span>{repo.name}</span>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <p className="text-xs text-muted-foreground italic pl-1">{t('projectDetail.settings.noRepos')}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="border border-dashed border-border rounded-xl p-6 text-center space-y-3 bg-muted/5">
-                          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                            {t('projectDetail.settings.noAccounts')}
-                          </p>
-                          <Button
-                            type="button"
-                            onClick={() => {
-                              const appUrl = import.meta.env.VITE_GITHUB_APP_URL || 'https://github.com/apps/laravel-paas-local'
-                              window.open(`${appUrl}/installations/new`, '_blank')
-                            }}
-                            className="gap-2 h-9 rounded-lg mx-auto text-xs"
-                          >
-                            <Github className="w-3.5 h-3.5" />
-                            Configure GitHub App
-                            <ExternalLink className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Mode 2: Manual Git URL */}
-                  {gitConnectionMode === 'manual' && (
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Repository Git URL</Label>
-                        <Input
-                          value={githubUrlInput}
-                          onChange={(e) => setGithubUrlInput(e.target.value)}
-                          placeholder="e.g. git@github.com:username/repository.git"
-                          className="h-10 text-xs bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all font-mono"
-                        />
-                        <p className="text-[9px] text-muted-foreground italic leading-relaxed pl-0.5 mt-1">
-                          Note: For private repositories, make sure the server's SSH key is added to the repository's deploy keys.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Floating Save Action Bar for Settings */}
-          {activeTab === 'settings' && isSettingsDirty && (
-            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-10 duration-500">
-              <div className="relative group">
-                {/* Glow effect background */}
-                <div className="absolute -inset-1 bg-gradient-to-r from-primary/50 to-blue-500/50 rounded-[22px] blur-xl opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
-
-                <Card className="relative bg-zinc-950/90 backdrop-blur-2xl border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden min-w-[360px] rounded-[20px]">
-                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
-                  <CardContent className="p-3 flex items-center justify-between gap-8">
-                    <div className="flex items-center gap-4 pl-3">
-                      <div className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90 leading-tight">Configuration Changed</span>
-                        <span className="text-[9px] text-white/40 font-bold uppercase tracking-widest">{t('common.settings')}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 pr-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleResetSettings}
-                        disabled={isSavingSettings}
-                        className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-white/50 hover:text-white hover:bg-white/5 transition-all"
-                      >
-                        {t('common.cancel')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={handleSaveSettings}
-                        disabled={isSavingSettings}
-                        className="relative group/btn bg-white text-black hover:bg-white/90 h-10 px-6 rounded-full font-black text-[10px] uppercase tracking-wider transition-all overflow-hidden"
-                      >
-                        {isSavingSettings ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <Save className="w-3.5 h-3.5" />
-                            <span>{t('common.save')}</span>
-                          </div>
-                        )}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+          {project && (
+            <SettingsTab
+              project={project}
+              frameworkLabel={frameworkLabel}
+              isNodeRelated={isNodeRelated}
+              phpVersionInput={phpVersionInput}
+              setPhpVersionInput={setPhpVersionInput}
+              queueEnabledInput={queueEnabledInput}
+              setQueueEnabledInput={setQueueEnabledInput}
+              nodeVersionInput={nodeVersionInput}
+              setNodeVersionInput={setNodeVersionInput}
+              languageVersionInput={languageVersionInput}
+              setLanguageVersionInput={setLanguageVersionInput}
+              workerCommandInput={workerCommandInput}
+              setWorkerCommandInput={setWorkerCommandInput}
+              buildCommandInput={buildCommandInput}
+              setBuildCommandInput={setBuildCommandInput}
+              startCommandInput={startCommandInput}
+              setStartCommandInput={setStartCommandInput}
+              branchesList={branchesList}
+              branchInput={branchInput}
+              setBranchInput={setBranchInput}
+              forceManualInput={forceManualInput}
+              setForceManualInput={setForceManualInput}
+              isFetchingBranches={isFetchingBranches}
+              fetchBranches={fetchBranches}
+              baseDirInput={baseDirInput}
+              setBaseDirInput={setBaseDirInput}
+              gitConnectionMode={gitConnectionMode}
+              setGitConnectionMode={setGitConnectionMode}
+              isGithubInstallationsLoading={isGithubInstallationsLoading}
+              memoizedGithubInstallations={memoizedGithubInstallations}
+              githubInstallationIdInput={githubInstallationIdInput}
+              setGithubInstallationIdInput={setGithubInstallationIdInput}
+              setGithubRepoOwnerInput={setGithubRepoOwnerInput}
+              setGithubRepoNameInput={setGithubRepoNameInput}
+              setGithubUrlInput={setGithubUrlInput}
+              isGithubReposLoading={isGithubReposLoading}
+              memoizedGithubRepos={memoizedGithubRepos}
+              githubRepoNameInput={githubRepoNameInput}
+              githubRepoOwnerInput={githubRepoOwnerInput}
+              githubUrlInput={githubUrlInput}
+              isSettingsDirty={isSettingsDirty}
+              isSavingSettings={isSavingSettings}
+              handleResetSettings={handleResetSettings}
+              handleSaveSettings={handleSaveSettings}
+            />
           )}
         </TabsContent>
 
@@ -2145,22 +1318,12 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="domains" className="pt-0">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                  <Globe className="w-5 h-5" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">{t('projectDetail.settings.customDomain') || 'Custom Domain'}</CardTitle>
-                  <CardDescription>{t('projectDetail.settings.customDomainDesc') || 'Manage custom domains for your project'}</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {project && <CustomDomainManager projectId={project.uid} subdomain={project.subdomain!} projectUrl={project.url} onDomainsChanged={fetchProject} />}
-            </CardContent>
-          </Card>
+          {project && (
+            <DomainsTab
+              project={project}
+              onDomainsChanged={fetchProject}
+            />
+          )}
         </TabsContent>
       </Tabs>
     </div>
