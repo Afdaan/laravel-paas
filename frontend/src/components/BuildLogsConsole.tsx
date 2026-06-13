@@ -622,7 +622,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                       {new Date(ev.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 leading-relaxed font-sans break-words font-medium">
+                  <div className="text-[11px] text-zinc-400 leading-relaxed break-words font-medium">
                     {(() => {
                       if (ev.error) return ev.error;
                       const type = ev.event_type || '';
@@ -641,9 +641,17 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                         return `Deployment skipped. Image is already up to date for commit: ${shortHash}`;
                       }
                       
-                      return ev.message || payload || '';
+                      const message = ev.message || payload || '';
+                      if (message.includes('\n')) {
+                        return (
+                          <div className="mt-2 p-2 bg-black/20 rounded border border-white/5 whitespace-pre-wrap font-mono text-[10px] text-zinc-300">
+                            {message}
+                          </div>
+                        );
+                      }
+                      return message;
                     })()}
-                  </p>
+                  </div>
                 </div>
               ))}
             </div>

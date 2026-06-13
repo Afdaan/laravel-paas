@@ -48,6 +48,9 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 4. Hide Laravel specific progress dots (the long lines of dots in package discovery)
 			regexp.MustCompile(`\[90m\.`),
 
+			// 4.5 Hide progress bars that output excessive carriage returns (pip, npm, curl)
+			regexp.MustCompile(`(━━━━━━━━━━━━━━━━━━━━|\[[=->]{5,}\]|\s+[0-9.]+/[0-9.]+\s(MB|kB|B)\s|ETA\s+0:0|100%\s+\|\s*█)`),
+
 			// 5. Hide Railpack branding, metadata headers, and ALL step commands
 			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|⚠ The config|↳ Output directory|  Packages|  ──────────)`),
 			// Hide Railpack package table rows (node, caddy, bun, python, go, etc.)
@@ -209,27 +212,19 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 
 	// Process the buffer
 	for {
-		// Find next separator (\n or \r)
+		// Find next complete line (\n)
 		idxN := strings.Index(r.buf, "\n")
-		idxR := strings.Index(r.buf, "\r")
-
-		var idx int
-		var sepLen int
-
-		if idxN == -1 && idxR == -1 {
+		if idxN == -1 {
 			break // No more complete lines
 		}
 
-		if idxN != -1 && (idxR == -1 || idxN < idxR) {
-			idx = idxN
-			sepLen = 1
-		} else {
-			idx = idxR
-			sepLen = 1
-		}
+		line := r.buf[:idxN]
+		r.buf = r.buf[idxN+1:]
 
-		line := r.buf[:idx]
-		r.buf = r.buf[idx+sepLen:]
+		// Simulate terminal \r overwrite by only keeping the last segment
+		if lastCR := strings.LastIndex(line, "\r"); lastCR != -1 {
+			line = line[lastCR+1:]
+		}
 
 		shouldHide := false
 		for _, pattern := range r.hidePatterns {
