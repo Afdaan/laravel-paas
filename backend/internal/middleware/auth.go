@@ -48,11 +48,15 @@ func JWTAuth(secret string, redis Blacklister, userProvider CurrentUserProvider,
 		authHeader := c.Get("Authorization")
 		var tokenString string
 		var tokenFromCookie bool
+		var tokenFromQuery bool
 
 		path := c.Path()
-		isStreamEndpoint := strings.HasSuffix(path, "/stream") || strings.HasSuffix(path, "/logs") || strings.HasSuffix(path, "/build-logs") || strings.HasSuffix(path, "/deployment-events")
+		isStreamEndpoint := strings.HasSuffix(path, "/stream")
 
-		if authHeader != "" {
+		if isStreamEndpoint && c.Query("stream_token") != "" {
+			tokenString = c.Query("stream_token")
+			tokenFromQuery = true
+		} else if authHeader != "" {
 			parts := strings.Split(authHeader, " ")
 			if len(parts) != 2 || parts[0] != "Bearer" {
 				return apperr.New(401, "INVALID_AUTH", "Invalid authorization format")
@@ -61,8 +65,6 @@ func JWTAuth(secret string, redis Blacklister, userProvider CurrentUserProvider,
 		} else if cookieToken := c.Cookies(SessionCookieName); cookieToken != "" {
 			tokenString = cookieToken
 			tokenFromCookie = true
-		} else if isStreamEndpoint {
-			tokenString = c.Query("stream_token")
 		}
 
 		if tokenString == "" {
@@ -101,7 +103,7 @@ func JWTAuth(secret string, redis Blacklister, userProvider CurrentUserProvider,
 			return apperr.New(403, "FORBIDDEN", "Ephemeral stream tokens are restricted exclusively to streaming endpoints")
 		}
 		// Security constraint: Standard long-lived tokens cannot be passed via query string to stream endpoints
-		if isStreamEndpoint && authHeader == "" && !claims.StreamOnly {
+		if isStreamEndpoint && tokenFromQuery && !claims.StreamOnly {
 			return apperr.New(403, "FORBIDDEN", "Primary tokens cannot be passed via query strings. Please use an ephemeral stream token.")
 		}
 
