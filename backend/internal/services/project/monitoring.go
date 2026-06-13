@@ -57,7 +57,27 @@ func (s *ProjectService) GetLogs(project *models.Project, logType string, lines 
 		return "", err
 	}
 
-	return trimLogLines(filterWorkerRuntimeLines(logs), lines), nil
+	webLogs := filterWorkerRuntimeLines(logs)
+	appLogs := readLaravelApplicationLogs(*containerID, lines)
+	if strings.TrimSpace(appLogs) != "" {
+		webLogs = strings.TrimRight(webLogs, "\n") + "\n" + strings.TrimRight(appLogs, "\n")
+	}
+
+	return trimLogLines(webLogs, lines), nil
+}
+
+func readLaravelApplicationLogs(containerID string, lines int) string {
+	if lines <= 0 {
+		lines = 100
+	}
+
+	res, err := utils.Run(15*time.Second, "docker", "exec", containerID, "sh", "-c",
+		fmt.Sprintf(`for f in /var/www/html/storage/logs/laravel.log /app/storage/logs/laravel.log; do if [ -f "$f" ]; then tail -n %d "$f"; exit 0; fi; done`, lines))
+	if err != nil {
+		return ""
+	}
+
+	return utils.StripLogControlSequences(res.Stdout + res.Stderr)
 }
 
 func filterWorkerRuntimeLines(logs string) string {

@@ -72,7 +72,7 @@ foreach (['require', 'require-dev'] as $section) {
         }
     }
 }
-$default_extensions = ['pdo_mysql', 'mbstring', 'exif', 'pcntl', 'bcmath', 'gd', 'zip', 'opcache'];
+$default_extensions = ['pdo_mysql', 'pdo_pgsql', 'pgsql', 'mbstring', 'exif', 'pcntl', 'bcmath', 'gd', 'zip', 'opcache'];
 $extensions = array_merge($extensions, $default_extensions);
 $extensions = array_unique($extensions);
 echo implode(' ', $extensions);
@@ -156,7 +156,7 @@ RUN REQUIRED_EXTS=$(cat /tmp/required_extensions.txt) && \
     done && \
     if [ -n "$MISSING_EXTS" ]; then \
         echo "Installing missing extensions: $MISSING_EXTS" && \
-        apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+        apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev \
         && docker-php-ext-install $MISSING_EXTS \
         && apk del .build-deps; \
     fi && \
