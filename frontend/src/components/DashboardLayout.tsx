@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -61,6 +61,26 @@ interface DashboardLayoutProps {
   isAdmin?: boolean;
 }
 
+const COLLAPSED_SIDEBAR_WIDTH = 72
+const DEFAULT_SIDEBAR_WIDTH = 256
+const MIN_EXPANDED_SIDEBAR_WIDTH = 200
+const MAX_EXPANDED_SIDEBAR_WIDTH = 320
+const COLLAPSE_DRAG_THRESHOLD = 150
+
+function DashboardPageFallback({ label }: { label: string }) {
+  return (
+    <div className="space-y-6" aria-label={label} aria-live="polite">
+      <div className="h-8 w-48 animate-pulse rounded-md bg-muted" />
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="h-28 animate-pulse rounded-lg border bg-card" />
+        <div className="h-28 animate-pulse rounded-lg border bg-card" />
+        <div className="h-28 animate-pulse rounded-lg border bg-card" />
+      </div>
+      <div className="h-80 animate-pulse rounded-lg border bg-card" />
+    </div>
+  )
+}
+
 const projectStatusTone = (status?: Project['status']) => {
   switch (status) {
     case 'running':
@@ -92,14 +112,15 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     const saved = localStorage.getItem('paas-sidebar-width')
     if (saved) {
       const parsed = parseInt(saved, 10)
-      if (!isNaN(parsed) && parsed >= 150 && parsed <= 320) {
+      if (!isNaN(parsed) && parsed >= MIN_EXPANDED_SIDEBAR_WIDTH && parsed <= MAX_EXPANDED_SIDEBAR_WIDTH) {
         return parsed
       }
     }
-    return 256
+    return DEFAULT_SIDEBAR_WIDTH
   })
   const [isDragging, setIsDragging] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const resizeFrameRef = useRef<number | null>(null)
   const isVisualExpanded = !isSidebarCollapsed || isHovered
 
   useEffect(() => {
@@ -117,8 +138,9 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   }, [isSidebarCollapsed])
 
   useEffect(() => {
+    if (isDragging) return
     localStorage.setItem('paas-sidebar-width', String(sidebarWidth))
-  }, [sidebarWidth])
+  }, [isDragging, sidebarWidth])
 
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
@@ -135,8 +157,9 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     navigate('/admin/users')
   }
   
-  const navItems = isAdmin
-    ? {
+  const navItems = useMemo(() => {
+    if (isAdmin) {
+      return {
         management: [
           { to: '/admin/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
           { to: '/admin/users', icon: Icons.Users, label: t('common.users') },
@@ -154,15 +177,18 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/admin/volumes', icon: Icons.Volumes, label: t('common.volumes') },
         ]
       }
-    : {
-        management: [
-          { to: '/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
-          { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
-          { to: '/databases', icon: Icons.Database, label: t('common.databases') },
-          { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
-          { to: '/secretstores', icon: Icons.SecretStore, label: t('common.secretStore') },
-        ]
-      }
+    }
+
+    return {
+      management: [
+        { to: '/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
+        { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
+        { to: '/databases', icon: Icons.Database, label: t('common.databases') },
+        { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
+        { to: '/secretstores', icon: Icons.SecretStore, label: t('common.secretStore') },
+      ]
+    }
+  }, [isAdmin, t])
 
   const userInitials = user?.name ? user.name.substring(0, 2).toUpperCase() : t('common.initialsFallback')
   const isAdminBrowsingAsAdmin = isAdmin && !adminToken
@@ -176,16 +202,27 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     if (!isDragging) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = e.clientX
-      if (newWidth < 150) {
-        setIsSidebarCollapsed(true)
-      } else {
-        setIsSidebarCollapsed(false)
-        setSidebarWidth(Math.min(Math.max(newWidth, 200), 320))
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current)
       }
+
+      const newWidth = e.clientX
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        if (newWidth < COLLAPSE_DRAG_THRESHOLD) {
+          setIsSidebarCollapsed(true)
+          return
+        }
+
+        setIsSidebarCollapsed(false)
+        setSidebarWidth(Math.min(Math.max(newWidth, MIN_EXPANDED_SIDEBAR_WIDTH), MAX_EXPANDED_SIDEBAR_WIDTH))
+      })
     }
 
     const handleMouseUp = () => {
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current)
+        resizeFrameRef.current = null
+      }
       setIsDragging(false)
     }
 
@@ -197,6 +234,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     return () => {
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current)
+        resizeFrameRef.current = null
+      }
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
@@ -293,11 +334,11 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
       <div 
-        style={{ width: isSidebarCollapsed ? 72 : sidebarWidth }}
+        style={{ width: isSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
         className={`relative shrink-0 z-50 ${isDragging ? '' : 'transition-[width] duration-300 ease-in-out'}`}
       >
         <aside 
-          style={{ width: !isVisualExpanded ? 72 : sidebarWidth }}
+          style={{ width: !isVisualExpanded ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
           onMouseEnter={() => {
             if (isSidebarCollapsed) {
               setIsHovered(true)
@@ -404,7 +445,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   to={item.to}
                   title={item.label}
                   className={({ isActive }) =>
-                    `flex h-9 items-center rounded-md text-sm font-medium transition-all duration-300 justify-start pl-4 pr-2 ${
+                    `flex h-9 items-center rounded-md text-sm font-medium transition-colors duration-150 justify-start pl-4 pr-2 ${
                       isActive
                          ? 'bg-secondary text-secondary-foreground shadow-sm'
                          : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
@@ -441,7 +482,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                     to={item.to}
                     title={item.label}
                     className={({ isActive }) =>
-                      `flex h-9 items-center rounded-md text-sm font-medium transition-all duration-300 justify-start pl-4 pr-2 ${
+                      `flex h-9 items-center rounded-md text-sm font-medium transition-colors duration-150 justify-start pl-4 pr-2 ${
                         isActive
                            ? 'bg-secondary text-secondary-foreground shadow-sm'
                            : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
@@ -648,7 +689,9 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
         {/* Global Main Stream */}
         <main className="flex-1 p-8 overflow-auto">
-          <Outlet />
+          <Suspense fallback={<DashboardPageFallback label={t('common.loading')} />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

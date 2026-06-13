@@ -4,7 +4,7 @@
 // Handles routing and layout
 // ===========================================
 
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
@@ -75,11 +75,15 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
   return children
 }
 
+const ACTIVITY_THROTTLE_MS = 10_000
+
 function App() {
   const { t } = useTranslation()
   const { fetchUser, logout, token, user } = useAuthStore()
   const navigate = useNavigate()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastActivityAtRef = useRef(0)
 
   const [settings, setSettings] = useState<Record<string, string> | null>(null)
 
@@ -107,9 +111,8 @@ function App() {
   }, [token, user])
 
   useEffect(() => {
-    let idleTimer: ReturnType<typeof setTimeout>
     const timeoutMinutes = settings?.admin_idle_timeout ? parseInt(settings.admin_idle_timeout) : 15
-    const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
+    const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000
 
     const handleIdleLogout = () => {
       const currentToken = useAuthStore.getState().token
@@ -121,20 +124,36 @@ function App() {
     }
 
     const resetTimer = () => {
-      if (idleTimer) clearTimeout(idleTimer)
-      idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT)
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(handleIdleLogout, IDLE_TIMEOUT)
     }
 
-    // Set up listeners for all authenticated users
-    if (token) {
-      const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
-      events.forEach(event => window.addEventListener(event, resetTimer))
-      resetTimer() // Initialize timer
+    const handleActivity = () => {
+      const now = Date.now()
+      if (now - lastActivityAtRef.current < ACTIVITY_THROTTLE_MS) return
 
-      return () => {
-        if (idleTimer) clearTimeout(idleTimer)
-        events.forEach(event => window.removeEventListener(event, resetTimer))
-      }
+      lastActivityAtRef.current = now
+      resetTimer()
+    }
+
+    if (!token) {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+      return
+    }
+
+    const passiveEvents = ['pointermove', 'scroll', 'touchstart'] as const
+    const activeEvents = ['pointerdown', 'keydown'] as const
+
+    passiveEvents.forEach(event => window.addEventListener(event, handleActivity, { passive: true }))
+    activeEvents.forEach(event => window.addEventListener(event, handleActivity))
+    resetTimer()
+
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+      passiveEvents.forEach(event => window.removeEventListener(event, handleActivity))
+      activeEvents.forEach(event => window.removeEventListener(event, handleActivity))
     }
   }, [token, t, settings, navigate, logout])
 
