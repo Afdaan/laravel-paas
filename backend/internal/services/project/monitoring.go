@@ -52,7 +52,45 @@ func (s *ProjectService) GetLogs(project *models.Project, logType string, lines 
 		return "", fmt.Errorf("no container running for type %s", logType)
 	}
 
-	return s.dockerService.GetLogs(*containerID, lines)
+	logs, err := s.dockerService.GetLogs(*containerID, lines*4)
+	if err != nil {
+		return "", err
+	}
+
+	return trimLogLines(filterWorkerRuntimeLines(logs), lines), nil
+}
+
+func filterWorkerRuntimeLines(logs string) string {
+	lines := strings.Split(logs, "\n")
+	filtered := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		normalized := strings.ToLower(line)
+		if strings.Contains(normalized, "laravel-worker") ||
+			strings.Contains(normalized, "queue:work") ||
+			strings.Contains(normalized, "storage/logs/worker.log") ||
+			strings.Contains(normalized, "storage/logs/laravel-worker.log") ||
+			strings.Contains(normalized, "/app/worker.log") ||
+			strings.Contains(normalized, "/var/log/worker.log") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+
+	return strings.Join(filtered, "\n")
+}
+
+func trimLogLines(logs string, maxLines int) string {
+	if maxLines <= 0 {
+		maxLines = 100
+	}
+
+	lines := strings.Split(logs, "\n")
+	if len(lines) <= maxLines {
+		return logs
+	}
+
+	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }
 
 // GetStats returns container resource usage

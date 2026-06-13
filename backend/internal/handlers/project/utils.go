@@ -455,9 +455,11 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	containerID := *project.ContainerID
 	logType := c.Query("type", "web")
 	var workerLogPath string
+	workerUsesContainer := false
 	if logType == "worker" {
 		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
 			containerID = *project.WorkerContainerID
+			workerUsesContainer = true
 		} else {
 			res, err := utils.Run(15*time.Second, "docker", "exec", *project.ContainerID, "sh", "-c",
 				`for f in /var/www/html/storage/logs/laravel-worker.log /var/www/html/storage/logs/worker.log /app/storage/logs/worker.log /app/worker.log /var/log/worker.log; do if [ -f "$f" ]; then echo "$f"; break; fi; done`)
@@ -483,6 +485,8 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 		var cmd *exec.Cmd
 		if logType == "worker" && workerLogPath != "" {
 			cmd = exec.CommandContext(cmdCtx, "docker", "exec", *project.ContainerID, "tail", "-f", "-n", "100", workerLogPath)
+		} else if logType == "worker" && workerUsesContainer {
+			cmd = exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
 		} else if logType == "worker" {
 			dataBytes, _ := json.Marshal("No worker logs found yet.")
 			_, _ = w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
@@ -542,6 +546,9 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 					return
 				}
 				line = utils.StripLogControlSequences(line)
+				if logType == "web" && isWorkerRuntimeLogLine(line) {
+					continue
+				}
 				dataBytes, _ := json.Marshal(line)
 				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
 				if err != nil {
@@ -562,6 +569,16 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	})
 
 	return nil
+}
+
+func isWorkerRuntimeLogLine(line string) bool {
+	normalized := strings.ToLower(line)
+	return strings.Contains(normalized, "laravel-worker") ||
+		strings.Contains(normalized, "queue:work") ||
+		strings.Contains(normalized, "storage/logs/worker.log") ||
+		strings.Contains(normalized, "storage/logs/laravel-worker.log") ||
+		strings.Contains(normalized, "/app/worker.log") ||
+		strings.Contains(normalized, "/var/log/worker.log")
 }
 
 // Stats returns project resource usage
