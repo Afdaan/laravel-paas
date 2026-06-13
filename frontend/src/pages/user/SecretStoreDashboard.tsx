@@ -77,14 +77,10 @@ interface ProjectOption {
   subdomain: string
 }
 
-type SecretStoreBackup = {
-  version: number
-  exported_at: string
-  store: {
-    name: string
-    description?: string
-  }
-  secrets: Record<string, string>
+type SecretStoreImportEntry = {
+  key?: unknown
+  name?: unknown
+  value?: unknown
 }
 
 const isStringRecord = (value: unknown): value is Record<string, string> => {
@@ -98,37 +94,69 @@ const isStringRecord = (value: unknown): value is Record<string, string> => {
 const normalizeSecretRecord = (value: Record<string, string>): Record<string, string> | null => {
   const normalized: Record<string, string> = {}
   for (const [key, item] of Object.entries(value)) {
-    const normalizedKey = key.trim()
-    if (!normalizedKey || normalized[normalizedKey] !== undefined) {
+    if (!addNormalizedSecret(normalized, key, item)) {
       return null
     }
-    normalized[normalizedKey] = item
   }
-  return normalized
+  return sortSecretRecord(normalized)
 }
 
+const normalizeSecretEntries = (value: unknown[]): Record<string, string> | null => {
+  const record: Record<string, string> = {}
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return null
+    }
+
+    const entry = item as SecretStoreImportEntry
+    const key = typeof entry.key === 'string' ? entry.key : typeof entry.name === 'string' ? entry.name : ''
+    if (typeof entry.value !== 'string') {
+      return null
+    }
+
+    if (!addNormalizedSecret(record, key, entry.value)) {
+      return null
+    }
+  }
+  return sortSecretRecord(record)
+}
+
+const addNormalizedSecret = (record: Record<string, string>, key: string, value: string) => {
+  const normalizedKey = key.trim()
+  if (!normalizedKey || record[normalizedKey] !== undefined) {
+    return false
+  }
+  record[normalizedKey] = value
+  return true
+}
+
+const sortSecretRecord = (record: Record<string, string>) =>
+  Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)))
+
 const normalizeSecretStoreBackup = (value: unknown): Record<string, string> | null => {
+  if (Array.isArray(value)) {
+    return normalizeSecretEntries(value)
+  }
+
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null
   }
 
-  const payload = value as { secrets?: unknown }
-  if (payload.secrets !== undefined) {
-    return isStringRecord(payload.secrets) ? normalizeSecretRecord(payload.secrets) : null
+  const payload = value as { secrets?: unknown; variables?: unknown; env?: unknown; items?: unknown }
+  for (const field of [payload.secrets, payload.variables, payload.env, payload.items]) {
+    if (field === undefined) {
+      continue
+    }
+
+    if (Array.isArray(field)) {
+      return normalizeSecretEntries(field)
+    }
+
+    return isStringRecord(field) ? normalizeSecretRecord(field) : null
   }
 
   return isStringRecord(value) ? normalizeSecretRecord(value) : null
 }
-
-const createSecretStoreBackup = (store: SecretStore, secrets: Record<string, string>): SecretStoreBackup => ({
-  version: 1,
-  exported_at: new Date().toISOString(),
-  store: {
-    name: store.name,
-    description: store.description || undefined,
-  },
-  secrets,
-})
 
 const toSafeBackupFilename = (name: string) => {
   const normalized = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
@@ -463,8 +491,7 @@ export default function SecretStoreDashboard() {
         throw new Error('Invalid SecretStore export response')
       }
 
-      const backup = createSecretStoreBackup(selectedStore, exportedSecrets)
-      const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], { type: 'application/json;charset=utf-8' })
+      const blob = new Blob([`${JSON.stringify(exportedSecrets, null, 2)}\n`], { type: 'application/json;charset=utf-8' })
       const objectUrl = URL.createObjectURL(blob)
       const downloadAnchor = document.createElement('a')
       downloadAnchor.href = objectUrl

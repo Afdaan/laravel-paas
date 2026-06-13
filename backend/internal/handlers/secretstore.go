@@ -23,19 +23,13 @@ type SecretStoreHandler struct {
 	secretStoreService *services.SecretStoreService
 }
 
-type secretStoreBackupPayload struct {
-	Version    int                   `json:"version"`
-	ExportedAt string                `json:"exported_at"`
-	Store      secretStoreBackupMeta `json:"store"`
-	Secrets    map[string]string     `json:"secrets"`
-}
-
-type secretStoreBackupMeta struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-}
-
 const maxSecretStoreImportBytes = 1024 * 1024
+
+type secretStoreImportEntry struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
 
 func NewSecretStoreHandler(db *gorm.DB, cfg *config.Config, secretStoreService *services.SecretStoreService) *SecretStoreHandler {
 	return &SecretStoreHandler{
@@ -341,18 +335,8 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 
 	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent"))
 
-	backup := secretStoreBackupPayload{
-		Version:    1,
-		ExportedAt: time.Now().UTC().Format(time.RFC3339),
-		Store: secretStoreBackupMeta{
-			Name:        store.Name,
-			Description: store.Description,
-		},
-		Secrets: secretsMap,
-	}
-
 	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
-	return c.JSON(backup)
+	return c.JSON(secretsMap)
 }
 
 func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
@@ -408,33 +392,62 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 }
 
 func parseSecretStoreImportPayload(raw []byte) (map[string]string, error) {
-	var envelope struct {
-		Secrets map[string]string `json:"secrets"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Secrets != nil {
-		return normalizeSecretStoreSecrets(envelope.Secrets)
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err == nil {
+		for _, field := range []string{"secrets", "variables", "env", "items"} {
+			if nested, ok := object[field]; ok {
+				return parseSecretStoreSecretsNode(nested)
+			}
+		}
 	}
 
+	return parseSecretStoreSecretsNode(raw)
+}
+
+func parseSecretStoreSecretsNode(raw []byte) (map[string]string, error) {
 	var rawSecrets map[string]string
-	if err := json.Unmarshal(raw, &rawSecrets); err != nil {
+	if err := json.Unmarshal(raw, &rawSecrets); err == nil {
+		return normalizeSecretStoreSecrets(rawSecrets)
+	}
+
+	var entries []secretStoreImportEntry
+	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil, err
 	}
-	return normalizeSecretStoreSecrets(rawSecrets)
+
+	secrets := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		key := entry.Key
+		if key == "" {
+			key = entry.Name
+		}
+		if err := addNormalizedSecret(secrets, key, entry.Value); err != nil {
+			return nil, err
+		}
+	}
+	return secrets, nil
 }
 
 func normalizeSecretStoreSecrets(input map[string]string) (map[string]string, error) {
 	secrets := make(map[string]string, len(input))
 	for key, value := range input {
-		normalizedKey := strings.TrimSpace(key)
-		if normalizedKey == "" {
-			return nil, fmt.Errorf("secret key cannot be empty")
+		if err := addNormalizedSecret(secrets, key, value); err != nil {
+			return nil, err
 		}
-		if _, exists := secrets[normalizedKey]; exists {
-			return nil, fmt.Errorf("duplicate secret key after normalization")
-		}
-		secrets[normalizedKey] = value
 	}
 	return secrets, nil
+}
+
+func addNormalizedSecret(secrets map[string]string, key string, value string) error {
+	normalizedKey := strings.TrimSpace(key)
+	if normalizedKey == "" {
+		return fmt.Errorf("secret key cannot be empty")
+	}
+	if _, exists := secrets[normalizedKey]; exists {
+		return fmt.Errorf("duplicate secret key after normalization")
+	}
+	secrets[normalizedKey] = value
+	return nil
 }
 
 func (h *SecretStoreHandler) AdminListAll(c *fiber.Ctx) error {
