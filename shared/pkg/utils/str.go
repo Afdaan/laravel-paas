@@ -8,6 +8,7 @@ package utils
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -37,6 +38,15 @@ func GeneratePassword(length int) string {
 		result[i] = charset[num.Int64()]
 	}
 	return string(result)
+}
+
+// GenerateLaravelAppKey returns a Laravel-compatible base64 encoded 32-byte application key.
+func GenerateLaravelAppKey() (string, error) {
+	keyBytes := make([]byte, 32)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return "", err
+	}
+	return "base64:" + base64.StdEncoding.EncodeToString(keyBytes), nil
 }
 
 // GenerateSubdomain creates a URL-safe subdomain from a project name
