@@ -20,16 +20,19 @@ interface AuthState {
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
-  loginAsClient: (newToken: string) => Promise<void>;
+  loginAsClient: () => Promise<void>;
   returnToAdmin: () => Promise<void>;
 }
+
+const SESSION_MARKER = 'authenticated'
+const IMPERSONATION_MARKER = 'impersonating'
 
 const useAuthStore = create<AuthState>((set, get) => ({
   // State
   user: null,
-  token: localStorage.getItem('token'),
-  adminToken: localStorage.getItem('admin_token'),
-  isLoading: !!localStorage.getItem('token'),
+  token: null,
+  adminToken: null,
+  isLoading: true,
   
   // Computed
   isAuthenticated: () => !!get().token,
@@ -42,10 +45,9 @@ const useAuthStore = create<AuthState>((set, get) => ({
   // Actions
   login: async (email, password) => {
     const response = await authAPI.login(email, password)
-    const { token, user } = response.data
+    const { user } = response.data
     
-    localStorage.setItem('token', token)
-    set({ token, user })
+    set({ token: SESSION_MARKER, user, adminToken: null, isLoading: false })
     
     return user
   },
@@ -57,53 +59,40 @@ const useAuthStore = create<AuthState>((set, get) => ({
       // Ignored
     }
     
-    localStorage.removeItem('token')
-    set({ token: null, user: null })
+    set({ token: null, user: null, adminToken: null, isLoading: false })
   },
   
   fetchUser: async () => {
-    const token = get().token
-    if (!token) {
-      set({ isLoading: false })
-      return
-    }
-
     set({ isLoading: true })
     try {
       const response = await authAPI.me()
-      set({ user: response.data, isLoading: false })
+      const isImpersonating = response.headers['x-impersonating'] === 'true'
+      set({
+        token: SESSION_MARKER,
+        adminToken: isImpersonating ? IMPERSONATION_MARKER : null,
+        user: response.data,
+        isLoading: false,
+      })
     } catch (error: unknown) {
       const axiosError = error as AxiosError
       const status = axiosError?.response?.status
       if (status === 401 || status === 403) {
-        localStorage.removeItem('token')
-        set({ token: null, user: null, isLoading: false })
+        set({ token: null, user: null, adminToken: null, isLoading: false })
       } else {
         set({ isLoading: false })
       }
     }
   },
   
-  loginAsClient: async (newToken: string) => {
-    const currentToken = get().token
-    if (currentToken && !get().adminToken) {
-      localStorage.setItem('admin_token', currentToken)
-      set({ adminToken: currentToken })
-    }
-    
-    localStorage.setItem('token', newToken)
-    set({ token: newToken })
+  loginAsClient: async () => {
+    set({ token: SESSION_MARKER, adminToken: IMPERSONATION_MARKER })
     await get().fetchUser()
   },
   
   returnToAdmin: async () => {
-    const adminToken = get().adminToken
-    if (adminToken) {
-      localStorage.setItem('token', adminToken)
-      localStorage.removeItem('admin_token')
-      set({ token: adminToken, adminToken: null })
-      await get().fetchUser()
-    }
+    await authAPI.returnToAdmin()
+    set({ token: SESSION_MARKER, adminToken: null })
+    await get().fetchUser()
   },
 }))
 

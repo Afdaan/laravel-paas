@@ -43,18 +43,6 @@ func NewGithubAppHandler(db *gorm.DB, cfg *config.Config, githubService *infrast
 func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 	metrics.GetCollector().IncrGithubWebhooksReceived()
 
-	deliveryID := c.Get("X-GitHub-Delivery")
-	if deliveryID != "" {
-		key := fmt.Sprintf("github:webhook:processed:%s", deliveryID)
-		ok, err := h.redisService.SetNX(key, true, 24*time.Hour)
-		if err != nil {
-			slog.Warn("Failed to check webhook delivery cache", "delivery_id", deliveryID, "error", err)
-		} else if !ok {
-			slog.Info("Duplicate webhook delivery detected, ignoring", "delivery_id", deliveryID)
-			return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Duplicate event ignored"})
-		}
-	}
-
 	secret := h.cfg.GithubAppWebhookSecret
 	if secret == "" {
 		secret = os.Getenv("GITHUB_APP_WEBHOOK_SECRET")
@@ -79,6 +67,18 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 
 		if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid signature"})
+		}
+	}
+
+	deliveryID := c.Get("X-GitHub-Delivery")
+	if deliveryID != "" {
+		key := fmt.Sprintf("github:webhook:processed:%s", deliveryID)
+		ok, err := h.redisService.SetNX(key, true, 24*time.Hour)
+		if err != nil {
+			slog.Warn("Failed to check webhook delivery cache", "delivery_id", deliveryID, "error", err)
+		} else if !ok {
+			slog.Info("Duplicate webhook delivery detected, ignoring", "delivery_id", deliveryID)
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Duplicate event ignored"})
 		}
 	}
 

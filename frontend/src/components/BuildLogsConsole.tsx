@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useReducer } from 'react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { projectsAPI } from '../services/api'
+import { getCSRFToken, projectsAPI } from '../services/api'
 import { Terminal, Copy, Activity } from 'lucide-react'
 import { toast } from 'sonner'
 import useTranslation from '@/lib/useTranslation'
@@ -393,10 +393,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
     const connectSSE = async () => {
       try {
-        const token = localStorage.getItem('token') || ''
         const res = await fetch('/api/auth/stream-token', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': getCSRFToken() }
         })
         if (!res.ok) {
           throw new Error('Failed to get stream token')

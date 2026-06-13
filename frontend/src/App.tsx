@@ -77,7 +77,7 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
 
 function App() {
   const { t } = useTranslation()
-  const { fetchUser, token, user } = useAuthStore()
+  const { fetchUser, logout, token, user } = useAuthStore()
   const navigate = useNavigate()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
 
@@ -97,10 +97,8 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (token && !user) {
-      fetchUser()
-    }
-  }, [token, user, fetchUser])
+    fetchUser()
+  }, [fetchUser])
 
   useEffect(() => {
     if (token && (user?.role === 'admin' || user?.role === 'superadmin')) {
@@ -114,10 +112,9 @@ function App() {
     const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
 
     const handleIdleLogout = () => {
-      const currentToken = useAuthStore.getState().token || localStorage.getItem('token')
+      const currentToken = useAuthStore.getState().token
       if (currentToken) {
-        useAuthStore.setState({ token: null, user: null, isLoading: false })
-        localStorage.removeItem('token')
+        void logout()
         toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
         navigate('/login', { state: { from: window.location.pathname }, replace: true })
       }
@@ -139,14 +136,13 @@ function App() {
         events.forEach(event => window.removeEventListener(event, resetTimer))
       }
     }
-  }, [token, t, settings, navigate])
+  }, [token, t, settings, navigate, logout])
 
   useEffect(() => {
     const handleExpired = () => {
-      const currentToken = useAuthStore.getState().token || localStorage.getItem('token')
+      const currentToken = useAuthStore.getState().token
       if (currentToken) {
-        useAuthStore.setState({ token: null, user: null, isLoading: false })
-        localStorage.removeItem('token')
+        useAuthStore.setState({ token: null, user: null, adminToken: null, isLoading: false })
         toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
         navigate('/login', { state: { from: window.location.pathname }, replace: true })
       }

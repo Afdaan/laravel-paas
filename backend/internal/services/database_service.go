@@ -633,7 +633,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 			re, err := regexp.Compile(pattern)
 			if err == nil && re.MatchString(normalizedQuery) {
 				slog.Warn("Blocked forbidden SQL operation attempt",
-					"query", query[:min(len(query), 100)],
+					"database", dbName,
 					"pattern", pattern,
 				)
 				return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
@@ -641,7 +641,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 		} else {
 			if strings.Contains(normalizedQuery, pattern) {
 				slog.Warn("Blocked forbidden SQL operation attempt",
-					"query", query[:min(len(query), 100)],
+					"database", dbName,
 					"pattern", pattern,
 				)
 				return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
@@ -674,7 +674,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 			if partUpper != dbNameUpper && partUpper != "INFORMATION_SCHEMA" && partUpper != "PUBLIC" && len(part) > 0 && !strings.HasPrefix(partUpper, "SELECT") {
 				if strings.Contains(normalizedQuery, "`"+partUpper+"`") || strings.Contains(normalizedQuery, "\""+partUpper+"\"") || strings.Contains(normalizedQuery, partUpper+".") {
 					slog.Warn("Blocked cross-database query attempt",
-						"query", query[:min(len(query), 100)],
+						"database", dbName,
 						"target_db", part,
 					)
 					return nil, apperr.New(403, "SQL_CROSS_DATABASE", "Cross-database queries are not allowed")
@@ -698,8 +698,8 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	if strings.HasPrefix(upperQuery, "SELECT") || strings.HasPrefix(upperQuery, "SHOW") || strings.HasPrefix(upperQuery, "DESCRIBE") || strings.HasPrefix(upperQuery, "DESC") {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
-			slog.Warn("SQL query execution failed", "query", query[:min(len(query), 100)], "error", err.Error())
-			return nil, apperr.New(400, "QUERY_ERROR", err.Error())
+			slog.Warn("SQL query execution failed", "database", dbName, "error", err.Error())
+			return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 		}
 		defer rows.Close()
 
@@ -746,8 +746,8 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	// Handle modification queries
 	result, err := db.ExecContext(ctx, query)
 	if err != nil {
-		slog.Warn("SQL modification query failed", "query", query[:min(len(query), 100)], "error", err.Error())
-		return nil, apperr.New(400, "QUERY_ERROR", err.Error())
+		slog.Warn("SQL modification query failed", "database", dbName, "error", err.Error())
+		return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 	}
 
 	affected, _ := result.RowsAffected()
@@ -1667,7 +1667,7 @@ func (s *DatabaseService) RestoreBackup(projectID uint, backupID uint) error {
 		}
 		_, err = s.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, stmt)
 		if err != nil {
-			slog.Warn("Failed executing restore SQL statement", "stmt", stmt[:min(len(stmt), 100)], "error", err.Error())
+			slog.Warn("Failed executing restore SQL statement", "database", project.DatabaseName, "error", err.Error())
 		}
 	}
 

@@ -56,6 +56,16 @@ func IsInternalIP(ip string) bool {
 	return ipNet.Contains(parsed)
 }
 
+// InternalOnly restricts operational endpoints to loopback/private mesh callers.
+func InternalOnly() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if !IsInternalIP(c.IP()) {
+			return apperr.ErrForbidden
+		}
+		return c.Next()
+	}
+}
+
 // ProxyAuth middleware validates that proxy access is from authenticated users
 func ProxyAuth(cfgJWTSecret string, redis Blacklister, userService ActivityTracker) fiber.Handler {
 	return func(c *fiber.Ctx) error {

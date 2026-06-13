@@ -37,6 +37,10 @@ func main() {
 
 	// Initialize structured logger
 	logger.Setup(cfg)
+	if err := cfg.ValidateProductionSecurity(); err != nil {
+		slog.Error("Insecure production configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Initialize database connection
 	db, err := database.Connect(cfg)

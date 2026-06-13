@@ -44,7 +44,6 @@ func Setup(
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
 		AppName:      "Laravel PaaS API",
-		ProxyHeader:  "X-Forwarded-For", // Correctly detect client IP behind Nginx/Traefik
 	})
 
 	// ===========================================
@@ -68,7 +67,7 @@ func Setup(
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.FrontendURL,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-CSRF-Token",
 		AllowCredentials: true,
 	}))
 
@@ -76,27 +75,11 @@ func Setup(
 	// Health Check
 	// ===========================================
 	app.Get("/health", func(c *fiber.Ctx) error {
-		// Check Database
-		dbConn, err := db.DB()
-		if err != nil {
-			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
-		}
-		if err := dbConn.Ping(); err != nil {
-			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
-		}
-
-		// Check Redis
-		if redisService != nil {
-			if err := redisService.Ping(c.Context()); err != nil {
-				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "error"})
-			}
-		}
-
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
 	// Prometheus Metrics Endpoint
-	app.Get("/metrics", metrics.PrometheusHandler())
+	app.Get("/metrics", middleware.InternalOnly(), metrics.PrometheusHandler())
 
 	// API Routes
 	api := app.Group("/api")
@@ -125,32 +108,33 @@ func Setup(
 	// Auth Routes (public, rate limited)
 	// -----------------------------
 	auth := api.Group("/auth")
-	auth.Post("/login", middleware.RateLimitLogin(), authHandler.Login)
+	auth.Post("/login", middleware.RateLimitLogin(redisService), authHandler.Login)
 	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
 
 	// -----------------------------
 	// System Init (public, rate limited)
 	// -----------------------------
-	systemInit := api.Group("/system", middleware.RateLimitLogin())
+	systemInit := api.Group("/system", middleware.RateLimitLogin(redisService))
 	systemInit.Get("/init-status", systemHandler.GetInitStatus)
 	systemInit.Post("/initialize", systemHandler.InitializeSystem)
 
 	// -----------------------------
 	// Internal System Routes (Publicly accessible but meant for internal mesh network)
 	// -----------------------------
-	internal := api.Group("/internal")
+	internal := api.Group("/internal", middleware.InternalOnly())
 	internal.Get("/traefik/config", domainHandler.GetTraefikConfig)
 
 	// -----------------------------
 	// Protected Routes
 	// -----------------------------
-	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService))
+	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService, userService))
 
 	// Auth (protected)
 	protected.Post("/auth/logout", authHandler.Logout)
 	protected.Get("/auth/me", authHandler.Me)
 	protected.Put("/auth/profile", authHandler.UpdateProfile)
 	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
+	protected.Post("/auth/return-to-admin", authHandler.ReturnToAdmin)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -218,10 +202,10 @@ func Setup(
 	secretstores.Put("/:id", secretStoreHandler.Update)
 	secretstores.Delete("/:id", secretStoreHandler.Delete)
 	secretstores.Post("/:id/secrets", secretStoreHandler.SetSecret)
-	secretstores.Get("/:id/items/:itemID/reveal", secretStoreHandler.RevealSecret)
+	secretstores.Post("/:id/items/:itemID/reveal", secretStoreHandler.RevealSecret)
 	secretstores.Post("/:id/bindings", secretStoreHandler.Bind)
 	secretstores.Delete("/:id/bindings/:bindingID", secretStoreHandler.Unbind)
-	secretstores.Get("/:id/export", secretStoreHandler.Export)
+	secretstores.Post("/:id/export", secretStoreHandler.Export)
 	secretstores.Post("/:id/import", secretStoreHandler.Import)
 
 	// SecretStore Item Management (Milestone 2)
@@ -262,7 +246,7 @@ func Setup(
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	projects.Get("/:id/database/credentials", databaseHandler.GetCredentials)
+	projects.Post("/:id/database/credentials", databaseHandler.GetCredentials)
 	projects.Post("/:id/database/rotate-credentials", databaseHandler.RotateCredentials)
 	projects.Post("/:id/database/status", databaseHandler.UpdateStatus)
 	projects.Get("/:id/database/overview", databaseHandler.GetOverview)

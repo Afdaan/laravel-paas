@@ -93,16 +93,7 @@ export default function AdminSecretStoreExplorer() {
 
   const handleToggleDisable = async (store: AdminSecretStore) => {
     try {
-      const response = await fetch(`/api/admin/secretstores/${store.id}/disable`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ disable: !store.is_disabled })
-      })
-      if (!response.ok) throw new Error()
-      
+      await secretStoreAPI.adminDisable(store.id, !store.is_disabled)
       toast.success('Store status toggled successfully')
       fetchData()
     } catch (error) {

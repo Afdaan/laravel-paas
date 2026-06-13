@@ -163,9 +163,8 @@ const AdminUsers = () => {
 
   const handleLoginAs = async (id: number) => {
     try {
-      const response = await usersAPI.loginAs(id)
-      const { token } = response.data
-      await loginAsClient(token)
+      await usersAPI.loginAs(id)
+      await loginAsClient()
       toast.success('Successfully logged in as user')
       navigate('/dashboard')
     } catch (error: unknown) {

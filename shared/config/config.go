@@ -6,9 +6,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // Config holds all application configuration
@@ -220,6 +222,32 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+// ValidateProductionSecurity fails closed when production boot would use known weak secrets.
+func (c *Config) ValidateProductionSecurity() error {
+	if !strings.EqualFold(c.AppEnv, "production") {
+		return nil
+	}
+
+	weakSecrets := map[string]string{
+		"JWT_SECRET":                c.JWTSecret,
+		"UID_SALT":                  c.UIDSalt,
+		"CREDENTIAL_ENCRYPTION_KEY": c.CredentialEncryptionKey,
+	}
+	defaults := map[string]string{
+		"JWT_SECRET":                "change-this-secret",
+		"UID_SALT":                  "change-this-salt",
+		"CREDENTIAL_ENCRYPTION_KEY": "default-fallback-encryption-key-for-dev",
+	}
+
+	for key, value := range weakSecrets {
+		if value == "" || value == defaults[key] || strings.Contains(strings.ToLower(value), "change-me") || strings.Contains(strings.ToLower(value), "placeholder") || len(value) < 32 {
+			return fmt.Errorf("%s must be configured with a strong production secret", key)
+		}
+	}
+
+	return nil
 }
 
 // Helper functions to read environment variables

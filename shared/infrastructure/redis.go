@@ -512,18 +512,17 @@ func (r *RedisService) IsBlacklisted(token string) bool {
 
 // RateLimit checks and increments a rate limit counter
 func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) (bool, error) {
-	count, err := r.client.Get(r.ctx, key).Int()
-	if err != nil && err != redis.Nil {
+	count, err := r.client.Incr(r.ctx, key).Result()
+	if err != nil {
 		return false, err
 	}
 
-	if count >= limit {
-		return false, nil // Limit exceeded
+	if count == 1 {
+		r.client.Expire(r.ctx, key, duration)
 	}
 
-	r.client.Incr(r.ctx, key)
-	if count == 0 {
-		r.client.Expire(r.ctx, key, duration)
+	if count > int64(limit) {
+		return false, nil // Limit exceeded
 	}
 
 	return true, nil

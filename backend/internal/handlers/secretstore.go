@@ -246,6 +246,7 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 	}
 	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", details, c.IP(), c.Get("User-Agent"))
 
+	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(fiber.Map{"data": fiber.Map{"value": decryptedVal}})
 }
 
@@ -335,6 +336,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 
 	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent"))
 
+	c.Set(fiber.HeaderCacheControl, "no-store")
 	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
 	return c.JSON(secretsMap)
 }

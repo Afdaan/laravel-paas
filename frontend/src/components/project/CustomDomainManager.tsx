@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Globe, Plus, Trash2, AlertCircle, RefreshCw, ExternalLink, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
-import { projectsAPI } from '@/services/api'
+import { getCSRFToken, projectsAPI } from '@/services/api'
 import { CustomDomain, DomainEvent } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -244,10 +244,10 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
     const connectSSE = async () => {
       try {
-        const token = localStorage.getItem('token') || '';
         const res = await fetch('/api/auth/stream-token', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': getCSRFToken() }
         });
         if (!res.ok || !isSubscribed) {
           scheduleReconnect();

@@ -9,16 +9,29 @@ import axios, { InternalAxiosRequestConfig, AxiosError } from 'axios'
 // Create axios instance
 const api = axios.create({
   baseURL: '/api',
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// Request interceptor - add auth token
+export const getCSRFToken = () => {
+  const token = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('paas_csrf='))
+    ?.split('=')[1]
+
+  return token ? decodeURIComponent(token) : ''
+}
+
+// Request interceptor - add CSRF token for cookie-authenticated unsafe requests
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('token')
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`
+  const method = (config.method || 'get').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && config.headers) {
+    const csrfToken = getCSRFToken()
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
   }
   return config
 })
@@ -30,11 +43,8 @@ api.interceptors.response.use(
     const { config, response } = error
     if (!config) return Promise.reject(error)
     
-    const wasAuthenticated = !!localStorage.getItem('token')
-    
     // Global 401 Unauthorized handling
-    if (response?.status === 401 && wasAuthenticated) {
-      localStorage.removeItem('token')
+    if (response?.status === 401) {
       window.dispatchEvent(new Event('auth:expired'))
     }
     
@@ -77,6 +87,9 @@ export const authAPI = {
   
   me: () => 
     api.get('/auth/me'),
+
+  returnToAdmin: () =>
+    api.post('/auth/return-to-admin'),
 
   updateProfile: (data: { name: string; email: string; password?: string }) =>
     api.put('/auth/profile', data),
@@ -233,7 +246,7 @@ export const projectsAPI = {
 export const databaseAPI = {
   // Get database credentials
   getCredentials: (projectId: number | string) => 
-    api.get(`/projects/${projectId}/database/credentials`),
+    api.post(`/projects/${projectId}/database/credentials`),
   
   // Rotate credentials
   rotateCredentials: (projectId: number | string) => 
@@ -391,7 +404,7 @@ export const secretStoreAPI = {
     api.delete(`/secretstores/${storeId}/items/${itemId}`),
 
   revealItemValue: (storeId: number | string, itemId: number | string, version?: number | string) =>
-    api.get(`/secretstores/${storeId}/items/${itemId}/reveal`, { params: version ? { version } : {} }),
+    api.post(`/secretstores/${storeId}/items/${itemId}/reveal`, null, { params: version ? { version } : {} }),
 
   getItemHistory: (storeId: number | string, itemId: number | string) =>
     api.get(`/secretstores/${storeId}/items/${itemId}/history`),
@@ -408,7 +421,7 @@ export const secretStoreAPI = {
 
   // Import/Export
   exportStore: (storeId: number | string) =>
-    api.get(`/secretstores/${storeId}/export`),
+    api.post(`/secretstores/${storeId}/export`),
 
   importStore: (storeId: number | string, data: { secrets: Record<string, string> }) =>
     api.post(`/secretstores/${storeId}/import`, data),
@@ -416,6 +429,9 @@ export const secretStoreAPI = {
   // Admin audit logs
   adminListAll: () =>
     api.get('/admin/secretstores'),
+
+  adminDisable: (id: number | string, disable: boolean) =>
+    api.put(`/admin/secretstores/${id}/disable`, { disable }),
 
   adminListLogs: () =>
     api.get('/admin/secretstores/logs'),

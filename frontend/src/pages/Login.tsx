@@ -110,7 +110,7 @@ function Login() {
         </Button>
         
         <Card size="sm" className="border-border/60 shadow-sm shadow-foreground/5">
-          <CardHeader className="items-center gap-3 px-6 pt-6 pb-2">
+          <CardHeader className="justify-items-center gap-3 px-6 pt-6 pb-2 text-center">
             <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <Terminal className="size-5" />
             </div>
@@ -136,6 +136,7 @@ function Login() {
                   aria-invalid={!!validationErrors.email}
                   className="h-9 bg-muted/30"
                   placeholder={t('login.emailPlaceholder')}
+                  autoComplete="email"
                   autoFocus
                 />
                 {validationErrors.email && (
@@ -159,6 +160,7 @@ function Login() {
                     aria-invalid={!!validationErrors.password}
                     className="h-9 bg-muted/30 pr-10"
                     placeholder={t('login.passwordPlaceholder')}
+                    autoComplete="current-password"
                   />
                   <Button
                     type="button"

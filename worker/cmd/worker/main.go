@@ -35,6 +35,10 @@ func main() {
 
 	cfg := config.Load()
 	logger.Setup(cfg)
+	if err := cfg.ValidateProductionSecurity(); err != nil {
+		slog.Error("Insecure production configuration", "error", err)
+		os.Exit(1)
+	}
 
 	slot := os.Getenv("SLOT")
 	version := os.Getenv("VERSION")
