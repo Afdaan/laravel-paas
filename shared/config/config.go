@@ -86,7 +86,9 @@ type Config struct {
 	GithubAppWebhookSecret  string
 
 	// SecretStore Credentials Encryption
-	CredentialEncryptionKey string
+	CredentialEncryptionKey                   string
+	CredentialEncryptionPreviousKeys          []string
+	CredentialEncryptionAllowInsecurePrevious bool
 }
 
 // Load reads configuration from environment variables
@@ -201,7 +203,9 @@ func Load() *Config {
 		GithubAppWebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
 
 		// SecretStore Credentials Encryption
-		CredentialEncryptionKey: getEnv("CREDENTIAL_ENCRYPTION_KEY", "default-fallback-encryption-key-for-dev"),
+		CredentialEncryptionKey:                   getEnv("CREDENTIAL_ENCRYPTION_KEY", "default-fallback-encryption-key-for-dev"),
+		CredentialEncryptionPreviousKeys:          parseSecretList(getEnv("CREDENTIAL_ENCRYPTION_KEY_PREVIOUS", "")),
+		CredentialEncryptionAllowInsecurePrevious: getEnvBool("CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS", false),
 	}
 
 	// Ensure host paths are absolute to prevent Docker volume naming errors
@@ -246,6 +250,13 @@ func (c *Config) ValidateProductionSecurity() error {
 			return fmt.Errorf("%s must be configured with a strong production secret", key)
 		}
 	}
+	for index, value := range c.CredentialEncryptionPreviousKeys {
+		if value == "" || value == defaults["CREDENTIAL_ENCRYPTION_KEY"] || strings.Contains(strings.ToLower(value), "change-me") || strings.Contains(strings.ToLower(value), "placeholder") || len(value) < 32 {
+			if !c.CredentialEncryptionAllowInsecurePrevious {
+				return fmt.Errorf("CREDENTIAL_ENCRYPTION_KEY_PREVIOUS entry %d is weak; set CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS=true only for a temporary one-time migration", index+1)
+			}
+		}
+	}
 
 	return nil
 }
@@ -256,6 +267,31 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func parseSecretList(value string) []string {
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\n'
+	})
+
+	secrets := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		secret := strings.TrimSpace(part)
+		if secret == "" {
+			continue
+		}
+		if _, ok := seen[secret]; ok {
+			continue
+		}
+		seen[secret] = struct{}{}
+		secrets = append(secrets, secret)
+	}
+	return secrets
 }
 
 func getEnvInt(key string, defaultValue int) int {

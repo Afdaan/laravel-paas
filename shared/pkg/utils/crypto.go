@@ -13,6 +13,11 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+type DecryptionResult struct {
+	Plaintext       string
+	UsedFallbackKey bool
+}
+
 // DeriveKey stretches the configuration key using HKDF-SHA256 to guarantee a secure 32-byte key.
 func DeriveKey(configKey string) []byte {
 	// Static salt and info to ensure deterministic key derivation for credentials.
@@ -62,17 +67,26 @@ func Encrypt(plaintext string, key []byte) (string, error) {
 // It accepts one or more derived keys (e.g., for backward-compatible fallback).
 // It attempts to decrypt using each key in order and returns the first successful decryption.
 func Decrypt(encryptedB64 string, keys ...[]byte) (string, error) {
+	result, err := DecryptWithResult(encryptedB64, keys...)
+	if err != nil {
+		return "", err
+	}
+	return result.Plaintext, nil
+}
+
+// DecryptWithResult decrypts with a keyring and reports whether a non-primary key succeeded.
+func DecryptWithResult(encryptedB64 string, keys ...[]byte) (DecryptionResult, error) {
 	if len(keys) == 0 {
-		return "", errors.New("at least one key must be provided for decryption")
+		return DecryptionResult{}, errors.New("at least one key must be provided for decryption")
 	}
 
 	ciphertext, err := base64.StdEncoding.DecodeString(encryptedB64)
 	if err != nil {
-		return "", err
+		return DecryptionResult{}, err
 	}
 
 	var lastErr error
-	for _, key := range keys {
+	for index, key := range keys {
 		if len(key) != 32 {
 			lastErr = errors.New("key must be exactly 32 bytes for AES-256")
 			continue
@@ -103,11 +117,33 @@ func Decrypt(encryptedB64 string, keys ...[]byte) (string, error) {
 			continue
 		}
 
-		return string(plaintext), nil
+		return DecryptionResult{
+			Plaintext:       string(plaintext),
+			UsedFallbackKey: index > 0,
+		}, nil
 	}
 
 	if lastErr != nil {
-		return "", fmt.Errorf("decryption failed with all provided keys; last error: %w", lastErr)
+		return DecryptionResult{}, fmt.Errorf("decryption failed with all provided keys; last error: %w", lastErr)
 	}
-	return "", errors.New("decryption failed")
+	return DecryptionResult{}, errors.New("decryption failed")
+}
+
+// CredentialDecryptionKeys returns the current HKDF key, current legacy key, then previous keys.
+func CredentialDecryptionKeys(current string, previous []string) [][]byte {
+	keys := make([][]byte, 0, 2+(len(previous)*2))
+	keys = append(keys, DeriveKey(current), DeriveKeyLegacy(current))
+
+	seen := map[string]struct{}{current: {}}
+	for _, secret := range previous {
+		if secret == "" {
+			continue
+		}
+		if _, ok := seen[secret]; ok {
+			continue
+		}
+		seen[secret] = struct{}{}
+		keys = append(keys, DeriveKey(secret), DeriveKeyLegacy(secret))
+	}
+	return keys
 }

@@ -815,7 +815,7 @@ export const translations = {
         loadFailedTitle: "Unable to Load Environment",
         loadBlockedTitle: "Environment Locked",
         loadBlockedDesc: "The environment cannot be loaded because a protected secret could not be decrypted.",
-        loadBlockedAction: "Restore the previous credential encryption key or re-encrypt the project SecretStore before editing environment variables.",
+        loadBlockedAction: "Add the old key to CREDENTIAL_ENCRYPTION_KEY_PREVIOUS, restart backend and worker, then retry. For legacy installs that used the built-in fallback key, enable CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS only during migration.",
       },
       database: {
         creds: "Database Credentials",
@@ -2323,7 +2323,7 @@ export const translations = {
         loadFailedTitle: "Environment Tidak Dapat Dimuat",
         loadBlockedTitle: "Environment Terkunci",
         loadBlockedDesc: "Environment tidak dapat dimuat karena secret terproteksi tidak bisa didekripsi.",
-        loadBlockedAction: "Restore credential encryption key sebelumnya atau re-encrypt SecretStore project sebelum mengubah variabel environment.",
+        loadBlockedAction: "Tambahkan key lama ke CREDENTIAL_ENCRYPTION_KEY_PREVIOUS, restart backend dan worker, lalu retry. Untuk instalasi lama yang memakai fallback key bawaan, aktifkan CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS hanya selama migrasi.",
       },
       database: {
         creds: "Kredensial Database",

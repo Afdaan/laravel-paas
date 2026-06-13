@@ -232,9 +232,8 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 		return apperr.New(404, "VALUE_NOT_FOUND", "No values set for this secret key")
 	}
 
-	stretchedKey := utils.DeriveKey(h.cfg.CredentialEncryptionKey)
-	legacyKey := utils.DeriveKeyLegacy(h.cfg.CredentialEncryptionKey)
-	decryptedVal, errDec := utils.Decrypt(targetVal.EncryptedValue, stretchedKey, legacyKey)
+	decryptionKeys := utils.CredentialDecryptionKeys(h.cfg.CredentialEncryptionKey, h.cfg.CredentialEncryptionPreviousKeys)
+	decryptedVal, errDec := utils.Decrypt(targetVal.EncryptedValue, decryptionKeys...)
 	if errDec != nil {
 		return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
 	}
@@ -309,8 +308,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 		return apperr.New(404, "NOT_FOUND", "SecretStore not found")
 	}
 
-	stretchedKey := utils.DeriveKey(h.cfg.CredentialEncryptionKey)
-	legacyKey := utils.DeriveKeyLegacy(h.cfg.CredentialEncryptionKey)
+	decryptionKeys := utils.CredentialDecryptionKeys(h.cfg.CredentialEncryptionKey, h.cfg.CredentialEncryptionPreviousKeys)
 	secretsMap := make(map[string]string)
 
 	for _, item := range store.Items {
@@ -327,7 +325,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 			return apperr.New(500, "SECRET_EXPORT_INCOMPLETE", "Unable to export SecretStore backup because one or more secrets have no active value")
 		}
 
-		decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
+		decrypted, err := utils.Decrypt(latestVal.EncryptedValue, decryptionKeys...)
 		if err != nil {
 			return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
 		}

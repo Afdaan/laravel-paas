@@ -430,8 +430,8 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 		return nil, err
 	}
 
-	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
-	legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
+	currentKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+	decryptionKeys := utils.CredentialDecryptionKeys(s.cfg.CredentialEncryptionKey, s.cfg.CredentialEncryptionPreviousKeys)
 
 	for _, b := range bindings {
 		var items []models.SecretStoreItem
@@ -450,11 +450,16 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 			}
 
 			if latestVal != nil {
-				decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
+				result, err := utils.DecryptWithResult(latestVal.EncryptedValue, decryptionKeys...)
 				if err != nil {
 					return nil, secretDecryptError(project.ID, b.SecretStoreID, item.ID, err)
 				}
-				envMap[item.Key] = decrypted
+				envMap[item.Key] = result.Plaintext
+				if result.UsedFallbackKey {
+					if err := s.rotateSecretValueToCurrentKey(s.db, project.UserID, b.SecretStoreID, item.ID, item.LatestSnapshotVersion, project.ID, currentKey, result.Plaintext); err != nil {
+						slog.Warn("Failed to re-encrypt SecretStore value with current credential key", "projectID", project.ID, "secret_store_id", b.SecretStoreID, "item_id", item.ID, "error", err)
+					}
+				}
 			}
 		}
 	}
@@ -506,7 +511,8 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 
 				var item models.SecretStoreItem
 				errItem := tx.Where("secret_store_id = ? AND key = ?", storeID, "APP_KEY").First(&item).Error
-				stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+				currentKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
+				decryptionKeys := utils.CredentialDecryptionKeys(s.cfg.CredentialEncryptionKey, s.cfg.CredentialEncryptionPreviousKeys)
 
 				if errItem != nil {
 					if errors.Is(errItem, gorm.ErrRecordNotFound) {
@@ -515,7 +521,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 							return randErr
 						}
 						appKey = generatedKey
-						encryptedVal, encErr := utils.Encrypt(appKey, stretchedKey)
+						encryptedVal, encErr := utils.Encrypt(appKey, currentKey)
 						if encErr != nil {
 							return encErr
 						}
@@ -546,12 +552,16 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 					if errVal := tx.Where("secret_store_item_id = ? AND version = ?", item.ID, item.LatestSnapshotVersion).First(&val).Error; errVal != nil {
 						return errVal
 					}
-					legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
-					decrypted, decErr := utils.Decrypt(val.EncryptedValue, stretchedKey, legacyKey)
+					result, decErr := utils.DecryptWithResult(val.EncryptedValue, decryptionKeys...)
 					if decErr != nil {
 						return secretDecryptError(project.ID, storeID, item.ID, decErr)
 					}
-					appKey = decrypted
+					appKey = result.Plaintext
+					if result.UsedFallbackKey {
+						if err := s.rotateSecretValueToCurrentKey(tx, project.UserID, storeID, item.ID, item.LatestSnapshotVersion, project.ID, currentKey, result.Plaintext); err != nil {
+							return err
+						}
+					}
 				}
 				return nil
 			})
@@ -571,7 +581,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 }
 
 func secretDecryptError(projectID uint, storeID uint, itemID uint, err error) error {
-	message := "A protected environment secret cannot be decrypted. Restore the previous CREDENTIAL_ENCRYPTION_KEY or re-encrypt the SecretStore before deploying."
+	message := "A protected environment secret cannot be decrypted. Configure CREDENTIAL_ENCRYPTION_KEY_PREVIOUS with the old key, restore the previous CREDENTIAL_ENCRYPTION_KEY, or re-encrypt the SecretStore before deploying."
 	appErr := apperr.NewSecretDecryptionFailed(message, err)
 	appErr.Details = map[string]uint{
 		"project_id":      projectID,
@@ -585,6 +595,39 @@ func emptyLaravelAppKeyError(projectID uint) error {
 	appErr := apperr.NewSecretDecryptionFailed("Laravel APP_KEY is empty. Restore the managed APP_KEY value before deploying.", nil)
 	appErr.Details = map[string]uint{"project_id": projectID}
 	return appErr
+}
+
+func (s *SecretStoreService) rotateSecretValueToCurrentKey(db *gorm.DB, userID uint, storeID uint, itemID uint, expectedVersion int, projectID uint, currentKey []byte, plaintext string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var item models.SecretStoreItem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, itemID).Error; err != nil {
+			return err
+		}
+		if item.LatestSnapshotVersion != expectedVersion {
+			return nil
+		}
+
+		encryptedVal, err := utils.Encrypt(plaintext, currentKey)
+		if err != nil {
+			return err
+		}
+
+		nextVersion := item.LatestSnapshotVersion + 1
+		itemValue := models.SecretStoreItemValue{
+			SecretStoreItemID: item.ID,
+			Version:           nextVersion,
+			EncryptedValue:    encryptedVal,
+			CreatedBy:         userID,
+		}
+		if err := tx.Create(&itemValue).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&item).Update("latest_snapshot_version", nextVersion).Error; err != nil {
+			return err
+		}
+		s.LogActivityTx(tx, userID, &storeID, &item.ID, &projectID, "reencrypt_secret_value", "Re-encrypted secret value with active credential key", "", "")
+		return nil
+	})
 }
 
 func (s *SecretStoreService) PropagateSecretStoreUpdates(storeID uint) {
