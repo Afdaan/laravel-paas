@@ -885,14 +885,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
-	project.LanguageVersion = langVersion
+	if langVersion != "" {
+		project.LanguageVersion = langVersion
+	}
 
 	if project.Framework == "Laravel" {
 		laravelVersion, phpVersion, err := w.versionService.DetectVersions(buildPath)
 		if err == nil {
 			project.LaravelVersion = laravelVersion
 			project.PHPVersion = phpVersion
-		} else {
+		} else if project.PHPVersion == "" {
 			project.PHPVersion = "8.4"
 		}
 	} else {
@@ -905,7 +907,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 		}
 		if isJS {
-			project.NodeVersion = langVersion
+			if langVersion != "" {
+				project.NodeVersion = langVersion
+			}
 		}
 	}
 
