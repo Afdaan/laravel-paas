@@ -126,12 +126,90 @@ const addNormalizedSecret = (record: Record<string, string>, key: string, value:
   if (!normalizedKey || record[normalizedKey] !== undefined) {
     return false
   }
-  record[normalizedKey] = value
+  record[normalizedKey] = normalizeSecretStoreValue(normalizedKey, value)
   return true
 }
 
 const sortSecretRecord = (record: Record<string, string>) =>
   Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)))
+
+const normalizeSecretStoreValue = (key: string, value: string) => {
+  if (!isSingleLineSecretValueKey(key)) {
+    return value
+  }
+
+  return value.replace(/[\r\n]/g, '')
+}
+
+const isSingleLineSecretValueKey = (key: string) => {
+  const normalizedKey = key.trim().toUpperCase()
+  return normalizedKey === 'DATABASE_URL' ||
+    normalizedKey === 'REDIS_URL' ||
+    normalizedKey === 'SENTRY_DSN' ||
+    normalizedKey.endsWith('_URL') ||
+    normalizedKey.endsWith('_DSN')
+}
+
+const parseSecretStoreImportText = (value: string): unknown => {
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    return JSON.parse(escapeJsonControlCharactersInStrings(value))
+  }
+}
+
+const escapeJsonControlCharactersInStrings = (value: string) => {
+  let result = ''
+  let inString = false
+  let escaping = false
+
+  for (const char of value) {
+    if (!inString) {
+      result += char
+      if (char === '"') {
+        inString = true
+      }
+      continue
+    }
+
+    if (escaping) {
+      result += char
+      escaping = false
+      continue
+    }
+
+    if (char === '\\') {
+      result += char
+      escaping = true
+      continue
+    }
+
+    if (char === '"') {
+      result += char
+      inString = false
+      continue
+    }
+
+    if (char === '\n') {
+      result += '\\n'
+      continue
+    }
+
+    if (char === '\r') {
+      result += '\\r'
+      continue
+    }
+
+    if (char === '\t') {
+      result += '\\t'
+      continue
+    }
+
+    result += char
+  }
+
+  return result
+}
 
 const normalizeSecretStoreBackup = (value: unknown): Record<string, string> | null => {
   if (Array.isArray(value)) {
@@ -512,7 +590,7 @@ export default function SecretStoreDashboard() {
     if (!selectedStore || !importText.trim()) return
 
     try {
-      const parsed = JSON.parse(importText)
+      const parsed = parseSecretStoreImportText(importText)
       const secrets = normalizeSecretStoreBackup(parsed)
       if (!secrets || Object.keys(secrets).length === 0) {
         throw new Error('Invalid SecretStore import payload')

@@ -330,7 +330,7 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 		if err != nil {
 			return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
 		}
-		secretsMap[item.Key] = decrypted
+		secretsMap[item.Key] = normalizeSecretStoreValue(item.Key, decrypted)
 	}
 
 	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent"))
@@ -392,6 +392,20 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 }
 
 func parseSecretStoreImportPayload(raw []byte) (map[string]string, error) {
+	secrets, err := parseSecretStoreImportPayloadStrict(raw)
+	if err == nil {
+		return secrets, nil
+	}
+
+	sanitized := escapeJSONControlCharactersInStrings(raw)
+	if string(sanitized) == string(raw) {
+		return nil, err
+	}
+
+	return parseSecretStoreImportPayloadStrict(sanitized)
+}
+
+func parseSecretStoreImportPayloadStrict(raw []byte) (map[string]string, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err == nil {
 		for _, field := range []string{"secrets", "variables", "env", "items"} {
@@ -446,8 +460,70 @@ func addNormalizedSecret(secrets map[string]string, key string, value string) er
 	if _, exists := secrets[normalizedKey]; exists {
 		return fmt.Errorf("duplicate secret key after normalization")
 	}
-	secrets[normalizedKey] = value
+	secrets[normalizedKey] = normalizeSecretStoreValue(normalizedKey, value)
 	return nil
+}
+
+func normalizeSecretStoreValue(key string, value string) string {
+	if !isSingleLineSecretValueKey(key) {
+		return value
+	}
+
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+}
+
+func isSingleLineSecretValueKey(key string) bool {
+	normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+	return normalizedKey == "DATABASE_URL" ||
+		normalizedKey == "REDIS_URL" ||
+		normalizedKey == "SENTRY_DSN" ||
+		strings.HasSuffix(normalizedKey, "_URL") ||
+		strings.HasSuffix(normalizedKey, "_DSN")
+}
+
+func escapeJSONControlCharactersInStrings(raw []byte) []byte {
+	escaped := make([]byte, 0, len(raw))
+	inString := false
+	escaping := false
+
+	for _, b := range raw {
+		if !inString {
+			escaped = append(escaped, b)
+			if b == '"' {
+				inString = true
+			}
+			continue
+		}
+
+		if escaping {
+			escaped = append(escaped, b)
+			escaping = false
+			continue
+		}
+
+		switch b {
+		case '\\':
+			escaped = append(escaped, b)
+			escaping = true
+		case '"':
+			escaped = append(escaped, b)
+			inString = false
+		case '\n':
+			escaped = append(escaped, '\\', 'n')
+		case '\r':
+			escaped = append(escaped, '\\', 'r')
+		case '\t':
+			escaped = append(escaped, '\\', 't')
+		default:
+			if b < 0x20 {
+				escaped = append(escaped, []byte(fmt.Sprintf("\\u%04x", b))...)
+				continue
+			}
+			escaped = append(escaped, b)
+		}
+	}
+
+	return escaped
 }
 
 func (h *SecretStoreHandler) AdminListAll(c *fiber.Ctx) error {
