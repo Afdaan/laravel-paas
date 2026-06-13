@@ -12,7 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -237,13 +239,38 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 
 					errorMsg := fmt.Sprintf("Deployment failed: %s.", reason)
 					sanitizedMsg := utils.SanitizeError(errorMsg)
-					if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", sanitizedMsg); err != nil {
+					
+					// Use a timeout context instead of context.Background() to prevent indefinite hangs during DB failure
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					if _, err := w.projectService.TransitionDeploymentState(ctx, project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", sanitizedMsg); err != nil {
 						slog.Error("Central watchdog: failed atomic state transition for failed project deployment", "id", project.ID, "error", err)
 					}
+					cancel()
 					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 						"error_log": sanitizedMsg,
 					})
 					w.updateGitHubCommitStatus(&project, models.DepStatusFailed, sanitizedMsg)
+
+					// Force the timeout message into the build log stream so the UI terminal displays it immediately
+					terminalErrorMsg := fmt.Sprintf("\n>> [TIMEOUT] DEPLOYMENT STALLED: %s\n", sanitizedMsg)
+					_ = w.redisService.PublishBuildLogForJob(project.ID, jobID, terminalErrorMsg)
+
+					// Also append to the physical log file so it persists on page refresh
+					// Sanitize jobID to prevent path traversal risks
+					safeJobID := filepath.Base(filepath.Clean(jobID))
+					buildLogPath := w.getActiveLogPath(&project, safeJobID)
+					
+					// Ensure the logs directory exists; if the original worker crashed before creating it, os.OpenFile will fail
+					if err := os.MkdirAll(filepath.Dir(buildLogPath), 0755); err != nil {
+						slog.Error("Central watchdog: failed to create logs directory", "projectId", project.ID, "error", err)
+					} else {
+						if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+							_, _ = f.WriteString(terminalErrorMsg)
+							f.Close()
+						} else {
+							slog.Error("Central watchdog: failed to open log file", "projectId", project.ID, "path", buildLogPath, "error", err)
+						}
+					}
 
 					if lockMeta != nil {
 						if err := w.redisService.ForceReleaseDeploymentLock(project.ID, fmt.Sprintf("Watchdog cleaning up stale deployment: %s", reason)); err != nil {
@@ -491,6 +518,24 @@ func (w *CentralWatchdog) recordAutoHealingEvent(projectID uint, eventType strin
 	if eventJSON, err := json.Marshal(event); err == nil {
 		_ = w.redisService.PublishDeploymentEvent(projectID, string(eventJSON))
 	}
+}
+
+
+
+func (w *CentralWatchdog) getActiveLogPath(project *models.Project, jobID string) string {
+	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	if jobID != "" && jobID != "unknown" {
+		buildPath := filepath.Join(projectPath, "logs", fmt.Sprintf("build-%s.log", jobID))
+		if _, err := os.Stat(buildPath); err == nil {
+			return buildPath
+		}
+		infraPath := filepath.Join(projectPath, "logs", fmt.Sprintf("infra-%s.log", jobID))
+		if _, err := os.Stat(infraPath); err == nil {
+			return infraPath
+		}
+		return buildPath
+	}
+	return filepath.Join(projectPath, "build.log")
 }
 
 func (w *CentralWatchdog) autoHealingCheck() {

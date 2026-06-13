@@ -1923,12 +1923,7 @@ func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 	return result, nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+
 
 // SplitSQLStatements splits a SQL string into individual statements by semicolon,
 // respecting single-quoted strings, double-quoted strings, and SQL comments.

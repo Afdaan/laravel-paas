@@ -1401,6 +1401,17 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	msg := sanitizedMsg
 	project.ErrorLog = &msg
 
+	// Force the error message into the build log stream so the UI terminal displays it immediately
+	terminalErrorMsg := fmt.Sprintf("\n>> [FAILED] DEPLOYMENT ERROR: %s\n", sanitizedMsg)
+	_ = w.redisService.PublishBuildLogForJob(project.ID, jobID, terminalErrorMsg)
+
+	// Also append to the physical log file
+	buildLogPath := w.getActiveLogPath(project)
+	if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
+		_, _ = f.WriteString(terminalErrorMsg)
+		f.Close()
+	}
+
 	// Determine the correct project status after a failure
 	statusUpdate := models.StatusFailed
 	if project.ContainerID != nil && *project.ContainerID != "" {
