@@ -324,33 +324,77 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		envs["RAILPACK_DISABLE_CACHES"] = "*"
 	}
 
-	// Dynamically inject runtime version overrides based on project.Framework and LanguageVersion
+	// Dynamically inject runtime version overrides using idiomatic files for Railpack/mise
 	switch project.Framework {
 	case "Go", "Golang":
 		if project.LanguageVersion != "" {
-			envs["RAILPACK_GO_VERSION"] = project.LanguageVersion
+			versionFile := filepath.Join(buildPath, ".go-version")
+			if _, err := os.Stat(versionFile); os.IsNotExist(err) {
+				if err := os.WriteFile(versionFile, []byte(project.LanguageVersion), 0644); err != nil {
+					slog.Warn("Failed to inject .go-version for Railpack", "error", err, "subdomain", project.Subdomain)
+				} else {
+					slog.Info("Injected .go-version for Railpack", "version", project.LanguageVersion)
+				}
+			}
 		}
 	case "Python":
 		if project.LanguageVersion != "" {
-			envs["RAILPACK_PYTHON_VERSION"] = project.LanguageVersion
+			versionFile := filepath.Join(buildPath, ".python-version")
+			if _, err := os.Stat(versionFile); os.IsNotExist(err) {
+				if err := os.WriteFile(versionFile, []byte(project.LanguageVersion), 0644); err != nil {
+					slog.Warn("Failed to inject .python-version for Railpack", "error", err, "subdomain", project.Subdomain)
+				} else {
+					slog.Info("Injected .python-version for Railpack", "version", project.LanguageVersion)
+				}
+			}
 		}
 	default:
 		// Default / Node runtime version overrides
-		if project.NodeVersion != "" {
-			envs["RAILPACK_NODE_VERSION"] = project.NodeVersion
-		} else if project.LanguageVersion != "" {
-			envs["RAILPACK_NODE_VERSION"] = project.LanguageVersion
+		nodeVer := project.NodeVersion
+		if nodeVer == "" {
+			nodeVer = project.LanguageVersion
+		}
+		if nodeVer != "" {
+			versionFile := filepath.Join(buildPath, ".node-version")
+			if _, err := os.Stat(versionFile); os.IsNotExist(err) {
+				if err := os.WriteFile(versionFile, []byte(nodeVer), 0644); err != nil {
+					slog.Warn("Failed to inject .node-version for Railpack", "error", err, "subdomain", project.Subdomain)
+				} else {
+					slog.Info("Injected .node-version for Railpack", "version", nodeVer)
+				}
+			}
 		}
 	}
 
 	// Fallback check if framework is empty but language version is provided
 	if project.Framework == "" && project.LanguageVersion != "" {
 		if _, err := os.Stat(filepath.Join(buildPath, "go.mod")); err == nil {
-			envs["RAILPACK_GO_VERSION"] = project.LanguageVersion
+			versionFile := filepath.Join(buildPath, ".go-version")
+			if _, e := os.Stat(versionFile); os.IsNotExist(e) {
+				if err := os.WriteFile(versionFile, []byte(project.LanguageVersion), 0644); err != nil {
+					slog.Warn("Failed to inject fallback .go-version for Railpack", "error", err, "subdomain", project.Subdomain)
+				} else {
+					slog.Info("Injected fallback .go-version for Railpack", "version", project.LanguageVersion)
+				}
+			}
 		} else if _, err := os.Stat(filepath.Join(buildPath, "requirements.txt")); err == nil {
-			envs["RAILPACK_PYTHON_VERSION"] = project.LanguageVersion
+			versionFile := filepath.Join(buildPath, ".python-version")
+			if _, e := os.Stat(versionFile); os.IsNotExist(e) {
+				if err := os.WriteFile(versionFile, []byte(project.LanguageVersion), 0644); err != nil {
+					slog.Warn("Failed to inject fallback .python-version for Railpack", "error", err, "subdomain", project.Subdomain)
+				} else {
+					slog.Info("Injected fallback .python-version for Railpack", "version", project.LanguageVersion)
+				}
+			}
 		} else if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
-			envs["RAILPACK_NODE_VERSION"] = project.LanguageVersion
+			versionFile := filepath.Join(buildPath, ".node-version")
+			if _, e := os.Stat(versionFile); os.IsNotExist(e) {
+				if err := os.WriteFile(versionFile, []byte(project.LanguageVersion), 0644); err != nil {
+					slog.Warn("Failed to inject fallback .node-version for Railpack", "error", err, "subdomain", project.Subdomain)
+				} else {
+					slog.Info("Injected fallback .node-version for Railpack", "version", project.LanguageVersion)
+				}
+			}
 		}
 	}
 

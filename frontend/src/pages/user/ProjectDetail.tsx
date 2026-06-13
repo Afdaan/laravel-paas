@@ -60,6 +60,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
+import { RUNTIME_VERSIONS, DEFAULT_RUNTIME_VERSIONS } from '@/lib/runtimes'
 import { Switch } from '@/components/ui/switch'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import BuildLogsConsole from '@/components/BuildLogsConsole'
@@ -1580,14 +1581,14 @@ function UserProjectDetail() {
                       <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.version')}</Label>
                       <Select
                         value={phpVersionInput}
-                        onValueChange={(val) => setPhpVersionInput(val || '8.2')}
+                        onValueChange={(val) => setPhpVersionInput(val || DEFAULT_RUNTIME_VERSIONS.php)}
                       >
                         <SelectTrigger className="h-12 border-muted-foreground/20">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                          {['8.1', '8.2', '8.3', '8.4'].map(v => (
-                            <SelectItem key={v} value={v}>PHP {v} {v === '8.4' ? t('projectDetail.settings.latest') : ''}</SelectItem>
+                          {RUNTIME_VERSIONS.php.map(v => (
+                            <SelectItem key={v.value} value={v.value}>{v.label} {v.isLatest ? t('projectDetail.settings.latest') : ''}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1613,18 +1614,14 @@ function UserProjectDetail() {
                         <Label className="text-xs uppercase tracking-widest text-muted-foreground">{t('projectDetail.settings.nodeVersion')}</Label>
                         <Select
                           value={nodeVersionInput}
-                          onValueChange={(val) => setNodeVersionInput(val || '20')}
+                          onValueChange={(val) => setNodeVersionInput(val || DEFAULT_RUNTIME_VERSIONS.node)}
                         >
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                            {[
-                              { v: '18', l: 'Node.js 18 (LTS)' },
-                              { v: '20', l: 'Node.js 20 (LTS)' },
-                              { v: '22', l: 'Node.js 22 (Current)' }
-                            ].map(item => (
-                              <SelectItem key={item.v} value={item.v}>{item.l}</SelectItem>
+                            {RUNTIME_VERSIONS.node.map(item => (
+                              <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1636,14 +1633,14 @@ function UserProjectDetail() {
                         <Label className="text-xs uppercase tracking-widest text-muted-foreground">Go Version</Label>
                         <Select
                           value={languageVersionInput}
-                          onValueChange={(val) => setLanguageVersionInput(val || '1.22')}
+                          onValueChange={(val) => setLanguageVersionInput(val || DEFAULT_RUNTIME_VERSIONS.go)}
                         >
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                            {['1.20', '1.21', '1.22'].map(v => (
-                              <SelectItem key={v} value={v}>Go {v}</SelectItem>
+                            {RUNTIME_VERSIONS.go.map(v => (
+                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1655,14 +1652,14 @@ function UserProjectDetail() {
                         <Label className="text-xs uppercase tracking-widest text-muted-foreground">Python Version</Label>
                         <Select
                           value={languageVersionInput}
-                          onValueChange={(val) => setLanguageVersionInput(val || '3.11')}
+                          onValueChange={(val) => setLanguageVersionInput(val || DEFAULT_RUNTIME_VERSIONS.python)}
                         >
                           <SelectTrigger className="h-12 border-muted-foreground/20">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent align="start" alignItemWithTrigger={false} className="w-[180px] bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                            {['3.9', '3.10', '3.11', '3.12'].map(v => (
-                              <SelectItem key={v} value={v}>Python {v}</SelectItem>
+                            {RUNTIME_VERSIONS.python.map(v => (
+                              <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
