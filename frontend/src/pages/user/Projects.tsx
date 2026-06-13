@@ -246,6 +246,7 @@ const UserProjects = () => {
                         status={project.status}
                         variant="outline"
                         size="icon"
+                        showOptions={false}
                         className="h-9 w-9 text-muted-foreground hover:text-foreground"
                         onStarted={() => onActionStarted(project.uid, 'queued')}
                         onSuccess={fetchProjects}

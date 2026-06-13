@@ -77,6 +77,64 @@ interface ProjectOption {
   subdomain: string
 }
 
+type SecretStoreBackup = {
+  version: number
+  exported_at: string
+  store: {
+    name: string
+    description?: string
+  }
+  secrets: Record<string, string>
+}
+
+const isStringRecord = (value: unknown): value is Record<string, string> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  return Object.entries(value).every(([key, item]) => key.trim() !== '' && typeof item === 'string')
+}
+
+const normalizeSecretRecord = (value: Record<string, string>): Record<string, string> | null => {
+  const normalized: Record<string, string> = {}
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = key.trim()
+    if (!normalizedKey || normalized[normalizedKey] !== undefined) {
+      return null
+    }
+    normalized[normalizedKey] = item
+  }
+  return normalized
+}
+
+const normalizeSecretStoreBackup = (value: unknown): Record<string, string> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  const payload = value as { secrets?: unknown }
+  if (payload.secrets !== undefined) {
+    return isStringRecord(payload.secrets) ? normalizeSecretRecord(payload.secrets) : null
+  }
+
+  return isStringRecord(value) ? normalizeSecretRecord(value) : null
+}
+
+const createSecretStoreBackup = (store: SecretStore, secrets: Record<string, string>): SecretStoreBackup => ({
+  version: 1,
+  exported_at: new Date().toISOString(),
+  store: {
+    name: store.name,
+    description: store.description || undefined,
+  },
+  secrets,
+})
+
+const toSafeBackupFilename = (name: string) => {
+  const normalized = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return `secretstore_${normalized || 'store'}_backup.json`
+}
+
 export default function SecretStoreDashboard() {
   const { t } = useTranslation()
   
@@ -400,13 +458,21 @@ export default function SecretStoreDashboard() {
     if (!selectedStore) return
     try {
       const res = await secretStoreAPI.exportStore(selectedStore.id)
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res.data.secrets, null, 2))
+      const exportedSecrets = normalizeSecretStoreBackup(res.data)
+      if (!exportedSecrets) {
+        throw new Error('Invalid SecretStore export response')
+      }
+
+      const backup = createSecretStoreBackup(selectedStore, exportedSecrets)
+      const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], { type: 'application/json;charset=utf-8' })
+      const objectUrl = URL.createObjectURL(blob)
       const downloadAnchor = document.createElement('a')
-      downloadAnchor.setAttribute("href", dataStr)
-      downloadAnchor.setAttribute("download", `secretstore_${selectedStore.name.toLowerCase().replace(/\s+/g, '_')}_backup.json`)
+      downloadAnchor.href = objectUrl
+      downloadAnchor.download = toSafeBackupFilename(selectedStore.name)
       document.body.appendChild(downloadAnchor)
       downloadAnchor.click()
       downloadAnchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
       toast.success(t('secretstore.exportSuccess'))
     } catch (error) {
       toast.error(t('common.error'))
@@ -420,7 +486,12 @@ export default function SecretStoreDashboard() {
 
     try {
       const parsed = JSON.parse(importText)
-      await secretStoreAPI.importStore(selectedStore.id, { secrets: parsed })
+      const secrets = normalizeSecretStoreBackup(parsed)
+      if (!secrets || Object.keys(secrets).length === 0) {
+        throw new Error('Invalid SecretStore import payload')
+      }
+
+      await secretStoreAPI.importStore(selectedStore.id, { secrets })
       toast.success(t('secretstore.importSuccess'))
       setIsImportModalOpen(false)
       setImportText('')

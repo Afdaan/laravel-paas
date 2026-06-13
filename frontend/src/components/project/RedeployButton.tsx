@@ -25,6 +25,7 @@ interface RedeployButtonProps {
   className?: string
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"
   size?: "default" | "sm" | "lg" | "icon"
+  showOptions?: boolean
 }
 
 export function RedeployButton({
@@ -37,7 +38,8 @@ export function RedeployButton({
   onError,
   className,
   variant = "outline",
-  size = "default"
+  size = "default",
+  showOptions = true
 }: RedeployButtonProps) {
   const { t } = useTranslation()
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
@@ -86,6 +88,40 @@ export function RedeployButton({
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (!showOptions) {
+    return (
+      <>
+        <Button
+          variant={variant}
+          size={size}
+          onClick={(e) => handleRedeploy(e, false)}
+          disabled={deployLocked}
+          className={cn("gap-2", deployLocked && "opacity-40", className)}
+          title={
+            deployLocked
+              ? `${t('projectDetail.actions.redeploy')} (${t(`status.${status}`)})`
+              : t('projectDetail.actions.redeploy')
+          }
+        >
+          <RefreshCw className={cn("w-4 h-4", (isSubmitting || status === 'building') && "animate-spin")} />
+          <span className={cn(size === 'icon' && 'sr-only')}>
+            {t('projectDetail.actions.redeploy')}
+          </span>
+        </Button>
+
+        <ConfirmationModal
+          isOpen={isConfirmOpen}
+          onClose={() => setIsConfirmOpen(false)}
+          onConfirm={confirmRedeploy}
+          title={isClean ? t('projectDetail.messages.redeployCleanConfirm') : t('projectDetail.messages.redeployConfirm')}
+          message={isClean ? t('projectDetail.messages.redeployCleanDesc') : t('projectDetail.messages.redeployDesc')}
+          type="warning"
+          confirmText={isClean ? t('projectDetail.actions.redeployClean') : t('projectDetail.actions.redeploy')}
+        />
+      </>
+    )
   }
 
   return (

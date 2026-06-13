@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -19,6 +22,20 @@ type SecretStoreHandler struct {
 	cfg                *config.Config
 	secretStoreService *services.SecretStoreService
 }
+
+type secretStoreBackupPayload struct {
+	Version    int                   `json:"version"`
+	ExportedAt string                `json:"exported_at"`
+	Store      secretStoreBackupMeta `json:"store"`
+	Secrets    map[string]string     `json:"secrets"`
+}
+
+type secretStoreBackupMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+const maxSecretStoreImportBytes = 1024 * 1024
 
 func NewSecretStoreHandler(db *gorm.DB, cfg *config.Config, secretStoreService *services.SecretStoreService) *SecretStoreHandler {
 	return &SecretStoreHandler{
@@ -311,17 +328,31 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 			}
 		}
 
-		if latestVal != nil {
-			decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
-			if err == nil {
-				secretsMap[item.Key] = decrypted
-			}
+		if latestVal == nil {
+			return apperr.New(500, "SECRET_EXPORT_INCOMPLETE", "Unable to export SecretStore backup because one or more secrets have no active value")
 		}
+
+		decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
+		if err != nil {
+			return apperr.New(500, "DECRYPTION_FAILED", "Failed to decrypt secret value")
+		}
+		secretsMap[item.Key] = decrypted
 	}
 
 	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent"))
 
-	return c.JSON(fiber.Map{"secrets": secretsMap})
+	backup := secretStoreBackupPayload{
+		Version:    1,
+		ExportedAt: time.Now().UTC().Format(time.RFC3339),
+		Store: secretStoreBackupMeta{
+			Name:        store.Name,
+			Description: store.Description,
+		},
+		Secrets: secretsMap,
+	}
+
+	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
+	return c.JSON(backup)
 }
 
 func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
@@ -331,24 +362,42 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 		return apperr.New(400, "INVALID_ID", "Invalid SecretStore ID")
 	}
 
-	var req struct {
-		Secrets map[string]string `json:"secrets"`
-	}
-	if err := c.BodyParser(&req); err != nil {
+	rawBody := c.BodyRaw()
+	if len(rawBody) == 0 {
 		return apperr.New(400, "BAD_REQUEST", "Invalid request body")
+	}
+	if len(rawBody) > maxSecretStoreImportBytes {
+		return apperr.New(413, "PAYLOAD_TOO_LARGE", "SecretStore import payload is too large")
+	}
+
+	secrets, err := parseSecretStoreImportPayload(rawBody)
+	if err != nil {
+		return apperr.New(400, "BAD_REQUEST", "Invalid request body")
+	}
+	if len(secrets) == 0 {
+		return apperr.New(400, "VALIDATION_FAILED", "SecretStore import contains no secrets")
 	}
 
 	storeID := uint(id)
-	for k, v := range req.Secrets {
-		if k == "" {
-			continue
-		}
-		if _, err := h.secretStoreService.SetSecretValueNoPropagate(userID, storeID, k, v, c.IP(), c.Get("User-Agent")); err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if _, err := h.secretStoreService.GetSecretStoreTx(tx, userID, storeID); err != nil {
 			return err
 		}
-	}
 
-	h.secretStoreService.LogActivity(userID, &storeID, nil, nil, "import_secrets", "Imported secrets into store container", c.IP(), c.Get("User-Agent"))
+		for key, value := range secrets {
+			if _, err := h.secretStoreService.SetSecretValueNoPropagateTx(tx, userID, storeID, key, value, c.IP(), c.Get("User-Agent")); err != nil {
+				return err
+			}
+		}
+
+		h.secretStoreService.LogActivityTx(tx, userID, &storeID, nil, nil, "import_secrets", "Imported secrets into store container", c.IP(), c.Get("User-Agent"))
+		return nil
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperr.New(404, "NOT_FOUND", "SecretStore not found")
+		}
+		return err
+	}
 
 	// Propagate updates exactly once after bulk import
 	utils.SafeGo(func() {
@@ -356,6 +405,36 @@ func (h *SecretStoreHandler) Import(c *fiber.Ctx) error {
 	})
 
 	return c.JSON(fiber.Map{"message": "Secrets imported successfully"})
+}
+
+func parseSecretStoreImportPayload(raw []byte) (map[string]string, error) {
+	var envelope struct {
+		Secrets map[string]string `json:"secrets"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Secrets != nil {
+		return normalizeSecretStoreSecrets(envelope.Secrets)
+	}
+
+	var rawSecrets map[string]string
+	if err := json.Unmarshal(raw, &rawSecrets); err != nil {
+		return nil, err
+	}
+	return normalizeSecretStoreSecrets(rawSecrets)
+}
+
+func normalizeSecretStoreSecrets(input map[string]string) (map[string]string, error) {
+	secrets := make(map[string]string, len(input))
+	for key, value := range input {
+		normalizedKey := strings.TrimSpace(key)
+		if normalizedKey == "" {
+			return nil, fmt.Errorf("secret key cannot be empty")
+		}
+		if _, exists := secrets[normalizedKey]; exists {
+			return nil, fmt.Errorf("duplicate secret key after normalization")
+		}
+		secrets[normalizedKey] = value
+	}
+	return secrets, nil
 }
 
 func (h *SecretStoreHandler) AdminListAll(c *fiber.Ctx) error {
