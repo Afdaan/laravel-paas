@@ -33,6 +33,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Progress, ProgressTrack, ProgressIndicator } from '@/components/ui/progress'
+import axios from 'axios'
 
 // Add stats interface
 interface ProjectStats {
@@ -159,18 +160,24 @@ const AdminProjects = () => {
 
   // Poll stats every 8 seconds
   useEffect(() => {
+    const controller = new AbortController()
+
     const fetchStats = async () => {
       try {
-        const response = await projectsAPI.listStats()
+        const response = await projectsAPI.listStats({ signal: controller.signal })
         setStats(response.data.stats || {})
       } catch (error) {
+        if (axios.isCancel(error) || (error as Error).name === 'CanceledError') return
         console.error("Telemetry failure", error)
       }
     }
 
     fetchStats()
     const interval = setInterval(fetchStats, 8000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      controller.abort()
+    }
   }, [])
 
   const totalPages = Math.ceil(total / limit)

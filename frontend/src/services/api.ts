@@ -223,8 +223,8 @@ export const projectsAPI = {
   listAll: (params: Record<string, unknown> = {}) => 
     api.get('/admin/projects', { params }),
 
-  listStats: () => 
-    api.get('/admin/projects/stats'),
+  listStats: (options?: AxiosRequestConfig) => 
+    api.get('/admin/projects/stats', options),
   
   adminStats: () => 
     api.get('/admin/stats'),
