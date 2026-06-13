@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { AxiosError } from 'axios'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -23,7 +24,8 @@ import {
   Pencil,
   Trash2,
   Plus,
-  Lock
+  Lock,
+  RefreshCw
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import useTranslation from '@/lib/useTranslation'
@@ -67,14 +69,22 @@ interface VariableGridItem {
   Source: string
 }
 
+interface EnvironmentLoadError {
+  title: string
+  message: string
+  code?: string
+}
+
 export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, project }: EnvironmentEditorProps) {
   const { t } = useTranslation()
+  const loadRequestRef = useRef(0)
   
   // State variables
   const [activeSubTab, setActiveSubTab] = useState('grid')
   const [isLoading, setIsLoading] = useState(true)
   const [isSavingEnv, setIsSavingEnv] = useState(false)
   const [isEnvHidden, setIsEnvHidden] = useState(true)
+  const [envLoadError, setEnvLoadError] = useState<EnvironmentLoadError | null>(null)
   const [initialContent, setInitialContent] = useState('')
   const [currentDotenv, setCurrentDotenv] = useState('')
   const [boundStores, setBoundStores] = useState<BoundStore[]>([])
@@ -238,22 +248,28 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
 
   // Load environment dotenv content and parse to grid items
   const loadEnv = useCallback(async () => {
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setIsLoading(true)
+    setEnvLoadError(null)
     try {
       // 1. Get raw dotenv content
       const response = await projectsAPI.getEnv(uid)
+      if (requestID !== loadRequestRef.current) return
       const content = response.data.content || ''
       setInitialContent(content)
       setCurrentDotenv(content)
 
       // 2. Load SecretStores list to inspect which ones are bound to this project
       const storesRes = await secretStoreAPI.list()
+      if (requestID !== loadRequestRef.current) return
       const stores: SecretStoreSummary[] = storesRes.data.data || []
       setAllStores(stores)
 
       const bounds: BoundStore[] = []
       for (const store of stores) {
         const detailRes = await secretStoreAPI.get(store.id)
+        if (requestID !== loadRequestRef.current) return
         const storeDetails = detailRes.data.data
         const storeBindings: SecretStoreProjectBinding[] = storeDetails.bindings || []
         
@@ -271,9 +287,30 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
       }
       setBoundStores(bounds)
     } catch (error) {
-      toast.error(t('common.loadError'))
+      if (requestID !== loadRequestRef.current) return
+      const axiosError = error as AxiosError<{ error?: string; code?: string }>
+      if (axiosError.response?.status === 409 && axiosError.response.data?.code === 'SECRET_DECRYPTION_FAILED') {
+        const message = axiosError.response.data.error || t('projectDetail.secrets.loadBlockedDesc')
+        setInitialContent('')
+        setCurrentDotenv('')
+        setBoundStores([])
+        setEnvLoadError({
+          title: t('projectDetail.secrets.loadBlockedTitle'),
+          message,
+          code: axiosError.response.data.code
+        })
+        toast.error(t('projectDetail.secrets.loadBlockedTitle'))
+      } else {
+        setEnvLoadError({
+          title: t('projectDetail.secrets.loadFailedTitle'),
+          message: t('common.loadError')
+        })
+        toast.error(t('common.loadError'))
+      }
     } finally {
-      setIsLoading(false)
+      if (requestID === loadRequestRef.current) {
+        setIsLoading(false)
+      }
     }
   }, [uid, t])
 
@@ -476,6 +513,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
               <Button
                 size="sm"
                 variant="outline"
+                disabled={!!envLoadError}
                 onClick={() => {
                   setAddForm({ key: '', value: '' })
                   setIsAddModalOpen(true)
@@ -489,6 +527,43 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
           </div>
         </CardHeader>
 
+        {envLoadError ? (
+          <div className="flex-1 p-6 bg-card">
+            <div className="flex h-full min-h-[360px] items-center justify-center rounded-lg border border-dashed border-destructive/30 bg-destructive/[0.03] px-6 text-center">
+              <div className="max-w-xl space-y-4">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-destructive/20 bg-destructive/10">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
+                    {envLoadError.title}
+                  </h3>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {envLoadError.message}
+                  </p>
+                </div>
+                {envLoadError.code && (
+                  <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider text-destructive border-destructive/30 bg-destructive/5">
+                    {envLoadError.code}
+                  </Badge>
+                )}
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t('projectDetail.secrets.loadBlockedAction')}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={loadEnv}
+                  className="h-9 px-4 text-[10px] font-bold uppercase tracking-wider"
+                >
+                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  {t('common.retry')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
         <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="px-6 py-4 border-b border-border/50 bg-muted/5">
             <TabsList className="flex border border-border/40 p-1 bg-muted/20 rounded-xl w-fit h-auto gap-1 bg-muted/20">
@@ -746,6 +821,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
           </div>
 
         </Tabs>
+        )}
 
         {/* Floating Unsaved Changes Banner */}
         {hasChanges && (activeSubTab === 'grid' || activeSubTab === 'bulk') && (

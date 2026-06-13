@@ -1,11 +1,13 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
@@ -20,6 +22,15 @@ func (h *ProjectHandler) GetEnv(c *fiber.Ctx) error {
 
 	envMap, err := h.secretStoreService.CompileEnvForProject(project.ID, "production")
 	if err != nil {
+		var appErr *apperr.AppError
+		if errors.As(err, &appErr) {
+			slog.Warn("Failed to compile environment variables", "project_id", project.ID, "code", appErr.Code, "error", err)
+			return c.Status(appErr.HTTPStatus).JSON(fiber.Map{
+				"error": appErr.Message,
+				"code":  appErr.Code,
+			})
+		}
+		slog.Error("Failed to compile environment variables", "project_id", project.ID, "error", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to compile environment variables"})
 	}
 

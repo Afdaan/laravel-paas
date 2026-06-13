@@ -812,6 +812,10 @@ export const translations = {
         cannotHideUnsaved: "Cannot hide unsaved changes",
         restartWarning: "Saving environment variables will trigger a container restart.",
         saveSuccess: "Environment variables updated and container restart initiated.",
+        loadFailedTitle: "Unable to Load Environment",
+        loadBlockedTitle: "Environment Locked",
+        loadBlockedDesc: "The environment cannot be loaded because a protected secret could not be decrypted.",
+        loadBlockedAction: "Restore the previous credential encryption key or re-encrypt the project SecretStore before editing environment variables.",
       },
       database: {
         creds: "Database Credentials",
@@ -2316,6 +2320,10 @@ export const translations = {
         cannotHideUnsaved: "Tidak dapat menyembunyikan perubahan yang belum disimpan",
         restartWarning: "Menyimpan variabel environment akan memicu restart container.",
         saveSuccess: "Variabel environment berhasil diperbarui dan restart container dimulai.",
+        loadFailedTitle: "Environment Tidak Dapat Dimuat",
+        loadBlockedTitle: "Environment Terkunci",
+        loadBlockedDesc: "Environment tidak dapat dimuat karena secret terproteksi tidak bisa didekripsi.",
+        loadBlockedAction: "Restore credential encryption key sebelumnya atau re-encrypt SecretStore project sebelum mengubah variabel environment.",
       },
       database: {
         creds: "Kredensial Database",

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
@@ -451,11 +452,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 			if latestVal != nil {
 				decrypted, err := utils.Decrypt(latestVal.EncryptedValue, stretchedKey, legacyKey)
 				if err != nil {
-					if item.Key == "APP_KEY" {
-						return nil, laravelAppKeyDecryptError(project.ID, b.SecretStoreID, item.ID, err)
-					}
-					slog.Error("Failed to decrypt secret value during env compilation", "item_id", item.ID, "error", err)
-					continue
+					return nil, secretDecryptError(project.ID, b.SecretStoreID, item.ID, err)
 				}
 				envMap[item.Key] = decrypted
 			}
@@ -466,7 +463,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	if project.Framework == "Laravel" {
 		if existingAppKey, ok := envMap["APP_KEY"]; ok {
 			if strings.TrimSpace(existingAppKey) == "" {
-				return nil, fmt.Errorf("Laravel APP_KEY is empty for project %d", project.ID)
+				return nil, emptyLaravelAppKeyError(project.ID)
 			}
 		} else {
 			var appKey string
@@ -552,7 +549,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 					legacyKey := utils.DeriveKeyLegacy(s.cfg.CredentialEncryptionKey)
 					decrypted, decErr := utils.Decrypt(val.EncryptedValue, stretchedKey, legacyKey)
 					if decErr != nil {
-						return laravelAppKeyDecryptError(project.ID, storeID, item.ID, decErr)
+						return secretDecryptError(project.ID, storeID, item.ID, decErr)
 					}
 					appKey = decrypted
 				}
@@ -565,7 +562,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 				slog.Error("Failed to auto-provision APP_KEY for Laravel project", "projectID", project.ID, "error", errTx)
 				return nil, errTx
 			} else {
-				return nil, fmt.Errorf("Laravel APP_KEY is empty for project %d", project.ID)
+				return nil, emptyLaravelAppKeyError(project.ID)
 			}
 		}
 	}
@@ -573,8 +570,21 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	return envMap, nil
 }
 
-func laravelAppKeyDecryptError(projectID uint, storeID uint, itemID uint, err error) error {
-	return fmt.Errorf("cannot decrypt Laravel APP_KEY for project %d (secret_store_id=%d, item_id=%d): restore the previous CREDENTIAL_ENCRYPTION_KEY or re-encrypt the secret store before deploying: %w", projectID, storeID, itemID, err)
+func secretDecryptError(projectID uint, storeID uint, itemID uint, err error) error {
+	message := "A protected environment secret cannot be decrypted. Restore the previous CREDENTIAL_ENCRYPTION_KEY or re-encrypt the SecretStore before deploying."
+	appErr := apperr.NewSecretDecryptionFailed(message, err)
+	appErr.Details = map[string]uint{
+		"project_id":      projectID,
+		"secret_store_id": storeID,
+		"item_id":         itemID,
+	}
+	return appErr
+}
+
+func emptyLaravelAppKeyError(projectID uint) error {
+	appErr := apperr.NewSecretDecryptionFailed("Laravel APP_KEY is empty. Restore the managed APP_KEY value before deploying.", nil)
+	appErr.Details = map[string]uint{"project_id": projectID}
+	return appErr
 }
 
 func (s *SecretStoreService) PropagateSecretStoreUpdates(storeID uint) {
