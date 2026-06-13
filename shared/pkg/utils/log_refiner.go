@@ -86,6 +86,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 
 			// 11. Hide pip / Python build noise
 			regexp.MustCompile(`(Collecting |Requirement already satisfied|Successfully installed|Using cached|Downloading .+\.whl|Building wheel for|Created wheel for)`),
+			regexp.MustCompile(`(Downloading .+tar\.gz|Installing build dependencies:|Getting requirements to build wheel:|Installing backend dependencies:|Rust not found, installing|Python reports SOABI:|Computed rustc target|Installation directory:|Rustup already downloaded|Installing rust to|warn: It looks like you have|warn: \/root\/\.cache\/|warn: Rustup will install|warn: instead of the one inferred|info: profile set to|info: setting default host triple|warn: Updating existing toolchain|info: syncing channel updates|info: default toolchain set to|Checking if cargo is installed|Running \x60maturin|📦 Including license|🍹 Building a mixed python/rust|🐍 Found CPython|🔗 Found pyo3|📡 Using build options|Compiling [a-zA-Z0-9_\-]+ v[0-9.]+|cargo:rustc-cfg=|cargo:rerun-if-changed=|error: failed-wheel-build-for-install|Failed to build installable wheels)`),
+			regexp.MustCompile(`(process didn't exit successfully:|thread 'main' panicked at|note: run with \x60RUST_BACKTRACE=1\x60|warning: build failed, waiting for other jobs|💥 maturin failed|Caused by:|Cargo build finished with|Error: command .* returned non-zero|ERROR: Failed building wheel)`),
 
 			// 12. Hide Go module noise
 			regexp.MustCompile(`(go: downloading |go: finding |go: extracting )`),
@@ -180,6 +182,10 @@ var buildTransformations = []logTransformation{
 	{regexp.MustCompile(`^\s*\$\s*(bundle|rake|gem)\s+(install|exec)\b.*`), "> $1 $2"},
 	// Hide any remaining $ commands that weren't transformed (infrastructure noise)
 	{regexp.MustCompile(`^\s*\$\s+.+`), ""},
+
+	// Transform Python/Rust build errors
+	{regexp.MustCompile(`^error:\s+subprocess-exited-with-error`), ">> Dependency build failed"},
+	{regexp.MustCompile(`^error:\s+failed to run custom build command for\s+\x60(.+)\x60`), ">> Failed to compile native extension for $1"},
 
 	// Transform progress indicators
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(install|download|extracting).*`), "Installing dependencies..."},

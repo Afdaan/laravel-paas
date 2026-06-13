@@ -1,7 +1,17 @@
 {
   "caches": {
-    "pip-cache": {
-      "directory": "/root/.cache/pip"
+    "uv-cache": {
+      "directory": "/root/.cache/uv"
+    }
+  },
+  "steps": {
+    "install": {
+      "commands": [
+        "pip install uv",
+        "python -m venv /app/.venv",
+        "if [ -f requirements.txt ]; then /app/.venv/bin/uv pip install -r requirements.txt; fi",
+        "if [ -f pyproject.toml ]; then /app/.venv/bin/uv pip install .; fi"
+      ]
     }
   },
   "deploy": {
@@ -10,7 +20,8 @@
     },
     "variables": {
       "PYTHONUNBUFFERED": "1",
-      "PYTHONDONTWRITEBYTECODE": "1"
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PATH": "/app/.venv/bin:$PATH"
     }
   }
 }
