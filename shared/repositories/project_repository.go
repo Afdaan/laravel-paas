@@ -284,7 +284,7 @@ func (r *projectRepository) ListDeploymentEventsByProjectID(projectID uint) ([]m
 func (r *projectRepository) ListAllDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error) {
 	var events []models.DeploymentEvent
 	err := r.db.Where("project_id = ? AND event_type NOT IN (?, ?, ?)", projectID, "lease_acquired", "lease_renewed", "lease_released").
-		Order("created_at DESC, sequence_number DESC").Limit(50).Find(&events).Error
+		Order("created_at DESC, sequence_number DESC").Limit(200).Find(&events).Error
 	return events, err
 }
 

@@ -32,7 +32,7 @@ import {
   Hammer,
   MemoryStick
 } from 'lucide-react'
-import { AxiosError } from 'axios'
+import axios, { AxiosError } from 'axios'
 import { projectsAPI, githubAPI } from '../../services/api'
 import { Project, ProjectStats, DeploymentEvent } from '../../types'
 interface GitHubInstallation {
@@ -244,24 +244,31 @@ function UserProjectDetail() {
   const [isRollingBack, setIsRollingBack] = useState(false)
   const [rollbackCommitSHA, setRollbackCommitSHA] = useState('')
 
-  const loadGithubInstallations = async () => {
-    setIsGithubInstallationsLoading(true)
-    try {
-      const response = await githubAPI.listInstallations()
-      setGithubInstallations(response.data.data || [])
-    } catch (err: any) {
-      const status = err?.response?.status
-      if (status !== 404 && status !== 403) {
-        console.error('Failed to load GitHub installations', err)
-      }
-    } finally {
-      setIsGithubInstallationsLoading(false)
-    }
-  }
-
   useEffect(() => {
     if (activeTab === 'settings') {
-      loadGithubInstallations()
+      let cancelled = false
+      setIsGithubInstallationsLoading(true)
+      
+      githubAPI.listInstallations()
+        .then(response => {
+          if (cancelled) return
+          setGithubInstallations(response.data.data || [])
+        })
+        .catch((err: any) => {
+          if (cancelled) return
+          const status = err?.response?.status
+          if (status !== 404 && status !== 403) {
+            console.error('Failed to load GitHub installations', err)
+          }
+        })
+        .finally(() => {
+          if (cancelled) return
+          setIsGithubInstallationsLoading(false)
+        })
+
+      return () => {
+        cancelled = true
+      }
     }
   }, [activeTab])
 
@@ -330,24 +337,34 @@ function UserProjectDetail() {
     }
   }, [activeTab, gitConnectionMode, githubRepoOwnerInput, githubRepoNameInput, githubInstallationIdInput])
 
-  const fetchRuntimeEvents = useCallback(async () => {
+  const fetchRuntimeEvents = useCallback(async (signal?: AbortSignal) => {
     if (!uid) return
     try {
-      const response = await projectsAPI.getDeploymentEvents(uid, true)
+      const response = await projectsAPI.getDeploymentEvents(uid, true, { signal })
       setRuntimeEvents(response.data)
     } catch (err) {
+      // Ignore abort errors
+      if (axios.isCancel(err) || (err as Error).name === 'CanceledError') return;
       setRuntimeEvents([])
     }
   }, [uid])
 
   useEffect(() => {
-    fetchRuntimeEvents()
+    const controller = new AbortController()
+    fetchRuntimeEvents(controller.signal)
+    return () => controller.abort()
   }, [fetchRuntimeEvents, project?.last_commit_hash])
 
   useEffect(() => {
     if (activeTab === 'runtime') {
-      const interval = setInterval(fetchRuntimeEvents, 5000)
-      return () => clearInterval(interval)
+      const controller = new AbortController()
+      const interval = setInterval(() => {
+        fetchRuntimeEvents(controller.signal)
+      }, 5000)
+      return () => {
+        clearInterval(interval)
+        controller.abort()
+      }
     }
   }, [activeTab, fetchRuntimeEvents])
 
@@ -423,13 +440,14 @@ function UserProjectDetail() {
     })
     
     runtimeEvents.forEach(evt => {
+      if (list.length >= 10) return;
       if (evt.event_type === 'deployment_completed' || evt.event_type === 'rollback_completed' || evt.event_type === 'deployment_skipped_existing_image') {
         const sha = evt.payload || evt.message
         // Validate as a real 40-char hex SHA — prevents arbitrary messages from becoming fake checkpoints
         const isValidSha = sha && /^[0-9a-f]{40}$/i.test(sha)
         if (isValidSha && !seen.has(sha)) {
           seen.add(sha)
-          const commitMsg = (evt.job_id && commitMsgMap.get(evt.job_id)) || evt.message || `Deployment version ${sha.substring(0, 7)}`
+          const commitMsg = (evt.job_id && commitMsgMap.get(evt.job_id)) || evt.message || t('projectDetail.runtime.deploymentVersion', { version: sha.substring(0, 7) })
           list.push({
             sha,
             time: new Date(evt.created_at).toLocaleString(),

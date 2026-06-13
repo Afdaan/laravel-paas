@@ -4,7 +4,7 @@
 // Centralized API calls with axios
 // ===========================================
 
-import axios, { InternalAxiosRequestConfig, AxiosError } from 'axios'
+import axios, { InternalAxiosRequestConfig, AxiosError, AxiosRequestConfig } from 'axios'
 
 // Create axios instance
 const api = axios.create({
@@ -194,8 +194,8 @@ export const projectsAPI = {
   buildLogs: (id: number | string) =>
     api.get(`/projects/${id}/build-logs`),
   
-  getDeploymentEvents: (id: number | string, all = false) =>
-    api.get(`/projects/${id}/deployment-events`, { params: { all } }),
+  getDeploymentEvents: (id: number | string, all = false, options?: AxiosRequestConfig) =>
+    api.get(`/projects/${id}/deployment-events`, { params: { all }, ...options }),
   
   listBranches: (id: number | string) =>
     api.get(`/projects/${id}/branches`),

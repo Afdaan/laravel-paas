@@ -60,15 +60,10 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 	// Determine if container exposes a web port
 	isWebFacing := project.Port == nil || *project.Port > 0
 
-	// 1. Startup grace period
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(5 * time.Second):
-	}
-
-	maxAttempts := 10
-	currentInterval := 1 * time.Second
+	// Remove hardcoded startup grace period - rely on polling instead
+	
+	maxAttempts := 15 // Increased attempts since we poll faster
+	currentInterval := 500 * time.Millisecond
 	isReady := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -94,10 +89,13 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 						isReady = true
 						break
 					} else {
-						slog.Warn("Container running but HTTP probe failed", "url", url, "error", err, "attempt", attempt)
+						// Only log occasionally to avoid spamming
+						if attempt%3 == 0 {
+							slog.Debug("Container running but HTTP probe failed", "url", url, "error", err, "attempt", attempt)
+						}
 					}
 				} else {
-					slog.Warn("Failed to resolve container IP for HTTP probe", "error", ipErr, "attempt", attempt)
+					slog.Debug("Failed to resolve container IP for HTTP probe", "error", ipErr, "attempt", attempt)
 				}
 			} else {
 				isReady = true
@@ -105,16 +103,16 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 			}
 		}
 
-		slog.Debug("Container health check probe pending", "attempt", attempt, "containerId", containerID)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(currentInterval):
 		}
 
-		currentInterval *= 2
-		if currentInterval > 8*time.Second {
-			currentInterval = 8 * time.Second
+		// Exponential backoff, but cap it faster
+		currentInterval = time.Duration(float64(currentInterval) * 1.5)
+		if currentInterval > 3*time.Second {
+			currentInterval = 3 * time.Second
 		}
 	}
 
@@ -124,11 +122,11 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 	}
 
 	// 2. Stabilization window
-	slog.Info("Container readiness verified, entering stabilization monitoring window (5s)", "containerId", containerID)
+	slog.Info("Container readiness verified, entering stabilization monitoring window (2s)", "containerId", containerID)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 	}
 
 	if !s.IsContainerHealthy(containerID) {
