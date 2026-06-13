@@ -86,6 +86,11 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Immediately flush an initial keep-alive to force HTTP headers to be sent
+		// preventing the browser/proxy from hanging and dropping the connection.
+		_, _ = w.WriteString(":\n\n")
+		_ = w.Flush()
+
 		// 1. Fetch existing events from DB and stream them as a single initial_events event
 		events, err := h.projectService.GetDeploymentEvents(project.ID)
 		if err == nil {

@@ -361,6 +361,11 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Immediately flush an initial keep-alive to force HTTP headers to be sent
+		// preventing the browser/proxy from hanging and dropping the connection.
+		_, _ = w.WriteString(":\n\n")
+		_ = w.Flush()
+
 		// 1. Read existing log file if it exists and write it as a single initial_logs event
 		jobID := ""
 		if project.DeploymentJobID != nil {
@@ -479,6 +484,11 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Immediately flush an initial keep-alive to force HTTP headers to be sent
+		// preventing the browser/proxy from hanging and dropping the connection.
+		_, _ = w.WriteString(":\n\n")
+		_ = w.Flush()
+
 		cmdCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
