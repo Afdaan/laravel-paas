@@ -179,7 +179,11 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 		_ = refiner.Flush()
 	}
 
-	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================\n", formatDuration(duration))
+	statusText := "Application built successfully"
+	if err != nil {
+		statusText = "Build failed"
+	}
+	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] %s in %s\n========================================================================\n", statusText, formatDuration(duration))
 	_, _ = logFile.WriteString(summaryMsg)
 
 	result := &Result{
@@ -299,7 +303,11 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		sw.Flush()
 	}
 
-	summaryMsg := fmt.Sprintf("========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================", formatDuration(duration))
+	statusText := "Application built successfully"
+	if err != nil {
+		statusText = "Build failed"
+	}
+	summaryMsg := fmt.Sprintf("========================================================================\n[BUILD SUMMARY] %s in %s\n========================================================================", statusText, formatDuration(duration))
 	if logCallback != nil {
 		logCallback("")
 		for _, line := range strings.Split(summaryMsg, "\n") {
