@@ -66,7 +66,7 @@ api.interceptors.response.use(
     }
     
     // Global connection error handling (No response received)
-    if (!error.response && !error.request?.status) {
+    if (!error.response && !error.request?.status && !axios.isCancel(error)) {
       window.dispatchEvent(new Event('system:offline'))
     }
     
