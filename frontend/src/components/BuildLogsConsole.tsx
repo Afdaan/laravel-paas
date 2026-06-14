@@ -186,8 +186,8 @@ const isBuildLogForActiveJob = (incomingJobId?: string, activeJobId?: string) =>
   return !incomingJobId || !activeJobId || incomingJobId === activeJobId
 }
 
-const toBuildLogsSnapshot = (data?: BuildLogsResponse, activeJobId?: string): BuildLogsSnapshot => {
-  if (!isBuildLogForActiveJob(data?.job_id, activeJobId)) {
+const toBuildLogsSnapshot = (data?: BuildLogsResponse, activeJobId?: string, force = false): BuildLogsSnapshot => {
+  if (!force && !isBuildLogForActiveJob(data?.job_id, activeJobId)) {
     return {
       lines: [],
       available: false,
@@ -323,7 +323,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         
         if (!isMounted) return
         
-        dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data, activeJobId) })
+        dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data, activeJobId, true) })
         if (Array.isArray(eventsRes.data)) {
           setEvents(eventsRes.data)
           if (eventsRes.data.length > 0 && onDeploymentEvent) {
