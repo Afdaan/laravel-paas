@@ -1,61 +1,204 @@
-import { 
-  PackageOpen, 
-  Database as DbIcon, 
-  Search, 
+import {
+  PackageOpen,
+  Database as DbIcon,
+  Search,
   ArrowRight,
-  Loader2
+  Loader2,
+  RefreshCw,
+  Trash2,
+  Settings,
+  AlertTriangle,
+  ExternalLink,
+  Layers,
+  Lock,
+  Server,
+  HardDrive,
+  Copy,
+  Check
 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { projectsAPI } from '../../services/api'
-import { Project } from '../../types'
-import DatabaseStudio from './DatabaseStudio'
+import { databaseAPI, projectsAPI } from '../../services/api'
+import { Project, DatabaseInstance } from '../../types'
 import useTranslation from '../../lib/useTranslation'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 export default function Databases() {
   const { t } = useTranslation()
+  const [databases, setDatabases] = useState<DatabaseInstance[]>([])
   const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<number | string | null>(null)
+  const [selectedDbId, setSelectedDbId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isActionLoading, setIsActionLoading] = useState(false)
   const [search, setSearch] = useState('')
-  const [hasAnyProjects, setHasAnyProjects] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
 
-  const fetchProjects = useCallback(async () => {
+  // Dialog states
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [showReinstallModal, setShowReinstallModal] = useState(false)
+  const [showRedeployModal, setShowRedeployModal] = useState(false)
+  const [confirmText, setConfirmText] = useState('')
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [redeployProjectUid, setRedeployProjectUid] = useState<string>('')
+
+  const fetchData = useCallback(async () => {
     try {
-      const response = await projectsAPI.listOwn()
-      const data = response.data.data || []
-      setHasAnyProjects(data.length > 0)
-      
-      const dbProjects = data.filter((p: Project) => !!p.database_instance)
-      setProjects(dbProjects)
-      
-      if (dbProjects.length > 0) {
-        setSelectedProjectId(dbProjects[0].uid)
-      } else {
-        setSelectedProjectId(null)
+      const [dbRes, projRes] = await Promise.all([
+        databaseAPI.listOwn(),
+        projectsAPI.listOwn()
+      ])
+      const dbs = dbRes.data.databases || []
+      const projs = projRes.data.data || []
+      setDatabases(dbs)
+      setProjects(projs)
+
+      // Auto-select first database if none selected
+      if (dbs.length > 0 && !selectedDbId) {
+        setSelectedDbId(dbs[0].id)
       }
     } catch (error) {
       toast.error(t('common.error'))
     } finally {
       setIsLoading(false)
     }
-  }, [t])
+  }, [t, selectedDbId])
 
   useEffect(() => {
-    fetchProjects()
-  }, [fetchProjects])
+    fetchData()
+  }, [fetchData])
 
-  const filteredProjects = projects.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.database_name?.toLowerCase().includes(search.toLowerCase())
+  const handleCopy = (text: string, field: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedField(field)
+    toast.success(t('databaseManager.copied', { label: field }))
+    setTimeout(() => setCopiedField(null), 2000)
+  }
+
+  const selectedDb = databases.find(db => db.id === selectedDbId)
+
+  // Filter databases
+  const filteredDbs = databases.filter(db =>
+    db.name.toLowerCase().includes(search.toLowerCase()) ||
+    db.engine.toLowerCase().includes(search.toLowerCase()) ||
+    (db.project_id && db.project && db.project.name.toLowerCase().includes(search.toLowerCase()))
   )
 
-  const selectedProject = projects.find(p => p.uid === selectedProjectId || p.id === Number(selectedProjectId))
+  // Projects that do not have a database attached
+  const attachableProjects = projects.filter(p => !p.database_instance)
+
+  // Attach database handler
+  const handleAttach = async () => {
+    if (!selectedDb || !selectedProjectId) return
+    setIsActionLoading(true)
+    try {
+      await databaseAPI.attach(selectedDb.id, selectedProjectId)
+      toast.success(t('common.success'))
+
+      // Prompt for redeploy
+      setRedeployProjectUid(selectedProjectId)
+      setShowRedeployModal(true)
+      setSelectedProjectId('')
+
+      // Refresh list
+      await fetchData()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Detach database handler
+  const handleDetach = async () => {
+    if (!selectedDb) return
+    setIsActionLoading(true)
+    try {
+      const projectUid = selectedDb.project_id ? selectedDb.project?.uid : undefined
+      await databaseAPI.detach(selectedDb.id)
+      toast.success(t('common.success'))
+
+      if (projectUid) {
+        setRedeployProjectUid(projectUid)
+        setShowRedeployModal(true)
+      }
+
+      await fetchData()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Reset database handler
+  const handleReset = async () => {
+    if (!selectedDb) return
+    if (confirmText !== selectedDb.name) {
+      toast.error(t('common.error'))
+      return
+    }
+    setIsActionLoading(true)
+    try {
+      await databaseAPI.resetInstance(selectedDb.id)
+      toast.success(t('databaseManager.querySuccess'))
+      setShowResetModal(false)
+      setConfirmText('')
+      await fetchData()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Reinstall database handler
+  const handleReinstall = async () => {
+    if (!selectedDb) return
+    if (confirmText !== selectedDb.name) {
+      toast.error(t('common.error'))
+      return
+    }
+    setIsActionLoading(true)
+    try {
+      const res = await databaseAPI.reinstallInstance(selectedDb.id)
+      toast.success(t('databaseManager.backupSuccess'))
+      setShowReinstallModal(false)
+      setConfirmText('')
+
+      if (res.data.redeployRequired && selectedDb.project_id && selectedDb.project?.uid) {
+        setRedeployProjectUid(selectedDb.project.uid)
+        setShowRedeployModal(true)
+      }
+
+      await fetchData()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Redeploy trigger handler
+  const handleRedeploy = async () => {
+    if (!redeployProjectUid) return
+    setIsActionLoading(true)
+    try {
+      await projectsAPI.redeploy(redeployProjectUid)
+      toast.success(t('common.success'))
+      setShowRedeployModal(false)
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -66,7 +209,7 @@ export default function Databases() {
     )
   }
 
-  if (projects.length === 0) {
+  if (databases.length === 0) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 animate-in fade-in duration-500">
         <div className="w-20 h-20 rounded-3xl bg-muted border flex items-center justify-center">
@@ -74,14 +217,14 @@ export default function Databases() {
         </div>
         <div className="text-center max-w-sm space-y-2">
           <h3 className="text-2xl font-bold tracking-tight">
-            {hasAnyProjects ? t('databaseManager.noDbsFound') : t('databaseManager.noProjectsFound')}
+            {t('databaseManager.noDbsFound')}
           </h3>
           <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">
-            {hasAnyProjects ? t('databaseManager.noDbsDesc') : t('databaseManager.noProjectsDesc')}
+            {t('databaseManager.noDbsDesc')}
           </p>
         </div>
-        <Link to="/projects/new" className={cn(buttonVariants({ variant: 'outline' }), "mt-4")}>
-           {hasAnyProjects ? t('databaseManager.createProjectWithDb') : t('databaseManager.initFirst')}
+        <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }), "mt-4")}>
+          {t('databaseManager.createProjectWithDb')}
         </Link>
       </div>
     )
@@ -89,86 +232,430 @@ export default function Databases() {
 
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col lg:flex-row gap-8 animate-in fade-in duration-500">
-      
-      {/* Sidebar - Project Selection */}
+
+      {/* Sidebar - Database List */}
       <div className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-6">
-         <Card className="flex flex-col overflow-hidden h-full pt-0">
-            <CardHeader className="bg-muted/30 border-b pt-5 pb-5">
-               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <DbIcon className="w-5 h-5" />
+        <Card className="flex flex-col overflow-hidden h-full pt-0">
+          <CardHeader className="bg-muted/30 border-b pt-5 pb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <DbIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold tracking-tight uppercase">{t('common.databases')}</h2>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t('databaseManager.activeInstances')}</p>
+              </div>
+            </div>
+            <div className="relative mt-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder={t('databaseManager.searchSchema')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-10 text-xs font-bold uppercase tracking-widest"
+              />
+            </div>
+          </CardHeader>
+
+          <CardContent className="flex-1 overflow-y-auto p-2 space-y-2 pt-4 scrollbar-thin">
+            {filteredDbs.length > 0 ? (
+              filteredDbs.map(db => (
+                <button
+                  key={db.id}
+                  onClick={() => setSelectedDbId(db.id)}
+                  className={cn(
+                    "w-full text-left p-4 rounded-xl transition-all border group focus:outline-none",
+                    selectedDbId === db.id
+                      ? 'bg-primary/10 border-primary/30 shadow-sm'
+                      : 'border-transparent hover:bg-muted hover:border-border'
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={cn(
+                      "font-bold text-xs uppercase tracking-tight truncate max-w-[180px]",
+                      selectedDbId === db.id ? 'text-primary' : 'text-foreground'
+                    )}>
+                      {db.name}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className={cn(
+                        "w-1.5 h-1.5 rounded-full",
+                        db.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                      )} />
+                      <Badge variant="outline" className={cn(
+                        "text-[8px] font-extrabold uppercase px-1.5 py-0.5",
+                        db.engine === 'mysql'
+                          ? 'border-amber-500/20 bg-amber-500/5 text-amber-500'
+                          : 'border-blue-500/20 bg-blue-500/5 text-blue-500'
+                      )}>
+                        {db.engine}
+                      </Badge>
+                    </span>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-bold tracking-tight uppercase">{t('common.databases')}</h2>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t('databaseManager.activeInstances')}</p>
+
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/10 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>{db.project_id !== null ? t('databaseManager.attachedTo') : t('databaseManager.unattached')}</span>
+                    <span className={cn(db.project_id !== null ? "text-primary" : "text-zinc-500")}>
+                      {db.project_id !== null && db.project ? db.project.name : '—'}
+                    </span>
                   </div>
-               </div>
-               <div className="relative mt-4">
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                 <Input 
-                   placeholder={t('databaseManager.searchSchema')} 
-                   value={search}
-                   onChange={(e) => setSearch(e.target.value)}
-                   className="pl-9 h-10 text-xs font-bold uppercase tracking-widest"
-                 />
-               </div>
-            </CardHeader>
-            
-            <CardContent className="flex-1 overflow-y-auto p-2 space-y-2 pt-4 scrollbar-thin">
-               {filteredProjects.length > 0 ? (
-                 filteredProjects.map(p => (
-                   <button
-                     key={p.uid}
-                     onClick={() => setSelectedProjectId(p.uid)}
-                     className={cn(
-                        "w-full text-left p-4 rounded-xl transition-all border group focus:outline-none",
-                        selectedProjectId === p.uid 
-                           ? 'bg-primary/10 border-primary/30 shadow-sm' 
-                           : 'border-transparent hover:bg-muted hover:border-border'
-                     )}
-                   >
-                     <div className="flex items-center justify-between mb-2">
-                       <span className={cn(
-                          "font-bold text-xs uppercase tracking-tight",
-                          selectedProjectId === p.uid ? 'text-primary' : 'text-foreground'
-                       )}>
-                         {p.name}
-                       </span>
-                       <div className={cn(
-                          "w-1.5 h-1.5 rounded-full",
-                          p.status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30'
-                       )} />
-                     </div>
-                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-medium uppercase tracking-tight truncate">
-                       <DbIcon className="w-3 h-3 text-primary/50 group-hover:text-primary" />
-                       db_{p.database_name || '...'}
-                     </div>
-                   </button>
-                 ))
-               ) : (
-                 <div className="text-center py-12 text-muted-foreground font-bold uppercase tracking-widest text-[10px] italic">
-                   {t('databaseManager.noClusters')}
-                 </div>
-               )}
-            </CardContent>
-         </Card>
+                </button>
+              ))
+            ) : (
+              <div className="text-center py-12 text-muted-foreground font-bold uppercase tracking-widest text-[10px] italic">
+                {t('databaseManager.noClusters')}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Main Content - Selected Node Manager */}
+      {/* Main Content - Database Details */}
       <Card className="flex-1 bg-muted/10 overflow-hidden flex flex-col relative border-muted/30">
-        {selectedProject ? (
-          <div className="flex-1 overflow-auto p-6 scrollbar-thin">
-             <DatabaseStudio embedded={true} projectId={selectedProjectId} />
+        {selectedDb ? (
+          <div className="flex-1 overflow-auto p-6 space-y-6 scrollbar-thin">
+            {/* Header section */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-border/40">
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-black tracking-tight text-foreground">{selectedDb.name}</h1>
+                  <Badge variant={selectedDb.status === 'active' ? 'default' : 'destructive'} className="text-[10px] font-bold uppercase tracking-wider">
+                    {selectedDb.status}
+                  </Badge>
+                  <Badge variant="outline" className={cn(
+                    "text-[10px] font-black uppercase tracking-wider",
+                    selectedDb.engine === 'mysql'
+                      ? 'border-amber-500/30 bg-amber-500/5 text-amber-500'
+                      : 'border-blue-500/30 bg-blue-500/5 text-blue-500'
+                  )}>
+                    {selectedDb.engine}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5">
+                  <Server className="w-3.5 h-3.5 text-muted-foreground" />
+                  {selectedDb.project_id !== null && selectedDb.project ? (
+                    <>
+                      {t('databaseManager.attachedTo')}{' '}
+                      <Link to={`/projects/${selectedDb.project.uid}`} className="text-primary hover:underline font-semibold">
+                        {selectedDb.project.name}
+                      </Link>
+                    </>
+                  ) : (
+                    t('databaseManager.unattached')
+                  )}
+                </p>
+              </div>
+
+              {/* Header Actions */}
+              <div className="flex items-center gap-3">
+                {selectedDb.project_id !== null && selectedDb.project ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={handleDetach}
+                      disabled={isActionLoading}
+                      className="text-xs font-bold uppercase tracking-widest text-rose-500 border-rose-500/20 hover:bg-rose-500/5"
+                    >
+                      {t('databaseManager.detach')}
+                    </Button>
+                    <Link
+                      to={`/projects/${selectedDb.project.uid}?tab=database&dbTab=dashboard`}
+                      className={cn(buttonVariants({ variant: "default" }), "text-xs font-bold uppercase tracking-widest flex items-center gap-2")}
+                    >
+                      {t('databaseManager.openStudio')}
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3 w-full md:w-auto">
+                    <Select
+                      value={selectedProjectId}
+                      onValueChange={(val) => setSelectedProjectId(val || '')}
+                    >
+                      <SelectTrigger className="w-[180px] text-xs font-bold uppercase tracking-wider h-10">
+                        <SelectValue placeholder={t('databaseManager.selectProject')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {attachableProjects.map(p => (
+                          <SelectItem key={p.uid} value={p.uid} className="text-xs uppercase tracking-wider font-bold">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                        {attachableProjects.length === 0 && (
+                          <div className="text-center py-2 text-[10px] uppercase font-bold text-muted-foreground">
+                            {t("databaseManager.noAttachableProjects")}
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleAttach}
+                      disabled={!selectedProjectId || isActionLoading}
+                      className="text-xs font-bold uppercase tracking-widest h-10"
+                    >
+                      {t('databaseManager.attach')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Connection Information */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground/80 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-primary" />
+                {t('databaseManager.credsTitle')}
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { label: t('databaseManager.networkHost'), value: selectedDb.host, key: 'Host' },
+                  { label: t('databaseManager.port'), value: String(selectedDb.port), key: 'Port' },
+                  { label: t('databaseManager.dbName'), value: selectedDb.name, key: 'Database' },
+                  { label: t('databaseManager.userName'), value: selectedDb.username, key: 'Username' }
+                ].map(item => (
+                  <Card key={item.key} className="bg-muted/10 border-border/20">
+                    <CardContent className="p-4 flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{item.label}</p>
+                        <p className="font-mono text-sm font-semibold mt-1 text-foreground break-all">{item.value}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleCopy(item.value, item.label)}
+                        className="flex-shrink-0 w-8 h-8 text-muted-foreground hover:text-foreground"
+                      >
+                        {copiedField === item.label ? (
+                          <Check className="w-4 h-4 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            {/* Stats/Resource Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-4">
+              <Card className="bg-muted/10 border-border/20">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.engine")}</span>
+                    <Layers className="w-4 h-4 text-primary" />
+                  </div>
+                  <p className="text-xl font-bold tracking-tight uppercase text-foreground">
+                    {selectedDb.engine}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-muted/10 border-border/20">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.storage")}</span>
+                    <HardDrive className="w-4 h-4 text-primary" />
+                  </div>
+                  <p className="text-xl font-bold tracking-tight text-foreground">
+                    1.0 GB
+                  </p>
+                  <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                    {t("databaseManager.allocatedLimit")}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-muted/10 border-border/20">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.tablesLabel")}</span>
+                    <DbIcon className="w-4 h-4 text-primary" />
+                  </div>
+                  <p className="text-xl font-bold tracking-tight text-foreground">
+                    {selectedDb.table_count || '—'}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                    {t("databaseManager.totalTables")}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-muted/10 border-border/20">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.connections")}</span>
+                    <RefreshCw className="w-4 h-4 text-primary" />
+                  </div>
+                  <p className="text-xl font-bold tracking-tight text-foreground">
+                    {selectedDb.connection_count || 0}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">
+                    {t("databaseManager.activeSessions")}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* {t("databaseManager.dangerZone")} */}
+            <div className="pt-6 border-t border-border/40">
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="w-5 h-5 text-destructive" />
+                  <div>
+                    <h3 className="font-bold text-base text-destructive uppercase tracking-wide">⚠ {t("databaseManager.dangerZone")}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t("databaseManager.destructiveActions")}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 pt-2">
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmText('')
+                      setShowResetModal(true)
+                    }}
+                    className="text-xs font-bold uppercase tracking-widest px-6 h-11"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {t('databaseManager.reset')}
+                  </Button>
+
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmText('')
+                      setShowReinstallModal(true)
+                    }}
+                    className="text-xs font-bold uppercase tracking-widest px-6 h-11"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin-hover" />
+                    {t('databaseManager.reinstall')}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-6 opacity-40 animate-pulse">
-             <div className="w-20 h-20 rounded-[2.5rem] bg-muted border flex items-center justify-center">
-               <ArrowRight className="w-8 h-8 rotate-90 lg:rotate-0" />
-             </div>
-             <p className="text-[10px] font-bold uppercase tracking-[0.4em]">{t('databaseManager.selectTarget')}</p>
+            <div className="w-20 h-20 rounded-[2.5rem] bg-muted border flex items-center justify-center">
+              <ArrowRight className="w-8 h-8 rotate-90 lg:rotate-0" />
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.4em]">{t('databaseManager.selectTarget')}</p>
           </div>
         )}
       </Card>
+
+      {/* Confirmation Dialog: Reset DB */}
+      <Dialog open={showResetModal} onOpenChange={setShowResetModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-6 h-6" />
+              <DialogTitle className="text-lg font-bold">{t('databaseManager.resetConfirm')}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t('databaseManager.resetDesc')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              {t('databaseManager.typeToConfirm', { name: selectedDb?.name || '' })}
+            </p>
+            <Input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={selectedDb?.name}
+              className="h-10 text-xs font-bold tracking-widest uppercase"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowResetModal(false)} className="text-xs font-bold uppercase tracking-wider">
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleReset}
+              disabled={confirmText !== selectedDb?.name || isActionLoading}
+              className="text-xs font-bold uppercase tracking-widest"
+            >
+              {t('databaseManager.resetAction')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog: Reinstall DB */}
+      <Dialog open={showReinstallModal} onOpenChange={setShowReinstallModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-6 h-6 animate-pulse" />
+              <DialogTitle className="text-lg font-bold">{t('databaseManager.reinstallConfirm')}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t('databaseManager.reinstallDesc')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              {t('databaseManager.typeToConfirm', { name: selectedDb?.name || '' })}
+            </p>
+            <Input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={selectedDb?.name}
+              className="h-10 text-xs font-bold tracking-widest uppercase"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowReinstallModal(false)} className="text-xs font-bold uppercase tracking-wider">
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleReinstall}
+              disabled={confirmText !== selectedDb?.name || isActionLoading}
+              className="text-xs font-bold uppercase tracking-widest"
+            >
+              {t('databaseManager.reinstallAction')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Redeploy Confirmation Dialog */}
+      <Dialog open={showRedeployModal} onOpenChange={setShowRedeployModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <Settings className="w-6 h-6 animate-spin-slow" />
+              <DialogTitle className="text-lg font-bold">{t("databaseManager.redeployTitle")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t('databaseManager.redeployConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowRedeployModal(false)} className="text-xs font-bold uppercase tracking-wider">
+              {t('databaseManager.later')}
+            </Button>
+            <Button
+              onClick={handleRedeploy}
+              disabled={isActionLoading}
+              className="text-xs font-bold uppercase tracking-widest"
+            >
+              {t('databaseManager.redeployNow')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )

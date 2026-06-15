@@ -21,7 +21,7 @@ func (s *DockerService) CreateEnvFile(project *models.Project, projectDomain str
 	envPath := filepath.Join(projectPath, ".env")
 
 	// Compile the complete env key-value map.
-	envMap, err := s.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.DatabaseName, project.DatabasePassword, project.Framework, "production")
+	envMap, err := s.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.GetDatabaseName(), project.DatabasePassword, project.Framework, "production")
 	if err != nil {
 		return fmt.Errorf("failed to compile env for project %s: %w", project.Name, err)
 	}
@@ -126,15 +126,6 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 			envMap["DATABASE_URL"] = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 				dbInst.Username, dbInst.Password, dbInst.Host, dbInst.Port, dbInst.Name)
 		}
-	} else {
-		// Fallback to project-level MySQL defaults if DatabaseInstance is missing/not provisioning yet.
-		envMap["DB_CONNECTION"] = "mysql"
-		envMap["DB_HOST"] = "paas-mysql"
-		envMap["DB_PORT"] = "3306"
-		envMap["DB_DATABASE"] = databaseName
-		envMap["DB_USERNAME"] = databaseName
-		envMap["DB_PASSWORD"] = databasePassword
-		envMap["DATABASE_URL"] = fmt.Sprintf("mysql://%s:%s@paas-mysql:3306/%s", databaseName, databasePassword, databaseName)
 	}
 
 	// Layer 3: SecretStore Bindings (Custom Env).

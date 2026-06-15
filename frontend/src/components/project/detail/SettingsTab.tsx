@@ -1,4 +1,4 @@
-import { Code2, Blocks, AlertTriangle, Play, RefreshCw, GitBranch, LayoutGrid, Globe, Loader2, Save, ExternalLink } from 'lucide-react'
+import { Code2, Blocks, AlertTriangle, Play, RefreshCw, GitBranch, LayoutGrid, Globe, Loader2, Save, ExternalLink, Database as DbIcon, Settings } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -9,7 +9,12 @@ import { Button } from '@/components/ui/button'
 import useTranslation from '@/lib/useTranslation'
 import { cn } from '@/lib/utils'
 import { RUNTIME_VERSIONS, DEFAULT_RUNTIME_VERSIONS } from '@/lib/runtimes'
-import { Project } from '@/types'
+import { Project, DatabaseInstance } from '@/types'
+import { useState, useEffect } from 'react'
+import { databaseAPI, projectsAPI } from '@/services/api'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
 
 export interface GitHubInstallationOption {
   installation_id: number
@@ -137,6 +142,24 @@ export function SettingsTab({
   handleSaveSettings,
 }: SettingsTabProps) {
   const { t } = useTranslation()
+  const [databasesList, setDatabasesList] = useState<DatabaseInstance[]>([])
+  const [selectedDbId, setSelectedDbId] = useState<string>('')
+  const [isDbActionLoading, setIsDbActionLoading] = useState(false)
+  const [showDbRedeployModal, setShowDbRedeployModal] = useState(false)
+
+  useEffect(() => {
+    const fetchDbs = async () => {
+      try {
+        const res = await databaseAPI.listOwn()
+        const dbs = res.data.databases || []
+        // Filter to only show databases that are not attached to any project
+        setDatabasesList(dbs.filter((db: DatabaseInstance) => !db.project_id))
+      } catch (err) {
+        console.error("Failed to load databases list", err)
+      }
+    }
+    fetchDbs()
+  }, [])
 
   if (!project) return null
 
@@ -369,7 +392,7 @@ export function SettingsTab({
                       className="h-9 flex-1 bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs font-mono"
                     />
                   )}
-                  
+
                   <Button
                     type="button"
                     variant="outline"
@@ -388,7 +411,7 @@ export function SettingsTab({
                     onClick={() => setForceManualInput(!forceManualInput)}
                     className="text-[9px] text-primary hover:underline font-semibold cursor-pointer block mt-1 pl-0.5"
                   >
-                    {forceManualInput 
+                    {forceManualInput
                       ? t('projectDetail.settings.useDropdown') || 'Select branch from list'
                       : t('projectDetail.settings.typeManually') || 'Use manual text input'
                     }
@@ -430,6 +453,117 @@ export function SettingsTab({
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+                  <DbIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">{t('common.databases')}</CardTitle>
+                  <CardDescription>
+                    {t("databaseManager.attachDetachDesc")}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {project.database_instance ? (
+                <div className="flex items-center justify-between p-4 rounded-xl border bg-primary/5 border-primary/20">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-bold flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      {project.database_instance.name}
+                    </Label>
+                    <Badge variant="outline" className={cn(
+                      "text-[9px] font-black uppercase px-2 py-0.5",
+                      project.database_instance.engine === 'mysql'
+                        ? 'border-amber-500/20 bg-amber-500/5 text-amber-500'
+                        : 'border-blue-500/20 bg-blue-500/5 text-blue-500'
+                    )}>
+                      {project.database_instance.engine}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      if (!project.database_instance) return
+                      setIsDbActionLoading(true)
+                      try {
+                        await databaseAPI.detach(project.database_instance.id)
+                        toast.success(t('common.success'))
+                        setShowDbRedeployModal(true)
+                      } catch (err: any) {
+                        toast.error(err.response?.data?.error || t('common.error'))
+                      } finally {
+                        setIsDbActionLoading(false)
+                      }
+                    }}
+                    disabled={isDbActionLoading}
+                    className="text-xs font-bold uppercase tracking-widest text-rose-500 border-rose-500/20 hover:bg-rose-500/5"
+                  >
+                    {t('databaseManager.detach')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="border border-dashed border-border rounded-xl p-4 text-center bg-muted/5">
+                    <p className="text-xs text-muted-foreground font-semibold">
+                      {t('databaseManager.noDatabaseAttached')}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-1 italic">
+                      {t('databaseManager.attachDesc')}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Select
+                      value={selectedDbId}
+                      onValueChange={(val) => setSelectedDbId(val || '')}
+                    >
+                      <SelectTrigger className="flex-1 text-xs font-bold uppercase tracking-wider h-10">
+                        <SelectValue placeholder={t('databaseManager.selectProject')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {databasesList.map(db => (
+                          <SelectItem key={db.id} value={String(db.id)} className="text-xs uppercase tracking-wider font-bold">
+                            {db.name} ({db.engine})
+                          </SelectItem>
+                        ))}
+                        {databasesList.length === 0 && (
+                          <div className="text-center py-2 text-[10px] uppercase font-bold text-muted-foreground">
+                            {t("databaseManager.noUnattachedDbs")}
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={async () => {
+                        if (!selectedDbId) return
+                        setIsDbActionLoading(true)
+                        try {
+                          await databaseAPI.attach(Number(selectedDbId), project.uid)
+                          toast.success(t('common.success'))
+                          setShowDbRedeployModal(true)
+                          setSelectedDbId('')
+                        } catch (err: any) {
+                          toast.error(err.response?.data?.error || t('common.error'))
+                        } finally {
+                          setIsDbActionLoading(false)
+                        }
+                      }}
+                      disabled={!selectedDbId || isDbActionLoading}
+                      className="text-xs font-bold uppercase tracking-widest h-10 px-5"
+                    >
+                      {t('databaseManager.attach')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
 
           <Card>
             <CardHeader>
@@ -556,7 +690,7 @@ export function SettingsTab({
                                 if (parts.length === 2) {
                                   setGithubRepoOwnerInput(parts[0])
                                   setGithubRepoNameInput(parts[1])
-                                  
+
                                   // Find selected repo details to set URL
                                   const repoDetail = memoizedGithubRepos.find(r => r.full_name === val)
                                   if (repoDetail) {
@@ -677,6 +811,58 @@ export function SettingsTab({
           </div>
         </div>
       )}
+
+      {/* Redeploy Confirmation Dialog */}
+      <Dialog open={showDbRedeployModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowDbRedeployModal(false)
+          window.location.reload()
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <Settings className="w-6 h-6 animate-spin-slow" />
+              <DialogTitle className="text-lg font-bold">{t("databaseManager.redeployTitle")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t('databaseManager.redeployConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowDbRedeployModal(false)
+                window.location.reload()
+              }}
+              className="text-xs font-bold uppercase tracking-wider"
+            >
+              {t('databaseManager.later')}
+            </Button>
+            <Button
+              onClick={async () => {
+                setIsDbActionLoading(true)
+                try {
+                  await projectsAPI.redeploy(project.uid)
+                  toast.success(t('common.success'))
+                  setShowDbRedeployModal(false)
+                  window.location.reload()
+                } catch (error: any) {
+                  toast.error(error.response?.data?.error || t('common.error'))
+                } finally {
+                  setIsDbActionLoading(false)
+                }
+              }}
+              disabled={isDbActionLoading}
+              className="text-xs font-bold uppercase tracking-widest"
+            >
+              {t('databaseManager.redeployNow')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

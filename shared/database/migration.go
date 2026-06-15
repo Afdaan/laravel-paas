@@ -56,6 +56,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		slog.Warn("Failed to clean duplicate deployment events", "error", err)
 	}
 
+	// 4.5 Migrate database_instances table fields user_id and project_id.
+	if err := migrateDatabaseInstancesTable(db); err != nil {
+		return fmt.Errorf("failed database_instances table migration: %w", err)
+	}
+
 	// 5. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
@@ -134,7 +139,7 @@ func hasConstraintSafe(db *gorm.DB, model interface{}, constraintName string) bo
 		tableName := getTableName(db, model)
 		var count int64
 		query := `
-			SELECT count(1) 
+			SELECT count(1)
 			FROM pg_constraint c
 			JOIN pg_class t ON t.oid = c.conrelid
 			WHERE t.relname = ? AND c.conname = ?;
@@ -196,7 +201,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		// Check if constraint exists in pg_constraint
 		var conCount int64
 		_ = db.Raw(`
-			SELECT count(1) 
+			SELECT count(1)
 			FROM pg_constraint c
 			JOIN pg_class t ON t.oid = c.conrelid
 			WHERE t.relname = ? AND c.conname = ?;
@@ -440,10 +445,10 @@ func logStartupSchemaState(db *gorm.DB) {
 	}
 	var constraints []ConstraintInfo
 	_ = db.Raw(`
-		SELECT t.relname, c.conname 
-		FROM pg_constraint c 
-		JOIN pg_class t ON t.oid = c.conrelid 
-		JOIN pg_namespace n ON n.oid = t.relnamespace 
+		SELECT t.relname, c.conname
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
 		WHERE n.nspname = 'public'
 	`).Scan(&constraints).Error
 
@@ -470,7 +475,7 @@ func getTableName(db *gorm.DB, model interface{}) string {
 // This ensures seamless migration from the legacy inline credentials model.
 func BackfillDatabaseInstances(db *gorm.DB) error {
 	var projects []models.Project
-	if err := db.Where("database_name != '' AND database_name IS NOT NULL").Find(&projects).Error; err != nil {
+	if err := db.Where("database_name != '' AND database_name IS NOT NULL AND database_name NOT LIKE 'detached_%'").Find(&projects).Error; err != nil {
 		return err
 	}
 
@@ -482,12 +487,14 @@ func BackfillDatabaseInstances(db *gorm.DB) error {
 			continue
 		}
 
+		projID := p.ID
 		instance := models.DatabaseInstance{
-			ProjectID: p.ID,
+			UserID:    p.UserID,
+			ProjectID: &projID,
 			Engine:    "mysql",
 			Status:    models.DBStatusActive,
-			Name:      p.DatabaseName,
-			Username:  p.DatabaseName,
+			Name:      p.GetDatabaseName(),
+			Username:  p.GetDatabaseName(),
 			Password:  p.DatabasePassword,
 			Host:      "paas-mysql",
 			Port:      3306,
@@ -775,4 +782,54 @@ func BackfillPrimaryDomains(db *gorm.DB) error {
 	}).Error
 
 	return err
+}
+
+func migrateDatabaseInstancesTable(db *gorm.DB) error {
+	if !db.Migrator().HasTable("database_instances") {
+		return nil
+	}
+
+	// 1. Add user_id column if not exists
+	if !db.Migrator().HasColumn(&models.DatabaseInstance{}, "user_id") {
+		slog.Info("Migrating database_instances: adding user_id column")
+		if isPostgres(db) {
+			if err := db.Exec("ALTER TABLE database_instances ADD COLUMN user_id INTEGER;").Error; err != nil {
+				return fmt.Errorf("failed to add user_id column: %w", err)
+			}
+			if err := db.Exec("UPDATE database_instances di SET user_id = p.user_id FROM projects p WHERE di.project_id = p.id;").Error; err != nil {
+				slog.Warn("Failed to backfill user_id from projects table", "error", err)
+			}
+			// Check for unresolved rows
+			var unresolvedCount int64
+			if err := db.Raw("SELECT COUNT(*) FROM database_instances WHERE user_id IS NULL").Scan(&unresolvedCount).Error; err == nil && unresolvedCount > 0 {
+				return fmt.Errorf("migration failed: found %d database_instance rows with unresolvable user_id owner. Explicit remediation is required", unresolvedCount)
+			}
+			if err := db.Exec("ALTER TABLE database_instances ALTER COLUMN user_id SET NOT NULL;").Error; err != nil {
+				return fmt.Errorf("failed to make user_id NOT NULL: %w", err)
+			}
+		} else {
+			// MySQL or SQLite
+			if err := db.Migrator().AddColumn(&models.DatabaseInstance{}, "UserID"); err != nil {
+				return fmt.Errorf("failed to add user_id column: %w", err)
+			}
+			if err := db.Exec("UPDATE database_instances di JOIN projects p ON di.project_id = p.id SET di.user_id = p.user_id;").Error; err != nil {
+				slog.Warn("Failed to backfill user_id from projects table", "error", err)
+			}
+			// Check for unresolved rows
+			var unresolvedCount int64
+			if err := db.Raw("SELECT COUNT(*) FROM database_instances WHERE user_id IS NULL").Scan(&unresolvedCount).Error; err == nil && unresolvedCount > 0 {
+				return fmt.Errorf("migration failed: found %d database_instance rows with unresolvable user_id owner. Explicit remediation is required", unresolvedCount)
+			}
+		}
+	}
+
+	// 2. Make project_id nullable if it was not null
+	if isPostgres(db) {
+		slog.Info("Migrating database_instances: making project_id nullable")
+		if err := db.Exec("ALTER TABLE database_instances ALTER COLUMN project_id DROP NOT NULL;").Error; err != nil {
+			slog.Warn("Failed to make project_id nullable in migration", "error", err)
+		}
+	}
+
+	return nil
 }

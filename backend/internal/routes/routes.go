@@ -215,6 +215,16 @@ func Setup(
 	secretstores.Get("/:id/items/:itemID/history", secretStoreHandler.History)
 
 	// -----------------------------
+	// Centralized Database Routes
+	// -----------------------------
+	databases := protected.Group("/databases")
+	databases.Get("/", databaseHandler.ListUserDatabases)
+	databases.Post("/:id/attach", databaseHandler.AttachDatabase)
+	databases.Post("/:id/detach", databaseHandler.DetachDatabase)
+	databases.Post("/:id/reset", databaseHandler.ResetDatabaseInstance)
+	databases.Post("/:id/reinstall", databaseHandler.ReinstallDatabaseInstance)
+
+	// -----------------------------
 	// Project Routes (Users)
 	// -----------------------------
 	projects := protected.Group("/projects")

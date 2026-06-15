@@ -106,7 +106,7 @@ type Project struct {
 	GithubURL             string           `gorm:"size:500;not null" json:"github_url"`
 	Branch                string           `gorm:"size:200;not null;default:main" json:"branch"`
 	Subdomain             string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
-	DatabaseName          string           `gorm:"uniqueIndex:uni_projects_database_name;size:100;not null" json:"database_name"`
+	DatabaseName          *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
 	DatabasePassword      string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
 	Status                ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	DeploymentStatus      DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
@@ -638,8 +638,10 @@ const (
 // which container and driver handles provisioning and queries.
 type DatabaseInstance struct {
 	ID                 uint                   `gorm:"primaryKey" json:"id"`
-	ProjectID          uint                   `gorm:"uniqueIndex:uni_database_instances_project_id;not null" json:"project_id"`
-	Project            Project                `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	UserID             uint                   `gorm:"not null;index" json:"user_id"`
+	User               User                   `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	ProjectID          *uint                  `gorm:"uniqueIndex:uni_database_instances_project_id" json:"project_id"`
+	Project            *Project               `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	Engine             string                 `gorm:"size:20;not null;default:mysql" json:"engine"` // "mysql" or "postgresql"
 	Version            string                 `gorm:"size:50" json:"version,omitempty"`
 	Status             DatabaseInstanceStatus `gorm:"size:20;not null;default:active" json:"status"`
@@ -753,4 +755,11 @@ type SecretStoreActivityLog struct {
 	UserAgent         string           `gorm:"size:500" json:"user_agent"`
 	Details           string           `gorm:"type:text" json:"details"`
 	CreatedAt         time.Time        `json:"created_at"`
+}
+
+func (p *Project) GetDatabaseName() string {
+	if p.DatabaseName == nil {
+		return ""
+	}
+	return *p.DatabaseName
 }

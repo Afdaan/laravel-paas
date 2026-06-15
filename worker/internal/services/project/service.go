@@ -108,29 +108,7 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		slog.Warn("Failed to remove docker image", "subdomain", project.Subdomain, "error", err)
 	}
 
-	// Drop User Database
-	dbProject := project
-	if freshProject, err := s.projectRepo.GetByID(project.ID); err == nil {
-		dbProject = freshProject
-	} else {
-		slog.Warn("Failed to reload project authoritative state for database cleanup, falling back to caller project", "id", project.ID, "error", err)
-	}
-
-	if dbProject.DatabaseInstance != nil && dbProject.DatabaseName != "" {
-		engine := dbProject.DatabaseInstance.Engine
-
-		slog.Debug("Dropping database", "db", dbProject.DatabaseName, "engine", engine)
-		if engine == "postgresql" {
-			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.DropDatabase(dbProject.DatabaseName); err != nil {
-				slog.Warn("Failed to drop PostgreSQL database, might be already gone", "db", dbProject.DatabaseName, "error", err)
-			}
-		} else {
-			if err := s.mysqlService.DropDatabase(dbProject.DatabaseName); err != nil {
-				slog.Warn("Failed to drop MySQL database, might be already gone", "db", dbProject.DatabaseName, "error", err)
-			}
-		}
-	}
+	// Managed databases are detached by the repository rather than deleted/dropped.
 
 	// CleanupFilesystem (Source Code & Persistent Data)
 	if err := s.dockerService.CleanupProject(project.UserID, project.Subdomain); err != nil {

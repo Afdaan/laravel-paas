@@ -345,7 +345,7 @@ func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, bindingID u
 	return nil
 }
 
-func (s *SecretStoreService) UpdateDatabaseSecrets(project *models.Project, username, password string) error {
+func (s *SecretStoreService) PropagateDatabaseEnv(project *models.Project) error {
 	var binding models.SecretStoreBinding
 	err := s.db.Where("project_id = ?", project.ID).First(&binding).Error
 	if err == nil {
@@ -358,6 +358,17 @@ func (s *SecretStoreService) UpdateDatabaseSecrets(project *models.Project, user
 		})
 	}
 	return nil
+}
+
+// PropagateDatabaseEnvFanout triggers async env updates for all projects bound to the
+// same secret store as the given project, skipping the given project itself.
+func (s *SecretStoreService) PropagateDatabaseEnvFanout(project *models.Project) {
+	var binding models.SecretStoreBinding
+	if err := s.db.Where("project_id = ?", project.ID).First(&binding).Error; err == nil {
+		utils.SafeGo(func() {
+			s.PropagateSecretStoreUpdatesExcept(binding.SecretStoreID, project.ID)
+		})
+	}
 }
 
 func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment string) (map[string]string, error) {

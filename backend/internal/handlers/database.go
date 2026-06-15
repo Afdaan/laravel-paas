@@ -100,6 +100,17 @@ func (h *DatabaseHandler) getProjectForUser(c *fiber.Ctx) (*models.Project, erro
 	return project, nil
 }
 
+func (h *DatabaseHandler) requireProjectWithDatabase(c *fiber.Ctx) (*models.Project, error) {
+	project, err := h.getProjectForUser(c)
+	if err != nil {
+		return nil, c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+	if project.DatabaseName == nil || *project.DatabaseName == "" {
+		return nil, c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not enabled for this project"})
+	}
+	return project, nil
+}
+
 // recordAuditLog stores visual designer and management transitions in the platform AuditLog
 func (h *DatabaseHandler) recordAuditLog(c *fiber.Ctx, projectID uint, operation, fromState, toState, status string, errMsg string) {
 	userID := uint(0)
@@ -127,9 +138,9 @@ func (h *DatabaseHandler) recordAuditLog(c *fiber.Ctx, projectID uint, operation
 
 // GetCredentials returns database credentials
 func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -140,8 +151,8 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 			"engine":   "mysql",
 			"host":     "paas-mysql",
 			"port":     3306,
-			"database": project.DatabaseName,
-			"username": project.DatabaseName,
+			"database": project.GetDatabaseName(),
+			"username": project.GetDatabaseName(),
 			"password": project.DatabasePassword,
 		})
 	}
@@ -159,9 +170,9 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 
 // RotateCredentials generates a new random password and hot-swaps it into container
 func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -214,30 +225,6 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 
 		lockedProject.DatabasePassword = newPassword
 
-		// 3. Write rotated credentials into the project's SecretStore container
-		if err := h.secretStoreService.UpdateDatabaseSecrets(&lockedProject, instance.Username, newPassword); err != nil {
-			return fmt.Errorf("failed to update database credentials in SecretStore: %w", err)
-		}
-
-		isRunning = lockedProject.ContainerID != nil && *lockedProject.ContainerID != ""
-		if isRunning {
-			var errQueue error
-			jobID, errQueue = h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
-			if errQueue != nil {
-				return fmt.Errorf("failed to queue update_env job: %w", errQueue)
-			}
-
-			// Transition project status to queued within the transactional lock
-			lockedProject.DeploymentStatus = models.DepStatusQueued
-			msg := "Credentials rotation env update"
-			lockedProject.DeploymentMessage = &msg
-			lockedProject.DeploymentJobID = &jobID
-			now := time.Now()
-			lockedProject.DeploymentStartedAt = &now
-			lockedProject.DeploymentHeartbeatAt = &now
-			lockedProject.DeploymentFinishedAt = nil
-		}
-
 		if err := tx.Save(&lockedProject).Error; err != nil {
 			return err
 		}
@@ -253,6 +240,42 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials rotation failed: " + errTx.Error()})
 	}
 
+	isRunning = lockedProject.ContainerID != nil && *lockedProject.ContainerID != ""
+
+	// 3. Trigger fan-out env propagation to OTHER projects bound to the same secret store
+	h.secretStoreService.PropagateDatabaseEnvFanout(&lockedProject)
+
+	if isRunning {
+		var errQueue error
+		jobID, errQueue = h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
+		if errQueue != nil {
+			// Compensate by saving failed deployment state and returning an error
+			msg := fmt.Sprintf("Failed to queue environment update after rotating credentials: %v", errQueue)
+			h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
+				"deployment_status":  models.DepStatusFailed,
+				"deployment_message": msg,
+			})
+			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", errQueue.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to queue environment update: " + errQueue.Error()})
+		}
+
+		// Persist the job id and status atomically after successful enqueue
+		now := time.Now()
+		msg := "Credentials rotation env update"
+		errUpdate := h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
+			"deployment_status":      models.DepStatusQueued,
+			"deployment_job_id":      jobID,
+			"deployment_message":     msg,
+			"deployment_started_at":   &now,
+			"deployment_heartbeat_at": &now,
+			"deployment_finished_at":  nil,
+		}).Error
+		if errUpdate != nil {
+			slog.Error("Failed to update project deployment status after successful enqueue", "project_id", lockedProject.ID, "error", errUpdate.Error())
+		}
+	}
+
+	h.databaseService.InvalidateProjectDB(instance.Name)
 	h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
 
 	if isRunning {
@@ -271,9 +294,9 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 
 // UpdateStatus suspends or resumes database instance
 func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -336,9 +359,9 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 
 // GetOverview returns metadata summary stats for database dashboard
 func (h *DatabaseHandler) GetOverview(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -386,9 +409,9 @@ func (h *DatabaseHandler) GetOverview(c *fiber.Ctx) error {
 
 // GetSchema returns visual structure explorer database metadata
 func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -444,9 +467,9 @@ func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
 
 // ExecuteDesignerAction handles graphical GUI designer modifications and writes audits
 func (h *DatabaseHandler) ExecuteDesignerAction(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -476,9 +499,9 @@ func (h *DatabaseHandler) ExecuteDesignerAction(c *fiber.Ctx) error {
 
 // ListBackups returns database snapshot backup history catalog
 func (h *DatabaseHandler) ListBackups(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	backups, err := h.databaseService.ListBackups(project.ID)
@@ -493,9 +516,9 @@ func (h *DatabaseHandler) ListBackups(c *fiber.Ctx) error {
 
 // CreateBackup creates a new manual SQL snapshot of user database
 func (h *DatabaseHandler) CreateBackup(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	backup, err := h.databaseService.CreateBackup(project.ID)
@@ -515,9 +538,9 @@ func (h *DatabaseHandler) CreateBackup(c *fiber.Ctx) error {
 
 // RestoreBackup restores a database state from a catalog snapshot
 func (h *DatabaseHandler) RestoreBackup(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	backupID, err := strconv.Atoi(c.Params("backup"))
@@ -541,9 +564,9 @@ func (h *DatabaseHandler) RestoreBackup(c *fiber.Ctx) error {
 
 // DeleteBackup prunes a database snapshot logically and physically
 func (h *DatabaseHandler) DeleteBackup(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	backupID, err := strconv.Atoi(c.Params("backup"))
@@ -567,9 +590,9 @@ func (h *DatabaseHandler) DeleteBackup(c *fiber.Ctx) error {
 
 // DownloadBackup downloads a physical database snapshot backup file
 func (h *DatabaseHandler) DownloadBackup(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	backupID, err := strconv.Atoi(c.Params("backup"))
@@ -604,9 +627,9 @@ func (h *DatabaseHandler) DownloadBackup(c *fiber.Ctx) error {
 
 // GetMetrics returns active metrics like connections and size
 func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
@@ -752,7 +775,8 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 
 	// 7. Update database record associations
 	oldProjectID := instance.ProjectID
-	instance.ProjectID = targetProject.ID
+	targetProjID := targetProject.ID
+	instance.ProjectID = &targetProjID
 	if err := h.db.Save(instance).Error; err != nil {
 		slog.Warn("Failed to update database instance ownership", "project_id", sourceProject.ID, "target_project_id", targetProject.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database instance ownership"})
@@ -765,14 +789,18 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 		slog.Warn("Failed to update target project database credentials", "error", err)
 	}
 
-	sourceProject.DatabaseName = ""
+	sourceProject.DatabaseName = nil
 	sourceProject.DatabasePassword = ""
 	if err := h.db.Save(sourceProject).Error; err != nil {
 		slog.Warn("Failed to update source project database credentials", "error", err)
 	}
 
 	// 8. Record audit log
-	h.recordAuditLog(c, sourceProject.ID, "db_transfer", strconv.Itoa(int(oldProjectID)), strconv.Itoa(int(targetProject.ID)), "completed", "")
+	oldProjIDStr := "nil"
+	if oldProjectID != nil {
+		oldProjIDStr = strconv.Itoa(int(*oldProjectID))
+	}
+	h.recordAuditLog(c, sourceProject.ID, "db_transfer", oldProjIDStr, strconv.Itoa(int(targetProject.ID)), "completed", "")
 
 	// 9. Hot-swap environment binding: trigger env update redeployment for both source and target projects
 	sourceJobID, err := h.redisService.EnqueueDeployment(sourceProject.ID, sourceProject.UserID, "update_env")
@@ -795,12 +823,12 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 
 // ListTables returns all tables in the database (Legacy/Fallback)
 func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
-	tables, err := h.databaseService.ListProjectTables(project.DatabaseName, project.DatabasePassword)
+	tables, err := h.databaseService.ListProjectTables(project.GetDatabaseName(), project.DatabasePassword)
 	if err != nil {
 		slog.Warn("Failed to list project tables", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -813,9 +841,9 @@ func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 
 // GetTableStructure returns columns for a table (Legacy/Fallback)
 func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	tableName := c.Params("table")
@@ -823,7 +851,7 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Table name required"})
 	}
 
-	columns, err := h.databaseService.GetTableStructure(project.DatabaseName, project.DatabasePassword, tableName)
+	columns, err := h.databaseService.GetTableStructure(project.GetDatabaseName(), project.DatabasePassword, tableName)
 	if err != nil {
 		slog.Warn("Failed to get table structure", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table structure"})
@@ -834,9 +862,9 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 
 // GetTableData returns rows from a table with pagination (Legacy/Fallback)
 func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	tableName := c.Params("table")
@@ -852,7 +880,7 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 		limit = 200
 	}
 
-	columns, rows, total, err := h.databaseService.GetTableData(project.DatabaseName, project.DatabasePassword, tableName, page, limit)
+	columns, rows, total, err := h.databaseService.GetTableData(project.GetDatabaseName(), project.DatabasePassword, tableName, page, limit)
 	if err != nil {
 		slog.Warn("Failed to get table data", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table data"})
@@ -869,9 +897,9 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 
 // DeleteTableRow deletes a specific row from a table (Legacy/Fallback)
 func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	tableName := c.Params("table")
@@ -888,7 +916,7 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key and value are required"})
 	}
 
-	deleted, err := h.databaseService.DeleteTableRow(project.DatabaseName, project.DatabasePassword, tableName, req.PrimaryKey, req.Value)
+	deleted, err := h.databaseService.DeleteTableRow(project.GetDatabaseName(), project.DatabasePassword, tableName, req.PrimaryKey, req.Value)
 	if err != nil {
 		slog.Warn("Failed to delete table row", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete row"})
@@ -902,9 +930,9 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 
 // UpdateTableRow updates specific fields of a row in a table using a primary key filter
 func (h *DatabaseHandler) UpdateTableRow(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	tableName := c.Params("table")
@@ -925,7 +953,7 @@ func (h *DatabaseHandler) UpdateTableRow(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key, value, and updates map are required"})
 	}
 
-	updated, err := h.databaseService.UpdateTableRow(project.DatabaseName, project.DatabasePassword, tableName, req.PrimaryKey, req.Value, req.Updates)
+	updated, err := h.databaseService.UpdateTableRow(project.GetDatabaseName(), project.DatabasePassword, tableName, req.PrimaryKey, req.Value, req.Updates)
 	if err != nil {
 		slog.Warn("Failed to update table row", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update row"})
@@ -939,9 +967,9 @@ func (h *DatabaseHandler) UpdateTableRow(c *fiber.Ctx) error {
 
 // ExecuteQuery runs a manual raw query (Legacy/Fallback)
 func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	var req ExecuteQueryRequest
@@ -949,7 +977,7 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	result, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, req.Query)
+	result, err := h.databaseService.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, req.Query)
 	if err != nil {
 		appErr, ok := err.(*apperr.AppError)
 		if ok && appErr != nil {
@@ -967,27 +995,27 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 
 // ExportDatabase exports database as SQL (Legacy/Fallback)
 func (h *DatabaseHandler) ExportDatabase(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
-	dump, err := h.databaseService.GenerateProjectDump(project.DatabaseName, project.DatabasePassword)
+	dump, err := h.databaseService.GenerateProjectDump(project.GetDatabaseName(), project.DatabasePassword)
 	if err != nil {
 		slog.Warn("Failed to export database", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to export database"})
 	}
 
 	c.Set("Content-Type", "application/sql")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.sql", project.DatabaseName))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.sql", project.GetDatabaseName()))
 	return c.SendString(dump)
 }
 
 // ImportDatabase imports SQL file (Legacy/Fallback)
 func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
 	var req ImportRequest
@@ -1014,7 +1042,7 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		if stmt == "" {
 			continue
 		}
-		res, err := h.databaseService.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, stmt)
+		res, err := h.databaseService.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, stmt)
 		if err != nil {
 			errors = append(errors, "Statement execution failed")
 		} else {
@@ -1033,12 +1061,12 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 
 // ResetDatabase drops all tables (Legacy/Fallback)
 func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
-	project, err := h.getProjectForUser(c)
+	project, err := h.requireProjectWithDatabase(c)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+		return err
 	}
 
-	dropped, err := h.databaseService.ResetProjectDatabase(project.DatabaseName, project.DatabasePassword)
+	dropped, err := h.databaseService.ResetProjectDatabase(project.GetDatabaseName(), project.DatabasePassword)
 	if err != nil {
 		slog.Warn("Failed to reset database", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database"})
@@ -1072,4 +1100,340 @@ type ExecuteQueryRequest struct {
 
 type ImportRequest struct {
 	SQL string `json:"sql"`
+}
+
+// ListUserDatabases lists all databases owned by the authenticated user
+func (h *DatabaseHandler) ListUserDatabases(c *fiber.Ctx) error {
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	var databases []models.DatabaseInstance
+	if err := h.db.Preload("Project").Where("user_id = ?", userID).Find(&databases).Error; err != nil {
+		slog.Error("Failed to list user databases", "userID", userID, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to list databases"})
+	}
+
+	return c.JSON(fiber.Map{
+		"databases": databases,
+	})
+}
+
+// AttachDatabase attaches a database to a project
+func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
+	dbIDStr := c.Params("id")
+	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	}
+
+	var req struct {
+		ProjectUID string `json:"project_uid"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Fetch DatabaseInstance and validate ownership
+	var dbInst models.DatabaseInstance
+	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+	if dbInst.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+
+	// Verify database is not already attached to a project
+	if dbInst.ProjectID != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database is already attached to a project"})
+	}
+
+	// Fetch project by UID and validate ownership
+	project, err := h.projectService.GetProjectByUID(req.ProjectUID)
+	if err != nil || project == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+	if project.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this project"})
+	}
+
+	// Verify project does not already have a database attached
+	var count int64
+	h.db.Model(&models.DatabaseInstance{}).Where("project_id = ?", project.ID).Count(&count)
+	if count > 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Project already has a database attached"})
+	}
+
+	// Start a transaction to attach and sync cache
+	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		projID := project.ID
+		dbInst.ProjectID = &projID
+		if err := tx.Save(&dbInst).Error; err != nil {
+			return err
+		}
+
+		project.DatabaseName = &dbInst.Name
+		project.DatabasePassword = dbInst.Password
+		if err := tx.Save(project).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if errTx != nil {
+		h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "failed", errTx.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errTx.Error()})
+	}
+
+	// Propagate env updates (after commit)
+	_ = h.secretStoreService.PropagateDatabaseEnv(project)
+
+	h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "completed", "")
+	return c.JSON(fiber.Map{"success": true, "message": "Database attached successfully"})
+}
+
+// DetachDatabase detaches a database from its project
+func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
+	dbIDStr := c.Params("id")
+	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Fetch DatabaseInstance and validate ownership
+	var dbInst models.DatabaseInstance
+	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+	if dbInst.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+
+	if dbInst.ProjectID == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database is not attached to any project"})
+	}
+
+	projectID := *dbInst.ProjectID
+
+	// Fetch project
+	var project models.Project
+	if err := h.db.First(&project, projectID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+
+	if project.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own the project associated with this database"})
+	}
+
+	// Start transaction to detach
+	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		dbInst.ProjectID = nil
+		if err := tx.Save(&dbInst).Error; err != nil {
+			return err
+		}
+
+		project.DatabaseName = nil
+		project.DatabasePassword = ""
+		if err := tx.Save(&project).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if errTx != nil {
+		h.recordAuditLog(c, projectID, "db_detach", "active", "active", "failed", errTx.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errTx.Error()})
+	}
+
+	// Propagate env updates (removes DB_* vars since association is now nil, after commit)
+	_ = h.secretStoreService.PropagateDatabaseEnv(&project)
+
+	h.recordAuditLog(c, projectID, "db_detach", "active", "active", "completed", "")
+	return c.JSON(fiber.Map{"success": true, "message": "Database detached successfully"})
+}
+
+// ResetDatabaseInstance wipes all data in the database
+func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
+	dbIDStr := c.Params("id")
+	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Fetch DatabaseInstance and validate ownership
+	var dbInst models.DatabaseInstance
+	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+	if dbInst.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+
+	// Connect and reset
+	conn, err := h.databaseService.ConnectToProjectDB(dbInst.Name, dbInst.Password)
+	if err != nil {
+		slog.Error("Failed to connect to database for reset", "db", dbInst.Name, "error", err.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to database"})
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if dbInst.Engine == "postgresql" {
+		if !h.databaseService.IsValidIdentifier(dbInst.Username) {
+			slog.Error("Invalid database username identifier for reset", "db", dbInst.Name, "username", dbInst.Username)
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database username identifier"})
+		}
+		escapedUsername := h.databaseService.EscapeIdentifier("postgresql", dbInst.Username)
+
+		if _, err := conn.ExecContext(ctx, "DROP SCHEMA public CASCADE;"); err != nil {
+			slog.Error("Failed to drop schema for postgresql reset", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database: " + err.Error()})
+		}
+		if _, err := conn.ExecContext(ctx, "CREATE SCHEMA public;"); err != nil {
+			slog.Error("Failed to recreate schema for postgresql reset", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database: " + err.Error()})
+		}
+		// Also restore public permissions just in case
+		_, _ = conn.ExecContext(ctx, "GRANT ALL ON SCHEMA public TO public;")
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s;", escapedUsername))
+	} else {
+		// MySQL reset
+		_, err := h.databaseService.ResetProjectDatabase(dbInst.Name, dbInst.Password)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database: " + err.Error()})
+		}
+	}
+
+	h.recordAuditLog(c, 0, "db_reset", "active", "active", "completed", "")
+	return c.JSON(fiber.Map{"success": true, "message": "Database wiped clean successfully"})
+}
+
+// ReinstallDatabaseInstance drops and recreates the database schema, rotating credentials
+func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
+	dbIDStr := c.Params("id")
+	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Fetch DatabaseInstance and validate ownership
+	var dbInst models.DatabaseInstance
+	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+	if dbInst.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+
+	newPassword := utils.GeneratePassword(16)
+
+	// 1. Drop and recreate schema
+	if dbInst.Engine == "postgresql" {
+		pgService := infrastructure.NewPostgreSQLService()
+		if err := pgService.DropDatabase(dbInst.Name); err != nil {
+			slog.Error("Failed to drop postgresql database during reinstall", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop database: " + err.Error()})
+		}
+		if err := pgService.CreateDatabase(dbInst.Name, newPassword); err != nil {
+			slog.Error("Failed to recreate postgresql database during reinstall", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to recreate database: " + err.Error()})
+		}
+	} else {
+		mysqlService := infrastructure.NewMySQLService()
+		if err := mysqlService.DropDatabase(dbInst.Name); err != nil {
+			slog.Error("Failed to drop mysql database during reinstall", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop database: " + err.Error()})
+		}
+		if err := mysqlService.CreateDatabase(dbInst.Name, newPassword); err != nil {
+			slog.Error("Failed to recreate mysql database during reinstall", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to recreate database: " + err.Error()})
+		}
+	}
+
+	redeployRequired := false
+	var project models.Project
+
+	// 2. Persist in database records
+	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		dbInst.Password = newPassword
+		if err := tx.Save(&dbInst).Error; err != nil {
+			return err
+		}
+
+		if dbInst.ProjectID != nil {
+			redeployRequired = true
+			if err := tx.First(&project, *dbInst.ProjectID).Error; err != nil {
+				return err
+			}
+			project.DatabasePassword = newPassword
+			if err := tx.Save(&project).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if errTx != nil {
+		h.recordAuditLog(c, 0, "db_reinstall", "active", "active", "failed", errTx.Error())
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reinstall database: " + errTx.Error()})
+	}
+
+	if redeployRequired {
+		// Update credentials in secret store (after commit)
+		_ = h.secretStoreService.PropagateDatabaseEnv(&project)
+	}
+
+	h.databaseService.InvalidateProjectDB(dbInst.Name)
+	h.recordAuditLog(c, 0, "db_reinstall", "active", "active", "completed", "")
+	return c.JSON(fiber.Map{
+		"success":          true,
+		"message":          "Database reinstalled and password rotated successfully",
+		"redeployRequired": redeployRequired,
+	})
 }

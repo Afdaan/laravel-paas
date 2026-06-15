@@ -208,19 +208,21 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	parts := strings.Split(subdomain, "-")
 	suffix := parts[len(parts)-1]
 
-	dbName := databaseName
-	if dbName == "" {
-		dbName = strings.ReplaceAll(subdomain, "-", "_")
-	} else {
-		// Even if user provides a database name, we sanitize it and append the
-		// same unique suffix to prevent collisions across users.
-		dbName = fmt.Sprintf("%s_%s",
-			strings.Trim(strings.ReplaceAll(strings.ToLower(dbName), "-", "_"), "_"),
-			suffix)
-	}
+	var dbName *string
+	var dbPassword string
 
-	// Always generate a random password if not provided to ensure successful MySQL user creation
-	dbPassword := utils.GeneratePassword(16)
+	if enableDatabase {
+		tempDbName := databaseName
+		if tempDbName == "" {
+			tempDbName = strings.ReplaceAll(subdomain, "-", "_")
+		} else {
+			tempDbName = fmt.Sprintf("%s_%s",
+				strings.Trim(strings.ReplaceAll(strings.ToLower(tempDbName), "-", "_"), "_"),
+				suffix)
+		}
+		dbName = &tempDbName
+		dbPassword = utils.GeneratePassword(16)
+	}
 
 	expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
 	var expiresAt *time.Time
@@ -264,10 +266,11 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		}
 
 		instance := &models.DatabaseInstance{
+			UserID:            userID,
 			Engine:            engine,
 			Status:            models.DBStatusActive,
-			Name:              dbName,
-			Username:          dbName,
+			Name:              *dbName,
+			Username:          *dbName,
 			Password:          dbPassword,
 			Host:              host,
 			Port:              port,

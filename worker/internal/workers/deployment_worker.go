@@ -486,8 +486,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	if job.Type == "update_env" {
 		if project.ContainerID == nil || *project.ContainerID == "" {
-			appendLog(">> Project is stopped. Skipping environment propagation.")
-			appendLog("✓ Environment configuration updated successfully.")
+			appendLog(">> Project is stopped. Regenerating environment configuration on disk...")
+			projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+			if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
+				appendLog("✗ Failed to regenerate environment configuration on disk: " + err.Error())
+				slog.Error("Failed to create env file for stopped project", "subdomain", project.Subdomain, "error", err)
+				w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to regenerate environment configuration on disk: "+err.Error())
+				return
+			}
+
+			appendLog("✓ Environment configuration updated successfully on disk.")
 			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
 			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusStopped)
@@ -738,7 +746,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 		if engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			dbErr = pgService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+			dbErr = pgService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
 			if dbErr == nil && dbInstance != nil {
 				dbInstance.Host = "paas-user-postgres"
 				dbInstance.Port = 5432
@@ -747,7 +755,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 				var version string
 				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					project.DatabaseName, project.DatabasePassword, w.cfg.UserPGHost, w.cfg.UserPGPort, project.DatabaseName,
+					project.GetDatabaseName(), project.DatabasePassword, w.cfg.UserPGHost, w.cfg.UserPGPort, project.GetDatabaseName(),
 				)
 				dbConn, err := sql.Open("pgx", dsn)
 				if err == nil {
@@ -769,7 +777,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
 			}
 		} else {
-			dbErr = w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+			dbErr = w.mysqlService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
 			if dbErr == nil && dbInstance != nil {
 				dbInstance.Host = "paas-mysql"
 				dbInstance.Port = 3306
@@ -778,7 +786,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 				var version string
 				dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
-					project.DatabaseName, project.DatabasePassword, w.cfg.MYSQLHost, w.cfg.MYSQLPort, project.DatabaseName,
+					project.GetDatabaseName(), project.DatabasePassword, w.cfg.MYSQLHost, w.cfg.MYSQLPort, project.GetDatabaseName(),
 				)
 				dbConn, err := sql.Open("mysql", dsn)
 				if err == nil {
@@ -1384,8 +1392,8 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 
 	// Gather sensitive values dynamically from database config and .env variables
 	var sensitiveValues []string
-	if project.DatabaseName != "" {
-		sensitiveValues = append(sensitiveValues, project.DatabaseName)
+	if project.GetDatabaseName() != "" {
+		sensitiveValues = append(sensitiveValues, project.GetDatabaseName())
 	}
 	if project.DatabasePassword != "" {
 		sensitiveValues = append(sensitiveValues, project.DatabasePassword)
@@ -1552,7 +1560,7 @@ func (w *DeploymentWorker) getSecretsToRedact(project *models.Project) []string 
 	}
 
 	// 2. Fetch compile map
-	envMap, err := w.dockerService.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.DatabaseName, project.DatabasePassword, project.Framework, "production")
+	envMap, err := w.dockerService.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.GetDatabaseName(), project.DatabasePassword, project.Framework, "production")
 	if err == nil {
 		// Explicitly add DB_PASSWORD and DATABASE_URL
 		if val, ok := envMap["DB_PASSWORD"]; ok && len(val) > 4 {

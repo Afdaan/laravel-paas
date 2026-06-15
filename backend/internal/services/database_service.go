@@ -38,6 +38,23 @@ func NewDatabaseService(db *gorm.DB, cfg *config.Config) *DatabaseService {
 	return &DatabaseService{db: db, cfg: cfg}
 }
 
+// InvalidateProjectDB closes and evicts the cached connection for a database.
+func (s *DatabaseService) InvalidateProjectDB(dbName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	engine := s.getEngineForDB(dbName)
+	cacheKey := fmt.Sprintf("%s:%s", engine, dbName)
+
+	if cached, ok := s.pool.Load(cacheKey); ok {
+		if db, ok := cached.(*sql.DB); ok {
+			db.Close()
+		}
+		s.pool.Delete(cacheKey)
+		slog.Info("Evicted and closed database connection pool entry", "db", dbName, "engine", engine)
+	}
+}
+
 type TableInfo struct {
 	Name    string `json:"name"`
 	Rows    int64  `json:"rows"`
@@ -205,7 +222,7 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 	var rows *sql.Rows
 	if engine == "postgresql" {
 		rows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				t.tablename,
 				COALESCE(c.reltuples::bigint, -1) AS table_rows,
 				ROUND((pg_total_relation_size(quote_ident(t.tablename)) / 1024.0), 2) AS size_kb,
@@ -218,13 +235,13 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 		`)
 	} else {
 		rows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				TABLE_NAME,
 				TABLE_ROWS,
 				ROUND(((DATA_LENGTH + INDEX_LENGTH) / 1024), 2) AS size_kb,
 				ENGINE,
 				CREATE_TIME
-			FROM information_schema.TABLES 
+			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
 			ORDER BY TABLE_NAME
 		`, dbName)
@@ -285,14 +302,14 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 	var rows *sql.Rows
 	if engine == "postgresql" {
 		rows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				c.column_name,
 				c.data_type,
 				c.is_nullable,
 				COALESCE(
-					(SELECT 'PRI' FROM pg_index i 
+					(SELECT 'PRI' FROM pg_index i
 					 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-					 WHERE i.indrelid = quote_ident(c.table_name)::regclass AND i.indisprimary AND a.attname = c.column_name LIMIT 1), 
+					 WHERE i.indrelid = quote_ident(c.table_name)::regclass AND i.indisprimary AND a.attname = c.column_name LIMIT 1),
 					''
 				) AS column_key,
 				c.column_default,
@@ -304,7 +321,7 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 		`, tableName)
 	} else {
 		rows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				COLUMN_NAME,
 				COLUMN_TYPE,
 				IS_NULLABLE,
@@ -312,7 +329,7 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 				COLUMN_DEFAULT,
 				EXTRA,
 				COLUMN_COMMENT
-			FROM information_schema.COLUMNS 
+			FROM information_schema.COLUMNS
 			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 			ORDER BY ORDINAL_POSITION
 		`, dbName, tableName)
@@ -366,23 +383,23 @@ func (s *DatabaseService) GetTableForeignKeys(dbName, password, tableName string
 				JOIN information_schema.constraint_column_usage AS ccu
 				  ON ccu.constraint_name = tc.constraint_name
 				  AND ccu.table_schema = tc.table_schema
-			WHERE 
-				tc.constraint_type = 'FOREIGN KEY' 
-				AND tc.table_schema = 'public' 
+			WHERE
+				tc.constraint_type = 'FOREIGN KEY'
+				AND tc.table_schema = 'public'
 				AND tc.table_name = $1;
 		`, tableName)
 	} else {
 		rows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				COLUMN_NAME,
 				REFERENCED_TABLE_NAME,
 				REFERENCED_COLUMN_NAME,
 				CONSTRAINT_NAME
-			FROM 
+			FROM
 				INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-			WHERE 
-				TABLE_SCHEMA = ? 
-				AND TABLE_NAME = ? 
+			WHERE
+				TABLE_SCHEMA = ?
+				AND TABLE_NAME = ?
 				AND REFERENCED_TABLE_NAME IS NOT NULL;
 		`, dbName, tableName)
 	}
@@ -776,7 +793,7 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 	} else {
 		_ = db.QueryRowContext(ctx, `
 			SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024.0, 0)
-			FROM information_schema.TABLES 
+			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
 		`, dbName).Scan(&totalSize)
 	}
@@ -827,8 +844,8 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 			sqlDump.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", escapedTable))
 
 			cols, err := db.QueryContext(ctx, `
-				SELECT column_name, data_type, is_nullable, column_default 
-				FROM information_schema.columns 
+				SELECT column_name, data_type, is_nullable, column_default
+				FROM information_schema.columns
 				WHERE table_schema = 'public' AND table_name = $1
 				ORDER BY ordinal_position
 			`, tableName)
@@ -1554,7 +1571,7 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 
 	// Enforce naming
 	timestamp := time.Now().Format("20060102_150405")
-	backupName := fmt.Sprintf("%s_backup_%s.sql", project.DatabaseName, timestamp)
+	backupName := fmt.Sprintf("%s_backup_%s.sql", project.GetDatabaseName(), timestamp)
 
 	// Check folders
 	backupDir := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), "backups")
@@ -1578,7 +1595,7 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 	}
 
 	// Run backup dump
-	dumpContent, err := s.GenerateProjectDump(project.DatabaseName, project.DatabasePassword)
+	dumpContent, err := s.GenerateProjectDump(project.GetDatabaseName(), project.DatabasePassword)
 	if err != nil {
 		backup.Status = models.BackupStatusFailed
 		s.db.Save(backup)
@@ -1653,7 +1670,7 @@ func (s *DatabaseService) RestoreBackup(projectID uint, backupID uint) error {
 	}
 
 	// Reset database tables
-	_, err = s.ResetProjectDatabase(project.DatabaseName, project.DatabasePassword)
+	_, err = s.ResetProjectDatabase(project.GetDatabaseName(), project.DatabasePassword)
 	if err != nil {
 		return fmt.Errorf("failed to reset database before restore: %w", err)
 	}
@@ -1665,9 +1682,9 @@ func (s *DatabaseService) RestoreBackup(projectID uint, backupID uint) error {
 		if stmt == "" || strings.HasPrefix(stmt, "--") {
 			continue
 		}
-		_, err = s.ExecuteRawQuery(project.DatabaseName, project.DatabasePassword, stmt)
+		_, err = s.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, stmt)
 		if err != nil {
-			slog.Warn("Failed executing restore SQL statement", "database", project.DatabaseName, "error", err.Error())
+			slog.Warn("Failed executing restore SQL statement", "database", project.GetDatabaseName(), "error", err.Error())
 		}
 	}
 
@@ -1722,6 +1739,16 @@ func (s *DatabaseService) escapeIdentifier(engine, name string) string {
 	return fmt.Sprintf("`%s`", strings.ReplaceAll(name, "`", "``"))
 }
 
+// IsValidIdentifier exposes the internal isValidIdentifier check
+func (s *DatabaseService) IsValidIdentifier(name string) bool {
+	return s.isValidIdentifier(name)
+}
+
+// EscapeIdentifier exposes the internal escapeIdentifier helper
+func (s *DatabaseService) EscapeIdentifier(engine, name string) string {
+	return s.escapeIdentifier(engine, name)
+}
+
 // GetAllSchemaMetadata fetches columns and foreign keys for all tables in a single step to prevent N+1 query loops.
 func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[string][]ColumnInfo, map[string][]ForeignKeyInfo, error) {
 	db, err := s.ConnectToProjectDB(dbName, password)
@@ -1740,15 +1767,15 @@ func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[str
 	var colRows *sql.Rows
 	if engine == "postgresql" {
 		colRows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				c.table_name,
 				c.column_name,
 				c.data_type,
 				c.is_nullable,
 				COALESCE(
-					(SELECT 'PRI' FROM pg_index i 
+					(SELECT 'PRI' FROM pg_index i
 					 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-					 WHERE i.indrelid = (c.table_schema || '.' || c.table_name)::regclass AND i.indisprimary AND a.attname = c.column_name LIMIT 1), 
+					 WHERE i.indrelid = (c.table_schema || '.' || c.table_name)::regclass AND i.indisprimary AND a.attname = c.column_name LIMIT 1),
 					''
 				) AS column_key,
 				c.column_default,
@@ -1760,7 +1787,7 @@ func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[str
 		`)
 	} else {
 		colRows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				TABLE_NAME,
 				COLUMN_NAME,
 				COLUMN_TYPE,
@@ -1769,7 +1796,7 @@ func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[str
 				COLUMN_DEFAULT,
 				EXTRA,
 				COLUMN_COMMENT
-			FROM information_schema.COLUMNS 
+			FROM information_schema.COLUMNS
 			WHERE TABLE_SCHEMA = ?
 			ORDER BY TABLE_NAME, ORDINAL_POSITION
 		`, dbName)
@@ -1812,22 +1839,22 @@ func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[str
 				JOIN information_schema.constraint_column_usage AS ccu
 				  ON ccu.constraint_name = tc.constraint_name
 				  AND ccu.table_schema = tc.table_schema
-			WHERE 
-				tc.constraint_type = 'FOREIGN KEY' 
+			WHERE
+				tc.constraint_type = 'FOREIGN KEY'
 				AND tc.table_schema = 'public';
 		`)
 	} else {
 		fkRows, err = db.QueryContext(ctx, `
-			SELECT 
+			SELECT
 				TABLE_NAME,
 				COLUMN_NAME,
 				REFERENCED_TABLE_NAME,
 				REFERENCED_COLUMN_NAME,
 				CONSTRAINT_NAME
-			FROM 
+			FROM
 				INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-			WHERE 
-				TABLE_SCHEMA = ? 
+			WHERE
+				TABLE_SCHEMA = ?
 				AND REFERENCED_TABLE_NAME IS NOT NULL;
 		`, dbName)
 	}
@@ -1859,7 +1886,7 @@ func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 		ID               uint
 		Name             string
 		UserName         string
-		DatabaseName     string
+		DatabaseName     *string
 		DatabasePassword string
 		Status           string
 	}
@@ -1876,19 +1903,23 @@ func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 
 	var result []AdminDatabaseInfo
 	for _, p := range projects {
-		engine := s.getEngineForDB(p.DatabaseName)
+		if p.DatabaseName == nil || *p.DatabaseName == "" || strings.HasPrefix(*p.DatabaseName, "detached_") {
+			continue
+		}
+		pDbName := *p.DatabaseName
+		engine := s.getEngineForDB(pDbName)
 		info := AdminDatabaseInfo{
 			ProjectID:    p.ID,
 			ProjectName:  p.Name,
 			UserName:     p.UserName,
-			DatabaseName: p.DatabaseName,
+			DatabaseName: pDbName,
 			Engine:       engine,
 			Status:       p.Status,
 			TableCount:   0,
 			Size:         "0 KB",
 		}
 
-		db, err := s.ConnectToProjectDB(p.DatabaseName, p.DatabasePassword)
+		db, err := s.ConnectToProjectDB(pDbName, p.DatabasePassword)
 		if err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			var tableCount int
@@ -1901,12 +1932,12 @@ func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 			} else {
 				// MySQL size queries
 				_ = db.QueryRowContext(ctx, `
-					SELECT 
+					SELECT
 						COUNT(*),
 						COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024.0, 0)
-					FROM information_schema.TABLES 
+					FROM information_schema.TABLES
 					WHERE TABLE_SCHEMA = ?
-				`, p.DatabaseName).Scan(&tableCount, &totalSize)
+				`, pDbName).Scan(&tableCount, &totalSize)
 			}
 			cancel()
 

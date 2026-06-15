@@ -165,7 +165,8 @@ export interface GithubRepository {
 
 export interface DatabaseInstance {
   id: number;
-  project_id: number;
+  project_id: number | null;
+  project?: Project;
   engine: 'mysql' | 'postgresql';
   version?: string;
   status: 'active' | 'suspended' | 'deleted';

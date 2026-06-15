@@ -228,8 +228,8 @@ func (r *projectRepository) Delete(id uint) error {
 			return err
 		}
 
-		// Delete associated database instances
-		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseInstance{}).Error; err != nil {
+		// Detach associated database instances instead of deleting them
+		if err := tx.Model(&models.DatabaseInstance{}).Where("project_id = ?", id).Update("project_id", nil).Error; err != nil {
 			return err
 		}
 

@@ -339,6 +339,22 @@ export const databaseAPI = {
   reset: (projectId: number | string) => 
     api.post(`/projects/${projectId}/database/reset`),
 
+  // Centralized Database Endpoints
+  listOwn: () =>
+    api.get('/databases'),
+
+  attach: (dbId: number | string, projectUid: string) =>
+    api.post(`/databases/${dbId}/attach`, { project_uid: projectUid }),
+
+  detach: (dbId: number | string) =>
+    api.post(`/databases/${dbId}/detach`),
+
+  resetInstance: (dbId: number | string) =>
+    api.post(`/databases/${dbId}/reset`),
+
+  reinstallInstance: (dbId: number | string) =>
+    api.post(`/databases/${dbId}/reinstall`),
+
   // Admin endpoints
   adminListAll: () => 
     api.get('/admin/databases'),
