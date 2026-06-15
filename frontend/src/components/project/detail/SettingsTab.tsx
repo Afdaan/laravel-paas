@@ -536,22 +536,41 @@ export function SettingsTab({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <Select
                       value={selectedDbId}
                       onValueChange={(val) => setSelectedDbId(val || '')}
                     >
-                      <SelectTrigger className="flex-1 text-xs font-bold uppercase tracking-wider h-10">
-                        <SelectValue placeholder={t('databaseManager.selectProject')} />
+                      <SelectTrigger className="flex-1 h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
+                        <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
+                          {(() => {
+                            const db = databasesList.find(d => String(d.id) === selectedDbId)
+                            return db ? (
+                              <span className="truncate font-semibold text-foreground/90 text-xs">{db.name}</span>
+                            ) : (
+                              <span className="text-muted-foreground/60 text-xs">{t('databaseManager.selectDatabase')}</span>
+                            )
+                          })()}
+                        </div>
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">
                         {databasesList.map(db => (
-                          <SelectItem key={db.id} value={String(db.id)} className="text-xs uppercase tracking-wider font-bold">
-                            {db.name} ({db.engine})
+                          <SelectItem key={db.id} value={String(db.id)} className="rounded-lg py-2 px-3 cursor-pointer">
+                            <div className="flex items-center gap-2 text-left">
+                              <span className="font-semibold text-foreground text-xs">{db.name}</span>
+                              <Badge variant="outline" className={cn(
+                                "text-[8px] font-black uppercase px-1.5 py-0 shrink-0",
+                                db.engine === 'mysql'
+                                  ? 'border-amber-500/20 bg-amber-500/5 text-amber-500'
+                                  : 'border-blue-500/20 bg-blue-500/5 text-blue-500'
+                              )}>
+                                {db.engine}
+                              </Badge>
+                            </div>
                           </SelectItem>
                         ))}
                         {databasesList.length === 0 && (
-                          <div className="text-center py-2 text-[10px] uppercase font-bold text-muted-foreground">
+                          <div className="text-center py-4 text-[10px] uppercase font-bold text-muted-foreground">
                             {t("databaseManager.noUnattachedDbs")}
                           </div>
                         )}
@@ -573,7 +592,8 @@ export function SettingsTab({
                         }
                       }}
                       disabled={!selectedDbId || isDbActionLoading}
-                      className="text-xs font-bold uppercase tracking-widest h-10 px-5"
+                      size="sm"
+                      className="text-xs font-bold uppercase tracking-widest h-9"
                     >
                       {t('databaseManager.attach')}
                     </Button>

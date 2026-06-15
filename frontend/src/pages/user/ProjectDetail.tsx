@@ -766,7 +766,7 @@ function UserProjectDetail() {
     setBaseDirInput(nextProject.base_directory || '')
     setBuildCommandInput(nextProject.build_command || '')
     setStartCommandInput(nextProject.start_command || '')
-    setPortInput(nextProject.port || '')
+    setPortInput(nextProject.port === null ? '' : nextProject.port)
     setNodeVersionInput(nextProject.node_version || DEFAULT_RUNTIME_VERSIONS.node)
     setPhpVersionInput(nextProject.php_version || DEFAULT_RUNTIME_VERSIONS.php)
     
@@ -798,7 +798,7 @@ function UserProjectDetail() {
       baseDirInput !== (project.base_directory || '') ||
       buildCommandInput !== (project.build_command || '') ||
       startCommandInput !== (project.start_command || '') ||
-      portInput !== (project.port || '') ||
+      portInput !== (project.port === null ? '' : project.port) ||
       nodeVersionInput !== (project.node_version || DEFAULT_RUNTIME_VERSIONS.node) ||
       phpVersionInput !== (project.php_version || DEFAULT_RUNTIME_VERSIONS.php) ||
       workerCommandInput !== (project.worker_command || '') ||
