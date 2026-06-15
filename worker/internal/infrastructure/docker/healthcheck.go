@@ -118,7 +118,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 
 	if !isReady {
 		logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
-		return fmt.Errorf("[RUNTIME_FAILED] Container process is running but did not respond to HTTP readiness checks. Last logs:\n%s", logs)
+		return fmt.Errorf("[RUNTIME_FAILED] Container process is running but did not respond to HTTP readiness checks.\n\n💡 Tip: Ensure your application is listening on the 0.0.0.0 host, is using the $PORT environment variable, and returns a 200 OK status code at the root path (/).\n\nLast logs:\n%s", logs)
 	}
 
 	// 2. Stabilization window
@@ -139,7 +139,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 		url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
 		if err := s.probeHTTP(ctx, url); err != nil {
 			logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
-			return fmt.Errorf("[RUNTIME_FAILED] HTTP probe failed during stabilization window. Error: %w. Last logs:\n%s", err, logs)
+			return fmt.Errorf("[RUNTIME_FAILED] HTTP probe failed during stabilization window. Error: %w.\n\n💡 Tip: Ensure your application is listening on the 0.0.0.0 host, is using the $PORT environment variable, and returns a 200 OK status code at the root path (/).\n\nLast logs:\n%s", err, logs)
 		}
 	}
 
