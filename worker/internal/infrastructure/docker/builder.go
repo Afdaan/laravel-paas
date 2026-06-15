@@ -640,7 +640,13 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 		return
 	}
 
-	// 2. Load the corresponding railpack.json from the stack directory under cfg.RailpacksPath
+	// 2. Skip configuration injection completely for Go/Golang to use Railpack's native builder directly.
+	if stack == "golang" {
+		slog.Info("Go/Golang stack detected, skipping config injection to use direct Railpack builder", "subdomain", project.Subdomain)
+		return
+	}
+
+	// 3. Load the corresponding railpack.json from the stack directory under cfg.RailpacksPath
 	templatePath := filepath.Join(s.cfg.RailpacksPath, stack, "railpack.json")
 	templateData, err := os.ReadFile(templatePath)
 	if err != nil {
@@ -648,11 +654,11 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 		templateData = []byte(`{"deploy":{"base":{"image":"debian:bookworm-slim"}}}`)
 	}
 
-	// 3. Perform version substitution
+	// 4. Perform version substitution
 	version := "20" // default Node
 	switch stack {
 	case "golang":
-		version = "latest"
+		version = "1.22"
 	case "python":
 		version = "3.11"
 	}
@@ -675,7 +681,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 	if err := json.Unmarshal([]byte(configStr), &config); err == nil {
 		modified := false
 
-		// 4. Overwrite steps.build.commands and deploy.startCommand with user custom inputs if configured
+		// 5. Overwrite steps.build.commands and deploy.startCommand with user custom inputs if configured
 		if buildCmd != "" {
 			if _, exists := config["steps"]; !exists {
 				config["steps"] = make(map[string]interface{})
@@ -701,7 +707,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 			}
 		}
 
-		// 5. Cache Busting: Inject a unique build ID only when noCache = true
+		// 6. Cache Busting: Inject a unique build ID only when noCache = true
 		if noCache {
 			if _, exists := config["variables"]; !exists {
 				config["variables"] = make(map[string]interface{})
@@ -719,7 +725,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 		}
 	}
 
-	// 6. Write the refined railpack.json atomically to avoid race conditions
+	// 7. Write the refined railpack.json atomically to avoid race conditions
 	if err := utils.WriteFileAtomic(railpackConfigPath, templateData, 0644); err != nil {
 		slog.Error("Failed to write railpack.json atomically", "path", railpackConfigPath, "error", err)
 	} else {
