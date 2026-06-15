@@ -717,6 +717,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	go func() {
 		defer wg.Done()
+		if project.DatabaseInstance == nil {
+			return // no PaaS database for this project, skip provisioning
+		}
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
 			if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
