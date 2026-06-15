@@ -184,7 +184,7 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool, enableDatabase bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, enableDatabase bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	// Enforce per-user project limit (bypass for admins and superadmins)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
 		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
@@ -242,6 +242,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		BaseDirectory:        baseDirectory,
 		BuildCommand:         sanitizeCommand(buildCommand),
 		StartCommand:         strings.TrimSpace(startCommand),
+		Port:                 port,
 		QueueEnabled:         queueEnabled,
 		Status:               models.StatusPending,
 		DeploymentStatus:     models.DepStatusQueued,
@@ -286,7 +287,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	return project, nil
 }
 
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string, githubURL string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled *bool, workerCommand *string, buildCommand, startCommand, nodeVersion string, languageVersion *string, port *int, githubURL string, githubInstallationID *int64, githubRepoOwner, githubRepoName *string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -298,14 +299,14 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	}
 
 	// Automate Laravel .env QUEUE_CONNECTION update if queue status changes
-	if project.Framework == "Laravel" && project.QueueEnabled != queueEnabled {
+	if queueEnabled != nil && project.Framework == "Laravel" && project.QueueEnabled != *queueEnabled {
 		if content, err := s.storageService.GetEnvFile(project.UserID, project.Subdomain); err == nil {
-			updatedContent := updateEnvQueueConnection(content, queueEnabled)
+			updatedContent := updateEnvQueueConnection(content, *queueEnabled)
 			if updatedContent != content {
 				if err := s.storageService.SaveEnvFile(project.UserID, project.Subdomain, updatedContent); err != nil {
 					slog.Warn("Failed to automatically update QUEUE_CONNECTION in .env file on settings update", "subdomain", project.Subdomain, "error", err)
 				} else {
-					slog.Info("Automatically updated QUEUE_CONNECTION in .env file", "subdomain", project.Subdomain, "queue_enabled", queueEnabled)
+					slog.Info("Automatically updated QUEUE_CONNECTION in .env file", "subdomain", project.Subdomain, "queue_enabled", *queueEnabled)
 				}
 			}
 		}
@@ -315,22 +316,32 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 		project.Name = name
 	}
 	project.Branch = branch
-	
-
 	project.PHPVersion = phpVersion
 	project.BaseDirectory = baseDirectory
-	project.QueueEnabled = queueEnabled
-	project.WorkerCommand = workerCommand
+	project.Port = port
+	
+	if queueEnabled != nil {
+		project.QueueEnabled = *queueEnabled
+	}
+	if workerCommand != nil {
+		project.WorkerCommand = *workerCommand
+	}
 	project.BuildCommand = sanitizeCommand(buildCommand)
 	project.StartCommand = strings.TrimSpace(startCommand)
 	project.NodeVersion = nodeVersion
-	project.LanguageVersion = languageVersion
+	if languageVersion != nil {
+		project.LanguageVersion = *languageVersion
+	}
 
 	// Update Git connection fields if provided (or allow resetting/changing)
 	project.GithubURL = githubURL
 	project.GithubInstallationID = githubInstallationID
-	project.GithubRepoOwner = githubRepoOwner
-	project.GithubRepoName = githubRepoName
+	if githubRepoOwner != nil {
+		project.GithubRepoOwner = *githubRepoOwner
+	}
+	if githubRepoName != nil {
+		project.GithubRepoName = *githubRepoName
+	}
 
 	if err := s.projectRepo.Update(project); err != nil {
 		return nil, err

@@ -37,6 +37,7 @@ type CreateProjectRequest struct {
 	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
 	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
 	GithubRepoName       string `json:"github_repo_name,omitempty"`
+	Port                 *int   `json:"port,omitempty"`
 }
 
 // ListOwn returns user's own projects
@@ -97,20 +98,22 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 // UpdateRequest represents project update payload
 type UpdateRequest struct {
-	Name                 string `json:"name"`
-	Branch               string `json:"branch"`
-	PHPVersion           string `json:"php_version"`
-	BaseDirectory        string `json:"base_directory"`
-	QueueEnabled         bool   `json:"queue_enabled"`
-	WorkerCommand        string `json:"worker_command"`
-	BuildCommand         string `json:"build_command"`
-	StartCommand         string `json:"start_command"`
-	NodeVersion          string `json:"node_version"`
-	LanguageVersion      string `json:"language_version"`
-	GithubURL            string `json:"github_url"`
-	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
-	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
-	GithubRepoName       string `json:"github_repo_name,omitempty"`
+
+	Name                 string  `json:"name"`
+	Branch               string  `json:"branch"`
+	PHPVersion           string  `json:"php_version"`
+	BaseDirectory        string  `json:"base_directory"`
+	BuildCommand         string  `json:"build_command"`
+	StartCommand         string  `json:"start_command"`
+	NodeVersion          string  `json:"node_version"`
+	LanguageVersion      *string `json:"language_version,omitempty"`
+	WorkerCommand        *string `json:"worker_command,omitempty"`
+	QueueEnabled         *bool   `json:"queue_enabled,omitempty"`
+	Port                 *int    `json:"port,omitempty"`
+	GithubURL            string  `json:"github_url"`
+	GithubInstallationID *int64  `json:"github_installation_id,omitempty"`
+	GithubRepoOwner      *string `json:"github_repo_owner,omitempty"`
+	GithubRepoName       *string `json:"github_repo_name,omitempty"`
 }
 
 // Update updates project details
@@ -139,6 +142,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		req.StartCommand,
 		req.NodeVersion,
 		req.LanguageVersion,
+		req.Port,
 		req.GithubURL,
 		req.GithubInstallationID,
 		req.GithubRepoOwner,

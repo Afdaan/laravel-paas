@@ -50,6 +50,7 @@ interface NewProjectForm {
   base_directory: string;
   build_command: string;
   start_command: string;
+  port: number | '';
   queue_enabled: boolean;
   enable_database: boolean;
   database_engine: 'mysql' | 'postgresql';
@@ -112,6 +113,7 @@ function UserNewProject() {
     base_directory: '',
     build_command: '',
     start_command: '',
+    port: '',
     queue_enabled: false,
     enable_database: true,
     database_engine: 'mysql',
@@ -967,6 +969,27 @@ function UserNewProject() {
                         className="font-mono text-xs"
                       />
                       <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.startCommandDesc')}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/5 flex items-center justify-center text-primary/70">
+                          <Play className="w-4 h-4" />
+                        </div>
+                        <Label htmlFor="port" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                          {t('projectDetail.settings.internalPort')}
+                        </Label>
+                      </div>
+                      <Input
+                        id="port"
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={(e) => setFormData(prev => ({ ...prev, port: e.target.value ? parseInt(e.target.value) : '' }))}
+                        placeholder="e.g. 5005"
+                        className="font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.internalPortDesc')}</p>
                     </div>
                   </div>
                 </div>

@@ -141,6 +141,7 @@ function UserProjectDetail() {
   const [baseDirInput, setBaseDirInput] = useState('')
   const [buildCommandInput, setBuildCommandInput] = useState('')
   const [startCommandInput, setStartCommandInput] = useState('')
+  const [portInput, setPortInput] = useState<number | ''>('')
   const [nodeVersionInput, setNodeVersionInput] = useState('')
   const [phpVersionInput, setPhpVersionInput] = useState('')
   const [workerCommandInput, setWorkerCommandInput] = useState('')
@@ -765,6 +766,7 @@ function UserProjectDetail() {
     setBaseDirInput(nextProject.base_directory || '')
     setBuildCommandInput(nextProject.build_command || '')
     setStartCommandInput(nextProject.start_command || '')
+    setPortInput(nextProject.port || '')
     setNodeVersionInput(nextProject.node_version || DEFAULT_RUNTIME_VERSIONS.node)
     setPhpVersionInput(nextProject.php_version || DEFAULT_RUNTIME_VERSIONS.php)
     
@@ -796,6 +798,7 @@ function UserProjectDetail() {
       baseDirInput !== (project.base_directory || '') ||
       buildCommandInput !== (project.build_command || '') ||
       startCommandInput !== (project.start_command || '') ||
+      portInput !== (project.port || '') ||
       nodeVersionInput !== (project.node_version || DEFAULT_RUNTIME_VERSIONS.node) ||
       phpVersionInput !== (project.php_version || DEFAULT_RUNTIME_VERSIONS.php) ||
       workerCommandInput !== (project.worker_command || '') ||
@@ -806,7 +809,7 @@ function UserProjectDetail() {
       githubRepoOwnerInput !== (project.github_repo_owner || '') ||
       githubRepoNameInput !== (project.github_repo_name || '')
   }, [
-    project, settingsProjectUid, branchInput, baseDirInput, buildCommandInput, startCommandInput,
+    project, settingsProjectUid, branchInput, baseDirInput, buildCommandInput, startCommandInput, portInput,
     nodeVersionInput, phpVersionInput, workerCommandInput, queueEnabledInput,
     languageVersionInput, githubUrlInput, githubInstallationIdInput, githubRepoOwnerInput, githubRepoNameInput
   ])
@@ -834,6 +837,7 @@ function UserProjectDetail() {
             base_directory: baseDirInput,
             build_command: buildCommandInput,
             start_command: startCommandInput,
+            port: portInput === '' ? null : portInput,
             node_version: nodeVersionInput,
             php_version: phpVersionInput,
             worker_command: workerCommandInput,
@@ -875,6 +879,7 @@ function UserProjectDetail() {
     setBaseDirInput('')
     setBuildCommandInput('')
     setStartCommandInput('')
+    setPortInput('')
     setNodeVersionInput(DEFAULT_RUNTIME_VERSIONS.node)
     setPhpVersionInput(DEFAULT_RUNTIME_VERSIONS.php)
     setWorkerCommandInput('')
@@ -1304,6 +1309,8 @@ function UserProjectDetail() {
               setBuildCommandInput={setBuildCommandInput}
               startCommandInput={startCommandInput}
               setStartCommandInput={setStartCommandInput}
+              portInput={portInput}
+              setPortInput={setPortInput}
               branchesList={branchesList}
               branchInput={branchInput}
               setBranchInput={setBranchInput}

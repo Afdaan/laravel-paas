@@ -66,6 +66,8 @@ interface SettingsTabProps {
   setBuildCommandInput: (val: string) => void
   startCommandInput: string
   setStartCommandInput: (val: string) => void
+  portInput: number | ''
+  setPortInput: (val: number | '') => void
   branchesList: string[]
   branchInput: string
   setBranchInput: (val: string) => void
@@ -113,6 +115,8 @@ export function SettingsTab({
   setBuildCommandInput,
   startCommandInput,
   setStartCommandInput,
+  portInput,
+  setPortInput,
   branchesList,
   branchInput,
   setBranchInput,
@@ -337,6 +341,21 @@ export function SettingsTab({
                   className="h-10 text-xs font-mono border-muted-foreground/20"
                 />
                 <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.startCommandDesc')}</p>
+              </div>
+
+              <div className="space-y-2 col-span-2">
+                <Label className="text-xs uppercase text-muted-foreground tracking-wider font-semibold flex items-center gap-2">
+                  <Play className="w-3 h-3" />
+                  {t('projectDetail.settings.internalPort')}
+                </Label>
+                <Input
+                  className="font-mono text-xs bg-zinc-900/50 border-zinc-800 focus:border-zinc-700"
+                  placeholder="e.g. 5005"
+                  type="number"
+                  value={portInput === '' ? '' : portInput}
+                  onChange={(e) => setPortInput(e.target.value ? parseInt(e.target.value) : '')}
+                />
+                <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.internalPortDesc')}</p>
               </div>
             </div>
 
