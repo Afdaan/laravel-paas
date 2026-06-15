@@ -23,14 +23,21 @@ export default function Databases() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [hasAnyProjects, setHasAnyProjects] = useState(false)
 
   const fetchProjects = useCallback(async () => {
     try {
       const response = await projectsAPI.listOwn()
       const data = response.data.data || []
-      setProjects(data)
-      if (data.length > 0) {
-        setSelectedProjectId(data[0].uid)
+      setHasAnyProjects(data.length > 0)
+      
+      const dbProjects = data.filter((p: Project) => !!p.database_instance)
+      setProjects(dbProjects)
+      
+      if (dbProjects.length > 0) {
+        setSelectedProjectId(dbProjects[0].uid)
+      } else {
+        setSelectedProjectId(null)
       }
     } catch (error) {
       toast.error(t('common.error'))
@@ -66,11 +73,15 @@ export default function Databases() {
           <PackageOpen className="w-10 h-10 text-muted-foreground" />
         </div>
         <div className="text-center max-w-sm space-y-2">
-          <h3 className="text-2xl font-bold tracking-tight">{t('databaseManager.noProjectsFound')}</h3>
-          <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">{t('databaseManager.noProjectsDesc')}</p>
+          <h3 className="text-2xl font-bold tracking-tight">
+            {hasAnyProjects ? t('databaseManager.noDbsFound') : t('databaseManager.noProjectsFound')}
+          </h3>
+          <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">
+            {hasAnyProjects ? t('databaseManager.noDbsDesc') : t('databaseManager.noProjectsDesc')}
+          </p>
         </div>
         <Link to="/projects/new" className={cn(buttonVariants({ variant: 'outline' }), "mt-4")}>
-           {t('databaseManager.initFirst')}
+           {hasAnyProjects ? t('databaseManager.createProjectWithDb') : t('databaseManager.initFirst')}
         </Link>
       </div>
     )

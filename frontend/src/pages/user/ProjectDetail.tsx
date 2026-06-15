@@ -345,6 +345,13 @@ function UserProjectDetail() {
     }
   }, [setActiveTab])
 
+  // Fallback database tab to overview if the project does not have a database instance provisioned
+  useEffect(() => {
+    if (activeTab === 'database' && project && !project.database_instance) {
+      setActiveTab('project')
+    }
+  }, [activeTab, project, setActiveTab])
+
 
 
   const handleRollback = async (commitSHA: string) => {
@@ -447,6 +454,17 @@ function UserProjectDetail() {
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
   const [consecutiveErrors, setConsecutiveErrors] = useState(0)
+
+  // Derivate tabs that should be visible based on active service configurations
+  const visibleTabs = useMemo(() => {
+    return PROJECT_DETAIL_TABS.filter((tab) => {
+      if (tab.value === 'database') {
+        return !!project?.database_instance
+      }
+      return true
+    })
+  }, [project?.database_instance])
+
   const frameworkDetail = useMemo(() => {
     if (!project) return t('projectDetail.metrics.managedStack')
     if (project.framework === 'Laravel') {
@@ -1154,16 +1172,29 @@ function UserProjectDetail() {
           subtext={frameworkDetail}
           renderIcon={(className) => <FrameworkIcon framework={project.framework} variant="plain" className={className} />}
         />
-        <MetricCard
-          title={t('projectDetail.metrics.db')}
-          value={
-            project.database_instance
-              ? (project.database_instance.engine === 'postgresql' ? 'PostgreSQL' : 'MySQL')
-              : 'None'
-          }
-          subtext={project.database_name || t('projectDetail.metrics.noDb')}
-          icon={DatabaseIcon}
-        />
+        {project.database_instance ? (
+          <MetricCard
+            title={t('projectDetail.metrics.db')}
+            value={project.database_instance.engine === 'postgresql' ? 'PostgreSQL' : 'MySQL'}
+            subtext={project.database_instance.name}
+            icon={DatabaseIcon}
+          />
+        ) : (
+          <Card className="bg-card/25 border-dashed border-border/60 backdrop-blur-sm overflow-hidden group hover:border-primary/20 hover:shadow-[0_0_20px_rgba(var(--primary),0.02)] transition-all duration-500 relative flex flex-col justify-between p-5 min-h-[120px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">{t('projectDetail.metrics.db')}</span>
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/30 bg-muted/10">
+                <DatabaseIcon className="w-4 h-4 text-muted-foreground/45" />
+              </div>
+            </div>
+            <div className="space-y-1 mt-auto">
+              <div className="text-[15px] font-bold tracking-tight text-muted-foreground/80">{t('common.none')}</div>
+              <div className="text-[9px] text-muted-foreground/50 font-bold uppercase tracking-wider leading-relaxed">
+                {t('projectDetail.metrics.externalDbHint')}
+              </div>
+            </div>
+          </Card>
+        )}
         <MetricCard
           title={isLaravelProject ? t('projectDetail.metrics.queue') : t('projectDetail.metrics.backgroundService')}
           value={
@@ -1189,7 +1220,7 @@ function UserProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="w-full overflow-x-auto pb-2 -mb-2 custom-scrollbar hide-scrollbar-on-mobile">
           <TabsList className="bg-muted/40 p-1.5 rounded-xl border border-border/40 inline-flex min-w-max shadow-sm mb-1">
-            {PROJECT_DETAIL_TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon
               return (
                 <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-2 data-active:!text-primary">
@@ -1224,9 +1255,11 @@ function UserProjectDetail() {
           />
         </TabsContent>
 
-        <TabsContent value="database" className="pt-0">
-          <DatabaseStudio embedded={true} projectId={uid} />
-        </TabsContent>
+        {!!project.database_instance && (
+          <TabsContent value="database" className="pt-0">
+            <DatabaseStudio embedded={true} projectId={uid} />
+          </TabsContent>
+        )}
 
         <TabsContent value="logs" className="pt-0">
           <LogsTab
