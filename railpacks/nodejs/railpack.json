@@ -10,13 +10,13 @@
       "directory": "/root/.local/share/pnpm/store"
     }
   },
-  "aptPackages": [
-    "openssl"
-  ],
   "deploy": {
     "base": {
       "image": "node:{{VERSION}}-slim"
     },
+    "aptPackages": [
+      "openssl"
+    ],
     "variables": {
       "NODE_ENV": "production"
     }
