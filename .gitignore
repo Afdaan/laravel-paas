@@ -57,6 +57,7 @@ Thumbs.db
 .agents/
 .opencode
 .codex
+.ai
 
 # Python / Scripts
 __pycache__/

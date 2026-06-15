@@ -17,6 +17,7 @@
   "deploy": {
     "base": {
       "image": "alpine:latest"
-    }
+    },
+    "startCommand": "./out"
   }
 }
