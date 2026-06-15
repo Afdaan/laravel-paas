@@ -92,7 +92,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	// 3.5. NEW: Dynamic Port Detection from Image Metadata
 	// If port hasn't been manually set by user, try to detect it from image metadata
 	detectedPort, detectErr := s.DetectExposedPort(imageName)
-	if detectErr == nil && detectedPort > 0 {
+	if detectErr == nil && project.Port == nil && detectedPort > 0 {
 		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
 		p := detectedPort
 		project.Port = &p
@@ -479,8 +479,8 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 					portRegex := regexp.MustCompile(`(?i)(?:\bport\b|PORT\s*=\s*|\b-p\b)\s*=?\s*(\d+)`)
 					if matches := portRegex.FindStringSubmatch(startScript); len(matches) > 1 {
 						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 && pVal <= 65535 {
-							project.Port = &pVal
-							slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal)
+							if project.Port == nil { project.Port = &pVal; slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal) }
+							
 						}
 					}
 				}
