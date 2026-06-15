@@ -944,14 +944,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	// Reset stale metadata if framework changed to prevent cross-framework configuration leakage (SRE guard)
 	if project.Framework != oldFramework {
-		project.Port = nil
+		
 		project.NodeVersion = ""
 		project.PHPVersion = ""
 		project.LaravelVersion = ""
 		project.LanguageVersion = ""
 		project.IsManualVersion = false
 
-		updates["port"] = nil
+		
 		updates["node_version"] = ""
 		updates["php_version"] = ""
 		updates["laravel_version"] = ""

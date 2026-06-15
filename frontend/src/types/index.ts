@@ -64,7 +64,7 @@ export interface Project {
   repository_url: string;
   branch: string;
   php_version: string;
-  port: number;
+  port: number | null;
   db_name: string;
   status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting';
   subdomain?: string;
@@ -173,7 +173,7 @@ export interface DatabaseInstance {
   name: string;
   username: string;
   host: string;
-  port: number;
+  port: number | null;
   storage_allocation: number;
   storage_consumption: number;
   connection_count: number;

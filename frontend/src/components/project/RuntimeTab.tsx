@@ -90,7 +90,7 @@ export function RuntimeTab({
                 </div>
                 <div className="flex justify-between items-center border-b border-border/30 pb-2">
                   <span className="text-muted-foreground">{t('projectDetail.runtime.port')}</span>
-                  <span className="font-bold text-foreground/90">{project.internal_port ? project.internal_port : 'Auto (8000)'}</span>
+                  <span className="font-bold text-foreground/90">{project.port ? project.port : 'Auto (8000)'}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Container ID</span>

@@ -59,6 +59,7 @@ Thumbs.db
 .codex
 .ai
 .traycer
+.claude
 
 # Python / Scripts
 __pycache__/
