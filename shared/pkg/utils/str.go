@@ -185,42 +185,10 @@ func quoteEnvValue(val string) string {
 		}
 	}
 
-	needsQuotes := false
-	if val == "" {
-		needsQuotes = true
-	} else {
-		for i := 0; i < len(val); i++ {
-			c := val[i]
-			if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '#' || c == '$' || c == '\'' || c == '"' || c == '=' {
-				needsQuotes = true
-				break
-			}
-		}
-	}
-
-	if !needsQuotes {
-		return val
-	}
-
-	var escaped strings.Builder
-	escaped.WriteByte('"')
-	for i := 0; i < len(val); i++ {
-		c := val[i]
-		switch c {
-		case '"':
-			escaped.WriteString(`\"`)
-		case '\\':
-			escaped.WriteString(`\\`)
-		case '\n':
-			escaped.WriteString(`\n`)
-		case '\r':
-			escaped.WriteString(`\r`)
-		default:
-			escaped.WriteByte(c)
-		}
-	}
-	escaped.WriteByte('"')
-	return escaped.String()
+	// Escape actual embedded newline characters for single-line representation in .env
+	val = strings.ReplaceAll(val, "\n", "\\n")
+	val = strings.ReplaceAll(val, "\r", "\\r")
+	return val
 }
 
 func getEnvKeyPriority(key string) int {

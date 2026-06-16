@@ -48,7 +48,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	}
 
 	// 2.2 Inject .dockerignore if missing to optimize build context size
-	s.injectDockerIgnore(projectPath)
+	s.injectDockerIgnore(projectPath, logCallback)
 
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	logFilePath := filepath.Join(projectPath, "build.log")
@@ -709,10 +709,31 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 		// Add support for tsc build cache if applicable
 		if stack == "nodejs" {
 			hasTsConfig := false
-			if _, err := os.Stat(filepath.Join(buildPath, "tsconfig.json")); err == nil {
+			tsconfigPath := filepath.Join(buildPath, "tsconfig.json")
+			if _, err := os.Stat(tsconfigPath); err == nil {
 				hasTsConfig = true
 			}
 			if hasTsConfig && buildCmd != "" {
+				// Check if tsconfig.json has incremental set to true
+				hasIncremental := false
+				if data, err := os.ReadFile(tsconfigPath); err == nil {
+					content := string(data)
+					if strings.Contains(content, `"incremental": true`) || strings.Contains(content, `"incremental":true`) {
+						hasIncremental = true
+					}
+				}
+
+				if !hasIncremental {
+					if _, exists := config["variables"]; !exists {
+						config["variables"] = make(map[string]interface{})
+					}
+					if vars, ok := config["variables"].(map[string]interface{}); ok {
+						vars["TSCONFIG_INCREMENTAL"] = "true"
+						vars["TSCONFIG_TSBUILDINFO"] = ".tsbuildinfo"
+						modified = true
+					}
+				}
+
 				// Only augment real tsc invocations, not npm run build strings.
 				cmds := strings.Split(buildCmd, "&&")
 				var trimmedCmds []interface{}
@@ -787,7 +808,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 	}
 }
 
-func (s *DockerService) injectDockerIgnore(projectPath string) {
+func (s *DockerService) injectDockerIgnore(projectPath string, logCallback func(string)) {
 	ignorePath := filepath.Join(projectPath, ".dockerignore")
 	templatePath := filepath.Join("/app/docker/templates", ".dockerignore")
 	// Fallback to local path for dev environment
@@ -795,6 +816,7 @@ func (s *DockerService) injectDockerIgnore(projectPath string) {
 		templatePath = "docker/templates/.dockerignore"
 	}
 
+	shouldScan := false
 	if currentData, err := os.ReadFile(ignorePath); err == nil {
 		// User already has a .dockerignore. Check if it's our older template.
 		// The old template had "/build/" and "/dist/" but the new one does not.
@@ -803,23 +825,41 @@ func (s *DockerService) injectDockerIgnore(projectPath string) {
 		if strings.Contains(content, "# Laravel PaaS - Docker Ignore File") && strings.Contains(content, "/build/") && strings.Contains(content, "/dist/") {
 			slog.Info("Found older generated .dockerignore template, updating to new version to improve caching", "path", ignorePath)
 		} else {
-			return // It's a genuine user file or an already-updated template. Respect it.
+			shouldScan = true
 		}
 	}
 
-	data, err := os.ReadFile(templatePath)
-	if err != nil {
-		slog.Warn("Failed to read .dockerignore template", "path", templatePath, "error", err)
-		return
+	if !shouldScan {
+		data, err := os.ReadFile(templatePath)
+		if err != nil {
+			slog.Warn("Failed to read .dockerignore template", "path", templatePath, "error", err)
+			return
+		}
+
+		// Write the default .dockerignore atomically to prevent half-written files from being read.
+		if err := utils.WriteFileAtomic(ignorePath, data, 0644); err != nil {
+			slog.Warn("Failed to write .dockerignore atomically to project", "path", ignorePath, "error", err)
+			return
+		}
+		slog.Debug("Injected default .dockerignore", "path", ignorePath)
+		shouldScan = true
 	}
 
-	// Write the default .dockerignore atomically to prevent half-written files from being read.
-	if err := utils.WriteFileAtomic(ignorePath, data, 0644); err != nil {
-		slog.Warn("Failed to write .dockerignore atomically to project", "path", ignorePath, "error", err)
-		return
+	if shouldScan && logCallback != nil {
+		if data, err := os.ReadFile(ignorePath); err == nil {
+			content := string(data)
+			lines := strings.Split(content, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "dist/") || strings.HasPrefix(line, "/dist/") ||
+					strings.HasPrefix(line, "build/") || strings.HasPrefix(line, "/build/") ||
+					line == "dist" || line == "/dist" || line == "build" || line == "/build" {
+					logCallback(">> WARNING: Your .dockerignore excludes 'dist/' or 'build/'. TypeScript compiled output will not be cached between builds, increasing build times. Consider removing these exclusions.")
+					break
+				}
+			}
+		}
 	}
-
-	slog.Debug("Injected default .dockerignore", "path", ignorePath)
 }
 
 // PruneProjectImages removes older images for a project keeping only the latest maxRetention unique versions
