@@ -360,7 +360,7 @@ export default function Databases() {
                       {t('databaseManager.detach')}
                     </Button>
                     <Link
-                      to={`/projects/${selectedDb.project.uid}/database`}
+                      to={`/projects/${selectedDb.project.uid}?tab=database`}
                       className={cn(buttonVariants({ variant: "default", size: "sm" }), "text-xs font-bold uppercase flex items-center gap-2")}
                     >
                       {t('databaseManager.openStudio')}
