@@ -433,7 +433,7 @@ export default function Databases() {
                   <Card key={item.key} className="group hover:border-primary/20 transition-colors">
                     <CardContent className="p-4 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{item.label}</p>
+                        <p className="text-xs text-muted-foreground font-medium mb-1.5">{item.label}</p>
                         <p className="font-mono text-sm font-semibold mt-1 text-foreground truncate">{item.value}</p>
                       </div>
                       <Button
@@ -582,8 +582,8 @@ export default function Databases() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-6 h-6" />
-              <DialogTitle className="text-lg font-bold">{t('databaseManager.resetConfirm')}</DialogTitle>
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t('databaseManager.resetConfirm')}</DialogTitle>
             </div>
             <DialogDescription className="text-xs leading-relaxed">
               {t('databaseManager.resetDesc')}
@@ -591,26 +591,26 @@ export default function Databases() {
           </DialogHeader>
 
           <div className="py-4 space-y-2">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <p className="text-xs text-muted-foreground font-medium mb-1.5">
               {t('databaseManager.typeToConfirm', { name: selectedDb?.name || '' })}
             </p>
             <Input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={selectedDb?.name}
-              className="h-10 text-xs font-bold tracking-widest uppercase"
+              className="h-9 text-xs font-mono"
             />
           </div>
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowResetModal(false)} className="text-xs font-bold uppercase tracking-wider">
+            <Button variant="ghost" onClick={() => setShowResetModal(false)} className="text-xs font-medium">
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleReset}
               disabled={confirmText !== selectedDb?.name || isActionLoading}
-              className="text-xs font-bold uppercase tracking-widest"
+              className="text-xs font-medium"
             >
               {t('databaseManager.resetAction')}
             </Button>
@@ -624,7 +624,7 @@ export default function Databases() {
           <DialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
               <AlertTriangle className="w-6 h-6 animate-pulse" />
-              <DialogTitle className="text-lg font-bold">{t('databaseManager.reinstallConfirm')}</DialogTitle>
+              <DialogTitle className="text-base font-semibold">{t('databaseManager.reinstallConfirm')}</DialogTitle>
             </div>
             <DialogDescription className="text-xs leading-relaxed">
               {t('databaseManager.reinstallDesc')}
@@ -632,26 +632,26 @@ export default function Databases() {
           </DialogHeader>
 
           <div className="py-4 space-y-2">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <p className="text-xs text-muted-foreground font-medium mb-1.5">
               {t('databaseManager.typeToConfirm', { name: selectedDb?.name || '' })}
             </p>
             <Input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={selectedDb?.name}
-              className="h-10 text-xs font-bold tracking-widest uppercase"
+              className="h-9 text-xs font-mono"
             />
           </div>
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowReinstallModal(false)} className="text-xs font-bold uppercase tracking-wider">
+            <Button variant="ghost" onClick={() => setShowReinstallModal(false)} className="text-xs font-medium">
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleReinstall}
               disabled={confirmText !== selectedDb?.name || isActionLoading}
-              className="text-xs font-bold uppercase tracking-widest"
+              className="text-xs font-medium"
             >
               {t('databaseManager.reinstallAction')}
             </Button>
@@ -665,7 +665,7 @@ export default function Databases() {
           <DialogHeader>
             <div className="flex items-center gap-3 text-primary mb-2">
               <Settings className="w-6 h-6 animate-spin-slow" />
-              <DialogTitle className="text-lg font-bold">{t("databaseManager.redeployTitle")}</DialogTitle>
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.redeployTitle")}</DialogTitle>
             </div>
             <DialogDescription className="text-xs leading-relaxed">
               {t('databaseManager.redeployConfirm')}
@@ -673,13 +673,13 @@ export default function Databases() {
           </DialogHeader>
 
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowRedeployModal(false)} className="text-xs font-bold uppercase tracking-wider">
+            <Button variant="ghost" onClick={() => setShowRedeployModal(false)} className="text-xs font-medium">
               {t('databaseManager.later')}
             </Button>
             <Button
               onClick={handleRedeploy}
               disabled={isActionLoading}
-              className="text-xs font-bold uppercase tracking-widest"
+              className="text-xs font-medium"
             >
               {t('databaseManager.redeployNow')}
             </Button>
