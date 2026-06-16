@@ -43,6 +43,14 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if req.GithubInstallationID != nil && *req.GithubInstallationID != 0 {
+		if req.GithubRepoOwner == "" || req.GithubRepoName == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "GitHub repository owner and name are required when installation ID is provided",
+			})
+		}
+	}
+
+	if req.GithubInstallationID != nil && *req.GithubInstallationID != 0 {
 		var localInst models.GithubAppInstallation
 		if err := h.db.Where("installation_id = ? AND user_id = ?", *req.GithubInstallationID, userID).First(&localInst).Error; err != nil {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{

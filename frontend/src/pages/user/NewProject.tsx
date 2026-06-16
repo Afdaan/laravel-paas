@@ -397,7 +397,11 @@ function UserNewProject() {
     setSubmitError(null)
 
     try {
-      const response = await projectsAPI.create(formData)
+      const payload = {
+        ...formData,
+        port: formData.port === '' ? undefined : Number(formData.port),
+      }
+      const response = await projectsAPI.create(payload)
       toast.success(t('common.success'))
       navigate(`/projects/${response.data.project.uid}`)
     } catch (error: unknown) {
@@ -556,6 +560,16 @@ function UserNewProject() {
                                 if (val) {
                                   setSelectedInstallationId(val)
                                   loadRepositories(val)
+                                  setSelectedRepoFullName('')
+                                  setBranches([])
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    github_url: '',
+                                    github_installation_id: undefined,
+                                    github_repo_owner: undefined,
+                                    github_repo_name: undefined,
+                                    branch: '',
+                                  }))
                                 }
                               }}
                             >
