@@ -178,9 +178,10 @@ func FormatEnvMap(envMap map[string]string) string {
 }
 
 func quoteEnvValue(val string) string {
+	val = strings.TrimSpace(val)
 	if len(val) >= 2 {
 		if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
-			return val
+			val = val[1 : len(val)-1]
 		}
 	}
 

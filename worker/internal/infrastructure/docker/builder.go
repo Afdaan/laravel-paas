@@ -123,8 +123,14 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		finalMemory = memoryLimit
 	}
 
-	// Web-facing by default unless port is explicitly set to <= 0.
-	isWebFacing := project.Port == nil || *project.Port > 0
+	// Web-facing if port is explicitly > 0, or if it's a legacy Laravel app with no port defined.
+	// If project.Port is nil here, it means the user didn't set a port AND no port was detected from the image.
+	isWebFacing := false
+	if project.Port != nil {
+		isWebFacing = *project.Port > 0
+	} else if project.Framework == "Laravel" {
+		isWebFacing = true
+	}
 	if !isWebFacing {
 		slog.Info("Project classified as non-web", "subdomain", project.Subdomain, "framework", project.Framework)
 	}

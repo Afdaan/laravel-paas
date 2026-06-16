@@ -64,7 +64,12 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 	}
 
 	// Determine if container exposes a web port
-	isWebFacing := project.Port == nil || *project.Port > 0
+	isWebFacing := false
+	if project.Port != nil {
+		isWebFacing = *project.Port > 0
+	} else if project.Framework == "Laravel" {
+		isWebFacing = true
+	}
 	announce(">> Starting readiness probe and stabilization checks...")
 
 	// Startup grace period for slow-starting non-Laravel frameworks
