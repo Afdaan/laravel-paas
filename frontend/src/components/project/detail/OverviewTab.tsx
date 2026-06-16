@@ -93,29 +93,31 @@ export function OverviewTab({ project, projectUrl, isLaravelProject, activeCommi
 
                 {/* Pending domains hint */}
                 {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 0 && (
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={() => onTabChange('domains')}
-                    className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30 transition-colors cursor-pointer group"
+                    className="w-full flex items-center justify-between px-4 py-2.5 h-auto rounded-xl border-dashed border-amber-500/20 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30 group"
                   >
                     <span className="text-[11px] font-semibold">
                       {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length} domain
                       {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 1 ? 's' : ''} pending verification
                     </span>
                     <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
 
             {/* Empty state: invite to add domains */}
             {(!project.custom_domains || project.custom_domains.length === 0) && (
-              <button
+              <Button
+                variant="outline"
                 onClick={() => onTabChange('domains')}
-                className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-dashed border-muted-foreground/15 bg-muted/20 text-muted-foreground hover:border-primary/20 hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer group"
+                className="w-full flex items-center justify-between px-4 py-2.5 h-auto rounded-xl border-dashed border-muted-foreground/15 bg-muted/20 text-muted-foreground hover:border-primary/20 hover:text-primary hover:bg-primary/5 group"
               >
                 <span className="text-[11px] font-medium">Add a custom domain</span>
                 <ExternalLink className="w-3.5 h-3.5 opacity-40 group-hover:opacity-80 transition-opacity" />
-              </button>
+              </Button>
             )}
           </CardContent>
         </Card>
@@ -167,24 +169,28 @@ export function OverviewTab({ project, projectUrl, isLaravelProject, activeCommi
                   <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest block">
                     {t('projectDetail.runtime.activeCommit') || 'Active Commit'}
                   </label>
-                  <button
+                  <Button
+                    variant="link"
+                    size="sm"
                     onClick={() => onTabChange('runtime')}
-                    className="text-[10px] font-bold text-primary hover:text-primary/80 hover:underline flex items-center gap-0.5 transition-all group cursor-pointer"
+                    className="text-[10px] font-bold text-primary hover:text-primary/80 h-auto p-0 gap-0.5 group"
                     title={t('projectDetail.runtime.goToCheckpointsTooltip') || 'Go to Deployment Checkpoints'}
                   >
                     {t('projectDetail.runtime.goToCheckpoints') || 'Go to Checkpoints'}
                     <ArrowUpRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                  </button>
+                  </Button>
                 </div>
                 <div className="flex items-start gap-2">
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => onTabChange('runtime')}
-                    className="group flex shrink-0 items-center gap-1 font-mono font-bold text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-1.5 py-0.5 rounded border border-primary/20 transition-all hover:scale-105"
+                    className="group shrink-0 font-mono font-bold text-[10px] bg-primary/10 hover:bg-primary/20 text-primary h-auto px-1.5 py-0.5 border-primary/20 gap-1"
                     title={t('projectDetail.runtime.goToCheckpointsTooltip') || 'View in Deployment Checkpoints'}
                   >
                     {activeCommit.shortSha}
                     <ArrowUpRight className="w-3 h-3 text-primary/70 group-hover:text-primary transition-colors" />
-                  </button>
+                  </Button>
                   {activeCommit.message ? (
                     <span className="min-w-0 text-[11px] leading-5 text-foreground/85 font-medium break-words" title={activeCommit.message}>
                       {activeCommit.message}

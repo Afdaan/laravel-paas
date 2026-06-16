@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { siMysql, siPostgresql } from 'simple-icons'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -465,7 +466,8 @@ function UserNewProject() {
                   </Label>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <button
+                  <Button
+                    variant="outline"
                     type="button"
                     onClick={() => {
                       setConnectionMode('app')
@@ -480,7 +482,7 @@ function UserNewProject() {
                       setBranches([])
                     }}
                     className={cn(
-                      "flex items-center justify-center gap-3 p-4 rounded-xl border text-sm font-semibold transition-all duration-200",
+                      "flex items-center justify-center gap-3 p-4 h-auto rounded-xl text-sm font-semibold",
                       connectionMode === 'app'
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:border-muted-foreground/30 hover:bg-muted/10 text-muted-foreground"
@@ -488,8 +490,9 @@ function UserNewProject() {
                   >
                     <GithubIcon className="w-5 h-5" />
                     {t('newProject.githubApp')}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="outline"
                     type="button"
                     onClick={() => {
                       setConnectionMode('manual')
@@ -501,7 +504,7 @@ function UserNewProject() {
                       }))
                     }}
                     className={cn(
-                      "flex items-center justify-center gap-3 p-4 rounded-xl border text-sm font-semibold transition-all duration-200",
+                      "flex items-center justify-center gap-3 p-4 h-auto rounded-xl text-sm font-semibold",
                       connectionMode === 'manual'
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:border-muted-foreground/30 hover:bg-muted/10 text-muted-foreground"
@@ -509,7 +512,7 @@ function UserNewProject() {
                   >
                     <Terminal className="w-5 h-5" />
                     {t('newProject.manualGitUrl')}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -826,26 +829,15 @@ function UserNewProject() {
                           <span className="text-[10px] text-muted-foreground">Provision a secure, isolated database with one click</span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
+                      <Switch
+                        checked={formData.enable_database}
+                        onCheckedChange={(checked) => {
                           setFormData(prev => ({
                             ...prev,
-                            enable_database: !prev.enable_database
+                            enable_database: checked
                           }))
                         }}
-                        className={cn(
-                          "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                          formData.enable_database ? "bg-primary" : "bg-muted"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out",
-                            formData.enable_database ? "translate-x-5" : "translate-x-0"
-                          )}
-                        />
-                      </button>
+                      />
                     </div>
 
                     <div

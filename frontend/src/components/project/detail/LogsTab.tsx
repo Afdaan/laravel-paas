@@ -46,46 +46,53 @@ export function LogsTab({
           </div>
           <div className="h-4 w-px bg-white/10 mx-2" />
           <div className="flex bg-zinc-950 p-0.5 rounded-md border border-white/5">
-            <button
+            <Button
+              variant={logType === 'web' ? "default" : "ghost"}
+              size="xs"
               onClick={() => setLogType('web')}
               className={cn(
-                "px-3 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
-                logType === 'web' ? "bg-primary text-primary-foreground shadow-lg" : "text-zinc-500 hover:text-zinc-300"
+                "px-3 py-1 rounded text-[9px] font-bold uppercase tracking-wider",
+                logType !== 'web' && "text-zinc-500 hover:text-zinc-300"
               )}
             >
               {t('projectDetail.logs.web')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant={logType === 'worker' ? "default" : "ghost"}
+              size="xs"
               onClick={() => setLogType('worker')}
               disabled={!project.worker_container_id && !project.queue_enabled}
               className={cn(
-                "px-3 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
-                logType === 'worker' ? "bg-primary text-primary-foreground shadow-lg" : "text-zinc-500 hover:text-zinc-300",
-                (!project.worker_container_id && !project.queue_enabled) && "opacity-30 cursor-not-allowed"
+                "px-3 py-1 rounded text-[9px] font-bold uppercase tracking-wider",
+                logType !== 'worker' && "text-zinc-500 hover:text-zinc-300"
               )}
             >
               {t('projectDetail.logs.worker')}
-            </button>
+            </Button>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => { navigator.clipboard.writeText(visibleLogsText); toast.success(t('common.copySuccess')) }}
-            className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
+            className="h-7 w-7 text-zinc-500 hover:text-white hover:bg-white/10"
             title={t('projectDetail.logs.copy')}
           >
             <Copy className="w-3.5 h-3.5" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               const el = document.getElementById('runtime-logs-scroll');
               if (el) el.scrollTop = el.scrollHeight;
             }}
-            className="p-1.5 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-white cursor-pointer"
+            className="h-7 w-7 text-zinc-500 hover:text-white hover:bg-white/10"
             title={t('projectDetail.logs.scrollToBottom')}
           >
             <ChevronsDown className="w-3.5 h-3.5" />
-          </button>
+          </Button>
           <div className="w-px h-3 bg-white/10 mx-1" />
           <Button variant="ghost" size="xs" onClick={onClearLogs} className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 cursor-pointer">{t('projectDetail.actions.clear')}</Button>
           <Button variant="ghost" size="xs" onClick={onRefreshLogs} className="h-6 w-6 cursor-pointer"><RefreshCw size={12} /></Button>

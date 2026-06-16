@@ -362,9 +362,10 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
           {/* Logo Branding */}
           <div className="relative px-3 py-4 flex items-center h-[72px]">
-            <button
+            <Button
+              variant="ghost"
               type="button"
-              className="flex min-w-0 items-center rounded-lg p-2 text-left transition-all duration-300 hover:bg-muted justify-start"
+              className="flex min-w-0 items-center rounded-lg p-2 text-left h-auto justify-start"
               onClick={() => {
                 if (!isVisualExpanded) {
                   setIsSidebarCollapsed(false);
@@ -379,8 +380,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 <span className="text-xs font-bold tracking-tighter">LP</span>
               </div>
               <div className={`min-w-0 text-left transition-all ease-in-out ${
-                isVisualExpanded 
-                  ? 'opacity-100 max-w-[150px] ml-3 duration-300 delay-100' 
+                isVisualExpanded
+                  ? 'opacity-100 max-w-[150px] ml-3 duration-300 delay-100'
                   : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
               }`}>
                 <h1 className="truncate text-base font-semibold tracking-tight whitespace-nowrap">PaaS</h1>
@@ -388,7 +389,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   {isAdmin ? t('common.globalAdmin') : t('common.user')}
                 </p>
               </div>
-            </button>
+            </Button>
 
             <div className={`absolute right-3 transition-all duration-300 ${
               isVisualExpanded ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-75 pointer-events-none'

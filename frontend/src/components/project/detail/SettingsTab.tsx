@@ -425,16 +425,18 @@ export function SettingsTab({
                   </Button>
                 </div>
                 {branchesList.length > 0 && (
-                  <button
+                  <Button
+                    variant="link"
                     type="button"
+                    size="sm"
                     onClick={() => setForceManualInput(!forceManualInput)}
-                    className="text-[9px] text-primary hover:underline font-semibold cursor-pointer block mt-1 pl-0.5"
+                    className="text-[9px] text-primary font-semibold h-auto p-0 mt-1 pl-0.5"
                   >
                     {forceManualInput
                       ? t('projectDetail.settings.useDropdown') || 'Select branch from list'
                       : t('projectDetail.settings.typeManually') || 'Use manual text input'
                     }
-                  </button>
+                  </Button>
                 )}
                 <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
                   <AlertTriangle size={10} className="text-amber-500/50" /> {t('projectDetail.settings.redeployWarningBranch')}

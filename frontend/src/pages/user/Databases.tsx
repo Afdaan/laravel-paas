@@ -235,10 +235,10 @@ export default function Databases() {
 
       {/* Sidebar - Database List */}
       <div className="w-full lg:w-72 flex-shrink-0 flex flex-col">
-        <Card className="flex flex-col overflow-hidden h-full pt-0">
+        <Card className="flex flex-col overflow-hidden h-full pt-0 shadow-sm">
           <CardHeader className="bg-muted/30 border-b py-4">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
                 <DbIcon className="w-4 h-4" />
               </div>
               <div>
@@ -264,15 +264,15 @@ export default function Databases() {
                   key={db.id}
                   onClick={() => setSelectedDbId(db.id)}
                   className={cn(
-                    "w-full text-left p-3 rounded-lg transition-all border group focus:outline-none",
+                    "w-full text-left p-3 rounded-lg transition-all border group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     selectedDbId === db.id
-                      ? 'bg-primary/10 border-primary/30 shadow-sm'
-                      : 'border-transparent hover:bg-muted hover:border-border'
+                      ? 'bg-primary/10 border-primary/30 shadow-sm ring-1 ring-primary/10'
+                      : 'border-transparent hover:bg-muted/80 hover:border-border/50'
                   )}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className={cn(
-                      "font-bold text-xs uppercase tracking-tight truncate max-w-[150px]",
+                      "font-bold text-xs tracking-tight truncate max-w-[150px]",
                       selectedDbId === db.id ? 'text-primary' : 'text-foreground'
                     )}>
                       {db.name}
@@ -283,7 +283,7 @@ export default function Databases() {
                         db.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
                       )} />
                       <Badge variant="outline" className={cn(
-                        "text-[9px] font-extrabold uppercase px-1.5 py-0",
+                        "text-[9px] font-bold uppercase px-1.5 py-0 h-4",
                         db.engine === 'mysql'
                           ? 'border-amber-500/20 bg-amber-500/5 text-amber-500'
                           : 'border-blue-500/20 bg-blue-500/5 text-blue-500'
@@ -293,9 +293,9 @@ export default function Databases() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1.5 border-t border-border/10 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <div className="flex items-center justify-between pt-1.5 border-t border-border/50 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     <span>{db.project_id !== null ? t('databaseManager.attachedTo') : t('databaseManager.unattached')}</span>
-                    <span className={cn("truncate max-w-[100px]", db.project_id !== null ? "text-primary" : "text-muted-foreground/50")}>
+                    <span className={cn("truncate max-w-[100px] font-semibold", db.project_id !== null ? "text-primary" : "text-muted-foreground/50")}>
                       {db.project_id !== null && db.project ? db.project.name : '—'}
                     </span>
                   </div>
@@ -311,7 +311,7 @@ export default function Databases() {
       </div>
 
       {/* Main Content - Database Details */}
-      <Card className="flex-1 overflow-hidden flex flex-col relative">
+      <Card className="flex-1 overflow-hidden flex flex-col relative shadow-sm">
         {selectedDb ? (
           <div className="flex-1 overflow-auto p-6 space-y-6 scrollbar-thin">
             {/* Header section */}
@@ -319,11 +319,11 @@ export default function Databases() {
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h1 className="text-xl font-black tracking-tight text-foreground">{selectedDb.name}</h1>
-                  <Badge variant={selectedDb.status === 'active' ? 'default' : 'destructive'} className="text-[10px] font-bold uppercase">
+                  <Badge variant={selectedDb.status === 'active' ? 'default' : 'destructive'} className="text-[10px] font-bold uppercase tracking-wide">
                     {selectedDb.status}
                   </Badge>
                   <Badge variant="outline" className={cn(
-                    "text-[10px] font-black uppercase",
+                    "text-[10px] font-bold uppercase tracking-wide",
                     selectedDb.engine === 'mysql'
                       ? 'border-amber-500/30 bg-amber-500/5 text-amber-500'
                       : 'border-blue-500/30 bg-blue-500/5 text-blue-500'
@@ -418,7 +418,7 @@ export default function Databases() {
 
             {/* Connection Information */}
             <div className="space-y-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                 <Lock className="w-3.5 h-3.5 shrink-0 text-primary" />
                 {t('databaseManager.credsTitle')}
               </h3>
@@ -430,22 +430,22 @@ export default function Databases() {
                   { label: t('databaseManager.dbName'), value: selectedDb.name, key: 'Database' },
                   { label: t('databaseManager.userName'), value: selectedDb.username, key: 'Username' }
                 ].map(item => (
-                  <Card key={item.key}>
+                  <Card key={item.key} className="group hover:border-primary/20 transition-colors">
                     <CardContent className="p-4 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{item.label}</p>
-                        <p className="font-mono text-sm font-semibold mt-0.5 text-foreground truncate">{item.value}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{item.label}</p>
+                        <p className="font-mono text-sm font-semibold mt-1 text-foreground truncate">{item.value}</p>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => handleCopy(item.value, item.label)}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        className="shrink-0 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         {copiedField === item.label ? (
-                          <Check className="w-4 h-4 text-emerald-500" />
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
                         ) : (
-                          <Copy className="w-4 h-4" />
+                          <Copy className="w-3.5 h-3.5" />
                         )}
                       </Button>
                     </CardContent>
@@ -456,11 +456,13 @@ export default function Databases() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Card>
-                <CardContent className="p-4 space-y-1.5">
+              <Card className="hover:border-primary/20 transition-colors">
+                <CardContent className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t("databaseManager.engine")}</span>
-                    <Layers className="w-4 h-4 shrink-0 text-primary" />
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.engine")}</span>
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Layers className="w-4 h-4 shrink-0 text-primary" />
+                    </div>
                   </div>
                   <p className="text-lg font-bold tracking-tight uppercase text-foreground">
                     {selectedDb.engine}
@@ -468,11 +470,13 @@ export default function Databases() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-4 space-y-1.5">
+              <Card className="hover:border-primary/20 transition-colors">
+                <CardContent className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t("databaseManager.storage")}</span>
-                    <HardDrive className="w-4 h-4 shrink-0 text-primary" />
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.storage")}</span>
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <HardDrive className="w-4 h-4 shrink-0 text-primary" />
+                    </div>
                   </div>
                   <p className="text-lg font-bold tracking-tight text-foreground">
                     1.0 GB
@@ -483,11 +487,13 @@ export default function Databases() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-4 space-y-1.5">
+              <Card className="hover:border-primary/20 transition-colors">
+                <CardContent className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t("databaseManager.tablesLabel")}</span>
-                    <DbIcon className="w-4 h-4 shrink-0 text-primary" />
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.tablesLabel")}</span>
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <DbIcon className="w-4 h-4 shrink-0 text-primary" />
+                    </div>
                   </div>
                   <p className="text-lg font-bold tracking-tight text-foreground">
                     {selectedDb.table_count || '—'}
@@ -498,11 +504,13 @@ export default function Databases() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="p-4 space-y-1.5">
+              <Card className="hover:border-primary/20 transition-colors">
+                <CardContent className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t("databaseManager.connections")}</span>
-                    <RefreshCw className="w-4 h-4 shrink-0 text-primary" />
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("databaseManager.connections")}</span>
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <RefreshCw className="w-4 h-4 shrink-0 text-primary" />
+                    </div>
                   </div>
                   <p className="text-lg font-bold tracking-tight text-foreground">
                     {selectedDb.connection_count || 0}
@@ -516,43 +524,47 @@ export default function Databases() {
 
             {/* Danger Zone */}
             <div className="pt-4 border-t border-border/40">
-              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-5 space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-destructive" />
-                  <div>
-                    <h3 className="font-bold text-sm text-destructive uppercase tracking-wide">{t("databaseManager.dangerZone")}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">{t("databaseManager.destructiveActions")}</p>
+              <Card className="border-destructive/20 bg-destructive/5 shadow-none">
+                <CardContent className="p-5 space-y-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-destructive" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-destructive uppercase tracking-wide">{t("databaseManager.dangerZone")}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">{t("databaseManager.destructiveActions")}</p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      setConfirmText('')
-                      setShowResetModal(true)
-                    }}
-                    className="text-xs font-bold uppercase"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0 mr-1.5" />
-                    {t('databaseManager.reset')}
-                  </Button>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setConfirmText('')
+                        setShowResetModal(true)
+                      }}
+                      className="text-xs font-bold uppercase gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      {t('databaseManager.reset')}
+                    </Button>
 
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      setConfirmText('')
-                      setShowReinstallModal(true)
-                    }}
-                    className="text-xs font-bold uppercase"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 shrink-0 mr-1.5" />
-                    {t('databaseManager.reinstall')}
-                  </Button>
-                </div>
-              </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setConfirmText('')
+                        setShowReinstallModal(true)
+                      }}
+                      className="text-xs font-bold uppercase gap-1.5"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                      {t('databaseManager.reinstall')}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         ) : (
