@@ -775,6 +775,22 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 			}
 		}
 
+		// Inject PORT based on project configuration to ensure deploy phase uses the correct port
+		if project.Port != nil {
+			if _, exists := config["deploy"]; !exists {
+				config["deploy"] = make(map[string]interface{})
+			}
+			if deploy, ok := config["deploy"].(map[string]interface{}); ok {
+				if _, exists := deploy["variables"]; !exists {
+					deploy["variables"] = make(map[string]interface{})
+				}
+				if vars, ok := deploy["variables"].(map[string]interface{}); ok {
+					vars["PORT"] = fmt.Sprintf("%d", *project.Port)
+					modified = true
+				}
+			}
+		}
+
 		if modified {
 			if newData, err := json.MarshalIndent(config, "", "  "); err == nil {
 				templateData = newData
