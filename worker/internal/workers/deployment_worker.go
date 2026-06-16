@@ -1041,7 +1041,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"port":                 project.Port,
 	})
 
-	appendLog(">> Running health checks...")
+	appendLog(">> Starting container readiness checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
 	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog); err != nil {

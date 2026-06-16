@@ -216,6 +216,10 @@ const pendingDeploymentLogCopy = {
     'Retrieving project source code and configuration.',
     'Build output will appear here as soon as the worker starts.',
   ],
+  healthchecking: [
+    'Running readiness checks on the new container.',
+    'Waiting for the application to respond before promoting traffic.',
+  ],
   initializing: [
     'Initializing deployment log stream.',
     'Build output will appear here as soon as the worker starts.',
@@ -283,6 +287,10 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
     if (deploymentStatus === 'cloning') {
       return pendingDeploymentLogCopy.cloning
+    }
+
+    if (deploymentStatus === 'healthchecking') {
+      return pendingDeploymentLogCopy.healthchecking
     }
 
     return pendingDeploymentLogCopy.initializing

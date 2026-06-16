@@ -57,15 +57,19 @@ func (s *DockerService) probeHTTP(ctx context.Context, url string) error {
 // logCallback is optional and used for appending events directly to the user deployment timeline.
 func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string, logCallback func(string)) error {
 	slog.Info("Starting advanced healthcheck probe", "projectId", project.ID, "containerId", containerID)
+	announce := func(message string) {
+		if logCallback != nil {
+			logCallback(message)
+		}
+	}
 
 	// Determine if container exposes a web port
 	isWebFacing := project.Port == nil || *project.Port > 0
+	announce(">> Starting readiness probe and stabilization checks...")
 
 	// Startup grace period for slow-starting non-Laravel frameworks
 	if !strings.EqualFold(project.Framework, "Laravel") {
-		if logCallback != nil {
-			logCallback(">> Waiting 5 seconds before starting health probes...")
-		}
+		announce(">> Allowing the application a short startup window before probing...")
 		slog.Info("Applying 5s startup grace period before health probes", "framework", project.Framework, "subdomain", project.Subdomain)
 		select {
 		case <-time.After(5 * time.Second):
@@ -77,6 +81,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 	maxAttempts := 45 // Increased to give larger total readiness budget for slow-starting apps (Prisma init, DB pool warmup)
 	currentInterval := 200 * time.Millisecond
 	isReady := false
+	probeHintLogged := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		select {
@@ -85,7 +90,14 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 		default:
 		}
 
+		if attempt == 1 || attempt == 10 || attempt == 25 || attempt == 40 {
+			announce(fmt.Sprintf(">> Readiness probe attempt %d of %d...", attempt, maxAttempts))
+		}
+
 		// Fail fast if the container crashed or stopped running during the check
+		if attempt == 1 {
+			announce(">> Checking whether the container is still running...")
+		}
 		running, runErr := s.IsContainerRunning(containerID)
 		if runErr == nil && !running {
 			logs, _ := s.GetLogs(containerID, 15)
@@ -93,6 +105,10 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 		}
 
 		if s.IsContainerHealthy(containerID) {
+			if !probeHintLogged {
+				announce(">> Container is healthy. Verifying application HTTP readiness...")
+				probeHintLogged = true
+			}
 			if isWebFacing {
 				ip, ipErr := s.GetContainerIP(containerID)
 				if ipErr == nil {
@@ -134,6 +150,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 	}
 
 	// 2. Stabilization window
+	announce(">> Readiness confirmed. Entering stabilization window...")
 	slog.Info("Container readiness verified, entering stabilization monitoring window (2s)", "containerId", containerID)
 	select {
 	case <-ctx.Done():
@@ -141,12 +158,14 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 	case <-time.After(2 * time.Second):
 	}
 
+	announce(">> Re-checking container health after stabilization...")
 	if !s.IsContainerHealthy(containerID) {
 		logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
 		return fmt.Errorf("[RUNTIME_FAILED] Container crashed during stabilization window. Last logs:\n%s", logs)
 	}
 
 	if isWebFacing {
+		announce(">> Re-confirming HTTP readiness after stabilization...")
 		ip, _ := s.GetContainerIP(containerID)
 		url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
 		if err := s.probeHTTP(ctx, url); err != nil {
@@ -155,6 +174,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 		}
 	}
 
+	announce("✓ Advanced healthcheck completed successfully.")
 	slog.Info("Advanced healthcheck completed successfully", "containerId", containerID)
 	return nil
 }
