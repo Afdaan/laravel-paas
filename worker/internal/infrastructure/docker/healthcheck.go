@@ -63,8 +63,10 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 
 	// Startup grace period for slow-starting non-Laravel frameworks
 	if !strings.EqualFold(project.Framework, "Laravel") {
-		if logCallback != nil { logCallback(">> Waiting 5 seconds for non-Laravel framework to initialize before probing...") }
-		slog.Info("Applying 5s startup grace period for non-Laravel framework", "framework", project.Framework, "subdomain", project.Subdomain)
+		if logCallback != nil {
+			logCallback(">> Waiting 5 seconds before starting health probes...")
+		}
+		slog.Info("Applying 5s startup grace period before health probes", "framework", project.Framework, "subdomain", project.Subdomain)
 		select {
 		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
