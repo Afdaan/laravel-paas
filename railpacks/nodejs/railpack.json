@@ -13,14 +13,6 @@
       "directory": ".tsbuildinfo"
     }
   },
-  "steps": {
-    "install": {
-      "commands": []
-    },
-    "build": {
-      "commands": []
-    }
-  },
   "deploy": {
     "base": {
       "image": "node:{{VERSION}}-slim"
