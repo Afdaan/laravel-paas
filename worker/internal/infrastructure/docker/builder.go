@@ -96,6 +96,9 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
 		p := detectedPort
 		project.Port = &p
+		if s.GetDB() != nil {
+			s.GetDB().Model(project).UpdateColumn("port", detectedPort)
+		}
 	}
 
 	// 4. Determine Final Internal Port for Traefik
@@ -134,10 +137,10 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
-		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
 		"--env-file", filepath.Join(projectPath, ".env"),
+		"-e", fmt.Sprintf("PORT=%s", internalPort),
 	}
 
 	if isWebFacing {
@@ -697,6 +700,33 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 			}
 		}
 
+		// Add support for tsc build cache if applicable
+		if stack == "nodejs" {
+			hasTsConfig := false
+			if _, err := os.Stat(filepath.Join(buildPath, "tsconfig.json")); err == nil {
+				hasTsConfig = true
+			}
+			if hasTsConfig && buildCmd != "" {
+				// Only augment real tsc invocations, not npm run build strings.
+				cmds := strings.Split(buildCmd, "&&")
+				var trimmedCmds []interface{}
+				for _, c := range cmds {
+					c = strings.TrimSpace(c)
+					if strings.HasPrefix(c, "tsc") && !strings.Contains(c, "--incremental") {
+						// Explicitly specify tsbuildinfo path to match railpack.json cache definition
+						c += " --incremental --tsBuildInfoFile .tsbuildinfo"
+					}
+					trimmedCmds = append(trimmedCmds, c)
+				}
+				if steps, ok := config["steps"].(map[string]interface{}); ok {
+					if buildStep, ok := steps["build"].(map[string]interface{}); ok {
+						buildStep["commands"] = trimmedCmds
+						modified = true
+					}
+				}
+			}
+		}
+
 		if startCmd != "" {
 			if _, exists := config["deploy"]; !exists {
 				config["deploy"] = make(map[string]interface{})
@@ -753,15 +783,22 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 
 func (s *DockerService) injectDockerIgnore(projectPath string) {
 	ignorePath := filepath.Join(projectPath, ".dockerignore")
-	if _, err := os.Stat(ignorePath); err == nil {
-		// User already has a .dockerignore, respect it
-		return
-	}
-
 	templatePath := filepath.Join("/app/docker/templates", ".dockerignore")
 	// Fallback to local path for dev environment
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		templatePath = "docker/templates/.dockerignore"
+	}
+
+	if currentData, err := os.ReadFile(ignorePath); err == nil {
+		// User already has a .dockerignore. Check if it's our older template.
+		// The old template had "/build/" and "/dist/" but the new one does not.
+		// If they have our exact old signature header, or specifically the old build exclusions, we overwrite.
+		content := string(currentData)
+		if strings.Contains(content, "# Laravel PaaS - Docker Ignore File") && strings.Contains(content, "/build/") && strings.Contains(content, "/dist/") {
+			slog.Info("Found older generated .dockerignore template, updating to new version to improve caching", "path", ignorePath)
+		} else {
+			return // It's a genuine user file or an already-updated template. Respect it.
+		}
 	}
 
 	data, err := os.ReadFile(templatePath)

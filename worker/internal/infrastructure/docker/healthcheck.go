@@ -54,15 +54,25 @@ func (s *DockerService) probeHTTP(ctx context.Context, url string) error {
 }
 
 // AdvancedHealthcheck runs a production readiness probe with exponential backoff and a stabilization monitoring window.
-func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string) error {
+// logCallback is optional and used for appending events directly to the user deployment timeline.
+func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string, logCallback func(string)) error {
 	slog.Info("Starting advanced healthcheck probe", "projectId", project.ID, "containerId", containerID)
 
 	// Determine if container exposes a web port
 	isWebFacing := project.Port == nil || *project.Port > 0
 
-	// Remove hardcoded startup grace period - rely on polling instead
+	// Startup grace period for slow-starting non-Laravel frameworks
+	if !strings.EqualFold(project.Framework, "Laravel") {
+		if logCallback != nil { logCallback(">> Waiting 5 seconds for non-Laravel framework to initialize before probing...") }
+		slog.Info("Applying 5s startup grace period for non-Laravel framework", "framework", project.Framework, "subdomain", project.Subdomain)
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	
-	maxAttempts := 30 // Restored to give larger total readiness budget
+	maxAttempts := 45 // Increased to give larger total readiness budget for slow-starting apps (Prisma init, DB pool warmup)
 	currentInterval := 200 * time.Millisecond
 	isReady := false
 

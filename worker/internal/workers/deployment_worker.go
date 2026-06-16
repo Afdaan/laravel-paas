@@ -1044,7 +1044,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	appendLog(">> Running health checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
-	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID); err != nil {
+	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
 

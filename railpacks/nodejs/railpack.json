@@ -8,6 +8,18 @@
     },
     "pnpm-store": {
       "directory": "/root/.local/share/pnpm/store"
+    },
+    "tsc-cache": {
+      "directory": ".tsbuildinfo",
+      "type": "cache"
+    }
+  },
+  "steps": {
+    "install": {
+      "commands": []
+    },
+    "build": {
+      "commands": []
     }
   },
   "deploy": {

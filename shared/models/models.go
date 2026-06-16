@@ -178,6 +178,9 @@ func (p *Project) GetInternalPort() string {
 	if strings.EqualFold(p.Framework, "Next.js") || strings.EqualFold(p.Framework, "Nuxt.js") {
 		return "3000"
 	}
+	if strings.EqualFold(p.Framework, "Node.js") || strings.EqualFold(p.Framework, "React") || strings.EqualFold(p.Framework, "Vue") || strings.EqualFold(p.Framework, "Svelte") || strings.EqualFold(p.Framework, "Angular") || strings.EqualFold(p.Framework, "TypeScript") || strings.EqualFold(p.Framework, "Vite") {
+		return "3000"
+	}
 	return "8080"
 }
 
