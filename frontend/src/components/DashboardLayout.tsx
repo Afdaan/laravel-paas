@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -121,7 +121,43 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const resizeFrameRef = useRef<number | null>(null)
+  const sidebarNavRef = useRef<HTMLElement | null>(null)
+  const mainContentRef = useRef<HTMLElement | null>(null)
   const isVisualExpanded = !isSidebarCollapsed || isHovered
+
+  /**
+   * Sidebar wheel handler: prevents sidebar from trapping scroll.
+   * - If sidebar nav has no overflow → forward all wheel delta to main content.
+   * - If sidebar nav has overflow but is at a scroll boundary in the wheel direction → forward remaining delta to main content.
+   * - Only let sidebar nav consume the event when it can actually scroll in that direction.
+   */
+  const handleSidebarWheel = useCallback((e: ReactWheelEvent<HTMLElement>) => {
+    const nav = sidebarNavRef.current
+    const main = mainContentRef.current
+    if (!main) return
+
+    // No nav or nav has no scrollable overflow → forward everything
+    if (!nav || nav.scrollHeight <= nav.clientHeight) {
+      e.preventDefault()
+      main.scrollTop += e.deltaY
+      if (e.deltaX) main.scrollLeft += e.deltaX
+      return
+    }
+
+    // Nav has overflow — check if it can scroll in the wheel direction
+    const atTop = nav.scrollTop <= 0
+    const atBottom = nav.scrollTop + nav.clientHeight >= nav.scrollHeight - 1
+    const scrollingDown = e.deltaY > 0
+    const scrollingUp = e.deltaY < 0
+
+    if ((scrollingDown && atBottom) || (scrollingUp && atTop)) {
+      // Nav cannot scroll further in this direction → forward to main
+      e.preventDefault()
+      main.scrollTop += e.deltaY
+      if (e.deltaX) main.scrollLeft += e.deltaX
+    }
+    // Otherwise let the nav scroll normally (no preventDefault)
+  }, [])
 
   useEffect(() => {
     if (!isSidebarCollapsed) {
@@ -338,7 +374,6 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         className={`relative shrink-0 z-50 ${isDragging ? '' : 'transition-[width] duration-300 ease-in-out'}`}
       >
         <aside 
-          style={{ width: !isVisualExpanded ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
           onMouseEnter={() => {
             if (isSidebarCollapsed) {
               setIsHovered(true)
@@ -347,22 +382,11 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           onMouseLeave={() => {
             setIsHovered(false)
           }}
-          onWheel={(e) => {
-            // Forward scroll events to the main content container when the sidebar doesn't overflow
-            const navElement = e.currentTarget.querySelector('nav');
-            if (navElement) {
-              const hasOverflow = navElement.scrollHeight > navElement.clientHeight;
-              if (!hasOverflow) {
-                const mainContent = document.getElementById('main-content');
-                if (mainContent) {
-                  mainContent.scrollTop += e.deltaY;
-                }
-              }
-            }
-          }}
+          onWheel={handleSidebarWheel}
           className={`absolute left-0 top-0 bottom-0 border-r bg-card flex flex-col z-50 select-none shrink-0 ${
             isDragging ? '' : 'transition-[width] duration-300 ease-in-out'
           } ${isHovered ? 'shadow-2xl' : ''}`}
+          style={{ width: !isVisualExpanded ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth, overscrollBehaviorY: 'contain' }}
         >
           {/* Resize Handle */}
           <div
@@ -443,7 +467,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           )}
 
           {/* Navigation Registry */}
-          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
+          <nav ref={sidebarNavRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-5" style={{ overscrollBehaviorY: 'contain' }}>
             {/* Main Group */}
             <div className="space-y-1">
               <h4 className={`px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider transition-all duration-300 ${
@@ -702,7 +726,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         </header>
 
         {/* Global Main Stream */}
-        <main id="main-content" className="flex-1 p-8 overflow-auto">
+        <main ref={mainContentRef} id="main-content" className="flex-1 p-8 overflow-auto">
           <Suspense fallback={<DashboardPageFallback label={t('common.loading')} />}>
             <Outlet />
           </Suspense>
