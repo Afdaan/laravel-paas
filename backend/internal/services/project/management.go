@@ -287,7 +287,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	return project, nil
 }
 
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled *bool, workerCommand *string, buildCommand, startCommand, nodeVersion string, languageVersion *string, port *int, githubURL string, githubInstallationID *int64, githubRepoOwner, githubRepoName *string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch string, phpVersion, nodeVersion *string, baseDirectory string, queueEnabled *bool, workerCommand *string, buildCommand, startCommand string, languageVersion *string, port *int, githubURL string, githubInstallationID *int64, githubRepoOwner, githubRepoName *string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -316,10 +316,20 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 		project.Name = name
 	}
 	project.Branch = branch
-	project.PHPVersion = phpVersion
+
+	// Flag as manual version if versions are explicitly set in settings payload and differ from current values
+	if (phpVersion != nil && *phpVersion != "" && *phpVersion != project.PHPVersion) ||
+		(nodeVersion != nil && *nodeVersion != "" && *nodeVersion != project.NodeVersion) ||
+		(languageVersion != nil && *languageVersion != "" && *languageVersion != project.LanguageVersion) {
+		project.IsManualVersion = true
+	}
+
+	if phpVersion != nil {
+		project.PHPVersion = *phpVersion
+	}
 	project.BaseDirectory = baseDirectory
 	project.Port = port
-	
+
 	if queueEnabled != nil {
 		project.QueueEnabled = *queueEnabled
 	}
@@ -328,7 +338,10 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	}
 	project.BuildCommand = sanitizeCommand(buildCommand)
 	project.StartCommand = strings.TrimSpace(startCommand)
-	project.NodeVersion = nodeVersion
+
+	if nodeVersion != nil {
+		project.NodeVersion = *nodeVersion
+	}
 	if languageVersion != nil {
 		project.LanguageVersion = *languageVersion
 	}

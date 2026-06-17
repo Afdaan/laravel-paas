@@ -454,7 +454,20 @@ function UserProjectDetail() {
 
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
-  const [consecutiveErrors, setConsecutiveErrors] = useState(0)
+  const consecutiveErrorsRef = useRef(0)
+  const [consecutiveErrors, setConsecutiveErrorsState] = useState(0)
+  const setConsecutiveErrors = useCallback((val: number | ((prev: number) => number)) => {
+    if (typeof val === 'function') {
+      setConsecutiveErrorsState(prev => {
+        const next = val(prev)
+        consecutiveErrorsRef.current = next
+        return next
+      })
+    } else {
+      consecutiveErrorsRef.current = val
+      setConsecutiveErrorsState(val)
+    }
+  }, [])
 
   // Derivate tabs that should be visible based on active service configurations
   const visibleTabs = useMemo(() => {
@@ -560,18 +573,19 @@ function UserProjectDetail() {
         return
       }
 
-      setConsecutiveErrors(prev => prev + 1)
+      const nextCount = consecutiveErrorsRef.current + 1
+      setConsecutiveErrors(nextCount)
 
       toast.error(t('common.error'), {
         id: 'project-load-error',
-        description: consecutiveErrors >= 2 ? t('common.pollingPaused') : undefined
+        description: nextCount >= 2 ? t('common.pollingPaused') : undefined
       })
     } finally {
       if (activeProjectUidRef.current === requestedUid && currentSeq === fetchProjectSeqRef.current) {
         setIsLoading(false)
       }
     }
-  }, [uid, navigate, t, consecutiveErrors, isDeleting])
+  }, [uid, navigate, t, isDeleting])
 
   const handleDeploymentEvent = useCallback(() => {
     fetchProject(true)
@@ -832,22 +846,35 @@ function UserProjectDetail() {
       onConfirm: async () => {
         setIsSavingSettings(true)
         try {
-          const payload = {
+          const payload: Record<string, any> = {
             branch: branchInput,
             base_directory: baseDirInput,
             build_command: buildCommandInput,
             start_command: startCommandInput,
             port: portInput === '' ? null : portInput,
-            node_version: nodeVersionInput,
-            php_version: phpVersionInput,
             worker_command: workerCommandInput,
             queue_enabled: queueEnabledInput,
-            language_version: languageVersionInput,
             github_url: githubUrlInput,
             github_installation_id: gitConnectionMode === 'github_app' ? githubInstallationIdInput : null,
             github_repo_owner: gitConnectionMode === 'github_app' ? githubRepoOwnerInput : '',
             github_repo_name: gitConnectionMode === 'github_app' ? githubRepoNameInput : ''
           }
+
+          let defaultLangVersion = ''
+          if (project.framework === 'Python') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.python
+          else if (project.framework === 'Go') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.go
+
+          // Only send runtime versions if they have been explicitly customized from the persisted settings values
+          if (nodeVersionInput !== (project.node_version || DEFAULT_RUNTIME_VERSIONS.node)) {
+            payload.node_version = nodeVersionInput
+          }
+          if (phpVersionInput !== (project.php_version || DEFAULT_RUNTIME_VERSIONS.php)) {
+            payload.php_version = phpVersionInput
+          }
+          if (languageVersionInput !== (project.language_version || defaultLangVersion)) {
+            payload.language_version = languageVersionInput
+          }
+
           await projectsAPI.update(uid, payload)
           toast.success(t('common.success'))
           await projectsAPI.redeploy(uid)

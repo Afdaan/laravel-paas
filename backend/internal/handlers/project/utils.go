@@ -98,14 +98,13 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 // UpdateRequest represents project update payload
 type UpdateRequest struct {
-
 	Name                 string  `json:"name"`
 	Branch               string  `json:"branch"`
-	PHPVersion           string  `json:"php_version"`
+	PHPVersion           *string `json:"php_version,omitempty"`
 	BaseDirectory        string  `json:"base_directory"`
 	BuildCommand         string  `json:"build_command"`
 	StartCommand         string  `json:"start_command"`
-	NodeVersion          string  `json:"node_version"`
+	NodeVersion          *string `json:"node_version,omitempty"`
 	LanguageVersion      *string `json:"language_version,omitempty"`
 	WorkerCommand        *string `json:"worker_command,omitempty"`
 	QueueEnabled         *bool   `json:"queue_enabled,omitempty"`

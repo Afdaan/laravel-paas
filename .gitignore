@@ -69,3 +69,6 @@ __pycache__/
 
 # Custom Remote MCP SSH Tunnel
 .mcp-ssh/
+
+# Workflow
+.forge/
