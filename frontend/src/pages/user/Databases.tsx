@@ -355,13 +355,13 @@ export default function Databases() {
                       size="sm"
                       onClick={handleDetach}
                       disabled={isActionLoading}
-                      className="text-xs font-bold uppercase text-rose-500 border-rose-500/20 hover:bg-rose-500/5"
+                      className="text-xs font-medium uppercase text-rose-500 hover:text-rose-600 border-rose-500/20 hover:bg-rose-500/10 bg-transparent transition-colors"
                     >
                       {t('databaseManager.detach')}
                     </Button>
                     <Link
                       to={`/projects/${selectedDb.project.uid}?tab=database`}
-                      className={cn(buttonVariants({ variant: "default", size: "sm" }), "text-xs font-bold uppercase flex items-center gap-2")}
+                      className={cn(buttonVariants({ variant: "default", size: "sm" }), "text-xs font-medium uppercase flex items-center gap-1.5 shadow-sm")}
                     >
                       {t('databaseManager.openStudio')}
                       <ExternalLink className="w-3.5 h-3.5 shrink-0" />
