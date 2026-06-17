@@ -347,6 +347,19 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           onMouseLeave={() => {
             setIsHovered(false)
           }}
+          onWheel={(e) => {
+            // Forward scroll events to the main content container when the sidebar doesn't overflow
+            const navElement = e.currentTarget.querySelector('nav');
+            if (navElement) {
+              const hasOverflow = navElement.scrollHeight > navElement.clientHeight;
+              if (!hasOverflow) {
+                const mainContent = document.getElementById('main-content');
+                if (mainContent) {
+                  mainContent.scrollTop += e.deltaY;
+                }
+              }
+            }
+          }}
           className={`absolute left-0 top-0 bottom-0 border-r bg-card flex flex-col z-50 select-none shrink-0 ${
             isDragging ? '' : 'transition-[width] duration-300 ease-in-out'
           } ${isHovered ? 'shadow-2xl' : ''}`}
@@ -689,7 +702,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         </header>
 
         {/* Global Main Stream */}
-        <main className="flex-1 p-8 overflow-auto">
+        <main id="main-content" className="flex-1 p-8 overflow-auto">
           <Suspense fallback={<DashboardPageFallback label={t('common.loading')} />}>
             <Outlet />
           </Suspense>
