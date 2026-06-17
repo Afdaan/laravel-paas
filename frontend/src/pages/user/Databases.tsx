@@ -204,7 +204,7 @@ export default function Databases() {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
-        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] animate-pulse">{t('databaseManager.loading')}</p>
+        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] ">{t('databaseManager.loading')}</p>
       </div>
     )
   }
@@ -266,8 +266,8 @@ export default function Databases() {
                   className={cn(
                     "w-full text-left p-3 rounded-lg transition-all border group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     selectedDbId === db.id
-                      ? 'bg-primary/10 border-primary/30 shadow-sm ring-1 ring-primary/10'
-                      : 'border-transparent hover:bg-muted/80 hover:border-border/50'
+                      ? 'bg-muted/30 border-primary/20 shadow-sm'
+                      : 'border-transparent hover:bg-muted/40 hover:border-border/40'
                   )}
                 >
                   <div className="flex items-center justify-between mb-1.5">
@@ -280,20 +280,20 @@ export default function Databases() {
                     <span className="flex items-center gap-1.5 shrink-0">
                       <span className={cn(
                         "w-1.5 h-1.5 rounded-full",
-                        db.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                        db.status === 'active' ? 'bg-emerald-500 ' : 'bg-rose-500'
                       )} />
                       <Badge variant="outline" className={cn(
-                        "text-[9px] font-bold uppercase px-1.5 py-0 h-4",
+                        "text-[10px] font-medium uppercase px-1.5 py-0 h-4",
                         db.engine === 'mysql'
-                          ? 'border-amber-500/20 bg-amber-500/5 text-amber-500'
-                          : 'border-blue-500/20 bg-blue-500/5 text-blue-500'
+                          ? 'border-transparent bg-amber-500/10 text-amber-500'
+                          : 'border-transparent bg-blue-500/10 text-blue-500'
                       )}>
                         {db.engine}
                       </Badge>
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1.5 border-t border-border/50 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  <div className="flex items-center justify-between pt-1.5 border-t border-border/50 text-[10px] font-medium text-muted-foreground">
                     <span>{db.project_id !== null ? t('databaseManager.attachedTo') : t('databaseManager.unattached')}</span>
                     <span className={cn("truncate max-w-[100px] font-semibold", db.project_id !== null ? "text-primary" : "text-muted-foreground/50")}>
                       {db.project_id !== null && db.project ? db.project.name : '—'}
@@ -318,15 +318,15 @@ export default function Databases() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border/40">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-xl font-black tracking-tight text-foreground">{selectedDb.name}</h1>
-                  <Badge variant={selectedDb.status === 'active' ? 'default' : 'destructive'} className="text-[10px] font-bold uppercase tracking-wide">
+                  <h1 className="text-xl font-semibold tracking-tight text-foreground">{selectedDb.name}</h1>
+                  <Badge variant={selectedDb.status === 'active' ? 'default' : 'destructive'} className="text-[10px] font-medium uppercase">
                     {selectedDb.status}
                   </Badge>
                   <Badge variant="outline" className={cn(
-                    "text-[10px] font-bold uppercase tracking-wide",
+                    "text-[10px] font-medium uppercase",
                     selectedDb.engine === 'mysql'
-                      ? 'border-amber-500/30 bg-amber-500/5 text-amber-500'
-                      : 'border-blue-500/30 bg-blue-500/5 text-blue-500'
+                      ? 'border-transparent bg-amber-500/10 text-amber-500'
+                      : 'border-transparent bg-blue-500/10 text-blue-500'
                   )}>
                     {selectedDb.engine}
                   </Badge>
@@ -623,7 +623,7 @@ export default function Databases() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-6 h-6 animate-pulse" />
+              <AlertTriangle className="w-6 h-6 " />
               <DialogTitle className="text-base font-semibold">{t('databaseManager.reinstallConfirm')}</DialogTitle>
             </div>
             <DialogDescription className="text-xs leading-relaxed">
