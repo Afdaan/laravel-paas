@@ -44,6 +44,8 @@ export default function Databases() {
   const [showResetModal, setShowResetModal] = useState(false)
   const [showReinstallModal, setShowReinstallModal] = useState(false)
   const [showRedeployModal, setShowRedeployModal] = useState(false)
+  const [showAttachModal, setShowAttachModal] = useState(false)
+  const [showDetachModal, setShowDetachModal] = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [redeployProjectUid, setRedeployProjectUid] = useState<string>('')
@@ -353,7 +355,7 @@ export default function Databases() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleDetach}
+                      onClick={() => setShowDetachModal(true)}
                       disabled={isActionLoading}
                       className="text-xs font-medium uppercase text-rose-500 hover:text-rose-600 border-rose-500/20 hover:bg-rose-500/10 bg-transparent transition-colors"
                     >
@@ -404,7 +406,7 @@ export default function Databases() {
                       </SelectContent>
                     </Select>
                     <Button
-                      onClick={handleAttach}
+                      onClick={() => setShowAttachModal(true)}
                       disabled={!selectedProjectId || isActionLoading}
                       size="sm"
                       className="text-xs font-bold uppercase"
@@ -618,6 +620,75 @@ export default function Databases() {
         </DialogContent>
       </Dialog>
 
+      {/* Detach Database Confirmation Dialog */}
+      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.detachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.detach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attach Database Confirmation Dialog */}
+      <Dialog open={showAttachModal} onOpenChange={setShowAttachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <DbIcon className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.attachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.attachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowAttachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={() => { setShowAttachModal(false); handleAttach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.attach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detach Database Confirmation Dialog */}
+      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.detachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.detach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Confirmation Dialog: Reinstall DB */}
       <Dialog open={showReinstallModal} onOpenChange={setShowReinstallModal}>
         <DialogContent className="max-w-md">
@@ -659,6 +730,75 @@ export default function Databases() {
         </DialogContent>
       </Dialog>
 
+      {/* Detach Database Confirmation Dialog */}
+      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.detachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.detach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attach Database Confirmation Dialog */}
+      <Dialog open={showAttachModal} onOpenChange={setShowAttachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <DbIcon className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.attachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.attachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowAttachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={() => { setShowAttachModal(false); handleAttach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.attach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detach Database Confirmation Dialog */}
+      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.detachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.detach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Redeploy Confirmation Dialog */}
       <Dialog open={showRedeployModal} onOpenChange={setShowRedeployModal}>
         <DialogContent className="max-w-md">
@@ -682,6 +822,75 @@ export default function Databases() {
               className="text-xs font-medium"
             >
               {t('databaseManager.redeployNow')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detach Database Confirmation Dialog */}
+      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.detachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.detach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attach Database Confirmation Dialog */}
+      <Dialog open={showAttachModal} onOpenChange={setShowAttachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <DbIcon className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.attachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.attachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowAttachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={() => { setShowAttachModal(false); handleAttach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.attach")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detach Database Confirmation Dialog */}
+      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-destructive mb-2">
+              <AlertTriangle className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.detachConfirmDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.detach")}
             </Button>
           </DialogFooter>
         </DialogContent>

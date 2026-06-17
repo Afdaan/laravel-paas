@@ -1,0 +1,37 @@
+--- frontend/src/pages/user/Databases.tsx
++++ frontend/src/pages/user/Databases.tsx
+@@ -702,6 +702,32 @@
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
++
++      {/* Detach Database Confirmation Dialog */}
++      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
++        <DialogContent className="max-w-md">
++          <DialogHeader>
++            <div className="flex items-center gap-3 text-destructive mb-2">
++              <AlertTriangle className="w-5 h-5" />
++              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
++            </div>
++            <DialogDescription className="text-xs leading-relaxed">
++              {t("databaseManager.detachConfirmDesc")}
++            </DialogDescription>
++          </DialogHeader>
++          <DialogFooter className="gap-2">
++            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
++              {t("common.cancel")}
++            </Button>
++            <Button
++              onClick={() => { setShowDetachModal(false); handleDetach(); }}
++              disabled={isActionLoading}
++              variant="destructive"
++              className="text-xs font-medium"
++            >
++              {t("databaseManager.detach")}
++            </Button>
++          </DialogFooter>
++        </DialogContent>
++      </Dialog>
+     </div>
+   )
+ }
