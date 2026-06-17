@@ -281,8 +281,9 @@ func RedactInfrastructureDetails(errorMsg string, sensitiveValues []string) stri
 	// Dynamically redact sensitive secrets/values from environment configurations
 	for _, val := range sensitiveValues {
 		valClean := strings.TrimSpace(val)
+		valLower := strings.ToLower(valClean)
 		// Prevent redacting short keywords or standard flags to avoid breaking normal log phrases
-		if len(valClean) > 3 && valClean != "true" && valClean != "false" && valClean != "local" {
+		if len(valClean) > 3 && valLower != "true" && valLower != "false" && valLower != "local" && valLower != "production" && valLower != "development" && valLower != "staging" && valLower != "testing" {
 			errorMsg = strings.ReplaceAll(errorMsg, valClean, "[redacted]")
 		}
 	}

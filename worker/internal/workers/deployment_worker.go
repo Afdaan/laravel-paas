@@ -485,6 +485,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	appendLog = w.makeRedactingLogger(project, appendLog)
 
 	if job.Type == "update_env" {
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Applying environment configuration")
 		if project.ContainerID == nil || *project.ContainerID == "" {
 			appendLog(">> Project is stopped. Regenerating environment configuration on disk...")
 			projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
@@ -499,6 +500,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
 			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusStopped)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment updated on disk")
 			return
 		}
 
@@ -605,6 +607,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	if job.Type == "restart" {
 		slog.Info("Performing container restart action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "restart_started", "Restarting application container(s)")
 		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_started", "Restarting application container(s)")
 		appendLog(">> Restarting application container(s)...")
 

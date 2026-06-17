@@ -318,6 +318,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	envs := map[string]string{
 		"NPM_CONFIG_JOBS":             "2",
 		"NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+		"NPM_CONFIG_INCLUDE":          "dev",
 		"PYTHONUNBUFFERED":            "1",
 	}
 
