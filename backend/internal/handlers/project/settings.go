@@ -153,12 +153,16 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 		slog.Warn("Failed to update project status after env update", "id", lockedProject.ID, "error", err)
 	}
 
-	_, err = h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
+	jobID, err := h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
 	if err != nil {
 		slog.Error("Failed to enqueue redeployment after env update", "project_id", lockedProject.ID, "error", err)
 		return c.JSON(fiber.Map{
 			"message": "Environment variables saved, but failed to queue environment propagation. Please restart the project manually.",
 		})
+	}
+
+	if err := h.projectService.UpdateDeploymentStatus(lockedProject.ID, models.DepStatusQueued, "Applying environment changes...", 0, jobID); err != nil {
+		slog.Warn("Failed to update project deployment status after env update", "id", lockedProject.ID, "error", err)
 	}
 
 	return c.JSON(fiber.Map{

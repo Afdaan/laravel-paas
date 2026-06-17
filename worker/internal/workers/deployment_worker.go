@@ -516,6 +516,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog("✓ Environment update completed successfully!")
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_completed", "Environment variables updated successfully")
 			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusRunning)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
 		}
 		return
 	}
@@ -617,6 +618,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog("✓ Container(s) restarted successfully.")
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_completed", "Container restarted successfully")
 			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusRunning)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "restart_completed", "Container restarted successfully")
 		}
 		return
 	}

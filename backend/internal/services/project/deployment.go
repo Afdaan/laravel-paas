@@ -13,7 +13,10 @@ func (s *ProjectService) StopProject(project *models.Project) error {
 		return err
 	}
 
-	_, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "stop")
+	jobID, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "stop")
+	if err == nil {
+		_ = s.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Stopping container", 0, jobID)
+	}
 	return err
 }
 
@@ -24,7 +27,10 @@ func (s *ProjectService) StartProject(project *models.Project) error {
 		return err
 	}
 
-	_, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "start")
+	jobID, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "start")
+	if err == nil {
+		_ = s.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Starting container", 0, jobID)
+	}
 	return err
 }
 
@@ -35,6 +41,9 @@ func (s *ProjectService) RestartProject(project *models.Project) error {
 		slog.Error("Failed to update status to restarting", "id", project.ID, "error", err)
 	}
 
-	_, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "restart")
+	jobID, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "restart")
+	if err == nil {
+		_ = s.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Restarting container", 0, jobID)
+	}
 	return err
 }
