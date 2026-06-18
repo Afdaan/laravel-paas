@@ -201,4 +201,3 @@ export interface DatabaseMetrics {
   active_connections: number;
   size_kb: number;
 }
-
