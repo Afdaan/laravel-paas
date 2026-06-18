@@ -52,7 +52,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const errors: Record<string, string | null> = {}
     if (!formData.name.trim()) errors.name = 'Full name is required'
     if (!formData.email.trim()) errors.email = 'Email address is required'
@@ -72,7 +72,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
         email: formData.email,
         password: formData.password,
       })
-      
+
       toast.success(t('admin.setupSuccess'))
       onComplete()
       navigate('/login', { replace: true })

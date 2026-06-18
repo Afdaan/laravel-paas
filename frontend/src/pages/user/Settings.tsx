@@ -372,8 +372,8 @@ export function UserSettings() {
 
                   <Badge variant="outline" className={cn(
                     "text-[10px] uppercase font-bold tracking-widest px-2.5 py-1",
-                    installations.length > 0 
-                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
+                    installations.length > 0
+                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                       : "bg-amber-500/10 text-amber-500 border-amber-500/20"
                   )}>
                     {installations.length > 0 ? t('user.settings.connected') : t('user.settings.disconnected')}

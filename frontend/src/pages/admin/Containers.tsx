@@ -74,7 +74,7 @@ const AdminContainers = () => {
       (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.image.toLowerCase().includes(searchQuery.toLowerCase())
     )
-    
+
     if (limit === 'all') return filtered
     const numLimit = parseInt(limit)
     return filtered.slice((page - 1) * numLimit, page * numLimit)

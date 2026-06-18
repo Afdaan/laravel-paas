@@ -223,7 +223,7 @@ export function StudioBackupsTab() {
           <h4 className="font-extrabold text-xs uppercase tracking-wider text-muted-foreground border-b pb-2">
             {t('databaseStudio.backups.retentionTitle')}
           </h4>
-          
+
           <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex justify-between items-center text-xs">
@@ -233,13 +233,13 @@ export function StudioBackupsTab() {
                 </span>
               </div>
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                <div 
-                   className={cn("h-full transition-all duration-500 bg-primary", backups.length >= 5 ? 'bg-destructive' : backups.length >= 4 ? 'bg-amber-500' : 'bg-primary')} 
+                <div
+                   className={cn("h-full transition-all duration-500 bg-primary", backups.length >= 5 ? 'bg-destructive' : backups.length >= 4 ? 'bg-amber-500' : 'bg-primary')}
                    style={{ width: `${Math.min((backups.length / 5) * 100, 100)}%` }}
                 />
               </div>
             </div>
-            
+
             <p className="text-[10px] text-muted-foreground leading-normal font-medium">
               {t('databaseStudio.backups.retentionDesc')}
             </p>

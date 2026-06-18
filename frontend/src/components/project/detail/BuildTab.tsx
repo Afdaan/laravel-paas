@@ -10,12 +10,12 @@ export function BuildTab({ project, onDeploymentEvent }: BuildTabProps) {
   if (!project) return null
 
   return (
-    <BuildLogsConsole 
+    <BuildLogsConsole
       key={`${project.uid}:${project.deployment_job_id || 'no-job'}`}
-      projectId={project.uid} 
-      status={project.status} 
-      project={project} 
-      onDeploymentEvent={onDeploymentEvent} 
+      projectId={project.uid}
+      status={project.status}
+      project={project}
+      onDeploymentEvent={onDeploymentEvent}
     />
   )
 }

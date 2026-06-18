@@ -55,25 +55,25 @@ interface ImportResults {
  */
 const formatTimeAgo = (dateStr: string | undefined, t: (key: string, data?: Record<string, string | number>) => string) => {
   if (!dateStr) return '-'
-  
+
   const date = new Date(dateStr)
   const now = new Date()
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-  
+
   if (diffInSeconds < 60) return t('common.justNow')
-  
+
   if (diffInSeconds < 3600) {
     return t('admin.users.minutesAgo', { count: Math.floor(diffInSeconds / 60) })
   }
-  
+
   if (diffInSeconds < 86400) {
     return t('admin.users.hoursAgo', { count: Math.floor(diffInSeconds / 3600) })
   }
-  
+
   if (diffInSeconds < 2592000) {
     return t('admin.users.daysAgo', { count: Math.floor(diffInSeconds / 86400) })
   }
-  
+
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
@@ -374,8 +374,8 @@ const AdminUsers = () => {
                   <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-2 text-xs font-semibold">
                       <div className={`w-2 h-2 rounded-full ${
-                        user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) 
-                        ? 'bg-emerald-500 animate-pulse' 
+                        user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000)
+                        ? 'bg-emerald-500 animate-pulse'
                         : 'bg-slate-300'
                       }`} />
                       <span className={user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) ? 'text-emerald-600' : 'text-slate-500'}>

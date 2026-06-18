@@ -36,16 +36,16 @@ export const RuntimeEvents: React.FC<RuntimeEventsProps> = ({ runtimeEvents, t }
                 {visibleEvents.map((evt, idx) => {
                   const isError = ['oom_killed', 'crashed', 'deployment_failed'].includes(evt.event_type ?? '')
                   const isWarning = ['auto_healing_restart'].includes(evt.event_type ?? '')
-                  const bulletColor = isError 
-                    ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]' 
-                    : isWarning 
-                      ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)]' 
+                  const bulletColor = isError
+                    ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]'
+                    : isWarning
+                      ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
                       : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
 
                   return (
                     <div key={idx} className="relative group/evt transition-all duration-200">
                       <div className={cn("absolute -left-[21.5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-background z-10", bulletColor)} />
-                      
+
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-[10px] uppercase tracking-wider text-foreground/80">

@@ -490,7 +490,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 					if matches := portRegex.FindStringSubmatch(startScript); len(matches) > 1 {
 						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 && pVal <= 65535 {
 							if project.Port == nil { project.Port = &pVal; slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal) }
-							
+
 						}
 					}
 				}

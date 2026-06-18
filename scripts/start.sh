@@ -20,7 +20,7 @@ init_vars() {
     PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
     REDIS_DATA_DIR="${PROJECT_ROOT}/storage/redis"
     USER_PG_DATA_DIR="${PROJECT_ROOT}/storage/user-postgres"
-    
+
     cd "$PROJECT_ROOT"
 
     # Load env vars
@@ -49,7 +49,7 @@ init_vars() {
     HTTPS_PORT=${HTTPS_PORT:-443}
     APP_MODE=${APP_MODE:-"docker"}
     HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
-    
+
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
     TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
@@ -79,7 +79,7 @@ deploy_with_anti_downtime() {
     local context_dir=$2
     local image_tag=$3
     shift 3
-    
+
     local image_name="paas-$service_name:$image_tag"
     local container_name="paas-$service_name"
     local temp_container_name="${container_name}-new"
@@ -99,17 +99,17 @@ deploy_with_anti_downtime() {
             # Capture and disable execution tracing to safeguard build arguments from leaking.
             [[ $- == *x* ]] && was_tracing=true || was_tracing=false
             { set +x; } 2>/dev/null
-            
+
             local success=false
             if docker build \
                 --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
                 -t "$image_name" "$context_dir"; then
                 success=true
             fi
-            
+
             # Restore execution tracing if it was active
             if [ "$was_tracing" = true ]; then set -x; fi
-            
+
             if [ "$success" = false ]; then
                 echo -e "${RED}[ERROR] Build failed for $service_name. Keeping current version running.${NC}"
                 return 1
@@ -126,7 +126,7 @@ deploy_with_anti_downtime() {
     # Start new container
     docker rm -f "$temp_container_name" 2>/dev/null || true
     echo -e "${YELLOW}[RUN] Starting new container $temp_container_name...${NC}"
-    
+
     if ! docker run -d --name "$temp_container_name" "$@" "$image_name"; then
         echo -e "${RED}[ERROR] Failed to start new container for $service_name. Keeping current version.${NC}"
         return 1
@@ -506,7 +506,7 @@ show_status() {
             ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$s" 2>/dev/null || echo "-")
         fi
         [ -z "$ip" ] && ip="-"
-        
+
         local status_color=$RED
         if [ "$status" = "running" ]; then
             status_color=$GREEN
@@ -518,7 +518,7 @@ show_status() {
                 fi
             fi
         fi
-        
+
         printf " %-22s | %b%-18s%b | %-15s\n" "$s" "$status_color" "$status" "$NC" "$ip"
     done
     echo -e "------------------------------------------------------------\n"
@@ -539,7 +539,7 @@ service_menu() {
         echo "9) Frontend (paas-frontend)"
         echo "10) Back to Main Menu"
         read -p "Select service [1-10]: " s_opt
-        
+
         case "$s_opt" in
             1) start_mysql ; break ;;
             2) start_postgres ; break ;;
@@ -564,7 +564,7 @@ interactive_menu() {
         echo "3) Show Container Status"
         echo "4) Exit"
         read -p "Select option [1-4]: " main_opt
-        
+
         case "$main_opt" in
             1) start_all ;;
             2) service_menu ;;

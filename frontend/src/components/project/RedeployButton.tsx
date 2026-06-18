@@ -45,7 +45,7 @@ export function RedeployButton({
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isClean, setIsClean] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+
   const isCurrentlyDeploying = Boolean(deploymentStatus && !['completed', 'failed', 'rollback', 'cancelled'].includes(deploymentStatus))
   const deployLocked = isSubmitting || isCurrentlyDeploying || status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
@@ -53,7 +53,7 @@ export function RedeployButton({
     e.preventDefault()
     e.stopPropagation()
     if (!projectId) return
-    
+
     if (deployLocked) {
       toast.message(t('projectDetail.messages.buildTitle'), {
         description: `${t('projectDetail.actions.redeploy')} (${t(`status.${status}`)})`,
@@ -169,7 +169,7 @@ export function RedeployButton({
             sideOffset={6}
             className="w-56 rounded-lg border border-border/70 bg-popover p-1 shadow-lg shadow-black/10 dark:border-white/10 dark:shadow-black/40"
           >
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={(e) => {
                 const mouseEvent = e as unknown as React.MouseEvent;
                 handleRedeploy(mouseEvent, false);
@@ -189,7 +189,7 @@ export function RedeployButton({
               </span>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="mx-2 my-0.5 bg-border/70" />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={(e) => {
                 const mouseEvent = e as unknown as React.MouseEvent;
                 handleRedeploy(mouseEvent, true);

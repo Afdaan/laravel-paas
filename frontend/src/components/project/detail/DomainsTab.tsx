@@ -28,11 +28,11 @@ export function DomainsTab({ project, onDomainsChanged }: DomainsTabProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <CustomDomainManager 
-          projectId={project.uid} 
-          subdomain={project.subdomain!} 
-          projectUrl={project.url} 
-          onDomainsChanged={onDomainsChanged} 
+        <CustomDomainManager
+          projectId={project.uid}
+          subdomain={project.subdomain!}
+          projectUrl={project.url}
+          onDomainsChanged={onDomainsChanged}
         />
       </CardContent>
     </Card>

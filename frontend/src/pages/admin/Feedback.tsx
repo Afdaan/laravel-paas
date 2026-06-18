@@ -219,7 +219,7 @@ const AdminFeedback = () => {
 
 const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, onUpdate: (id: number, status: string) => void, onDelete: (id: number) => void }) => {
   const { t } = useTranslation()
-  
+
   const typeConfigs: Record<string, { color: string, icon: React.ElementType, glow: string, label: string }> = {
     bug: { color: 'text-rose-600', icon: Bug, glow: 'bg-rose-500/10', label: t('admin.feedback.criticalBug') },
     trouble: { color: 'text-amber-600', icon: AlertTriangle, glow: 'bg-amber-500/10', label: t('admin.feedback.infraIssue') },

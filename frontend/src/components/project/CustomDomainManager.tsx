@@ -31,11 +31,11 @@ const getDNSHost = (domain: string): string => {
   const parts = domain.split('.')
   if (parts.length === 1) return domain
   if (parts.length === 2) return '@'
-  
+
   const multiPartTLDs = ['co.id', 'my.id', 'ac.id', 'sch.id', 'biz.id', 'or.id', 'go.id', 'net.id', 'co.uk', 'org.uk', 'com.au']
   const lastTwo = parts.slice(-2).join('.')
   const rootPartsCount = multiPartTLDs.includes(lastTwo) ? 3 : 2
-  
+
   return parts.length > rootPartsCount ? parts.slice(0, -rootPartsCount).join('.') : '@'
 }
 
@@ -80,8 +80,8 @@ const StatusBadge = ({ status }: { status: string }) => {
   const isSpinning = ['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
 
   return (
-    <Badge 
-      variant="outline" 
+    <Badge
+      variant="outline"
       className={`gap-2 items-center flex w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border ${bgColor} ${textColor} transition-all duration-300`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${isSpinning ? 'animate-pulse' : ''}`} />
@@ -102,8 +102,8 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
 
   return (
     <div className="flex items-center gap-2">
-      <Badge 
-        variant="outline" 
+      <Badge
+        variant="outline"
         className={`gap-2 items-center flex w-fit text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${bgColor} ${textColor}`}
       >
         <span className={`w-1 h-1 rounded-full ${dotColor}`} />
@@ -202,7 +202,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
           return newD
         })
       })
-      
+
       if (!selectedDomainId && domainList.length > 0) {
         const firstPending = domainList.find((d: CustomDomain) => d.status !== 'active')
         if (firstPending) setSelectedDomainId(firstPending.id)
@@ -370,13 +370,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     if (match) {
       const code = match[1]
       const content = match[2]
-      
+
       const title = code
         .toLowerCase()
         .split('_')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ')
-        
+
       toast.error(title, {
         description: content
       })
@@ -528,7 +528,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
               ? 'border-rose-500 group-hover:bg-rose-500'
               : 'border-primary group-hover:bg-primary'
           }`} />
-          
+
           <div className="space-y-2.5 bg-muted/20 p-4 rounded-xl border border-border/60 hover:bg-muted/30 transition-colors text-left shadow-sm">
             {/* Header: Title and Timestamp */}
             <div className="flex items-center justify-between gap-2">
@@ -655,8 +655,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             disabled={isAdding}
           />
         </div>
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={!newDomain.trim() || isAdding}
           className="gap-2 h-11 px-6 shadow-lg shadow-primary/10 transition-all hover:scale-[1.02] rounded-xl font-semibold"
         >
@@ -676,8 +676,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             const isActive = domain.status === 'active' || domain.status === 'ssl_active'
 
             return (
-              <Card 
-                key={domain.id} 
+              <Card
+                key={domain.id}
                 className={`group border-muted-foreground/10 transition-all duration-300 cursor-pointer overflow-hidden ${
                   isSelected ? 'ring-1 ring-primary/30 bg-muted/40 shadow-xl' : 'bg-muted/10 hover:bg-muted/20'
                 }`}
@@ -693,9 +693,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                         <div className="flex items-center gap-3">
                           <span className="font-bold text-base tracking-tight text-foreground">{domain.domain}</span>
                           {isActive && (
-                            <a 
-                              href={`https://${domain.domain}`} 
-                              target="_blank" 
+                            <a
+                              href={`https://${domain.domain}`}
+                              target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
                               className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all border border-transparent hover:border-primary/20"
@@ -765,7 +765,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                     </div>
                   </div>
 
-                  <div 
+                  <div
                     className={`transition-all duration-300 ease-in-out border-t border-muted-foreground/5 bg-background/30 ${
                       isSelected ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
                     }`}
@@ -786,8 +786,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                           <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.type')}</Label>
                           <div className="text-sm font-mono font-bold text-primary bg-primary/10 w-fit px-2.5 py-1 rounded-md border border-primary/20">CNAME</div>
                         </div>
-                        
-                        <div 
+
+                        <div
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -806,7 +806,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                           <Plus className="absolute -bottom-2 -right-2 w-12 h-12 text-primary/5 group-hover/box:text-primary/10 transition-colors rotate-12" />
                         </div>
 
-                        <div 
+                        <div
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -844,7 +844,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         </div>
       )}
 
-      <ConfirmationModal 
+      <ConfirmationModal
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
         type="danger"

@@ -116,7 +116,7 @@ export function StudioTablesTab() {
     }
   }, [schemaData, selectedTable, setSelectedTable])
 
-  const filteredTables = schemaData.filter(tb => 
+  const filteredTables = schemaData.filter(tb =>
     tb.name.toLowerCase().includes(tableSearch.toLowerCase())
   )
 
@@ -127,7 +127,7 @@ export function StudioTablesTab() {
     const colParam = searchParams.get('column')
     if (colParam && tableData?.columns.includes(colParam)) {
       let frameId2: number | undefined
-      
+
       const frameId1 = requestAnimationFrame(() => {
         frameId2 = requestAnimationFrame(() => {
           highlightedHeaderRef.current?.scrollIntoView({
@@ -137,7 +137,7 @@ export function StudioTablesTab() {
           })
         })
       })
-      
+
       return () => {
         cancelAnimationFrame(frameId1)
         if (frameId2 !== undefined) {
@@ -290,7 +290,7 @@ export function StudioTablesTab() {
 
   const generateRowEditSql = () => {
     if (!selectedTable || !editingRow || !tableData) return ''
-    const pkColumn = tableData.columns.find((c: string) => 
+    const pkColumn = tableData.columns.find((c: string) =>
       c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
     ) || tableData.columns[0]
     const pkValue = editingRow[pkColumn]
@@ -349,7 +349,7 @@ export function StudioTablesTab() {
 
   const openEditRowModal = (row: Record<string, unknown>) => {
     setEditingRow(row)
-    
+
     const cols = schemaData.find(tb => tb.name === selectedTable)?.columns || []
     const initialData: Record<string, string | number | boolean | null> = {}
     cols.forEach((c: SchemaColumn) => {
@@ -359,7 +359,7 @@ export function StudioTablesTab() {
         initialData[c.name] = ''
         return
       }
-      
+
       const typeLower = c.type.toLowerCase()
       if (typeLower.includes('timestamp') || typeLower.includes('datetime')) {
         initialData[c.name] = formatDatetimeLocal(val)
@@ -385,7 +385,7 @@ export function StudioTablesTab() {
   const handleEditRowSubmit = async () => {
     if (!id || !selectedTable || !editingRow || !tableData) return
 
-    const pkColumn = tableData.columns.find((c: string) => 
+    const pkColumn = tableData.columns.find((c: string) =>
       c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
     ) || tableData.columns[0]
 
@@ -467,7 +467,7 @@ export function StudioTablesTab() {
         <div className="flex items-center justify-between px-2 pt-1 border-b border-border/40 pb-2">
           <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">{t('databaseStudio.tables.sidebarTitle')} ({schemaData.length} tables)</span>
         </div>
-        
+
         {!isSuspended && schemaData.length > 0 && (
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
@@ -479,7 +479,7 @@ export function StudioTablesTab() {
             />
           </div>
         )}
-        
+
         <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin max-h-[500px] pr-1">
           {isSuspended ? (
             <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">{t('databaseStudio.dashboard.suspendedTitle')}</div>
@@ -572,14 +572,14 @@ export function StudioTablesTab() {
 
                   const typeLower = c.type.toLowerCase()
                   const isDateType = typeLower.includes('date') || typeLower.includes('time') || typeLower.includes('timestamp')
-                  
+
                   if (isDateType) {
                     const isDynamicDefault = typeof c.default === 'string' && (
                       c.default.toLowerCase().includes('current_timestamp') ||
                       c.default.toLowerCase().includes('now()') ||
                       c.default.toLowerCase().includes('uuid')
                     )
-                    
+
                     if (isDynamicDefault) {
                       initialData[c.name] = ''
                     } else if (c.default) {
@@ -698,7 +698,7 @@ export function StudioTablesTab() {
                     </tr>
                   ) : (
                     tableData.rows.map((row: Record<string, unknown>, idx: number) => {
-                      const pkColumn = tableData.columns.find((c: string) => 
+                      const pkColumn = tableData.columns.find((c: string) =>
                         c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
                       ) || tableData.columns[0]
 
@@ -757,9 +757,9 @@ export function StudioTablesTab() {
                   {t('databaseStudio.tables.showingRows', { start: (tablePage - 1) * tableLimit + 1, end: Math.min(tablePage * tableLimit, tableTotal), total: tableTotal })}
                 </span>
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="xs" 
+                  <Button
+                    variant="outline"
+                    size="xs"
                     onClick={() => setTablePage(prev => Math.max(prev - 1, 1))}
                     disabled={tablePage === 1}
                     className="font-bold h-8 text-xs px-3 rounded-lg cursor-pointer"
@@ -767,9 +767,9 @@ export function StudioTablesTab() {
                   >
                     {t('common.previous')}
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="xs" 
+                  <Button
+                    variant="outline"
+                    size="xs"
                     onClick={() => setTablePage(prev => prev + 1)}
                     disabled={tablePage * tableLimit >= tableTotal}
                     className="font-bold h-8 text-xs px-3 rounded-lg cursor-pointer"
@@ -818,7 +818,7 @@ export function StudioTablesTab() {
                     const lengthMatch = typeLower.match(/\((\d+)\)/)
                     const maxLength = lengthMatch ? parseInt(lengthMatch[1], 10) : undefined
                     const isNumeric = typeLower.includes('int') || typeLower.includes('decimal') || typeLower.includes('float') || typeLower.includes('double') || typeLower.includes('numeric') || typeLower.includes('real')
-                    
+
                     return (
                       <div key={col} className="space-y-1.5">
                         <div className="flex items-center justify-between">
@@ -827,7 +827,7 @@ export function StudioTablesTab() {
                             <span className="font-mono text-[9px] text-muted-foreground/50 lowercase">({colDetail?.type || 'unknown'})</span>
                             {!isNullable && !isPK && <span className="text-red-500 font-bold">*</span>}
                           </Label>
-                          
+
                           {isPK ? (
                             <span className="text-[9px] font-bold uppercase text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                               Primary Key
@@ -838,7 +838,7 @@ export function StudioTablesTab() {
                             </span>
                           ) : undefined}
                         </div>
-  
+
                         {isPK ? (
                           <Input
                             id={`insert_${col}`}
@@ -924,7 +924,7 @@ export function StudioTablesTab() {
                     )
                   })}
                 </div>
-  
+
                 <div className="flex gap-2.5 pt-2 border-t border-border/40">
                   <Button type="submit" disabled={isActionLoading} className="font-bold flex-1 rounded-xl cursor-pointer" style={{ cursor: 'pointer' }}>
                     {isActionLoading ? t('common.executing') : t('databaseStudio.tables.insertModal.submit')}
@@ -981,7 +981,7 @@ export function StudioTablesTab() {
               <form onSubmit={handleEditRowFormSubmit} className="space-y-4 pt-3">
                 <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1">
                   {(schemaData.find(tb => tb.name === selectedTable)?.columns || []).map((col: SchemaColumn) => {
-                    const pkColumn = tableData?.columns.find((c: string) => 
+                    const pkColumn = tableData?.columns.find((c: string) =>
                       c.toLowerCase() === 'id' || c.toLowerCase() === 'uid' || c.toLowerCase() === 'uuid'
                     ) || tableData?.columns[0]
                     const isPK = col.name === pkColumn

@@ -22,8 +22,8 @@ interface ConfirmationModalProps {
   cancelText?: string;
 }
 
-export default function ConfirmationModal({ 
-  isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel' 
+export default function ConfirmationModal({
+  isOpen, onClose, onConfirm, title, message, type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel'
 }: ConfirmationModalProps) {
   const configs = {
     danger: {
@@ -75,7 +75,7 @@ export default function ConfirmationModal({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onClose}>{cancelText}</AlertDialogCancel>
-          <AlertDialogAction 
+          <AlertDialogAction
             className={config.btn}
             onClick={(e) => {
               e.preventDefault();

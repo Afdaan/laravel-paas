@@ -20,7 +20,7 @@ init_vars() {
     PG_DATA_DIR="${PROJECT_ROOT}/storage/postgres"
     REDIS_DATA_DIR="${PROJECT_ROOT}/storage/redis"
     USER_PG_DATA_DIR="${PROJECT_ROOT}/storage/user-postgres"
-    
+
     cd "$PROJECT_ROOT"
 
     # Load env vars
@@ -29,7 +29,7 @@ init_vars() {
         source "$PROJECT_ROOT/.env"
         set +a
     fi
-    
+
     # Set default variables (matching start.sh)
     MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"}
     MYSQL_USER=${MYSQL_USER:-"root"}
@@ -47,7 +47,7 @@ init_vars() {
     HTTPS_PORT=${HTTPS_PORT:-443}
     APP_MODE=${APP_MODE:-"docker"}
     HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
-    
+
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
     TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
@@ -77,7 +77,7 @@ deploy_with_anti_downtime() {
     local context_dir=$2
     local image_tag=$3
     shift 3
-    
+
     local image_name="paas-$service_name:$image_tag"
     local container_name="paas-$service_name"
     local temp_container_name="${container_name}-new"
@@ -103,7 +103,7 @@ deploy_with_anti_downtime() {
     # Start new container
     docker rm -f "$temp_container_name" 2>/dev/null || true
     echo -e "${YELLOW}[RUN] Starting new container $temp_container_name...${NC}"
-    
+
     if ! docker run -d --name "$temp_container_name" "$@" "$image_name"; then
         echo -e "${RED}[ERROR] Failed to start new container for $service_name. Keeping current version.${NC}"
         return 1
@@ -339,7 +339,7 @@ start_worker() {
     prepare_env
     local worker_tag=$(get_next_service_tag "worker")
     DOCKER_BUILDKIT=1 docker build -t "paas-worker:$worker_tag" -t "paas-worker:latest" -f "${PROJECT_ROOT}/worker/Dockerfile" "${PROJECT_ROOT}"
-    
+
     local redis_auth_param=""
     [ ! -z "$REDIS_PASSWORD" ] && redis_auth_param="-a $REDIS_PASSWORD"
     docker exec paas-redis redis-cli $redis_auth_param set "worker:target_version" "$worker_tag" 2>/dev/null || true
@@ -462,7 +462,7 @@ show_status() {
             ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$s" 2>/dev/null || echo "-")
         fi
         [ -z "$ip" ] && ip="-"
-        
+
         local status_color=$RED
         if [ "$status" = "running" ]; then
             status_color=$GREEN
@@ -474,7 +474,7 @@ show_status() {
                 fi
             fi
         fi
-        
+
         printf " %-22s | %b%-18s%b | %-15s\n" "$s" "$status_color" "$status" "$NC" "$ip"
     done
     echo -e "------------------------------------------------------------\n"
@@ -528,7 +528,7 @@ service_menu() {
         echo "8) Frontend (paas-frontend)"
         echo "9) Back to Main Menu"
         read -p "Select service [1-9]: " s_opt
-        
+
         local svc=""
         case "$s_opt" in
             1) svc="mysql" ;;
@@ -542,7 +542,7 @@ service_menu() {
             9) return 0 ;;
             *) echo -e "${RED}Invalid option!${NC}" && continue ;;
         esac
-        
+
         while true; do
             echo -e "\n${YELLOW}=== Action for $svc ===${NC}"
             echo "1) Start"
@@ -550,7 +550,7 @@ service_menu() {
             echo "3) Restart"
             echo "4) Back to Service List"
             read -p "Select action [1-4]: " a_opt
-            
+
             case "$a_opt" in
                 1) start_service "$svc" && break ;;
                 2) stop_service "$svc" && break ;;
@@ -571,7 +571,7 @@ interactive_menu() {
         echo "4) Show Container Status"
         echo "5) Exit"
         read -p "Select option [1-5]: " main_opt
-        
+
         case "$main_opt" in
             1) start_all ;;
             2) stop_all ;;

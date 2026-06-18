@@ -4,9 +4,9 @@ import { check } from 'k6';
 /**
  * REDEPLOY STRESS TEST (MULTIPLE PROJECTS)
  * ---------------------------------------
- * Script ini digunakan untuk mengetes sistem antrian (queue) saat menerima 
+ * Script ini digunakan untuk mengetes sistem antrian (queue) saat menerima
  * banyak permintaan redeploy untuk BERBAGAI project secara bersamaan.
- * 
+ *
  * CARA JALANIN (via Docker):
  * docker run --rm -i \
  *   -e TARGET_URL=https://hosting.rplmusaba.my.id \

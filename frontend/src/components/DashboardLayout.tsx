@@ -182,7 +182,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const activeProjectUID = projectRouteMatch?.[1]
   const showProjectSwitcher = !isAdmin && !!activeProjectUID && activeProjectUID !== 'new'
-  
+
   const handleLogout = async () => {
     await logout()
     navigate('/login')
@@ -192,7 +192,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     await returnToAdmin()
     navigate('/admin/users')
   }
-  
+
   const navItems = useMemo(() => {
     if (isAdmin) {
       return {
@@ -346,7 +346,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         const listRes = isAdminBrowsingAsAdmin
           ? await projectsAPI.listAll({ page: 1, limit: 100 })
           : await projectsAPI.listOwn()
-        
+
         let nextProjects = (listRes.data.data || []) as Project[]
         if (isAdminBrowsingAsAdmin) {
           nextProjects = nextProjects.filter((project) => project.user_id === updatedCurrent.user_id)
@@ -365,15 +365,15 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
     refreshStatuses()
   }, showProjectSwitcher ? 8000 : null)
-  
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
-      <div 
+      <div
         style={{ width: isSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
         className={`relative shrink-0 z-50 ${isDragging ? '' : 'transition-[width] duration-300 ease-in-out'}`}
       >
-        <aside 
+        <aside
           onMouseEnter={() => {
             if (isSidebarCollapsed) {
               setIsHovered(true)
@@ -449,15 +449,15 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
           {!isAdmin && (
             <div className="px-3 pb-3">
-              <Button 
-                render={<NavLink to="/projects/new" title={t('common.newProject')} />} 
-                className="h-9 w-full transition-all duration-300 justify-start pl-4 pr-2" 
+              <Button
+                render={<NavLink to="/projects/new" title={t('common.newProject')} />}
+                className="h-9 w-full transition-all duration-300 justify-start pl-4 pr-2"
                 size="sm"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
-                  isVisualExpanded 
-                    ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100' 
+                  isVisualExpanded
+                    ? 'opacity-100 max-w-[150px] ml-2 duration-300 delay-100'
                     : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                 }`}>
                   {t('common.newProject')}
@@ -471,8 +471,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
             {/* Main Group */}
             <div className="space-y-1">
               <h4 className={`px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider transition-all duration-300 ${
-                isVisualExpanded 
-                  ? 'opacity-100 max-h-[20px] pb-1' 
+                isVisualExpanded
+                  ? 'opacity-100 max-h-[20px] pb-1'
                   : 'opacity-0 max-h-0 pb-0 overflow-hidden'
               }`}>
                 {t('common.main')}
@@ -493,8 +493,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   <div className="flex items-center w-full gap-2.5">
                     <item.icon className="h-4 w-4 shrink-0" />
                     <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
-                      isVisualExpanded 
-                        ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100' 
+                      isVisualExpanded
+                        ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100'
                         : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                     }`}>
                       {item.label}
@@ -508,8 +508,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
             {isAdmin && navItems.resources && (
               <div className="space-y-1 pt-2">
                 <h4 className={`px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider transition-all duration-300 ${
-                  isVisualExpanded 
-                    ? 'opacity-100 max-h-[20px] pb-1' 
+                  isVisualExpanded
+                    ? 'opacity-100 max-h-[20px] pb-1'
                     : 'opacity-0 max-h-0 pb-0 overflow-hidden'
                 }`}>
                   {t('common.infrastructure')}
@@ -530,8 +530,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                     <div className="flex items-center w-full gap-2.5">
                       <item.icon className="h-4 w-4 shrink-0" />
                       <span className={`truncate whitespace-nowrap transition-all ease-in-out ${
-                        isVisualExpanded 
-                          ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100' 
+                        isVisualExpanded
+                          ? 'opacity-100 max-w-[180px] ml-2.5 duration-300 delay-100'
                           : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
                       }`}>
                         {item.label}
@@ -542,7 +542,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               </div>
             )}
           </nav>
-          
+
           <div className="p-3 border-t">
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -554,8 +554,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   <AvatarFallback className="bg-primary/10 text-primary">{userInitials}</AvatarFallback>
                 </Avatar>
                 <div className={`flex-1 min-w-0 text-left transition-all ease-in-out ${
-                  isVisualExpanded 
-                    ? 'opacity-100 max-w-[180px] duration-300 delay-100' 
+                  isVisualExpanded
+                    ? 'opacity-100 max-w-[180px] duration-300 delay-100'
                     : 'opacity-0 max-w-0 overflow-hidden duration-75'
                 }`}>
                   <p className="text-sm font-medium leading-none truncate whitespace-nowrap">{user?.name}</p>
@@ -616,7 +616,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           </div>
         </aside>
       </div>
-      
+
       {/* Content Stream Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
         {/* Impersonation Banner */}
@@ -701,7 +701,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                </DropdownMenu>
              )}
            </div>
-           
+
            <div className="flex items-center gap-4">
              <LanguageSwitcher />
 
@@ -713,7 +713,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              >
                 {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
              </Button>
-             
+
              <Button
                 variant={location.pathname.includes('feedback') ? "default" : "outline"}
                 size="icon"

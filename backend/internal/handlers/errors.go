@@ -44,7 +44,7 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 		"error": message,
 		"code":  code,
 	}
-	
+
 	// Include structured details if present for API consumers
 	if ae != nil && ae.Details != nil {
 		response["details"] = ae.Details

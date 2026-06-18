@@ -124,7 +124,7 @@ export function StudioDashboardTab() {
 
           if (jobId) {
             toast.info(t('databaseStudio.dashboard.actions.rotatingInProgress') || "Rotation in progress. Applying configuration changes...")
-            
+
             let attempts = 0
             // Poll project deployment status until completion
             pollIntervalRef.current = setInterval(async () => {
@@ -142,7 +142,7 @@ export function StudioDashboardTab() {
               try {
                 const projRes = await projectsAPI.get(id)
                 const project = projRes.data.data
-                
+
                 if (project) {
                   const status = project.deployment_status
                   if (status === 'completed' || status === 'failed' || status === 'cancelled') {
@@ -255,7 +255,7 @@ export function StudioDashboardTab() {
               </h3>
               <p className="text-xs text-muted-foreground/80">{t('databaseStudio.dashboard.activity.desc')}</p>
             </div>
-            
+
             <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -407,10 +407,10 @@ export function StudioDashboardTab() {
               <div className="space-y-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t('databaseStudio.dashboard.credentials.password')}</span>
                 <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/10 font-mono text-xs">
-                  <input 
-                    type={revealPassword ? "text" : "password"} 
-                    value={dbOverview?.password || ''} 
-                    readOnly 
+                  <input
+                    type={revealPassword ? "text" : "password"}
+                    value={dbOverview?.password || ''}
+                    readOnly
                     className="bg-transparent border-none outline-none focus:ring-0 flex-1 min-w-0 pr-4 font-mono text-xs text-foreground/90 font-semibold"
                   />
                   <div className="flex items-center gap-3 shrink-0">
@@ -434,8 +434,8 @@ export function StudioDashboardTab() {
                     onClick={() => setCredentialsTab(tab)}
                     className={cn(
                       "flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer",
-                      credentialsTab === tab 
-                        ? "bg-background text-primary shadow-sm border border-border/30" 
+                      credentialsTab === tab
+                        ? "bg-background text-primary shadow-sm border border-border/30"
                         : "text-muted-foreground hover:text-foreground"
                     )}
                     style={{ cursor: 'pointer' }}
@@ -500,15 +500,15 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
             <Activity className="w-4.5 h-4.5" />
             {t('databaseStudio.dashboard.activity.panelTitle')}
           </h4>
-          
+
           <div className="space-y-4">
             {/* Status Indicator */}
             <div className="flex justify-between items-center text-xs">
               <span className="font-bold text-muted-foreground uppercase tracking-wider">{t('databaseStudio.dashboard.metrics.status')}:</span>
               <span className={cn(
                 "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide border",
-                isSuspended 
-                  ? "bg-destructive/10 text-destructive border-destructive/20 animate-pulse" 
+                isSuspended
+                  ? "bg-destructive/10 text-destructive border-destructive/20 animate-pulse"
                   : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
               )}>
                 {instanceStatus}
@@ -517,17 +517,17 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
 
             {metrics && (() => {
               const connectionRatio = metrics.active_connections / 15;
-              const connectionColor = connectionRatio > 0.8 
-                ? 'bg-destructive' 
-                : connectionRatio > 0.6 
-                  ? 'bg-amber-500' 
+              const connectionColor = connectionRatio > 0.8
+                ? 'bg-destructive'
+                : connectionRatio > 0.6
+                  ? 'bg-amber-500'
                   : 'bg-primary';
 
               const storageRatio = metrics.size_kb / 1048576;
-              const storageColor = storageRatio > 0.8 
-                ? 'bg-destructive' 
-                : storageRatio > 0.6 
-                  ? 'bg-amber-500' 
+              const storageColor = storageRatio > 0.8
+                ? 'bg-destructive'
+                : storageRatio > 0.6
+                  ? 'bg-amber-500'
                   : 'bg-primary';
 
               return (
@@ -541,8 +541,8 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                      <div 
-                         className={cn("h-full transition-all duration-500", connectionColor)} 
+                      <div
+                         className={cn("h-full transition-all duration-500", connectionColor)}
                          style={{ width: `${Math.min(connectionRatio * 100, 100)}%` }}
                       />
                     </div>
@@ -557,8 +557,8 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                      <div 
-                         className={cn("h-full transition-all duration-500", storageColor)} 
+                      <div
+                         className={cn("h-full transition-all duration-500", storageColor)}
                          style={{ width: `${Math.min(storageRatio * 100, 100)}%` }}
                       />
                     </div>
@@ -675,18 +675,18 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
               </div>
 
               <div className="flex gap-2.5 pt-2 border-t border-border/40">
-                <Button 
-                  onClick={handleTransferSubmit} 
-                  disabled={isActionLoading || !selectedTargetProject} 
+                <Button
+                  onClick={handleTransferSubmit}
+                  disabled={isActionLoading || !selectedTargetProject}
                   className="font-bold flex-1 rounded-xl cursor-pointer"
                   style={{ cursor: 'pointer' }}
                 >
                   {isActionLoading ? t('common.executing') : t('databaseStudio.dashboard.transferModal.btnSubmit')}
                 </Button>
-                <Button 
-                  type="button" 
-                  onClick={() => setShowTransferModal(false)} 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  onClick={() => setShowTransferModal(false)}
+                  variant="outline"
                   className="font-bold flex-1 rounded-xl cursor-pointer"
                   style={{ cursor: 'pointer' }}
                 >

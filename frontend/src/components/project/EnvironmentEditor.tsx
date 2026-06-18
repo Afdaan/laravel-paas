@@ -78,7 +78,7 @@ interface EnvironmentLoadError {
 export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, project }: EnvironmentEditorProps) {
   const { t } = useTranslation()
   const loadRequestRef = useRef(0)
-  
+
   // State variables
   const [activeSubTab, setActiveSubTab] = useState('grid')
   const [isLoading, setIsLoading] = useState(true)
@@ -89,10 +89,10 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
   const [currentDotenv, setCurrentDotenv] = useState('')
   const [boundStores, setBoundStores] = useState<BoundStore[]>([])
   const [allStores, setAllStores] = useState<SecretStoreSummary[]>([])
-  
+
   const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({})
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  
+
   // Modals state
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false)
   const [linkForm, setLinkForm] = useState({ storeId: '', environment: 'all' })
@@ -117,7 +117,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
     baseline["APP_NAME"] = project.name
     baseline["APP_ENV"] = "production"
     baseline["APP_DEBUG"] = "false"
-    
+
     // APP_URL
     let appURL = `http://${project.subdomain}`
     let primaryDomain = ''
@@ -181,7 +181,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
         }
         const isDBKey = key.startsWith('DB_') || key === 'DATABASE_URL'
         const isPlatformKey = key === 'APP_NAME' || key === 'APP_URL'
-        
+
         let source = 'secret_store'
         if (isPlatformKey) {
           source = 'system'
@@ -189,7 +189,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
           const isBaselineKey = Object.prototype.hasOwnProperty.call(baselineValues, key)
           const isOverridden = isBaselineKey && baselineValues[key] !== val
           const isNotBaseline = !isBaselineKey
-          
+
           if (isOverridden || isNotBaseline) {
             source = 'secret_store'
           } else {
@@ -211,13 +211,13 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
       const bLocked = b.Source === 'system' || b.Source === 'db_auto'
       if (aLocked && !bLocked) return -1
       if (!aLocked && bLocked) return 1
-      
+
       // If both are locked, prioritize system first, then db_auto
       if (aLocked && bLocked) {
         if (a.Source === 'system' && b.Source !== 'system') return -1
         if (a.Source !== 'system' && b.Source === 'system') return 1
       }
-      
+
       return a.Key.localeCompare(b.Key)
     })
 
@@ -272,7 +272,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
         if (requestID !== loadRequestRef.current) return
         const storeDetails = detailRes.data.data
         const storeBindings: SecretStoreProjectBinding[] = storeDetails.bindings || []
-        
+
         // Find matching binding for this project uid
         const match = storeBindings.find((b) => b.project?.uid === uid)
         if (match) {
@@ -340,7 +340,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
       }
       return item
     })
-    
+
     // Compile back to dotenv
     const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
     setCurrentDotenv(newContent)
@@ -363,9 +363,9 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
       Value: addForm.value,
       Source: 'secret_store'
     }
-    
+
     const updatedItems = [...gridItems, newItem]
-    
+
     // Compile back to dotenv
     const newContent = updatedItems.map(item => `${item.Key}=${item.Value}`).join('\n')
     setCurrentDotenv(newContent)
@@ -487,10 +487,10 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
           </div>
           <div className="flex items-center gap-3">
             {activeSubTab === 'bulk' && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setIsEnvHidden(!isEnvHidden)} 
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEnvHidden(!isEnvHidden)}
                 className="h-9"
               >
                 {isEnvHidden ? <Eye className="w-3.5 h-3.5 mr-2" /> : <EyeOff className="w-3.5 h-3.5 mr-2" />}
@@ -567,22 +567,22 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
         <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="px-6 py-4 border-b border-border/50 bg-muted/5">
             <TabsList className="flex border border-border/40 p-1 bg-muted/20 rounded-xl w-fit h-auto gap-1 bg-muted/20">
-              <TabsTrigger 
-                value="grid" 
+              <TabsTrigger
+                value="grid"
                 className="px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
               >
                 <Grid className="w-3.5 h-3.5 mr-1.5" />
                 {t('projectDetail.secrets.gridTab')}
               </TabsTrigger>
-              <TabsTrigger 
-                value="bulk" 
+              <TabsTrigger
+                value="bulk"
                 className="px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
               >
                 <FileText className="w-3.5 h-3.5 mr-1.5" />
                 {t('projectDetail.secrets.bulkTab')}
               </TabsTrigger>
-              <TabsTrigger 
-                value="stores" 
+              <TabsTrigger
+                value="stores"
                 className="px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
               >
                 <Link2 className="w-3.5 h-3.5 mr-1.5" />
@@ -619,8 +619,8 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
                         const isDirty = !Object.prototype.hasOwnProperty.call(initialMap, item.Key) || initialMap[item.Key] !== item.Value
                         const isRevealed = !!revealedKeys[item.Key] || isDirty
                         return (
-                          <TableRow 
-                            key={item.Key} 
+                          <TableRow
+                            key={item.Key}
                             className={cn(
                               "hover:bg-muted/10 transition-colors",
                               isDirty && "bg-amber-500/[0.03] dark:bg-amber-500/[0.02] hover:bg-amber-500/[0.05]"
@@ -750,7 +750,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
                 )}
                 placeholder={t('projectDetail.secrets.placeholder')}
               />
-              
+
               {isEnvHidden && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="px-6 py-3 bg-zinc-900/80 border border-white/10 backdrop-blur-md rounded-full shadow-2xl flex items-center gap-3">

@@ -515,8 +515,9 @@ export function SettingsTab({
                         await databaseAPI.detach(project.database_instance.id)
                         toast.success(t('common.success'))
                         setShowDbRedeployModal(true)
-                      } catch (err: any) {
-                        toast.error(err.response?.data?.error || t('common.error'))
+                      } catch (err: unknown) {
+                        const error = err as { response?: { data?: { error?: string } } };
+                        toast.error(error.response?.data?.error || t('common.error'))
                       } finally {
                         setIsDbActionLoading(false)
                       }
@@ -587,8 +588,9 @@ export function SettingsTab({
                           toast.success(t('common.success'))
                           setShowDbRedeployModal(true)
                           setSelectedDbId('')
-                        } catch (err: any) {
-                          toast.error(err.response?.data?.error || t('common.error'))
+                        } catch (err: unknown) {
+                          const error = err as { response?: { data?: { error?: string } } };
+                          toast.error(error.response?.data?.error || t('common.error'))
                         } finally {
                           setIsDbActionLoading(false)
                         }
@@ -890,8 +892,9 @@ export function SettingsTab({
                   toast.success(t('common.success'))
                   setShowDbRedeployModal(false)
                   window.location.reload()
-                } catch (error: any) {
-                  toast.error(error.response?.data?.error || t('common.error'))
+                } catch (error: unknown) {
+                  const err = error as { response?: { data?: { error?: string } } };
+                  toast.error(err.response?.data?.error || t('common.error'))
                 } finally {
                   setIsDbActionLoading(false)
                 }

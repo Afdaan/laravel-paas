@@ -19,14 +19,14 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string | null>>({})
-  
+
   const login = useAuthStore((state) => state.login)
   const token = useAuthStore((state) => state.token)
   const user = useAuthStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
-  
+
   // Get redirect path from state, default to dashboards
   const from = location.state?.from?.pathname || null
 
@@ -50,25 +50,25 @@ function Login() {
       navigate(destination, { replace: true })
     }
   }, [token, user, navigate, from])
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const errors: Record<string, string | null> = {}
     if (!email.trim()) errors.email = t('login.emailRequired')
     if (!password) errors.password = t('login.passwordRequired')
-    
+
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
       return
     }
 
     setIsLoading(true)
-    
+
     try {
       const user = await login(email, password)
       toast.success(t('login.welcomeBack', { name: user.name }))
-      
+
       const isAdminMatched = user.role === 'superadmin' || user.role === 'admin'
       const destination = from || (isAdminMatched ? '/admin/dashboard' : '/dashboard')
       navigate(destination)
@@ -79,7 +79,7 @@ function Login() {
       setIsLoading(false)
     }
   }
-  
+
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   return (
@@ -108,7 +108,7 @@ function Login() {
           <ArrowLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" />
           {t('login.backToHome')}
         </Button>
-        
+
         <Card size="sm" className="border-border/60 shadow-sm shadow-foreground/5">
           <CardHeader className="justify-items-center gap-3 px-6 pt-6 pb-2 text-center">
             <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
@@ -143,7 +143,7 @@ function Login() {
                    <p className="text-xs text-destructive font-medium">{validationErrors.email}</p>
                 )}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="password" className={validationErrors.password ? 'text-destructive' : 'text-foreground'}>
                   {t('login.password')}
@@ -185,7 +185,7 @@ function Login() {
                    <p className="text-xs text-destructive font-medium">{validationErrors.password}</p>
                 )}
               </div>
-              
+
               <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <>

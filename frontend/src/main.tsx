@@ -28,8 +28,8 @@ const preventSpam = (
   if (options && options.id !== undefined) {
     return originalFn(message, options)
   }
-  const msgStr = typeof message === 'string' 
-    ? message 
+  const msgStr = typeof message === 'string'
+    ? message
     : (typeof message === 'function' ? 'functional-toast' : String(message || ''))
   const now = Date.now()
   const existing = activeToasts.get(msgStr)

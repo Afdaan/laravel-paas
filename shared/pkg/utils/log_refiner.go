@@ -165,7 +165,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 
 			// 22. Hide internal env vars but ALLOW package manager summaries
 			regexp.MustCompile(`(RAILPACK_|NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
-			
+
 			// 24. Hide npm warn config (e.g. npm warn config production) which occurs outside docker buildkit
 			regexp.MustCompile(`npm warn config (production|global|only|\[redacted\])`),
 		},

@@ -96,7 +96,7 @@ function App() {
       .catch((err) => {
         console.error('Failed to check init status', err)
         // If it fails (maybe server still starting), try again later or assume true to avoid blocks
-        setIsInitialized(true) 
+        setIsInitialized(true)
       })
   }, [])
 
@@ -193,7 +193,7 @@ function App() {
     window.addEventListener('auth:expired', handleExpired)
     window.addEventListener('system:offline', handleOffline)
     window.addEventListener('system:updating', handleUpdating)
-    
+
     return () => {
       window.removeEventListener('auth:expired', handleExpired)
       window.removeEventListener('system:offline', handleOffline)
@@ -215,15 +215,15 @@ function App() {
         {/* Public Routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        <Route 
-          path="/setup" 
+        <Route
+          path="/setup"
           element={
             isInitialized ? (
               <Navigate to="/login" replace />
             ) : (
               <Setup onComplete={() => setIsInitialized(true)} />
             )
-          } 
+          }
         />
 
         {/* User Routes */}

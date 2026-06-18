@@ -243,14 +243,14 @@ const toSafeBackupFilename = (name: string) => {
 
 export default function SecretStoreDashboard() {
   const { t } = useTranslation()
-  
+
   // State variables
   const [stores, setStores] = useState<SecretStore[]>([])
   const [selectedStore, setSelectedStore] = useState<SecretStore | null>(null)
   const [items, setItems] = useState<SecretStoreItem[]>([])
   const [bindings, setBindings] = useState<SecretStoreBinding[]>([])
   const [projects, setProjects] = useState<ProjectOption[]>([])
-  
+
   const [isLoadingStores, setIsLoadingStores] = useState(true)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
   const [revealedValues, setRevealedValues] = useState<Record<number, string>>({})
@@ -291,26 +291,26 @@ export default function SecretStoreDashboard() {
 
     toast.error(t(fallbackKey))
   }
-  
+
   // Modals state
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false)
   const [storeForm, setStoreForm] = useState({ name: '', description: '' })
   const [editingStoreId, setEditingStoreId] = useState<number | null>(null)
-  
+
   const [isVarModalOpen, setIsVarModalOpen] = useState(false)
   const [varForm, setVarForm] = useState({ key: '', value: '' })
   const [editingVarId, setEditingVarId] = useState<number | null>(null)
-  
+
   const [isBindingModalOpen, setIsBindingModalOpen] = useState(false)
   const [bindingForm, setBindingForm] = useState({ projectUid: '', environment: 'all' })
-  
+
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
   const [selectedItemHistory, setSelectedItemHistory] = useState<SecretStoreItemValue[]>([])
   const [activeHistoryItem, setActiveHistoryItem] = useState<SecretStoreItem | null>(null)
-  
+
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [importText, setImportText] = useState('')
-  
+
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -327,7 +327,7 @@ export default function SecretStoreDashboard() {
       const response = await secretStoreAPI.list()
       const data = response.data.data || []
       setStores(data)
-      
+
       if (selectId) {
         const found = data.find((s: SecretStore) => s.id === selectId)
         if (found) setSelectedStore(found)
@@ -388,7 +388,7 @@ export default function SecretStoreDashboard() {
   const handleSaveStore = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!storeForm.name.trim()) return
-    
+
     try {
       if (editingStoreId) {
         await secretStoreAPI.update(editingStoreId, storeForm)
@@ -620,7 +620,7 @@ export default function SecretStoreDashboard() {
           <h1 className="text-3xl font-bold tracking-tight mb-1">{t('secretstore.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('secretstore.desc')}</p>
         </div>
-        <Button 
+        <Button
           size="sm"
           onClick={() => {
             setEditingStoreId(null)
@@ -712,20 +712,20 @@ export default function SecretStoreDashboard() {
               <Tabs defaultValue="variables" className="w-full">
                 <div className="px-6 py-4 border-b border-border/50 bg-muted/5">
                   <TabsList className="flex border border-border/40 p-1 bg-muted/20 rounded-xl w-fit h-auto gap-1 bg-muted/20">
-                    <TabsTrigger 
-                      value="variables" 
+                    <TabsTrigger
+                      value="variables"
                       className="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
                     >
                       {t('secretstore.variables')}
                     </TabsTrigger>
-                    <TabsTrigger 
-                      value="bindings" 
+                    <TabsTrigger
+                      value="bindings"
                       className="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
                     >
                       {t('secretstore.bindings')}
                     </TabsTrigger>
-                    <TabsTrigger 
-                      value="settings" 
+                    <TabsTrigger
+                      value="settings"
                       className="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer h-auto border border-transparent data-active:!bg-background data-active:!text-primary data-active:!shadow-sm data-active:!border-border/40 !text-muted-foreground hover:!text-foreground dark:!text-muted-foreground dark:hover:!text-foreground dark:data-active:!text-primary dark:data-active:!bg-background"
                     >
                       {t('common.settings')}
@@ -797,7 +797,7 @@ export default function SecretStoreDashboard() {
                                       >
                                         {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                                       </Button>
-                                      
+
                                       <Button
                                         variant="outline"
                                         size="icon"
@@ -810,7 +810,7 @@ export default function SecretStoreDashboard() {
                                       >
                                         {copiedKey === item.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                                       </Button>
- 
+
                                       <Button
                                         variant="outline"
                                         size="icon"
@@ -824,7 +824,7 @@ export default function SecretStoreDashboard() {
                                       >
                                         <History className="w-3.5 h-3.5" />
                                       </Button>
- 
+
                                       <Button
                                         variant="outline"
                                         size="icon"
@@ -834,7 +834,7 @@ export default function SecretStoreDashboard() {
                                       >
                                         <Info className="w-3.5 h-3.5" />
                                       </Button>
- 
+
                                       <Button
                                         variant="outline"
                                         size="icon"
@@ -902,8 +902,8 @@ export default function SecretStoreDashboard() {
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="secondary" className="font-bold text-[9px] uppercase tracking-wider px-2 py-0.5">
-                                    {binding.environment === 'all' || binding.environment === '' 
-                                      ? t('secretstore.allEnvs') 
+                                    {binding.environment === 'all' || binding.environment === ''
+                                      ? t('secretstore.allEnvs')
                                       : binding.environment}
                                   </Badge>
                                 </TableCell>
@@ -973,7 +973,7 @@ export default function SecretStoreDashboard() {
               <FolderKey className="w-12 h-12 text-muted-foreground opacity-30 mb-4" />
               <h3 className="font-bold text-base mb-1">{t('secretstore.noStores')}</h3>
               <p className="text-xs text-muted-foreground max-w-xs mb-6">{t('secretstore.noStoresDesc')}</p>
-              <Button 
+              <Button
                 onClick={() => {
                   setEditingStoreId(null)
                   setStoreForm({ name: '', description: '' })
@@ -1044,7 +1044,7 @@ export default function SecretStoreDashboard() {
               {editingVarId ? t('secretstore.rotate') : t('secretstore.addVariable')}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              {editingVarId 
+              {editingVarId
                 ? t('secretstore.rotateNotice')
                 : t('secretstore.encryptionNotice')}
             </DialogDescription>

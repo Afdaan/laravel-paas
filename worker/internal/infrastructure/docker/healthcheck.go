@@ -98,7 +98,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 			return ctx.Err()
 		}
 	}
-	
+
 	maxAttempts := 45 // Increased to give larger total readiness budget for slow-starting apps (Prisma init, DB pool warmup)
 	currentInterval := 200 * time.Millisecond
 	isReady := false

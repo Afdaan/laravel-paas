@@ -80,7 +80,7 @@ deploy_with_anti_downtime() {
     local context_dir=$2
     local image_tag=$3
     shift 3
-    
+
     local image_name="paas-$service_name:$image_tag"
     local container_name="paas-$service_name"
     if [ "$service_name" = "worker" ]; then
@@ -93,7 +93,7 @@ deploy_with_anti_downtime() {
 
     local success=false
     echo -e "${YELLOW}[BUILD] Running docker build with BuildKit... (Retry enabled: 3 attempts)${NC}"
-    
+
     for attempt in {1..3}; do
         if [ "$service_name" = "backend" ]; then
             if DOCKER_BUILDKIT=1 docker build -t "$image_name" -f "${PROJECT_ROOT}/backend/Dockerfile" "${PROJECT_ROOT}"; then
@@ -110,16 +110,16 @@ deploy_with_anti_downtime() {
                 # Capture and disable execution tracing to safeguard build arguments from leaking in public CI/CD logs.
                 [[ $- == *x* ]] && was_tracing=true || was_tracing=false
                 { set +x; } 2>/dev/null
-                
+
                 if DOCKER_BUILDKIT=1 docker build \
                     --build-arg VITE_GITHUB_APP_URL="$VITE_GITHUB_APP_URL" \
                     -t "$image_name" "$context_dir"; then
                     success=true
                 fi
-                
+
                 # Restore execution tracing if it was active
                 if [ "$was_tracing" = true ]; then set -x; fi
-                
+
                 if [ "$success" = true ]; then
                     break
                 fi
@@ -142,7 +142,7 @@ deploy_with_anti_downtime() {
 
     docker rm -f "$temp_container_name" 2>/dev/null || true
     echo -e "${YELLOW}[RUN] Starting new container $temp_container_name...${NC}"
-    
+
     if ! docker run -d --name "$temp_container_name" "$@" "$image_name"; then
         echo -e "${RED}[ERROR] Failed to start new container. Keeping current version.${NC}"
         return 1
@@ -168,28 +168,28 @@ deploy_with_anti_downtime() {
 
     if [ "$healthy" == "true" ]; then
         echo -e "${GREEN}[SUCCESS] $service_name is healthy! Swapping containers...${NC}"
-        
+
         # 1. Prepare for cutover by moving the current container to 'old' identity
         if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
             echo -e "${YELLOW}[SWAP] Reassigning current $container_name to $old_container_name...${NC}"
             docker rename "$container_name" "$old_container_name" 2>/dev/null || true
         fi
-        
+
         # 2. Immediately assign the new container to the main identity
         echo -e "${YELLOW}[SWAP] Promoting $temp_container_name to $container_name...${NC}"
         docker rename "$temp_container_name" "$container_name"
         docker tag "$image_name" "paas-$service_name:latest" 2>/dev/null || true
-        
+
         # 3. NOW stop the old version
         if docker ps -a --format '{{.Names}}' | grep -q "^${old_container_name}$"; then
             echo -e "${YELLOW}[STOP] Stopping previous $service_name version...${NC}"
             docker stop "$old_container_name" 2>/dev/null || true
             docker rm -f "$old_container_name" 2>/dev/null || true
         fi
-        
+
         echo -e "${YELLOW}[CLEANUP] Removing old images for $service_name...${NC}"
         docker images "paas-$service_name" --format "{{.Tag}}" | grep -v "$image_tag" | xargs -I {} docker rmi "paas-$service_name:{}" 2>/dev/null || true
-        
+
         return 0
     else
         echo -e "${RED}[ERROR] $service_name validation failed. Inspecting container logs before rollback:${NC}"
@@ -204,7 +204,7 @@ deploy_with_anti_downtime() {
 deploy_backend() {
     echo -e "${YELLOW}Deploying backend module...${NC}"
     BACKEND_TAG=$(get_next_service_tag "backend")
-    
+
     deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$BACKEND_TAG" \
         --network paas-network \
         --restart unless-stopped \
@@ -253,7 +253,7 @@ deploy_backend() {
 deploy_frontend() {
     echo -e "${YELLOW}Deploying frontend module...${NC}"
     FRONTEND_TAG=$(get_next_service_tag "frontend")
-    
+
     deploy_with_anti_downtime "frontend" "${PROJECT_ROOT}/frontend" "$FRONTEND_TAG" \
         --network paas-network \
         --restart unless-stopped \
@@ -265,12 +265,12 @@ deploy_frontend() {
 deploy_worker() {
     echo -e "${YELLOW}Deploying standalone worker module with zero-downtime...${NC}"
     WORKER_TAG=$(get_next_service_tag "worker")
-    
+
     echo -e "${YELLOW}Setting target worker version in Redis: $WORKER_TAG...${NC}"
     REDIS_AUTH_PARAM=""
     [ ! -z "$REDIS_PASSWORD" ] && REDIS_AUTH_PARAM="-a $REDIS_PASSWORD"
     docker exec paas-redis redis-cli $REDIS_AUTH_PARAM set "worker:target_version" "$WORKER_TAG" 2>/dev/null || true
-    
+
     deploy_with_anti_downtime "worker" "${PROJECT_ROOT}" "$WORKER_TAG" \
         --network paas-network \
         --restart unless-stopped \

@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { settingsAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
-import { 
-  Globe, 
-  Shield, 
-  Activity, 
-  Cpu, 
-  Database, 
-  Save, 
+import {
+  Globe,
+  Shield,
+  Activity,
+  Cpu,
+  Database,
+  Save,
   AlertCircle,
   Server,
   Network,
@@ -43,7 +43,7 @@ const AdminSettings = () => {
   const [settings, setSettings] = useState<PlatformSettings>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  
+
   const fetchSettings = useCallback(async () => {
     setIsLoading(true)
     try {
@@ -59,11 +59,11 @@ const AdminSettings = () => {
   useEffect(() => {
     fetchSettings()
   }, [fetchSettings])
-  
+
   const handleChange = (key: keyof PlatformSettings, value: string | number | boolean) => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
-  
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
@@ -74,7 +74,7 @@ const AdminSettings = () => {
           payload[key] = String(value)
         }
       })
-      
+
       await settingsAPI.update(payload)
       toast.success(t('admin.settings.success'))
     } catch (error) {
@@ -83,7 +83,7 @@ const AdminSettings = () => {
       setIsSaving(false)
     }
   }
-  
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-80 gap-6">
@@ -156,7 +156,7 @@ const AdminSettings = () => {
               <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10 flex items-center gap-3">
                 <div className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest">{t('admin.settings.wildcardResolve')}:</div>
                 <div className="flex-1 text-sm font-mono text-muted-foreground truncate">
-                  *.{settings.project_domain || 'example.com'} 
+                  *.{settings.project_domain || 'example.com'}
                 </div>
               </div>
             </div>
@@ -191,7 +191,7 @@ const AdminSettings = () => {
                   />
                 </div>
               </div>
-              
+
               <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Clock size={14} className="text-amber-500 shrink-0 mt-0.5" />
@@ -301,7 +301,7 @@ const AdminSettings = () => {
                 </Label>
                 <span className="text-lg font-bold text-foreground">{settings.cpu_limit_percent || 50}% <span className="text-sm text-muted-foreground">{t('admin.settings.cores')}</span></span>
               </div>
-              <Slider 
+              <Slider
                 value={[settings.cpu_limit_percent || 50]}
                 min={10}
                 max={100}
@@ -323,7 +323,7 @@ const AdminSettings = () => {
                 </Label>
                 <span className="text-lg font-bold text-foreground">{settings.memory_limit_mb || 512} <span className="text-sm text-muted-foreground">{t('admin.settings.mbRam')}</span></span>
               </div>
-              <Slider 
+              <Slider
                 value={[settings.memory_limit_mb || 512]}
                 min={128}
                 max={2048}

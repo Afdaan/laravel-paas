@@ -33,7 +33,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
   token: null,
   adminToken: null,
   isLoading: true,
-  
+
   // Computed
   isAuthenticated: () => !!get().token,
   isAdmin: () => {
@@ -41,27 +41,27 @@ const useAuthStore = create<AuthState>((set, get) => ({
     return user?.role === 'superadmin' || user?.role === 'admin'
   },
   isSuperAdmin: () => get().user?.role === 'superadmin',
-  
+
   // Actions
   login: async (email, password) => {
     const response = await authAPI.login(email, password)
     const { user } = response.data
-    
+
     set({ token: SESSION_MARKER, user, adminToken: null, isLoading: false })
-    
+
     return user
   },
-  
+
   logout: async () => {
     try {
       await authAPI.logout()
     } catch (error) {
       // Ignored
     }
-    
+
     set({ token: null, user: null, adminToken: null, isLoading: false })
   },
-  
+
   fetchUser: async () => {
     set({ isLoading: true })
     try {
@@ -83,12 +83,12 @@ const useAuthStore = create<AuthState>((set, get) => ({
       }
     }
   },
-  
+
   loginAsClient: async () => {
     set({ token: SESSION_MARKER, adminToken: IMPERSONATION_MARKER })
     await get().fetchUser()
   },
-  
+
   returnToAdmin: async () => {
     await authAPI.returnToAdmin()
     set({ token: SESSION_MARKER, adminToken: null })

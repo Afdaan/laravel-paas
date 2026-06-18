@@ -50,7 +50,7 @@ export function StudioQueryTab() {
     try {
       const res = await databaseAPI.query(id, sqlQuery)
       setQueryResult(res.data)
-      
+
       setQueryHistory(prev => {
         const newHistory = [sqlQuery, ...prev.filter(q => q !== sqlQuery).slice(0, 49)]
         try {
@@ -60,7 +60,7 @@ export function StudioQueryTab() {
         }
         return newHistory
       })
-      
+
       toast.success(t('databaseStudio.query.successToast'))
     } catch (error) {
       const err = error as { response?: { data?: { error?: string } }; message?: string }

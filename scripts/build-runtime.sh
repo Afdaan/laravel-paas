@@ -85,12 +85,12 @@ for VERSION in "${VERSIONS[@]}"; do
         TAG_RUNTIME="paas-runtime-php:${VERSION}-alpine"
         reg_port=${REGISTRY_PORT:-"5000"}
         reg_host=${REGISTRY_HOST:-"127.0.0.1"}
-        
+
         if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_RUNTIME" >/dev/null 2>&1; then
             echo -e "${GREEN}[SKIP] PHP ${VERSION} runtime already exists. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG_RUNTIME)${NC}"
-            
+
             # Tag with registry hosts to avoid remote pulls and enable instant local resolution in BuildKit.
             $BUILD_CMD \
                 --build-arg PHP_VERSION="${VERSION}" \
@@ -114,12 +114,12 @@ for VERSION in "${VERSIONS[@]}"; do
         TAG_BUILDER="paas-builder-base:${VERSION}-alpine"
         reg_port=${REGISTRY_PORT:-"5000"}
         reg_host=${REGISTRY_HOST:-"127.0.0.1"}
-        
+
         if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_BUILDER" >/dev/null 2>&1; then
             echo -e "${GREEN}[SKIP] PHP ${VERSION} Unified Builder already exists. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} Unified Builder... ($TAG_BUILDER)${NC}"
-            
+
             # Tag with registry hosts to avoid remote pulls and enable instant local resolution in BuildKit.
             $BUILD_CMD \
                 --build-arg PHP_VERSION="${VERSION}" \

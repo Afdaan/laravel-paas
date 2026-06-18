@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
-import { 
-  Plus, 
-  Rocket, 
-  ExternalLink, 
-  Trash2, 
-  Clock, 
-  CheckCircle2, 
-  AlertCircle, 
+import {
+  Plus,
+  Rocket,
+  ExternalLink,
+  Trash2,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
   PauseCircle,
   Database,
   Globe,
@@ -64,7 +64,7 @@ const UserProjects = () => {
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const isFirstLoad = useRef(true)
-  
+
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -78,7 +78,7 @@ const UserProjects = () => {
     if (isFirstLoad.current) {
       setIsLoading(true)
     }
-    
+
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
@@ -89,7 +89,7 @@ const UserProjects = () => {
       isFirstLoad.current = false
     }
   }, [t])
-  
+
   useEffect(() => {
     fetchProjects()
   }, [fetchProjects])
@@ -100,11 +100,11 @@ const UserProjects = () => {
     setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status } : p))
   }
 
-  
+
   const handleDelete = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     setConfirmModal({
       isOpen: true,
       title: t('projectDetail.messages.deleteConfirm'),
@@ -122,10 +122,10 @@ const UserProjects = () => {
       }
     })
   }
-  
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <ConfirmationModal 
+      <ConfirmationModal
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
@@ -143,7 +143,7 @@ const UserProjects = () => {
           {t('common.newProject')}
         </Link>
       </div>
-      
+
       {/* Grid Architecture */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-80">
@@ -164,8 +164,8 @@ const UserProjects = () => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 pb-12">
           {projects.map((project) => (
-            <Card 
-              key={project.uid} 
+            <Card
+              key={project.uid}
               onClick={() => navigate(`/projects/${project.uid}`)}
               className="group flex flex-col h-full hover:border-primary/30 transition-all cursor-pointer overflow-hidden border-border/50"
             >
@@ -187,7 +187,7 @@ const UserProjects = () => {
                       {getFrameworkLabel(project.framework, t('common.general'))}
                     </Badge>
                   </div>
-                  <a 
+                  <a
                     href={project.url}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -207,8 +207,8 @@ const UserProjects = () => {
                       <span>{project.framework === 'Laravel' ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')}</span>
                     </div>
                       <Badge variant="secondary" className="font-mono text-[10px]">
-                        {project.framework === 'Laravel' 
-                          ? `${t('projectDetail.settings.version')} ${project.php_version}` 
+                        {project.framework === 'Laravel'
+                          ? `${t('projectDetail.settings.version')} ${project.php_version}`
                           : getFrameworkLabel(project.framework, t('common.general'))}
                       </Badge>
                   </div>
@@ -218,8 +218,8 @@ const UserProjects = () => {
                       <span>{t('projectDetail.metrics.db')}</span>
                     </div>
                     <span className="text-xs font-semibold text-primary">
-                      {project.database_name 
-                        ? getEngineDisplayName(project.database_instance?.engine) 
+                      {project.database_name
+                        ? getEngineDisplayName(project.database_instance?.engine)
                         : t('projectDetail.metrics.inactive')}
                     </span>
                   </div>
@@ -230,7 +230,7 @@ const UserProjects = () => {
                       <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">{t('common.date')}</span>
                       <span className="text-xs font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
-                   
+
                   <div className="flex gap-2">
                       <RestartButton
                         projectId={project.uid}

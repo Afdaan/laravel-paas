@@ -11,10 +11,10 @@ export function DatabaseEngineIcon({ engine, className }: { engine?: string; cla
   }
 
   return (
-    <svg 
-      viewBox="0 0 24 24" 
-      aria-hidden="true" 
-      className={cn('w-5 h-5 shrink-0', className)} 
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={cn('w-5 h-5 shrink-0', className)}
       xmlns="http://www.w3.org/2000/svg"
     >
       <path fill={`#${icon.hex}`} d={icon.path} />
@@ -37,7 +37,7 @@ export const parseDbType = (dbType: string) => {
   if (match) {
     length = parseInt(match[1], 10);
   }
-  
+
   if (typeLower.includes('varchar') || typeLower.includes('string') || typeLower.includes('char')) {
     return { type: 'varchar', length };
   }
@@ -88,7 +88,7 @@ export const adjustDatetimeForDatabase = (inputValue: string): string => {
     const strToParse = inputValue.length === 10 ? `${inputValue}T00:00` : inputValue
     const d = new Date(strToParse)
     if (isNaN(d.getTime())) return inputValue
-    
+
     // toISOString() returns UTC like "2026-06-01T08:45:00.000Z"
     return d.toISOString().slice(0, 19).replace('T', ' ')
   } catch (e) {
@@ -115,7 +115,7 @@ export const formatDatetimeLocal = (val: unknown) => {
 
     const d = new Date(parsedStr)
     if (isNaN(d.getTime())) return ''
-    
+
     // toLocalISOString converts it to the format expected by datetime-local input
     return toLocalISOString(d)
   } catch (e) {
@@ -188,7 +188,7 @@ export const formatHumanDatetime = (val: unknown) => {
     const hours = String(d.getHours()).padStart(2, '0')
     const minutes = String(d.getMinutes()).padStart(2, '0')
     const seconds = String(d.getSeconds()).padStart(2, '0')
-    
+
     return `${day} ${month} ${year}, ${hours}:${minutes}:${seconds}`
   } catch (e) {
     return String(val)
@@ -222,7 +222,7 @@ export const formatCellValue = (val: unknown, columnType?: string): React.ReactN
   if (val === null || val === undefined) {
     return React.createElement('span', { className: 'text-muted-foreground/30 italic' }, 'NULL')
   }
-  
+
   const strVal = String(val).trim()
   if (!strVal || strVal.startsWith('0000-00-00') || strVal.startsWith('0001-01-01')) {
     return React.createElement('span', { className: 'text-muted-foreground/30 italic' }, 'NULL')

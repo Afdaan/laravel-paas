@@ -239,7 +239,7 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 
 					errorMsg := fmt.Sprintf("Deployment failed: %s.", reason)
 					sanitizedMsg := utils.SanitizeError(errorMsg)
-					
+
 					// Use a timeout context instead of context.Background() to prevent indefinite hangs during DB failure
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					if _, err := w.projectService.TransitionDeploymentState(ctx, project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", sanitizedMsg); err != nil {
@@ -259,7 +259,7 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 					// Sanitize jobID to prevent path traversal risks
 					safeJobID := filepath.Base(filepath.Clean(jobID))
 					buildLogPath := w.getActiveLogPath(&project, safeJobID)
-					
+
 					// Ensure the logs directory exists; if the original worker crashed before creating it, os.OpenFile will fail
 					if err := os.MkdirAll(filepath.Dir(buildLogPath), 0755); err != nil {
 						slog.Error("Central watchdog: failed to create logs directory", "projectId", project.ID, "error", err)

@@ -68,7 +68,7 @@ function UserDashboard() {
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const isFirstLoad = useRef(true)
-  
+
   const fetchDashboardData = useCallback(async () => {
     if (isFirstLoad.current) {
       setIsLoading(true)

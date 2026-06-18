@@ -114,7 +114,7 @@ const AdminProjects = () => {
     if (isFirstLoad.current || forced) {
       setIsLoading(true)
     }
-    
+
     try {
       const statusQuery = statusFilter === 'all' ? '' : statusFilter
       const response = await projectsAPI.listAll({ page, search, status: statusQuery, limit })
@@ -308,8 +308,8 @@ const AdminProjects = () => {
                     <TableCell className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="font-mono bg-muted/30">
-                          {project.framework 
-                            ? `${project.framework}${project.language_version ? ` ${project.language_version}` : ''}` 
+                          {project.framework
+                            ? `${project.framework}${project.language_version ? ` ${project.language_version}` : ''}`
                             : (project.laravel_version ? `Laravel ${project.laravel_version}` : 'Static/Unknown')}
                         </Badge>
                       </div>

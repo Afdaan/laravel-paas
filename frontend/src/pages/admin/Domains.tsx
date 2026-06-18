@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { domainsAPI } from '../../services/api'
-import { 
-  Globe, 
-  CheckCircle2, 
-  AlertCircle, 
+import {
+  Globe,
+  CheckCircle2,
+  AlertCircle,
   AlertTriangle,
-  Clock, 
+  Clock,
   Loader2,
   ExternalLink,
   Search,
@@ -100,7 +100,7 @@ const AdminDomains = () => {
     fetchData()
   }, [fetchData])
 
-  const filteredDomains = domains.filter(d => 
+  const filteredDomains = domains.filter(d =>
     d.domain.toLowerCase().includes(search.toLowerCase()) ||
     (d.project && d.project.name.toLowerCase().includes(search.toLowerCase())) ||
     (d.project && d.project.user && d.project.user.name.toLowerCase().includes(search.toLowerCase()))
@@ -121,8 +121,8 @@ const AdminDomains = () => {
       <div className="flex items-center gap-4 bg-card p-4 border rounded-lg shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder={t('common.search')} 
+          <Input
+            placeholder={t('common.search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -163,9 +163,9 @@ const AdminDomains = () => {
                       </div>
                       <div className="flex min-w-0 flex-col text-left">
                         <span className="truncate text-[13px] font-semibold text-foreground/90">{domain.domain}</span>
-                        <a 
-                          href={`https://${domain.domain}`} 
-                          target="_blank" 
+                        <a
+                          href={`https://${domain.domain}`}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="flex w-fit items-center gap-1 text-[9px] text-muted-foreground hover:text-primary hover:underline underline-offset-2 mt-0.5"
                         >

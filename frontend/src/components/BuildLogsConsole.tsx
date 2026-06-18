@@ -319,18 +319,18 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   // 1. Fetch static logs once if deployment is NOT active
   useEffect(() => {
     if (isDeploying) return
-    
+
     let isMounted = true
-    
+
     const fetchStaticLogs = async () => {
       try {
         const [logsRes, eventsRes] = await Promise.all([
           projectsAPI.buildLogs(projectId).catch(() => ({ data: { logs: '' } })),
           projectsAPI.getDeploymentEvents(projectId).catch(() => ({ data: [] }))
         ])
-        
+
         if (!isMounted) return
-        
+
         dispatchLogs({ type: 'merge_snapshot', snapshot: toBuildLogsSnapshot(logsRes.data, activeJobId, true) })
         if (Array.isArray(eventsRes.data)) {
           setEvents(eventsRes.data)
@@ -369,7 +369,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
       if (isPollingFallbackActive) return
       isPollingFallbackActive = true
       if (pollingInterval) clearInterval(pollingInterval)
-      
+
       const fetchData = async () => {
         try {
           const [logsRes, eventsRes] = await Promise.all([
@@ -444,8 +444,8 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             const newLogLine = JSON.parse(e.data) as string | LiveBuildLogPayload
             const incomingJobId = typeof newLogLine === 'string' ? undefined : newLogLine.job_id
             if (!isBuildLogForActiveJob(incomingJobId, activeJobId)) return
-            const rawLine = typeof newLogLine === 'string' 
-              ? newLogLine 
+            const rawLine = typeof newLogLine === 'string'
+              ? newLogLine
               : (typeof newLogLine?.line === 'string' ? newLogLine.line : undefined)
             if (rawLine === undefined || rawLine === null) return
             const lines = rawLine.split('\n')
@@ -635,7 +635,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                       if (ev.error) return ev.error;
                       const type = ev.event_type || '';
                       const payload = ev.payload || '';
-                      
+
                       if (type === 'deployment_completed') {
                         const shortHash = payload && payload.length >= 7 ? payload.substring(0, 7) : payload;
                         return `Deployment completed successfully. Active commit: ${shortHash}`;
@@ -648,7 +648,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
                         const shortHash = payload && payload.length >= 7 ? payload.substring(0, 7) : payload;
                         return `Deployment skipped. Image is already up to date for commit: ${shortHash}`;
                       }
-                      
+
                       const message = ev.message || payload || '';
                       if (message.includes('\n')) {
                         return (

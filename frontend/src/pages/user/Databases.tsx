@@ -110,8 +110,9 @@ export default function Databases() {
 
       // Refresh list
       await fetchData()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.error'))
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('common.error'))
     } finally {
       setIsActionLoading(false)
     }
@@ -132,8 +133,9 @@ export default function Databases() {
       }
 
       await fetchData()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.error'))
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('common.error'))
     } finally {
       setIsActionLoading(false)
     }
@@ -153,8 +155,9 @@ export default function Databases() {
       setShowResetModal(false)
       setConfirmText('')
       await fetchData()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.error'))
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('common.error'))
     } finally {
       setIsActionLoading(false)
     }
@@ -180,8 +183,9 @@ export default function Databases() {
       }
 
       await fetchData()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.error'))
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('common.error'))
     } finally {
       setIsActionLoading(false)
     }
@@ -195,8 +199,9 @@ export default function Databases() {
       await projectsAPI.redeploy(redeployProjectUid)
       toast.success(t('common.success'))
       setShowRedeployModal(false)
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || t('common.error'))
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('common.error'))
     } finally {
       setIsActionLoading(false)
     }

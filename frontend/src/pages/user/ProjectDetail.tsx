@@ -153,7 +153,7 @@ function UserProjectDetail() {
   const [branchesList, setBranchesList] = useState<string[]>([])
   const [isFetchingBranches, setIsFetchingBranches] = useState(false)
   const [forceManualInput, setForceManualInput] = useState(false)
-  
+
   // Git Connection states
   const [githubUrlInput, setGithubUrlInput] = useState('')
   const [githubInstallationIdInput, setGithubInstallationIdInput] = useState<number | null>(null)
@@ -214,7 +214,7 @@ function UserProjectDetail() {
     if (activeTab === 'settings') {
       let cancelled = false
       setIsGithubInstallationsLoading(true)
-      
+
       githubAPI.listInstallations()
         .then(response => {
           if (cancelled) return
@@ -397,7 +397,7 @@ function UserProjectDetail() {
   const checkpoints = useMemo(() => {
     const seen = new Set<string>()
     const list: { sha: string, time: string, message: string }[] = []
-    
+
     // Create a map of jobId -> commitMessage from "building_image" events
     const commitMsgMap = new Map<string, string>()
     runtimeEvents.forEach(evt => {
@@ -410,7 +410,7 @@ function UserProjectDetail() {
         }
       }
     })
-    
+
     runtimeEvents.forEach(evt => {
       if (list.length >= 10) return;
       if (evt.event_type === 'deployment_completed' || evt.event_type === 'rollback_completed' || evt.event_type === 'deployment_skipped_existing_image') {
@@ -496,7 +496,7 @@ function UserProjectDetail() {
 
   const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
-  
+
   const deploymentPhase = useMemo(() => {
     if (!project?.deployment_status || !isDeploying) return null
     const status = project.deployment_status
@@ -506,7 +506,7 @@ function UserProjectDetail() {
     if (['promoting', 'cleanup'].includes(status)) return { label: 'Finalizing', phase: 'finalize' }
     return { label: 'Deploying', phase: 'build' }
   }, [project?.deployment_status, isDeploying])
-  
+
   const displayStatus = deploymentPhase ? 'building' : project?.status
 
   const fetchBranches = useCallback(async (showToast = false) => {
@@ -552,7 +552,7 @@ function UserProjectDetail() {
       // Prevent stale polling overwrites during optimistic action phases unless explicitly forced
       if (typeof forceUpdate !== 'boolean') forceUpdate = false // Handle accidental event objects
       if (!forceUpdate && isActionPendingRef.current) return
-      
+
       setProject(response.data)
       setConsecutiveErrors(0)
     } catch (error: unknown) {
@@ -585,7 +585,7 @@ function UserProjectDetail() {
         setIsLoading(false)
       }
     }
-  }, [uid, navigate, t, isDeleting])
+  }, [uid, navigate, t, isDeleting, setConsecutiveErrors])
 
   const handleDeploymentEvent = useCallback(() => {
     fetchProject(true)
@@ -594,7 +594,7 @@ function UserProjectDetail() {
   // Poll project details periodically during active deployments/restarts
   useEffect(() => {
     if (!project) return
-    const isDeploying = ['queued', 'pending', 'building', 'restarting'].includes(project.status) || 
+    const isDeploying = ['queued', 'pending', 'building', 'restarting'].includes(project.status) ||
       Boolean(project.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
     if (isDeploying) {
       const interval = setInterval(() => {
@@ -656,7 +656,7 @@ function UserProjectDetail() {
 
   const { visibleLogLines, logOffset } = useMemo(() => {
     if (!logs) return { visibleLogLines: [], logOffset: 0 }
-    
+
     const clearedForType = clearedLogsMap[logType] || ''
     let visibleLogs = logs
     if (clearedForType) {
@@ -664,7 +664,7 @@ function UserProjectDetail() {
       const currentLines = logs.trimEnd().split('\n')
       let overlapLines = 0
       const maxCheck = Math.min(clearedLines.length, currentLines.length)
-      
+
       for (let k = maxCheck; k > 0; k--) {
         let match = true
         for (let i = 0; i < k; i++) {
@@ -684,7 +684,7 @@ function UserProjectDetail() {
     const lines = visibleLogs.split('\n').map(normalizeLogLine).filter(l => l.trim() !== '' || l === '')
     const slicedLines = lines.length > 500 ? lines.slice(-500) : lines
     const offset = lines.length > 500 ? lines.length - 500 : 0
-    
+
     return { visibleLogLines: slicedLines, logOffset: offset }
   }, [logs, clearedLogsMap, logType])
 
@@ -707,7 +707,7 @@ function UserProjectDetail() {
   }
 
 
-  
+
   const onActionStarted = (status: Project['status'] = 'queued') => {
     isActionPendingRef.current = true
     setProject(prev => prev ? ({ ...prev, status }) : null)
@@ -783,12 +783,12 @@ function UserProjectDetail() {
     setPortInput(nextProject.port === null ? '' : nextProject.port)
     setNodeVersionInput(nextProject.node_version || DEFAULT_RUNTIME_VERSIONS.node)
     setPhpVersionInput(nextProject.php_version || DEFAULT_RUNTIME_VERSIONS.php)
-    
+
     let defaultLangVersion = ''
     if (nextProject.framework === 'Python') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.python
     else if (nextProject.framework === 'Go') defaultLangVersion = DEFAULT_RUNTIME_VERSIONS.go
     setLanguageVersionInput(nextProject.language_version || defaultLangVersion)
-    
+
     setWorkerCommandInput(nextProject.worker_command || '')
     setQueueEnabledInput(nextProject.queue_enabled || false)
     setGithubUrlInput(nextProject.github_url || '')
@@ -846,7 +846,7 @@ function UserProjectDetail() {
       onConfirm: async () => {
         setIsSavingSettings(true)
         try {
-          const payload: Record<string, any> = {
+          const payload: Record<string, unknown> = {
             branch: branchInput,
             base_directory: baseDirInput,
             build_command: buildCommandInput,
@@ -1025,13 +1025,13 @@ function UserProjectDetail() {
                 "text-lg font-bold",
                 (project.deployment_status === 'failed' || project.status === 'failed') && "text-rose-500"
               )}>
-                {isDeploying 
+                {isDeploying
                   ? (deploymentPhase ? `${deploymentPhase.label}...` : t('projectDetail.messages.buildTitle'))
                   : t('projectDetail.overview.deployError')}
               </h3>
               <p className="text-sm text-muted-foreground">
                 {isDeploying
-                  ? (deploymentPhase?.phase === 'startup' 
+                  ? (deploymentPhase?.phase === 'startup'
                       ? 'Container is starting up and running health checks...'
                       : deploymentPhase?.phase === 'finalize'
                       ? 'Finalizing deployment and cleaning up old versions...'
@@ -1040,7 +1040,7 @@ function UserProjectDetail() {
               </p>
               {isDeploying && project.deployment_progress != null && (
                 <div className="mt-3 w-full bg-muted/50 rounded-full h-1.5 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-blue-500 rounded-full transition-all duration-500 ease-out"
                     style={{ width: `${Math.min(project.deployment_progress, 100)}%` }}
                   />
@@ -1106,9 +1106,9 @@ function UserProjectDetail() {
               )}
             </div>
             {project.custom_domains && project.custom_domains.length > 0 && (
-              <a 
-                href={`https://${project.custom_domains[0].domain}`} 
-                target="_blank" 
+              <a
+                href={`https://${project.custom_domains[0].domain}`}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="group/domain"
               >
@@ -1170,10 +1170,10 @@ function UserProjectDetail() {
               fetchProject(true)
             }}
           />
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={handleDelete} 
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleDelete}
             className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 cursor-pointer"
             style={{ cursor: 'pointer' }}
           >
@@ -1279,9 +1279,9 @@ function UserProjectDetail() {
         </TabsContent>
 
         <TabsContent value="environment" className="pt-0">
-          <EnvironmentEditor 
-            uid={uid || ''} 
-            onSave={() => fetchProject()} 
+          <EnvironmentEditor
+            uid={uid || ''}
+            onSave={() => fetchProject()}
             hasDatabaseInstance={!!project?.database_instance}
             project={project}
           />

@@ -99,7 +99,7 @@ export function StudioStructureTab() {
 
   // Visual Designer states
   const [designerAction, setDesignerAction] = useState<'create_table' | 'add_column' | 'create_index' | 'modify_column' | null>(null)
-  
+
   // Create Table Form
   const [newTableName, setNewTableName] = useState('')
 
@@ -116,7 +116,7 @@ export function StudioStructureTab() {
   const [newColFkTargetTable, setNewColFkTargetTable] = useState('')
   const [newColFkTargetColumn, setNewColFkTargetColumn] = useState('')
   const [newColFkOnDelete, setNewColFkOnDelete] = useState('CASCADE')
-  
+
   // Create Index Form
   const [indexName, setIndexName] = useState('')
   const [indexCols, setIndexCols] = useState<string[]>([])
@@ -135,7 +135,7 @@ export function StudioStructureTab() {
   const [editColFkTargetTable, setEditColFkTargetTable] = useState('')
   const [editColFkTargetColumn, setEditColFkTargetColumn] = useState('')
   const [editColFkOnDelete, setEditColFkOnDelete] = useState('CASCADE')
-  
+
   const [showColModifyPreview, setShowColModifyPreview] = useState(false)
   const [colModifyPreviewSql, setColModifyPreviewSql] = useState('')
 
@@ -146,7 +146,7 @@ export function StudioStructureTab() {
     }
   }, [typedSchemaData, selectedTable, setSelectedTable])
 
-  const filteredTables = typedSchemaData.filter(tb => 
+  const filteredTables = typedSchemaData.filter(tb =>
     tb.name.toLowerCase().includes(structureSearch.toLowerCase())
   )
 
@@ -158,7 +158,7 @@ export function StudioStructureTab() {
     const activeTableData = typedSchemaData.find(t => t.name === selectedTable)
     if (colParam && activeTableData?.columns.some(c => c.name === colParam)) {
       let frameId2: number | undefined
-      
+
       const frameId1 = requestAnimationFrame(() => {
         frameId2 = requestAnimationFrame(() => {
           highlightedRowRef.current?.scrollIntoView({
@@ -167,7 +167,7 @@ export function StudioStructureTab() {
           })
         })
       })
-      
+
       return () => {
         cancelAnimationFrame(frameId1)
         if (frameId2 !== undefined) {
@@ -256,7 +256,7 @@ export function StudioStructureTab() {
             table_name: tableName
           })
           toast.success(t('databaseStudio.structure.updateSuccess'))
-          
+
           if (selectedTable === tableName) {
             setSelectedTable('')
           }
@@ -276,11 +276,11 @@ export function StudioStructureTab() {
     setSelectedTable(tableName)
     setEditingCol(col)
     setEditColNewName(col.name)
-    
+
     const table = typedSchemaData.find(tb => tb.name === tableName)
     const tableFks = table?.foreign_keys || []
     const fk = tableFks.find((f) => f.column_name === col.name)
-    
+
     const parsed = parseDbType(col.type)
     setEditColType(parsed.type)
     setEditColLength(parsed.length)
@@ -293,10 +293,10 @@ export function StudioStructureTab() {
     setEditColFkTargetTable(fk ? fk.target_table : '')
     setEditColFkTargetColumn(fk ? fk.target_column : '')
     setEditColFkOnDelete(fk ? (fk.on_delete || 'CASCADE') : 'CASCADE')
-    
+
     setShowColModifyPreview(false)
     setColModifyPreviewSql('')
-    
+
     setDesignerAction('modify_column')
   }
 
@@ -307,7 +307,7 @@ export function StudioStructureTab() {
 
     const escapedTable = `${q}${selectedTable}${q}`
     const escapedCol = `${q}${editingCol.name}${q}`
-    
+
     let dbType = editColType.toUpperCase()
     if (editColType === 'varchar') {
       const len = editColLength === "" ? 255 : Number(editColLength)
@@ -342,10 +342,10 @@ export function StudioStructureTab() {
       sqls.push(`-- 1. Alter Column Type\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} TYPE ${dbType} USING ${escapedCol}::${dbType.toLowerCase()};`)
       sqls.push(`-- 2. Alter Column Nullability\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} ${editColNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`)
       sqls.push(`-- 3. Alter Column Default\nALTER TABLE ${escapedTable} ALTER COLUMN ${escapedCol} ${editColDefault !== '' ? `SET DEFAULT '${editColDefault.replace(/'/g, "''")}'` : 'DROP DEFAULT'};`)
-      
+
       const oldUqName = `uq_${selectedTable}_${editingCol.name}`
       sqls.push(`-- 4. Drop Old Unique Constraint (if any)\nALTER TABLE ${escapedTable} DROP CONSTRAINT IF EXISTS ${q}${oldUqName}${q};`)
-      
+
       const oldFkName = `fk_${selectedTable}_${editingCol.name}`
       sqls.push(`-- 5. Drop Old Foreign Key Constraint (if any)\nALTER TABLE ${escapedTable} DROP CONSTRAINT IF EXISTS ${q}${oldFkName}${q};`)
 
@@ -468,7 +468,7 @@ export function StudioStructureTab() {
   const handleDesignerAction = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!id) return
-    
+
     const payload: DesignerPayload = {
       action: designerAction,
       table_name: selectedTable || newTableName
@@ -547,7 +547,7 @@ export function StudioStructureTab() {
             </Button>
           )}
         </div>
-        
+
         {!isSuspended && schemaData.length > 0 && (
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
@@ -559,7 +559,7 @@ export function StudioStructureTab() {
             />
           </div>
         )}
-        
+
         <div className="flex-1 overflow-y-auto space-y-1.5 scrollbar-thin max-h-[500px] pr-1">
           {isSuspended ? (
             <div className="text-center py-8 text-xs text-muted-foreground/50 italic font-semibold">{t('databaseStudio.dashboard.suspendedTitle')}</div>
@@ -1291,7 +1291,7 @@ export function StudioStructureTab() {
                     <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground border-b pb-1.5 flex items-center">
                       {t('databaseStudio.structure.designer.configHeader')}
                     </span>
-                    
+
                     <div className="flex flex-col gap-3 text-xs">
                       <label className="flex items-start gap-2.5 font-medium cursor-pointer select-none">
                         <Checkbox

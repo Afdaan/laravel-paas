@@ -97,7 +97,7 @@ function UserNewProject() {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  
+
   const [connectionMode, setConnectionMode] = useState<'app' | 'manual'>('app')
   const [installations, setInstallations] = useState<GithubAppInstallation[]>([])
   const [repositories, setRepositories] = useState<GithubRepository[]>([])
@@ -133,17 +133,17 @@ function UserNewProject() {
     selectedInstallationIdRef.current = selectedInstallationId
   }, [selectedInstallationId])
 
-  const currentInst = React.useMemo(() => 
+  const currentInst = React.useMemo(() =>
     installations.find(inst => String(inst.installation_id) === selectedInstallationId),
     [installations, selectedInstallationId]
   )
 
-  const currentRepo = React.useMemo(() => 
+  const currentRepo = React.useMemo(() =>
     repositories.find(r => r.full_name === selectedRepoFullName),
     [repositories, selectedRepoFullName]
   )
 
-  const currentBranch = React.useMemo(() => 
+  const currentBranch = React.useMemo(() =>
     branches.find(b => b.name === formData.branch),
     [branches, formData.branch]
   )
@@ -195,11 +195,11 @@ function UserNewProject() {
       const response = await githubAPI.listInstallations()
       const insts: GithubAppInstallation[] = response.data.data || []
       setInstallations(insts)
-      
+
       if (insts.length > 0) {
         const currentId = selectedInstallationIdRef.current
         const isStillValid = insts.some(inst => String(inst.installation_id) === currentId)
-        
+
         if (currentId && isStillValid) {
           if (triggerRepoLoad) {
             loadRepositories(currentId)
@@ -350,7 +350,7 @@ function UserNewProject() {
         github_repo_owner: owner,
         github_repo_name: repoName,
       }))
-      
+
       loadBranches(owner, repoName)
     }
   }
@@ -650,8 +650,8 @@ function UserNewProject() {
                                       </div>
                                       <span className={cn(
                                         "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 border ml-2 transition-all duration-200",
-                                        currentRepo.private 
-                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+                                        currentRepo.private
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                           : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                       )}>
                                         {currentRepo.private ? t('newProject.privateBadge') : t('newProject.publicBadge')}
@@ -674,8 +674,8 @@ function UserNewProject() {
                                       </div>
                                       <span className={cn(
                                         "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 border",
-                                        repo.private 
-                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+                                        repo.private
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                           : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                       )}>
                                         {repo.private ? t('newProject.privateBadge') : t('newProject.publicBadge')}

@@ -101,7 +101,7 @@ export default function AdminSecretStoreExplorer() {
     }
   }
 
-  const filteredStores = stores.filter(store => 
+  const filteredStores = stores.filter(store =>
     store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (store.user?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (store.user?.email || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -266,8 +266,8 @@ export default function AdminSecretStoreExplorer() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className={`font-mono text-[9px] uppercase tracking-wider font-bold ${
                             log.action.includes('reveal')
                               ? 'text-rose-500 border-rose-500/20 bg-rose-500/5'

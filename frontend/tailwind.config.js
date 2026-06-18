@@ -11,7 +11,7 @@ export default {
         // Catppuccin Base overrides for light/dark swapping
         white: '#eff1f5', // Latte Base (light mode bg, dark mode text)
         black: '#11111b', // Mocha Crust (deepest dark)
-        
+
         // Mapped to Catppuccin to seamlessly swap between Latte and Mocha
         slate: {
           50: '#e6e9ef',  // Latte Mantle (light card bg)
@@ -26,7 +26,7 @@ export default {
           900: '#1e1e2e', // Mocha Base (dark bg, light text)
           950: '#11111b', // Mocha Crust (deepest dark bg)
         },
-        
+
         // Accents (Catppuccin Mocha mapped)
         indigo: {
           400: '#b4befe', // Lavender
@@ -50,7 +50,7 @@ export default {
           400: '#8caaee', // Light blue
           500: '#89b4fa', // Blue
         },
-        
+
         // Keep original primary for legacy compatibility where required
         primary: {
           50: '#f0f9ff',

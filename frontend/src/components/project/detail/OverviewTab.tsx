@@ -157,7 +157,7 @@ export function OverviewTab({ project, projectUrl, isLaravelProject, activeCommi
                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.settings.version')}</label>
                 <div className="flex items-center gap-1.5 font-bold text-xs uppercase">
                   <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
-                  {isLaravelProject 
+                  {isLaravelProject
                     ? (project.laravel_version || 'Laravel 10')
                     : (project.framework && project.framework !== 'Other' ? `${project.framework} ${project.language_version || ''}` : t('common.general'))}
                 </div>

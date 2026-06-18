@@ -42,34 +42,34 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const { config, response } = error
     if (!config) return Promise.reject(error)
-    
+
     // Global 401 Unauthorized handling
     if (response?.status === 401) {
       window.dispatchEvent(new Event('auth:expired'))
     }
-    
+
     // Global Server Updating/Swap handling (502 Bad Gateway / 503 Service Unavailable)
     if (response?.status === 502 || response?.status === 503) {
       window.dispatchEvent(new Event('system:updating'))
-      
+
       // Auto-Retry Logic: Retry up to 3 times if it's a transient server error
       const retryConfig = config as InternalAxiosRequestConfig & { _retryCount?: number }
       retryConfig._retryCount = retryConfig._retryCount || 0
       if (retryConfig._retryCount < 3) {
         retryConfig._retryCount++
         console.warn(`System swapping detected (HTTP ${response.status}). Retrying request... (${retryConfig._retryCount}/3)`)
-        
+
         // Wait 1.5s before retrying to give backend time to swap
         await new Promise(resolve => setTimeout(resolve, 1500))
         return api(retryConfig)
       }
     }
-    
+
     // Global connection error handling (No response received)
     if (!error.response && !error.request?.status && !axios.isCancel(error)) {
       window.dispatchEvent(new Event('system:offline'))
     }
-    
+
     return Promise.reject(error)
   }
 )
@@ -79,13 +79,13 @@ api.interceptors.response.use(
 // ===========================================
 
 export const authAPI = {
-  login: (email: string, password: string) => 
+  login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
-  
-  logout: () => 
+
+  logout: () =>
     api.post('/auth/logout'),
-  
-  me: () => 
+
+  me: () =>
     api.get('/auth/me'),
 
   returnToAdmin: () =>
@@ -100,24 +100,24 @@ export const authAPI = {
 // ===========================================
 
 export const usersAPI = {
-  list: (params: Record<string, unknown> = {}) => 
+  list: (params: Record<string, unknown> = {}) =>
     api.get('/admin/users', { params }),
-  
-  get: (id: number | string) => 
+
+  get: (id: number | string) =>
     api.get(`/admin/users/${id}`),
-  
-  create: (data: unknown) => 
+
+  create: (data: unknown) =>
     api.post('/admin/users', data),
-  
-  update: (id: number | string, data: unknown) => 
+
+  update: (id: number | string, data: unknown) =>
     api.put(`/admin/users/${id}`, data),
-  
-  delete: (id: number | string) => 
+
+  delete: (id: number | string) =>
     api.delete(`/admin/users/${id}`),
 
   loginAs: (id: number | string) =>
     api.post(`/admin/users/${id}/login-as`),
-  
+
   importExcel: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -132,10 +132,10 @@ export const usersAPI = {
 // ===========================================
 
 export const settingsAPI = {
-  list: () => 
+  list: () =>
     api.get('/admin/settings'),
-  
-  update: (settings: unknown) => 
+
+  update: (settings: unknown) =>
     api.put('/admin/settings', { settings }),
 }
 
@@ -146,40 +146,40 @@ export const settingsAPI = {
 
 export const projectsAPI = {
   // User endpoints
-  listOwn: () => 
+  listOwn: () =>
     api.get('/projects'),
-  
-  create: (data: unknown) => 
+
+  create: (data: unknown) =>
     api.post('/projects', data),
-  
-  get: (id: number | string) => 
+
+  get: (id: number | string) =>
     api.get(`/projects/${id}`),
-  
-  redeploy: (id: number | string, clean?: boolean) => 
+
+  redeploy: (id: number | string, clean?: boolean) =>
     api.post(`/projects/${id}/redeploy`, null, { params: { clean: clean ? 'true' : 'false' } }),
-  
+
   stop: (id: number | string) =>
     api.post(`/projects/${id}/stop`),
-  
+
   start: (id: number | string) =>
     api.post(`/projects/${id}/start`),
-  
+
   restart: (id: number | string) =>
     api.post(`/projects/${id}/restart`),
-  
+
   rollback: (id: number | string, commitSHA: string) =>
     api.post(`/projects/${id}/rollback`, { commit_sha: commitSHA }),
-  
+
   update: (id: number | string, data: unknown) =>
     api.put(`/projects/${id}`, data),
-  
-  delete: (id: number | string) => 
+
+  delete: (id: number | string) =>
     api.delete(`/projects/${id}`),
-  
-  logs: (id: number | string, lines: number = 100, type: string = 'web') => 
+
+  logs: (id: number | string, lines: number = 100, type: string = 'web') =>
     api.get(`/projects/${id}/logs`, { params: { lines, type } }),
-  
-  stats: (id: number | string) => 
+
+  stats: (id: number | string) =>
     api.get(`/projects/${id}/stats`),
 
   runArtisan: (id: number | string, command: string) =>
@@ -190,16 +190,16 @@ export const projectsAPI = {
 
   updateEnv: (id: number | string, content: string) =>
     api.put(`/projects/${id}/env`, { content }),
-  
+
   buildLogs: (id: number | string) =>
     api.get(`/projects/${id}/build-logs`),
-  
+
   getDeploymentEvents: (id: number | string, all = false, options?: AxiosRequestConfig) =>
     api.get(`/projects/${id}/deployment-events`, { params: { all }, ...options }),
-  
+
   listBranches: (id: number | string) =>
     api.get(`/projects/${id}/branches`),
-  
+
   // Custom Domain endpoints
   listDomains: (id: number | string) =>
     api.get(`/projects/${id}/domains`),
@@ -212,26 +212,26 @@ export const projectsAPI = {
 
   verifyDomain: (id: number | string, domainId: number | string) =>
     api.post(`/projects/${id}/domains/${domainId}/verify`),
-  
+
   getDomainDiagnostic: (id: number | string, domainId: number | string) =>
     api.get(`/projects/${id}/domains/${domainId}/diagnostic`),
 
   getDomainEvents: (id: number | string, domainId: number | string) =>
     api.get(`/projects/${id}/domains/${domainId}/events`),
-  
+
   // Admin endpoints
-  listAll: (params: Record<string, unknown> = {}) => 
+  listAll: (params: Record<string, unknown> = {}) =>
     api.get('/admin/projects', { params }),
 
-  listStats: (options?: AxiosRequestConfig) => 
+  listStats: (options?: AxiosRequestConfig) =>
     api.get('/admin/projects/stats', options),
-  
-  adminStats: () => 
+
+  adminStats: () =>
     api.get('/admin/stats'),
 
-  getQueueStats: () => 
+  getQueueStats: () =>
     api.get('/admin/queue/stats'),
-  
+
   cancelQueueJob: (id: number | string) =>
     api.post(`/admin/queue/cancel/${id}`),
 
@@ -245,98 +245,98 @@ export const projectsAPI = {
 
 export const databaseAPI = {
   // Get database credentials
-  getCredentials: (projectId: number | string) => 
+  getCredentials: (projectId: number | string) =>
     api.post(`/projects/${projectId}/database/credentials`),
-  
+
   // Rotate credentials
-  rotateCredentials: (projectId: number | string) => 
+  rotateCredentials: (projectId: number | string) =>
     api.post(`/projects/${projectId}/database/rotate-credentials`),
 
 
   // Suspend or resume database status
-  updateStatus: (projectId: number | string, suspend: boolean) => 
+  updateStatus: (projectId: number | string, suspend: boolean) =>
     api.post(`/projects/${projectId}/database/status`, { suspend }),
 
   // Get overview statistics
-  getOverview: (projectId: number | string) => 
+  getOverview: (projectId: number | string) =>
     api.get(`/projects/${projectId}/database/overview`),
 
   // Get visual schema metadata
-  getSchema: (projectId: number | string) => 
+  getSchema: (projectId: number | string) =>
     api.get(`/projects/${projectId}/database/schema`),
 
   // Execute Table Designer Action
-  executeDesigner: (projectId: number | string, data: unknown) => 
+  executeDesigner: (projectId: number | string, data: unknown) =>
     api.post(`/projects/${projectId}/database/designer`, data),
 
   // List backup snapshots
-  listBackups: (projectId: number | string) => 
+  listBackups: (projectId: number | string) =>
     api.get(`/projects/${projectId}/database/backups`),
 
   // Create manual backup snapshot
-  createBackup: (projectId: number | string) => 
+  createBackup: (projectId: number | string) =>
     api.post(`/projects/${projectId}/database/backups`),
 
   // Restore backup state
-  restoreBackup: (projectId: number | string, backupId: number | string) => 
+  restoreBackup: (projectId: number | string, backupId: number | string) =>
     api.post(`/projects/${projectId}/database/backups/${backupId}/restore`),
 
   // Prune backup snapshot
-  deleteBackup: (projectId: number | string, backupId: number | string) => 
+  deleteBackup: (projectId: number | string, backupId: number | string) =>
     api.delete(`/projects/${projectId}/database/backups/${backupId}`),
 
   // Download backup snapshot file
-  downloadBackup: (projectId: number | string, backupId: number | string) => 
+  downloadBackup: (projectId: number | string, backupId: number | string) =>
     api.get(`/projects/${projectId}/database/backups/${backupId}/download`, { responseType: 'blob' }),
 
   // Get real-time connection metrics
-  getMetrics: (projectId: number | string) => 
+  getMetrics: (projectId: number | string) =>
     api.get(`/projects/${projectId}/database/metrics`),
 
   // Transfer database ownership to another project
-  transfer: (projectId: number | string, targetProjectUid: string) => 
+  transfer: (projectId: number | string, targetProjectUid: string) =>
     api.post(`/projects/${projectId}/database/transfer`, { target_project_id: targetProjectUid }),
 
   // List all tables (Fallback/Legacy)
-  listTables: (projectId: number | string) => 
+  listTables: (projectId: number | string) =>
     api.get(`/projects/${projectId}/database/tables`),
-  
+
   // Get table structure (columns) (Fallback/Legacy)
-  getStructure: (projectId: number | string, tableName: string) => 
+  getStructure: (projectId: number | string, tableName: string) =>
     api.get(`/projects/${projectId}/database/tables/${tableName}`),
-  
+
   // Get table data with pagination (Fallback/Legacy)
-  getData: (projectId: number | string, tableName: string, page: number = 1, limit: number = 50) => 
-    api.get(`/projects/${projectId}/database/tables/${tableName}/data`, { 
-      params: { page, limit } 
+  getData: (projectId: number | string, tableName: string, page: number = 1, limit: number = 50) =>
+    api.get(`/projects/${projectId}/database/tables/${tableName}/data`, {
+      params: { page, limit }
     }),
-  
+
   // Delete row securely using primary key (Fallback/Legacy)
-  deleteRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown) => 
-    api.delete(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
-      data: { primary_key: primaryKey, value } 
+  deleteRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown) =>
+    api.delete(`/projects/${projectId}/database/tables/${tableName}/rows`, {
+      data: { primary_key: primaryKey, value }
     }),
 
   // Update row securely using primary key
-  updateRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown, updates: Record<string, unknown>, config?: import('axios').AxiosRequestConfig) => 
-    api.put(`/projects/${projectId}/database/tables/${tableName}/rows`, { 
-      primary_key: primaryKey, value, updates 
+  updateRow: (projectId: number | string, tableName: string, primaryKey: string, value: unknown, updates: Record<string, unknown>, config?: import('axios').AxiosRequestConfig) =>
+    api.put(`/projects/${projectId}/database/tables/${tableName}/rows`, {
+      primary_key: primaryKey, value, updates
     }, config),
-  
+
   // Execute SQL query (Fallback/Legacy)
-  query: (projectId: number | string, sql: string, config?: import('axios').AxiosRequestConfig) => 
+  query: (projectId: number | string, sql: string, config?: import('axios').AxiosRequestConfig) =>
     api.post(`/projects/${projectId}/database/query`, { query: sql }, config),
-  
+
   // Export database as SQL file (Fallback/Legacy)
-  export: (projectId: number | string) => 
+  export: (projectId: number | string) =>
     api.get(`/projects/${projectId}/database/export`, { responseType: 'blob' }),
-  
+
   // Import SQL (Fallback/Legacy)
-  import: (projectId: number | string, sql: string) => 
+  import: (projectId: number | string, sql: string) =>
     api.post(`/projects/${projectId}/database/import`, { sql }),
-  
+
   // Reset database (drop all tables) (Fallback/Legacy)
-  reset: (projectId: number | string) => 
+  reset: (projectId: number | string) =>
     api.post(`/projects/${projectId}/database/reset`),
 
   // Centralized Database Endpoints
@@ -356,7 +356,7 @@ export const databaseAPI = {
     api.post(`/databases/${dbId}/reinstall`),
 
   // Admin endpoints
-  adminListAll: () => 
+  adminListAll: () =>
     api.get('/admin/databases'),
 }
 
@@ -365,20 +365,20 @@ export const databaseAPI = {
 // ===========================================
 
 export const feedbackAPI = {
-  submit: (data: unknown) => 
+  submit: (data: unknown) =>
     api.post('/feedback', data),
-  
-  listOwn: () => 
+
+  listOwn: () =>
     api.get('/feedback'),
-  
+
   // Admin endpoints
-  listAll: (params: Record<string, unknown> = {}) => 
+  listAll: (params: Record<string, unknown> = {}) =>
     api.get('/admin/feedback', { params }),
-  
-  updateStatus: (id: number | string, status: string) => 
+
+  updateStatus: (id: number | string, status: string) =>
     api.put(`/admin/feedback/${id}/status`, { status }),
-  
-  delete: (id: number | string) => 
+
+  delete: (id: number | string) =>
     api.delete(`/admin/feedback/${id}`),
 }
 
@@ -454,32 +454,32 @@ export const secretStoreAPI = {
 }
 
 export const systemAPI = {
-  getStats: () => 
+  getStats: () =>
     api.get('/admin/system/stats'),
-  
-  prune: () => 
+
+  prune: () =>
     api.post('/admin/system/prune'),
 
   deleteVolume: (name: string) =>
     api.delete(`/admin/system/volumes/${name}`),
-  
-  getInitStatus: () => 
+
+  getInitStatus: () =>
     api.get('/system/init-status'),
-  
-  initialize: (data: unknown) => 
+
+  initialize: (data: unknown) =>
     api.post('/system/initialize', data),
 }
 
 export const githubAPI = {
   listInstallations: () =>
     api.get('/github/installations'),
-  
+
   linkInstallation: (installationId: number | string) =>
     api.post('/github/installations/link', { installation_id: Number(installationId) }),
-  
+
   listRepositories: (installationId: number | string) =>
     api.get(`/github/installations/${installationId}/repositories`),
-  
+
   listBranches: (owner: string, repo: string, installationId?: number | string) =>
     api.get(`/github/repositories/${owner}/${repo}/branches`, {
       params: installationId ? { installation_id: installationId } : undefined,
