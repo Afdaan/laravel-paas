@@ -355,6 +355,12 @@ export const databaseAPI = {
   reinstallInstance: (dbId: number | string) =>
     api.post(`/databases/${dbId}/reinstall`),
 
+  create: (data: { engine: string; name: string; username: string; password: string }) =>
+    api.post('/databases', data),
+
+  delete: (id: number | string) =>
+    api.delete(`/databases/${id}`),
+
   // Admin endpoints
   adminListAll: () =>
     api.get('/admin/databases'),

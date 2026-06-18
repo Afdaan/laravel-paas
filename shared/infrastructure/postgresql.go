@@ -11,10 +11,7 @@ import (
 	"github.com/laravel-paas/shared/pkg/utils"
 )
 
-var (
-	validDBNameRegex   = regexp.MustCompile(`^[a-z0-9_]{3,63}$`)
-	validPasswordRegex = regexp.MustCompile(`^[a-zA-Z0-9]{8,128}$`)
-)
+// validDBNameRegex and validPasswordRegex are defined in mysql.go to avoid redeclaration in the same package.
 
 // PostgreSQLService handles PostgreSQL database provisioning for user projects
 // inside the dedicated paas-user-postgres container (isolated from the control plane).
@@ -89,6 +86,150 @@ func (s *PostgreSQLService) CreateDatabase(dbName, password string) error {
 	if res, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
 		"psql", "-U", "postgres", "-c", idleSQL); err != nil {
 		slog.Warn("Failed to configure idle connection timeouts", "db", dbName, "err", err, "stderr", res.Stderr)
+	}
+
+	return nil
+}
+
+// CreateDatabaseCustom provisions a new PostgreSQL database and a distinct role with SRE-hardened defaults.
+// Enforces naming validation, password validation, connection limits, and idle timeouts.
+func (s *PostgreSQLService) CreateDatabaseCustom(dbName, username, password string) error {
+	// Enforce lowercase names for DB and username
+	dbName = strings.ToLower(dbName)
+	username = strings.ToLower(username)
+
+	var nameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
+	var userRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,31}$`)
+	var passRegex = regexp.MustCompile(`^[^[:space:]"'\x60\\;@#/?]{12,128}$`)
+
+	if !nameRegex.MatchString(dbName) {
+		return apperr.New(400, "INVALID_DB_NAME", "Database name must be 2-64 characters, start with a letter, and contain only alphanumeric characters or underscores")
+	}
+	if !userRegex.MatchString(username) {
+		return apperr.New(400, "INVALID_DB_USER", "Database username must be 2-32 characters, start with a letter, and contain only alphanumeric characters or underscores")
+	}
+	if !passRegex.MatchString(password) {
+		return apperr.New(400, "INVALID_DB_PASSWORD", "Database password must be 12-128 characters and not contain invalid characters")
+	}
+
+	// NOTE: Check-then-create has an inherent TOCTOU window because MySQL/PostgreSQL
+	// DDL is non-transactional. This is acceptable because global control-plane
+	// uniqueness is enforced before this call reaches the infrastructure layer.
+
+	// Check if role already exists
+	checkRoleSQL := fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';", username)
+	checkRoleRes, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-t", "-c", checkRoleSQL)
+	if err != nil {
+		return apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
+	}
+
+	roleExists := strings.Contains(checkRoleRes.Stdout, "1")
+
+	if roleExists {
+		return apperr.New(409, "ROLE_ALREADY_EXISTS", fmt.Sprintf("PostgreSQL role '%s' already exists", username))
+	}
+
+	// Create role with connection limit to prevent tenant connection storms and SQL injection
+	createRoleSQL := fmt.Sprintf(
+		"CREATE ROLE \"%s\" WITH LOGIN PASSWORD '%s' CONNECTION LIMIT 15;",
+		username, password,
+	)
+	res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-c", createRoleSQL)
+	if err != nil {
+		return apperr.New(500, "PG_ROLE_FAILED", "Failed to create PostgreSQL role: "+res.Stderr)
+	}
+
+	// NOTE: Check-then-create has an inherent TOCTOU window because MySQL/PostgreSQL
+	// DDL is non-transactional. This is acceptable because global control-plane
+	// uniqueness is enforced before this call reaches the infrastructure layer.
+
+	// Check if database already exists
+	checkDBSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';", dbName)
+	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-t", "-c", checkDBSQL)
+	if err != nil {
+		// ROLLBACK: Drop PostgreSQL role created in previous step
+		dropRoleSQL := fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";", username)
+		_, _ = utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+			"psql", "-U", "postgres", "-c", dropRoleSQL)
+		return apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
+	}
+
+	dbExists := strings.Contains(checkDBRes.Stdout, "1")
+
+	if dbExists {
+		// ROLLBACK: Drop PostgreSQL role created in previous step
+		dropRoleSQL := fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";", username)
+		_, _ = utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+			"psql", "-U", "postgres", "-c", dropRoleSQL)
+		return apperr.New(409, "DB_ALREADY_EXISTS", fmt.Sprintf("PostgreSQL database '%s' already exists", dbName))
+	}
+
+	// Create database owned by the new role
+	createDBSQL := fmt.Sprintf(
+		"CREATE DATABASE \"%s\" OWNER \"%s\";",
+		dbName, username,
+	)
+	res, err = utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-c", createDBSQL)
+	if err != nil {
+		// ROLLBACK: Drop PostgreSQL role created in previous step
+		dropRoleSQL := fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";", username)
+		_, _ = utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+			"psql", "-U", "postgres", "-c", dropRoleSQL)
+		return apperr.New(500, "PG_DB_FAILED", "Failed to create PostgreSQL database: "+res.Stderr)
+	}
+
+	// Apply idle connection cleanup timeouts to prevent hung sessions from leaking RAM
+	idleSQL := fmt.Sprintf(
+		"ALTER DATABASE \"%s\" SET idle_in_transaction_session_timeout = '60000'; ALTER DATABASE \"%s\" SET idle_session_timeout = '300000';",
+		dbName, dbName,
+	)
+	if res, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-c", idleSQL); err != nil {
+		slog.Warn("Failed to configure idle connection timeouts", "db", dbName, "err", err, "stderr", res.Stderr)
+	}
+
+	return nil
+}
+
+// DropDatabaseCustom drops database and custom role.
+func (s *PostgreSQLService) DropDatabaseCustom(dbName, username string) error {
+	dbName = strings.ToLower(dbName)
+	username = strings.ToLower(username)
+
+	var nameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
+	var userRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,31}$`)
+
+	if !nameRegex.MatchString(dbName) {
+		return apperr.New(400, "INVALID_DB_NAME", "Database name must be 2-64 characters, start with a letter, and contain only alphanumeric characters or underscores")
+	}
+	if !userRegex.MatchString(username) {
+		return apperr.New(400, "INVALID_DB_USER", "Database username must be 2-32 characters, start with a letter, and contain only alphanumeric characters or underscores")
+	}
+
+	// Force-disconnect all active sessions before dropping
+	terminateSQL := fmt.Sprintf(
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();",
+		dbName,
+	)
+	if res, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-c", terminateSQL); err != nil {
+		slog.Warn("Failed to terminate active connections before drop", "db", dbName, "err", err, "stderr", res.Stderr)
+	}
+
+	dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS \"%s\";", dbName)
+	if res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-c", dropDBSQL); err != nil {
+		return apperr.New(500, "PG_DROP_DB_FAILED", "Failed to drop PostgreSQL database: "+res.Stderr)
+	}
+
+	dropRoleSQL := fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";", username)
+	if res, err := utils.Run(30*time.Second, "docker", "exec", "paas-user-postgres",
+		"psql", "-U", "postgres", "-c", dropRoleSQL); err != nil {
+		return apperr.New(500, "PG_DROP_ROLE_FAILED", "Failed to drop PostgreSQL role: "+res.Stderr)
 	}
 
 	return nil

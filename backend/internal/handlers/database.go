@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,7 +36,47 @@ import (
 const (
 	maxDatabaseImportBytes      = 5 * 1024 * 1024
 	maxDatabaseImportStatements = 200
+	databasePasswordInvalidCharsMessage = "Database password must not contain spaces or connection-string-breaking characters like \", ', `, \\, ;, @, #, /, or ?"
 )
+
+var reservedDatabaseWords = map[string]struct{}{
+	"all": {}, "alter": {}, "and": {}, "any": {}, "as": {}, "asc": {}, "authorization": {},
+	"backup": {}, "begin": {}, "between": {}, "break": {}, "browse": {}, "bulk": {}, "by": {},
+	"cascade": {}, "case": {}, "check": {}, "checkpoint": {}, "close": {}, "clustered": {},
+	"coalesce": {}, "collate": {}, "column": {}, "commit": {}, "compute": {}, "constraint": {},
+	"contains": {}, "containstable": {}, "continue": {}, "convert": {}, "create": {}, "cross": {},
+	"current": {}, "current_date": {}, "current_time": {}, "current_timestamp": {}, "current_user": {},
+	"cursor": {}, "database": {}, "dbcc": {}, "deallocate": {}, "declare": {}, "default": {},
+	"delete": {}, "deny": {}, "desc": {}, "disk": {}, "distinct": {}, "distributed": {},
+	"double": {}, "drop": {}, "dump": {}, "else": {}, "end": {}, "errlvl": {}, "escape": {},
+	"except": {}, "exec": {}, "execute": {}, "exists": {}, "exit": {}, "external": {},
+	"fetch": {}, "file": {}, "fillfactor": {}, "for": {}, "foreign": {}, "freetext": {},
+	"freetexttable": {}, "from": {}, "full": {}, "function": {}, "goto": {}, "grant": {},
+	"group": {}, "having": {}, "holdlock": {}, "identity": {}, "identity_insert": {}, "identitycol": {},
+	"if": {}, "in": {}, "index": {}, "inner": {}, "insert": {}, "intersect": {}, "into": {},
+	"is": {}, "join": {}, "key": {}, "kill": {}, "left": {}, "like": {}, "lineno": {},
+	"load": {}, "merge": {}, "national": {}, "nocheck": {}, "nonclustered": {}, "not": {},
+	"null": {}, "nullif": {}, "of": {}, "off": {}, "offsets": {}, "on": {}, "once": {},
+	"only": {}, "open": {}, "opendatasource": {}, "openquery": {}, "openrowset": {}, "openxml": {},
+	"option": {}, "or": {}, "order": {}, "outer": {}, "over": {}, "percent": {}, "pivot": {},
+	"plan": {}, "precision": {}, "primary": {}, "print": {}, "proc": {}, "procedure": {},
+	"public": {}, "raiserror": {}, "read": {}, "readtext": {}, "reconfigure": {}, "references": {},
+	"replication": {}, "restore": {}, "restrict": {}, "return": {}, "revert": {}, "revoke": {},
+	"right": {}, "rollback": {}, "rowcount": {}, "rowguidcol": {}, "rule": {}, "save": {},
+	"schema": {}, "securityaudit": {}, "select": {}, "semantickeyphrasetable": {},
+	"semanticsimilaritydetailstable": {}, "semanticsimilaritytable": {}, "session_user": {}, "set": {},
+	"setuser": {}, "shutdown": {}, "some": {}, "statistics": {}, "system_user": {}, "table": {},
+	"tablesample": {}, "textsize": {}, "then": {}, "to": {}, "top": {}, "tran": {}, "transaction": {},
+	"trigger": {}, "truncate": {}, "try_convert": {}, "tsequal": {}, "union": {}, "unique": {},
+	"unpivot": {}, "update": {}, "updatetext": {}, "use": {}, "user": {}, "values": {},
+	"varying": {}, "view": {}, "waitfor": {}, "when": {}, "where": {}, "while": {}, "with": {},
+	"within": {}, "writetext": {}, "postgres": {}, "root": {}, "admin": {}, "system": {}, "mysql": {},
+}
+
+func isReservedDatabaseWord(value string) bool {
+	_, ok := reservedDatabaseWords[value]
+	return ok
+}
 
 // DatabaseHandler handles database management endpoints
 type DatabaseHandler struct {
@@ -615,7 +657,11 @@ func (h *DatabaseHandler) DownloadBackup(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server config error"})
 	}
 	absBackupPath, err := filepath.Abs(backup.Path)
-	if err != nil || !strings.HasPrefix(absBackupPath, absProjectsPath) {
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server config error"})
+	}
+	rel, err := filepath.Rel(absProjectsPath, absBackupPath)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Unauthorized file path"})
 	}
 
@@ -1435,5 +1481,269 @@ func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
 		"success":          true,
 		"message":          "Database reinstalled and password rotated successfully",
 		"redeployRequired": redeployRequired,
+	})
+}
+
+// CreateDatabase request body definition
+type CreateDatabaseRequest struct {
+	Engine   string `json:"engine"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// CreateDatabase handles creation of a standalone database instance
+func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
+	var req CreateDatabaseRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Validate engine
+	req.Engine = strings.ToLower(req.Engine)
+	if req.Engine == "postgres" {
+		req.Engine = "postgresql"
+	}
+	if req.Engine != "mysql" && req.Engine != "postgresql" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database engine. Supported: mysql, postgresql"})
+	}
+
+	// Trim space if desired, and reject casing drift explicitly before mutation
+	req.Name = strings.TrimSpace(req.Name)
+	req.Username = strings.TrimSpace(req.Username)
+
+	if req.Name != strings.ToLower(req.Name) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database name must be strictly lowercase"})
+	}
+	if req.Username != strings.ToLower(req.Username) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database username must be strictly lowercase"})
+	}
+
+	// Regex pattern validations (re-use pattern defined in PostgreSQL/MySQL services)
+	// Spec:
+	// - Database Name: min 2, max 64, alphanumeric/underscore, must NOT start with number or underscore (must be lowercase)
+	// - Username: min 2, max 32, alphanumeric/underscore, MUST start with a letter (must be lowercase)
+	// - Password: min 12, max 128, must contain at least one uppercase, one lowercase, and one number. No spaces or connection-string-breaking characters.
+	var nameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
+	var userRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,31}$`)
+
+	if !nameRegex.MatchString(req.Name) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database name must be 2-64 characters, start with a letter, and contain only alphanumeric characters or underscores"})
+	}
+	if !userRegex.MatchString(req.Username) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database username must be 2-32 characters, start with a letter, and contain only alphanumeric characters or underscores"})
+	}
+
+	// Password strength check
+	if len(req.Password) < 12 || len(req.Password) > 128 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database password must be 12-128 characters long"})
+	}
+	// Check spaces or connection-string-breaking characters: e.g. space, double quote, single quote, backtick, backslash, semicolon, @, #, /, ?
+	if strings.ContainsAny(req.Password, " \"'`\\;@#/?") {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": databasePasswordInvalidCharsMessage})
+	}
+	hasUpper := false
+	hasLower := false
+	hasDigit := false
+	for _, char := range req.Password {
+		if char >= 'A' && char <= 'Z' {
+			hasUpper = true
+		} else if char >= 'a' && char <= 'z' {
+			hasLower = true
+		} else if char >= '0' && char <= '9' {
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database password must contain at least one uppercase letter, one lowercase letter, and one number"})
+	}
+
+	if isReservedDatabaseWord(req.Name) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("Database name '%s' is a reserved SQL word", req.Name)})
+	}
+	if isReservedDatabaseWord(req.Username) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("Database username '%s' is a reserved SQL word", req.Username)})
+	}
+
+	// Check global uniqueness for Database Name and Username across all non-deleted database instances
+	var duplicateCount int64
+	h.db.Model(&models.DatabaseInstance{}).Where("name = ? AND status != ?", req.Name, models.DBStatusDeleted).Count(&duplicateCount)
+	if duplicateCount > 0 {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": fmt.Sprintf("A database with name '%s' already exists in the system", req.Name)})
+	}
+
+	var duplicateUserCount int64
+	h.db.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", req.Username, models.DBStatusDeleted).Count(&duplicateUserCount)
+	if duplicateUserCount > 0 {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": fmt.Sprintf("A database user with username '%s' already exists in the system", req.Username)})
+	}
+
+	// Determine host & port based on engine
+	var host string
+	var port int
+	if req.Engine == "postgresql" {
+		host = "paas-user-postgres"
+		port = 5432
+	} else {
+		host = "paas-mysql"
+		port = 3306
+	}
+
+	// Provision database in engine container
+	if req.Engine == "postgresql" {
+		pgService := infrastructure.NewPostgreSQLService()
+		if err := pgService.CreateDatabaseCustom(req.Name, req.Username, req.Password); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision PostgreSQL database: " + err.Error()})
+		}
+	} else {
+		mysqlService := infrastructure.NewMySQLService()
+		if err := mysqlService.CreateDatabaseCustom(req.Name, req.Username, req.Password); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision MySQL database: " + err.Error()})
+		}
+	}
+
+	// Create DatabaseInstance record
+	dbInst := &models.DatabaseInstance{
+		UserID:            userID,
+		Engine:            req.Engine,
+		Name:              req.Name,
+		Username:          req.Username, // Use actual requested username instead of hardcoded req.Name
+		Password:          req.Password,
+		Host:              host,
+		Port:              port,
+		Status:            models.DBStatusActive,
+		StorageAllocation: 1073741824, // 1GB -> TODO to make configurable by plan or user input in future
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+
+	if err := h.db.Create(dbInst).Error; err != nil {
+		// Compensating cleanup on DB insert failure to prevent orphan physical DBs
+		slog.Error("Failed to save database instance record. Initiating compensating cleanup.", "error", err.Error())
+		if req.Engine == "postgresql" {
+			pgService := infrastructure.NewPostgreSQLService()
+			_ = pgService.DropDatabaseCustom(req.Name, req.Username)
+		} else {
+			mysqlService := infrastructure.NewMySQLService()
+			_ = mysqlService.DropDatabaseCustom(req.Name, req.Username)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save database record: " + err.Error()})
+	}
+
+	h.recordAuditLog(c, 0, "db_create", "", "active", "completed", "")
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"success":  true,
+		"database": dbInst,
+	})
+}
+
+// DeleteDatabase handles deletion of a database instance (only if unattached)
+func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
+	dbIDStr := c.Params("id")
+	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Fetch DatabaseInstance and validate ownership
+	var dbInst models.DatabaseInstance
+	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+	if dbInst.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+
+	// Verify database is not attached (ProjectID must be nil)
+	if dbInst.ProjectID != nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is currently attached to a project. Detach it first."})
+	}
+
+	// Drop schema & user in engine container
+	if dbInst.Engine == "postgresql" {
+		pgService := infrastructure.NewPostgreSQLService()
+		if err := pgService.DropDatabaseCustom(dbInst.Name, dbInst.Username); err != nil {
+			slog.Error("Failed to drop PostgreSQL database", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop physical PostgreSQL database: " + err.Error()})
+		}
+	} else {
+		mysqlService := infrastructure.NewMySQLService()
+		if err := mysqlService.DropDatabaseCustom(dbInst.Name, dbInst.Username); err != nil {
+			slog.Error("Failed to drop MySQL database", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop physical MySQL database: " + err.Error()})
+		}
+	}
+
+	// Delete related backups (file + record)
+	var backups []models.DatabaseBackup
+	if err := h.db.Where("database_instance_id = ?", dbInst.ID).Find(&backups).Error; err == nil {
+		for _, backup := range backups {
+			// Delete backup files safely using validated paths and existing storage conventions
+			if backup.Path != "" {
+				// Prevent path traversal
+				cleanedPath := filepath.Clean(backup.Path)
+				// Resolve absolute path to check containment
+				absPath, err := filepath.Abs(cleanedPath)
+				if err != nil {
+					slog.Error("Failed to resolve absolute path of backup file", "path", backup.Path, "error", err.Error())
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve backup file path: " + err.Error()})
+				}
+
+				absDataPath, err := filepath.Abs(h.cfg.DataPath)
+				if err != nil {
+					slog.Error("Failed to resolve absolute data path", "error", err.Error())
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve storage data path: " + err.Error()})
+				}
+
+				// The backup file must reside inside h.cfg.DataPath to prevent arbitrary file deletion (such as /etc or root dirs)
+				rel, err := filepath.Rel(absDataPath, absPath)
+				if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+					if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+						slog.Error("Failed to delete physical database backup file", "path", absPath, "error", err.Error())
+						return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete backup file: " + err.Error()})
+					}
+				} else {
+					slog.Error("Backup file path is outside the allowed storage directory", "path", absPath, "allowed", absDataPath)
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Security violation: Backup path is outside the allowed storage directory"})
+				}
+			}
+			if err := h.db.Delete(&backup).Error; err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete backup record: " + err.Error()})
+			}
+		}
+	}
+
+	// Soft delete the DatabaseInstance record: Set status = "deleted"
+	dbInst.Status = models.DBStatusDeleted
+	dbInst.ProjectID = nil // explicitly clear just in case
+	if err := h.db.Save(&dbInst).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database status: " + err.Error()})
+	}
+
+
+	h.recordAuditLog(c, 0, "db_delete", "active", "deleted", "completed", "")
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Database deleted successfully",
 	})
 }
