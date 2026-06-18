@@ -18,13 +18,13 @@ import (
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/database"
 	"github.com/laravel-paas/shared/infrastructure"
-	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 	"github.com/laravel-paas/shared/logger"
 	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/services/deployment"
 	domainPkg "github.com/laravel-paas/shared/services/domain"
-	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 	"github.com/laravel-paas/shared/services/setting"
+	"github.com/laravel-paas/worker/internal/infrastructure/docker"
+	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 	workerPkg "github.com/laravel-paas/worker/internal/services/worker"
 	"github.com/laravel-paas/worker/internal/workers"
 )
@@ -35,6 +35,10 @@ func main() {
 
 	cfg := config.Load()
 	logger.Setup(cfg)
+	if err := cfg.ValidateProductionSecurity(); err != nil {
+		slog.Error("Insecure production configuration", "error", err)
+		os.Exit(1)
+	}
 
 	slot := os.Getenv("SLOT")
 	version := os.Getenv("VERSION")
@@ -53,9 +57,9 @@ func main() {
 	}
 	defer redisService.Close()
 
-	storageService := infrastructure.NewStorageService(cfg)
-	dockerService := docker.NewDockerService(cfg, storageService)
-	gitService := infrastructure.NewGitService(cfg)
+	storageService := infrastructure.NewStorageService(cfg, db)
+	dockerService := docker.NewDockerService(cfg, storageService, db)
+	gitService := infrastructure.NewGitService(cfg, db)
 	versionService := infrastructure.NewVersionService()
 	mysqlService := infrastructure.NewMySQLService()
 
@@ -87,7 +91,8 @@ func main() {
 		domainWorker := workers.NewDomainWorker(db, domainService, projectService, redisService)
 		go domainWorker.Start(managerCtx)
 
-		watchdog := workerPkg.NewCentralWatchdog(projectRepo, redisService, dockerService, projectService, settingService)
+		githubService := infrastructure.NewGithubService(cfg, redisService)
+		watchdog := workerPkg.NewCentralWatchdog(cfg, projectRepo, redisService, dockerService, projectService, settingService, githubService)
 		watchdog.Start()
 
 		workerManager := workerPkg.NewWorkerManager(cfg, dockerService, redisService, settingService)

@@ -74,7 +74,7 @@ const AdminContainers = () => {
       (c.names[0] || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.image.toLowerCase().includes(searchQuery.toLowerCase())
     )
-    
+
     if (limit === 'all') return filtered
     const numLimit = parseInt(limit)
     return filtered.slice((page - 1) * numLimit, page * numLimit)
@@ -301,7 +301,7 @@ const AdminContainers = () => {
                     {limit === 'all' ? t('common.all') : limit}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent side="top" align="end" className="min-w-[100px]">
+                <SelectContent side="top" align="end" alignItemWithTrigger={false} className="min-w-[100px] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                   <SelectItem value="all">{t('common.all')}</SelectItem>
                   <SelectItem value="10">10</SelectItem>
                   <SelectItem value="25">25</SelectItem>

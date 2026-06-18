@@ -4,11 +4,11 @@ import { translations } from '../lib/translations'
 
 const useTranslation = () => {
   const { language } = useLanguageStore()
-  
+
   const t = useCallback((keyPath: string, data?: Record<string, string | number>): string => {
     const keys = keyPath.split('.')
     let current: unknown = translations[language as keyof typeof translations]
-    
+
     for (const key of keys) {
       if (current && typeof current === 'object' && (current as Record<string, unknown>)[key] !== undefined) {
         current = (current as Record<string, unknown>)[key]
@@ -19,27 +19,27 @@ const useTranslation = () => {
           if (fallback && typeof fallback === 'object' && (fallback as Record<string, unknown>)[fKey] !== undefined) {
             fallback = (fallback as Record<string, unknown>)[fKey]
           } else {
-            return keyPath 
+            return keyPath
           }
         }
         current = fallback
         break
       }
     }
-    
+
     if (current && typeof current === 'object') {
       // Resolved to a nested namespace, not a leaf string — return keyPath so
       // callers see the raw key instead of silent [object Object] rendering.
       return keyPath
     }
-    
+
     let result = String(current)
     if (data && typeof result === 'string') {
       Object.entries(data).forEach(([key, value]) => {
         result = result.replace(`{{${key}}}`, String(value))
       })
     }
-    
+
     return result
   }, [language])
 

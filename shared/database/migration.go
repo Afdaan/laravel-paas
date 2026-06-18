@@ -7,13 +7,17 @@
 package database
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -52,6 +56,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		slog.Warn("Failed to clean duplicate deployment events", "error", err)
 	}
 
+	// 4.5 Migrate database_instances table fields user_id and project_id.
+	if err := migrateDatabaseInstancesTable(db); err != nil {
+		return fmt.Errorf("failed database_instances table migration: %w", err)
+	}
+
 	// 5. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
@@ -67,6 +76,13 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.PendingReconcile{},
 		&models.AuditLog{},
 		&models.GithubAppInstallation{},
+		&models.DatabaseInstance{},
+		&models.DatabaseBackup{},
+		&models.SecretStore{},
+		&models.SecretStoreItem{},
+		&models.SecretStoreItemValue{},
+		&models.SecretStoreBinding{},
+		&models.SecretStoreActivityLog{},
 	}
 
 	for _, m := range modelsList {
@@ -84,9 +100,31 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 
 	slog.Info("Defensive migration bootstrap completed successfully.")
 
+	cfg := config.Load()
+
+	// Perform filesystem migration to user tenant subdirectories.
+	if err := MigrateProjectsFilesToTenantLayout(db, cfg.ProjectsPath); err != nil {
+		slog.Error("Filesystem tenant migration failed", "error", err)
+	}
+
 	// Backfill UIDs for projects that don't have one.
 	if err := BackfillUIDs(db, &config.Config{UIDSalt: os.Getenv("UID_SALT")}); err != nil {
 		slog.Warn("Failed to backfill UIDs", "error", err)
+	}
+
+	// Backfill DatabaseInstance records for existing projects that have MySQL databases.
+	if err := BackfillDatabaseInstances(db); err != nil {
+		slog.Warn("Failed to backfill database instances", "error", err)
+	}
+
+	// Backfill Laravel APP_KEY for existing Laravel projects.
+	if err := BackfillLaravelAppKeys(db, cfg); err != nil {
+		slog.Warn("Failed to backfill Laravel app keys", "error", err)
+	}
+
+	// Backfill Primary Custom Domains for existing projects.
+	if err := BackfillPrimaryDomains(db); err != nil {
+		slog.Warn("Failed to backfill primary custom domains", "error", err)
 	}
 
 	return nil
@@ -101,7 +139,7 @@ func hasConstraintSafe(db *gorm.DB, model interface{}, constraintName string) bo
 		tableName := getTableName(db, model)
 		var count int64
 		query := `
-			SELECT count(1) 
+			SELECT count(1)
 			FROM pg_constraint c
 			JOIN pg_class t ON t.oid = c.conrelid
 			WHERE t.relname = ? AND c.conname = ?;
@@ -156,13 +194,14 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"deployment_events", "uni_project_job_seq", []string{"project_id", "job_id", "sequence_number"}},
 		{"idempotent_operations", "uni_idempotent_operations_key", []string{"key"}},
 		{"pending_reconciles", "uni_pending_reconciles_domain_id", []string{"domain_id"}},
+		{"database_instances", "uni_database_instances_project_id", []string{"project_id"}},
 	}
 
 	for _, def := range uniqueDefs {
 		// Check if constraint exists in pg_constraint
 		var conCount int64
 		_ = db.Raw(`
-			SELECT count(1) 
+			SELECT count(1)
 			FROM pg_constraint c
 			JOIN pg_class t ON t.oid = c.conrelid
 			WHERE t.relname = ? AND c.conname = ?;
@@ -300,6 +339,25 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile PendingReconcile — constraint name must match GORM's uni_<table>_<column> convention
 	_ = EnsureConstraint(db, &models.PendingReconcile{}, "uni_pending_reconciles_domain_id", "UNIQUE (domain_id)")
 
+	// Reconcile DatabaseInstance
+	_ = EnsureConstraint(db, &models.DatabaseInstance{}, "uni_database_instances_project_id", "UNIQUE (project_id)")
+
+	// Reconcile GithubAppInstallation
+	_ = EnsureIndex(db, &models.GithubAppInstallation{}, "idx_gh_install_acc", "account_name", false)
+
+	// Reconcile SecretStoreItem unique index
+	if isPostgres(db) {
+		if !hasIndexSafe(db, &models.SecretStoreItem{}, "idx_secret_store_items_key_active") {
+			slog.Info("Creating missing partial unique index idx_secret_store_items_key_active concurrently")
+			if err := db.Exec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_secret_store_items_key_active ON secret_store_items (secret_store_id, key) WHERE deleted_at IS NULL;").Error; err != nil {
+				slog.Error("Failed to create idx_secret_store_items_key_active", "error", err)
+			}
+		}
+	}
+
+	// Reconcile SecretStoreBinding unique constraint
+	_ = EnsureConstraint(db, &models.SecretStoreBinding{}, "uni_secret_store_bindings_proj_store_env", "UNIQUE (project_id, secret_store_id, environment)")
+
 	return nil
 }
 
@@ -387,10 +445,10 @@ func logStartupSchemaState(db *gorm.DB) {
 	}
 	var constraints []ConstraintInfo
 	_ = db.Raw(`
-		SELECT t.relname, c.conname 
-		FROM pg_constraint c 
-		JOIN pg_class t ON t.oid = c.conrelid 
-		JOIN pg_namespace n ON n.oid = t.relnamespace 
+		SELECT t.relname, c.conname
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
 		WHERE n.nspname = 'public'
 	`).Scan(&constraints).Error
 
@@ -410,4 +468,368 @@ func getTableName(db *gorm.DB, model interface{}) string {
 		return stmt.Schema.Table
 	}
 	return fmt.Sprintf("%Ts", model)
+}
+
+// BackfillDatabaseInstances creates DatabaseInstance records for existing projects
+// that have a database_name set but no corresponding DatabaseInstance row.
+// This ensures seamless migration from the legacy inline credentials model.
+func BackfillDatabaseInstances(db *gorm.DB) error {
+	var projects []models.Project
+	if err := db.Where("database_name != '' AND database_name IS NOT NULL AND database_name NOT LIKE 'detached_%'").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	backfilled := 0
+	for _, p := range projects {
+		var count int64
+		db.Model(&models.DatabaseInstance{}).Where("project_id = ?", p.ID).Count(&count)
+		if count > 0 {
+			continue
+		}
+
+		projID := p.ID
+		instance := models.DatabaseInstance{
+			UserID:    p.UserID,
+			ProjectID: &projID,
+			Engine:    "mysql",
+			Status:    models.DBStatusActive,
+			Name:      p.GetDatabaseName(),
+			Username:  p.GetDatabaseName(),
+			Password:  p.DatabasePassword,
+			Host:      "paas-mysql",
+			Port:      3306,
+		}
+		if err := db.Create(&instance).Error; err != nil {
+			slog.Warn("Failed to backfill database instance", "project_id", p.ID, "error", err)
+			continue
+		}
+		backfilled++
+	}
+
+	if backfilled > 0 {
+		slog.Info("Backfilled database instances for legacy projects", "count", backfilled)
+	}
+	return nil
+}
+
+// MigrateProjectsFilesToTenantLayout re-arranges legacy project files into multi-tenant user-based folders.
+func MigrateProjectsFilesToTenantLayout(db *gorm.DB, projectsPath string) error {
+	cfg := config.Load()
+	dataPath := cfg.DataPath
+
+	slog.Info("Starting database UserSlug population and filesystem tenant layout migration...")
+
+	// 1. Populate UserSlug in the database for any legacy projects
+	var allProjects []models.Project
+	if err := db.Preload("User").Find(&allProjects).Error; err == nil {
+		for _, p := range allProjects {
+			if p.UserSlug == "" || p.UserSlug == "user-unknown" {
+				slug := models.NormalizeSlug(p.User.Name)
+				if slug == "" {
+					parts := strings.Split(p.User.Email, "@")
+					if len(parts) > 0 {
+						slug = models.NormalizeSlug(parts[0])
+					}
+				}
+				if slug == "" {
+					slug = "user"
+				}
+				p.UserSlug = fmt.Sprintf("%s-%d", slug, p.UserID)
+				if err := db.Model(&p).Update("user_slug", p.UserSlug).Error; err != nil {
+					slog.Error("Failed to update user_slug for project", "id", p.ID, "error", err)
+				}
+			}
+		}
+	}
+
+	// 2. Fetch projects again to ensure we have updated slugs
+	var projects []models.Project
+	if err := db.Find(&projects).Error; err != nil {
+		return fmt.Errorf("failed to fetch projects for file migration: %w", err)
+	}
+
+	// Track parent migrations we have performed to avoid duplicate log spams
+	migratedParents := make(map[string]bool)
+
+	for _, p := range projects {
+		userFolder := p.UserSlug
+		if userFolder == "" {
+			userFolder = fmt.Sprintf("user-%d", p.UserID)
+		}
+
+		// A. Rename projects/user-<id> to projects/<slug>-<id>
+		legacyParentPath := filepath.Join(projectsPath, fmt.Sprintf("user-%d", p.UserID))
+		newParentPath := filepath.Join(projectsPath, userFolder)
+
+		if !migratedParents[legacyParentPath] && legacyParentPath != newParentPath {
+			if info, err := os.Stat(legacyParentPath); err == nil && info.IsDir() {
+				slog.Info("Migrating projects parent directory to named user slug", "from", legacyParentPath, "to", newParentPath)
+				if err := os.Rename(legacyParentPath, newParentPath); err != nil {
+					slog.Warn("Failed to rename legacy projects user folder, attempting subfolder-level migration", "from", legacyParentPath, "to", newParentPath, "error", err)
+					files, readErr := os.ReadDir(legacyParentPath)
+					if readErr == nil {
+						_ = os.MkdirAll(newParentPath, 0755)
+						for _, f := range files {
+							oldSub := filepath.Join(legacyParentPath, f.Name())
+							newSub := filepath.Join(newParentPath, f.Name())
+							if renameErr := os.Rename(oldSub, newSub); renameErr != nil {
+								slog.Error("Failed to migrate project subfolder during fallback", "from", oldSub, "to", newSub, "error", renameErr)
+							} else {
+								slog.Info("Migrated project subfolder during fallback", "from", oldSub, "to", newSub)
+							}
+						}
+						_ = os.Remove(legacyParentPath)
+					}
+				}
+			}
+			migratedParents[legacyParentPath] = true
+		}
+
+		// B. Rename data/user-<id> to data/<slug>-<id> (for backups and storage volumes)
+		legacyDataParentPath := filepath.Join(dataPath, fmt.Sprintf("user-%d", p.UserID))
+		newDataParentPath := filepath.Join(dataPath, userFolder)
+
+		if !migratedParents[legacyDataParentPath] && legacyDataParentPath != newDataParentPath {
+			if info, err := os.Stat(legacyDataParentPath); err == nil && info.IsDir() {
+				slog.Info("Migrating data parent directory to named user slug", "from", legacyDataParentPath, "to", newDataParentPath)
+				if err := os.Rename(legacyDataParentPath, newDataParentPath); err != nil {
+					slog.Warn("Failed to rename legacy data user folder, attempting subfolder-level migration", "from", legacyDataParentPath, "to", newDataParentPath, "error", err)
+					files, readErr := os.ReadDir(legacyDataParentPath)
+					if readErr == nil {
+						_ = os.MkdirAll(newDataParentPath, 0755)
+						for _, f := range files {
+							oldSub := filepath.Join(legacyDataParentPath, f.Name())
+							newSub := filepath.Join(newDataParentPath, f.Name())
+							if renameErr := os.Rename(oldSub, newSub); renameErr != nil {
+								slog.Error("Failed to migrate data subfolder during fallback", "from", oldSub, "to", newSub, "error", renameErr)
+							} else {
+								slog.Info("Migrated data subfolder during fallback", "from", oldSub, "to", newSub)
+							}
+						}
+						_ = os.Remove(legacyDataParentPath)
+					}
+				}
+			}
+			migratedParents[legacyDataParentPath] = true
+		}
+
+		// C. Handle old flat-layout to tenant-layout fallback migrations (if any old files exist)
+		legacyPath := filepath.Join(projectsPath, p.Subdomain)
+		newPath := filepath.Join(newParentPath, p.Subdomain)
+		if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
+			slog.Info("Migrating project directory from legacy flat format to named user tenant folder", "project", p.Name, "legacy", legacyPath, "new", newPath)
+			if err := os.MkdirAll(newParentPath, 0755); err != nil {
+				slog.Error("Failed to create user directory", "path", newParentPath, "error", err)
+				continue
+			}
+			if err := os.Rename(legacyPath, newPath); err != nil {
+				slog.Error("Failed to rename project directory", "from", legacyPath, "to", newPath, "error", err)
+				continue
+			}
+		}
+
+		// Cleanup env backup files to protect secrets
+		legacyBakFile := filepath.Join(projectsPath, p.Subdomain+".env.bak")
+		if _, err := os.Stat(legacyBakFile); err == nil {
+			_ = os.Remove(legacyBakFile)
+		}
+		newBakFile := filepath.Join(newPath, ".env.bak")
+		if _, err := os.Stat(newBakFile); err == nil {
+			_ = os.Remove(newBakFile)
+		}
+	}
+
+	// Delete any stray backup files in the root projects path.
+	files, err := os.ReadDir(projectsPath)
+	if err == nil {
+		for _, f := range files {
+			if !f.IsDir() && strings.HasSuffix(f.Name(), ".bak") {
+				_ = os.Remove(filepath.Join(projectsPath, f.Name()))
+			}
+		}
+	}
+
+	return nil
+}
+
+// BackfillLaravelAppKeys ensures all existing Laravel projects have an APP_KEY in their secret store.
+func BackfillLaravelAppKeys(db *gorm.DB, cfg *config.Config) error {
+	backfilled := 0
+	stretchedKey := utils.DeriveKey(cfg.CredentialEncryptionKey)
+
+	var projects []models.Project
+	err := db.Where("framework = 'Laravel'").FindInBatches(&projects, 100, func(tx *gorm.DB, batch int) error {
+		for _, p := range projects {
+			var bindings []models.SecretStoreBinding
+			if err := tx.Where("project_id = ?", p.ID).Find(&bindings).Error; err != nil {
+				continue
+			}
+
+			appKeyExists := false
+			var storeID uint
+			if len(bindings) > 0 {
+				storeID = bindings[0].SecretStoreID
+				var storeIDs []uint
+				for _, b := range bindings {
+					storeIDs = append(storeIDs, b.SecretStoreID)
+				}
+				var count int64
+				tx.Model(&models.SecretStoreItem{}).Where("secret_store_id IN (?) AND key = ?", storeIDs, "APP_KEY").Count(&count)
+				if count > 0 {
+					appKeyExists = true
+				}
+			}
+
+			if appKeyExists {
+				continue
+			}
+
+			// Create store and binding if none exist.
+			if storeID == 0 {
+				store := models.SecretStore{
+					UserID:      p.UserID,
+					Name:        fmt.Sprintf("Environment Secrets (%s)", p.Name),
+					Description: "Managed variables for project " + p.Name,
+				}
+				if err := tx.Create(&store).Error; err != nil {
+					slog.Warn("Failed to create secret store during backfill", "projectID", p.ID, "error", err)
+					continue
+				}
+				storeID = store.ID
+
+				newBinding := models.SecretStoreBinding{
+					ProjectID:     p.ID,
+					SecretStoreID: store.ID,
+					Environment:   "production",
+				}
+				if err := tx.Create(&newBinding).Error; err != nil {
+					slog.Warn("Failed to bind secret store during backfill", "projectID", p.ID, "error", err)
+					continue
+				}
+			}
+
+			keyBytes := make([]byte, 32)
+			if _, err := rand.Read(keyBytes); err != nil {
+				slog.Warn("Failed to generate random key bytes during backfill", "error", err)
+				continue
+			}
+
+			appKey := "base64:" + base64.StdEncoding.EncodeToString(keyBytes)
+			encryptedVal, err := utils.Encrypt(appKey, stretchedKey)
+			if err != nil {
+				slog.Warn("Failed to encrypt APP_KEY during backfill", "error", err)
+				continue
+			}
+
+			errTx := tx.Transaction(func(txInner *gorm.DB) error {
+				item := models.SecretStoreItem{
+					SecretStoreID:         storeID,
+					Key:                   "APP_KEY",
+					LatestSnapshotVersion: 1,
+				}
+				if err := txInner.Create(&item).Error; err != nil {
+					return err
+				}
+				itemValue := models.SecretStoreItemValue{
+					SecretStoreItemID: item.ID,
+					Version:           1,
+					EncryptedValue:    encryptedVal,
+					CreatedBy:         p.UserID,
+				}
+				return txInner.Create(&itemValue).Error
+			})
+
+			if errTx != nil {
+				slog.Warn("Failed to save APP_KEY during backfill", "projectID", p.ID, "error", errTx)
+				continue
+			}
+
+			backfilled++
+		}
+		return nil
+	}).Error
+
+	if err != nil {
+		return err
+	}
+
+	if backfilled > 0 {
+		slog.Info("Backfilled APP_KEY for existing Laravel projects", "count", backfilled)
+	}
+
+	return nil
+}
+
+// BackfillPrimaryDomains sets IsPrimary = true for the first custom domain of existing projects
+func BackfillPrimaryDomains(db *gorm.DB) error {
+	var projects []models.Project
+	err := db.FindInBatches(&projects, 100, func(tx *gorm.DB, batch int) error {
+		for _, p := range projects {
+			var firstDomain models.CustomDomain
+			errFirst := tx.Where("project_id = ?", p.ID).Order("created_at ASC").First(&firstDomain).Error
+			if errFirst == nil {
+				var count int64
+				tx.Model(&models.CustomDomain{}).Where("project_id = ? AND is_primary = ?", p.ID, true).Count(&count)
+				if count == 0 {
+					firstDomain.IsPrimary = true
+					if errSave := tx.Save(&firstDomain).Error; errSave != nil {
+						slog.Warn("Failed to save primary domain during backfill", "projectID", p.ID, "domain", firstDomain.Domain, "error", errSave)
+					}
+				}
+			}
+		}
+		return nil
+	}).Error
+
+	return err
+}
+
+func migrateDatabaseInstancesTable(db *gorm.DB) error {
+	if !db.Migrator().HasTable("database_instances") {
+		return nil
+	}
+
+	// 1. Add user_id column if not exists
+	if !db.Migrator().HasColumn(&models.DatabaseInstance{}, "user_id") {
+		slog.Info("Migrating database_instances: adding user_id column")
+		if isPostgres(db) {
+			if err := db.Exec("ALTER TABLE database_instances ADD COLUMN user_id INTEGER;").Error; err != nil {
+				return fmt.Errorf("failed to add user_id column: %w", err)
+			}
+			if err := db.Exec("UPDATE database_instances di SET user_id = p.user_id FROM projects p WHERE di.project_id = p.id;").Error; err != nil {
+				slog.Warn("Failed to backfill user_id from projects table", "error", err)
+			}
+			// Check for unresolved rows
+			var unresolvedCount int64
+			if err := db.Raw("SELECT COUNT(*) FROM database_instances WHERE user_id IS NULL").Scan(&unresolvedCount).Error; err == nil && unresolvedCount > 0 {
+				return fmt.Errorf("migration failed: found %d database_instance rows with unresolvable user_id owner. Explicit remediation is required", unresolvedCount)
+			}
+			if err := db.Exec("ALTER TABLE database_instances ALTER COLUMN user_id SET NOT NULL;").Error; err != nil {
+				return fmt.Errorf("failed to make user_id NOT NULL: %w", err)
+			}
+		} else {
+			// MySQL or SQLite
+			if err := db.Migrator().AddColumn(&models.DatabaseInstance{}, "UserID"); err != nil {
+				return fmt.Errorf("failed to add user_id column: %w", err)
+			}
+			if err := db.Exec("UPDATE database_instances di JOIN projects p ON di.project_id = p.id SET di.user_id = p.user_id;").Error; err != nil {
+				slog.Warn("Failed to backfill user_id from projects table", "error", err)
+			}
+			// Check for unresolved rows
+			var unresolvedCount int64
+			if err := db.Raw("SELECT COUNT(*) FROM database_instances WHERE user_id IS NULL").Scan(&unresolvedCount).Error; err == nil && unresolvedCount > 0 {
+				return fmt.Errorf("migration failed: found %d database_instance rows with unresolvable user_id owner. Explicit remediation is required", unresolvedCount)
+			}
+		}
+	}
+
+	// 2. Make project_id nullable if it was not null
+	if isPostgres(db) {
+		slog.Info("Migrating database_instances: making project_id nullable")
+		if err := db.Exec("ALTER TABLE database_instances ALTER COLUMN project_id DROP NOT NULL;").Error; err != nil {
+			slog.Warn("Failed to make project_id nullable in migration", "error", err)
+		}
+	}
+
+	return nil
 }

@@ -168,8 +168,6 @@ func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, 
 	return s.nginxService.GetSSLStatus(domain)
 }
 
-
-
 // ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
 	projects, total, err := s.projectRepo.List(page, limit, userID, status, search)
@@ -186,7 +184,7 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, queueEnabled bool, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, enableDatabase bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	// Enforce per-user project limit (bypass for admins and superadmins)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
 		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
@@ -210,19 +208,21 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	parts := strings.Split(subdomain, "-")
 	suffix := parts[len(parts)-1]
 
-	dbName := databaseName
-	if dbName == "" {
-		dbName = strings.ReplaceAll(subdomain, "-", "_")
-	} else {
-		// Even if user provides a database name, we sanitize it and append the
-		// same unique suffix to prevent collisions across users.
-		dbName = fmt.Sprintf("%s_%s",
-			strings.Trim(strings.ReplaceAll(strings.ToLower(dbName), "-", "_"), "_"),
-			suffix)
-	}
+	var dbName *string
+	var dbPassword string
 
-	// Always generate a random password if not provided to ensure successful MySQL user creation
-	dbPassword := utils.GeneratePassword(16)
+	if enableDatabase {
+		tempDbName := databaseName
+		if tempDbName == "" {
+			tempDbName = strings.ReplaceAll(subdomain, "-", "_")
+		} else {
+			tempDbName = fmt.Sprintf("%s_%s",
+				strings.Trim(strings.ReplaceAll(strings.ToLower(tempDbName), "-", "_"), "_"),
+				suffix)
+		}
+		dbName = &tempDbName
+		dbPassword = utils.GeneratePassword(16)
+	}
 
 	expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
 	var expiresAt *time.Time
@@ -242,6 +242,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		BaseDirectory:        baseDirectory,
 		BuildCommand:         sanitizeCommand(buildCommand),
 		StartCommand:         strings.TrimSpace(startCommand),
+		Port:                 port,
 		QueueEnabled:         queueEnabled,
 		Status:               models.StatusPending,
 		DeploymentStatus:     models.DepStatusQueued,
@@ -252,6 +253,33 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		GithubRepoName:       githubRepoName,
 	}
 
+	if enableDatabase {
+		engine := "mysql"
+		if databaseEngine == "postgresql" {
+			engine = "postgresql"
+		}
+
+		host := "paas-mysql"
+		port := 3306
+		if engine == "postgresql" {
+			host = "paas-user-postgres"
+			port = 5432
+		}
+
+		instance := &models.DatabaseInstance{
+			UserID:            userID,
+			Engine:            engine,
+			Status:            models.DBStatusActive,
+			Name:              *dbName,
+			Username:          *dbName,
+			Password:          dbPassword,
+			Host:              host,
+			Port:              port,
+			StorageAllocation: 1073741824, // 1GB
+		}
+		project.DatabaseInstance = instance
+	}
+
 	if err := s.projectRepo.Create(project); err != nil {
 		return nil, err
 	}
@@ -259,7 +287,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	return project, nil
 }
 
-func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch, phpVersion, baseDirectory string, queueEnabled bool, workerCommand, buildCommand, startCommand, nodeVersion, languageVersion string) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch string, phpVersion, nodeVersion *string, baseDirectory string, queueEnabled *bool, workerCommand *string, buildCommand, startCommand string, languageVersion *string, port *int, githubURL string, githubInstallationID *int64, githubRepoOwner, githubRepoName *string) (*models.Project, error) {
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -270,18 +298,63 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 		return nil, apperr.New(403, "FORBIDDEN", "You do not have permission to update this project")
 	}
 
+	// Automate Laravel .env QUEUE_CONNECTION update if queue status changes
+	if queueEnabled != nil && project.Framework == "Laravel" && project.QueueEnabled != *queueEnabled {
+		if content, err := s.storageService.GetEnvFile(project.UserID, project.Subdomain); err == nil {
+			updatedContent := updateEnvQueueConnection(content, *queueEnabled)
+			if updatedContent != content {
+				if err := s.storageService.SaveEnvFile(project.UserID, project.Subdomain, updatedContent); err != nil {
+					slog.Warn("Failed to automatically update QUEUE_CONNECTION in .env file on settings update", "subdomain", project.Subdomain, "error", err)
+				} else {
+					slog.Info("Automatically updated QUEUE_CONNECTION in .env file", "subdomain", project.Subdomain, "queue_enabled", *queueEnabled)
+				}
+			}
+		}
+	}
+
 	if name != "" {
 		project.Name = name
 	}
 	project.Branch = branch
-	project.PHPVersion = phpVersion
+
+	// Flag as manual version if versions are explicitly set in settings payload and differ from current values
+	if (phpVersion != nil && *phpVersion != "" && *phpVersion != project.PHPVersion) ||
+		(nodeVersion != nil && *nodeVersion != "" && *nodeVersion != project.NodeVersion) ||
+		(languageVersion != nil && *languageVersion != "" && *languageVersion != project.LanguageVersion) {
+		project.IsManualVersion = true
+	}
+
+	if phpVersion != nil {
+		project.PHPVersion = *phpVersion
+	}
 	project.BaseDirectory = baseDirectory
-	project.QueueEnabled = queueEnabled
-	project.WorkerCommand = workerCommand
+	project.Port = port
+
+	if queueEnabled != nil {
+		project.QueueEnabled = *queueEnabled
+	}
+	if workerCommand != nil {
+		project.WorkerCommand = *workerCommand
+	}
 	project.BuildCommand = sanitizeCommand(buildCommand)
 	project.StartCommand = strings.TrimSpace(startCommand)
-	project.NodeVersion = nodeVersion
-	project.LanguageVersion = languageVersion
+
+	if nodeVersion != nil {
+		project.NodeVersion = *nodeVersion
+	}
+	if languageVersion != nil {
+		project.LanguageVersion = *languageVersion
+	}
+
+	// Update Git connection fields if provided (or allow resetting/changing)
+	project.GithubURL = githubURL
+	project.GithubInstallationID = githubInstallationID
+	if githubRepoOwner != nil {
+		project.GithubRepoOwner = *githubRepoOwner
+	}
+	if githubRepoName != nil {
+		project.GithubRepoName = *githubRepoName
+	}
 
 	if err := s.projectRepo.Update(project); err != nil {
 		return nil, err
@@ -380,4 +453,46 @@ func (s *ProjectService) GetDeploymentEvents(projectID uint) ([]models.Deploymen
 // GetAllDeploymentEvents returns the complete unfiltered timeline of deployment events for a project
 func (s *ProjectService) GetAllDeploymentEvents(projectID uint) ([]models.DeploymentEvent, error) {
 	return s.projectRepo.ListAllDeploymentEventsByProjectID(projectID)
+}
+
+func updateEnvQueueConnection(content string, queueEnabled bool) string {
+	lines := strings.Split(content, "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		cleanLine := trimmed
+		if strings.HasPrefix(trimmed, "#") {
+			cleanLine = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+		}
+
+		if strings.HasPrefix(cleanLine, "QUEUE_CONNECTION=") {
+			parts := strings.SplitN(cleanLine, "=", 2)
+			currentVal := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+
+			newVal := currentVal
+			if queueEnabled {
+				if currentVal == "sync" || currentVal == "" {
+					newVal = "database"
+				}
+			} else {
+				if currentVal != "sync" {
+					newVal = "sync"
+				}
+			}
+
+			lines[i] = "QUEUE_CONNECTION=" + newVal
+			found = true
+			break
+		}
+	}
+
+	if !found && queueEnabled {
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "QUEUE_CONNECTION=database")
+	}
+
+	return strings.Join(lines, "\n")
 }

@@ -9,7 +9,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
-      closeButton={true}
+      closeButton={false}
       icons={{
         success: (
           <div className="flex shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 p-1.5 border border-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
@@ -39,14 +39,16 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       toastOptions={{
         classNames: {
-          toast: "group rounded-2xl p-4 flex gap-4 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 w-[380px] shadow-2xl relative items-start",
-          title: "text-[13px] font-bold tracking-tight text-foreground leading-tight",
-          description: "text-xs text-muted-foreground/90 leading-relaxed mt-1.5 whitespace-pre-wrap break-words",
+          toast: "group rounded-2xl !p-4 border backdrop-blur-xl font-sans text-sm select-none transition-all duration-300 min-w-[280px] max-w-[480px] shadow-2xl !items-start flex !flex-col",
+          content: "flex flex-col justify-center !min-w-0",
+          title: "text-[13px] font-bold tracking-tight text-foreground leading-snug",
+          description: "text-xs text-muted-foreground/90 leading-relaxed mt-1.5 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto",
           success: "!bg-emerald-950/20 dark:!bg-emerald-950/30 !border-emerald-500/20 !text-emerald-200 [box-shadow:0_12px_40px_rgba(16,185,129,0.06),inset_0_0_12px_rgba(16,185,129,0.02)]",
           error: "!bg-rose-950/25 dark:!bg-rose-950/35 !border-rose-500/20 !text-rose-200 [box-shadow:0_12px_40px_rgba(244,63,94,0.08),inset_0_0_12px_rgba(244,63,94,0.03)]",
           warning: "!bg-amber-950/20 dark:!bg-amber-950/30 !border-amber-500/20 !text-amber-200 [box-shadow:0_12px_40px_rgba(245,158,11,0.06),inset_0_0_12px_rgba(245,158,11,0.02)]",
           info: "!bg-blue-950/20 dark:!bg-blue-950/30 !border-blue-500/20 !text-blue-200 [box-shadow:0_12px_40px_rgba(59,130,246,0.06),inset_0_0_12px_rgba(59,130,246,0.02)]",
-          closeButton: "!absolute !top-3 !right-3 !left-auto !translate-x-0 !translate-y-0 !bg-transparent hover:!bg-white/10 !border-transparent hover:!text-foreground !text-muted-foreground/60 !rounded-lg !p-1 !h-6 !w-6 !flex !items-center !justify-center !transition-all cursor-pointer z-50",
+          actionButton: "!bg-primary !text-primary-foreground !rounded-lg !font-semibold !text-xs !px-4 !py-2 !transition-all hover:!bg-primary/90 active:!scale-95 !mt-3 !justify-self-start !shrink-0 cursor-pointer",
+          cancelButton: "!bg-muted !text-muted-foreground !rounded-lg !font-medium !text-xs !px-4 !py-2 !transition-all hover:!bg-muted/80 active:!scale-95 !mt-3 !justify-self-start !shrink-0 cursor-pointer",
         },
       }}
       {...props}

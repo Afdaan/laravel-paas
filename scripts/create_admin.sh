@@ -32,7 +32,7 @@ if [ -f ".env" ]; then
     ENV_USER=$(grep "^PG_USER=" .env | cut -d '=' -f2)
     ENV_PASS=$(grep "^PG_PASSWORD=" .env | cut -d '=' -f2)
     ENV_NAME=$(grep "^PG_DATABASE=" .env | cut -d '=' -f2)
-    
+
     if [ ! -z "$ENV_USER" ]; then DB_USER=$ENV_USER; fi
     if [ ! -z "$ENV_PASS" ]; then DB_PASS=$ENV_PASS; fi
     if [ ! -z "$ENV_NAME" ]; then DB_NAME=$ENV_NAME; fi
@@ -62,7 +62,7 @@ while true; do
     echo ""
     read -s -p "Confirm Password: " ADMIN_PASSWORD_CONFIRM
     echo ""
-    
+
     if [[ -z "$ADMIN_PASSWORD" ]]; then
         echo -e "${RED}Password cannot be empty.${NC}"
     elif [[ "$ADMIN_PASSWORD" != "$ADMIN_PASSWORD_CONFIRM" ]]; then

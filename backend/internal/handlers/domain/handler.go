@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
-	"github.com/laravel-paas/shared/services/domain"
 	"github.com/laravel-paas/shared/pkg/traefik"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
+	"github.com/laravel-paas/shared/services/domain"
 	"gorm.io/gorm"
 )
 
@@ -40,8 +40,8 @@ func NewDomainHandler(cfg *config.Config, db *gorm.DB, redisService *infrastruct
 }
 
 // validateAccess verifies that the authenticated user owns the project or has administrative privileges.
-func (h *DomainHandler) validateAccess(c *fiber.Ctx, projectID uint, domainID uint) (*models.Project, *models.CustomDomain, error) {
-	project, err := h.projectService.GetProjectByID(projectID)
+func (h *DomainHandler) validateAccess(c *fiber.Ctx, projectUID string, domainID uint) (*models.Project, *models.CustomDomain, error) {
+	project, err := h.projectService.GetProjectByUID(projectUID)
 	if err != nil {
 		return nil, nil, apperr.New(404, "PROJECT_NOT_FOUND", "Project not found")
 	}
@@ -61,7 +61,7 @@ func (h *DomainHandler) validateAccess(c *fiber.Ctx, projectID uint, domainID ui
 		return nil, nil, apperr.New(404, "DOMAIN_NOT_FOUND", "Domain not found")
 	}
 
-	if domain.ProjectID != projectID {
+	if domain.ProjectID != project.ID {
 		return nil, nil, apperr.New(400, "MISMATCH", "Domain does not belong to the specified project")
 	}
 
@@ -82,16 +82,14 @@ func (h *DomainHandler) RegisterRoutes(r fiber.Router) {
 }
 
 func (h *DomainHandler) List(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
-	if _, _, err := h.validateAccess(c, uint(projectID), 0); err != nil {
+	project, _, err := h.validateAccess(c, projectUID, 0)
+	if err != nil {
 		return err
 	}
 
-	domains, err := h.domainService.ListDomains(uint(projectID))
+	domains, err := h.domainService.ListDomains(project.ID)
 	if err != nil {
 		return err
 	}
@@ -137,12 +135,10 @@ func (h *DomainHandler) ListGlobalMetrics(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) Add(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
-	if _, _, err := h.validateAccess(c, uint(projectID), 0); err != nil {
+	project, _, err := h.validateAccess(c, projectUID, 0)
+	if err != nil {
 		return err
 	}
 
@@ -154,7 +150,7 @@ func (h *DomainHandler) Add(c *fiber.Ctx) error {
 		return apperr.New(400, "INVALID_REQUEST", "Invalid request body")
 	}
 
-	domainData, err := h.domainService.AddDomain(uint(projectID), req.Domain)
+	domainData, err := h.domainService.AddDomain(project.ID, req.Domain)
 	if err != nil {
 		return err
 	}
@@ -165,27 +161,24 @@ func (h *DomainHandler) Add(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) Remove(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil || domainID == 0 {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	project, _, err := h.validateAccess(c, uint(projectID), uint(domainID))
+	project, _, err := h.validateAccess(c, projectUID, uint(domainID))
 	if err != nil {
 		return err
 	}
 
-	if err := h.domainService.RemoveDomain(uint(domainID), uint(projectID)); err != nil {
+	if err := h.domainService.RemoveDomain(uint(domainID), project.ID); err != nil {
 		return err
 	}
 
 	// Trigger Nginx & Traefik Sync using a fresh, authoritative database snapshot (without the removed domain)
-	updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
+	updatedProject, err := h.projectService.GetProjectByID(project.ID)
 	if err == nil {
 		_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_remove_handler")
 		_ = traefik.WriteProjectDynamicFile(h.cfg, updatedProject, updatedProject.CustomDomains)
@@ -198,24 +191,21 @@ func (h *DomainHandler) Remove(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) Verify(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil || domainID == 0 {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	project, domain, err := h.validateAccess(c, uint(projectID), uint(domainID))
+	project, domain, err := h.validateAccess(c, projectUID, uint(domainID))
 	if err != nil {
 		return err
 	}
 
 	wasAlreadyActive := domain != nil && domain.Status == models.DomainStatusActive
 
-	domainData, err := h.domainService.VerifyDomain(c.UserContext(), uint(domainID), uint(projectID), project)
+	domainData, err := h.domainService.VerifyDomain(c.UserContext(), uint(domainID), project.ID, project)
 	if err != nil {
 		return c.JSON(fiber.Map{
 			"error": fiber.Map{
@@ -228,7 +218,7 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 
 	// Trigger Nginx & Traefik Sync only if the domain wasn't already active to avoid redundant downtime/restarts
 	if !wasAlreadyActive {
-		updatedProject, err := h.projectService.GetProjectByID(uint(projectID))
+		updatedProject, err := h.projectService.GetProjectByID(project.ID)
 		if err == nil {
 			_, _ = h.projectService.SyncProjectNginxFrom(updatedProject, "domain_verify_handler")
 			_ = traefik.WriteProjectDynamicFile(h.cfg, updatedProject, updatedProject.CustomDomains)
@@ -244,63 +234,59 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) Transfer(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil || domainID == 0 {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	if _, _, err := h.validateAccess(c, uint(projectID), uint(domainID)); err != nil {
+	project, _, err := h.validateAccess(c, projectUID, uint(domainID))
+	if err != nil {
 		return err
 	}
 
 	var req struct {
-		TargetProjectID uint `json:"target_project_id"`
+		TargetProjectUID string `json:"target_project_uid"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
 		return apperr.New(400, "INVALID_REQUEST", "Invalid request body")
 	}
 
-	if _, _, err := h.validateAccess(c, req.TargetProjectID, 0); err != nil {
+	targetProject, _, err := h.validateAccess(c, req.TargetProjectUID, 0)
+	if err != nil {
 		return apperr.New(403, "FORBIDDEN", "You do not have permission to transfer domains to the target project")
 	}
 
 	userID := c.Locals("user_id").(uint)
-	if err := h.domainService.TransferDomain(userID, uint(domainID), req.TargetProjectID); err != nil {
+	if err := h.domainService.TransferDomain(userID, uint(domainID), targetProject.ID); err != nil {
 		return err
 	}
 
 	// Trigger Traefik Sync using fresh, authoritative database snapshots for both source and target projects
-	sourceProject, errSource := h.projectService.GetProjectByID(uint(projectID))
+	sourceProject, errSource := h.projectService.GetProjectByID(project.ID)
 	if errSource == nil {
 		_ = traefik.WriteProjectDynamicFile(h.cfg, sourceProject, sourceProject.CustomDomains)
 	}
 
-	targetProject, errTarget := h.projectService.GetProjectByID(uint(req.TargetProjectID))
+	targetProjectUpdated, errTarget := h.projectService.GetProjectByID(targetProject.ID)
 	if errTarget == nil {
-		_ = traefik.WriteProjectDynamicFile(h.cfg, targetProject, targetProject.CustomDomains)
+		_ = traefik.WriteProjectDynamicFile(h.cfg, targetProjectUpdated, targetProjectUpdated.CustomDomains)
 	}
 
 	return c.JSON(fiber.Map{"message": "Domain transferred successfully"})
 }
 
 func (h *DomainHandler) Diagnostic(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil || domainID == 0 {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	project, domain, err := h.validateAccess(c, uint(projectID), uint(domainID))
+	project, domain, err := h.validateAccess(c, projectUID, uint(domainID))
 	if err != nil {
 		return err
 	}
@@ -316,17 +302,15 @@ func (h *DomainHandler) Diagnostic(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) ListEvents(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil || domainID == 0 {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	if _, _, err := h.validateAccess(c, uint(projectID), uint(domainID)); err != nil {
+	_, _, err = h.validateAccess(c, projectUID, uint(domainID))
+	if err != nil {
 		return err
 	}
 
@@ -351,17 +335,15 @@ func (h *DomainHandler) setSecureCORS(c *fiber.Ctx) {
 }
 
 func (h *DomainHandler) StreamEvents(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
 	domainID, err := strconv.ParseUint(c.Params("domainID"), 10, 32)
 	if err != nil || domainID == 0 {
 		return apperr.New(400, "INVALID_DOMAIN_ID", "Invalid domain ID")
 	}
 
-	if _, _, err := h.validateAccess(c, uint(projectID), uint(domainID)); err != nil {
+	_, _, err = h.validateAccess(c, projectUID, uint(domainID))
+	if err != nil {
 		return err
 	}
 
@@ -467,12 +449,10 @@ func (h *DomainHandler) StreamEvents(c *fiber.Ctx) error {
 }
 
 func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
-	projectID, err := strconv.ParseUint(c.Params("id"), 10, 32)
-	if err != nil || projectID == 0 {
-		return apperr.New(400, "INVALID_ID", "Invalid project ID")
-	}
+	projectUID := c.Params("id")
 
-	if _, _, err := h.validateAccess(c, uint(projectID), 0); err != nil {
+	project, _, err := h.validateAccess(c, projectUID, 0)
+	if err != nil {
 		return err
 	}
 
@@ -492,7 +472,7 @@ func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
 	}
 
 	ctx := c.Context()
-	eventChan, err := h.domainService.SubscribeProjectEvents(ctx, uint(projectID))
+	eventChan, err := h.domainService.SubscribeProjectEvents(ctx, project.ID)
 	if err != nil {
 		return err
 	}
@@ -506,7 +486,7 @@ func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
 
 		if lastSeq > 0 {
 			metrics.GetCollector().IncrSSEReplayTotal()
-			missedEvents, err := h.domainService.ListProjectEventsAfterSequence(uint(projectID), lastSeq)
+			missedEvents, err := h.domainService.ListProjectEventsAfterSequence(project.ID, lastSeq)
 			if err == nil {
 				for _, ev := range missedEvents {
 					evBytes, _ := json.Marshal(ev)
@@ -543,7 +523,7 @@ func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
 					if lastSeq > 0 {
 						time.Sleep(time.Duration(mathrand.Int64N(500)) * time.Millisecond)
 						metrics.GetCollector().IncrSSEReplayTotal()
-						missedEvents, err := h.domainService.ListProjectEventsAfterSequence(uint(projectID), lastSeq)
+						missedEvents, err := h.domainService.ListProjectEventsAfterSequence(project.ID, lastSeq)
 						if err == nil {
 							for _, ev := range missedEvents {
 								evBytes, _ := json.Marshal(ev)
@@ -645,9 +625,9 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 	}
 
 	type TraefikHTTP struct {
-		Routers     map[string]TraefikRouter     `json:"routers"`
-		Middlewares map[string]interface{}        `json:"middlewares,omitempty"`
-		Services    map[string]TraefikService    `json:"services"`
+		Routers     map[string]TraefikRouter  `json:"routers"`
+		Middlewares map[string]interface{}    `json:"middlewares,omitempty"`
+		Services    map[string]TraefikService `json:"services"`
 	}
 
 	type TraefikConfigResponse struct {

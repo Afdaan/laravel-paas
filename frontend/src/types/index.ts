@@ -9,12 +9,14 @@ export interface User {
   last_ip?: string;
   last_location?: string;
   created_at?: string;
+  avatar_url?: string;
 }
 
 export interface CustomDomain {
   id: number;
   domain: string;
   status: string;
+  is_primary?: boolean;
   health_status?: string;
   last_healthcheck_at?: string;
   error_code?: string;
@@ -62,7 +64,7 @@ export interface Project {
   repository_url: string;
   branch: string;
   php_version: string;
-  port: number;
+  port: number | null;
   db_name: string;
   status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting';
   subdomain?: string;
@@ -70,6 +72,9 @@ export interface Project {
   user?: User;
   laravel_version?: string;
   github_url?: string;
+  github_installation_id?: number | null;
+  github_repo_owner?: string;
+  github_repo_name?: string;
   error_log?: string;
   queue_enabled?: boolean;
   is_manual_version?: boolean;
@@ -88,6 +93,7 @@ export interface Project {
   internal_port?: string;
   last_commit_hash?: string;
   custom_domains?: CustomDomain[];
+  database_instance?: DatabaseInstance;
   deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'provisioning' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
   deployment_job_id?: string;
   rollout_container_id?: string;
@@ -155,4 +161,43 @@ export interface GithubRepository {
   description: string;
   private: boolean;
   default_branch: string;
+}
+
+export interface DatabaseInstance {
+  id: number;
+  project_id: number | null;
+  project?: Project;
+  engine: 'mysql' | 'postgresql';
+  version?: string;
+  status: 'active' | 'suspended' | 'deleted';
+  name: string;
+  username: string;
+  host: string;
+  port: number | null;
+  storage_allocation: number;
+  storage_consumption: number;
+  connection_count: number;
+  created_at: string;
+  updated_at: string;
+  size?: string;
+  table_count?: number;
+  row_count?: number;
+  database?: string;
+  password?: string;
+}
+
+export interface DatabaseBackup {
+  id: number;
+  database_instance_id: number;
+  project_id: number;
+  name: string;
+  path: string;
+  size: string;
+  status: 'pending' | 'completed' | 'failed';
+  created_at: string;
+}
+
+export interface DatabaseMetrics {
+  active_connections: number;
+  size_kb: number;
 }

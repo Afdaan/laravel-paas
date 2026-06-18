@@ -1,0 +1,18 @@
+{
+  "caches": {
+    "uv-cache": {
+      "directory": "/root/.cache/uv"
+    }
+  },
+
+  "deploy": {
+    "base": {
+      "image": "python:{{VERSION}}-slim"
+    },
+    "variables": {
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PATH": "/app/.venv/bin:$PATH"
+    }
+  }
+}

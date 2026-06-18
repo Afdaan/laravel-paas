@@ -32,6 +32,7 @@ NGINX_LIMIT_CONF = os.path.join(os.path.dirname(NGINX_CONF_DIR), "paas-rate-limi
 SSL_EMAIL = os.environ.get("SSL_EMAIL", "admin@example.com")
 WEBHOOK_KEY = os.environ.get("WEBHOOK_KEY", "change-this-key")
 LISTEN_PORT = 49512
+NGINX_CUSTOM_ERRORS_ENABLED = os.environ.get("NGINX_CUSTOM_ERRORS_ENABLED", "false").lower() in ("true", "1", "yes")
 
 # --- Logging Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -88,7 +89,7 @@ class NginxReloader:
             self.pending_reloads = 0
             self.total_reloads += 1
             self.last_reload_time = time.time()
-            
+
         logging.info(f"Executing coalesced Nginx reload across cluster (coalesced {pending} updates into 1 reload)...")
         run_command(["nginx", "-s", "reload"])
 
@@ -113,7 +114,7 @@ def certbot_worker():
         task = CERTBOT_QUEUE.get()
         if task is None:
             break
-        
+
         domain = task["domain"]
         subdomain = task["subdomain"]
         custom_domains = task["custom_domains"]
@@ -121,7 +122,7 @@ def certbot_worker():
         port = task["port"]
         project_dir = task["project_dir"]
         retry_count = task.get("retry_count", 0)
-        
+
         SSL_STATUS_STORE[domain] = {
             "status": "ssl_provisioning",
             "error": "",
@@ -129,11 +130,11 @@ def certbot_worker():
             "issued_at": None,
             "expires_at": None
         }
-        
+
         all_domains_list = [domain] + custom_domains
         all_domains_str = " ".join(all_domains_list)
         logging.info(f"[{subdomain}] Background Let's Encrypt provisioning initiated for: {all_domains_str} (Attempt {retry_count + 1})")
-        
+
         certbot_args = [
             "certbot", "certonly", "--webroot", "-w", "/var/www/html",
             "--non-interactive", "--agree-tos",
@@ -141,7 +142,7 @@ def certbot_worker():
         ]
         for d in all_domains_list:
             certbot_args.extend(["-d", d])
-            
+
         # Retry loop to mitigate Let's Encrypt / Certbot global lock contention
         max_lock_retries = 5
         lock_retry_delay = 5.0
@@ -199,7 +200,7 @@ def certbot_worker():
                 "issued_at": None,
                 "expires_at": None
             }
-            
+
         CERTBOT_QUEUE.task_done()
 
 threading.Thread(target=certbot_worker, daemon=True).start()
@@ -218,8 +219,9 @@ PROXY_DIRECTIVES_TEMPLATE = """
         proxy_busy_buffers_size 256k;
 
         # Proxy settings to internal IP
+{custom_errors_directive}
         proxy_pass http://{internal_ip}:{port};
-        
+
         # HTTPS Detection for Backend (Laravel)
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Port 443;
@@ -306,13 +308,21 @@ def get_file_sha256(filepath):
 
 def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False, primary_domain=None):
     """Generates the full Nginx configuration string."""
-    proxy_config = PROXY_DIRECTIVES_TEMPLATE.format(internal_ip=internal_ip, port=port)
-    
+    custom_errors_directive = "        proxy_intercept_errors on;" if NGINX_CUSTOM_ERRORS_ENABLED else ""
+    proxy_config = PROXY_DIRECTIVES_TEMPLATE.format(
+        internal_ip=internal_ip,
+        port=port,
+        custom_errors_directive=custom_errors_directive
+    )
+
+    custom_errors_include = "    include snippets/custom-errors.conf;" if NGINX_CUSTOM_ERRORS_ENABLED else ""
+
     if not ssl_enabled:
         return f"""server {{
     listen 80;
     server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
+{custom_errors_include}
 
     location /.well-known/acme-challenge/ {{
         root /var/www/html;
@@ -327,13 +337,21 @@ def get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=False, prim
     return f"""server {{
     listen 80;
     server_name {all_domains_str};
-    return 301 https://$host$request_uri;
+
+    location /.well-known/acme-challenge/ {{
+        root /var/www/html;
+    }}
+
+    location / {{
+        return 301 https://$host$request_uri;
+    }}
 }}
 
 server {{
     listen 443 ssl;
     server_name {all_domains_str};
     {COMMON_SERVER_DIRECTIVES}
+{custom_errors_include}
 
     ssl_certificate /etc/letsencrypt/live/{primary_domain}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{primary_domain}/privkey.pem;
@@ -429,10 +447,10 @@ def _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port
     file_path = os.path.join(project_dir, f"project-{subdomain}.conf")
     temp_path = f"{file_path}.tmp"
     backup_path = f"{file_path}.bak"
-    
+
     conf_content = get_nginx_config(all_domains_str, internal_ip, port, ssl_enabled=ssl_enabled, primary_domain=domain)
     new_hash = hashlib.sha256(conf_content.encode("utf-8")).hexdigest()
-    
+
     old_hash = get_file_sha256(file_path)
     if old_hash == new_hash:
         logging.info(f"[{subdomain}] Nginx configuration hash ({new_hash[:8]}) matches active config. Skipping rewrite and reload.")
@@ -440,12 +458,12 @@ def _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port
 
     with open(temp_path, "w") as f:
         f.write(conf_content)
-        
+
     old_existed = os.path.exists(file_path)
     if old_existed:
         os.rename(file_path, backup_path)
     os.rename(temp_path, file_path)
-    
+
     test_success, test_out = run_command(["nginx", "-t"])
     if not test_success:
         logging.error(f"[{subdomain}] Nginx syntax validation failed. Rolling back configuration.")
@@ -453,10 +471,10 @@ def _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port
         if old_existed:
             os.rename(backup_path, file_path)
         return False, f"Nginx syntax error: {test_out}", None
-        
+
     if os.path.exists(backup_path):
         os.remove(backup_path)
-        
+
     RELOADER.schedule_reload()
     return True, "Synced", new_hash
 
@@ -464,10 +482,13 @@ def sync_project(subdomain, domain, custom_domains, internal_ip, port, project_d
     """Handles project Nginx configuration using an Atomic Commit workflow with Smart SSL."""
     all_domains_list = [domain] + custom_domains
     all_domains_str = " ".join(all_domains_list)
-    
+
     needs_ssl_expansion = not cert_covers_all(domain, all_domains_list)
     has_ssl_options = os.path.exists("/etc/letsencrypt/options-ssl-nginx.conf")
-    use_ssl = (not needs_ssl_expansion) and has_ssl_options
+
+    # Avoid dropping HTTPS for existing working domains if Let's Encrypt expansion is queued or fails
+    primary_cert_exists = os.path.exists(f"/etc/letsencrypt/live/{domain}/fullchain.pem")
+    use_ssl = (primary_cert_exists or not needs_ssl_expansion) and has_ssl_options
 
     success, msg, conf_hash = _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port, project_dir, ssl_enabled=use_ssl)
     if not success:
@@ -495,7 +516,7 @@ def sync_project(subdomain, domain, custom_domains, internal_ip, port, project_d
             })
             logging.info(f"[{subdomain}] Let's Encrypt expansion enqueued for asynchronous background issuance.")
         return True, "Synced (SSL Queued)", conf_hash
-        
+
     return True, "Synced (SSL Active)", conf_hash
 
 def delete_project(subdomain, project_dir):
@@ -558,11 +579,11 @@ def webhook():
     """Main webhook entry point."""
     client_ip = request.remote_addr
     valid, err_msg = verify_webhook_signature(request)
-    
+
     if not valid:
         logging.warning(f"Unauthorized access from {client_ip}: {err_msg}")
         return jsonify({"error": f"Unauthorized: {err_msg}"}), 401
-    
+
     data = request.get_json(force=True, silent=True) or {}
     action = data.get("action")
     subdomain = data.get("subdomain")
@@ -583,7 +604,7 @@ def webhook():
             port = data.get("port")
             if not internal_ip or not port:
                 return jsonify({"error": "Missing IP/Port"}), 400
-            
+
             success, message, conf_hash = sync_project(subdomain, domain, custom_domains, internal_ip, port, project_dir)
             return jsonify({"message": message, "config_hash": conf_hash}), 200 if success else 500
 
@@ -605,12 +626,12 @@ def ssl_status():
     domain = request.args.get("domain")
     if not domain:
         return jsonify({"error": "Missing domain parameter"}), 400
-        
+
     status_info = SSL_STATUS_STORE.get(domain, {})
     current_status = status_info.get("status", "none")
     error_msg = status_info.get("error", "")
     retry_count = status_info.get("retry_count", 0)
-    
+
     expires_at = None
     issued_at = None
     cert_info = inspect_certificate(domain) or find_certificate_covering_domain(domain)
@@ -620,7 +641,7 @@ def ssl_status():
         current_status = "ssl_active"
         error_msg = ""
         logging.info(f"SSL status active for {domain}; covered by certificate {cert_info['cert_name']}")
-             
+
     return jsonify({
         "domain": domain,
         "status": current_status,

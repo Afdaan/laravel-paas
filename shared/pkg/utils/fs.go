@@ -7,9 +7,13 @@
 package utils
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // IsPathWithinRoot verifies that a candidate path is physically located
@@ -49,4 +53,156 @@ func IsSymlink(path string) bool {
 		return false
 	}
 	return info.Mode()&os.ModeSymlink != 0
+}
+
+// WriteFileAtomic writes data to a file atomically by writing to a temporary file,
+// performing fsync, and then doing an atomic rename to the target path.
+func WriteFileAtomic(filename string, data []byte, perm os.FileMode) (err error) {
+	dir := filepath.Dir(filename)
+	// Create a temp file in the same directory to guarantee atomic rename (same mount/device)
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(filename)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	defer func() {
+		// Clean up the temp file if any error occurs
+		if err != nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if err = tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	if _, err = tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	// Perform fsync to ensure persistence
+	if err = tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	if err = tmpFile.Close(); err != nil {
+		return err
+	}
+
+	// Atomic rename replaces the target file atomically on Unix systems
+	if err = os.Rename(tmpName, filename); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// PruneJobLogs finds all files matching the pattern in logsDir and removes the oldest ones,
+// keeping only the maxKeep most recent files (based on modification time).
+func PruneJobLogs(logsDir string, pattern string, maxKeep int) error {
+	if maxKeep <= 0 {
+		return nil
+	}
+
+	matches, err := filepath.Glob(filepath.Join(logsDir, pattern))
+	if err != nil {
+		return err
+	}
+
+	if len(matches) <= maxKeep {
+		return nil
+	}
+
+	type fileInfo struct {
+		path    string
+		modTime time.Time
+	}
+
+	files := make([]fileInfo, 0, len(matches))
+	for _, path := range matches {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{
+			path:    path,
+			modTime: info.ModTime(),
+		})
+	}
+
+	// Sort descending (newest first)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+
+	// Remove older files
+	for i := maxKeep; i < len(files); i++ {
+		_ = os.Remove(files[i].path)
+	}
+
+	return nil
+}
+
+// TruncateFileIfNeeded checks if the file at path exceeds maxSizeBytes.
+// If it does, it keeps the last 50% of the maxSizeBytes bytes of the file and truncates the rest.
+func TruncateFileIfNeeded(path string, maxSizeBytes int64) error {
+	f, err := os.OpenFile(path, os.O_RDWR, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	// Acquire exclusive file lock to prevent race conditions during truncation
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	}()
+
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	if info.Size() <= maxSizeBytes {
+		return nil
+	}
+
+	// Keep the last 50% of the maxSizeBytes
+	keepBytes := maxSizeBytes / 2
+	if keepBytes <= 0 {
+		return f.Truncate(0)
+	}
+
+	// Read last keepBytes
+	offset := info.Size() - keepBytes
+	if offset < 0 {
+		offset = 0
+	}
+
+	buf := make([]byte, keepBytes)
+	n, err := f.ReadAt(buf, offset)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	// Seek to the beginning, truncate, and write back in-place
+	if _, err := f.Seek(0, 0); err != nil {
+		return err
+	}
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Write(buf[:n]); err != nil {
+		return err
+	}
+	// Sync changes to disk
+	return f.Sync()
 }

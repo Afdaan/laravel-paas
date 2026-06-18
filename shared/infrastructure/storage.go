@@ -10,28 +10,28 @@ import (
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"gorm.io/gorm"
 )
 
 type StorageService struct {
 	cfg *config.Config
+	db  *gorm.DB
 }
 
-func NewStorageService(cfg *config.Config) *StorageService {
-	return &StorageService{cfg: cfg}
+func NewStorageService(cfg *config.Config, db *gorm.DB) *StorageService {
+	return &StorageService{cfg: cfg, db: db}
 }
 
 // EnsurePersistentPath ensures the hierarchical data path exists on host
 func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
-	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
+	path := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage")
 
 	if err := os.MkdirAll(path, 0777); err != nil {
 		slog.Error("Failed to create storage path", "subdomain", project.Subdomain, "path", path, "error", err)
 	}
 	// Logic: Sync new files from Git Source to Persistent Storage
 	// We use 'cp -an' to copy non-existing files and preserve attributes
-	// projectSourceStorage = /home/afdaan/projects/subdomain/storage/app/
-	// path = /home/afdaan/data/user-1/subdomain/storage/
-	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, project.Subdomain, "storage", "app")
+	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "app")
 
 	if _, err := os.Stat(projectSourceStorage); err == nil {
 		slog.Info("Syncing source assets to persistent storage", "subdomain", project.Subdomain)
@@ -49,7 +49,7 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 		slog.Warn("Failed to create public storage path", "path", publicPath, "error", err)
 	}
 
-	fullUserPath := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID))
+	fullUserPath := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID))
 	if err := s.ChmodRecursive(fullUserPath, 0777); err != nil {
 		slog.Error("Failed to apply storage permissions", "userId", project.UserID, "path", fullUserPath, "error", err)
 	}
@@ -85,17 +85,17 @@ func (s *StorageService) ChmodRecursive(path string, mode os.FileMode) error {
 // GetPersistentHostPath returns the path as seen by the Host OS
 func (s *StorageService) GetPersistentHostPath(project *models.Project) string {
 	s.EnsurePersistentPath(project)
-	return filepath.Join(s.cfg.HostDataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain, "storage")
+	return filepath.Join(s.cfg.HostDataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage")
 }
 
 // GetProjectsHostPath returns the project path as seen by the Host OS
-func (s *StorageService) GetProjectsHostPath(subdomain string) string {
-	return filepath.Join(s.cfg.HostProjectsPath, subdomain)
+func (s *StorageService) GetProjectsHostPath(userID uint, subdomain string) string {
+	return filepath.Join(s.cfg.HostProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 }
 
 // CleanupPersistentData removes project storage folders
 func (s *StorageService) CleanupPersistentData(project *models.Project) {
-	path := filepath.Join(s.cfg.DataPath, fmt.Sprintf("user-%d", project.UserID), project.Subdomain)
+	path := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain)
 	slog.Info("Cleaning up persistent data", "path", path)
 	os.RemoveAll(path)
 }
@@ -123,8 +123,8 @@ func (s *StorageService) CopyFile(src, dst string) error {
 }
 
 // GetEnvFile reads the .env file for a project
-func (s *StorageService) GetEnvFile(subdomain string) (string, error) {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+func (s *StorageService) GetEnvFile(userID uint, subdomain string) (string, error) {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 	content, err := os.ReadFile(filepath.Join(projectPath, ".env"))
 	if err != nil {
 		return "", err
@@ -132,9 +132,33 @@ func (s *StorageService) GetEnvFile(subdomain string) (string, error) {
 	return string(content), nil
 }
 
-// SaveEnvFile updates the .env file for a project
-func (s *StorageService) SaveEnvFile(subdomain, content string) error {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
-	return os.WriteFile(filepath.Join(projectPath, ".env"), []byte(content), 0644)
-}
+// SaveEnvFile updates the .env file for a project using an atomic write pattern (write temp -> fsync -> rename)
+func (s *StorageService) SaveEnvFile(userID uint, subdomain, content string) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
+	envPath := filepath.Join(projectPath, ".env")
+	tempPath := envPath + ".tmp"
 
+	// Ensure parent directory exists
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempPath)
+
+	if _, err := f.Write([]byte(content)); err != nil {
+		f.Close()
+		return err
+	}
+
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	return os.Rename(tempPath, envPath)
+}

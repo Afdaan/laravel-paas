@@ -7,6 +7,7 @@ package workers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,15 +22,17 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
-	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 	sharedDocker "github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"github.com/laravel-paas/shared/repositories"
-	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 	"github.com/laravel-paas/shared/services/setting"
+	"github.com/laravel-paas/worker/internal/infrastructure/docker"
+	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
@@ -178,15 +181,23 @@ func (w *DeploymentWorker) processJobs() {
 			"type", job.Type)
 
 		// Process the job
-		w.wg.Add(1)
-		localSem := sem
-		localSem <- struct{}{}
+		isLightweight := job.Type == "restart" || job.Type == "update_env" || job.Type == "stop" || job.Type == "start"
 
-		go func(j *infrastructure.DeploymentJob, sema chan struct{}) {
-			defer w.wg.Done()
-			defer func() { <-sema }()
-			w.processDeployment(j)
-		}(job, localSem)
+		w.wg.Add(1)
+		if isLightweight {
+			go func(j *infrastructure.DeploymentJob) {
+				defer w.wg.Done()
+				w.processDeployment(j)
+			}(job)
+		} else {
+			localSem := sem
+			localSem <- struct{}{}
+			go func(j *infrastructure.DeploymentJob, sema chan struct{}) {
+				defer w.wg.Done()
+				defer func() { <-sema }()
+				w.processDeployment(j)
+			}(job, localSem)
+		}
 	}
 }
 
@@ -291,6 +302,9 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	if err != nil {
 		slog.Error("Failed to acquire lock for project", "id", job.ProjectID, "error", err)
 		w.redisService.IncrementDeploymentCounter("failed")
+		if project, errRepo := w.projectRepo.GetByID(job.ProjectID); errRepo == nil {
+			w.updateProjectError(project, job.JobID, "Deployment failed: worker failed to acquire project build lock: "+err.Error())
+		}
 		return
 	}
 
@@ -393,40 +407,65 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
-	if job.Type == "update_env" && project.ContainerID != nil {
-		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
-		if err := w.instantUpdateEnv(project); err == nil {
+	if job.Type == "delete" {
+		slog.Info("Performing project background deletion", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "delete_started", "Purging project from system")
+
+		if err := w.projectService.DeleteProject(project); err != nil {
+			slog.Error("Failed to purge project during background delete job", "projectId", project.ID, "error", err)
 			return
 		}
-		slog.Warn("Instant update failed, falling back to full deployment", "subdomain", project.Subdomain)
+		return
 	}
 
-	if job.Type == "rollback" {
-		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
-		if err := w.redeployExistingImage(project); err == nil {
-			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
-			return
+	previousCommitHash := project.LastCommitHash
+	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	logsDir := filepath.Join(projectPath, "logs")
+	_ = os.MkdirAll(logsDir, 0755)
+
+	// 1. Register log pruning and size truncation defer block first.
+	// Because of LIFO execution of defers, this runs LAST (after log files have been cleanly closed).
+	defer func() {
+		if err := utils.PruneJobLogs(logsDir, "build-*.log", 5); err != nil {
+			slog.Warn("Failed to prune build logs", "projectId", project.ID, "error", err)
 		}
-		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
-	}
+		if err := utils.PruneJobLogs(logsDir, "infra-*.log", 5); err != nil {
+			slog.Warn("Failed to prune infra logs", "projectId", project.ID, "error", err)
+		}
+		infraLogPath := filepath.Join(logsDir, "infra.log")
+		if err := utils.TruncateFileIfNeeded(infraLogPath, 5*1024*1024); err != nil {
+			slog.Warn("Failed to truncate infra.log", "projectId", project.ID, "error", err)
+		}
+	}()
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
-	project.ErrorLog = nil
-	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"error_log": nil,
-	})
+	isDeployment := job.Type == "deploy" || job.Type == "redeploy" || job.Type == "redeploy_clean"
 
-	projectPath := filepath.Join(w.cfg.ProjectsPath, project.Subdomain)
-	buildLogPath := filepath.Join(projectPath, "build.log")
-	if err := os.MkdirAll(projectPath, 0755); err == nil {
-		if err := os.WriteFile(buildLogPath, []byte(""), 0644); err != nil {
-			slog.Warn("Failed to clear build log", "path", buildLogPath, "error", err)
+	// 2. Open persistent infra.log once at start to avoid repeated open/close I/O performance bottleneck
+	var infraLogFile *os.File
+	if !isDeployment {
+		infraLogPath := filepath.Join(logsDir, "infra.log")
+		var errOpen error
+		infraLogFile, errOpen = os.OpenFile(infraLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if errOpen != nil {
+			slog.Error("Failed to open persistent infra log file", "path", infraLogPath, "error", errOpen)
+		} else {
+			defer infraLogFile.Close()
 		}
 	}
 
-	var logFile *os.File
+	logFilePrefix := "infra"
+	if isDeployment {
+		logFilePrefix = "build"
+	}
+	buildLogPath := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", logFilePrefix, job.JobID))
+
+	// 3. Open job-specific log file next
+	logFile, logOpenErr := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if logOpenErr != nil {
+		slog.Error("Failed to open job log file", "path", buildLogPath, "error", logOpenErr)
+	} else {
+		defer logFile.Close()
+	}
 
 	var logFileMu sync.Mutex
 	appendLog := func(msg string) {
@@ -436,31 +475,194 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if logFile != nil {
 			_, _ = logFile.WriteString(msg + "\n")
 		}
-		_ = w.redisService.PublishBuildLog(project.ID, msg)
+		_ = w.redisService.PublishBuildLogForJob(project.ID, job.JobID, msg)
+
+		if !isDeployment && infraLogFile != nil {
+			timestamp := time.Now().Format("2006-01-02 15:04:05")
+			_, _ = infraLogFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+		}
 	}
+	appendLog = w.makeRedactingLogger(project, appendLog)
+
+	if job.Type == "update_env" {
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Applying environment configuration")
+		if project.ContainerID == nil || *project.ContainerID == "" {
+			appendLog(">> Project is stopped. Regenerating environment configuration on disk...")
+			projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+			if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
+				appendLog("✗ Failed to regenerate environment configuration on disk: " + err.Error())
+				slog.Error("Failed to create env file for stopped project", "subdomain", project.Subdomain, "error", err)
+				w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to regenerate environment configuration on disk: "+err.Error())
+				return
+			}
+
+			appendLog("✓ Environment configuration updated successfully on disk.")
+			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
+			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
+			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusStopped)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment updated on disk")
+			return
+		}
+
+		appendLog(">> Preparing database credentials rotation...")
+		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
+		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_started", "Updating environment and restarting container")
+
+		if err := w.instantUpdateEnv(project, appendLog); err != nil {
+			appendLog("")
+			appendLog("✗ Environment update failed: " + err.Error())
+			slog.Error("Instant update failed", "subdomain", project.Subdomain, "error", err)
+			w.updateProjectError(project, job.JobID, "[ENV_UPDATE_FAILED] Failed to update environment variables: "+err.Error())
+		} else {
+			appendLog("")
+			appendLog("✓ Environment update completed successfully!")
+			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_completed", "Environment variables updated successfully")
+			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusRunning)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
+		}
+		return
+	}
+
+	if job.Type == "rollback" {
+		appendLog(fmt.Sprintf(">> Preparing rollback to commit %s...", project.LastCommitHash))
+		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
+		if err := w.redeployExistingImage(project, appendLog); err == nil {
+			appendLog("")
+			appendLog("✓ Rollback completed successfully.")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
+			return
+		}
+		appendLog("")
+		appendLog("✗ Rollback failed. Falling back to full rebuild.")
+		slog.Warn("Instant rollback failed, falling back to full build deployment", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 30, "rollback_fallback", "Instant rollback failed, falling back to rebuild")
+	}
+
+	if job.Type == "stop" {
+		slog.Info("Performing container stop action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "stop_started", "Stopping application container(s)")
+		appendLog(">> Stopping application container(s)...")
+
+		if project.ContainerID != nil && *project.ContainerID != "" {
+			appendLog(fmt.Sprintf("Stopping main container: %s", *project.ContainerID))
+			if err := w.dockerService.StopContainer(*project.ContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to stop main container: %v", err))
+			}
+		}
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			appendLog(fmt.Sprintf("Stopping worker container: %s", *project.WorkerContainerID))
+			if err := w.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to stop worker container: %v", err))
+			}
+		}
+
+		project.Status = models.StatusStopped
+		if err := w.projectRepo.UpdateStatus(project.ID, models.StatusStopped); err != nil {
+			slog.Error("Failed to update project status to stopped", "id", project.ID, "error", err)
+		}
+
+		if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
+		}
+
+		appendLog("✓ Container(s) stopped successfully.")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "stop_completed", "Container stopped successfully")
+		return
+	}
+
+	if job.Type == "start" {
+		slog.Info("Performing container start action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "start_started", "Starting application container(s)")
+		appendLog(">> Starting application container(s)...")
+
+		if project.ContainerID != nil && *project.ContainerID != "" {
+			appendLog(fmt.Sprintf("Starting main container: %s", *project.ContainerID))
+			if err := w.dockerService.StartContainer(*project.ContainerID); err != nil {
+				appendLog(fmt.Sprintf("Error starting main container: %v", err))
+				w.updateProjectError(project, job.JobID, "Failed to start main container: "+err.Error())
+				return
+			}
+		}
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			appendLog(fmt.Sprintf("Starting worker container: %s", *project.WorkerContainerID))
+			if err := w.dockerService.StartContainer(*project.WorkerContainerID); err != nil {
+				appendLog(fmt.Sprintf("Warning: Failed to start worker container: %v", err))
+			}
+		}
+
+		project.Status = models.StatusRunning
+		if err := w.projectRepo.UpdateStatus(project.ID, models.StatusRunning); err != nil {
+			slog.Error("Failed to update project status to running", "id", project.ID, "error", err)
+		}
+
+		if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+			slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
+		}
+
+		appendLog("✓ Container(s) started successfully.")
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "start_completed", "Container started successfully")
+		return
+	}
+
+	if job.Type == "restart" {
+		slog.Info("Performing container restart action", "subdomain", project.Subdomain)
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "restart_started", "Restarting application container(s)")
+		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_started", "Restarting application container(s)")
+		appendLog(">> Restarting application container(s)...")
+
+		if err := w.projectService.RecreateProjectZeroDowntime(project, appendLog); err != nil {
+			appendLog("")
+			appendLog("✗ Restart failed: " + err.Error())
+			slog.Error("Restart failed", "subdomain", project.Subdomain, "error", err)
+			w.updateProjectError(project, job.JobID, "[RESTART_FAILED] Failed to restart application container(s): "+err.Error())
+		} else {
+			appendLog("")
+			appendLog("✓ Container(s) restarted successfully.")
+			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_completed", "Container restarted successfully")
+			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusRunning)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "restart_completed", "Container restarted successfully")
+		}
+		return
+	}
+
+	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
+	project.ErrorLog = nil
+	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"error_log": nil,
+	})
 
 	w.checkDiskSpace()
 
 	// Obtain GitHub App installation token for authenticating private repositories
 	authURL := project.GithubURL
 	var installationID int64
+
+	owner := ""
+	trimmed := strings.TrimPrefix(authURL, "https://github.com/")
+	trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) > 0 {
+		owner = parts[0]
+	}
+
+	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
+		// Verify if the stored installation matches the repository owner
+		if matches, err := w.projectRepo.VerifyInstallationID(*project.GithubInstallationID, owner); err == nil && !matches {
+			slog.Warn("GitHub Installation ID mismatch detected for project, forcing re-resolution", "projectId", project.ID, "storedID", *project.GithubInstallationID, "owner", owner)
+			project.GithubInstallationID = nil
+		}
+	}
+
 	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 {
 		installationID = *project.GithubInstallationID
 	} else {
 		// Dynamic Self-Healing: Attempt to resolve missing installation ID from owner or user's account
-		owner := ""
-		trimmed := strings.TrimPrefix(authURL, "https://github.com/")
-		trimmed = strings.TrimPrefix(trimmed, "http://github.com/")
-		trimmed = strings.TrimSuffix(trimmed, "/")
-		parts := strings.Split(trimmed, "/")
-		if len(parts) > 0 {
-			owner = parts[0]
-		}
-		
 		if resolvedID, err := w.projectRepo.ResolveInstallationID(project.UserID, owner); err == nil && resolvedID != 0 {
 			installationID = resolvedID
 			slog.Info("Self-healed and dynamically resolved GitHub Installation ID for project", "projectId", project.ID, "owner", owner, "resolvedID", resolvedID)
-			
+
 			// Persist the resolved installation ID to prevent future slow resolution runs
 			project.GithubInstallationID = &resolvedID
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -487,11 +689,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Commit hash unchanged, checking for existing image", "subdomain", project.Subdomain, "hash", latestHash)
 
 		imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-		checkImg, _ := exec.Command("docker", "image", "inspect", imageName).Output()
-		if len(checkImg) > 0 {
+		checkImg, err := exec.Command("docker", "image", "inspect", imageName).Output()
+		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			slog.Info("Valid image found, skipping build", "subdomain", project.Subdomain)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_skipped_existing_image", latestHash)
-			if err := w.redeployExistingImage(project); err == nil {
+			if err := w.redeployExistingImage(project, appendLog); err == nil {
 				return
 			}
 		}
@@ -507,11 +709,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(authURL, project.Branch, project.Subdomain)
+		projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.UserID, authURL, project.Branch, project.Subdomain)
 		if cloneErr != nil && installationID != 0 && (strings.Contains(cloneErr.Error(), "Authentication failed") || strings.Contains(cloneErr.Error(), "Invalid username or token") || strings.Contains(cloneErr.Error(), "could not read Username")) {
 			slog.Warn("Git clone failed due to authentication issue, invalidating cached token and retrying...", "projectId", project.ID, "installationId", installationID)
 			w.githubService.InvalidateInstallationToken(installationID)
-			
+
 			// Fetch a fresh token
 			newToken, err := w.githubService.GetInstallationToken(installationID)
 			if err == nil && newToken != "" {
@@ -521,13 +723,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 					retryURL = "https://x-access-token:" + newToken + "@" + strings.TrimPrefix(retryURL, "https://")
 				}
 				slog.Info("Retrying Git clone with a fresh token...", "projectId", project.ID)
-				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(retryURL, project.Branch, project.Subdomain)
+				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.UserID, retryURL, project.Branch, project.Subdomain)
 			}
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
+		if project.DatabaseInstance == nil {
+			return // no PaaS database for this project, skip provisioning
+		}
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
 			if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -536,7 +741,72 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				slog.Warn("Failed to save database password", "id", project.ID, "error", err)
 			}
 		}
-		dbErr = w.mysqlService.CreateDatabase(project.DatabaseName, project.DatabasePassword)
+
+		engine := "mysql"
+		var dbInstance *models.DatabaseInstance
+		if project.DatabaseInstance != nil {
+			engine = project.DatabaseInstance.Engine
+			dbInstance = project.DatabaseInstance
+		}
+
+		if engine == "postgresql" {
+			pgService := infrastructure.NewPostgreSQLService()
+			dbErr = pgService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
+			if dbErr == nil && dbInstance != nil {
+				dbInstance.Host = "paas-user-postgres"
+				dbInstance.Port = 5432
+				dbInstance.Password = project.DatabasePassword
+				dbInstance.Status = models.DBStatusActive
+
+				var version string
+				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					project.GetDatabaseName(), project.DatabasePassword, w.cfg.UserPGHost, w.cfg.UserPGPort, project.GetDatabaseName(),
+				)
+				dbConn, err := sql.Open("pgx", dsn)
+				if err == nil {
+					ctxDB, cancelDB := context.WithTimeout(ctx, 5*time.Second)
+					_ = dbConn.QueryRowContext(ctxDB, "SELECT version()").Scan(&version)
+					cancelDB()
+					dbConn.Close()
+				}
+				if version == "" {
+					version = "PostgreSQL 15"
+				} else {
+					// Clean up the verbose PostgreSQL version output
+					parts := strings.Split(version, " on ")
+					if len(parts) > 0 {
+						version = parts[0]
+					}
+				}
+				dbInstance.Version = version
+				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
+			}
+		} else {
+			dbErr = w.mysqlService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
+			if dbErr == nil && dbInstance != nil {
+				dbInstance.Host = "paas-mysql"
+				dbInstance.Port = 3306
+				dbInstance.Password = project.DatabasePassword
+				dbInstance.Status = models.DBStatusActive
+
+				var version string
+				dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
+					project.GetDatabaseName(), project.DatabasePassword, w.cfg.MYSQLHost, w.cfg.MYSQLPort, project.GetDatabaseName(),
+				)
+				dbConn, err := sql.Open("mysql", dsn)
+				if err == nil {
+					ctxDB, cancelDB := context.WithTimeout(ctx, 5*time.Second)
+					_ = dbConn.QueryRowContext(ctxDB, "SELECT @@version").Scan(&version)
+					cancelDB()
+					dbConn.Close()
+				}
+				if version == "" {
+					version = "MySQL 8.0"
+				}
+				dbInstance.Version = version
+				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
+			}
+		}
 	}()
 
 	wg.Wait()
@@ -548,15 +818,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if dbErr != nil {
 		w.updateProjectError(project, job.JobID, "[INFRASTRUCTURE_FAILED] Failed to create database: "+dbErr.Error())
 		return
-	}
-
-	// Open build log file after repository has been successfully synced/cloned
-	var logOpenErr error
-	logFile, logOpenErr = os.OpenFile(buildLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if logOpenErr != nil {
-		slog.Error("Failed to open build log file", "path", buildLogPath, "error", logOpenErr)
-	} else {
-		defer logFile.Close()
 	}
 
 	project.LastCommitHash = cloneHash
@@ -603,10 +864,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		{"artisan", "Laravel"},
 		{"next.config.js", "Next.js"},
 		{"next.config.mjs", "Next.js"},
+		{"next.config.ts", "Next.js"},
 		{"nuxt.config.js", "Nuxt.js"},
+		{"nuxt.config.mjs", "Nuxt.js"},
 		{"nuxt.config.ts", "Nuxt.js"},
 		{"vite.config.js", "Vite"},
+		{"vite.config.mjs", "Vite"},
 		{"vite.config.ts", "Vite"},
+		{"vite.config.mts", "Vite"},
 		{"src/App.tsx", "React"},
 		{"src/App.jsx", "React"},
 		{"src/App.vue", "Vue"},
@@ -626,23 +891,28 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		{"index.html", "Static"},
 	}
 
+	oldFramework := project.Framework
 	project.Framework = "Other"
 	for _, m := range markers {
-		if _, err := os.Stat(filepath.Join(buildPath, m.file)); err == nil {
+		if foundPath := w.dockerService.FindFileRecursively(buildPath, m.file, 1, 3); foundPath != "" {
 			project.Framework = m.name
 			break
 		}
 	}
 
 	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
-	project.LanguageVersion = langVersion
+	if langVersion != "" && !project.IsManualVersion {
+		project.LanguageVersion = langVersion
+	}
 
 	if project.Framework == "Laravel" {
 		laravelVersion, phpVersion, err := w.versionService.DetectVersions(buildPath)
 		if err == nil {
 			project.LaravelVersion = laravelVersion
-			project.PHPVersion = phpVersion
-		} else {
+			if !project.IsManualVersion {
+				project.PHPVersion = phpVersion
+			}
+		} else if project.PHPVersion == "" {
 			project.PHPVersion = "8.4"
 		}
 	} else {
@@ -655,7 +925,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 		}
 		if isJS {
-			project.NodeVersion = langVersion
+			if langVersion != "" && !project.IsManualVersion {
+				project.NodeVersion = langVersion
+			}
 		}
 	}
 
@@ -674,6 +946,24 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if project.LaravelVersion != "" {
 		updates["laravel_version"] = project.LaravelVersion
 	}
+
+	// Reset stale metadata if framework changed to prevent cross-framework configuration leakage (SRE guard)
+	if project.Framework != oldFramework {
+
+		project.NodeVersion = ""
+		project.PHPVersion = ""
+		project.LaravelVersion = ""
+		project.LanguageVersion = ""
+		project.IsManualVersion = false
+
+
+		updates["node_version"] = ""
+		updates["php_version"] = ""
+		updates["laravel_version"] = ""
+		updates["language_version"] = ""
+		updates["is_manual_version"] = false
+	}
+
 	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
 		slog.Warn("Failed to update project metadata", "id", project.ID, "error", err)
 	}
@@ -703,7 +993,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	memoryMB := w.getSetting(models.SettingMemoryLimit, models.DefaultMemoryLimit)
 	memoryLimit := memoryMB + "m"
 
-
 	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
 	if err != nil || buildTimeoutSec <= 0 {
 		buildTimeoutSec = 1800
@@ -711,9 +1000,20 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	buildCtx, buildCancel := context.WithTimeout(ctx, time.Duration(buildTimeoutSec)*time.Second)
 	defer buildCancel()
 
-	newContainerID, err := w.dockerService.BuildAndRun(buildCtx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy", appendLog)
+	newContainerID, err := w.dockerService.BuildAndRun(buildCtx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy_clean", appendLog)
 	if err != nil {
 		sharedDocker.GetCircuitBreaker().RecordFailure()
+		if previousCommitHash != "" {
+			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+		}
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"last_commit_hash": previousCommitHash,
+		})
+		if cloneHash != "" {
+			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+		}
+
 		if ctx.Err() == context.Canceled {
 			appendLog("ERROR: Deployment cancelled by user request.")
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCancelled, project.DeploymentProgress, "deployment_cancelled", "User requested cancellation")
@@ -746,12 +1046,24 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"port":                 project.Port,
 	})
 
-	appendLog(">> Running health checks...")
+	appendLog(">> Starting container readiness checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
-	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID); err != nil {
+	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
+
+		sharedDocker.GetCircuitBreaker().RecordFailure()
+		if previousCommitHash != "" {
+			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+		}
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"last_commit_hash": previousCommitHash,
+		})
+		if cloneHash != "" {
+			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+		}
 
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Healthcheck failed, keeping old version active")
 
@@ -772,6 +1084,19 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if ctx.Err() == context.Canceled {
 			slog.Info("Deployment cancelled before migrations, rolling back", "subdomain", project.Subdomain)
 			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
+
+			sharedDocker.GetCircuitBreaker().RecordFailure()
+			if previousCommitHash != "" {
+				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"last_commit_hash": previousCommitHash,
+			})
+			if cloneHash != "" {
+				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+			}
+
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
 			_ = w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID)
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -785,7 +1110,20 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		appendLog(">> Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-			appendLog("ERROR: Migrations failed:\n" + output)
+			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+
+			sharedDocker.GetCircuitBreaker().RecordFailure()
+			if previousCommitHash != "" {
+				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"last_commit_hash": previousCommitHash,
+			})
+			if cloneHash != "" {
+				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+			}
+
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
 			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
 				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
@@ -856,14 +1194,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
-		w.forceDeploymentCompleted(project, job.JobID)
-	}
-	
 	appendLog("")
 	appendLog("========================================================================")
 	appendLog("✓ Deployment completed successfully! Application is live.")
 	appendLog("========================================================================")
+
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
+		w.forceDeploymentCompleted(project, job.JobID)
+	}
 
 	go func() {
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
@@ -889,6 +1227,23 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 		w.updateGitHubCommitStatus(project, nextState, payload)
 	}
 	return true
+}
+
+func (w *DeploymentWorker) getActiveLogPath(project *models.Project) string {
+	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+		jobID := *project.DeploymentJobID
+		buildPath := filepath.Join(projectPath, "logs", fmt.Sprintf("build-%s.log", jobID))
+		if _, err := os.Stat(buildPath); err == nil {
+			return buildPath
+		}
+		infraPath := filepath.Join(projectPath, "logs", fmt.Sprintf("infra-%s.log", jobID))
+		if _, err := os.Stat(infraPath); err == nil {
+			return infraPath
+		}
+		return buildPath
+	}
+	return filepath.Join(projectPath, "build.log")
 }
 
 func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
@@ -921,7 +1276,7 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	case models.DepStatusBuilding:
 		desc = "Building container image using BuildKit..."
 	case models.DepStatusStarting:
-		desc = "Provisioning container instance..."
+		desc = "Deploying container release onto system..."
 	case models.DepStatusHealthchecking:
 		desc = "Running health checks and readiness probes..."
 	case models.DepStatusMigrating:
@@ -937,6 +1292,10 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		}
 	}
 
+	if description != "" {
+		desc = description
+	}
+
 	if len(desc) > 140 {
 		desc = desc[:137] + "..."
 	}
@@ -948,12 +1307,48 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	targetURL := fmt.Sprintf("%s/projects/%s?tab=build", w.cfg.FrontendURL, projectUID)
 
 	slog.Info("Updating GitHub commit status", "project_id", project.ID, "sha", project.LastCommitHash, "state", ghState, "desc", desc)
-	go func() {
-		err := w.githubService.UpdateCommitStatus(*project.GithubInstallationID, project.GithubRepoOwner, project.GithubRepoName, project.LastCommitHash, ghState, targetURL, desc)
-		if err != nil {
-			slog.Warn("Failed to update GitHub commit status", "project_id", project.ID, "error", err)
+
+	instID := *project.GithubInstallationID
+	owner := project.GithubRepoOwner
+	repo := project.GithubRepoName
+	commitHash := project.LastCommitHash
+	projectID := project.ID
+	jobID := ""
+	if project.DeploymentJobID != nil {
+		jobID = *project.DeploymentJobID
+	}
+
+	// Save desired status to Redis first to enable background retry/reconciliation
+	createdAt := time.Now().UnixNano()
+	statusPayload := &infrastructure.GithubStatusPayload{
+		InstallationID: instID,
+		Owner:          owner,
+		Repo:           repo,
+		SHA:            commitHash,
+		State:          ghState,
+		TargetURL:      targetURL,
+		Description:    desc,
+		CreatedAt:      createdAt,
+	}
+	if err := w.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+		slog.Warn("Failed to set desired commit status in Redis", "project_id", projectID, "error", err)
+	}
+
+	err := w.githubService.UpdateCommitStatus(instID, owner, repo, commitHash, ghState, targetURL, desc)
+	if err == nil {
+		_, _ = w.redisService.RemoveCommitStatusSyncIfMatched(commitHash, createdAt)
+	} else {
+		slog.Warn("Failed to update GitHub commit status, queued for reconciler", "project_id", projectID, "error", err)
+
+		logMsg := fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to %s: %s", time.Now().Format("2006-01-02 15:04:05"), ghState, err.Error())
+		_ = w.redisService.PublishBuildLogForJob(projectID, jobID, logMsg)
+
+		buildLogPath := w.getActiveLogPath(project)
+		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
+			_, _ = f.WriteString(logMsg + "\n")
+			f.Close()
 		}
-	}()
+	}
 }
 
 func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, jobID string) {
@@ -1000,11 +1395,47 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	// Log the raw error for administrator diagnostics
 	slog.Error("Deployment failure with raw diagnostic details", "projectId", project.ID, "jobId", jobID, "error", errorMsg)
 
-	sanitizedMsg := utils.SanitizeError(errorMsg)
+	// Gather sensitive values dynamically from database config and .env variables
+	var sensitiveValues []string
+	if project.GetDatabaseName() != "" {
+		sensitiveValues = append(sensitiveValues, project.GetDatabaseName())
+	}
+	if project.DatabasePassword != "" {
+		sensitiveValues = append(sensitiveValues, project.DatabasePassword)
+	}
+
+	projectEnvPath := filepath.Join(project.GetProjectPath(w.cfg.ProjectsPath), ".env")
+	if envVars, err := w.dockerService.ParseProjectEnv(projectEnvPath); err == nil {
+		for _, val := range envVars {
+			sensitiveValues = append(sensitiveValues, val)
+		}
+	}
+
+	// Clean up internal infrastructure credentials and paths using centralized utility functions
+	redactedErrorMsg := utils.RedactInfrastructureDetails(errorMsg, sensitiveValues)
+	sanitizedMsg := utils.SanitizeError(redactedErrorMsg)
+
+	// Get smart suggestion based on centralized utility classifiers
+	suggestion := utils.GetSmartSuggestion(errorMsg)
+	if suggestion != "" {
+		sanitizedMsg = fmt.Sprintf("%s\n\nPaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
+	}
+
 	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
 	msg := sanitizedMsg
 	project.ErrorLog = &msg
-	
+
+	// Force the error message into the build log stream so the UI terminal displays it immediately
+	terminalErrorMsg := fmt.Sprintf("\n>> [FAILED] DEPLOYMENT ERROR: %s\n", sanitizedMsg)
+	_ = w.redisService.PublishBuildLogForJob(project.ID, jobID, terminalErrorMsg)
+
+	// Also append to the physical log file
+	buildLogPath := w.getActiveLogPath(project)
+	if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
+		_, _ = f.WriteString(terminalErrorMsg)
+		f.Close()
+	}
+
 	// Determine the correct project status after a failure
 	statusUpdate := models.StatusFailed
 	if project.ContainerID != nil && *project.ContainerID != "" {
@@ -1012,7 +1443,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 		statusUpdate = models.StatusRunning
 	}
 	project.Status = statusUpdate
-	
+
 	if err := w.projectRepo.UpdateStatus(project.ID, statusUpdate); err != nil {
 		slog.Error("Failed to update project runtime status on error", "id", project.ID, "status", statusUpdate, "error", err)
 	}
@@ -1068,23 +1499,152 @@ func (w *DeploymentWorker) checkDiskSpace() {
 	}
 }
 
-func (w *DeploymentWorker) instantUpdateEnv(project *models.Project) error {
+func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc func(string)) error {
+	if logFunc == nil {
+		logFunc = func(string) {}
+	}
 	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
 
+	logFunc("")
+	logFunc(">> Regenerating environment configuration...")
 	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
+		logFunc("✗ Failed to regenerate environment configuration: " + err.Error())
 		return err
 	}
+	logFunc("✓ Environment configuration regenerated successfully.")
 
-	return w.projectService.RecreateProjectZeroDowntime(project)
-}
-
-func (w *DeploymentWorker) redeployExistingImage(project *models.Project) error {
-	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
-
-	// Refresh .env before restart
-	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
-		slog.Warn("Failed to refresh environment file during redeploy", "id", project.ID, "error", err)
+	logFunc("")
+	logFunc(">> Updating database connection credentials...")
+	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
+		logFunc("✗ Failed to update database connection credentials: " + err.Error())
+		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
+	} else {
+		logFunc("✓ Database connection credentials updated successfully.")
 	}
 
-	return w.projectService.RecreateProjectZeroDowntime(project)
+	logFunc("")
+	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
+}
+
+func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFunc func(string)) error {
+	if logFunc == nil {
+		logFunc = func(string) {}
+	}
+	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+
+	logFunc("")
+	logFunc(">> Refreshing environment configuration...")
+	if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
+		logFunc("✗ Failed to refresh environment configuration: " + err.Error())
+		slog.Warn("Failed to refresh environment file during redeploy", "id", project.ID, "error", err)
+	} else {
+		logFunc("✓ Environment configuration refreshed successfully.")
+	}
+
+	logFunc("")
+	logFunc(">> Updating database connection credentials...")
+	if err := w.dockerService.UpdateDatabaseCredentialsInEnv(project); err != nil {
+		logFunc("✗ Failed to update database connection credentials: " + err.Error())
+		slog.Warn("Failed to update database credentials in .env file", "id", project.ID, "error", err)
+	} else {
+		logFunc("✓ Database connection credentials updated successfully.")
+	}
+
+	logFunc("")
+	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
+}
+
+// getSecretsToRedact compiles a list of decrypted secrets linked to the project.
+// Any secret value returned here (if length > 4) will be redacted in the build logs.
+func (w *DeploymentWorker) getSecretsToRedact(project *models.Project) []string {
+	var secrets []string
+
+	// 1. Add DB password
+	if len(project.DatabasePassword) > 4 {
+		secrets = append(secrets, project.DatabasePassword)
+	}
+
+	// 2. Fetch compile map
+	envMap, err := w.dockerService.CompileEnvForProject(project.ID, project.UserID, project.Subdomain, project.GetDatabaseName(), project.DatabasePassword, project.Framework, "production")
+	if err == nil {
+		// Explicitly add DB_PASSWORD and DATABASE_URL
+		if val, ok := envMap["DB_PASSWORD"]; ok && len(val) > 4 {
+			secrets = append(secrets, val)
+		}
+		if val, ok := envMap["DATABASE_URL"]; ok && len(val) > 4 {
+			secrets = append(secrets, val)
+		}
+	}
+
+	// 3. Query all SecretStoreItemValue linked to the project's active bindings
+	db := w.dockerService.GetDB()
+	if db != nil {
+		var bindings []models.SecretStoreBinding
+		if err := db.Where("project_id = ?", project.ID).Find(&bindings).Error; err == nil {
+			decryptionKeys := utils.CredentialDecryptionKeys(w.cfg.CredentialEncryptionKey, w.cfg.CredentialEncryptionPreviousKeys)
+			for _, b := range bindings {
+				var items []models.SecretStoreItem
+				if err := db.Where("secret_store_id = ?", b.SecretStoreID).Preload("Values").Find(&items).Error; err == nil {
+					for _, item := range items {
+						var latestVal *models.SecretStoreItemValue
+						for i := range item.Values {
+							val := &item.Values[i]
+							if val.Version == item.LatestSnapshotVersion {
+								latestVal = val
+								break
+							}
+						}
+						if latestVal != nil {
+							decrypted, err := utils.Decrypt(latestVal.EncryptedValue, decryptionKeys...)
+							if err == nil && len(decrypted) > 4 {
+								secrets = append(secrets, decrypted)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// De-duplicate secrets and remove empty/short strings, ignoring common non-sensitive environment values
+	nonSensitiveBlocklist := map[string]bool{
+		"production":  true,
+		"development": true,
+		"staging":     true,
+		"testing":     true,
+		"local":       true,
+		"true":        true,
+		"false":       true,
+	}
+
+	uniqueSecrets := make(map[string]bool)
+	var filtered []string
+	for _, s := range secrets {
+		s = strings.TrimSpace(s)
+		if len(s) > 4 && !uniqueSecrets[s] && !nonSensitiveBlocklist[strings.ToLower(s)] {
+			uniqueSecrets[s] = true
+			filtered = append(filtered, s)
+		}
+	}
+
+	return filtered
+}
+
+// makeRedactingLogger wraps a log callback function to redact sensitive values
+func (w *DeploymentWorker) makeRedactingLogger(project *models.Project, rawLogger func(string)) func(string) {
+	if rawLogger == nil {
+		return func(string) {}
+	}
+	secrets := w.getSecretsToRedact(project)
+	if len(secrets) == 0 {
+		return rawLogger
+	}
+
+	return func(msg string) {
+		redacted := msg
+		for _, secret := range secrets {
+			redacted = strings.ReplaceAll(redacted, secret, "[REDACTED_SECRET]")
+		}
+		rawLogger(redacted)
+	}
 }

@@ -25,6 +25,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { siMysql, siPostgresql } from 'simple-icons'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -49,7 +51,10 @@ interface NewProjectForm {
   base_directory: string;
   build_command: string;
   start_command: string;
+  port: number | '';
   queue_enabled: boolean;
+  enable_database: boolean;
+  database_engine: 'mysql' | 'postgresql';
   github_installation_id?: number;
   github_repo_owner?: string;
   github_repo_name?: string;
@@ -61,12 +66,38 @@ interface ValidationErrors {
   database_name?: string;
 }
 
+const databaseEngines = [
+  { value: 'mysql', label: 'MySQL (8.0)', icon: siMysql },
+  { value: 'postgresql', label: 'PostgreSQL (15)', icon: siPostgresql },
+] as const
+
+type DatabaseEngineOption = (typeof databaseEngines)[number]
+
+const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOption; className?: string }) => {
+  const fillColor = `#${engine.icon.hex}`
+
+  return (
+    <div
+      className={cn(
+        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm transition-colors duration-200',
+        engine.value === 'mysql' && 'border-amber-500/20 bg-amber-500/10 text-amber-500',
+        engine.value === 'postgresql' && 'border-sky-500/20 bg-sky-500/10 text-sky-500',
+        className
+      )}
+    >
+      <svg viewBox='0 0 24 24' aria-hidden='true' className='h-4.5 w-4.5 drop-shadow-sm'>
+        <path fill={fillColor} d={engine.icon.path} />
+      </svg>
+    </div>
+  )
+}
+
 function UserNewProject() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  
+
   const [connectionMode, setConnectionMode] = useState<'app' | 'manual'>('app')
   const [installations, setInstallations] = useState<GithubAppInstallation[]>([])
   const [repositories, setRepositories] = useState<GithubRepository[]>([])
@@ -83,7 +114,10 @@ function UserNewProject() {
     base_directory: '',
     build_command: '',
     start_command: '',
+    port: '',
     queue_enabled: false,
+    enable_database: true,
+    database_engine: 'mysql',
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
 
@@ -99,19 +133,24 @@ function UserNewProject() {
     selectedInstallationIdRef.current = selectedInstallationId
   }, [selectedInstallationId])
 
-  const currentInst = React.useMemo(() => 
+  const currentInst = React.useMemo(() =>
     installations.find(inst => String(inst.installation_id) === selectedInstallationId),
     [installations, selectedInstallationId]
   )
 
-  const currentRepo = React.useMemo(() => 
+  const currentRepo = React.useMemo(() =>
     repositories.find(r => r.full_name === selectedRepoFullName),
     [repositories, selectedRepoFullName]
   )
 
-  const currentBranch = React.useMemo(() => 
+  const currentBranch = React.useMemo(() =>
     branches.find(b => b.name === formData.branch),
     [branches, formData.branch]
+  )
+
+  const selectedDatabaseEngine = React.useMemo(
+    () => databaseEngines.find(engine => engine.value === formData.database_engine) || databaseEngines[0],
+    [formData.database_engine]
   )
 
   const loadRepositories = useCallback(async (installationId: string) => {
@@ -156,11 +195,11 @@ function UserNewProject() {
       const response = await githubAPI.listInstallations()
       const insts: GithubAppInstallation[] = response.data.data || []
       setInstallations(insts)
-      
+
       if (insts.length > 0) {
         const currentId = selectedInstallationIdRef.current
         const isStillValid = insts.some(inst => String(inst.installation_id) === currentId)
-        
+
         if (currentId && isStillValid) {
           if (triggerRepoLoad) {
             loadRepositories(currentId)
@@ -236,9 +275,19 @@ function UserNewProject() {
     const currentSeq = ++branchQuerySeq.current
     setIsGithubLoading(true)
     try {
-      const response = await githubAPI.listBranches(owner, repo)
+      const response = await githubAPI.listBranches(owner, repo, selectedInstallationId)
       if (currentSeq === branchQuerySeq.current) {
-        setBranches(response.data.data || [])
+        if (response.data.warning) {
+          toast.warning(response.data.warning)
+        }
+        const raw = response.data.data || []
+        const normalized = raw.map((b: string | { name: string }) => {
+          if (typeof b === 'string') {
+            return { name: b }
+          }
+          return { name: b?.name || '' }
+        })
+        setBranches(normalized)
         const repoDetails = currentReposList.find(r => r.full_name === `${owner}/${repo}`)
         const defaultBranch = repoDetails?.default_branch || 'main'
         setFormData(prev => ({ ...prev, branch: defaultBranch }))
@@ -257,6 +306,7 @@ function UserNewProject() {
           }
           loadInstallations(false)
         } else {
+          setBranches([])
           toast.error(t('newProject.errors.failedToLoadBranches'))
         }
       }
@@ -300,7 +350,7 @@ function UserNewProject() {
         github_repo_owner: owner,
         github_repo_name: repoName,
       }))
-      
+
       loadBranches(owner, repoName)
     }
   }
@@ -330,7 +380,9 @@ function UserNewProject() {
     const errors: ValidationErrors = {}
     if (!formData.name.trim()) errors.name = t('common.validation.required', { field: t('newProject.displayName') })
     if (!formData.github_url.trim()) errors.github_url = t('common.validation.required', { field: t('newProject.repoUrl') })
-    if (!formData.database_name.trim()) errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+    if (formData.enable_database && !formData.database_name.trim()) {
+      errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+    }
 
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
@@ -346,7 +398,11 @@ function UserNewProject() {
     setSubmitError(null)
 
     try {
-      const response = await projectsAPI.create(formData)
+      const payload = {
+        ...formData,
+        port: formData.port === '' ? undefined : Number(formData.port),
+      }
+      const response = await projectsAPI.create(payload)
       toast.success(t('common.success'))
       navigate(`/projects/${response.data.project.uid}`)
     } catch (error: unknown) {
@@ -410,7 +466,8 @@ function UserNewProject() {
                   </Label>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <button
+                  <Button
+                    variant="outline"
                     type="button"
                     onClick={() => {
                       setConnectionMode('app')
@@ -425,7 +482,7 @@ function UserNewProject() {
                       setBranches([])
                     }}
                     className={cn(
-                      "flex items-center justify-center gap-3 p-4 rounded-xl border text-sm font-semibold transition-all duration-200",
+                      "flex items-center justify-center gap-3 p-4 h-auto rounded-xl text-sm font-semibold",
                       connectionMode === 'app'
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:border-muted-foreground/30 hover:bg-muted/10 text-muted-foreground"
@@ -433,8 +490,9 @@ function UserNewProject() {
                   >
                     <GithubIcon className="w-5 h-5" />
                     {t('newProject.githubApp')}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="outline"
                     type="button"
                     onClick={() => {
                       setConnectionMode('manual')
@@ -446,7 +504,7 @@ function UserNewProject() {
                       }))
                     }}
                     className={cn(
-                      "flex items-center justify-center gap-3 p-4 rounded-xl border text-sm font-semibold transition-all duration-200",
+                      "flex items-center justify-center gap-3 p-4 h-auto rounded-xl text-sm font-semibold",
                       connectionMode === 'manual'
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border hover:border-muted-foreground/30 hover:bg-muted/10 text-muted-foreground"
@@ -454,7 +512,7 @@ function UserNewProject() {
                   >
                     <Terminal className="w-5 h-5" />
                     {t('newProject.manualGitUrl')}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -505,6 +563,16 @@ function UserNewProject() {
                                 if (val) {
                                   setSelectedInstallationId(val)
                                   loadRepositories(val)
+                                  setSelectedRepoFullName('')
+                                  setBranches([])
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    github_url: '',
+                                    github_installation_id: undefined,
+                                    github_repo_owner: undefined,
+                                    github_repo_name: undefined,
+                                    branch: '',
+                                  }))
                                 }
                               }}
                             >
@@ -582,8 +650,8 @@ function UserNewProject() {
                                       </div>
                                       <span className={cn(
                                         "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 border ml-2 transition-all duration-200",
-                                        currentRepo.private 
-                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+                                        currentRepo.private
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                           : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                       )}>
                                         {currentRepo.private ? t('newProject.privateBadge') : t('newProject.publicBadge')}
@@ -606,8 +674,8 @@ function UserNewProject() {
                                       </div>
                                       <span className={cn(
                                         "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 border",
-                                        repo.private 
-                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+                                        repo.private
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                           : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                                       )}>
                                         {repo.private ? t('newProject.privateBadge') : t('newProject.publicBadge')}
@@ -748,27 +816,103 @@ function UserNewProject() {
                   </div>
 
                   {/* Database Settings */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                        <Database className="w-4 h-4" />
+                  <div className="space-y-6 border-t pt-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Managed Database Studio
+                          </Label>
+                          <span className="text-[10px] text-muted-foreground">Provision a secure, isolated database with one click</span>
+                        </div>
                       </div>
-                      <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        {t('newProject.dbName')}
-                      </Label>
+                      <Switch
+                        checked={formData.enable_database}
+                        onCheckedChange={(checked) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            enable_database: checked
+                          }))
+                        }}
+                      />
                     </div>
-                    <Input
-                      id="database_name"
-                      name="database_name"
-                      value={formData.database_name}
-                      onChange={handleChange}
-                      placeholder={t('newProject.dbName')}
-                      className={cn(validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
-                    />
-                    <p className="text-[10px] text-muted-foreground italic pl-1 uppercase tracking-wider">{t('newProject.dbAutoDesc')}</p>
-                    {validationErrors.database_name && (
-                      <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
-                    )}
+
+                    <div
+                      className={cn(
+                        "grid transition-[grid-template-rows,opacity,transform] duration-500 ease-in-out",
+                        formData.enable_database
+                          ? "grid-rows-[1fr] opacity-100 translate-y-0"
+                          : "grid-rows-[0fr] opacity-0 -translate-y-2 pointer-events-none"
+                      )}
+                    >
+                      <div className="min-h-0 overflow-hidden">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl border border-border/70 bg-background/45 shadow-[0_18px_60px_-40px_hsl(var(--foreground))] backdrop-blur-sm transition-[background-color,border-color,box-shadow,transform,opacity] duration-500 ease-in-out">
+                          {/* Database Engine Dropdown */}
+                          <div className="space-y-2 min-w-0">
+                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                              Database Engine
+                            </Label>
+                            <Select
+                              value={formData.database_engine}
+                              onValueChange={(val) => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  database_engine: val as 'mysql' | 'postgresql'
+                                }))
+                              }}
+                            >
+                              <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
+                                <div className="flex items-center gap-3.5 text-left flex-1 min-w-0 pr-4">
+                                  <DatabaseEngineBadge engine={selectedDatabaseEngine} />
+                                  <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
+                                </div>
+                              </SelectTrigger>
+                              <SelectContent
+                                side="top"
+                                align="start"
+                                sideOffset={8}
+                                alignItemWithTrigger={false}
+                                className="min-w-[var(--anchor-width)] w-[var(--anchor-width)] bg-popover/98 backdrop-blur-xl border border-border/80 rounded-xl shadow-2xl p-1.5"
+                              >
+                                {databaseEngines.map(engine => (
+                                  <SelectItem
+                                    key={engine.value}
+                                    value={engine.value}
+                                    className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
+                                  >
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                      <DatabaseEngineBadge engine={engine} className="h-9 w-9" />
+                                      <span className="font-medium text-foreground/90 text-sm truncate">{engine.label}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Database Name */}
+                          <div className="space-y-2 min-w-0">
+                            <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                              {t('newProject.dbName')}
+                            </Label>
+                            <Input
+                              id="database_name"
+                              name="database_name"
+                              value={formData.database_name}
+                              onChange={handleChange}
+                              placeholder={t('newProject.dbName')}
+                              className={cn("h-11 rounded-xl border-border/70 bg-background/80 shadow-sm transition-all duration-200", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
+                            />
+                            {validationErrors.database_name && (
+                              <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Base Directory */}
@@ -831,6 +975,27 @@ function UserNewProject() {
                         className="font-mono text-xs"
                       />
                       <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.startCommandDesc')}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/5 flex items-center justify-center text-primary/70">
+                          <Play className="w-4 h-4" />
+                        </div>
+                        <Label htmlFor="port" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                          {t('projectDetail.settings.internalPort')}
+                        </Label>
+                      </div>
+                      <Input
+                        id="port"
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={(e) => setFormData(prev => ({ ...prev, port: e.target.value ? parseInt(e.target.value) : '' }))}
+                        placeholder="e.g. 5005"
+                        className="font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.internalPortDesc')}</p>
                     </div>
                   </div>
                 </div>

@@ -364,7 +364,7 @@ dnsLoop:
 
 	client := &http.Client{
 		Transport: GetHTTPClient().Transport,
-		Timeout: 7 * time.Second,
+		Timeout:   7 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return http.ErrUseLastResponse

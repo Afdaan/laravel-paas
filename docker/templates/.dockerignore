@@ -47,8 +47,7 @@ coverage/
 .phpunit.result.cache
 
 # Build artifacts
-/build/
-/dist/
+public/build/
 public/hot
 public/storage
 storage/app/public

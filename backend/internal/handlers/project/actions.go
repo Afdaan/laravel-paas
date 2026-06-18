@@ -43,6 +43,14 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if req.GithubInstallationID != nil && *req.GithubInstallationID != 0 {
+		if req.GithubRepoOwner == "" || req.GithubRepoName == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "GitHub repository owner and name are required when installation ID is provided",
+			})
+		}
+	}
+
+	if req.GithubInstallationID != nil && *req.GithubInstallationID != 0 {
 		var localInst models.GithubAppInstallation
 		if err := h.db.Where("installation_id = ? AND user_id = ?", *req.GithubInstallationID, userID).First(&localInst).Error; err != nil {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -53,7 +61,13 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
 		repos, err := githubService.ListRepositories(*req.GithubInstallationID)
 		if err != nil {
-			slog.Warn("Failed to list repositories for validation", "installation_id", *req.GithubInstallationID, "error", err)
+			// Retry with fresh token — handles stale cache after GitHub App reinstall
+			slog.Warn("GitHub API error during repo validation, retrying with fresh token", "installation_id", *req.GithubInstallationID, "error", err)
+			githubService.InvalidateInstallationToken(*req.GithubInstallationID)
+			repos, err = githubService.ListRepositories(*req.GithubInstallationID)
+		}
+		if err != nil {
+			slog.Warn("Failed to list repositories for validation after retry", "installation_id", *req.GithubInstallationID, "error", err)
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "Failed to verify repository access with GitHub. Please check your GitHub App configuration.",
 			})
@@ -75,7 +89,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		}
 	}
 
-	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.QueueEnabled, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
+	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.EnableDatabase, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
 	if err != nil {
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -119,14 +133,28 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
 	if isQueued {
 		queueLength, _ := h.redisService.GetQueueLength()
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
 		return c.JSON(fiber.Map{
-			"message":        "Project is already in queue",
-			"queue_position": queueLength,
+			"message":           "Project is already in queue",
+			"job_id":            jobID,
+			"deployment_status": project.DeploymentStatus,
+			"queue_position":    queueLength,
 		})
 	}
 
+	clean := c.Query("clean")
+	jobType := "redeploy"
+	statusMsg := "Redeployment requested by user"
+	if clean == "true" {
+		jobType = "redeploy_clean"
+		statusMsg = "Clean rebuild requested by user"
+	}
+
 	// Enqueue redeployment job to Redis
-	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, jobType)
 	if err != nil {
 		slog.Error("Failed to enqueue redeployment", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -135,13 +163,28 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	}
 
 	// Truncate the build log immediately to prevent old logs from displaying
-	projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+	projectPath := project.GetProjectPath(h.cfg.ProjectsPath)
 	buildLogPath := filepath.Join(projectPath, "build.log")
 	_ = os.MkdirAll(projectPath, 0755)
 	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Redeployment requested by user", 0, jobID); err != nil {
-		slog.Warn("Failed to update project deployment status to queued", "id", project.ID, "error", err)
+	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, statusMsg, 0, jobID); err != nil {
+		if cleanupErr := h.redisService.RemoveDeploymentJob(jobID); cleanupErr != nil {
+			slog.Error("Failed to remove queued redeployment after state transition failure",
+				"project_id", project.ID,
+				"job_id", jobID,
+				"transition_error", err,
+				"cleanup_error", cleanupErr,
+			)
+		}
+		slog.Error("Failed to update project deployment status to queued",
+			"project_id", project.ID,
+			"job_id", jobID,
+			"error", err,
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to queue redeployment",
+		})
 	}
 	h.projectService.UpdateActivity(project.ID)
 
@@ -149,8 +192,10 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	queueLength, _ := h.redisService.GetQueueLength()
 
 	return c.JSON(fiber.Map{
-		"message":        "Redeployment queued successfully",
-		"queue_position": queueLength,
+		"message":           "Redeployment queued successfully",
+		"job_id":            jobID,
+		"deployment_status": models.DepStatusQueued,
+		"queue_position":    queueLength,
 	})
 }
 
@@ -300,7 +345,7 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 
 	if imageExists {
 		slog.Info("Performing instant rollback using existing local image", "project", project.Subdomain, "commit", req.CommitSHA)
-		
+
 		project.LastCommitHash = req.CommitSHA
 		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
 
@@ -310,14 +355,14 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 		}
 
 		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Instant rollback to "+req.CommitSHA, 0, jobID)
-		
+
 		return c.JSON(fiber.Map{
 			"message": "Instant rollback initiated successfully",
-			"type": "instant",
+			"type":    "instant",
 		})
 	} else {
 		slog.Info("Image not found locally, performing rebuild/redeploy fallback", "project", project.Subdomain, "commit", req.CommitSHA)
-		
+
 		project.LastCommitHash = req.CommitSHA
 		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
 
@@ -326,7 +371,7 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue redeploy fallback"})
 		}
 
-		projectPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+		projectPath := project.GetProjectPath(h.cfg.ProjectsPath)
 		buildLogPath := filepath.Join(projectPath, "build.log")
 		_ = os.MkdirAll(projectPath, 0755)
 		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
@@ -335,8 +380,7 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 
 		return c.JSON(fiber.Map{
 			"message": "Rebuild rollback initiated successfully",
-			"type": "rebuild",
+			"type":    "rebuild",
 		})
 	}
 }
-

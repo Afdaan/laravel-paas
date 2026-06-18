@@ -90,7 +90,7 @@ export function RuntimeTab({
                 </div>
                 <div className="flex justify-between items-center border-b border-border/30 pb-2">
                   <span className="text-muted-foreground">{t('projectDetail.runtime.port')}</span>
-                  <span className="font-bold text-foreground/90">{project.internal_port ? project.internal_port : 'Auto (8000)'}</span>
+                  <span className="font-bold text-foreground/90">{project.port ? project.port : 'Auto (8000)'}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Container ID</span>
@@ -111,8 +111,16 @@ export function RuntimeTab({
                       <CardTitle className="text-sm font-bold">{t('projectDetail.runtime.workerRole')}</CardTitle>
                     </div>
                     <StatusIndicator
-                      status={project.worker_container_id ? 'running' : 'stopped'}
-                      label={project.worker_container_id ? t('status.running') : t('status.stopped')}
+                      status={
+                        project.framework === 'Laravel'
+                          ? (project.status === 'running' ? 'running' : 'stopped')
+                          : (project.worker_container_id ? 'running' : 'stopped')
+                      }
+                      label={
+                        project.framework === 'Laravel'
+                          ? (project.status === 'running' ? t('status.running') : t('status.stopped'))
+                          : (project.worker_container_id ? t('status.running') : t('status.stopped'))
+                      }
                     />
                   </div>
                 </CardHeader>
@@ -134,7 +142,9 @@ export function RuntimeTab({
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Container ID</span>
                     <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[10px] text-foreground/80">
-                      {project.worker_container_id ? project.worker_container_id.substring(0, 12) : '-'}
+                      {project.framework === 'Laravel'
+                        ? (project.container_id ? project.container_id.substring(0, 12) : '-')
+                        : (project.worker_container_id ? project.worker_container_id.substring(0, 12) : '-')}
                     </code>
                   </div>
                 </CardContent>

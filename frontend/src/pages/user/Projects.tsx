@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI } from '../../services/api'
-import { 
-  Plus, 
-  Rocket, 
-  ExternalLink, 
-  Trash2, 
-  Clock, 
-  CheckCircle2, 
-  AlertCircle, 
+import {
+  Plus,
+  Rocket,
+  ExternalLink,
+  Trash2,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
   PauseCircle,
   Database,
   Globe,
@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
+import { getEngineDisplayName } from '../../components/database-studio/utils'
 import { Project } from '../../types'
 
 const getFrameworkLabel = (framework?: string, fallback?: string) => {
@@ -63,7 +64,7 @@ const UserProjects = () => {
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const isFirstLoad = useRef(true)
-  
+
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -77,18 +78,18 @@ const UserProjects = () => {
     if (isFirstLoad.current) {
       setIsLoading(true)
     }
-    
+
     try {
       const response = await projectsAPI.listOwn()
       setProjects(response.data.data || [])
     } catch (error) {
-      toast.error(t('common.loadError'))
+      toast.error(t('common.loadError'), { id: 'projects-load-error' })
     } finally {
       setIsLoading(false)
       isFirstLoad.current = false
     }
   }, [t])
-  
+
   useEffect(() => {
     fetchProjects()
   }, [fetchProjects])
@@ -99,11 +100,11 @@ const UserProjects = () => {
     setProjects(prev => prev.map(p => p.uid === uid ? { ...p, status } : p))
   }
 
-  
+
   const handleDelete = async (uid: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     setConfirmModal({
       isOpen: true,
       title: t('projectDetail.messages.deleteConfirm'),
@@ -121,10 +122,10 @@ const UserProjects = () => {
       }
     })
   }
-  
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <ConfirmationModal 
+      <ConfirmationModal
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
@@ -142,7 +143,7 @@ const UserProjects = () => {
           {t('common.newProject')}
         </Link>
       </div>
-      
+
       {/* Grid Architecture */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-80">
@@ -163,8 +164,8 @@ const UserProjects = () => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 pb-12">
           {projects.map((project) => (
-            <Card 
-              key={project.uid} 
+            <Card
+              key={project.uid}
               onClick={() => navigate(`/projects/${project.uid}`)}
               className="group flex flex-col h-full hover:border-primary/30 transition-all cursor-pointer overflow-hidden border-border/50"
             >
@@ -186,7 +187,7 @@ const UserProjects = () => {
                       {getFrameworkLabel(project.framework, t('common.general'))}
                     </Badge>
                   </div>
-                  <a 
+                  <a
                     href={project.url}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -206,8 +207,8 @@ const UserProjects = () => {
                       <span>{project.framework === 'Laravel' ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')}</span>
                     </div>
                       <Badge variant="secondary" className="font-mono text-[10px]">
-                        {project.framework === 'Laravel' 
-                          ? `${t('projectDetail.settings.version')} ${project.php_version}` 
+                        {project.framework === 'Laravel'
+                          ? `${t('projectDetail.settings.version')} ${project.php_version}`
                           : getFrameworkLabel(project.framework, t('common.general'))}
                       </Badge>
                   </div>
@@ -217,7 +218,9 @@ const UserProjects = () => {
                       <span>{t('projectDetail.metrics.db')}</span>
                     </div>
                     <span className="text-xs font-semibold text-primary">
-                      {project.database_name ? t('projectDetail.metrics.active') : t('projectDetail.metrics.inactive')}
+                      {project.database_name
+                        ? getEngineDisplayName(project.database_instance?.engine)
+                        : t('projectDetail.metrics.inactive')}
                     </span>
                   </div>
                 </div>
@@ -227,7 +230,7 @@ const UserProjects = () => {
                       <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">{t('common.date')}</span>
                       <span className="text-xs font-medium">{new Date(project.created_at).toLocaleDateString()}</span>
                    </div>
-                   
+
                   <div className="flex gap-2">
                       <RestartButton
                         projectId={project.uid}
@@ -243,6 +246,7 @@ const UserProjects = () => {
                         status={project.status}
                         variant="outline"
                         size="icon"
+                        showOptions={false}
                         className="h-9 w-9 text-muted-foreground hover:text-foreground"
                         onStarted={() => onActionStarted(project.uid, 'queued')}
                         onSuccess={fetchProjects}
@@ -251,10 +255,11 @@ const UserProjects = () => {
                         variant="outline"
                         size="icon"
                         onClick={(e) => handleDelete(project.uid, e)}
-                        className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30"
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/30 cursor-pointer"
+                        style={{ cursor: 'pointer' }}
                         title={t('projectDetail.actions.delete')}
                       >
-                         <Trash2 className="w-4 h-4" />
+                         <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} />
                       </Button>
                       <Button size="icon" className="h-9 w-9">
                          <ArrowRight className="w-4 h-4" />

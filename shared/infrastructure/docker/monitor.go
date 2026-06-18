@@ -25,7 +25,7 @@ func (s *DockerService) GetLogs(containerID string, lines int) (string, error) {
 		return "", fmt.Errorf("failed to get logs for %s: %s", containerID, res.Stderr)
 	}
 
-	return res.Stdout + res.Stderr, nil
+	return utils.StripLogControlSequences(res.Stdout + res.Stderr), nil
 }
 
 // ContainerStats represents resource usage
@@ -643,10 +643,7 @@ func (s *DockerService) PruneImages() error {
 }
 
 // CleanupProject removes project files
-func (s *DockerService) CleanupProject(subdomain string) error {
-	projectPath := filepath.Join(s.cfg.ProjectsPath, subdomain)
+func (s *DockerService) CleanupProject(userID uint, subdomain string) error {
+	projectPath := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 	return os.RemoveAll(projectPath)
 }
-
-
-

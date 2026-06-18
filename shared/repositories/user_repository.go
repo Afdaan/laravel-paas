@@ -34,6 +34,17 @@ func (r *userRepository) GetByID(id uint) (*models.User, error) {
 	if err := r.db.Preload("Projects").First(&user, id).Error; err != nil {
 		return nil, err
 	}
+
+	// Dynamic Sync: If user has a GitHub integration but no avatar URL set, backfill it
+	if user.AvatarURL == "" {
+		var inst models.GithubAppInstallation
+		if err := r.db.Where("user_id = ? AND avatar_url != ?", user.ID, "").First(&inst).Error; err == nil {
+			user.AvatarURL = inst.AvatarURL
+			// Persist backfill to database
+			_ = r.db.Model(&models.User{}).Where("id = ?", user.ID).Update("avatar_url", inst.AvatarURL)
+		}
+	}
+
 	return &user, nil
 }
 

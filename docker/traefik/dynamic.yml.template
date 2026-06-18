@@ -17,13 +17,13 @@ http:
         referrerPolicy: "strict-origin-when-cross-origin"
         customResponseHeaders:
           X-Powered-By: ""
-    
+
     # Rate limiting
     rate-limit:
       rateLimit:
         average: 100
         burst: 50
-    
+
     # CORS for API
     cors:
       headers:
@@ -52,7 +52,7 @@ http:
       priority: 200
       middlewares:
         - security-headers
-    
+
     # Backend API (high priority)
     api:
       rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
@@ -64,7 +64,7 @@ http:
         - cors
         - security-headers
         - rate-limit
-    
+
     # Frontend dashboard (lowest priority)
     frontend:
       rule: "Host(`{{BASE_DOMAIN}}`)"
@@ -81,12 +81,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://paas-frontend:80"
-    
+
     backend:
       loadBalancer:
         servers:
           - url: "http://paas-backend:8080"
-    
+
     # Dynamic service - will route to user containers
     dynamic-projects:
       loadBalancer:

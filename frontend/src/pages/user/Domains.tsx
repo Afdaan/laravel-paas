@@ -267,7 +267,7 @@ const Domains = () => {
                     }}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] p-1">
+                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                   {projects
                     .filter(p => p.id !== transferModal.domain?.project_id)
                     .map(p => (

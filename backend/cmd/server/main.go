@@ -11,18 +11,18 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
+	"github.com/laravel-paas/backend/internal/routes"
+	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/database"
-	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/logger"
 	"github.com/laravel-paas/shared/repositories"
-	"github.com/laravel-paas/backend/internal/routes"
-	"github.com/laravel-paas/backend/internal/services"
 	"github.com/laravel-paas/shared/services/deployment"
 	domainServicePkg "github.com/laravel-paas/shared/services/domain"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/services/setting"
 )
 
@@ -37,6 +37,10 @@ func main() {
 
 	// Initialize structured logger
 	logger.Setup(cfg)
+	if err := cfg.ValidateProductionSecurity(); err != nil {
+		slog.Error("Insecure production configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// Initialize database connection
 	db, err := database.Connect(cfg)
@@ -68,8 +72,8 @@ func main() {
 	slog.Info("Redis connected successfully")
 
 	// Initialize Infrastructure Services
-	storageService := infrastructure.NewStorageService(cfg)
-	dockerService := docker.NewDockerService(cfg, storageService)
+	storageService := infrastructure.NewStorageService(cfg, db)
+	dockerService := docker.NewDockerService(cfg, storageService, db)
 	mysqlService := infrastructure.NewMySQLService()
 
 	// Initialize Repositories
@@ -88,9 +92,10 @@ func main() {
 	databaseService := services.NewDatabaseService(db, cfg)
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
 	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, db, redisService, domainService, projectService)
+	secretStoreService := services.NewSecretStoreService(db, cfg, redisService)
 
 	// Initialize server
-	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler)
+	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler, secretStoreService)
 
 	port := os.Getenv("PORT")
 	if port == "" {

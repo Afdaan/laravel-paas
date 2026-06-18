@@ -7,9 +7,9 @@ package repositories
 
 import (
 	"errors"
-	"strings"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
+	"strings"
 )
 
 type ProjectRepository interface {
@@ -42,6 +42,8 @@ type ProjectRepository interface {
 	UpdateDeploymentHeartbeat(id uint) error
 	PromoteRolloutContainer(id uint, newContainerID string) error
 	ResolveInstallationID(userID uint, owner string) (int64, error)
+	VerifyInstallationID(installationID int64, owner string) (bool, error)
+	SaveDatabaseInstance(instance *models.DatabaseInstance) error
 }
 
 type projectRepository struct {
@@ -54,7 +56,7 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 
 func (r *projectRepository) GetByID(id uint) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Preload("User").Preload("CustomDomains").First(&project, id).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").First(&project, id).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -85,7 +87,7 @@ func (r *projectRepository) GetByIDForNginx(id uint) (*models.Project, error) {
 
 func (r *projectRepository) GetByUID(uid string) (*models.Project, error) {
 	var project models.Project
-	if err := r.db.Preload("User").Preload("CustomDomains").Where("uid = ?", uid).First(&project).Error; err != nil {
+	if err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Where("uid = ?", uid).First(&project).Error; err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -118,7 +120,7 @@ func (r *projectRepository) List(page, limit int, userID uint, status string, se
 	query.Count(&total)
 
 	offset := (page - 1) * limit
-	err := query.Preload("User").Preload("CustomDomains").Order("created_at DESC").Offset(offset).Limit(limit).Find(&projects).Error
+	err := query.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Order("created_at DESC").Offset(offset).Limit(limit).Find(&projects).Error
 
 	return projects, total, err
 }
@@ -131,7 +133,7 @@ func (r *projectRepository) ListByUserID(userID uint) ([]models.Project, error) 
 
 func (r *projectRepository) ListAll() ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Preload("User").Preload("CustomDomains").Order("created_at DESC").Find(&projects).Error
+	err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Order("created_at DESC").Find(&projects).Error
 	return projects, err
 }
 
@@ -191,7 +193,73 @@ func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOl
 }
 
 func (r *projectRepository) Delete(id uint) error {
-	return r.db.Unscoped().Delete(&models.Project{}, id).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 1. Fetch associated custom domains to clean up domain-specific children first
+		var domainIDs []uint
+		if err := tx.Model(&models.CustomDomain{}).Where("project_id = ?", id).Pluck("id", &domainIDs).Error; err != nil {
+			return err
+		}
+
+		if len(domainIDs) > 0 {
+			// Delete domain-specific events and logs
+			if err := tx.Unscoped().Where("domain_id IN ?", domainIDs).Delete(&models.DomainEvent{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("domain_id IN ?", domainIDs).Delete(&models.PendingReconcile{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("domain_id IN ?", domainIDs).Delete(&models.AuditLog{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// Delete associated outbox events (MUST be before CustomDomain since it references DomainID)
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.OutboxEvent{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated custom domains
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.CustomDomain{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated database backups
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseBackup{}).Error; err != nil {
+			return err
+		}
+
+		// Detach associated database instances instead of deleting them
+		if err := tx.Model(&models.DatabaseInstance{}).Where("project_id = ?", id).Update("project_id", nil).Error; err != nil {
+			return err
+		}
+
+		// Delete associated deployment events
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DeploymentEvent{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated resource logs
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.ResourceLog{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated secret store bindings
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.SecretStoreBinding{}).Error; err != nil {
+			return err
+		}
+
+		// Delete associated secret store activity logs
+		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.SecretStoreActivityLog{}).Error; err != nil {
+			return err
+		}
+
+		// Delete the project itself
+		if err := tx.Unscoped().Delete(&models.Project{}, id).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func (r *projectRepository) UpdateActivity(id uint) error {
@@ -250,7 +318,7 @@ func (r *projectRepository) ListDeploymentEventsByProjectID(projectID uint) ([]m
 func (r *projectRepository) ListAllDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error) {
 	var events []models.DeploymentEvent
 	err := r.db.Where("project_id = ? AND event_type NOT IN (?, ?, ?)", projectID, "lease_acquired", "lease_renewed", "lease_released").
-		Order("created_at DESC, sequence_number DESC").Limit(50).Find(&events).Error
+		Order("created_at DESC, sequence_number DESC").Limit(200).Find(&events).Error
 	return events, err
 }
 
@@ -293,19 +361,34 @@ func (r *projectRepository) UpdateDeploymentHeartbeat(id uint) error {
 func (r *projectRepository) ResolveInstallationID(userID uint, owner string) (int64, error) {
 	var inst models.GithubAppInstallation
 	if owner != "" {
+		// 1. Try to find the installation belonging to the repository owner for this specific user
 		err := r.db.Where("user_id = ? AND LOWER(account_name) = ?", userID, strings.ToLower(owner)).First(&inst).Error
 		if err == nil && inst.InstallationID != 0 {
 			return inst.InstallationID, nil
 		}
 	}
-	// Fallback to the sole installation if they only have one
+	// 2. Fallback to the sole installation if they only have one
 	var count int64
 	r.db.Model(&models.GithubAppInstallation{}).Where("user_id = ?", userID).Count(&count)
 	if count == 1 {
 		err := r.db.Where("user_id = ?", userID).First(&inst).Error
 		if err == nil && inst.InstallationID != 0 {
-			return inst.InstallationID, nil
+			if owner == "" || strings.EqualFold(inst.AccountName, owner) {
+				return inst.InstallationID, nil
+			}
 		}
 	}
 	return 0, errors.New("installation not found")
+}
+
+func (r *projectRepository) VerifyInstallationID(installationID int64, owner string) (bool, error) {
+	var count int64
+	err := r.db.Model(&models.GithubAppInstallation{}).
+		Where("installation_id = ? AND LOWER(account_name) = ?", installationID, strings.ToLower(owner)).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func (r *projectRepository) SaveDatabaseInstance(instance *models.DatabaseInstance) error {
+	return r.db.Save(instance).Error
 }

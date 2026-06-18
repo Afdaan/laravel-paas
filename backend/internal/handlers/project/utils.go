@@ -19,6 +19,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 )
 
 // CreateProjectRequest represents project creation payload
@@ -31,9 +32,12 @@ type CreateProjectRequest struct {
 	BuildCommand         string `json:"build_command"`
 	StartCommand         string `json:"start_command"`
 	QueueEnabled         bool   `json:"queue_enabled"`
+	EnableDatabase       bool   `json:"enable_database"`
+	DatabaseEngine       string `json:"database_engine"`
 	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
 	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
 	GithubRepoName       string `json:"github_repo_name,omitempty"`
+	Port                 *int   `json:"port,omitempty"`
 }
 
 // ListOwn returns user's own projects
@@ -94,16 +98,21 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 // UpdateRequest represents project update payload
 type UpdateRequest struct {
-	Name            string `json:"name"`
-	Branch          string `json:"branch"`
-	PHPVersion      string `json:"php_version"`
-	BaseDirectory   string `json:"base_directory"`
-	QueueEnabled    bool   `json:"queue_enabled"`
-	WorkerCommand   string `json:"worker_command"`
-	BuildCommand    string `json:"build_command"`
-	StartCommand    string `json:"start_command"`
-	NodeVersion     string `json:"node_version"`
-	LanguageVersion string `json:"language_version"`
+	Name                 string  `json:"name"`
+	Branch               string  `json:"branch"`
+	PHPVersion           *string `json:"php_version,omitempty"`
+	BaseDirectory        string  `json:"base_directory"`
+	BuildCommand         string  `json:"build_command"`
+	StartCommand         string  `json:"start_command"`
+	NodeVersion          *string `json:"node_version,omitempty"`
+	LanguageVersion      *string `json:"language_version,omitempty"`
+	WorkerCommand        *string `json:"worker_command,omitempty"`
+	QueueEnabled         *bool   `json:"queue_enabled,omitempty"`
+	Port                 *int    `json:"port,omitempty"`
+	GithubURL            string  `json:"github_url"`
+	GithubInstallationID *int64  `json:"github_installation_id,omitempty"`
+	GithubRepoOwner      *string `json:"github_repo_owner,omitempty"`
+	GithubRepoName       *string `json:"github_repo_name,omitempty"`
 }
 
 // Update updates project details
@@ -118,7 +127,26 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	project, err = h.projectService.UpdateProject(project.ID, project.UserID, project.User.Role, req.Name, req.Branch, req.PHPVersion, req.BaseDirectory, req.QueueEnabled, req.WorkerCommand, req.BuildCommand, req.StartCommand, req.NodeVersion, req.LanguageVersion)
+	project, err = h.projectService.UpdateProject(
+		project.ID,
+		project.UserID,
+		project.User.Role,
+		req.Name,
+		req.Branch,
+		req.PHPVersion,
+		req.NodeVersion,
+		req.BaseDirectory,
+		req.QueueEnabled,
+		req.WorkerCommand,
+		req.BuildCommand,
+		req.StartCommand,
+		req.LanguageVersion,
+		req.Port,
+		req.GithubURL,
+		req.GithubInstallationID,
+		req.GithubRepoOwner,
+		req.GithubRepoName,
+	)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
 	}
@@ -150,6 +178,103 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"logs": logs})
 }
 
+func getActiveOrLatestLogPath(projectPath string, jobID string) string {
+	logsDir := filepath.Join(projectPath, "logs")
+	if jobID != "" {
+		buildPath := filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
+		if utils.IsPathWithinRoot(projectPath, buildPath) {
+			if _, err := os.Stat(buildPath); err == nil {
+				return buildPath
+			}
+		}
+		infraPath := filepath.Join(logsDir, fmt.Sprintf("infra-%s.log", jobID))
+		if utils.IsPathWithinRoot(projectPath, infraPath) {
+			if _, err := os.Stat(infraPath); err == nil {
+				return infraPath
+			}
+		}
+		// SRE Guard: Prevent fallback to stale log files when the requested job log does not exist yet.
+		return buildPath
+	}
+
+	// Fallback to most recent file in logsDir
+	if matches, err := filepath.Glob(filepath.Join(logsDir, "build-*.log")); err == nil && len(matches) > 0 {
+		var newestFile string
+		var newestTime time.Time
+		for _, m := range matches {
+			if info, err := os.Stat(m); err == nil {
+				if info.ModTime().After(newestTime) {
+					newestTime = info.ModTime()
+					newestFile = m
+				}
+			}
+		}
+		if infraMatches, err := filepath.Glob(filepath.Join(logsDir, "infra-*.log")); err == nil {
+			for _, m := range infraMatches {
+				if info, err := os.Stat(m); err == nil {
+					if info.ModTime().After(newestTime) {
+						newestTime = info.ModTime()
+						newestFile = m
+					}
+				}
+			}
+		}
+		if newestFile != "" {
+			return newestFile
+		}
+	}
+
+	// Final fallback to legacy build.log
+	return filepath.Join(projectPath, "build.log")
+}
+
+// resolveLogPath searches multiple path options (with/without user folder, host/container configurations)
+// to resolve the authoritative build log location.
+func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) string {
+	// 1. Primary path: using configured ProjectsPath with user folder (multi-tenant layout)
+	primaryPath := project.GetProjectPath(h.cfg.ProjectsPath)
+	logPath := getActiveOrLatestLogPath(primaryPath, jobID)
+	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, primaryPath) {
+		if _, err := os.Stat(logPath); err == nil {
+			return logPath
+		}
+	}
+
+	// 2. Fallback: try without user folder (legacy direct layout)
+	legacyPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
+	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, legacyPath) {
+		logPathFallback := getActiveOrLatestLogPath(legacyPath, jobID)
+		if _, err := os.Stat(logPathFallback); err == nil {
+			return logPathFallback
+		}
+	}
+
+	// 3. Fallback: if PROJECTS_PATH is set to host path in .env, try standard container mount /app/storage/projects
+	const defaultContainerPath = "/app/storage/projects"
+	if h.cfg.ProjectsPath != defaultContainerPath {
+		// With user folder
+		containerPath := project.GetProjectPath(defaultContainerPath)
+		if utils.IsPathWithinRoot(defaultContainerPath, containerPath) {
+			logPathFallback := getActiveOrLatestLogPath(containerPath, jobID)
+			if _, err := os.Stat(logPathFallback); err == nil {
+				return logPathFallback
+			}
+		}
+
+		// Without user folder
+		containerLegacyPath := filepath.Join(defaultContainerPath, project.Subdomain)
+		if utils.IsPathWithinRoot(defaultContainerPath, containerLegacyPath) {
+			logPathFallback := getActiveOrLatestLogPath(containerLegacyPath, jobID)
+			if _, err := os.Stat(logPathFallback); err == nil {
+				return logPathFallback
+			}
+		}
+	}
+
+	// 4. Default: return primary path (so standard file-open handling propagates any errors naturally)
+	return logPath
+}
+
 // BuildLogs returns the railpack build log output
 func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
@@ -157,20 +282,46 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
 	if project.DeploymentStatus == models.DepStatusQueued {
-		return c.JSON(fiber.Map{"logs": "Deployment is queued. Waiting for worker to start..."})
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
+		return c.JSON(fiber.Map{
+			"logs":        "Deployment is queued. Waiting for worker to start...",
+			"job_id":      jobID,
+			"available":   false,
+			"placeholder": true,
+		})
 	}
 
-	logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
+	jobID := ""
+	if project.DeploymentJobID != nil {
+		jobID = *project.DeploymentJobID
+	}
+	logPath := h.resolveLogPath(project, jobID)
 	f, err := os.Open(logPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("Failed to open build log file", "projectId", project.ID, "subdomain", project.Subdomain, "jobID", jobID, "path", logPath, "error", err.Error())
+		}
 		// Log not available yet or project not building
-		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
+		return c.JSON(fiber.Map{
+			"logs":        "Initializing build environment...",
+			"job_id":      jobID,
+			"available":   false,
+			"placeholder": true,
+		})
 	}
 	defer f.Close()
 
 	st, err := f.Stat()
 	if err != nil {
-		return c.JSON(fiber.Map{"logs": "Initializing build environment..."})
+		return c.JSON(fiber.Map{
+			"logs":        "Initializing build environment...",
+			"job_id":      jobID,
+			"available":   false,
+			"placeholder": true,
+		})
 	}
 
 	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
@@ -188,7 +339,12 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	}
 	_, _ = f.ReadAt(buf, off)
 
-	return c.JSON(fiber.Map{"logs": string(buf)})
+	return c.JSON(fiber.Map{
+		"logs":        string(buf),
+		"job_id":      jobID,
+		"available":   size > 0,
+		"placeholder": false,
+	})
 }
 
 // StreamBuildLogs streams live build log output using Server-Sent Events (SSE)
@@ -208,20 +364,46 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Immediately flush an initial keep-alive to force HTTP headers to be sent
+		// preventing the browser/proxy from hanging and dropping the connection.
+		_, _ = w.WriteString(":\n\n")
+		_ = w.Flush()
+
 		// 1. Read existing log file if it exists and write it as a single initial_logs event
-		logPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain, "build.log")
-		if logBytes, err := os.ReadFile(logPath); err == nil && len(logBytes) > 0 {
-			// Limit to a reasonable size to avoid giant SSE messages, e.g. last 1MB
-			const maxInitialBytes = 1 * 1024 * 1024
-			if len(logBytes) > maxInitialBytes {
-				logBytes = logBytes[len(logBytes)-maxInitialBytes:]
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
+		logPath := h.resolveLogPath(project, jobID)
+		if f, err := os.Open(logPath); err == nil {
+			st, statErr := f.Stat()
+			if statErr == nil && st.Size() > 0 {
+				const maxInitialBytes = 1 * 1024 * 1024 // Limit to last 1MB
+				size := st.Size()
+				readSize := int64(maxInitialBytes)
+				if size < readSize {
+					readSize = size
+				}
+				buf := make([]byte, readSize)
+				off := size - readSize
+				if off < 0 {
+					off = 0
+				}
+				n, _ := f.ReadAt(buf, off)
+				f.Close() // Close immediately to release the file descriptor
+
+				if n > 0 {
+					logBytes := buf[:n]
+					dataBytes, _ := json.Marshal(string(logBytes))
+					_, err = w.WriteString(fmt.Sprintf("event: initial_logs\ndata: %s\n\n", string(dataBytes)))
+					if err != nil {
+						return
+					}
+					_ = w.Flush()
+				}
+			} else {
+				f.Close()
 			}
-			dataBytes, _ := json.Marshal(string(logBytes))
-			_, err = w.WriteString(fmt.Sprintf("event: initial_logs\ndata: %s\n\n", string(dataBytes)))
-			if err != nil {
-				return
-			}
-			_ = w.Flush()
 		}
 
 		// 2. Subscribe to Redis build logs Pub/Sub for new logs
@@ -229,9 +411,6 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 		if err != nil {
 			return
 		}
-
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
 
 		keepAliveTicker := time.NewTicker(15 * time.Second)
 		defer keepAliveTicker.Stop()
@@ -244,21 +423,25 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 				if !ok {
 					return
 				}
+				var liveLog infrastructure.BuildLogMessage
+				if err := json.Unmarshal([]byte(line), &liveLog); err == nil && (liveLog.Line != "" || liveLog.JobID != "") {
+					if liveLog.JobID != "" && jobID != "" && liveLog.JobID != jobID {
+						continue
+					}
+					line = liveLog.Line
+				}
 				dataBytes, _ := json.Marshal(line)
 				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
 				if err != nil {
 					return
 				}
+				_ = w.Flush()
 			case <-keepAliveTicker.C:
 				_, err := w.WriteString(":\n\n")
 				if err != nil {
 					return
 				}
 				_ = w.Flush()
-			case <-ticker.C:
-				if err := w.Flush(); err != nil {
-					return
-				}
 			}
 		}
 	})
@@ -279,11 +462,19 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 
 	containerID := *project.ContainerID
 	logType := c.Query("type", "web")
+	var workerLogPath string
+	workerUsesContainer := false
 	if logType == "worker" {
-		if project.WorkerContainerID == nil || *project.WorkerContainerID == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Worker container not running"})
+		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
+			containerID = *project.WorkerContainerID
+			workerUsesContainer = true
+		} else {
+			res, err := utils.Run(15*time.Second, "docker", "exec", *project.ContainerID, "sh", "-c",
+				`for f in /var/www/html/storage/logs/laravel-worker.log /var/www/html/storage/logs/worker.log /app/storage/logs/worker.log /app/worker.log /var/log/worker.log; do if [ -f "$f" ]; then echo "$f"; break; fi; done`)
+			if err == nil {
+				workerLogPath = strings.TrimSpace(res.Stdout)
+			}
 		}
-		containerID = *project.WorkerContainerID
 	}
 
 	c.Set("Content-Type", "text/event-stream")
@@ -296,10 +487,28 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Immediately flush an initial keep-alive to force HTTP headers to be sent
+		// preventing the browser/proxy from hanging and dropping the connection.
+		_, _ = w.WriteString(":\n\n")
+		_ = w.Flush()
+
 		cmdCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		cmd := exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
+		var cmd *exec.Cmd
+		if logType == "worker" && workerLogPath != "" {
+			cmd = exec.CommandContext(cmdCtx, "docker", "exec", *project.ContainerID, "tail", "-f", "-n", "100", workerLogPath)
+		} else if logType == "worker" && workerUsesContainer {
+			cmd = exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
+		} else if logType == "worker" {
+			dataBytes, _ := json.Marshal("No worker logs found yet.")
+			_, _ = w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
+			_ = w.Flush()
+			return
+		} else {
+			cmd = exec.CommandContext(cmdCtx, "docker", "logs", "-f", "--tail", "100", containerID)
+		}
+
 		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			return
@@ -349,6 +558,10 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 				if !ok {
 					return
 				}
+				line = utils.StripLogControlSequences(line)
+				if logType == "web" && isWorkerRuntimeLogLine(line) {
+					continue
+				}
 				dataBytes, _ := json.Marshal(line)
 				_, err := w.WriteString(fmt.Sprintf("event: log\ndata: %s\n\n", string(dataBytes)))
 				if err != nil {
@@ -369,6 +582,16 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	})
 
 	return nil
+}
+
+func isWorkerRuntimeLogLine(line string) bool {
+	normalized := strings.ToLower(line)
+	return strings.Contains(normalized, "laravel-worker") ||
+		strings.Contains(normalized, "queue:work") ||
+		strings.Contains(normalized, "storage/logs/worker.log") ||
+		strings.Contains(normalized, "storage/logs/laravel-worker.log") ||
+		strings.Contains(normalized, "/app/worker.log") ||
+		strings.Contains(normalized, "/var/log/worker.log")
 }
 
 // Stats returns project resource usage
@@ -557,19 +780,8 @@ func (h *ProjectHandler) GetProjectsStats(c *fiber.Ctx) error {
 func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 	idParam := c.Params("id")
 
-	var project *models.Project
-	var err error
-
-	// 1. Try to fetch by UID column first (Standard)
-	project, err = h.projectService.GetProjectByUID(idParam)
-	if err != nil {
-		// 2. Fallback: Check if it's a numeric ID (for admins or transition)
-		id, errConv := strconv.Atoi(idParam)
-		if errConv == nil {
-			project, err = h.projectService.GetProjectByID(uint(id))
-		}
-	}
-
+	// Query project strictly by string UID.
+	project, err := h.projectService.GetProjectByUID(idParam)
 	if err != nil || project == nil {
 		return nil, fmt.Errorf("project not found")
 	}
@@ -601,13 +813,11 @@ func (h *ProjectHandler) getProject(c *fiber.Ctx) (*models.Project, error) {
 
 // CancelQueueJob cancels a queued or building deployment (Admin only)
 func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
-	idVal := c.Params("id")
-	projectID, _ := strconv.Atoi(idVal)
-
-	_, err := h.projectService.GetProjectByID(uint(projectID))
+	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	projectID := project.ID
 
 	// 1. Broadcast cancellation across distributed worker cluster
 	_ = h.redisService.PublishCancellation(c.Context(), uint(projectID))
@@ -618,21 +828,67 @@ func (h *ProjectHandler) CancelQueueJob(c *fiber.Ctx) error {
 	// 3. Release Redis Lock
 	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID), "User cancelled deployment")
 
-	// 4. Update project status to Failed
+	// 4. Update project deployment status to Cancelled
+	jobID := ""
+	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
+		jobID = *project.DeploymentJobID
+	}
+	if _, errTransition := h.projectService.TransitionDeploymentState(c.Context(), uint(projectID), jobID, models.DepStatusCancelled, project.DeploymentProgress, "user_cancelled", "Deployment cancelled by user request"); errTransition != nil {
+		slog.Warn("Failed to transition deployment state to cancelled", "project_id", projectID, "error", errTransition)
+	}
+
+	// 5. Update project status to Failed
 	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusFailed)
+
+	// 6. Update GitHub commit status to error/failure immediately so it doesn't get stuck
+	if project.GithubInstallationID != nil && *project.GithubInstallationID != 0 && project.GithubRepoOwner != "" && project.GithubRepoName != "" && project.LastCommitHash != "" {
+		githubService := infrastructure.NewGithubService(h.cfg, h.redisService)
+		projectUID := project.UID
+		if projectUID == "" {
+			projectUID = fmt.Sprintf("%d", project.ID)
+		}
+		targetURL := fmt.Sprintf("%s/projects/%s?tab=build", h.cfg.FrontendURL, projectUID)
+
+		instID := *project.GithubInstallationID
+		owner := project.GithubRepoOwner
+		repo := project.GithubRepoName
+		commitHash := project.LastCommitHash
+
+		createdAt := time.Now().UnixNano()
+		statusPayload := &infrastructure.GithubStatusPayload{
+			InstallationID: instID,
+			Owner:          owner,
+			Repo:           repo,
+			SHA:            commitHash,
+			State:          "error",
+			TargetURL:      targetURL,
+			Description:    "Deployment cancelled by user.",
+			CreatedAt:      createdAt,
+		}
+		if err := h.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+			slog.Warn("Failed to set desired commit status in Redis on cancellation", "project_id", projectID, "error", err)
+		}
+
+		go func() {
+			errStatus := githubService.UpdateCommitStatus(instID, owner, repo, commitHash, "error", targetURL, "Deployment cancelled by user.")
+			if errStatus == nil {
+				_, _ = h.redisService.RemoveCommitStatusSyncIfMatched(commitHash, createdAt)
+			} else {
+				slog.Warn("Failed to update GitHub commit status on cancellation, queued for reconciler", "project_id", projectID, "error", errStatus)
+			}
+		}()
+	}
 
 	return c.JSON(fiber.Map{"message": "Deployment cancelled successfully"})
 }
 
 // RequeueJob forcefully re-enqueues a stuck deployment (Admin only)
 func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
-	idVal := c.Params("id")
-	projectID, _ := strconv.Atoi(idVal)
-
-	project, err := h.projectService.GetProjectByID(uint(projectID))
+	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	projectID := project.ID
 
 	// 1. Remove from queue if duplicate
 	_ = h.redisService.RemoveFromQueue(uint(projectID))

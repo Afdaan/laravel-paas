@@ -12,10 +12,18 @@ type AppError struct {
 	Message    string      `json:"message"`
 	HTTPStatus int         `json:"-"`
 	Details    interface{} `json:"details,omitempty"`
+	Cause      error       `json:"-"`
 }
 
 func (e *AppError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("[%s] %s: %v", e.Code, e.Message, e.Cause)
+	}
 	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+
+func (e *AppError) Unwrap() error {
+	return e.Cause
 }
 
 func New(status int, code, message string) *AppError {
@@ -50,4 +58,14 @@ func NewValidationErr(details interface{}) *AppError {
 	err := New(422, "VALIDATION_ERROR", "Validation failed for the input")
 	err.Details = details
 	return err
+}
+
+func NewSecretDecryptionFailed(message string, cause error) *AppError {
+	err := New(409, "SECRET_DECRYPTION_FAILED", message)
+	err.Cause = cause
+	return err
+}
+
+func NewSecretDecryptionUnavailable(cause error) *AppError {
+	return NewSecretDecryptionFailed("This secret is unavailable and needs administrator attention.", cause)
 }

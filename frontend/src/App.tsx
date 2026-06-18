@@ -4,7 +4,7 @@
 // Handles routing and layout
 // ===========================================
 
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
@@ -27,7 +27,7 @@ const UserDashboard = lazy(() => import('./pages/user/Dashboard'))
 const UserProjects = lazy(() => import('./pages/user/Projects'))
 const UserNewProject = lazy(() => import('./pages/user/NewProject'))
 const UserProjectDetail = lazy(() => import('./pages/user/ProjectDetail'))
-const DatabaseManager = lazy(() => import('./pages/user/DatabaseManager'))
+const DatabaseManager = lazy(() => import('./pages/user/DatabaseStudio'))
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
 const AdminUsers = lazy(() => import('./pages/admin/Users'))
 const AdminProjects = lazy(() => import('./pages/admin/Projects'))
@@ -43,6 +43,10 @@ const AdminDatabases = lazy(() => import('./pages/admin/Databases'))
 const AdminDeploymentQueue = lazy(() => import('./pages/admin/DeploymentQueue'))
 const UserDomains = lazy(() => import('./pages/user/Domains'))
 const AdminDomains = lazy(() => import('./pages/admin/Domains'))
+const UserSettings = lazy(() => import('./pages/user/Settings').then(module => ({ default: module.UserSettings })))
+const UserSecretStore = lazy(() => import('./pages/user/SecretStoreDashboard'))
+const AdminSecretStore = lazy(() => import('./pages/admin/AdminSecretStoreExplorer'))
+
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -71,11 +75,15 @@ function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps)
   return children
 }
 
+const ACTIVITY_THROTTLE_MS = 10_000
+
 function App() {
   const { t } = useTranslation()
-  const { fetchUser, token, user } = useAuthStore()
+  const { fetchUser, logout, token, user } = useAuthStore()
   const navigate = useNavigate()
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastActivityAtRef = useRef(0)
 
   const [settings, setSettings] = useState<Record<string, string> | null>(null)
 
@@ -88,15 +96,13 @@ function App() {
       .catch((err) => {
         console.error('Failed to check init status', err)
         // If it fails (maybe server still starting), try again later or assume true to avoid blocks
-        setIsInitialized(true) 
+        setIsInitialized(true)
       })
   }, [])
 
   useEffect(() => {
-    if (token && !user) {
-      fetchUser()
-    }
-  }, [token, user, fetchUser])
+    fetchUser()
+  }, [fetchUser])
 
   useEffect(() => {
     if (token && (user?.role === 'admin' || user?.role === 'superadmin')) {
@@ -105,42 +111,60 @@ function App() {
   }, [token, user])
 
   useEffect(() => {
-    let idleTimer: NodeJS.Timeout
     const timeoutMinutes = settings?.admin_idle_timeout ? parseInt(settings.admin_idle_timeout) : 15
-    const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000 
+    const IDLE_TIMEOUT = timeoutMinutes * 60 * 1000
 
     const handleIdleLogout = () => {
-      if (token) {
-        useAuthStore.setState({ token: null, user: null, isLoading: false })
-        localStorage.removeItem('token')
-        toast.error(t('common.sessionExpired'), { id: 'user-idle-timeout' })
+      const currentToken = useAuthStore.getState().token
+      if (currentToken) {
+        void logout()
+        toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
         navigate('/login', { state: { from: window.location.pathname }, replace: true })
       }
     }
 
     const resetTimer = () => {
-      if (idleTimer) clearTimeout(idleTimer)
-      idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT)
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(handleIdleLogout, IDLE_TIMEOUT)
     }
 
-    // Set up listeners for all authenticated users
-    if (token) {
-      const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
-      events.forEach(event => window.addEventListener(event, resetTimer))
-      resetTimer() // Initialize timer
+    const handleActivity = () => {
+      const now = Date.now()
+      if (now - lastActivityAtRef.current < ACTIVITY_THROTTLE_MS) return
 
-      return () => {
-        if (idleTimer) clearTimeout(idleTimer)
-        events.forEach(event => window.removeEventListener(event, resetTimer))
-      }
+      lastActivityAtRef.current = now
+      resetTimer()
     }
-  }, [token, t, settings, navigate])
+
+    if (!token) {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+      return
+    }
+
+    const passiveEvents = ['pointermove', 'scroll', 'touchstart'] as const
+    const activeEvents = ['pointerdown', 'keydown'] as const
+
+    passiveEvents.forEach(event => window.addEventListener(event, handleActivity, { passive: true }))
+    activeEvents.forEach(event => window.addEventListener(event, handleActivity))
+    resetTimer()
+
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+      passiveEvents.forEach(event => window.removeEventListener(event, handleActivity))
+      activeEvents.forEach(event => window.removeEventListener(event, handleActivity))
+    }
+  }, [token, t, settings, navigate, logout])
 
   useEffect(() => {
     const handleExpired = () => {
-      useAuthStore.setState({ token: null, user: null, isLoading: false })
-      toast.error(t('common.sessionExpired'), { id: 'auth-expired' })
-      navigate('/login', { state: { from: window.location.pathname }, replace: true })
+      const currentToken = useAuthStore.getState().token
+      if (currentToken) {
+        useAuthStore.setState({ token: null, user: null, adminToken: null, isLoading: false })
+        toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
+        navigate('/login', { state: { from: window.location.pathname }, replace: true })
+      }
     }
 
     const handleOffline = () => {
@@ -169,7 +193,7 @@ function App() {
     window.addEventListener('auth:expired', handleExpired)
     window.addEventListener('system:offline', handleOffline)
     window.addEventListener('system:updating', handleUpdating)
-    
+
     return () => {
       window.removeEventListener('auth:expired', handleExpired)
       window.removeEventListener('system:offline', handleOffline)
@@ -191,15 +215,15 @@ function App() {
         {/* Public Routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        <Route 
-          path="/setup" 
+        <Route
+          path="/setup"
           element={
             isInitialized ? (
               <Navigate to="/login" replace />
             ) : (
               <Setup onComplete={() => setIsInitialized(true)} />
             )
-          } 
+          }
         />
 
         {/* User Routes */}
@@ -216,6 +240,8 @@ function App() {
           <Route path="/domains" element={<UserDomains />} />
           <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<UserFeedback />} />
+          <Route path="/settings" element={<UserSettings />} />
+          <Route path="/secretstores" element={<UserSecretStore />} />
         </Route>
 
         {/* Admin Routes */}
@@ -237,6 +263,7 @@ function App() {
           <Route path="databases" element={<AdminDatabases />} />
           <Route path="domains" element={<AdminDomains />} />
           <Route path="queue" element={<AdminDeploymentQueue />} />
+          <Route path="secretstores" element={<AdminSecretStore />} />
         </Route>
 
         {/* Fallback */}

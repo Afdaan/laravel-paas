@@ -6,15 +6,18 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/middleware"
+	"github.com/laravel-paas/backend/internal/services"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
-	"github.com/laravel-paas/backend/internal/services"
 )
 
 // AuthHandler handles authentication endpoints
@@ -60,12 +63,13 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return err
 	}
 
+	h.setSessionCookies(c, token, "")
+
 	// Track login activity
 	go h.userService.UpdateActivity(user.ID, c.IP(), true)
 
 	return c.JSON(fiber.Map{
-		"token": token,
-		"user":  user,
+		"user": user,
 	})
 }
 
@@ -73,6 +77,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == "" || token == authHeader {
+		token = c.Cookies(middleware.SessionCookieName)
+	}
 
 	if token != "" && token != authHeader {
 		// Blacklist for the remaining duration
@@ -80,6 +87,15 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 			slog.Warn("Failed to logout token", "error", err)
 		}
 	}
+
+	adminToken := c.Cookies(middleware.AdminCookieName)
+	if adminToken != "" {
+		if err := h.service.Logout(adminToken, time.Duration(h.cfg.JWTExpiryHours)*time.Hour); err != nil {
+			slog.Warn("Failed to logout admin token", "error", err)
+		}
+	}
+
+	h.clearSessionCookies(c)
 
 	return c.JSON(fiber.Map{
 		"message": "Logged out successfully",
@@ -93,6 +109,36 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
 		return err
+	}
+
+	if impersonating, ok := c.Locals("impersonating").(bool); ok && impersonating {
+		c.Set("X-Impersonating", "true")
+	}
+
+	return c.JSON(user)
+}
+
+// UpdateProfileRequest represents profile update payload
+type UpdateProfileRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password,omitempty"`
+}
+
+// UpdateProfile updates the current authenticated user's profile
+func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(uint)
+
+	var req UpdateProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.ErrBadRequest
+	}
+
+	user, err := h.userService.UpdateUser(userID, req.Name, req.Email, req.Password)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
 	}
 
 	return c.JSON(user)
@@ -141,16 +187,112 @@ func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 		return err
 	}
 
-	// Get admin ID who initiated this action
-	adminID := c.Locals("user_id").(uint)
+	adminToken := c.Cookies(middleware.AdminCookieName)
+	if adminToken == "" {
+		adminToken, _ = c.Locals("token").(string)
+	}
+	if adminToken == "" {
+		return apperr.ErrUnauthorized
+	}
 
 	// Optionally: Record the login attempt by the admin acting as the user
 	go h.userService.UpdateActivity(targetUser.ID, c.IP(), true)
 
-	_ = adminID // to prevent unused variable if not logging
+	h.setSessionCookies(c, token, adminToken)
 
 	return c.JSON(fiber.Map{
-		"token": token,
-		"user":  targetUser,
+		"user": targetUser,
 	})
+}
+
+// ReturnToAdmin restores the original admin session after an impersonation flow.
+func (h *AuthHandler) ReturnToAdmin(c *fiber.Ctx) error {
+	adminToken := c.Cookies(middleware.AdminCookieName)
+	if adminToken == "" {
+		return apperr.ErrUnauthorized
+	}
+
+	h.setSessionCookies(c, adminToken, "")
+
+	return c.JSON(fiber.Map{
+		"message": "Returned to admin session",
+	})
+}
+
+func (h *AuthHandler) setSessionCookies(c *fiber.Ctx, sessionToken string, adminToken string) {
+	maxAge := h.cfg.JWTExpiryHours * 60 * 60
+	expires := time.Now().Add(time.Duration(h.cfg.JWTExpiryHours) * time.Hour)
+	secure := strings.HasPrefix(h.cfg.FrontendURL, "https://")
+	csrfToken := generateCSRFToken()
+
+	c.Cookie(&fiber.Cookie{
+		Name:     middleware.SessionCookieName,
+		Value:    sessionToken,
+		Path:     "/",
+		MaxAge:   maxAge,
+		Expires:  expires,
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: "Strict",
+	})
+
+	c.Cookie(&fiber.Cookie{
+		Name:     middleware.CSRFCookieName,
+		Value:    csrfToken,
+		Path:     "/",
+		MaxAge:   maxAge,
+		Expires:  expires,
+		HTTPOnly: false,
+		Secure:   secure,
+		SameSite: "Strict",
+	})
+
+	if adminToken != "" {
+		c.Cookie(&fiber.Cookie{
+			Name:     middleware.AdminCookieName,
+			Value:    adminToken,
+			Path:     "/",
+			MaxAge:   maxAge,
+			Expires:  expires,
+			HTTPOnly: true,
+			Secure:   secure,
+			SameSite: "Strict",
+		})
+		return
+	}
+
+	c.Cookie(&fiber.Cookie{
+		Name:     middleware.AdminCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Now().Add(-time.Hour),
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: "Strict",
+	})
+}
+
+func (h *AuthHandler) clearSessionCookies(c *fiber.Ctx) {
+	secure := strings.HasPrefix(h.cfg.FrontendURL, "https://")
+	for _, name := range []string{middleware.SessionCookieName, middleware.AdminCookieName, middleware.CSRFCookieName} {
+		c.Cookie(&fiber.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			Expires:  time.Now().Add(-time.Hour),
+			HTTPOnly: name != middleware.CSRFCookieName,
+			Secure:   secure,
+			SameSite: "Strict",
+		})
+	}
+}
+
+func generateCSRFToken() string {
+	var bytes [32]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+	}
+	return hex.EncodeToString(bytes[:])
 }

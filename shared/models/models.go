@@ -7,6 +7,8 @@ package models
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -39,6 +41,7 @@ type User struct {
 	LastActivity *time.Time     `json:"last_activity,omitempty"`
 	LastIP       string         `gorm:"size:45" json:"last_ip,omitempty"`
 	LastLocation string         `gorm:"size:255" json:"last_location,omitempty"`
+	AvatarURL    string         `gorm:"size:500" json:"avatar_url,omitempty"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
@@ -98,11 +101,12 @@ type Project struct {
 	ID                    uint             `gorm:"primaryKey" json:"id"`
 	UserID                uint             `gorm:"not null;index" json:"user_id"`
 	User                  User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	UserSlug              string           `gorm:"size:255;not null;default:'user-unknown'" json:"user_slug"`
 	Name                  string           `gorm:"size:255;not null" json:"name"`
 	GithubURL             string           `gorm:"size:500;not null" json:"github_url"`
 	Branch                string           `gorm:"size:200;not null;default:main" json:"branch"`
 	Subdomain             string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
-	DatabaseName          string           `gorm:"uniqueIndex:uni_projects_database_name;size:100;not null" json:"database_name"`
+	DatabaseName          *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
 	DatabasePassword      string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
 	Status                ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	DeploymentStatus      DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
@@ -159,7 +163,8 @@ type Project struct {
 	GithubRepoOwner      string `gorm:"size:255" json:"github_repo_owner,omitempty"`
 	GithubRepoName       string `gorm:"size:255" json:"github_repo_name,omitempty"`
 
-	CustomDomains []CustomDomain `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
+	CustomDomains    []CustomDomain    `gorm:"foreignKey:ProjectID" json:"custom_domains,omitempty"`
+	DatabaseInstance *DatabaseInstance `gorm:"foreignKey:ProjectID" json:"database_instance,omitempty"`
 }
 
 // GetInternalPort returns the target port for Traefik routing
@@ -167,8 +172,14 @@ func (p *Project) GetInternalPort() string {
 	if p.Port != nil {
 		return fmt.Sprintf("%d", *p.Port)
 	}
-	if p.Framework == "Laravel" {
+	if strings.EqualFold(p.Framework, "Laravel") {
 		return "80"
+	}
+	if strings.EqualFold(p.Framework, "Next.js") || strings.EqualFold(p.Framework, "Nuxt.js") {
+		return "3000"
+	}
+	if strings.EqualFold(p.Framework, "Node.js") || strings.EqualFold(p.Framework, "React") || strings.EqualFold(p.Framework, "Vue") || strings.EqualFold(p.Framework, "Svelte") || strings.EqualFold(p.Framework, "Angular") || strings.EqualFold(p.Framework, "TypeScript") || strings.EqualFold(p.Framework, "Vite") {
+		return "3000"
 	}
 	return "8080"
 }
@@ -178,12 +189,87 @@ func (p *Project) GetHealthCheckPath() string {
 	if p.HealthCheckPath != "" {
 		return p.HealthCheckPath
 	}
-	if p.Framework == "Laravel" {
+	if strings.EqualFold(p.Framework, "Laravel") {
 		return "/health"
 	}
 	return "/"
 }
 
+// GetProjectPath returns the multi-tenant directory path for the project on the host or inside the workspace.
+func (p *Project) GetProjectPath(basePath string) string {
+	userFolder := p.UserSlug
+	if userFolder == "" || userFolder == "user-unknown" {
+		userFolder = fmt.Sprintf("user-%d", p.UserID)
+	}
+	return filepath.Join(basePath, userFolder, p.Subdomain)
+}
+
+// BeforeCreate hooks into GORM's creation cycle to auto-populate UserSlug.
+func (p *Project) BeforeCreate(tx *gorm.DB) error {
+	var user User
+	if err := tx.Select("name, email").First(&user, p.UserID).Error; err == nil {
+		slug := NormalizeSlug(user.Name)
+		if slug == "" {
+			parts := strings.Split(user.Email, "@")
+			if len(parts) > 0 {
+				slug = NormalizeSlug(parts[0])
+			}
+		}
+		if slug == "" {
+			slug = "user"
+		}
+		p.UserSlug = fmt.Sprintf("%s-%d", slug, p.UserID)
+	} else {
+		p.UserSlug = fmt.Sprintf("user-%d", p.UserID)
+	}
+	return nil
+}
+
+// NormalizeSlug converts a string (like name or email prefix) to a clean, safe slug.
+func NormalizeSlug(s string) string {
+	s = strings.ToLower(s)
+	var sb strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			sb.WriteByte(c)
+		} else {
+			sb.WriteByte('-')
+		}
+	}
+	res := sb.String()
+	for strings.Contains(res, "--") {
+		res = strings.ReplaceAll(res, "--", "-")
+	}
+	res = strings.Trim(res, "-")
+	return res
+}
+
+// GetUserDirName retrieves a clean, human-readable directory name for a user (e.g., "afdaan-1").
+func GetUserDirName(db *gorm.DB, userID uint) string {
+	defaultName := fmt.Sprintf("user-%d", userID)
+	if db == nil {
+		return defaultName
+	}
+
+	var user User
+	if err := db.Select("name, email").First(&user, userID).Error; err != nil {
+		return defaultName
+	}
+
+	slug := NormalizeSlug(user.Name)
+	if slug == "" {
+		parts := strings.Split(user.Email, "@")
+		if len(parts) > 0 {
+			slug = NormalizeSlug(parts[0])
+		}
+	}
+	if slug == "" {
+		slug = "user"
+	}
+
+	return fmt.Sprintf("%s-%d", slug, userID)
+}
 
 // ===========================================
 // Setting Model
@@ -349,22 +435,23 @@ const (
 	ErrLockAcquisitionFailed DomainErrorCode = "LOCK_ACQUISITION_FAILED"
 
 	// Explicit Degraded Reason Codes
-	ErrRedisUnavailable      DomainErrorCode = "redis_unavailable"
-	ErrNginxReloadFailed     DomainErrorCode = "nginx_reload_failed"
-	ErrSSLExpired            DomainErrorCode = "ssl_expired"
+	ErrRedisUnavailable       DomainErrorCode = "redis_unavailable"
+	ErrNginxReloadFailed      DomainErrorCode = "nginx_reload_failed"
+	ErrSSLExpired             DomainErrorCode = "ssl_expired"
 	ErrPublicRouteUnreachable DomainErrorCode = "public_route_unreachable"
-	ErrUpstreamTimeout       DomainErrorCode = "upstream_timeout"
-	ErrIntegrityCheckFailed  DomainErrorCode = "integrity_check_failed"
-	ErrReconciliationStalled DomainErrorCode = "reconciliation_stalled"
+	ErrUpstreamTimeout        DomainErrorCode = "upstream_timeout"
+	ErrIntegrityCheckFailed   DomainErrorCode = "integrity_check_failed"
+	ErrReconciliationStalled  DomainErrorCode = "reconciliation_stalled"
 )
 
 // CustomDomain represents a custom domain mapped to a project, tracking both its lifecycle state and operational health overlay.
 type CustomDomain struct {
-	ID        uint               `gorm:"primaryKey" json:"id"`
-	ProjectID uint               `gorm:"not null;index" json:"project_id"`
-	Project   Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
-	Domain    string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
-	Status    CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
+	ID            uint               `gorm:"primaryKey" json:"id"`
+	ProjectID     uint               `gorm:"not null;index" json:"project_id"`
+	Project       Project            `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Domain        string             `gorm:"uniqueIndex:uni_custom_domains_domain;size:255;not null" json:"domain"`
+	IsPrimary     bool               `gorm:"not null;default:false;index" json:"is_primary"`
+	Status        CustomDomainStatus `gorm:"size:30;not null;default:pending" json:"status"`
 	DesiredStatus CustomDomainStatus `gorm:"size:30;not null;default:active" json:"desired_status"`
 
 	// SSL & Certificate Lifecycle
@@ -388,11 +475,11 @@ type CustomDomain struct {
 	SnapshotVersion   int                `gorm:"default:0" json:"snapshot_version"`
 
 	// Granular Layered Health Validation
-	Layer1DNSReachable           bool `gorm:"default:false" json:"layer1_dns_reachable"`
-	Layer2PublicAccessReachable  bool `gorm:"default:false" json:"layer2_public_access_reachable"`
-	Layer3SSLValid               bool `gorm:"default:false" json:"layer3_ssl_valid"`
-	Layer4UpstreamReachable      bool `gorm:"default:false" json:"layer4_upstream_reachable"`
-	Layer5ResponseIntegrity      bool `gorm:"default:false" json:"layer5_response_integrity"`
+	Layer1DNSReachable          bool `gorm:"default:false" json:"layer1_dns_reachable"`
+	Layer2PublicAccessReachable bool `gorm:"default:false" json:"layer2_public_access_reachable"`
+	Layer3SSLValid              bool `gorm:"default:false" json:"layer3_ssl_valid"`
+	Layer4UpstreamReachable     bool `gorm:"default:false" json:"layer4_upstream_reachable"`
+	Layer5ResponseIntegrity     bool `gorm:"default:false" json:"layer5_response_integrity"`
 
 	// Staged Cleanup & Tombstone Metadata
 	CleanupRetryCount int    `gorm:"default:0" json:"cleanup_retry_count"`
@@ -530,9 +617,152 @@ type GithubAppInstallation struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
 	UserID         uint      `gorm:"not null;index" json:"user_id"`
 	InstallationID int64     `gorm:"uniqueIndex;not null" json:"installation_id"`
-	AccountName    string    `gorm:"size:255;not null" json:"account_name"`
+	AccountName    string    `gorm:"size:255;not null;index:idx_gh_install_acc" json:"account_name"`
 	AvatarURL      string    `gorm:"size:500" json:"avatar_url"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// ===========================================
+// DatabaseInstance Model
+// ===========================================
+
+// DatabaseInstanceStatus represents the lifecycle state of a managed database instance.
+type DatabaseInstanceStatus string
+
+const (
+	DBStatusActive    DatabaseInstanceStatus = "active"
+	DBStatusSuspended DatabaseInstanceStatus = "suspended"
+	DBStatusDeleted   DatabaseInstanceStatus = "deleted"
+)
+
+// DatabaseInstance represents a managed database provisioned for a user project.
+// Each project has at most one database instance. The engine field determines
+// which container and driver handles provisioning and queries.
+type DatabaseInstance struct {
+	ID                 uint                   `gorm:"primaryKey" json:"id"`
+	UserID             uint                   `gorm:"not null;index" json:"user_id"`
+	User               User                   `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	ProjectID          *uint                  `gorm:"uniqueIndex:uni_database_instances_project_id" json:"project_id"`
+	Project            *Project               `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Engine             string                 `gorm:"size:20;not null;default:mysql" json:"engine"` // "mysql" or "postgresql"
+	Version            string                 `gorm:"size:50" json:"version,omitempty"`
+	Status             DatabaseInstanceStatus `gorm:"size:20;not null;default:active" json:"status"`
+	Name               string                 `gorm:"size:100;not null" json:"name"`
+	Username           string                 `gorm:"size:100;not null" json:"username"`
+	Password           string                 `gorm:"size:255;not null" json:"-"` // Never expose in JSON
+	Host               string                 `gorm:"size:255;not null" json:"host"`
+	Port               int                    `gorm:"not null" json:"port"`
+	StorageAllocation  int64                  `gorm:"default:1073741824" json:"storage_allocation"` // Default 1GB in bytes
+	StorageConsumption int64                  `gorm:"default:0" json:"storage_consumption"`
+	ConnectionCount    int                    `gorm:"default:0" json:"connection_count"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+}
+
+// ===========================================
+// DatabaseBackup Model
+// ===========================================
+
+// DatabaseBackupStatus represents the state of a database backup job.
+type DatabaseBackupStatus string
+
+const (
+	BackupStatusPending   DatabaseBackupStatus = "pending"
+	BackupStatusCompleted DatabaseBackupStatus = "completed"
+	BackupStatusFailed    DatabaseBackupStatus = "failed"
+)
+
+// DatabaseBackup tracks point-in-time SQL snapshots for a database instance.
+// A strict retention policy of 5 backups per database is enforced at creation time.
+type DatabaseBackup struct {
+	ID                 uint                 `gorm:"primaryKey" json:"id"`
+	DatabaseInstanceID uint                 `gorm:"not null;index" json:"database_instance_id"`
+	DatabaseInstance   DatabaseInstance     `gorm:"foreignKey:DatabaseInstanceID" json:"database_instance,omitempty"`
+	ProjectID          uint                 `gorm:"not null;index" json:"project_id"`
+	Name               string               `gorm:"size:255;not null" json:"name"`
+	Path               string               `gorm:"size:500;not null" json:"path"`
+	Size               string               `gorm:"size:50" json:"size"`
+	Status             DatabaseBackupStatus `gorm:"size:20;not null;default:pending" json:"status"`
+	CreatedAt          time.Time            `json:"created_at"`
+}
+
+// ===========================================
+// SecretStore Models
+// ===========================================
+
+// SecretStore represents a credentials container that can be linked to multiple projects.
+type SecretStore struct {
+	ID          uint                 `gorm:"primaryKey" json:"id"`
+	UserID      uint                 `gorm:"not null;index" json:"user_id"`
+	User        User                 `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Name        string               `gorm:"size:255;not null" json:"name"`
+	Description string               `gorm:"size:500" json:"description,omitempty"`
+	IsDisabled  bool                 `gorm:"default:false" json:"is_disabled"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   time.Time            `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt       `gorm:"index" json:"-"`
+	Items       []SecretStoreItem    `gorm:"foreignKey:SecretStoreID" json:"items,omitempty"`
+	Bindings    []SecretStoreBinding `gorm:"foreignKey:SecretStoreID" json:"bindings,omitempty"`
+}
+
+// SecretStoreItem represents an environment variable key within a SecretStore.
+type SecretStoreItem struct {
+	ID                    uint                   `gorm:"primaryKey" json:"id"`
+	SecretStoreID         uint                   `gorm:"not null;index" json:"secret_store_id"`
+	SecretStore           SecretStore            `gorm:"foreignKey:SecretStoreID" json:"-"`
+	Key                   string                 `gorm:"size:255;not null;index" json:"key"`
+	LatestSnapshotVersion int                    `gorm:"default:1" json:"latest_snapshot_version"`
+	CreatedAt             time.Time              `json:"created_at"`
+	UpdatedAt             time.Time              `json:"updated_at"`
+	DeletedAt             gorm.DeletedAt         `gorm:"index" json:"-"`
+	Values                []SecretStoreItemValue `gorm:"foreignKey:SecretStoreItemID" json:"values,omitempty"`
+}
+
+// SecretStoreItemValue stores the encrypted credentials of a secret item version.
+type SecretStoreItemValue struct {
+	ID                uint            `gorm:"primaryKey" json:"id"`
+	SecretStoreItemID uint            `gorm:"not null;index" json:"secret_store_item_id"`
+	SecretStoreItem   SecretStoreItem `gorm:"foreignKey:SecretStoreItemID" json:"-"`
+	Version           int             `gorm:"not null;default:1" json:"version"`
+	EncryptedValue    string          `gorm:"type:text;not null" json:"-"`
+	CreatedBy         uint            `gorm:"not null" json:"created_by"`
+	CreatedAt         time.Time       `json:"created_at"`
+}
+
+// SecretStoreBinding binds a SecretStore container to a project environment.
+type SecretStoreBinding struct {
+	ID            uint        `gorm:"primaryKey" json:"id"`
+	ProjectID     uint        `gorm:"not null;index" json:"project_id"`
+	Project       Project     `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	SecretStoreID uint        `gorm:"not null;index" json:"secret_store_id"`
+	SecretStore   SecretStore `gorm:"foreignKey:SecretStoreID" json:"secret_store,omitempty"`
+	Environment   string      `gorm:"size:50;not null;default:'production'" json:"environment"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}
+
+// SecretStoreActivityLog logs auditing actions on SecretStores.
+type SecretStoreActivityLog struct {
+	ID                uint             `gorm:"primaryKey" json:"id"`
+	SecretStoreID     *uint            `gorm:"index" json:"secret_store_id,omitempty"`
+	SecretStore       *SecretStore     `gorm:"foreignKey:SecretStoreID" json:"secret_store,omitempty"`
+	SecretStoreItemID *uint            `gorm:"index" json:"secret_store_item_id,omitempty"`
+	SecretStoreItem   *SecretStoreItem `gorm:"foreignKey:SecretStoreItemID" json:"secret_store_item,omitempty"`
+	UserID            uint             `gorm:"not null;index" json:"user_id"`
+	User              User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	ProjectID         *uint            `gorm:"index" json:"project_id,omitempty"`
+	Project           *Project         `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Action            string           `gorm:"size:100;not null" json:"action"`
+	IpAddress         string           `gorm:"size:45" json:"ip_address"`
+	UserAgent         string           `gorm:"size:500" json:"user_agent"`
+	Details           string           `gorm:"type:text" json:"details"`
+	CreatedAt         time.Time        `json:"created_at"`
+}
+
+func (p *Project) GetDatabaseName() string {
+	if p.DatabaseName == nil {
+		return ""
+	}
+	return *p.DatabaseName
+}

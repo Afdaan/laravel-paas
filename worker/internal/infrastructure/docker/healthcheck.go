@@ -35,41 +35,74 @@ func (s *DockerService) probeHTTP(ctx context.Context, url string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 	}
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("server error status code: %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 
 // AdvancedHealthcheck runs a production readiness probe with exponential backoff and a stabilization monitoring window.
-func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string) error {
+// logCallback is optional and used for appending events directly to the user deployment timeline.
+func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string, logCallback func(string)) error {
 	slog.Info("Starting advanced healthcheck probe", "projectId", project.ID, "containerId", containerID)
-
-	// Determine if container exposes a web port
-	isWebFacing := project.Port == nil || *project.Port > 0
-
-	// 1. Startup grace period
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(5 * time.Second):
+	announce := func(message string) {
+		if logCallback != nil {
+			logCallback(message)
+		}
 	}
 
-	maxAttempts := 10
-	currentInterval := 1 * time.Second
+	// Determine if container exposes a web port
+	isWebFacing := false
+	if project.Port != nil {
+		isWebFacing = *project.Port > 0
+	} else if project.Framework == "Laravel" {
+		isWebFacing = true
+	}
+
+	if !isWebFacing {
+		announce(">> Checking container status for non-web application...")
+		running, runErr := s.IsContainerRunning(containerID)
+		if runErr != nil {
+			return fmt.Errorf("failed to check container running status: %w", runErr)
+		}
+		if !running {
+			logs, _ := s.GetLogs(containerID, 15)
+			return fmt.Errorf("[RUNTIME_FAILED] Container stopped unexpectedly. Last logs:\n%s", logs)
+		}
+		announce("✓ Container is running (non-web application fast path).")
+		slog.Info("Non-web application health check completed (container running)", "containerId", containerID)
+		return nil
+	}
+
+	announce(">> Starting readiness probe and stabilization checks...")
+
+	// Startup grace period for slow-starting non-Laravel frameworks
+	if !strings.EqualFold(project.Framework, "Laravel") {
+		announce(">> Allowing the application a short startup window before probing...")
+		slog.Info("Applying 5s startup grace period before health probes", "framework", project.Framework, "subdomain", project.Subdomain)
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	maxAttempts := 45 // Increased to give larger total readiness budget for slow-starting apps (Prisma init, DB pool warmup)
+	currentInterval := 200 * time.Millisecond
 	isReady := false
+	probeHintLogged := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		select {
@@ -78,68 +111,95 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 		default:
 		}
 
+		if attempt == 1 || attempt == 10 || attempt == 25 || attempt == 40 {
+			announce(fmt.Sprintf(">> Readiness probe attempt %d of %d...", attempt, maxAttempts))
+		}
+
+		// Fail fast if the container crashed or stopped running during the check
+		if attempt == 1 {
+			announce(">> Checking whether the container is still running...")
+		}
+		running, runErr := s.IsContainerRunning(containerID)
+		if runErr == nil && !running {
+			logs, _ := s.GetLogs(containerID, 15)
+			return fmt.Errorf("[RUNTIME_FAILED] Container stopped unexpectedly. Last logs:\n%s", logs)
+		}
+
 		if s.IsContainerHealthy(containerID) {
-			if isWebFacing {
-				ip, ipErr := s.GetContainerIP(containerID)
-				if ipErr == nil {
-					url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
-					if err := s.probeHTTP(ctx, url); err == nil {
-						isReady = true
-						break
-					} else {
-						slog.Warn("Container running but HTTP probe failed", "url", url, "error", err, "attempt", attempt)
-					}
+			if !probeHintLogged {
+				announce(">> Container is healthy. Verifying application HTTP readiness...")
+				probeHintLogged = true
+			}
+			ip, ipErr := s.GetContainerIP(containerID)
+			if ipErr == nil {
+				url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
+				if err := s.probeHTTP(ctx, url); err == nil {
+					isReady = true
+					break
 				} else {
-					slog.Warn("Failed to resolve container IP for HTTP probe", "error", ipErr, "attempt", attempt)
+					// Only log occasionally to avoid spamming
+					if attempt%3 == 0 {
+						slog.Debug("Container running but HTTP probe failed", "url", url, "error", err, "attempt", attempt)
+					}
 				}
 			} else {
-				isReady = true
-				break
+				slog.Debug("Failed to resolve container IP for HTTP probe", "error", ipErr, "attempt", attempt)
 			}
 		}
 
-		slog.Debug("Container health check probe pending", "attempt", attempt, "containerId", containerID)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(currentInterval):
 		}
 
-		currentInterval *= 2
-		if currentInterval > 8*time.Second {
-			currentInterval = 8 * time.Second
+		// Exponential backoff, but cap it faster
+		currentInterval = time.Duration(float64(currentInterval) * 1.5)
+		if currentInterval > 2*time.Second {
+			currentInterval = 2 * time.Second
 		}
 	}
 
 	if !isReady {
 		logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
-		return fmt.Errorf("[RUNTIME_FAILED] Container process is running but did not respond to HTTP readiness checks. Last logs:\n%s", logs)
+		return fmt.Errorf("[RUNTIME_FAILED] Container process is running but did not respond to HTTP readiness checks.\n\n💡 Tip: Ensure your application is listening on the 0.0.0.0 host, is using the $PORT environment variable, and returns a 200 OK status code at the root path (/).\n\nLast logs:\n%s", logs)
 	}
 
 	// 2. Stabilization window
-	slog.Info("Container readiness verified, entering stabilization monitoring window (5s)", "containerId", containerID)
+	announce(">> Readiness confirmed. Entering stabilization window...")
+	slog.Info("Container readiness verified, entering stabilization monitoring window (2s)", "containerId", containerID)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 	}
 
+	announce(">> Re-checking container health after stabilization...")
 	if !s.IsContainerHealthy(containerID) {
 		logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
 		return fmt.Errorf("[RUNTIME_FAILED] Container crashed during stabilization window. Last logs:\n%s", logs)
 	}
 
-	if isWebFacing {
-		ip, _ := s.GetContainerIP(containerID)
-		url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
-		if err := s.probeHTTP(ctx, url); err != nil {
-			logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
-			return fmt.Errorf("[RUNTIME_FAILED] HTTP probe failed during stabilization window. Error: %w. Last logs:\n%s", err, logs)
-		}
+	announce(">> Re-confirming HTTP readiness after stabilization...")
+	ip, _ := s.GetContainerIP(containerID)
+	url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
+	if err := s.probeHTTP(ctx, url); err != nil {
+		logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
+		return fmt.Errorf("[RUNTIME_FAILED] HTTP probe failed during stabilization window. Error: %w.\n\n💡 Tip: Ensure your application is listening on the 0.0.0.0 host, is using the $PORT environment variable, and returns a 200 OK status code at the root path (/).\n\nLast logs:\n%s", err, logs)
 	}
 
+	announce("✓ Advanced healthcheck completed successfully.")
 	slog.Info("Advanced healthcheck completed successfully", "containerId", containerID)
 	return nil
+}
+
+// IsContainerRunning inspects if the container is currently running.
+func (s *DockerService) IsContainerRunning(containerID string) (bool, error) {
+	res, err := utils.Run(5*time.Second, "docker", "inspect", "--format", "{{.State.Running}}", containerID)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(res.Stdout) == "true", nil
 }
 
 // IsSystemOverloaded checks if host memory or CPU pressure is too high for safe builds.

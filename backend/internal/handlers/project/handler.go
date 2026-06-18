@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/services"
+	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/docker"
 	"github.com/laravel-paas/shared/models"
-	"github.com/laravel-paas/backend/internal/services"
-	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"gorm.io/gorm"
 )
 
@@ -24,23 +24,25 @@ import (
 // ===========================================
 // ProjectHandler handles project endpoints
 type ProjectHandler struct {
-	cfg            *config.Config
-	db             *gorm.DB
-	redisService   *infrastructure.RedisService
-	projectService *projectServicePkg.ProjectService
-	userService    *services.UserService
-	dockerService  *docker.DockerService
+	cfg                *config.Config
+	db                 *gorm.DB
+	redisService       *infrastructure.RedisService
+	projectService     *projectServicePkg.ProjectService
+	userService        *services.UserService
+	dockerService      *docker.DockerService
+	secretStoreService *services.SecretStoreService
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, projectService *projectServicePkg.ProjectService, userService *services.UserService, dockerService *docker.DockerService) *ProjectHandler {
+func NewProjectHandler(cfg *config.Config, db *gorm.DB, redisService *infrastructure.RedisService, projectService *projectServicePkg.ProjectService, userService *services.UserService, dockerService *docker.DockerService, secretStoreService *services.SecretStoreService) *ProjectHandler {
 	return &ProjectHandler{
-		cfg:            cfg,
-		db:             db,
-		projectService: projectService,
-		userService:    userService,
-		redisService:   redisService,
-		dockerService:  dockerService,
+		cfg:                cfg,
+		db:                 db,
+		projectService:     projectService,
+		userService:        userService,
+		redisService:       redisService,
+		dockerService:      dockerService,
+		secretStoreService: secretStoreService,
 	}
 }
 
@@ -84,6 +86,11 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		// Immediately flush an initial keep-alive to force HTTP headers to be sent
+		// preventing the browser/proxy from hanging and dropping the connection.
+		_, _ = w.WriteString(":\n\n")
+		_ = w.Flush()
+
 		// 1. Fetch existing events from DB and stream them as a single initial_events event
 		events, err := h.projectService.GetDeploymentEvents(project.ID)
 		if err == nil {
@@ -143,4 +150,3 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 
 	return nil
 }
-

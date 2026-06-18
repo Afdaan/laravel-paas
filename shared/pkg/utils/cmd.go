@@ -65,7 +65,6 @@ func (w *streamWriter) Flush() {
 // DefaultTimeout is the standard deadline for shell commands
 const DefaultTimeout = 2 * time.Minute
 
-
 // Result holds the output of an executed command
 type Result struct {
 	Stdout string
@@ -180,7 +179,11 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 		_ = refiner.Flush()
 	}
 
-	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================\n", formatDuration(duration))
+	statusText := "Application built successfully"
+	if err != nil {
+		statusText = "Build failed"
+	}
+	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] %s in %s\n========================================================================\n", statusText, formatDuration(duration))
 	_, _ = logFile.WriteString(summaryMsg)
 
 	result := &Result{
@@ -211,7 +214,6 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%.1fs", seconds)
 }
-
 
 func runInDirWithEnv(parentCtx context.Context, timeout time.Duration, dir string, env []string, silent bool, name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
@@ -245,6 +247,11 @@ func runInDirWithEnv(parentCtx context.Context, timeout time.Duration, dir strin
 // RunWithRefinedLogCtx executes a command with a parent context, timeout, and writes filtered output to a log file.
 func RunWithRefinedLogCtx(parentCtx context.Context, timeout time.Duration, logFilePath string, logCallback func(string), name string, args ...string) (*Result, error) {
 	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", nil, logFilePath, true, logCallback, name, args...)
+}
+
+// RunWithRefinedLogAndEnvCtx executes a command with a parent context, timeout, custom environment variables, and writes filtered output to a log file.
+func RunWithRefinedLogAndEnvCtx(parentCtx context.Context, timeout time.Duration, env []string, logFilePath string, logCallback func(string), name string, args ...string) (*Result, error) {
+	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", env, logFilePath, true, logCallback, name, args...)
 }
 
 func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, logFilePath string, refined bool, logCallback func(string), name string, args ...string) (*Result, error) {
@@ -296,7 +303,11 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		sw.Flush()
 	}
 
-	summaryMsg := fmt.Sprintf("========================================================================\n[BUILD SUMMARY] Application built successfully in %s\n========================================================================", formatDuration(duration))
+	statusText := "Application built successfully"
+	if err != nil {
+		statusText = "Build failed"
+	}
+	summaryMsg := fmt.Sprintf("========================================================================\n[BUILD SUMMARY] %s in %s\n========================================================================", statusText, formatDuration(duration))
 	if logCallback != nil {
 		logCallback("")
 		for _, line := range strings.Split(summaryMsg, "\n") {

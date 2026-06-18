@@ -161,7 +161,7 @@ const UserFeedback = () => {
                         {formData.type === 'trouble' && t('feedback.issue')}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                       <SelectItem value="suggestion">{t('feedback.suggestion')}</SelectItem>
                       <SelectItem value="bug">{t('feedback.bug')}</SelectItem>
                       <SelectItem value="trouble">{t('feedback.issue')}</SelectItem>

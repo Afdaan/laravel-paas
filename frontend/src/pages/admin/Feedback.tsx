@@ -21,6 +21,7 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import useTranslation from '../../lib/useTranslation'
+import ConfirmationModal from '../../components/ConfirmationModal'
 
 interface FeedbackUser {
   name: string;
@@ -43,6 +44,8 @@ const AdminFeedback = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterType, setFilterType] = useState<string>('all')
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [targetDeleteId, setTargetDeleteId] = useState<number | null>(null)
 
   const fetchFeedback = useCallback(async () => {
     setIsLoading(true)
@@ -75,14 +78,22 @@ const AdminFeedback = () => {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm(t('admin.users.confirmPurge'))) return
+  const handleDeleteTrigger = (id: number) => {
+    setTargetDeleteId(id)
+    setIsDeleteModalOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!targetDeleteId) return
     try {
-      await feedbackAPI.delete(id)
+      await feedbackAPI.delete(targetDeleteId)
       toast.success(t('admin.feedback.purgeSuccess'))
       fetchFeedback()
     } catch (error) {
       toast.error(t('admin.feedback.purgeError'))
+    } finally {
+      setIsDeleteModalOpen(false)
+      setTargetDeleteId(null)
     }
   }
 
@@ -90,19 +101,19 @@ const AdminFeedback = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 pb-4 border-b">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Client Intelligence</h1>
-          <p className="text-muted-foreground">Reviewing bug reports, architecture suggestions, and user sentiment analysis.</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">{t('admin.feedback.title')}</h1>
+          <p className="text-muted-foreground">{t('admin.feedback.desc')}</p>
         </div>
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 bg-muted/30 border p-2 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground">
             <div className="flex items-center gap-2 px-3 border-r">
               <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
-              {feedback?.length || 0} Submissions
+              {t('admin.feedback.submissions', { count: feedback?.length || 0 })}
             </div>
             <div className="flex items-center gap-2 px-3">
               <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
-              {(feedback || []).filter(f => f.type === 'bug').length} Critical
+              {t('admin.feedback.critical', { count: (feedback || []).filter(f => f.type === 'bug').length })}
             </div>
           </div>
 
@@ -117,45 +128,45 @@ const AdminFeedback = () => {
           <div className="relative flex-1 w-full max-w-xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Filter intel by keyword or user identity..."
+              placeholder={t('admin.feedback.filterPlaceholder')}
               className="pl-9 w-full"
             />
           </div>
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-muted-foreground">Status:</span>
+              <span className="text-sm font-medium text-muted-foreground">{t('admin.feedback.status')}:</span>
               <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v || 'all')}>
                 <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="All States" />
+                  <SelectValue placeholder={t('admin.feedback.allStates')} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All States</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="in_review">In Review</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
+                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
+                  <SelectItem value="all">{t('admin.feedback.allStates')}</SelectItem>
+                  <SelectItem value="pending">{t('feedback.status.pending')}</SelectItem>
+                  <SelectItem value="in_review">{t('feedback.status.inPreview')}</SelectItem>
+                  <SelectItem value="resolved">{t('feedback.status.resolved')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-muted-foreground">Category:</span>
+              <span className="text-sm font-medium text-muted-foreground">{t('admin.feedback.category')}:</span>
               <Select value={filterType} onValueChange={(v) => setFilterType(v || 'all')}>
                 <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="All Intel" />
+                  <SelectValue placeholder={t('admin.feedback.allCategories')} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                   <SelectItem value="all">
-                    <div className="flex items-center gap-2"><Sparkles className="w-4 h-4" /> All Intel</div>
+                    <div className="flex items-center gap-2"><Sparkles className="w-4 h-4" /> {t('admin.feedback.allCategories')}</div>
                   </SelectItem>
                   <SelectItem value="suggestion">
-                    <div className="flex items-center gap-2"><Lightbulb className="w-4 h-4 text-indigo-500" /> Suggestion</div>
+                    <div className="flex items-center gap-2"><Lightbulb className="w-4 h-4 text-indigo-500" /> {t('admin.feedback.suggestion')}</div>
                   </SelectItem>
                   <SelectItem value="bug">
-                    <div className="flex items-center gap-2"><Bug className="w-4 h-4 text-rose-500" /> Bug Report</div>
+                    <div className="flex items-center gap-2"><Bug className="w-4 h-4 text-rose-500" /> {t('admin.feedback.criticalBug')}</div>
                   </SelectItem>
                   <SelectItem value="trouble">
-                    <div className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> Infrastructure</div>
+                    <div className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> {t('admin.feedback.infraIssue')}</div>
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -167,15 +178,15 @@ const AdminFeedback = () => {
       {isLoading ? (
         <div className="flex flex-col items-center justify-center h-80 gap-6">
           <Loader2 className="w-12 h-12 text-primary animate-spin" />
-          <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">Syncing Global Intel Registry</p>
+          <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest animate-pulse">{t('admin.feedback.syncing')}</p>
         </div>
       ) : (!feedback || feedback.length === 0) ? (
         <Card className="py-24 flex flex-col items-center justify-center text-center">
           <div className="w-20 h-20 bg-muted/50 rounded-full flex items-center justify-center mb-6">
             <Sparkles className="w-10 h-10 text-muted-foreground opacity-50" />
           </div>
-          <h3 className="font-semibold text-lg">No telemetry records found</h3>
-          <p className="text-muted-foreground mt-2 max-w-sm">The feedback registry is currently clear of pending alerts for the selected filters.</p>
+          <h3 className="font-semibold text-lg">{t('admin.feedback.noRecords')}</h3>
+          <p className="text-muted-foreground mt-2 max-w-sm">{t('admin.feedback.noRecordsDesc')}</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -184,20 +195,35 @@ const AdminFeedback = () => {
               key={item.id}
               item={item}
               onUpdate={handleUpdateStatus}
-              onDelete={handleDelete}
+              onDelete={handleDeleteTrigger}
             />
           ))}
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false)
+          setTargetDeleteId(null)
+        }}
+        onConfirm={confirmDelete}
+        title={t('admin.feedback.deleteTitle')}
+        message={t('admin.feedback.confirmDelete')}
+        confirmText={t('admin.initCleanup')}
+        type="danger"
+      />
     </div>
   )
 }
 
 const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, onUpdate: (id: number, status: string) => void, onDelete: (id: number) => void }) => {
+  const { t } = useTranslation()
+
   const typeConfigs: Record<string, { color: string, icon: React.ElementType, glow: string, label: string }> = {
-    bug: { color: 'text-rose-600', icon: Bug, glow: 'bg-rose-500/10', label: 'Critical Bug' },
-    trouble: { color: 'text-amber-600', icon: AlertTriangle, glow: 'bg-amber-500/10', label: 'Infra Issue' },
-    suggestion: { color: 'text-indigo-600', icon: Lightbulb, glow: 'bg-indigo-500/10', label: 'Suggestion' },
+    bug: { color: 'text-rose-600', icon: Bug, glow: 'bg-rose-500/10', label: t('admin.feedback.criticalBug') },
+    trouble: { color: 'text-amber-600', icon: AlertTriangle, glow: 'bg-amber-500/10', label: t('admin.feedback.infraIssue') },
+    suggestion: { color: 'text-indigo-600', icon: Lightbulb, glow: 'bg-indigo-500/10', label: t('admin.feedback.suggestion') },
   }
 
   const config = typeConfigs[item.type] || typeConfigs.suggestion
@@ -262,7 +288,7 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
               onClick={() => onUpdate(item.id, 'in_review')}
               className="text-indigo-600"
             >
-              Mark Reviewing
+              {t('feedback.status.inPreview')}
             </Button>
           )}
           {item.status !== 'resolved' && (
@@ -272,7 +298,7 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
               onClick={() => onUpdate(item.id, 'resolved')}
               className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
             >
-              Resolve
+              {t('feedback.status.resolved')}
             </Button>
           )}
         </div>
@@ -281,7 +307,7 @@ const FeedbackCard = memo(({ item, onUpdate, onDelete }: { item: FeedbackData, o
           variant="ghost"
           size="icon"
           onClick={() => onDelete(item.id)}
-          className="text-destructive hover:bg-destructive/10"
+          className="text-destructive hover:bg-destructive/10 cursor-pointer"
         >
           <Trash2 className="w-4 h-4" />
         </Button>

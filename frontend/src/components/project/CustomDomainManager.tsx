@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Globe, Plus, Trash2, AlertCircle, RefreshCw, ExternalLink, Loader2, Activity, Terminal, FileText } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
-import { projectsAPI } from '@/services/api'
+import { getCSRFToken, projectsAPI } from '@/services/api'
 import { CustomDomain, DomainEvent } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,11 +31,11 @@ const getDNSHost = (domain: string): string => {
   const parts = domain.split('.')
   if (parts.length === 1) return domain
   if (parts.length === 2) return '@'
-  
+
   const multiPartTLDs = ['co.id', 'my.id', 'ac.id', 'sch.id', 'biz.id', 'or.id', 'go.id', 'net.id', 'co.uk', 'org.uk', 'com.au']
   const lastTwo = parts.slice(-2).join('.')
   const rootPartsCount = multiPartTLDs.includes(lastTwo) ? 3 : 2
-  
+
   return parts.length > rootPartsCount ? parts.slice(0, -rootPartsCount).join('.') : '@'
 }
 
@@ -80,8 +80,8 @@ const StatusBadge = ({ status }: { status: string }) => {
   const isSpinning = ['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
 
   return (
-    <Badge 
-      variant="outline" 
+    <Badge
+      variant="outline"
       className={`gap-2 items-center flex w-fit text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border ${bgColor} ${textColor} transition-all duration-300`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${isSpinning ? 'animate-pulse' : ''}`} />
@@ -102,8 +102,8 @@ const HealthBadge = ({ health, error }: { health?: string, error?: string }) => 
 
   return (
     <div className="flex items-center gap-2">
-      <Badge 
-        variant="outline" 
+      <Badge
+        variant="outline"
         className={`gap-2 items-center flex w-fit text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${bgColor} ${textColor}`}
       >
         <span className={`w-1 h-1 rounded-full ${dotColor}`} />
@@ -164,7 +164,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
   const [isLoading, setIsLoading] = useState(true)
   const [newDomain, setNewDomain] = useState('')
   const [isAdding, setIsAdding] = useState(false)
-  const [verifyingId, setVerifyingId] = useState<number | null>(null)
+  const [verifyingIds, setVerifyingIds] = useState<Record<number, boolean>>({})
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null)
 
   const [eventsModal, setEventsModal] = useState<{
@@ -194,7 +194,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         return domainList.map((newD: CustomDomain) => {
           const existing = prev.find(d => d.id === newD.id)
           if (existing && existing.current_sequence != null && newD.current_sequence != null && newD.current_sequence < existing.current_sequence) {
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
               console.log("Ignoring stale domain list fetch for", newD.id, newD.current_sequence, "vs existing", existing.current_sequence)
             }
             return existing
@@ -202,7 +202,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
           return newD
         })
       })
-      
+
       if (!selectedDomainId && domainList.length > 0) {
         const firstPending = domainList.find((d: CustomDomain) => d.status !== 'active')
         if (firstPending) setSelectedDomainId(firstPending.id)
@@ -228,7 +228,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     let isSubscribed = true;
     let reconnectDelay = 1000;
     const maxReconnectDelay = 30000;
-    let reconnectTimer: NodeJS.Timeout | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const scheduleReconnect = () => {
       if (!isSubscribed) return;
@@ -244,10 +244,10 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
     const connectSSE = async () => {
       try {
-        const token = localStorage.getItem('token') || '';
         const res = await fetch('/api/auth/stream-token', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': getCSRFToken() }
         });
         if (!res.ok || !isSubscribed) {
           scheduleReconnect();
@@ -283,7 +283,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
               return prevDomains.map(d => {
                 if (d.id === updatedDomainId) {
                   if (eventData.sequence_number != null && d.current_sequence != null && eventData.sequence_number < d.current_sequence) {
-                    if (process.env.NODE_ENV === 'development') {
+                    if (import.meta.env.DEV) {
                       console.log("Ignoring stale SSE domain event for", d.id, eventData.sequence_number, "vs existing", d.current_sequence);
                     }
                     return d;
@@ -334,7 +334,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         });
 
         eventSource.addEventListener('overflow', () => {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.warn("Subscriber buffer overflow detected, initiating SSE reconnection");
           }
           eventSource?.close();
@@ -342,7 +342,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         });
 
         eventSource.onerror = (err) => {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.error("Project SSE connection error", err);
           }
           eventSource?.close();
@@ -370,13 +370,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
     if (match) {
       const code = match[1]
       const content = match[2]
-      
+
       const title = code
         .toLowerCase()
         .split('_')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ')
-        
+
       toast.error(title, {
         description: content
       })
@@ -389,11 +389,21 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newDomain.trim()) return
+    const trimmedDomain = newDomain.trim()
+    if (!trimmedDomain) return
+
+    // Strict FQDN formatting check to prevent config injections and malformed routing records
+    const domainRegex = /^[a-zA-Z0-9.-]+$/
+    if (!domainRegex.test(trimmedDomain) || trimmedDomain.startsWith('.') || trimmedDomain.endsWith('.') || trimmedDomain.startsWith('-') || trimmedDomain.endsWith('-') || trimmedDomain.includes('..')) {
+      toast.error(t('domains.errors.invalidFormat') || 'Invalid Domain Format', {
+        description: t('domains.errors.invalidCharacters') || 'Domain names can only contain letters, numbers, dots, and hyphens.'
+      })
+      return
+    }
 
     setIsAdding(true)
     try {
-      const res = await projectsAPI.addDomain(projectId, newDomain.trim())
+      const res = await projectsAPI.addDomain(projectId, trimmedDomain)
       setNewDomain('')
       fetchDomains()
       onDomainsChanged?.()
@@ -444,15 +454,25 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
   const handleVerifyDomain = async (e: React.MouseEvent, domainId: number) => {
     e.stopPropagation()
-    setVerifyingId(domainId)
+    setVerifyingIds(prev => ({ ...prev, [domainId]: true }))
+
+    const dom = domains.find(d => d.id === domainId)
+    const isAlreadyActive = dom?.status === 'active' || dom?.status === 'ssl_active'
+
     try {
       const res = await projectsAPI.verifyDomain(projectId, domainId)
       if (res.data?.error) {
         showErrorToast(res.data.error.message || t('common.error'))
       } else {
-        toast.success(t('domains.verified') || 'Domain Verified', {
-          description: t('domains.verifiedDesc') || 'DNS configuration verified successfully.'
-        })
+        if (isAlreadyActive) {
+          toast.success(t('domains.healthcheckTriggered') || 'Health Check Triggered', {
+            description: t('domains.healthcheckTriggeredDesc') || 'Background health check has been initiated. Status will update shortly.'
+          })
+        } else {
+          toast.success(t('domains.verified') || 'Domain Verified', {
+            description: t('domains.verifiedDesc') || 'DNS configuration verified successfully.'
+          })
+        }
       }
       fetchDomains()
       onDomainsChanged?.()
@@ -462,7 +482,11 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       fetchDomains()
       onDomainsChanged?.()
     } finally {
-      setVerifyingId(null)
+      setVerifyingIds(prev => {
+        const next = { ...prev }
+        delete next[domainId]
+        return next
+      })
     }
   }
 
@@ -504,7 +528,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
               ? 'border-rose-500 group-hover:bg-rose-500'
               : 'border-primary group-hover:bg-primary'
           }`} />
-          
+
           <div className="space-y-2.5 bg-muted/20 p-4 rounded-xl border border-border/60 hover:bg-muted/30 transition-colors text-left shadow-sm">
             {/* Header: Title and Timestamp */}
             <div className="flex items-center justify-between gap-2">
@@ -631,8 +655,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             disabled={isAdding}
           />
         </div>
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={!newDomain.trim() || isAdding}
           className="gap-2 h-11 px-6 shadow-lg shadow-primary/10 transition-all hover:scale-[1.02] rounded-xl font-semibold"
         >
@@ -652,8 +676,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             const isActive = domain.status === 'active' || domain.status === 'ssl_active'
 
             return (
-              <Card 
-                key={domain.id} 
+              <Card
+                key={domain.id}
                 className={`group border-muted-foreground/10 transition-all duration-300 cursor-pointer overflow-hidden ${
                   isSelected ? 'ring-1 ring-primary/30 bg-muted/40 shadow-xl' : 'bg-muted/10 hover:bg-muted/20'
                 }`}
@@ -669,9 +693,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                         <div className="flex items-center gap-3">
                           <span className="font-bold text-base tracking-tight text-foreground">{domain.domain}</span>
                           {isActive && (
-                            <a 
-                              href={`https://${domain.domain}`} 
-                              target="_blank" 
+                            <a
+                              href={`https://${domain.domain}`}
+                              target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
                               className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all border border-transparent hover:border-primary/20"
@@ -705,30 +729,43 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                         <FileText className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">Audit Log</span>
                       </Button>
-                      {!isActive && (
+                      {isActive ? (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={(e) => handleVerifyDomain(e, domain.id)}
-                          disabled={verifyingId === domain.id}
+                          disabled={!!verifyingIds[domain.id]}
+                          className="h-8 gap-2 text-xs transition-all text-muted-foreground hover:text-primary hover:bg-primary/10 border-border"
+                          title="Trigger instant health check"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${verifyingIds[domain.id] ? 'animate-spin' : ''}`} />
+                          {verifyingIds[domain.id] ? t('domains.checking') : t('domains.checkHealth')}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => handleVerifyDomain(e, domain.id)}
+                          disabled={!!verifyingIds[domain.id]}
                           className="h-8 gap-2 text-xs transition-all text-emerald-500 border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/50"
                         >
-                          <RefreshCw className={`w-3 h-3 ${verifyingId === domain.id ? 'animate-spin' : ''}`} />
-                          {verifyingId === domain.id ? 'Verifying...' : t('common.verify')}
+                          <RefreshCw className={`w-3 h-3 ${verifyingIds[domain.id] ? 'animate-spin' : ''}`} />
+                          {verifyingIds[domain.id] ? t('domains.verifying') : t('common.verify')}
                         </Button>
                       )}
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={(e) => handleRemoveDomain(e, domain)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        style={{ cursor: 'pointer' }}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 cursor-pointer" style={{ cursor: 'pointer' }} />
                       </Button>
                     </div>
                   </div>
 
-                  <div 
+                  <div
                     className={`transition-all duration-300 ease-in-out border-t border-muted-foreground/5 bg-background/30 ${
                       isSelected ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
                     }`}
@@ -749,8 +786,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                           <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">{t('common.type')}</Label>
                           <div className="text-sm font-mono font-bold text-primary bg-primary/10 w-fit px-2.5 py-1 rounded-md border border-primary/20">CNAME</div>
                         </div>
-                        
-                        <div 
+
+                        <div
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -769,7 +806,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                           <Plus className="absolute -bottom-2 -right-2 w-12 h-12 text-primary/5 group-hover/box:text-primary/10 transition-colors rotate-12" />
                         </div>
 
-                        <div 
+                        <div
                           className="space-y-2 p-4 rounded-2xl bg-background/60 border border-border transition-all hover:bg-primary/5 hover:border-primary/30 cursor-pointer group/box relative overflow-hidden shadow-sm"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -807,7 +844,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         </div>
       )}
 
-      <ConfirmationModal 
+      <ConfirmationModal
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
         type="danger"

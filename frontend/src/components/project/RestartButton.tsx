@@ -31,14 +31,14 @@ export function RestartButton({
 }: RestartButtonProps) {
   const { t } = useTranslation()
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
-  
+
   const deployLocked = status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
   const handleRestart = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!projectId) return
-    
+
     if (deployLocked) {
       return // Can't restart while building
     }

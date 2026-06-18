@@ -61,9 +61,9 @@ func IsValidDeploymentTransition(from, to DeploymentStatus) bool {
 	case DepStatusQueued:
 		return to == DepStatusPreparing
 	case DepStatusPreparing:
-		return to == DepStatusCloning || to == DepStatusBuilding
+		return to == DepStatusCloning || to == DepStatusBuilding || to == DepStatusCompleted
 	case DepStatusCloning:
-		return to == DepStatusBuilding
+		return to == DepStatusBuilding || to == DepStatusCompleted
 	case DepStatusBuilding:
 		return to == DepStatusProvisioning || to == DepStatusStarting || to == DepStatusHealthchecking
 	case DepStatusProvisioning:

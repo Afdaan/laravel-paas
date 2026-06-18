@@ -512,18 +512,17 @@ func (r *RedisService) IsBlacklisted(token string) bool {
 
 // RateLimit checks and increments a rate limit counter
 func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) (bool, error) {
-	count, err := r.client.Get(r.ctx, key).Int()
-	if err != nil && err != redis.Nil {
+	count, err := r.client.Incr(r.ctx, key).Result()
+	if err != nil {
 		return false, err
 	}
 
-	if count >= limit {
-		return false, nil // Limit exceeded
+	if count == 1 {
+		r.client.Expire(r.ctx, key, duration)
 	}
 
-	r.client.Incr(r.ctx, key)
-	if count == 0 {
-		r.client.Expire(r.ctx, key, duration)
+	if count > int64(limit) {
+		return false, nil // Limit exceeded
 	}
 
 	return true, nil
@@ -597,6 +596,43 @@ func (r *RedisService) RemoveFromQueue(projectID uint) error {
 	return nil
 }
 
+// RemoveDeploymentJob removes a specific queued deployment job without touching newer jobs for the same project.
+func (r *RedisService) RemoveDeploymentJob(jobID string) error {
+	if jobID == "" {
+		return nil
+	}
+
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("failed to inspect deployment queue: %w", err)
+	}
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil && job.JobID == jobID {
+			if err := r.client.LRem(r.ctx, deploymentQueueKey, 1, res).Err(); err != nil {
+				return fmt.Errorf("failed to remove queued deployment job: %w", err)
+			}
+			return nil
+		}
+	}
+
+	delayedResults, err := r.client.ZRange(r.ctx, deploymentDelayedQueueKey, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("failed to inspect delayed deployment queue: %w", err)
+	}
+	for _, res := range delayedResults {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil && job.JobID == jobID {
+			if err := r.client.ZRem(r.ctx, deploymentDelayedQueueKey, res).Err(); err != nil {
+				return fmt.Errorf("failed to remove delayed deployment job: %w", err)
+			}
+			return nil
+		}
+	}
+
+	return nil
+}
+
 // RenewDeploymentLock resets the TTL of an active deployment lock verifying the unique token and updating heartbeat metadata
 func (r *RedisService) RenewDeploymentLock(projectID uint, token string, ttl time.Duration) error {
 	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
@@ -618,10 +654,34 @@ func (r *RedisService) IsDeploymentLocked(projectID uint) bool {
 	return err == nil && exists > 0
 }
 
-// PublishBuildLog streams a build log line to a Redis Pub/Sub channel
+// BuildLogMessage carries a log line with optional JobID for client-side filtering.
+type BuildLogMessage struct {
+	JobID string `json:"job_id,omitempty"`
+	Line  string `json:"line"`
+}
+
+// PublishBuildLog streams a build log line to a Redis Pub/Sub channel.
 func (r *RedisService) PublishBuildLog(projectID uint, msg string) error {
 	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
 	return r.client.Publish(r.ctx, channel, msg).Err()
+}
+
+// PublishBuildLogForJob streams a log line with JobID to filter stale events.
+func (r *RedisService) PublishBuildLogForJob(projectID uint, jobID, msg string) error {
+	if jobID == "" {
+		return r.PublishBuildLog(projectID, msg)
+	}
+
+	payload, err := json.Marshal(BuildLogMessage{
+		JobID: jobID,
+		Line:  msg,
+	})
+	if err != nil {
+		return err
+	}
+
+	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
+	return r.client.Publish(r.ctx, channel, string(payload)).Err()
 }
 
 // PublishDeploymentEvent streams a deployment lifecycle event to a Redis Pub/Sub channel
@@ -633,7 +693,7 @@ func (r *RedisService) PublishDeploymentEvent(projectID uint, eventJSON string) 
 // SubscribeBuildLogs subscribes to a build log channel and returns a Go channel of messages
 func (r *RedisService) SubscribeBuildLogs(ctx context.Context, projectID uint) (<-chan string, error) {
 	channel := fmt.Sprintf("channel:build_logs:%d", projectID)
-	sub := r.client.Subscribe(r.ctx, channel)
+	sub := r.client.Subscribe(ctx, channel)
 
 	msgChan := make(chan string, 100)
 	go func() {
@@ -662,7 +722,7 @@ func (r *RedisService) SubscribeBuildLogs(ctx context.Context, projectID uint) (
 // SubscribeDeploymentEvents subscribes to a deployment lifecycle events channel and returns a Go channel of messages
 func (r *RedisService) SubscribeDeploymentEvents(ctx context.Context, projectID uint) (<-chan string, error) {
 	channel := fmt.Sprintf("channel:deployment_events:%d", projectID)
-	sub := r.client.Subscribe(r.ctx, channel)
+	sub := r.client.Subscribe(ctx, channel)
 
 	msgChan := make(chan string, 100)
 	go func() {
@@ -1173,4 +1233,104 @@ func (r *RedisService) GetDomainMetrics() (map[string]interface{}, error) {
 		}
 	}
 	return res, nil
+}
+
+// GithubStatusPayload represents the desired commit status payload stored in Redis for eventual consistency reconciliation.
+type GithubStatusPayload struct {
+	InstallationID int64  `json:"installation_id"`
+	Owner          string `json:"owner"`
+	Repo           string `json:"repo"`
+	SHA            string `json:"sha"`
+	State          string `json:"state"`
+	TargetURL      string `json:"target_url"`
+	Description    string `json:"description"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
+// SetDesiredCommitStatus stores the latest desired GitHub commit status for a commit hash.
+func (r *RedisService) SetDesiredCommitStatus(payload *GithubStatusPayload) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	pipe := r.client.Pipeline()
+	pipe.HSet(r.ctx, "github:status:desired", payload.SHA, data)
+	pipe.SAdd(r.ctx, "github:status:sync_set", payload.SHA)
+	_, err = pipe.Exec(r.ctx)
+	return err
+}
+
+// GetPendingCommitStatusSHAs returns all commit hashes that need their status synchronized.
+func (r *RedisService) GetPendingCommitStatusSHAs() ([]string, error) {
+	return r.client.SMembers(r.ctx, "github:status:sync_set").Result()
+}
+
+// GetDesiredCommitStatus retrieves the desired status for a specific commit hash.
+func (r *RedisService) GetDesiredCommitStatus(sha string) (*GithubStatusPayload, error) {
+	data, err := r.client.HGet(r.ctx, "github:status:desired", sha).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	var payload GithubStatusPayload
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+// RemoveCommitStatusSync removes a commit hash from the sync set and deletes its desired status.
+func (r *RedisService) RemoveCommitStatusSync(sha string) error {
+	pipe := r.client.Pipeline()
+	pipe.HDel(r.ctx, "github:status:desired", sha)
+	pipe.SRem(r.ctx, "github:status:sync_set", sha)
+	_, err := pipe.Exec(r.ctx)
+	return err
+}
+
+// RemoveCommitStatusSyncIfMatched transactionally removes a commit hash from the sync set only if the stored payload's CreatedAt timestamp matches.
+func (r *RedisService) RemoveCommitStatusSyncIfMatched(sha string, createdAt int64) (bool, error) {
+	keyDesired := "github:status:desired"
+	keySet := "github:status:sync_set"
+
+	txf := func(tx *redis.Tx) error {
+		data, err := tx.HGet(r.ctx, keyDesired, sha).Result()
+		if err == redis.Nil {
+			_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+				pipe.SRem(r.ctx, keySet, sha)
+				return nil
+			})
+			return err
+		} else if err != nil {
+			return err
+		}
+
+		var payload GithubStatusPayload
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+				pipe.HDel(r.ctx, keyDesired, sha)
+				pipe.SRem(r.ctx, keySet, sha)
+				return nil
+			})
+			return err
+		}
+
+		if payload.CreatedAt == createdAt {
+			_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+				pipe.HDel(r.ctx, keyDesired, sha)
+				pipe.SRem(r.ctx, keySet, sha)
+				return nil
+			})
+			return err
+		}
+
+		return nil
+	}
+
+	err := r.client.Watch(r.ctx, txf, keyDesired)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

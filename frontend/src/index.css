@@ -130,8 +130,8 @@
 
   /* Autofill styling */
   input:-webkit-autofill,
-  input:-webkit-autofill:hover, 
-  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
   input:-webkit-autofill:active{
       -webkit-background-clip: text;
       -webkit-text-fill-color: var(--foreground);
@@ -156,33 +156,33 @@
     @apply translate-y-[-1px] transition-transform duration-300 ease-out;
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1));
   }
-  
+
   button:active svg {
     @apply translate-y-0 scale-95;
   }
 }
 
 /* Global scrollbar */
-* {
+:root {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
-*::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-*::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
 
-*::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 10px;
 }
 
-*::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
 
@@ -197,4 +197,58 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Optimize scroll containers for native performance, touchpads, and touch devices */
+.overflow-x-auto,
+.overflow-y-auto,
+.overflow-x-scroll,
+.overflow-y-scroll,
+.overflow-auto,
+.scrollbar-thin {
+  scroll-behavior: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent horizontal scroll-chaining (like browser history swipe gestures) on horizontal containers */
+.overflow-x-auto,
+.overflow-x-scroll,
+.overflow-auto {
+  overscroll-behavior-x: contain;
+}
+
+/* Force Sonner toaster container to center precisely at viewport midpoint */
+[data-sonner-toaster][data-x-position="center"] {
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+/* Ensure individual toasts center within the toaster container */
+[data-sonner-toast] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Fix spacing between Sonner icon and text */
+[data-sonner-toast] [data-icon] {
+  margin-right: 14px !important;
+}
+
+/* Align close button to the middle right of the toast (vertically centered) */
+[data-sonner-toast] [data-close-button] {
+  position: absolute !important;
+  top: 50% !important;
+  right: 16px !important;
+  left: auto !important;
+  transform: translateY(-50%) !important;
+}
+
+/* Allow Sonner toast titles to wrap and break properly for long text */
+[data-sonner-toast] [data-title] {
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: 1.4 !important;
 }

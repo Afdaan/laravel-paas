@@ -8,13 +8,13 @@ import useTranslation from '../../lib/useTranslation'
 import { systemAPI } from '../../services/api'
 import { toast } from 'sonner'
 import ConfirmationModal from '../../components/ConfirmationModal'
-import { 
-  RefreshCw, 
-  Cpu, 
-  HardDrive, 
-  Box, 
-  Image as ImageIcon, 
-  Network, 
+import {
+  RefreshCw,
+  Cpu,
+  HardDrive,
+  Box,
+  Image as ImageIcon,
+  Network,
   Layers,
   Activity,
   ShieldAlert,
@@ -147,27 +147,27 @@ const AdminDashboard = () => {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500 pb-10">
-      <Header 
+      <Header
         t={t}
-        onRefresh={fetchData} 
-        onPrune={handlePrune} 
-        isPruning={isPruning} 
+        onRefresh={fetchData}
+        onPrune={handlePrune}
+        isPruning={isPruning}
       />
-      
-      <SystemOverview 
+
+      <SystemOverview
         t={t}
-        system={system} 
-        containers={containers} 
-        images={images} 
-        networks={networks} 
-        volumes={volumes} 
-        formatBytes={formatBytes} 
+        system={system}
+        containers={containers}
+        images={images}
+        networks={networks}
+        volumes={volumes}
+        formatBytes={formatBytes}
       />
-      
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <ResourceTable 
+        <ResourceTable
           t={t}
-          title={t('admin.liveWorkload')} 
+          title={t('admin.liveWorkload')}
           subtitle={t('admin.activeRunning')}
           icon={Box}
           data={containers}
@@ -175,9 +175,9 @@ const AdminDashboard = () => {
           viewAllPath="/admin/containers"
         />
 
-        <ResourceTable 
+        <ResourceTable
           t={t}
-          title={t('admin.localImage')} 
+          title={t('admin.localImage')}
           subtitle={t('admin.cachedDocker')}
           icon={ImageIcon}
           data={images}
@@ -186,7 +186,7 @@ const AdminDashboard = () => {
         />
       </div>
 
-      <ConfirmationModal 
+      <ConfirmationModal
         isOpen={isPruneModalOpen}
         onClose={() => setIsPruneModalOpen(false)}
         onConfirm={confirmPrune}
@@ -219,7 +219,7 @@ const Header = memo(({ t, onRefresh, onPrune, isPruning }: HeaderProps) => (
         {t('admin.adminDesc')}
       </p>
     </div>
-    
+
     <div className="flex items-center gap-2">
       <Button variant="outline" size="sm" className="h-8 text-xs px-3" onClick={onRefresh}>
         <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
@@ -245,44 +245,44 @@ interface SystemOverviewProps {
 
 const SystemOverview = memo(({ t, system, containers, images, networks, volumes, formatBytes }: SystemOverviewProps) => {
   const memUsage = system ? (system.memory_used / system.memory_total) * 100 : 0
-  
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <StatCard 
-        title={t('admin.cpuLoad')} 
+      <StatCard
+        title={t('admin.cpuLoad')}
         value={`${(system?.cpu_usage || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
         detail={t('admin.cpuCoresDetail', { count: system?.cpu_cores || 1 })}
         progress={Math.min(system?.cpu_usage || 0, 100)}
         icon={Cpu}
       />
 
-      <StatCard 
-        title={t('admin.computeRam')} 
+      <StatCard
+        title={t('admin.computeRam')}
         value={formatBytes(system?.memory_used || 0)}
         detail={t('admin.ofTotal', { total: formatBytes(system?.memory_total || 0) })}
         progress={memUsage}
         icon={Activity}
       />
 
-      <StatCard 
-        title={t('admin.systemResources')} 
+      <StatCard
+        title={t('admin.systemResources')}
         value={(images?.length || 0) + (containers?.length || 0)}
-        detail={t('admin.resourcesDetail', { 
-          containers: containers?.length || 0, 
-          images: images?.length || 0 
+        detail={t('admin.resourcesDetail', {
+          containers: containers?.length || 0,
+          images: images?.length || 0
         })}
         progress={100}
         icon={Layers}
       />
-      
+
       <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SmallStat icon={Network} label={t('common.networks')} value={networks?.length || 0} />
         <SmallStat icon={HardDrive} label={t('common.volumes')} value={volumes?.length || 0} />
         <SmallStat icon={Globe} label={t('admin.system.os')} value={simplifyOS(system?.os)} />
-        <SmallStat 
-          icon={system?.is_docker ? Box : Server} 
-          label={t('admin.system.mode')} 
-          value={system?.is_docker ? 'Docker' : 'Bare Metal'} 
+        <SmallStat
+          icon={system?.is_docker ? Box : Server}
+          label={t('admin.system.mode')}
+          value={system?.is_docker ? 'Docker' : 'Bare Metal'}
           badge={system?.is_docker ? 'Virtual' : 'Host'}
         />
       </div>
@@ -301,7 +301,7 @@ interface StatCardProps {
 const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps) => {
   let displayValue = value;
   let displayUnit = "";
-  
+
   if (typeof value === 'string') {
     const match = value.match(/^([\d.,]+)\s*([a-zA-Z%]+)$/);
     if (match) {
@@ -327,8 +327,8 @@ const StatCard = ({ title, value, detail, progress, icon: Icon }: StatCardProps)
           <p className="text-[10px] font-medium text-muted-foreground/60 ml-auto bg-muted/30 px-2 py-0.5 rounded-full">{detail}</p>
         </div>
         <div className="h-2 w-full bg-secondary/30 rounded-full overflow-hidden mt-4 p-0.5">
-          <div 
-            className="h-full rounded-full bg-gradient-to-r from-primary/80 via-primary to-primary shadow-[0_0_8px_rgba(var(--primary),0.4)] transition-all duration-1000 ease-in-out" 
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-primary/80 via-primary to-primary shadow-[0_0_8px_rgba(var(--primary),0.4)] transition-all duration-1000 ease-in-out"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -450,10 +450,10 @@ const ContainerTableBody = memo(({ data, t }: { data: DockerContainer[], t: (key
           </TableCell>
           <TableCell className="text-center align-middle py-2">
             <div className="flex items-center justify-center">
-              <Badge 
-                variant="outline" 
-                className={c.state === 'running' 
-                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-transparent uppercase" 
+              <Badge
+                variant="outline"
+                className={c.state === 'running'
+                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-transparent uppercase"
                   : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-muted text-muted-foreground border-transparent uppercase"}
               >
                 {c.state === 'running' ? t('status.running') : (c.state === 'exited' ? t('status.stopped') : c.state)}
@@ -503,10 +503,10 @@ const ImageTableBody = memo(({ data, t }: { data: DockerImage[], t: (key: string
           </TableCell>
           <TableCell className="text-center align-middle py-2">
             <div className="flex items-center justify-center">
-              <Badge 
-                variant="outline" 
-                className={img.status === 'In Use' 
-                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-transparent uppercase" 
+              <Badge
+                variant="outline"
+                className={img.status === 'In Use'
+                  ? "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-transparent uppercase"
                   : "h-[22px] px-2.5 tracking-tight text-[10px] font-semibold rounded-full bg-muted text-muted-foreground border-transparent uppercase"}
               >
                 {img.status === 'In Use' ? t('status.inUse') : img.status}

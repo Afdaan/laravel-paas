@@ -10,12 +10,11 @@ func (s *ProjectService) ExecCommand(project *models.Project, command string) (s
 }
 
 // GetEnv reads the .env file from the project storage
-func (s *ProjectService) GetEnv(subdomain string) (string, error) {
-	return s.storageService.GetEnvFile(subdomain)
+func (s *ProjectService) GetEnv(userID uint, subdomain string) (string, error) {
+	return s.storageService.GetEnvFile(userID, subdomain)
 }
 
 // SaveEnv saves the .env file to the project storage
-func (s *ProjectService) SaveEnv(subdomain string, content string) error {
-	return s.storageService.SaveEnvFile(subdomain, content)
+func (s *ProjectService) SaveEnv(userID uint, subdomain string, content string) error {
+	return s.storageService.SaveEnvFile(userID, subdomain, content)
 }
-

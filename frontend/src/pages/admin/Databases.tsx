@@ -61,7 +61,7 @@ const AdminDatabases = () => {
   const [databases, setDatabases] = useState<AdminDatabaseInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
-  
+
   // Pagination
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
@@ -82,7 +82,7 @@ const AdminDatabases = () => {
     fetchDatabases()
   }, [fetchDatabases])
 
-  const filteredDatabases = databases.filter(db => 
+  const filteredDatabases = databases.filter(db =>
     db.project_name.toLowerCase().includes(search.toLowerCase()) ||
     db.database_name.toLowerCase().includes(search.toLowerCase()) ||
     db.user_name.toLowerCase().includes(search.toLowerCase())
@@ -131,13 +131,13 @@ const AdminDatabases = () => {
                 className="pl-9 h-10 bg-background/50 border-border"
               />
             </div>
- 
+
             <Button variant="outline" size="icon" onClick={fetchDatabases} disabled={isLoading} className="h-10 w-10 border-border/50 bg-background/50">
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </CardHeader>
- 
+
         <CardContent className="p-0">
           <div className="overflow-x-auto">
           <Table className="min-w-[1080px]">
@@ -243,10 +243,10 @@ const AdminDatabases = () => {
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
                 <Info className="w-4 h-4 text-primary" />
-                {t('admin.databases.summary', { 
+                {t('admin.databases.summary', {
                   start: (page - 1) * limit + 1,
                   end: Math.min(page * limit, total),
-                  total: total 
+                  total: total
                 })}
               </div>
               <div className="flex items-center space-x-2">
@@ -264,7 +264,8 @@ const AdminDatabases = () => {
                   <SelectContent
                     side="top"
                     align="end"
-                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                    alignItemWithTrigger={false}
+                    className="min-w-[120px] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-[220px]"
                   >
                     {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
                       <SelectItem

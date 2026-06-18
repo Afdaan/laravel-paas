@@ -55,25 +55,25 @@ interface ImportResults {
  */
 const formatTimeAgo = (dateStr: string | undefined, t: (key: string, data?: Record<string, string | number>) => string) => {
   if (!dateStr) return '-'
-  
+
   const date = new Date(dateStr)
   const now = new Date()
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-  
+
   if (diffInSeconds < 60) return t('common.justNow')
-  
+
   if (diffInSeconds < 3600) {
     return t('admin.users.minutesAgo', { count: Math.floor(diffInSeconds / 60) })
   }
-  
+
   if (diffInSeconds < 86400) {
     return t('admin.users.hoursAgo', { count: Math.floor(diffInSeconds / 3600) })
   }
-  
+
   if (diffInSeconds < 2592000) {
     return t('admin.users.daysAgo', { count: Math.floor(diffInSeconds / 86400) })
   }
-  
+
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
@@ -163,9 +163,8 @@ const AdminUsers = () => {
 
   const handleLoginAs = async (id: number) => {
     try {
-      const response = await usersAPI.loginAs(id)
-      const { token } = response.data
-      await loginAsClient(token)
+      await usersAPI.loginAs(id)
+      await loginAsClient()
       toast.success('Successfully logged in as user')
       navigate('/dashboard')
     } catch (error: unknown) {
@@ -304,7 +303,7 @@ const AdminUsers = () => {
               <SelectTrigger className={'w-full'}>
                 <SelectValue placeholder={t('admin.users.allAccess')} />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
                 <SelectItem value="all">{t('admin.users.allAccess')}</SelectItem>
                 <SelectItem value="user">{t('admin.users.level1')}</SelectItem>
                 <SelectItem value="admin">{t('admin.users.level2')}</SelectItem>
@@ -375,8 +374,8 @@ const AdminUsers = () => {
                   <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-2 text-xs font-semibold">
                       <div className={`w-2 h-2 rounded-full ${
-                        user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) 
-                        ? 'bg-emerald-500 animate-pulse' 
+                        user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000)
+                        ? 'bg-emerald-500 animate-pulse'
                         : 'bg-slate-300'
                       }`} />
                       <span className={user.last_activity && (new Date().getTime() - new Date(user.last_activity).getTime() < 300000) ? 'text-emerald-600' : 'text-slate-500'}>
@@ -456,7 +455,8 @@ const AdminUsers = () => {
                   <SelectContent
                     side="top"
                     align="end"
-                    className="min-w-[120px] max-h-[220px] rounded-lg p-1 shadow-lg"
+                    alignItemWithTrigger={false}
+                    className="min-w-[120px] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72"
                   >
                     {[10, 15, 20, 25, 30, 40, 50, 75, 100].map((pageSize) => (
                       <SelectItem

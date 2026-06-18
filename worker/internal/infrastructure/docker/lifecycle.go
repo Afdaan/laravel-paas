@@ -13,6 +13,17 @@ import (
 	"github.com/laravel-paas/shared/pkg/utils"
 )
 
+var (
+	rxDockerDaemonErr     = regexp.MustCompile(`(?s)docker: Error response from daemon: `)
+	rxDockerSeeHelp       = regexp.MustCompile(`(?s)See 'docker run --help'.*`)
+	rxDockerRunHelp       = regexp.MustCompile(`(?s)Run 'docker run --help'.*`)
+	rxPaasImageWithHash   = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:[a-f0-9]+`)
+	rxPaasImageWithLatest = regexp.MustCompile(`paas-[a-zA-Z0-9-]+:latest`)
+	rxPaasImageBase       = regexp.MustCompile(`paas-[a-zA-Z0-9-]+`)
+	rxStorageProjectsPath = regexp.MustCompile(`/[a-zA-Z0-9_-]+/storage/projects/[a-zA-Z0-9_-]+`)
+	rxStorageAppPath      = regexp.MustCompile(`/[a-zA-Z0-9_-]+/storage/app/[a-zA-Z0-9_-]+`)
+)
+
 // StartWorkerContainer starts a secondary container for background tasks.
 // Architectural Note on Multi-Tenant Isolation:
 // To prevent noisy-neighbor attacks and privilege escalation across tenant containers,
@@ -34,7 +45,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--memory-swap", memoryLimit,
 		"--security-opt=no-new-privileges:true",
 		"--pids-limit=250",
-		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
+		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
 
 		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
 		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
@@ -51,9 +62,15 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 	// Append custom worker command
 	runArgs = append(runArgs, "sh", "-c", project.WorkerCommand)
 
-	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
+	res, err := utils.Run(3*time.Minute, "docker", runArgs...)
 	if err != nil {
-		return "", fmt.Errorf("worker start failed: %s", res.Stderr)
+		errMsg := res.Stderr
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		cleanedErr := sanitizeDockerRunError(errMsg)
+		cleanedErr = strings.TrimPrefix(cleanedErr, "failed to start container: ")
+		return "", fmt.Errorf("worker start failed: %s", cleanedErr)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
@@ -63,7 +80,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 // and returns only the lines that are actionable by the end user using regex error classifiers.
 func sanitizeBuildError(stderr string) string {
 	lines := strings.Split(stderr, "\n")
-	
+
 	// Define actionable error patterns
 	patterns := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\[vite\]:\s*Rollup\s*failed`),
@@ -89,7 +106,7 @@ func sanitizeBuildError(stderr string) string {
 				if end >= len(lines) {
 					end = len(lines) - 1
 				}
-				
+
 				var contextLines []string
 				for idx := start; idx <= end; idx++ {
 					trimmed := strings.TrimSpace(lines[idx])
@@ -150,8 +167,8 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	if project.LastCommitHash != "" {
 		tagToCheck := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
-		checkImg, _ := exec.Command("docker", "image", "inspect", tagToCheck).Output()
-		if len(checkImg) > 0 {
+		checkImg, err := exec.Command("docker", "image", "inspect", tagToCheck).Output()
+		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			imageName = tagToCheck
 			slog.Info("Using specific commit tag image for startup", "tag", tagToCheck)
 		}
@@ -190,7 +207,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--pids-limit=250",
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
-		"--env-file", filepath.Join(s.cfg.ProjectsPath, project.Subdomain, ".env"),
+		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
 
 		"--label", "traefik.enable=true",
 		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
@@ -207,9 +224,13 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		imageName,
 	}
 
-	res, err := utils.Run(1*time.Minute, "docker", runArgs...)
+	res, err := utils.Run(3*time.Minute, "docker", runArgs...)
 	if err != nil {
-		return "", fmt.Errorf("failed to start container: %s", res.Stderr)
+		errMsg := res.Stderr
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("%s", sanitizeDockerRunError(errMsg))
 	}
 
 	mainContainerID := strings.TrimSpace(res.Stdout)
@@ -287,8 +308,6 @@ func (s *DockerService) IsContainerHealthy(containerID string) bool {
 	return status == "healthy"
 }
 
-
-
 // parseArtisanMigrationCommand deterministically inspects an artisan command string.
 // If the command is an operational database migration or seed command, it enforces non-interactive and force execution flags.
 func parseArtisanMigrationCommand(cmdStr string) string {
@@ -316,6 +335,56 @@ func parseArtisanMigrationCommand(cmdStr string) string {
 		result += " --force"
 	}
 	return result
+}
+
+// RunMigrations runs `php artisan migrate --force --no-interaction` inside a specific container.
+// Unlike ExecProjectCommand which uses the project's current ContainerID, this method targets
+// a specific container (typically a rollout container that hasn't been promoted yet).
+// Returns the combined stdout+stderr output and any error encountered.
+func (s *DockerService) RunMigrations(containerID string) (string, error) {
+	if containerID == "" {
+		return "", fmt.Errorf("container ID is empty")
+	}
+
+	// Detect the correct user to run artisan commands as
+	user := "root"
+	if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
+		user = "www-data"
+
+		// Fix permissions before running as www-data to prevent storage/cache write errors
+		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", "www-data:www-data", "storage", "bootstrap/cache"); err != nil {
+			slog.Warn("Failed to fix permissions before migration", "containerID", containerID, "error", err, "stderr", res.Stderr)
+		}
+	}
+
+	// Check if --isolated flag is supported by artisan (Laravel 9+)
+	useIsolated := false
+	if helpRes, errHelp := utils.Run(5*time.Second, "docker", "exec", containerID, "php", "artisan", "migrate", "--help"); errHelp == nil {
+		if strings.Contains(helpRes.Stdout, "--isolated") {
+			useIsolated = true
+			slog.Info("Detected Laravel 9+ with migration isolation support. Appending --isolated flag.", "containerID", containerID)
+		}
+	}
+
+	// Build the migration command arguments
+	migrationArgs := []string{"exec", "-u", user, containerID, "php", "artisan", "migrate", "--force", "--no-interaction"}
+	if useIsolated {
+		migrationArgs = append(migrationArgs, "--isolated")
+	}
+
+	// Run artisan migrate
+	// 5-minute timeout accommodates large migrations but prevents indefinite hangs
+	res, err := utils.Run(5*time.Minute, "docker", migrationArgs...)
+
+	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
+	if err != nil {
+		if output == "" {
+			output = "Migration command failed with no output"
+		}
+		return output, fmt.Errorf("migration failed: %w", err)
+	}
+
+	return output, nil
 }
 
 // ExecProjectCommand runs commands inside container (artisan for Laravel, direct binary execution for others)
@@ -382,4 +451,42 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 	}
 
 	return output, nil
+}
+
+// sanitizeDockerRunError refines raw Docker daemon execution errors to prevent infrastructure leakage.
+func sanitizeDockerRunError(stderr string) string {
+	if stderr == "" {
+		return "failed to start application container"
+	}
+
+	// 1. Image not found / pull denied (broken / missing image tag)
+	if strings.Contains(stderr, "Unable to find image") || strings.Contains(stderr, "pull access denied") || strings.Contains(stderr, "repository does not exist") {
+		return "failed to start container: application build image not found. Please trigger a new clean build first."
+	}
+
+	// 2. Port collision
+	if strings.Contains(stderr, "port is already allocated") || strings.Contains(stderr, "address already in use") {
+		return "failed to start container: network port collision detected."
+	}
+
+	// 3. Clean up generic docker prefix and help suffix
+	cleaned := stderr
+	cleaned = rxDockerDaemonErr.ReplaceAllString(cleaned, "")
+	cleaned = rxDockerSeeHelp.ReplaceAllString(cleaned, "")
+	cleaned = rxDockerRunHelp.ReplaceAllString(cleaned, "")
+
+	// Strip absolute storage paths to prevent internal host directory disclosure
+	cleaned = rxStorageProjectsPath.ReplaceAllString(cleaned, "project-storage")
+	cleaned = rxStorageAppPath.ReplaceAllString(cleaned, "project-storage")
+
+	// Strip internal image name tag leaks if any (e.g. paas-porttofolio-hcn5qa:latest)
+	cleaned = rxPaasImageWithHash.ReplaceAllString(cleaned, "application-image")
+	cleaned = rxPaasImageWithLatest.ReplaceAllString(cleaned, "application-image")
+	cleaned = rxPaasImageBase.ReplaceAllString(cleaned, "application-image")
+
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return "failed to start container: internal daemon execution error"
+	}
+	return "failed to start container: " + cleaned
 }

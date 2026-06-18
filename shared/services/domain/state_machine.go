@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	domainAgg "github.com/laravel-paas/shared/domain"
-	pkgMetrics "github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/models"
+	pkgMetrics "github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/repository"
 )
 

@@ -6,12 +6,20 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
 )
+
+type distributedRateLimiter interface {
+	RateLimit(key string, limit int, duration time.Duration) (bool, error)
+}
 
 // RateLimiter implements a sliding window rate limiter
 type RateLimiter struct {
@@ -87,14 +95,56 @@ var (
 )
 
 // RateLimitLogin applies rate limiting to login endpoint
-func RateLimitLogin() fiber.Handler {
+func RateLimitLogin(redis distributedRateLimiter) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ip := c.IP()
-		if !loginLimiter.Allow(ip) {
+
+		var req struct {
+			Email string `json:"email"`
+		}
+		_ = c.BodyParser(&req)
+
+		emailHash := hashRateLimitPart(req.Email)
+		keys := []string{
+			"auth:login:ip:" + ip,
+		}
+		if emailHash != "" {
+			keys = append(keys, "auth:login:email:"+emailHash, "auth:login:ip-email:"+ip+":"+emailHash)
+		}
+
+		if redis != nil {
+			for _, key := range keys {
+				allowed, err := redis.RateLimit(key, 5, time.Minute)
+				if err != nil {
+					slog.Warn("Redis login rate limit failed; falling back to local limiter", "error", err)
+					break
+				}
+				if !allowed {
+					return apperr.New(429, "RATE_LIMITED", "Too many login attempts. Please try again later")
+				}
+			}
+			return c.Next()
+		}
+
+		if !loginLimiter.Allow(ip + ":" + emailHash) {
 			return apperr.New(429, "RATE_LIMITED", "Too many login attempts. Please try again later")
 		}
 		return c.Next()
 	}
+}
+
+func hashRateLimitPart(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return ""
+	}
+
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:])
 }
 
 // RateLimitQuery applies rate limiting to database query endpoint

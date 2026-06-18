@@ -48,6 +48,9 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 4. Hide Laravel specific progress dots (the long lines of dots in package discovery)
 			regexp.MustCompile(`\[90m\.`),
 
+			// 4.5 Hide progress bars that output excessive carriage returns (pip, npm, curl)
+			regexp.MustCompile(`(━━━━━━━━━━━━━━━━━━━━|\[[=->]{5,}\]|\s+[0-9.]+/[0-9.]+\s(MB|kB|B)\s|ETA\s+0:0|100%\s+\|\s*█)`),
+
 			// 5. Hide Railpack branding, metadata headers, and ALL step commands
 			regexp.MustCompile(`(INFO No package manager|╭─|│ Railpack|╰─|⚠ The config|↳ Output directory|  Packages|  ──────────)`),
 			// Hide Railpack package table rows (node, caddy, bun, python, go, etc.)
@@ -57,6 +60,12 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^\s+\$\s+[a-z]+\s+(run\s+(dev|start|serve|watch|preview)|test|lint|format)\s`),
 			// Hide build steps
 			regexp.MustCompile(`^\s*(↳|▸|Steps)`),
+			// Hide Railpack start command warnings and configuration instructions
+			regexp.MustCompile(`(?i)(no start command detected|specify a start command|to configure your start command|railpack will check)`),
+			regexp.MustCompile(`(?i)(a "start" script in your package\.json|a "main" field in your package\.json|an index\.js or index\.ts file in your project root)`),
+			regexp.MustCompile(`(?i)(if you have a static site, you can set the RAILPACK_SPA_OUTPUT_DIR|containing the directory of your built static files)`),
+			regexp.MustCompile(`(?i)(^\s*"scripts":\s*\{\s*$|^\s*"start":\s*"node\s+index\.js"\s*$|^\s*\}\s*$)`),
+			regexp.MustCompile(`(?i)(^\s*"main":\s*"src/server\.js"\s*$)`),
 
 			// 6. Hide final Docker metadata (Except the build time which we will transform)
 			regexp.MustCompile(`(Loaded image:|Run with \x60docker run)`),
@@ -80,6 +89,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 
 			// 11. Hide pip / Python build noise
 			regexp.MustCompile(`(Collecting |Requirement already satisfied|Successfully installed|Using cached|Downloading .+\.whl|Building wheel for|Created wheel for)`),
+			regexp.MustCompile(`(Downloading .+tar\.gz|Installing build dependencies:|Getting requirements to build wheel:|Installing backend dependencies:|Rust not found, installing|Python reports SOABI:|Computed rustc target|Installation directory:|Rustup already downloaded|Installing rust to|warn: It looks like you have|warn: \/root\/\.cache\/|warn: Rustup will install|warn: instead of the one inferred|info: profile set to|info: setting default host triple|warn: Updating existing toolchain|info: syncing channel updates|info: default toolchain set to|Checking if cargo is installed|Running \x60maturin|📦 Including license|🍹 Building a mixed python/rust|🐍 Found CPython|🔗 Found pyo3|📡 Using build options|Compiling [a-zA-Z0-9_\-]+ v[0-9.]+|cargo:rustc-cfg=|cargo:rerun-if-changed=|error: failed-wheel-build-for-install|Failed to build installable wheels)`),
+			regexp.MustCompile(`(process didn't exit successfully:|thread 'main' panicked at|note: run with \x60RUST_BACKTRACE=1\x60|warning: build failed, waiting for other jobs|💥 maturin failed|Caused by:|Cargo build finished with|Error: command .* returned non-zero|ERROR: Failed building wheel)`),
 
 			// 12. Hide Go module noise
 			regexp.MustCompile(`(go: downloading |go: finding |go: extracting )`),
@@ -153,7 +164,10 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^\s*transformed\.\s*$`),
 
 			// 22. Hide internal env vars but ALLOW package manager summaries
-			regexp.MustCompile(`(NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
+			regexp.MustCompile(`(RAILPACK_|NIXPACKS_|PAAS_|NPM_CONFIG_|NODE_ENV=)`),
+
+			// 24. Hide npm warn config (e.g. npm warn config production) which occurs outside docker buildkit
+			regexp.MustCompile(`npm warn config (production|global|only|\[redacted\])`),
 		},
 		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
@@ -174,6 +188,10 @@ var buildTransformations = []logTransformation{
 	{regexp.MustCompile(`^\s*\$\s*(bundle|rake|gem)\s+(install|exec)\b.*`), "> $1 $2"},
 	// Hide any remaining $ commands that weren't transformed (infrastructure noise)
 	{regexp.MustCompile(`^\s*\$\s+.+`), ""},
+
+	// Transform Python/Rust build errors
+	{regexp.MustCompile(`^error:\s+subprocess-exited-with-error`), ">> Dependency build failed"},
+	{regexp.MustCompile(`^error:\s+failed to run custom build command for\s+\x60(.+)\x60`), ">> Failed to compile native extension for $1"},
 
 	// Transform progress indicators
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(install|download|extracting).*`), "Installing dependencies..."},
@@ -197,27 +215,19 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 
 	// Process the buffer
 	for {
-		// Find next separator (\n or \r)
+		// Find next complete line (\n)
 		idxN := strings.Index(r.buf, "\n")
-		idxR := strings.Index(r.buf, "\r")
-
-		var idx int
-		var sepLen int
-
-		if idxN == -1 && idxR == -1 {
+		if idxN == -1 {
 			break // No more complete lines
 		}
 
-		if idxN != -1 && (idxR == -1 || idxN < idxR) {
-			idx = idxN
-			sepLen = 1
-		} else {
-			idx = idxR
-			sepLen = 1
-		}
+		line := r.buf[:idxN]
+		r.buf = r.buf[idxN+1:]
 
-		line := r.buf[:idx]
-		r.buf = r.buf[idx+sepLen:]
+		// Simulate terminal \r overwrite by only keeping the last segment
+		if lastCR := strings.LastIndex(line, "\r"); lastCR != -1 {
+			line = line[lastCR+1:]
+		}
 
 		shouldHide := false
 		for _, pattern := range r.hidePatterns {

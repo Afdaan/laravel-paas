@@ -10,11 +10,11 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/nginx"
 	"github.com/laravel-paas/shared/models"
-	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/traefik"
+	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/services/deployment"
 	"github.com/laravel-paas/shared/services/setting"
-	"github.com/laravel-paas/shared/pkg/traefik"
 	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 )
 
@@ -108,16 +108,10 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		slog.Warn("Failed to remove docker image", "subdomain", project.Subdomain, "error", err)
 	}
 
-	// Drop User Database
-	if project.DatabaseName != "" {
-		slog.Debug("Dropping database", "db", project.DatabaseName)
-		if err := s.mysqlService.DropDatabase(project.DatabaseName); err != nil {
-			slog.Warn("Failed to drop database, might be already gone", "db", project.DatabaseName, "error", err)
-		}
-	}
+	// Managed databases are detached by the repository rather than deleted/dropped.
 
-	// Cleanup Filesystem (Source Code & Persistent Data)
-	if err := s.dockerService.CleanupProject(project.Subdomain); err != nil {
+	// CleanupFilesystem (Source Code & Persistent Data)
+	if err := s.dockerService.CleanupProject(project.UserID, project.Subdomain); err != nil {
 		slog.Warn("Failed to cleanup project filesystem", "subdomain", project.Subdomain, "error", err)
 	}
 	s.storageService.CleanupPersistentData(project)
@@ -213,13 +207,17 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 	return hash, nil
 }
 
-func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) error {
+func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, logFunc func(string)) error {
+	if logFunc == nil {
+		logFunc = func(string) {}
+	}
 	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 
 	if project.ContainerID == nil || *project.ContainerID == "" {
 		return nil
 	}
 
+	logFunc(">> Initiating application transition...")
 	slog.Info("Executing zero-downtime container recreation with health guard",
 		"subdomain", project.Subdomain,
 		"projectId", project.ID)
@@ -227,23 +225,31 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 	oldWebID := *project.ContainerID
 	oldWorkerID := project.WorkerContainerID
 
+	logFunc(">> Starting new application instance...")
 	newID, err := s.dockerService.StartExistingImage(project, projectDomain)
 	if err != nil {
+		logFunc("✗ Failed to start new application instance: " + err.Error())
 		slog.Error("Failed to start new container during recreation", "subdomain", project.Subdomain, "error", err)
 		return err
 	}
+	logFunc("✓ New application instance started.")
 
 	_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 		"rollout_container_id": newID,
 	})
 
+	logFunc("")
+	logFunc(">> Running application health checks...")
 	// Run Advanced 2-step Healthcheck with timeout context
 	hcCtx, hcCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer hcCancel()
 
-	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID); err != nil {
+	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID, logFunc); err != nil {
+		logFunc("✗ Health checks failed. Rolling back configuration changes...")
 		slog.Error("New container failed advanced healthcheck, rolling back", "subdomain", project.Subdomain, "newID", newID, "error", err)
 
+		logFunc("")
+		logFunc(">> Rolling back release...")
 		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
 		}
@@ -253,24 +259,38 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project) er
 
 		return fmt.Errorf("recreation failed: %w", err)
 	}
+	logFunc("✓ Health checks passed successfully.")
 
+	logFunc("")
+	logFunc(">> Swapping application routing...")
 	if err := s.PromoteRolloutContainer(project.ID, newID); err != nil {
+		logFunc("✗ Failed to route traffic to the new instance: " + err.Error())
 		slog.Error("Failed to promote rollout container during recreation", "id", project.ID, "error", err)
+	} else {
+		logFunc("✓ Application routing updated successfully.")
 	}
 	project.ContainerID = &newID
 	project.RolloutContainerID = nil
 
 	time.Sleep(2 * time.Second)
 
+	logFunc("")
+	logFunc(">> Cleaning up legacy resources...")
 	slog.Info("Cleaning up legacy containers",
 		"subdomain", project.Subdomain,
 		"oldWebID", oldWebID)
 
 	if err := s.dockerService.RemoveContainer(oldWebID, oldWorkerID); err != nil {
+		logFunc("✗ Failed to prune legacy resources: " + err.Error())
 		slog.Warn("Failed to remove old containers after successful swap", "error", err)
+	} else {
+		logFunc("✓ Legacy resources cleaned up.")
 	}
 
 	s.dockerService.CleanupLegacyContainers(project.Subdomain, newID, project.WorkerContainerID)
+
+	logFunc("")
+	logFunc("✓ Transition completed.")
 
 	return nil
 }
@@ -290,5 +310,3 @@ func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error) {
 	return s.nginxService.GetSSLStatus(domain)
 }
-
-

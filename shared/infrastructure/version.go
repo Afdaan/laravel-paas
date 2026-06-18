@@ -100,14 +100,14 @@ func (s *VersionService) DetectNodeVersion(projectPath string) (string, error) {
 	}
 
 	if pkg.Engines.Node != "" {
-		re := regexp.MustCompile(`(\d+(\.\d+)?)`)
+		re := regexp.MustCompile(`(\d+)`)
 		matches := re.FindStringSubmatch(pkg.Engines.Node)
 		if len(matches) > 0 {
 			return matches[0], nil
 		}
 	}
 
-	return "20", nil // Default to Node.js 20
+	return "", nil // No explicit version detected
 }
 
 // DetectGoVersion reads go.mod to detect the Go version
@@ -133,7 +133,7 @@ func (s *VersionService) DetectGoVersion(projectPath string) (string, error) {
 		return matches[1], nil
 	}
 
-	return "1.22", nil // Default to Go 1.22
+	return "", nil // No explicit version detected
 }
 
 // DetectPythonVersion attempts to find Python version
@@ -148,7 +148,7 @@ func (s *VersionService) DetectPythonVersion(projectPath string) (string, error)
 		}
 	}
 
-	return "3.11", nil // Default to Python 3.11
+	return "", nil // No explicit version detected
 }
 
 // DetectRuntimeVersion is a generic method to detect version based on framework

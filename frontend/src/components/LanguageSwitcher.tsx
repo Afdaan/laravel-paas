@@ -28,7 +28,7 @@ export function LanguageSwitcher() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator className="opacity-50" />
         <DropdownMenuRadioGroup value={language} onValueChange={(val) => setLanguage(val as 'en' | 'id')}>
-          <DropdownMenuRadioItem 
+          <DropdownMenuRadioItem
             value="en"
             className="flex items-center justify-between rounded-md px-2 py-2.5 transition-colors focus:bg-primary/5 data-[state=checked]:bg-primary/5"
           >
@@ -39,8 +39,8 @@ export function LanguageSwitcher() {
               <span className="text-sm font-medium tracking-tight">English</span>
             </div>
           </DropdownMenuRadioItem>
-          
-          <DropdownMenuRadioItem 
+
+          <DropdownMenuRadioItem
             value="id"
             className="flex items-center justify-between rounded-md px-2 py-2.5 transition-colors focus:bg-primary/5 data-[state=checked]:bg-primary/5"
           >

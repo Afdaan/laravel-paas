@@ -43,18 +43,6 @@ func NewGithubAppHandler(db *gorm.DB, cfg *config.Config, githubService *infrast
 func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 	metrics.GetCollector().IncrGithubWebhooksReceived()
 
-	deliveryID := c.Get("X-GitHub-Delivery")
-	if deliveryID != "" {
-		key := fmt.Sprintf("github:webhook:processed:%s", deliveryID)
-		ok, err := h.redisService.SetNX(key, true, 24*time.Hour)
-		if err != nil {
-			slog.Warn("Failed to check webhook delivery cache", "delivery_id", deliveryID, "error", err)
-		} else if !ok {
-			slog.Info("Duplicate webhook delivery detected, ignoring", "delivery_id", deliveryID)
-			return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Duplicate event ignored"})
-		}
-	}
-
 	secret := h.cfg.GithubAppWebhookSecret
 	if secret == "" {
 		secret = os.Getenv("GITHUB_APP_WEBHOOK_SECRET")
@@ -79,6 +67,18 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 
 		if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid signature"})
+		}
+	}
+
+	deliveryID := c.Get("X-GitHub-Delivery")
+	if deliveryID != "" {
+		key := fmt.Sprintf("github:webhook:processed:%s", deliveryID)
+		ok, err := h.redisService.SetNX(key, true, 24*time.Hour)
+		if err != nil {
+			slog.Warn("Failed to check webhook delivery cache", "delivery_id", deliveryID, "error", err)
+		} else if !ok {
+			slog.Info("Duplicate webhook delivery detected, ignoring", "delivery_id", deliveryID)
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Duplicate event ignored"})
 		}
 	}
 
@@ -125,6 +125,8 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				continue
 			}
 
+			var initLogContent []byte
+
 			// Update GitHub commit status to pending immediately (synchronous to prevent race conditions with the worker)
 			if p.GithubInstallationID != nil && *p.GithubInstallationID != 0 && p.GithubRepoOwner != "" && p.GithubRepoName != "" && commitSHA != "" {
 				projectUID := p.UID
@@ -133,9 +135,28 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				}
 				targetURL := fmt.Sprintf("%s/projects/%s?tab=build", h.cfg.FrontendURL, projectUID)
 				desc := "Build queued. Waiting for an available worker slot..."
+
+				createdAt := time.Now().UnixNano()
+				statusPayload := &infrastructure.GithubStatusPayload{
+					InstallationID: *p.GithubInstallationID,
+					Owner:          p.GithubRepoOwner,
+					Repo:           p.GithubRepoName,
+					SHA:            commitSHA,
+					State:          "pending",
+					TargetURL:      targetURL,
+					Description:    desc,
+					CreatedAt:      createdAt,
+				}
+				if err := h.redisService.SetDesiredCommitStatus(statusPayload); err != nil {
+					slog.Warn("Failed to set initial desired commit status in Redis", "project_id", p.ID, "error", err)
+				}
+
 				err := h.githubService.UpdateCommitStatus(*p.GithubInstallationID, p.GithubRepoOwner, p.GithubRepoName, commitSHA, "pending", targetURL, desc)
-				if err != nil {
-					slog.Warn("Failed to update initial GitHub commit status to pending", "project_id", p.ID, "error", err)
+				if err == nil {
+					_, _ = h.redisService.RemoveCommitStatusSyncIfMatched(commitSHA, createdAt)
+				} else {
+					slog.Warn("Failed to update initial GitHub commit status to pending, queued for reconciler", "project_id", p.ID, "error", err)
+					initLogContent = []byte(fmt.Sprintf("[%s] System Warning: Failed to update GitHub commit status to pending: %s\n", time.Now().Format("2006-01-02 15:04:05"), err.Error()))
 				}
 			}
 
@@ -148,10 +169,10 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				continue
 			}
 
-			projectPath := filepath.Join(h.cfg.ProjectsPath, p.Subdomain)
+			projectPath := p.GetProjectPath(h.cfg.ProjectsPath)
 			buildLogPath := filepath.Join(projectPath, "build.log")
 			_ = os.MkdirAll(projectPath, 0755)
-			_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+			_ = os.WriteFile(buildLogPath, initLogContent, 0644)
 
 			if err := h.projectService.UpdateDeploymentStatus(p.ID, models.DepStatusQueued, "GitHub Push trigger: "+payload.HeadCommit.Message, 0, jobID); err != nil {
 				slog.Warn("Failed to update status", "id", p.ID, "error", err)
@@ -177,6 +198,31 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 
 		if payload.Action == "deleted" {
 			slog.Info("GitHub App uninstalled", "installation_id", payload.Installation.ID)
+
+			// Clean up user profile picture if this was their last/active GitHub integration
+			var inst models.GithubAppInstallation
+			if err := h.db.Where("installation_id = ?", payload.Installation.ID).First(&inst).Error; err == nil {
+				var count int64
+				h.db.Model(&models.GithubAppInstallation{}).
+					Where("user_id = ? AND installation_id != ?", inst.UserID, payload.Installation.ID).
+					Count(&count)
+
+				if count == 0 {
+					// Clear the user's avatar URL as no active integrations remain
+					if err := h.db.Model(&models.User{}).Where("id = ?", inst.UserID).Update("avatar_url", "").Error; err != nil {
+						slog.Warn("Failed to clear user avatar URL on uninstallation", "user_id", inst.UserID, "error", err)
+					}
+				} else {
+					// Fallback to one of the remaining connected installations
+					var remainingInst models.GithubAppInstallation
+					if err := h.db.Where("user_id = ? AND installation_id != ?", inst.UserID, payload.Installation.ID).First(&remainingInst).Error; err == nil {
+						if err := h.db.Model(&models.User{}).Where("id = ?", inst.UserID).Update("avatar_url", remainingInst.AvatarURL).Error; err != nil {
+							slog.Warn("Failed to update user avatar fallback URL on uninstallation", "user_id", inst.UserID, "error", err)
+						}
+					}
+				}
+			}
+
 			h.db.Where("installation_id = ?", payload.Installation.ID).Delete(&models.GithubAppInstallation{})
 			h.db.Model(&models.Project{}).Where("github_installation_id = ?", payload.Installation.ID).
 				Updates(map[string]interface{}{
@@ -235,6 +281,13 @@ func (h *GithubAppHandler) LinkInstallation(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save installation mapping"})
 	}
 
+	// Update user's avatar URL to match the newly connected GitHub profile
+	if ghInst.Account.AvatarURL != "" {
+		if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("avatar_url", ghInst.Account.AvatarURL).Error; err != nil {
+			slog.Warn("Failed to update user avatar URL", "user_id", userID, "error", err)
+		}
+	}
+
 	return c.JSON(fiber.Map{"message": "GitHub App connected successfully", "data": inst})
 }
 
@@ -267,7 +320,10 @@ func (h *GithubAppHandler) ListRepositories(c *fiber.Ctx) error {
 			})
 		}
 		slog.Error("Failed to list repositories", "installation_id", instID, "error", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch repositories from GitHub"})
+		return c.JSON(fiber.Map{
+			"data":    []interface{}{},
+			"warning": "Failed to fetch repositories from GitHub.",
+		})
 	}
 
 	return c.JSON(fiber.Map{"data": repos})
@@ -279,13 +335,25 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(uint)
 
 	var inst models.GithubAppInstallation
-	if err := h.db.Where("user_id = ? AND account_name = ?", userID, owner).First(&inst).Error; err != nil {
-		if err := h.db.Where("user_id = ?", userID).First(&inst).Error; err != nil {
+
+	// Prefer explicit installation_id to avoid ambiguous owner-based matching.
+	if instIDStr := c.Query("installation_id"); instIDStr != "" {
+		instID, parseErr := strconv.ParseInt(instIDStr, 10, 64)
+		if parseErr != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid installation_id"})
+		}
+		if err := h.db.Where("user_id = ? AND installation_id = ?", userID, instID).First(&inst).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "No GitHub App installation found"})
+		}
+	} else {
+		// Fall back to matching by account name only — no catch-all by user_id.
+		if err := h.db.Where("user_id = ? AND account_name = ?", userID, owner).First(&inst).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "No GitHub App installation found for this owner"})
 		}
 	}
 
 	branches, err := h.githubService.ListBranches(inst.InstallationID, owner, repo)
+	// Only 401 means revoked credentials — retry once with a fresh token.
 	if err != nil && isGitHubAuthError(err) {
 		slog.Warn("GitHub API auth error on branch fetch, retrying with fresh token", "installation_id", inst.InstallationID)
 		h.githubService.InvalidateInstallationToken(inst.InstallationID)
@@ -293,21 +361,36 @@ func (h *GithubAppHandler) ListBranches(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		if isGitHubAuthError(err) {
-			slog.Warn("GitHub installation confirmed revoked after retry (branches)", "installation_id", inst.InstallationID)
+			slog.Warn("GitHub installation confirmed revoked after retry", "installation_id", inst.InstallationID)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "This GitHub installation is unauthorized or has been uninstalled.",
 				"code":  "INSTALLATION_REVOKED",
 			})
 		}
+		if strings.Contains(err.Error(), "status=404") {
+			slog.Warn("Repository not accessible via GitHub App", "installation_id", inst.InstallationID, "owner", owner, "repo", repo)
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Repository not found or the GitHub App does not have access to it.",
+				"code":  "REPO_NOT_ACCESSIBLE",
+			})
+		}
 		slog.Error("Failed to list branches", "installation_id", inst.InstallationID, "owner", owner, "repo", repo, "error", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch branches from GitHub"})
+		return c.JSON(fiber.Map{
+			"data":    []string{},
+			"warning": "Failed to fetch branches from GitHub.",
+		})
 	}
 
-	return c.JSON(fiber.Map{"data": branches})
+	branchNames := make([]string, 0, len(branches))
+	for _, b := range branches {
+		branchNames = append(branchNames, b.Name)
+	}
+
+	return c.JSON(fiber.Map{"data": branchNames})
 }
 
-// isGitHubAuthError checks whether a GitHub API error indicates a stale/revoked credential.
+// isGitHubAuthError returns true only for 401 — revoked or expired installation credentials.
+// 404 means the repo is inaccessible, not that the token is invalid.
 func isGitHubAuthError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "status=404") || strings.Contains(msg, "status=401")
+	return strings.Contains(err.Error(), "status=401")
 }

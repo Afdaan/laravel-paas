@@ -42,7 +42,7 @@ func (p *redisLeaseProvider) Acquire(ctx context.Context, domainID uint, ttl tim
 
 func (p *redisLeaseProvider) Release(ctx context.Context, domainID uint, token uuid.UUID) error {
 	tokenStr := token.String()
-	// Redis script uses exact match. Since uuid.String() has hyphens but AcquireDomainLock may use 
+	// Redis script uses exact match. Since uuid.String() has hyphens but AcquireDomainLock may use
 	// generateLockToken without hyphens, we try releasing using the hex-encoded string without hyphens.
 	// This avoids silent lease leakage due to string format mismatches.
 	hexStr := fmt.Sprintf("%x", token)

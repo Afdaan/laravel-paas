@@ -14,6 +14,6 @@ func NewNoopDomainMetrics() DomainMetrics {
 	return &noopDomainMetrics{}
 }
 
-func (n *noopDomainMetrics) Increment(metric string) {}
-func (n *noopDomainMetrics) IncrementBy(metric string, val int64) {}
+func (n *noopDomainMetrics) Increment(metric string)                        {}
+func (n *noopDomainMetrics) IncrementBy(metric string, val int64)           {}
 func (n *noopDomainMetrics) ObserveDuration(metric string, d time.Duration) {}

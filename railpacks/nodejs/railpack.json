@@ -1,0 +1,30 @@
+{
+  "caches": {
+    "npm-cache": {
+      "directory": "/root/.npm"
+    },
+    "yarn-cache": {
+      "directory": "/usr/local/share/.cache/yarn"
+    },
+    "pnpm-store": {
+      "directory": "/root/.local/share/pnpm/store"
+    },
+    "tsc-cache": {
+      "directory": ".tsbuildinfo"
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "node:{{VERSION}}-slim"
+    },
+    "aptPackages": [
+      "openssl",
+      "libssl-dev"
+    ],
+    "variables": {
+      "DEBIAN_FRONTEND": "noninteractive",
+      "NODE_ENV": "production",
+      "PATH": "./node_modules/.bin:../../node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    }
+  }
+}
