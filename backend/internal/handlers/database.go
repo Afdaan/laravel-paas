@@ -1160,7 +1160,7 @@ func (h *DatabaseHandler) ListUserDatabases(c *fiber.Ctx) error {
 	}
 
 	var databases []models.DatabaseInstance
-	if err := h.db.Preload("Project").Where("user_id = ?", userID).Find(&databases).Error; err != nil {
+	if err := h.db.Preload("Project").Where("user_id = ? AND status != ?", userID, models.DBStatusDeleted).Find(&databases).Error; err != nil {
 		slog.Error("Failed to list user databases", "userID", userID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to list databases"})
 	}

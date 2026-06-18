@@ -73,7 +73,7 @@ export default function Databases() {
         databaseAPI.listOwn(),
         projectsAPI.listOwn()
       ])
-      const dbs = dbRes.data.databases || []
+      const dbs = (dbRes.data.databases || []).filter((db: DatabaseInstance) => db.status !== 'deleted')
       const projs = projRes.data.data || []
       setDatabases(dbs)
       setProjects(projs)
@@ -104,9 +104,11 @@ export default function Databases() {
 
   // Filter databases
   const filteredDbs = databases.filter(db =>
-    db.name.toLowerCase().includes(search.toLowerCase()) ||
-    db.engine.toLowerCase().includes(search.toLowerCase()) ||
-    (db.project_id && db.project && db.project.name.toLowerCase().includes(search.toLowerCase()))
+    db.status !== 'deleted' && (
+      db.name.toLowerCase().includes(search.toLowerCase()) ||
+      db.engine.toLowerCase().includes(search.toLowerCase()) ||
+      (db.project_id && db.project && db.project.name.toLowerCase().includes(search.toLowerCase()))
+    )
   )
 
   // Projects that do not have a database attached
@@ -351,6 +353,8 @@ export default function Databases() {
       toast.success(t('databaseManager.deleteSuccess'))
       setShowDeleteModal(false)
       setConfirmText('')
+
+      // Clear selectedDbId and trigger fetch
       setSelectedDbId(null)
       await fetchData()
     } catch (error: unknown) {
@@ -721,7 +725,8 @@ export default function Databases() {
                         setConfirmText('')
                         setShowResetModal(true)
                       }}
-                      className="text-xs font-bold uppercase gap-1.5"
+                      disabled={selectedDb.status === 'deleted'}
+                      className="text-xs font-bold uppercase gap-1.5 disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5 shrink-0" />
                       {t('databaseManager.reset')}
@@ -734,7 +739,8 @@ export default function Databases() {
                         setConfirmText('')
                         setShowReinstallModal(true)
                       }}
-                      className="text-xs font-bold uppercase gap-1.5"
+                      disabled={selectedDb.status === 'deleted'}
+                      className="text-xs font-bold uppercase gap-1.5 disabled:opacity-50"
                     >
                       <RefreshCw className="w-3.5 h-3.5 shrink-0" />
                       {t('databaseManager.reinstall')}
@@ -743,7 +749,7 @@ export default function Databases() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      disabled={selectedDb.project_id !== null}
+                      disabled={selectedDb.project_id !== null || selectedDb.status === 'deleted'}
                       onClick={() => {
                         setConfirmText('')
                         setShowDeleteModal(true)
