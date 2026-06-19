@@ -367,7 +367,7 @@ export function SettingsTab({
             <CardHeader>
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
-                  <RefreshCw className="w-5 h-5" />
+                  <GitBranch className="w-5 h-5" />
                 </div>
                 <div>
                   <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
