@@ -1,6 +1,9 @@
 package infrastructure
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMySQLContainerName(t *testing.T) {
 	// Test default fallback
@@ -74,5 +77,37 @@ func TestDatabasePortFallsBackForInvalidValues(t *testing.T) {
 		if port := MySQLPort(); port != 3306 {
 			t.Errorf("Expected fallback port 3306 for %q, got %d", value, port)
 		}
+	}
+}
+
+func TestMySQLUpdateStatusValidation(t *testing.T) {
+	s := NewMySQLService()
+
+	// 1. Invalid DB name
+	err := s.UpdateStatus("invalid-name-!", "valid_user", true)
+	if err == nil || !strings.Contains(err.Error(), "INVALID_DB_NAME") {
+		t.Errorf("Expected INVALID_DB_NAME error, got %v", err)
+	}
+
+	// 2. Invalid Username
+	err = s.UpdateStatus("valid_db", "invalid-user-!", true)
+	if err == nil || !strings.Contains(err.Error(), "INVALID_DB_NAME") {
+		t.Errorf("Expected INVALID_DB_NAME error for username, got %v", err)
+	}
+}
+
+func TestPostgreSQLUpdateStatusValidation(t *testing.T) {
+	s := NewPostgreSQLService()
+
+	// 1. Invalid DB name
+	err := s.UpdateStatus("invalid-name-!", "valid_user", true)
+	if err == nil || !strings.Contains(err.Error(), "INVALID_DB_NAME") {
+		t.Errorf("Expected INVALID_DB_NAME error, got %v", err)
+	}
+
+	// 2. Invalid Username
+	err = s.UpdateStatus("valid_db", "invalid-user-!", true)
+	if err == nil || !strings.Contains(err.Error(), "INVALID_DB_NAME") {
+		t.Errorf("Expected INVALID_DB_NAME error for username, got %v", err)
 	}
 }

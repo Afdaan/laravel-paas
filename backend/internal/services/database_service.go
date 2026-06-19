@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,7 @@ import (
 type DatabaseService struct {
 	db   *gorm.DB
 	cfg  *config.Config
-	pool sync.Map   // map[string]*sql.DB — cached connections per user database: "engine:dbName"
+	pool sync.Map   // map[string]*sql.DB — cached connections per database instance: "engine:host:port:name:username"
 	mu   sync.Mutex // Protects pool connection initialization against race conditions
 }
 
@@ -43,16 +44,28 @@ func (s *DatabaseService) InvalidateProjectDB(dbName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	engine := s.getEngineForDB(dbName)
-	cacheKey := fmt.Sprintf("%s:%s", engine, dbName)
-
-	if cached, ok := s.pool.Load(cacheKey); ok {
-		if db, ok := cached.(*sql.DB); ok {
-			db.Close()
+	s.pool.Range(func(key, value any) bool {
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
 		}
-		s.pool.Delete(cacheKey)
-		slog.Info("Evicted and closed database connection pool entry", "db", dbName, "engine", engine)
-	}
+		parts := strings.Split(keyStr, ":")
+		isMatch := false
+		if len(parts) == 2 && parts[1] == dbName {
+			isMatch = true
+		} else if len(parts) == 5 && parts[3] == dbName {
+			isMatch = true
+		}
+
+		if isMatch {
+			if db, ok := value.(*sql.DB); ok {
+				db.Close()
+			}
+			s.pool.Delete(key)
+			slog.Info("Evicted and closed database connection pool entry", "key", keyStr)
+		}
+		return true
+	})
 }
 
 type TableInfo struct {
@@ -136,11 +149,13 @@ func (s *DatabaseService) getEngineForDB(dbName string) string {
 	return "mysql" // Fallback to legacy default
 }
 
-// ConnectToProjectDB returns a pooled connection to a user's database.
-// Uses double-checked locking to guarantee thread safety during connection initialization.
-func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, error) {
-	engine := s.getEngineForDB(dbName)
-	cacheKey := fmt.Sprintf("%s:%s", engine, dbName)
+// ConnectToDatabaseInstance returns a pooled connection to a specific DatabaseInstance
+func (s *DatabaseService) ConnectToDatabaseInstance(instance *models.DatabaseInstance) (*sql.DB, error) {
+	if instance == nil {
+		return nil, fmt.Errorf("database instance cannot be nil")
+	}
+
+	cacheKey := fmt.Sprintf("%s:%s:%d:%s:%s", instance.Engine, instance.Host, instance.Port, instance.Name, instance.Username)
 
 	// Return cached connection if available and healthy (fast path)
 	if cached, ok := s.pool.Load(cacheKey); ok {
@@ -168,21 +183,11 @@ func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, 
 
 	var db *sql.DB
 	var err error
+	dsn := buildDSN(instance, s.cfg.UIDSalt)
 
-	if engine == "postgresql" {
-		// Generate salted application name to prevent client-side spoofing
-		appHash := sha256.Sum256([]byte(s.cfg.UIDSalt))
-		appName := fmt.Sprintf("paas-backend-%x", appHash[:8])
-
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s",
-			dbName, password, s.cfg.UserPGHost, s.cfg.UserPGPort, dbName, appName,
-		)
+	if instance.Engine == "postgresql" {
 		db, err = sql.Open("pgx", dsn)
 	} else {
-		// Default to mysql
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
-			dbName, password, s.cfg.MYSQLHost, s.cfg.MYSQLPort, dbName,
-		)
 		db, err = sql.Open("mysql", dsn)
 	}
 
@@ -199,6 +204,48 @@ func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, 
 	return db, nil
 }
 
+// ConnectToProjectDB returns a pooled connection to a user's database (Legacy / Fallback).
+func (s *DatabaseService) ConnectToProjectDB(dbName, password string) (*sql.DB, error) {
+	// Try to fetch instance by name
+	var instance models.DatabaseInstance
+	if err := s.db.Where("name = ?", dbName).First(&instance).Error; err == nil {
+		if password != "" {
+			instance.Password = password
+		}
+		return s.ConnectToDatabaseInstance(&instance)
+	}
+
+	// Legacy fallback if no database instance record found in DB
+	engine := s.getEngineForDB(dbName)
+	host := s.cfg.MYSQLHost
+	var port int
+	if p, err := strconv.Atoi(s.cfg.MYSQLPort); err == nil {
+		port = p
+	} else {
+		port = 3306
+	}
+
+	if engine == "postgresql" {
+		host = s.cfg.UserPGHost
+		if p, err := strconv.Atoi(s.cfg.UserPGPort); err == nil {
+			port = p
+		} else {
+			port = 5432
+		}
+	}
+
+	legacyInstance := &models.DatabaseInstance{
+		Engine:   engine,
+		Name:     dbName,
+		Username: dbName,
+		Password: password,
+		Host:     host,
+		Port:     port,
+	}
+
+	return s.ConnectToDatabaseInstance(legacyInstance)
+}
+
 // GetDatabaseInstanceByProjectID loads the DatabaseInstance record for a project
 func (s *DatabaseService) GetDatabaseInstanceByProjectID(projectID uint) (*models.DatabaseInstance, error) {
 	var instance models.DatabaseInstance
@@ -209,13 +256,16 @@ func (s *DatabaseService) GetDatabaseInstanceByProjectID(projectID uint) (*model
 }
 
 // ListProjectTables returns metadata for all tables in a project database
-func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInfo, error) {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) ListProjectTables(instance *models.DatabaseInstance) ([]TableInfo, error) {
+	if instance == nil {
+		return nil, fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return nil, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -244,7 +294,7 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
 			ORDER BY TABLE_NAME
-		`, dbName)
+		`, instance.Name)
 	}
 
 	if err != nil {
@@ -289,13 +339,16 @@ func (s *DatabaseService) ListProjectTables(dbName, password string) ([]TableInf
 }
 
 // GetTableStructure returns column metadata for a specific table
-func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) ([]ColumnInfo, error) {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) GetTableStructure(instance *models.DatabaseInstance, tableName string) ([]ColumnInfo, error) {
+	if instance == nil {
+		return nil, fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return nil, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -332,7 +385,7 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 			FROM information_schema.COLUMNS
 			WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 			ORDER BY ORDINAL_POSITION
-		`, dbName, tableName)
+		`, instance.Name, tableName)
 	}
 
 	if err != nil {
@@ -357,13 +410,16 @@ func (s *DatabaseService) GetTableStructure(dbName, password, tableName string) 
 	return columns, nil
 }
 
-func (s *DatabaseService) GetTableForeignKeys(dbName, password, tableName string) ([]ForeignKeyInfo, error) {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) GetTableForeignKeys(instance *models.DatabaseInstance, tableName string) ([]ForeignKeyInfo, error) {
+	if instance == nil {
+		return nil, fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return nil, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -401,7 +457,7 @@ func (s *DatabaseService) GetTableForeignKeys(dbName, password, tableName string
 				TABLE_SCHEMA = ?
 				AND TABLE_NAME = ?
 				AND REFERENCED_TABLE_NAME IS NOT NULL;
-		`, dbName, tableName)
+		`, instance.Name, tableName)
 	}
 
 	if err != nil {
@@ -425,17 +481,20 @@ func (s *DatabaseService) GetTableForeignKeys(dbName, password, tableName string
 }
 
 // GetTableData supports paginated data retrieval from a table
-func (s *DatabaseService) GetTableData(dbName, password, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
+func (s *DatabaseService) GetTableData(instance *models.DatabaseInstance, tableName string, page, limit int) ([]string, []map[string]interface{}, int64, error) {
+	if instance == nil {
+		return nil, nil, 0, fmt.Errorf("database instance cannot be nil")
+	}
 	if !s.isValidIdentifier(tableName) {
 		return nil, nil, 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters")
 	}
 
-	db, err := s.ConnectToProjectDB(dbName, password)
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -490,7 +549,10 @@ func (s *DatabaseService) GetTableData(dbName, password, tableName string, page,
 }
 
 // DeleteTableRow safely deletes a specific row from a table using a primary key
-func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn string, pkValue interface{}) (int64, error) {
+func (s *DatabaseService) DeleteTableRow(instance *models.DatabaseInstance, tableName, pkColumn string, pkValue interface{}) (int64, error) {
+	if instance == nil {
+		return 0, fmt.Errorf("database instance cannot be nil")
+	}
 	if !s.isValidIdentifier(tableName) {
 		return 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters")
 	}
@@ -498,12 +560,12 @@ func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn s
 		return 0, apperr.New(400, "INVALID_COLUMN_NAME", "Column name contains invalid characters")
 	}
 
-	db, err := s.ConnectToProjectDB(dbName, password)
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return 0, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -531,7 +593,10 @@ func (s *DatabaseService) DeleteTableRow(dbName, password, tableName, pkColumn s
 }
 
 // UpdateTableRow safely updates a specific row's fields in a table using a primary key
-func (s *DatabaseService) UpdateTableRow(dbName, password, tableName, pkColumn string, pkValue interface{}, updates map[string]interface{}) (int64, error) {
+func (s *DatabaseService) UpdateTableRow(instance *models.DatabaseInstance, tableName, pkColumn string, pkValue interface{}, updates map[string]interface{}) (int64, error) {
+	if instance == nil {
+		return 0, fmt.Errorf("database instance cannot be nil")
+	}
 	if !s.isValidIdentifier(tableName) {
 		return 0, apperr.New(400, "INVALID_TABLE_NAME", "Table name contains invalid characters")
 	}
@@ -539,12 +604,12 @@ func (s *DatabaseService) UpdateTableRow(dbName, password, tableName, pkColumn s
 		return 0, apperr.New(400, "INVALID_COLUMN_NAME", "Column name contains invalid characters")
 	}
 
-	db, err := s.ConnectToProjectDB(dbName, password)
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return 0, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -595,7 +660,10 @@ func (s *DatabaseService) UpdateTableRow(dbName, password, tableName, pkColumn s
 }
 
 // ExecuteRawQuery runs a manual SQL query against a project database under a 15-second execution timeout.
-func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*QueryResult, error) {
+func (s *DatabaseService) ExecuteRawQuery(instance *models.DatabaseInstance, query string) (*QueryResult, error) {
+	if instance == nil {
+		return nil, fmt.Errorf("database instance cannot be nil")
+	}
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, apperr.New(400, "EMPTY_QUERY", "Query cannot be empty")
@@ -650,7 +718,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 			re, err := regexp.Compile(pattern)
 			if err == nil && re.MatchString(normalizedQuery) {
 				slog.Warn("Blocked forbidden SQL operation attempt",
-					"database", dbName,
+					"database", instance.Name,
 					"pattern", pattern,
 				)
 				return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
@@ -658,7 +726,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 		} else {
 			if strings.Contains(normalizedQuery, pattern) {
 				slog.Warn("Blocked forbidden SQL operation attempt",
-					"database", dbName,
+					"database", instance.Name,
 					"pattern", pattern,
 				)
 				return nil, apperr.New(403, "SQL_OPERATION_FORBIDDEN", "This SQL operation is not permitted for security reasons")
@@ -687,11 +755,11 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 			part = strings.TrimSpace(part)
 			part = strings.Trim(part, "`\"")
 			partUpper := strings.ToUpper(part)
-			dbNameUpper := strings.ToUpper(dbName)
+			dbNameUpper := strings.ToUpper(instance.Name)
 			if partUpper != dbNameUpper && partUpper != "INFORMATION_SCHEMA" && partUpper != "PUBLIC" && len(part) > 0 && !strings.HasPrefix(partUpper, "SELECT") {
 				if strings.Contains(normalizedQuery, "`"+partUpper+"`") || strings.Contains(normalizedQuery, "\""+partUpper+"\"") || strings.Contains(normalizedQuery, partUpper+".") {
 					slog.Warn("Blocked cross-database query attempt",
-						"database", dbName,
+						"database", instance.Name,
 						"target_db", part,
 					)
 					return nil, apperr.New(403, "SQL_CROSS_DATABASE", "Cross-database queries are not allowed")
@@ -700,9 +768,9 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 		}
 	}
 
-	db, err := s.ConnectToProjectDB(dbName, password)
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
-		slog.Error("Failed to connect to project database", "database", dbName, "error", err.Error())
+		slog.Error("Failed to connect to project database", "database", instance.Name, "error", err.Error())
 		return nil, apperr.New(500, "DB_CONNECTION_FAILED", "Unable to connect to database")
 	}
 
@@ -715,7 +783,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	if strings.HasPrefix(upperQuery, "SELECT") || strings.HasPrefix(upperQuery, "SHOW") || strings.HasPrefix(upperQuery, "DESCRIBE") || strings.HasPrefix(upperQuery, "DESC") {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
-			slog.Warn("SQL query execution failed", "database", dbName, "error", err.Error())
+			slog.Warn("SQL query execution failed", "database", instance.Name, "error", err.Error())
 			return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 		}
 		defer rows.Close()
@@ -763,7 +831,7 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 	// Handle modification queries
 	result, err := db.ExecContext(ctx, query)
 	if err != nil {
-		slog.Warn("SQL modification query failed", "database", dbName, "error", err.Error())
+		slog.Warn("SQL modification query failed", "database", instance.Name, "error", err.Error())
 		return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 	}
 
@@ -776,13 +844,16 @@ func (s *DatabaseService) ExecuteRawQuery(dbName, password, query string) (*Quer
 
 // GenerateProjectDump creates a logical SQL export for a project database.
 // Enforces a strict 100MB database size cap to prevent OOM / SRE resource exhaustion crashes.
-func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, error) {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance) (string, error) {
+	if instance == nil {
+		return "", fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return "", err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -795,7 +866,7 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 			SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024.0, 0)
 			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
-		`, dbName).Scan(&totalSize)
+		`, instance.Name).Scan(&totalSize)
 	}
 
 	if totalSize > 102400 { // 100MB in KB
@@ -803,7 +874,7 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 	}
 
 	var sqlDump strings.Builder
-	sqlDump.WriteString(fmt.Sprintf("-- Database Export: %s\n", dbName))
+	sqlDump.WriteString(fmt.Sprintf("-- Database Export: %s\n", instance.Name))
 	sqlDump.WriteString(fmt.Sprintf("-- Engine: %s\n", engine))
 	sqlDump.WriteString(fmt.Sprintf("-- Generated: %s\n\n", time.Now().Format(time.RFC3339)))
 
@@ -922,13 +993,16 @@ func (s *DatabaseService) GenerateProjectDump(dbName, password string) (string, 
 }
 
 // ResetProjectDatabase drops all tables in a database
-func (s *DatabaseService) ResetProjectDatabase(dbName, password string) (int, error) {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) ResetProjectDatabase(instance *models.DatabaseInstance) (int, error) {
+	if instance == nil {
+		return 0, fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return 0, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -965,13 +1039,16 @@ func (s *DatabaseService) ResetProjectDatabase(dbName, password string) (int, er
 }
 
 // ExecuteDesignerAction generates and executes visual DDL transformations on MySQL or PostgreSQL.
-func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req DesignerActionRequest) error {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) ExecuteDesignerAction(instance *models.DatabaseInstance, req DesignerActionRequest) error {
+	if instance == nil {
+		return fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	// DDL operations may wait for Metadata Locks if the application has active transactions.
 	// We use a longer timeout (45s) to allow locks to release gracefully without timing out the UI prematurely.
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -1204,7 +1281,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 
 		// Retrieve current schema constraints to avoid needless dropping/creation races
 		var originalCol *ColumnInfo
-		currentCols, _ := s.GetTableStructure(dbName, password, req.TableName)
+		currentCols, _ := s.GetTableStructure(instance, req.TableName)
 		for _, c := range currentCols {
 			if c.Name == req.Column.Name {
 				originalCol = &c
@@ -1213,7 +1290,7 @@ func (s *DatabaseService) ExecuteDesignerAction(dbName, password string, req Des
 		}
 
 		var originalFk *ForeignKeyInfo
-		currentFks, _ := s.GetTableForeignKeys(dbName, password, req.TableName)
+		currentFks, _ := s.GetTableForeignKeys(instance, req.TableName)
 		for _, f := range currentFks {
 			if f.ColumnName == req.Column.Name {
 				originalFk = &f
@@ -1594,8 +1671,15 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 		return nil, err
 	}
 
+	instance, err := s.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		backup.Status = models.BackupStatusFailed
+		s.db.Save(backup)
+		return nil, fmt.Errorf("database instance not found: %w", err)
+	}
+
 	// Run backup dump
-	dumpContent, err := s.GenerateProjectDump(project.GetDatabaseName(), project.DatabasePassword)
+	dumpContent, err := s.GenerateProjectDump(instance)
 	if err != nil {
 		backup.Status = models.BackupStatusFailed
 		s.db.Save(backup)
@@ -1664,13 +1748,18 @@ func (s *DatabaseService) RestoreBackup(projectID uint, backupID uint) error {
 		return err
 	}
 
+	instance, err := s.GetDatabaseInstanceByProjectID(projectID)
+	if err != nil {
+		return fmt.Errorf("database instance not found: %w", err)
+	}
+
 	sqlBytes, err := os.ReadFile(backup.Path)
 	if err != nil {
 		return fmt.Errorf("unable to read backup file: %w", err)
 	}
 
 	// Reset database tables
-	_, err = s.ResetProjectDatabase(project.GetDatabaseName(), project.DatabasePassword)
+	_, err = s.ResetProjectDatabase(instance)
 	if err != nil {
 		return fmt.Errorf("failed to reset database before restore: %w", err)
 	}
@@ -1682,9 +1771,9 @@ func (s *DatabaseService) RestoreBackup(projectID uint, backupID uint) error {
 		if stmt == "" || strings.HasPrefix(stmt, "--") {
 			continue
 		}
-		_, err = s.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, stmt)
+		_, err = s.ExecuteRawQuery(instance, stmt)
 		if err != nil {
-			slog.Warn("Failed executing restore SQL statement", "database", project.GetDatabaseName(), "error", err.Error())
+			slog.Warn("Failed executing restore SQL statement", "database", instance.Name, "error", err.Error())
 		}
 	}
 
@@ -1750,13 +1839,16 @@ func (s *DatabaseService) EscapeIdentifier(engine, name string) string {
 }
 
 // GetAllSchemaMetadata fetches columns and foreign keys for all tables in a single step to prevent N+1 query loops.
-func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[string][]ColumnInfo, map[string][]ForeignKeyInfo, error) {
-	db, err := s.ConnectToProjectDB(dbName, password)
+func (s *DatabaseService) GetAllSchemaMetadata(instance *models.DatabaseInstance) (map[string][]ColumnInfo, map[string][]ForeignKeyInfo, error) {
+	if instance == nil {
+		return nil, nil, fmt.Errorf("database instance cannot be nil")
+	}
+	db, err := s.ConnectToDatabaseInstance(instance)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	engine := s.getEngineForDB(dbName)
+	engine := instance.Engine
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -1799,7 +1891,7 @@ func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[str
 			FROM information_schema.COLUMNS
 			WHERE TABLE_SCHEMA = ?
 			ORDER BY TABLE_NAME, ORDINAL_POSITION
-		`, dbName)
+		`, instance.Name)
 	}
 
 	if err != nil {
@@ -1856,7 +1948,7 @@ func (s *DatabaseService) GetAllSchemaMetadata(dbName, password string) (map[str
 			WHERE
 				TABLE_SCHEMA = ?
 				AND REFERENCED_TABLE_NAME IS NOT NULL;
-		`, dbName)
+		`, instance.Name)
 	}
 
 	if err != nil {
@@ -1953,8 +2045,6 @@ func (s *DatabaseService) AdminListAllDatabases() ([]AdminDatabaseInfo, error) {
 
 	return result, nil
 }
-
-
 
 // SplitSQLStatements splits a SQL string into individual statements by semicolon,
 // respecting single-quoted strings, double-quoted strings, and SQL comments.
@@ -2122,4 +2212,18 @@ func normalizeSQLForCheck(query string) string {
 	}
 
 	return strings.TrimSpace(normalized.String())
+}
+
+// buildDSN formats DSN connection strings depending on database engine
+func buildDSN(instance *models.DatabaseInstance, uidSalt string) string {
+	if instance.Engine == "postgresql" {
+		appHash := sha256.Sum256([]byte(uidSalt))
+		appName := fmt.Sprintf("paas-backend-%x", appHash[:8])
+		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable&application_name=%s",
+			instance.Username, instance.Password, instance.Host, instance.Port, instance.Name, appName,
+		)
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
+		instance.Username, instance.Password, instance.Host, instance.Port, instance.Name,
+	)
 }

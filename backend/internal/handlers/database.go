@@ -249,12 +249,12 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		// 1. Update password inside container engine
 		if instance.Engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdatePassword(instance.Name, newPassword); err != nil {
+			if err := pgService.UpdatePassword(instance.Username, newPassword); err != nil {
 				return err
 			}
 		} else {
 			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdatePassword(instance.Name, newPassword); err != nil {
+			if err := mysqlService.UpdatePassword(instance.Username, newPassword); err != nil {
 				return err
 			}
 		}
@@ -356,13 +356,13 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 	if req.Suspend {
 		if instance.Engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdateStatus(instance.Name, true); err != nil {
+			if err := pgService.UpdateStatus(instance.Name, instance.Username, true); err != nil {
 				slog.Warn("Failed to suspend PostgreSQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to suspend PostgreSQL database"})
 			}
 		} else {
 			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdateStatus(instance.Name, true); err != nil {
+			if err := mysqlService.UpdateStatus(instance.Name, instance.Username, true); err != nil {
 				slog.Warn("Failed to suspend MySQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to suspend MySQL database"})
 			}
@@ -371,13 +371,13 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 	} else {
 		if instance.Engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdateStatus(instance.Name, false); err != nil {
+			if err := pgService.UpdateStatus(instance.Name, instance.Username, false); err != nil {
 				slog.Warn("Failed to resume PostgreSQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resume PostgreSQL database"})
 			}
 		} else {
 			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdateStatus(instance.Name, false); err != nil {
+			if err := mysqlService.UpdateStatus(instance.Name, instance.Username, false); err != nil {
 				slog.Warn("Failed to resume MySQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resume MySQL database"})
 			}
@@ -411,7 +411,7 @@ func (h *DatabaseHandler) GetOverview(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(instance.Name, instance.Password)
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to connect to project database for overview", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to database"})
@@ -461,13 +461,13 @@ func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(instance.Name, instance.Password)
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to retrieve project database tables", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve tables"})
 	}
 
-	columnsMap, fksMap, schemaErr := h.databaseService.GetAllSchemaMetadata(instance.Name, instance.Password)
+	columnsMap, fksMap, schemaErr := h.databaseService.GetAllSchemaMetadata(instance)
 	if schemaErr != nil {
 		slog.Warn("Failed to retrieve project database schema metadata", "project_id", project.ID, "error", schemaErr.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table metadata"})
@@ -524,7 +524,7 @@ func (h *DatabaseHandler) ExecuteDesignerAction(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 	}
 
-	err = h.databaseService.ExecuteDesignerAction(instance.Name, instance.Password, req)
+	err = h.databaseService.ExecuteDesignerAction(instance, req)
 	if err != nil {
 		h.recordAuditLog(c, project.ID, "db_designer_"+req.Action, req.TableName, req.NewName, "failed", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database designer operation failed"})
@@ -683,7 +683,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(instance.Name, instance.Password)
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to list project database tables for metrics", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve database metrics"})
@@ -697,7 +697,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 	}
 
 	// Enforce dynamic active connections check in the engine container
-	db, err := h.databaseService.ConnectToProjectDB(instance.Name, instance.Password)
+	db, err := h.databaseService.ConnectToDatabaseInstance(instance)
 	activeConnections := 0
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -874,7 +874,12 @@ func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 		return err
 	}
 
-	tables, err := h.databaseService.ListProjectTables(project.GetDatabaseName(), project.DatabasePassword)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to list project tables", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -897,7 +902,12 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Table name required"})
 	}
 
-	columns, err := h.databaseService.GetTableStructure(project.GetDatabaseName(), project.DatabasePassword, tableName)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	columns, err := h.databaseService.GetTableStructure(instance, tableName)
 	if err != nil {
 		slog.Warn("Failed to get table structure", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table structure"})
@@ -926,7 +936,12 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 		limit = 200
 	}
 
-	columns, rows, total, err := h.databaseService.GetTableData(project.GetDatabaseName(), project.DatabasePassword, tableName, page, limit)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	columns, rows, total, err := h.databaseService.GetTableData(instance, tableName, page, limit)
 	if err != nil {
 		slog.Warn("Failed to get table data", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table data"})
@@ -962,7 +977,12 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key and value are required"})
 	}
 
-	deleted, err := h.databaseService.DeleteTableRow(project.GetDatabaseName(), project.DatabasePassword, tableName, req.PrimaryKey, req.Value)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	deleted, err := h.databaseService.DeleteTableRow(instance, tableName, req.PrimaryKey, req.Value)
 	if err != nil {
 		slog.Warn("Failed to delete table row", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete row"})
@@ -999,7 +1019,12 @@ func (h *DatabaseHandler) UpdateTableRow(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key, value, and updates map are required"})
 	}
 
-	updated, err := h.databaseService.UpdateTableRow(project.GetDatabaseName(), project.DatabasePassword, tableName, req.PrimaryKey, req.Value, req.Updates)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	updated, err := h.databaseService.UpdateTableRow(instance, tableName, req.PrimaryKey, req.Value, req.Updates)
 	if err != nil {
 		slog.Warn("Failed to update table row", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update row"})
@@ -1023,7 +1048,12 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	result, err := h.databaseService.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, req.Query)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	result, err := h.databaseService.ExecuteRawQuery(instance, req.Query)
 	if err != nil {
 		appErr, ok := err.(*apperr.AppError)
 		if ok && appErr != nil {
@@ -1046,7 +1076,12 @@ func (h *DatabaseHandler) ExportDatabase(c *fiber.Ctx) error {
 		return err
 	}
 
-	dump, err := h.databaseService.GenerateProjectDump(project.GetDatabaseName(), project.DatabasePassword)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	dump, err := h.databaseService.GenerateProjectDump(instance)
 	if err != nil {
 		slog.Warn("Failed to export database", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to export database"})
@@ -1076,6 +1111,11 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{"error": "SQL import payload is too large"})
 	}
 
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
 	statements := services.SplitSQLStatements(req.SQL)
 	if len(statements) > maxDatabaseImportStatements {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "SQL import contains too many statements"})
@@ -1088,7 +1128,7 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		if stmt == "" {
 			continue
 		}
-		res, err := h.databaseService.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, stmt)
+		res, err := h.databaseService.ExecuteRawQuery(instance, stmt)
 		if err != nil {
 			errors = append(errors, "Statement execution failed")
 		} else {
@@ -1112,7 +1152,12 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 		return err
 	}
 
-	dropped, err := h.databaseService.ResetProjectDatabase(project.GetDatabaseName(), project.DatabasePassword)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	dropped, err := h.databaseService.ResetProjectDatabase(instance)
 	if err != nil {
 		slog.Warn("Failed to reset database", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database"})
@@ -1347,7 +1392,7 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 	}
 
 	// Connect and reset
-	conn, err := h.databaseService.ConnectToProjectDB(dbInst.Name, dbInst.Password)
+	conn, err := h.databaseService.ConnectToDatabaseInstance(&dbInst)
 	if err != nil {
 		slog.Error("Failed to connect to database for reset", "db", dbInst.Name, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to database"})
@@ -1377,7 +1422,7 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 		_, _ = conn.ExecContext(ctx, fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s;", escapedUsername))
 	} else {
 		// MySQL reset
-		_, err := h.databaseService.ResetProjectDatabase(dbInst.Name, dbInst.Password)
+		_, err := h.databaseService.ResetProjectDatabase(&dbInst)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database: " + err.Error()})
 		}

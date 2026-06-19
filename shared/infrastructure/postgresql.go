@@ -288,15 +288,15 @@ func (s *PostgreSQLService) DropDatabase(dbName string) error {
 }
 
 // UpdatePassword rotates the database user's password inside the PostgreSQL engine.
-func (s *PostgreSQLService) UpdatePassword(dbName, newPassword string) error {
-	if !validDBNameRegex.MatchString(dbName) {
+func (s *PostgreSQLService) UpdatePassword(username, newPassword string) error {
+	if !validDBNameRegex.MatchString(username) {
 		return apperr.New(400, "INVALID_DB_NAME", "Database name must match ^[a-z0-9_]{3,63}$")
 	}
 	if !validPasswordRegex.MatchString(newPassword) {
 		return apperr.New(400, "INVALID_DB_PASSWORD", "Database password must contain only alphanumeric characters and be 8-128 characters long")
 	}
 
-	alterSQL := fmt.Sprintf("ALTER ROLE \"%s\" WITH PASSWORD '%s';", dbName, newPassword)
+	alterSQL := fmt.Sprintf("ALTER ROLE \"%s\" WITH PASSWORD '%s';", username, newPassword)
 	res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-c", alterSQL)
 	if err != nil {
@@ -307,13 +307,16 @@ func (s *PostgreSQLService) UpdatePassword(dbName, newPassword string) error {
 
 // UpdateStatus suspends or resumes a database by revoking/granting CONNECT privileges.
 // Suspension also terminates all active backend connections to enforce immediate lockout.
-func (s *PostgreSQLService) UpdateStatus(dbName string, suspend bool) error {
+func (s *PostgreSQLService) UpdateStatus(dbName, username string, suspend bool) error {
 	if !validDBNameRegex.MatchString(dbName) {
+		return apperr.New(400, "INVALID_DB_NAME", "Database name must match ^[a-z0-9_]{3,63}$")
+	}
+	if !validDBNameRegex.MatchString(username) {
 		return apperr.New(400, "INVALID_DB_NAME", "Database name must match ^[a-z0-9_]{3,63}$")
 	}
 
 	if suspend {
-		revokeSQL := fmt.Sprintf("REVOKE CONNECT ON DATABASE \"%s\" FROM \"%s\";", dbName, dbName)
+		revokeSQL := fmt.Sprintf("REVOKE CONNECT ON DATABASE \"%s\" FROM \"%s\";", dbName, username)
 		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", revokeSQL)
 		if err != nil {
@@ -330,7 +333,7 @@ func (s *PostgreSQLService) UpdateStatus(dbName string, suspend bool) error {
 			slog.Warn("Failed to terminate active connections during suspend", "db", dbName, "err", err, "stderr", res.Stderr)
 		}
 	} else {
-		grantSQL := fmt.Sprintf("GRANT CONNECT ON DATABASE \"%s\" TO \"%s\";", dbName, dbName)
+		grantSQL := fmt.Sprintf("GRANT CONNECT ON DATABASE \"%s\" TO \"%s\";", dbName, username)
 		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", grantSQL)
 		if err != nil {
