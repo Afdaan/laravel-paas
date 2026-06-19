@@ -465,7 +465,7 @@ export function SettingsTab({
                     value={baseDirInput}
                     onChange={(e) => setBaseDirInput(e.target.value)}
                     placeholder={t('newProject.baseDirPlaceholder')}
-                    className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
+                    className="h-9 w-full bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs font-mono"
                   />
                 </div>
                 <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
