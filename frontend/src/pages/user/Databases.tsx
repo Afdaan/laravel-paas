@@ -33,8 +33,9 @@ import { siPostgresql, siMysql } from 'simple-icons'
 
 // Official brand logos (simple-icons) + tint for list avatars/badges
 const ENGINE_META = {
-  postgresql: { icon: siPostgresql, avatar: 'bg-blue-500/10 border-blue-500/20', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
-  mysql: { icon: siMysql, avatar: 'bg-sky-500/10 border-sky-500/20', badge: 'border-transparent bg-sky-600/10 text-sky-600' },
+  postgresql: { icon: siPostgresql, iconSize: 'w-5 h-5', avatar: 'bg-blue-500/10 border-blue-500/20', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  // MySQL glyph carries heavy internal padding — bump it up to match Postgres visual weight
+  mysql: { icon: siMysql, iconSize: 'w-[1.4rem] h-[1.4rem]', avatar: 'bg-sky-500/10 border-sky-500/20', badge: 'border-transparent bg-sky-600/10 text-sky-600' },
 } as const
 
 const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
@@ -74,10 +75,10 @@ function DbRow({ db, selected, onSelect, t }: {
       )} />
       <div className="flex items-center gap-2.5">
         <span className={cn(
-          "shrink-0 w-8 h-8 rounded-lg border flex items-center justify-center",
+          "shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center",
           meta.avatar
         )}>
-          <EngineIcon icon={meta.icon} className="w-4 h-4" />
+          <EngineIcon icon={meta.icon} className={meta.iconSize} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
