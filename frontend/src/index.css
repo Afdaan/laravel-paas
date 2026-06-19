@@ -127,6 +127,12 @@
   html {
     @apply font-sans;
     }
+  /* Lock the shell chain to the viewport so only <main> scrolls. Without this,
+     focusing an element inside the scroll area lets the browser scroll <body>
+     too, surfacing a phantom second scrollbar that jumps to the bottom. */
+  html, body, #root {
+    @apply h-full overflow-hidden;
+    }
 
   /* Autofill styling */
   input:-webkit-autofill,

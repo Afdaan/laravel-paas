@@ -149,10 +149,10 @@ function UserDashboard() {
           {frameworkBreakdown.length > 0 && (
             <>
               <div className="hidden sm:block h-5 w-px bg-border/60" />
-              <div className="hidden sm:flex items-center gap-2 flex-wrap">
+              <div className="hidden sm:flex items-center gap-x-5 gap-y-2 flex-wrap">
                 {frameworkBreakdown.map(([fw, count]) => (
-                  <span key={fw} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <FrameworkIcon framework={fw} variant="plain" className="w-3.5 h-3.5" />
+                  <span key={fw} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <FrameworkIcon framework={fw} variant="plain" className="w-3.5 h-3.5 shrink-0" />
                     <span className="font-mono">{fw}</span>
                     <span className="font-bold text-foreground/80 tabular-nums">{count}</span>
                   </span>
