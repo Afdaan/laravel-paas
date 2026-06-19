@@ -235,6 +235,13 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 
 	mainContainerID := strings.TrimSpace(res.Stdout)
 
+	if project.DatabaseOption == "sqlite" {
+		if err := s.EnsureSQLiteFile(mainContainerID); err != nil {
+			_ = utils.RunSilent(30*time.Second, "docker", "rm", "-f", mainContainerID)
+			return "", fmt.Errorf("failed to initialize SQLite database: %w", err)
+		}
+	}
+
 	// Restart Worker if needed
 	if project.Framework != "Laravel" && project.WorkerCommand != "" {
 		slog.Info("Restarting background worker container for existing image", "subdomain", project.Subdomain)
@@ -489,4 +496,32 @@ func sanitizeDockerRunError(stderr string) string {
 		return "failed to start container: internal daemon execution error"
 	}
 	return "failed to start container: " + cleaned
+}
+
+// EnsureSQLiteFile runs initialization commands for SQLite inside the container
+func (s *DockerService) EnsureSQLiteFile(containerID string) error {
+	// First, check/create database directory inside the container
+	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "mkdir", "-p", "/var/www/html/database"); err != nil {
+		return fmt.Errorf("failed to create database directory: %w (stderr: %s)", err, res.Stderr)
+	}
+
+	// Run: docker exec -u root containerID touch /var/www/html/database/database.sqlite
+	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "touch", "/var/www/html/database/database.sqlite"); err != nil {
+		return fmt.Errorf("failed to touch sqlite file: %w (stderr: %s)", err, res.Stderr)
+	}
+
+	// Run: docker exec -u root containerID chown -R www-data:www-data /var/www/html/database
+	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", "www-data:www-data", "/var/www/html/database"); err != nil {
+		return fmt.Errorf("failed to chown database directory: %w (stderr: %s)", err, res.Stderr)
+	}
+
+	// Run: docker exec -u root containerID chmod -R 775 /var/www/html/database
+	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chmod", "775", "/var/www/html/database"); err != nil {
+		return fmt.Errorf("failed to chmod database directory: %w (stderr: %s)", err, res.Stderr)
+	}
+	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chmod", "664", "/var/www/html/database/database.sqlite"); err != nil {
+		return fmt.Errorf("failed to chmod sqlite file: %w (stderr: %s)", err, res.Stderr)
+	}
+
+	return nil
 }

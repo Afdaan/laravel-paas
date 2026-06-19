@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -108,6 +109,7 @@ type Project struct {
 	Subdomain             string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
 	DatabaseName          *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
 	DatabasePassword      string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
+	DatabaseOption        string           `gorm:"size:20;not null;default:'none'" json:"database_option"`
 	Status                ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
 	DeploymentStatus      DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
 	DeploymentJobID       *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
@@ -641,6 +643,7 @@ const (
 // which container and driver handles provisioning and queries.
 type DatabaseInstance struct {
 	ID                 uint                   `gorm:"primaryKey" json:"id"`
+	UID                string                 `gorm:"uniqueIndex:uni_database_instances_uid;size:100" json:"uid"`
 	UserID             uint                   `gorm:"not null;index" json:"user_id"`
 	User               User                   `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	ProjectID          *uint                  `gorm:"uniqueIndex:uni_database_instances_project_id" json:"project_id"`
@@ -658,6 +661,14 @@ type DatabaseInstance struct {
 	ConnectionCount    int                    `gorm:"default:0" json:"connection_count"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
+}
+
+// BeforeCreate hooks into GORM's creation cycle to auto-populate UID.
+func (db *DatabaseInstance) BeforeCreate(tx *gorm.DB) error {
+	if db.UID == "" {
+		db.UID = utils.GenerateRandomUID()
+	}
+	return nil
 }
 
 // ===========================================

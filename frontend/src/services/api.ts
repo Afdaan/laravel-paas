@@ -343,23 +343,23 @@ export const databaseAPI = {
   listOwn: () =>
     api.get('/databases'),
 
-  attach: (dbId: number | string, projectUid: string) =>
-    api.post(`/databases/${dbId}/attach`, { project_uid: projectUid }),
+  attach: (dbUid: string, projectUid: string) =>
+    api.post(`/databases/${dbUid}/attach`, { project_uid: projectUid }),
 
-  detach: (dbId: number | string) =>
-    api.post(`/databases/${dbId}/detach`),
+  detach: (dbUid: string) =>
+    api.post(`/databases/${dbUid}/detach`),
 
-  resetInstance: (dbId: number | string) =>
-    api.post(`/databases/${dbId}/reset`),
+  resetInstance: (dbUid: string) =>
+    api.post(`/databases/${dbUid}/reset`),
 
-  reinstallInstance: (dbId: number | string) =>
-    api.post(`/databases/${dbId}/reinstall`),
+  reinstallInstance: (dbUid: string) =>
+    api.post(`/databases/${dbUid}/reinstall`),
 
   create: (data: { engine: string; name: string; username: string; password: string }) =>
     api.post('/databases', data),
 
-  delete: (id: number | string) =>
-    api.delete(`/databases/${id}`),
+  delete: (uid: string) =>
+    api.delete(`/databases/${uid}`),
 
   // Admin endpoints
   adminListAll: () =>

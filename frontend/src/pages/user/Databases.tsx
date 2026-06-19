@@ -119,7 +119,7 @@ export default function Databases() {
     if (!selectedDb || !selectedProjectId) return
     setIsActionLoading(true)
     try {
-      await databaseAPI.attach(selectedDb.id, selectedProjectId)
+      await databaseAPI.attach(selectedDb.uid, selectedProjectId)
       toast.success(t('common.success'))
 
       // Prompt for redeploy
@@ -143,7 +143,7 @@ export default function Databases() {
     setIsActionLoading(true)
     try {
       const projectUid = selectedDb.project_id ? selectedDb.project?.uid : undefined
-      await databaseAPI.detach(selectedDb.id)
+      await databaseAPI.detach(selectedDb.uid)
       toast.success(t('common.success'))
 
       if (projectUid) {
@@ -169,7 +169,7 @@ export default function Databases() {
     }
     setIsActionLoading(true)
     try {
-      await databaseAPI.resetInstance(selectedDb.id)
+      await databaseAPI.resetInstance(selectedDb.uid)
       toast.success(t('databaseManager.querySuccess'))
       setShowResetModal(false)
       setConfirmText('')
@@ -191,7 +191,7 @@ export default function Databases() {
     }
     setIsActionLoading(true)
     try {
-      const res = await databaseAPI.reinstallInstance(selectedDb.id)
+      const res = await databaseAPI.reinstallInstance(selectedDb.uid)
       toast.success(t('databaseManager.backupSuccess'))
       setShowReinstallModal(false)
       setConfirmText('')
@@ -349,7 +349,7 @@ export default function Databases() {
 
     setIsActionLoading(true)
     try {
-      await databaseAPI.delete(selectedDb.id)
+      await databaseAPI.delete(selectedDb.uid)
       toast.success(t('databaseManager.deleteSuccess'))
       setShowDeleteModal(false)
       setConfirmText('')

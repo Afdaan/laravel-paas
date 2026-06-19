@@ -1172,10 +1172,9 @@ func (h *DatabaseHandler) ListUserDatabases(c *fiber.Ctx) error {
 
 // AttachDatabase attaches a database to a project
 func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	var req struct {
@@ -1196,7 +1195,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
@@ -1255,10 +1254,9 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 // DetachDatabase detaches a database from its project
 func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1272,7 +1270,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
@@ -1325,10 +1323,9 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 // ResetDatabaseInstance wipes all data in the database
 func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1342,7 +1339,7 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
@@ -1392,10 +1389,9 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 
 // ReinstallDatabaseInstance drops and recreates the database schema, rotating credentials
 func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1409,7 +1405,7 @@ func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
@@ -1649,10 +1645,9 @@ func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
 
 // DeleteDatabase handles deletion of a database instance (only if unattached)
 func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1666,7 +1661,7 @@ func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {

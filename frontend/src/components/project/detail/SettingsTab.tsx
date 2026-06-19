@@ -512,7 +512,7 @@ export function SettingsTab({
                       if (!project.database_instance) return
                       setIsDbActionLoading(true)
                       try {
-                        await databaseAPI.detach(project.database_instance.id)
+                        await databaseAPI.detach(project.database_instance.uid)
                         toast.success(t('common.success'))
                         setShowDbRedeployModal(true)
                       } catch (err: unknown) {
@@ -547,7 +547,7 @@ export function SettingsTab({
                       <SelectTrigger className="flex-1 h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
                         <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
                           {(() => {
-                            const db = databasesList.find(d => String(d.id) === selectedDbId)
+                            const db = databasesList.find(d => d.uid === selectedDbId)
                             return db ? (
                               <span className="truncate font-semibold text-foreground/90 text-xs">{db.name}</span>
                             ) : (
@@ -558,7 +558,7 @@ export function SettingsTab({
                       </SelectTrigger>
                       <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">
                         {databasesList.map(db => (
-                          <SelectItem key={db.id} value={String(db.id)} className="rounded-lg py-2 px-3 cursor-pointer">
+                          <SelectItem key={db.id} value={db.uid} className="rounded-lg py-2 px-3 cursor-pointer">
                             <div className="flex items-center gap-2 text-left">
                               <span className="font-semibold text-foreground text-xs">{db.name}</span>
                               <Badge variant="outline" className={cn(
@@ -584,7 +584,7 @@ export function SettingsTab({
                         if (!selectedDbId) return
                         setIsDbActionLoading(true)
                         try {
-                          await databaseAPI.attach(Number(selectedDbId), project.uid)
+                          await databaseAPI.attach(selectedDbId, project.uid)
                           toast.success(t('common.success'))
                           setShowDbRedeployModal(true)
                           setSelectedDbId('')

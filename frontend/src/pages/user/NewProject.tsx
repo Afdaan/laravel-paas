@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { projectsAPI, githubAPI } from '../../services/api'
+import { projectsAPI, githubAPI, databaseAPI } from '../../services/api'
 import { AxiosError } from 'axios'
 import useTranslation from '../../lib/useTranslation'
-import { GithubAppInstallation, GithubRepository } from '../../types'
+import { GithubAppInstallation, GithubRepository, DatabaseInstance } from '../../types'
 import {
   Rocket,
   Database,
@@ -25,7 +25,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { siMysql, siPostgresql } from 'simple-icons'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -48,13 +47,17 @@ interface NewProjectForm {
   github_url: string;
   branch: string;
   database_name: string;
+  database_username: string;
+  database_password: string;
   base_directory: string;
   build_command: string;
   start_command: string;
   port: number | '';
   queue_enabled: boolean;
   enable_database: boolean;
+  database_option: 'none' | 'sqlite' | 'new' | 'existing' | 'external';
   database_engine: 'mysql' | 'postgresql';
+  existing_database_uid: string;
   github_installation_id?: number;
   github_repo_owner?: string;
   github_repo_name?: string;
@@ -64,6 +67,7 @@ interface ValidationErrors {
   name?: string;
   github_url?: string;
   database_name?: string;
+  existing_database_uid?: string;
 }
 
 const databaseEngines = [
@@ -111,15 +115,64 @@ function UserNewProject() {
     github_url: '',
     branch: '',
     database_name: '',
+    database_username: '',
+    database_password: '',
     base_directory: '',
     build_command: '',
     start_command: '',
     port: '',
     queue_enabled: false,
     enable_database: true,
+    database_option: 'new',
     database_engine: 'mysql',
+    existing_database_uid: '',
   })
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
+  const [existingDatabases, setExistingDatabases] = useState<DatabaseInstance[]>([])
+  const [isLoadingDatabases, setIsLoadingDatabases] = useState(false)
+
+  const generatePassword = useCallback(() => {
+    const safeChars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!$%-+*='
+    let pass = ''
+    for (let i = 0; i < 20; i++) {
+      pass += safeChars.charAt(Math.floor(Math.random() * safeChars.length))
+    }
+    return pass
+  }, [])
+
+  const loadExistingDatabases = useCallback(async () => {
+    setIsLoadingDatabases(true)
+    try {
+      const response = await databaseAPI.listOwn()
+      const dbs = response.data.databases || []
+      const unattached = dbs.filter((db: any) => db.project_id === null && db.status !== 'deleted')
+      setExistingDatabases(unattached)
+      if (unattached.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          existing_database_uid: unattached[0].uid
+        }))
+      }
+    } catch {
+      toast.error('Failed to load existing databases')
+    } finally {
+      setIsLoadingDatabases(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const generated = generatePassword()
+    setFormData(prev => ({
+      ...prev,
+      database_password: generated
+    }))
+  }, [generatePassword])
+
+  useEffect(() => {
+    if (formData.database_option === 'existing') {
+      loadExistingDatabases()
+    }
+  }, [formData.database_option, loadExistingDatabases])
 
   const repoQuerySeq = React.useRef(0)
   const branchQuerySeq = React.useRef(0)
@@ -146,11 +199,6 @@ function UserNewProject() {
   const currentBranch = React.useMemo(() =>
     branches.find(b => b.name === formData.branch),
     [branches, formData.branch]
-  )
-
-  const selectedDatabaseEngine = React.useMemo(
-    () => databaseEngines.find(engine => engine.value === formData.database_engine) || databaseEngines[0],
-    [formData.database_engine]
   )
 
   const loadRepositories = useCallback(async (installationId: string) => {
@@ -341,11 +389,14 @@ function UserNewProject() {
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
 
+      const dbUser = `dbuser_${dbName.slice(0, 25)}`
+
       setFormData(prev => ({
         ...prev,
         name: pName,
         github_url: selectedRepo.html_url,
         database_name: dbName,
+        database_username: dbUser,
         github_installation_id: Number(selectedInstallationId),
         github_repo_owner: owner,
         github_repo_name: repoName,
@@ -368,7 +419,12 @@ function UserNewProject() {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
-      setFormData(prev => ({ ...prev, database_name: dbName }))
+      const dbUser = `dbuser_${dbName.slice(0, 25)}`
+      setFormData(prev => ({
+        ...prev,
+        database_name: dbName,
+        database_username: dbUser
+      }))
     }
 
     if (validationErrors[name as keyof ValidationErrors]) {
@@ -380,8 +436,11 @@ function UserNewProject() {
     const errors: ValidationErrors = {}
     if (!formData.name.trim()) errors.name = t('common.validation.required', { field: t('newProject.displayName') })
     if (!formData.github_url.trim()) errors.github_url = t('common.validation.required', { field: t('newProject.repoUrl') })
-    if (formData.enable_database && !formData.database_name.trim()) {
+    if (formData.database_option === 'new' && !formData.database_name.trim()) {
       errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+    }
+    if (formData.database_option === 'existing' && !formData.existing_database_uid) {
+      errors.existing_database_uid = 'Please select a database'
     }
 
     setValidationErrors(errors)
@@ -817,102 +876,310 @@ function UserNewProject() {
 
                   {/* Database Settings */}
                   <div className="space-y-6 border-t pt-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                          <Database className="w-4 h-4" />
-                        </div>
-                        <div className="flex flex-col">
-                          <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Managed Database Studio
-                          </Label>
-                          <span className="text-[10px] text-muted-foreground">Provision a secure, isolated database with one click</span>
-                        </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                        <Database className="w-4 h-4" />
                       </div>
-                      <Switch
-                        checked={formData.enable_database}
-                        onCheckedChange={(checked) => {
-                          setFormData(prev => ({
-                            ...prev,
-                            enable_database: checked
-                          }))
-                        }}
-                      />
+                      <div className="flex flex-col">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                          Database Configuration
+                        </Label>
+                        <span className="text-[10px] text-muted-foreground">Select how this project connects to a database</span>
+                      </div>
                     </div>
 
-                    <div
-                      className={cn(
-                        "grid transition-[grid-template-rows,opacity,transform] duration-500 ease-in-out",
-                        formData.enable_database
-                          ? "grid-rows-[1fr] opacity-100 translate-y-0"
-                          : "grid-rows-[0fr] opacity-0 -translate-y-2 pointer-events-none"
-                      )}
-                    >
-                      <div className="min-h-0 overflow-hidden">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl border border-border/70 bg-background/45 shadow-[0_18px_60px_-40px_hsl(var(--foreground))] backdrop-blur-sm transition-[background-color,border-color,box-shadow,transform,opacity] duration-500 ease-in-out">
-                          {/* Database Engine Dropdown */}
-                          <div className="space-y-2 min-w-0">
-                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                              Database Engine
-                            </Label>
-                            <Select
-                              value={formData.database_engine}
-                              onValueChange={(val) => {
-                                setFormData(prev => ({
-                                  ...prev,
-                                  database_engine: val as 'mysql' | 'postgresql'
-                                }))
-                              }}
-                            >
-                              <SelectTrigger className="w-full h-11 px-4 rounded-xl border border-border/70 hover:border-primary/40 bg-background/80 hover:bg-background text-sm font-semibold transition-all duration-200 shadow-sm outline-none focus:outline-none focus:ring-1 focus:ring-primary/25 focus:border-primary/60 data-[size=default]:h-11 data-[size=default]:py-0 data-[size=default]:pr-4 data-[size=default]:pl-4">
-                                <div className="flex items-center gap-3.5 text-left flex-1 min-w-0 pr-4">
-                                  <DatabaseEngineBadge engine={selectedDatabaseEngine} />
-                                  <span className="truncate text-foreground/95">{selectedDatabaseEngine.label}</span>
+                    {/* Database Options Cards */}
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {[
+                          { value: 'none', label: 'No Database', desc: 'App stateless, tidak butuh database sama sekali.', badge: 'FREE' },
+                          { value: 'sqlite', label: 'SQLite', desc: 'File-based, auto-setup. Cocok untuk hosting murah.', badge: 'FREE · INCLUDED' },
+                          { value: 'new', label: 'New Managed DB', desc: 'Provision MySQL / PostgreSQL baru, langsung attach.', badge: 'ADDITIONAL ITEM' },
+                        ].map((opt) => (
+                          <Card
+                            key={opt.value}
+                            className={cn(
+                              "p-4 cursor-pointer border transition-all duration-200 flex flex-col justify-between hover:shadow-md",
+                              formData.database_option === opt.value
+                                ? "border-primary bg-primary/5 ring-1 ring-primary/25"
+                                : "border-border/80 bg-background/50"
+                            )}
+                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as any }))}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                                <div className={cn(
+                                  "w-4 h-4 rounded-full border flex items-center justify-center",
+                                  formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
+                                )}>
+                                  {formData.database_option === opt.value && (
+                                    <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                                  )}
                                 </div>
-                              </SelectTrigger>
-                              <SelectContent
-                                side="top"
-                                align="start"
-                                sideOffset={8}
-                                alignItemWithTrigger={false}
-                                className="min-w-[var(--anchor-width)] w-[var(--anchor-width)] bg-popover/98 backdrop-blur-xl border border-border/80 rounded-xl shadow-2xl p-1.5"
-                              >
-                                {databaseEngines.map(engine => (
-                                  <SelectItem
-                                    key={engine.value}
-                                    value={engine.value}
-                                    className="rounded-lg py-2.5 px-3 cursor-pointer transition-colors focus:bg-accent/80 hover:bg-accent/40"
-                                  >
-                                    <div className="flex items-center gap-3.5 min-w-0">
-                                      <DatabaseEngineBadge engine={engine} className="h-9 w-9" />
-                                      <span className="font-medium text-foreground/90 text-sm truncate">{engine.label}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{opt.desc}</p>
+                            </div>
+                            <div className="mt-4">
+                              <span className={cn(
+                                "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
+                                opt.value === 'none' && "border-border bg-muted/20 text-muted-foreground",
+                                opt.value === 'sqlite' && "border-emerald-500/20 bg-emerald-500/10 text-emerald-500",
+                                opt.value === 'new' && "border-primary/20 bg-primary/10 text-primary"
+                              )}>
+                                {opt.badge}
+                              </span>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
 
-                          {/* Database Name */}
-                          <div className="space-y-2 min-w-0">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[
+                          { value: 'existing', label: 'Use Existing Database', desc: 'Attach database yang sudah kamu punya (unattached).', badge: 'ALREADY OWNED' },
+                          { value: 'external', label: 'External Database', desc: 'Pakai DB dari provider lain: Supabase, PlanetScale, dll.', badge: 'BRING YOUR OWN' },
+                        ].map((opt) => (
+                          <Card
+                            key={opt.value}
+                            className={cn(
+                              "p-4 cursor-pointer border transition-all duration-200 flex flex-col justify-between hover:shadow-md",
+                              formData.database_option === opt.value
+                                ? "border-primary bg-primary/5 ring-1 ring-primary/25"
+                                : "border-border/80 bg-background/50"
+                            )}
+                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as any }))}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                                <div className={cn(
+                                  "w-4 h-4 rounded-full border flex items-center justify-center",
+                                  formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
+                                )}>
+                                  {formData.database_option === opt.value && (
+                                    <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{opt.desc}</p>
+                            </div>
+                            <div className="mt-4">
+                              <span className={cn(
+                                "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
+                                opt.value === 'existing' && "border-amber-500/20 bg-amber-500/10 text-amber-500",
+                                opt.value === 'external' && "border-purple-500/20 bg-purple-500/10 text-purple-500"
+                              )}>
+                                {opt.badge}
+                              </span>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* New Managed DB Section */}
+                    {formData.database_option === 'new' && (
+                      <div className="p-5 rounded-xl border border-primary/20 bg-primary/5/30 backdrop-blur-sm space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-primary">
+                          Configure New Database
+                        </Label>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Database Engine
+                          </Label>
+                          <div className="grid grid-cols-2 gap-3">
+                            {databaseEngines.map((engine) => (
+                              <div
+                                key={engine.value}
+                                onClick={() => setFormData(prev => ({ ...prev, database_engine: engine.value }))}
+                                className={cn(
+                                  "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200",
+                                  formData.database_engine === engine.value
+                                    ? "border-primary bg-primary/10"
+                                    : "border-border bg-background/50 hover:bg-muted/30"
+                                )}
+                              >
+                                <DatabaseEngineBadge engine={engine} />
+                                <span className="text-sm font-semibold">{engine.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
                             <Label htmlFor="database_name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                              {t('newProject.dbName')}
+                              Database Name
                             </Label>
                             <Input
                               id="database_name"
                               name="database_name"
                               value={formData.database_name}
                               onChange={handleChange}
-                              placeholder={t('newProject.dbName')}
-                              className={cn("h-11 rounded-xl border-border/70 bg-background/80 shadow-sm transition-all duration-200", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
+                              placeholder="my_database"
+                              className={cn("h-11 rounded-xl bg-background", validationErrors.database_name && "border-destructive focus-visible:ring-destructive")}
                             />
                             {validationErrors.database_name && (
                               <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_name}</p>
                             )}
                           </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="database_username" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                              Username
+                            </Label>
+                            <Input
+                              id="database_username"
+                              name="database_username"
+                              value={formData.database_username}
+                              onChange={(e) => setFormData(prev => ({ ...prev, database_username: e.target.value }))}
+                              placeholder="db_user"
+                              className="h-11 rounded-xl bg-background"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="database_password" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Password
+                          </Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="database_password"
+                              name="database_password"
+                              value={formData.database_password}
+                              onChange={(e) => setFormData(prev => ({ ...prev, database_password: e.target.value }))}
+                              placeholder="Password"
+                              className="h-11 rounded-xl bg-background flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setFormData(prev => ({ ...prev, database_password: generatePassword() }))}
+                              className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1 text-xs"
+                            >
+                              ⚡ Generate
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 flex gap-2.5 items-start">
+                          <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                          <span className="text-[10px] text-muted-foreground leading-relaxed">
+                            Database ini tercatat sebagai <strong className="text-primary font-bold">additional item</strong>. Billing credit akan diterapkan di masa mendatang — saat ini gratis.
+                          </span>
                         </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Existing Database Section */}
+                    {formData.database_option === 'existing' && (
+                      <div className="p-5 rounded-xl border border-amber-500/20 bg-amber-500/5/30 backdrop-blur-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-amber-500">
+                          Select Existing Database
+                        </Label>
+                        {validationErrors.existing_database_uid && (
+                          <p className="text-xs text-destructive font-medium pl-1">{validationErrors.existing_database_uid}</p>
+                        )}
+
+                        {isLoadingDatabases ? (
+                          <div className="flex items-center justify-center p-6 gap-2 text-muted-foreground">
+                            <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+                            <span className="text-sm font-medium">Loading your databases...</span>
+                          </div>
+                        ) : existingDatabases.length === 0 ? (
+                          <div className="text-center p-6 border border-dashed rounded-xl space-y-1">
+                            <p className="text-sm font-semibold text-foreground/80">No unattached databases found</p>
+                            <p className="text-xs text-muted-foreground">Go to Database Studio to create a standalone database first.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                              Your Unattached Databases
+                            </Label>
+                            <div className="space-y-2">
+                              {existingDatabases.map((db) => (
+                                <div
+                                  key={db.id}
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, existing_database_uid: db.uid }))
+                                    if (validationErrors.existing_database_uid) {
+                                      setValidationErrors(prev => ({ ...prev, existing_database_uid: undefined }))
+                                    }
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all duration-200",
+                                    formData.existing_database_uid === db.uid
+                                      ? "border-amber-500 bg-amber-500/10"
+                                      : "border-border bg-background/50 hover:bg-muted/30"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    <div>
+                                      <div className="font-mono text-sm font-bold text-foreground">{db.name}</div>
+                                      <div className="text-[10px] text-muted-foreground mt-0.5">Engine: {db.engine.toUpperCase()} · Unattached</div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className={cn(
+                                      "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
+                                      db.engine === 'mysql' ? "border-amber-500/20 bg-amber-500/10 text-amber-500" : "border-sky-500/20 bg-sky-500/10 text-sky-500"
+                                    )}>
+                                      {db.engine}
+                                    </span>
+                                    <div className={cn(
+                                      "w-4 h-4 rounded-full border flex items-center justify-center",
+                                      formData.existing_database_uid === db.uid ? "border-amber-500" : "border-muted-foreground"
+                                    )}>
+                                      {formData.existing_database_uid === db.uid && (
+                                        <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 flex gap-2.5 items-start">
+                          <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                          <span className="text-[10px] text-muted-foreground leading-relaxed">
+                            Database yang dipilih akan di-attach ke project ini. Database ini sudah tercatat sebagai <strong className="text-amber-500 font-bold">milikmu</strong> — tidak ada biaya tambahan saat attach.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* External Database Section */}
+                    {formData.database_option === 'external' && (
+                      <div className="p-5 rounded-xl border border-purple-500/20 bg-purple-500/5/30 backdrop-blur-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-purple-500">
+                          External Database — Bring Your Own
+                        </Label>
+                        <div className="flex gap-3 items-start">
+                          <ExternalLink className="w-5 h-5 text-purple-500 shrink-0 mt-0.5" />
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            Project ini akan berjalan tanpa managed database dari kami. Set kredensial database kamu di <strong className="text-purple-500 font-bold">Environment Editor</strong> setelah project dibuat.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2 border-t border-purple-500/10 pt-3">
+                          <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            Variabel yang perlu diisi
+                          </Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'].map((val) => (
+                              <span key={val} className="text-[9px] font-mono font-bold px-2 py-0.5 rounded border bg-muted/30 border-border text-muted-foreground uppercase tracking-wider">
+                                {val}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Base Directory */}
@@ -1007,7 +1274,7 @@ function UserNewProject() {
           {(connectionMode === 'manual' || selectedRepoFullName) && (
             <Button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || (formData.database_option === 'existing' && isLoadingDatabases)}
               className="w-full h-16 text-lg font-bold gap-3"
             >
               {isLoading ? (

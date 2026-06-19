@@ -98,6 +98,28 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
 	}
 
+	// 5.1. Populate empty UIDs for database_instances to support secure communications.
+	var emptyUIDInstances []models.DatabaseInstance
+	if err := db.Where("uid = ? OR uid IS NULL", "").Find(&emptyUIDInstances).Error; err != nil {
+		return fmt.Errorf("failed to scan for database instances with empty UIDs: %w", err)
+	}
+	for _, inst := range emptyUIDInstances {
+		newUID := utils.GenerateRandomUID()
+		if err := db.Model(&inst).Update("uid", newUID).Error; err != nil {
+			slog.Error("Failed to update database instance UID during backfill migration", "db_id", inst.ID, "error", err)
+			return fmt.Errorf("failed to backfill database instance UID for ID %d: %w", inst.ID, err)
+		}
+	}
+
+	// Verify that no database instances still have an empty/null UID
+	var count int64
+	if err := db.Model(&models.DatabaseInstance{}).Where("uid = ? OR uid IS NULL", "").Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to verify database instance UID backfill count: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("migration verification failed: %d database instances still have empty UIDs", count)
+	}
+
 	slog.Info("Defensive migration bootstrap completed successfully.")
 
 	cfg := config.Load()

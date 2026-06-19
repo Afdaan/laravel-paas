@@ -13,6 +13,7 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"gorm.io/gorm"
 )
 
 func sanitizeCommand(cmd string) string {
@@ -184,7 +185,12 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, enableDatabase bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+	return s.CreateProjectTx(nil, userID, role, name, githubURL, branch, databaseOption, databaseName, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
+}
+
+// CreateProjectTx handles the initial creation of a project record within a transaction context
+func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	// Enforce per-user project limit (bypass for admins and superadmins)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
 		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
@@ -211,7 +217,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 	var dbName *string
 	var dbPassword string
 
-	if enableDatabase {
+	if databaseOption == "new" {
 		tempDbName := databaseName
 		if tempDbName == "" {
 			tempDbName = strings.ReplaceAll(subdomain, "-", "_")
@@ -239,6 +245,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		Subdomain:            subdomain,
 		DatabaseName:         dbName,
 		DatabasePassword:     dbPassword,
+		DatabaseOption:       databaseOption,
 		BaseDirectory:        baseDirectory,
 		BuildCommand:         sanitizeCommand(buildCommand),
 		StartCommand:         strings.TrimSpace(startCommand),
@@ -253,7 +260,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		GithubRepoName:       githubRepoName,
 	}
 
-	if enableDatabase {
+	if databaseOption == "new" {
 		engine := "mysql"
 		if databaseEngine == "postgresql" {
 			engine = "postgresql"
@@ -280,7 +287,7 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 		project.DatabaseInstance = instance
 	}
 
-	if err := s.projectRepo.Create(project); err != nil {
+	if err := s.projectRepo.CreateTx(tx, project); err != nil {
 		return nil, err
 	}
 

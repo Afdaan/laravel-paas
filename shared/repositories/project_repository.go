@@ -24,6 +24,7 @@ type ProjectRepository interface {
 	ListByStatus(status models.ProjectStatus) ([]models.Project, error)
 	ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error)
 	Create(project *models.Project) error
+	CreateTx(tx *gorm.DB, project *models.Project) error
 	Update(project *models.Project) error
 	UpdateStatus(id uint, status models.ProjectStatus) error
 	UpdateMetadata(id uint, updates map[string]interface{}) error
@@ -162,6 +163,13 @@ func (r *projectRepository) ListByDeploymentStatuses(statuses []models.Deploymen
 }
 
 func (r *projectRepository) Create(project *models.Project) error {
+	return r.db.Create(project).Error
+}
+
+func (r *projectRepository) CreateTx(tx *gorm.DB, project *models.Project) error {
+	if tx != nil {
+		return tx.Create(project).Error
+	}
 	return r.db.Create(project).Error
 }
 

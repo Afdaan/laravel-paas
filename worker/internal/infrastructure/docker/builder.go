@@ -202,6 +202,13 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	mainContainerID := strings.TrimSpace(res.Stdout)
 
+	if project.DatabaseOption == "sqlite" {
+		if err := s.EnsureSQLiteFile(mainContainerID); err != nil {
+			_ = utils.RunSilent(30*time.Second, "docker", "rm", "-f", mainContainerID)
+			return "", fmt.Errorf("failed to initialize SQLite database: %w", err)
+		}
+	}
+
 	// 5. Start Worker Container if needed (for non-Laravel)
 	if project.Framework != "Laravel" && project.WorkerCommand != "" {
 		slog.Info("Starting background worker container", "subdomain", project.Subdomain, "command", project.WorkerCommand)
