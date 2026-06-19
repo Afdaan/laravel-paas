@@ -13,10 +13,12 @@ fi
 # Set Defaults
 MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"}
 MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
+MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
+POSTGRES_CONTAINER_NAME=${POSTGRES_CONTAINER_NAME:-"paas-user-postgres"}
 
 # 2. Bersihkan kontainer lama
 echo "[INFO] Cleaning old infrastructure..."
-docker rm -f paas-mysql paas-postgres paas-user-postgres paas-redis paas-traefik paas-buildkit paas-registry 2>/dev/null || true
+docker rm -f "$MYSQL_CONTAINER_NAME" paas-postgres "$POSTGRES_CONTAINER_NAME" paas-redis paas-traefik paas-buildkit paas-registry 2>/dev/null || true
 
 # 3. Siapkan Network & Folder (Pakai sudo untuk folder agar aman dari Permission Denied)
 echo "[INFO] Preparing storage folders..."
@@ -25,9 +27,9 @@ sudo mkdir -p storage/mysql storage/postgres storage/projects
 sudo chown -R $(id -u):$(id -g) storage/  # Ubah kepemilikan ke user saat ini
 
 # 4. Jalankan MariaDB
-echo "[INFO] Starting MariaDB..."
+echo "[INFO] Starting MariaDB ($MYSQL_CONTAINER_NAME)..."
 docker run -d \
-    --name paas-mysql \
+    --name "$MYSQL_CONTAINER_NAME" \
     --network paas-network \
     --restart unless-stopped \
     -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
@@ -50,13 +52,13 @@ docker run -d \
     postgres:15-alpine
 
 # 5.5. Jalankan User PostgreSQL (Isolated User Database Container)
-echo "[INFO] Starting User PostgreSQL..."
+echo "[INFO] Starting User PostgreSQL ($POSTGRES_CONTAINER_NAME)..."
 USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
 USER_PG_PORT=${USER_PG_PORT:-5433}
 sudo mkdir -p storage/user-postgres
 sudo chown -R $(id -u):$(id -g) storage/user-postgres
 docker run -d \\
-    --name paas-user-postgres \\
+    --name "$POSTGRES_CONTAINER_NAME" \\
     --network paas-network \\
     --restart unless-stopped \\
     -e POSTGRES_USER="postgres" \\

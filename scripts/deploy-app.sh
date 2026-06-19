@@ -46,7 +46,10 @@ PG_USER=${PG_USER:-"postgres"}
 PG_DATABASE=${PG_DATABASE:-"paas"}
 USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
 USER_PG_PORT=${USER_PG_PORT:-5433}
-USER_PG_HOST=${USER_PG_HOST:-"paas-user-postgres"}
+MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
+POSTGRES_CONTAINER_NAME=${POSTGRES_CONTAINER_NAME:-"paas-user-postgres"}
+PG_CONTAINER_NAME=${PG_CONTAINER_NAME:-"paas-postgres"}
+USER_PG_HOST=${USER_PG_HOST:-"$POSTGRES_CONTAINER_NAME"}
 
 # Deployment Mode
 APP_MODE=${APP_MODE:-"docker"}
@@ -222,11 +225,11 @@ deploy_backend() {
         -e HOST_DATA_PATH="$DATA_PATH" \
         -e HOST_TEMPLATES_PATH="${PROJECT_ROOT}/docker/templates" \
         -e HOST_RAILPACKS_PATH="${PROJECT_ROOT}/railpacks" \
-        -e PG_HOST=paas-postgres \
+        -e PG_HOST="${PG_HOST:-$PG_CONTAINER_NAME}" \
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
-        -e MYSQL_HOST=paas-mysql \
+        -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e MYSQL_USER="$MYSQL_USER" \
         -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
@@ -242,7 +245,7 @@ deploy_backend() {
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
-        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
@@ -289,11 +292,12 @@ deploy_worker() {
         -e HOST_TEMPLATES_PATH="${PROJECT_ROOT}/docker/templates" \
         -e HOST_RAILPACKS_PATH="${PROJECT_ROOT}/railpacks" \
         -e DOCKER_SOCKET=/var/run/docker.sock \
-        -e PG_HOST=paas-postgres \
-        -e PG_PORT=5432 \
+        -e PG_HOST="${PG_HOST:-$PG_CONTAINER_NAME}" \
+        -e PG_PORT="${PG_PORT:-5432}" \
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
+        -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
         -e REDIS_HOST=paas-redis \
         -e REDIS_PORT="${REDIS_PORT:-6379}" \
         -e REDIS_PASSWORD="$REDIS_PASSWORD" \
@@ -305,7 +309,7 @@ deploy_worker() {
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
-        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \

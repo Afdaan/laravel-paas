@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -259,6 +260,12 @@ func RedactInfrastructureDetails(errorMsg string, sensitiveValues []string) stri
 	// Redact DB Hostnames
 	errorMsg = strings.ReplaceAll(errorMsg, "paas-mysql", "database-host")
 	errorMsg = strings.ReplaceAll(errorMsg, "paas-user-postgres", "database-host")
+	if mysqlName := os.Getenv("MYSQL_CONTAINER_NAME"); mysqlName != "" {
+		errorMsg = strings.ReplaceAll(errorMsg, mysqlName, "database-host")
+	}
+	if postgresName := os.Getenv("POSTGRES_CONTAINER_NAME"); postgresName != "" {
+		errorMsg = strings.ReplaceAll(errorMsg, postgresName, "database-host")
+	}
 
 	// Redact absolute server directory paths
 	pathRegex := regexp.MustCompile(`/(home|var|app|etc|usr|nix)/[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.-]+)*`)

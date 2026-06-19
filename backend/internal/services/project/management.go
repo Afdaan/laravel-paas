@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/nginx"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
@@ -266,11 +267,11 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 			engine = "postgresql"
 		}
 
-		host := "paas-mysql"
-		port := 3306
+		host := infrastructure.MySQLContainerName()
+		port := infrastructure.MySQLPort()
 		if engine == "postgresql" {
-			host = "paas-user-postgres"
-			port = 5432
+			host = infrastructure.PostgreSQLContainerName()
+			port = infrastructure.PostgreSQLPort()
 		}
 
 		instance := &models.DatabaseInstance{

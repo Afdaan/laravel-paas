@@ -22,6 +22,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # Load DB credentials from .env or use defaults
+PG_CONTAINER_NAME=${PG_CONTAINER_NAME:-"paas-postgres"}
 DB_USER="paas"
 DB_PASS=""
 DB_NAME="paas"
@@ -87,8 +88,8 @@ fi
 echo -e "${BLUE}Inserting user into database...${NC}"
 
 # Check if Postgres container is running
-if ! docker ps | grep -q paas-postgres; then
-    echo -e "${RED}Error: paas-postgres container is not running.${NC}"
+if ! docker ps | grep -q "$PG_CONTAINER_NAME"; then
+    echo -e "${RED}Error: $PG_CONTAINER_NAME container is not running.${NC}"
     echo -e "Please start the services first: ./scripts/start.sh"
     exit 1
 fi
@@ -98,7 +99,7 @@ SQL="INSERT INTO users (name, email, password, role, created_at, updated_at) VAL
 
 # Execute Query
 # We use docker exec to run psql client inside the container
-docker exec -e PGPASSWORD="$DB_PASS" -i paas-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "$SQL"
+docker exec -e PGPASSWORD="$DB_PASS" -i "$PG_CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$SQL"
 
 EXIT_CODE=$?
 

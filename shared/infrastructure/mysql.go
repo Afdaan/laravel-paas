@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,12 +23,43 @@ var (
 	validPasswordRegex = regexp.MustCompile(`^[a-zA-Z0-9]{8,128}$`)
 )
 
+// MySQLContainerName returns the container name for MySQL, checking MYSQL_CONTAINER_NAME env var with fallback
+func MySQLContainerName() string {
+	if name := os.Getenv("MYSQL_CONTAINER_NAME"); name != "" {
+		return name
+	}
+	return "paas-mysql"
+}
+
+func databasePort(envName string, fallback int) int {
+	value := os.Getenv(envName)
+	if value == "" {
+		return fallback
+	}
+
+	port, err := strconv.Atoi(value)
+	if err != nil || port < 1 || port > 65535 {
+		return fallback
+	}
+
+	return port
+}
+
+// MySQLPort returns the configured MySQL port with the current default fallback.
+func MySQLPort() int {
+	return databasePort("MYSQL_PORT", 3306)
+}
+
 // MySQLService handles MySQL database provisioning for user projects
-type MySQLService struct{}
+type MySQLService struct {
+	containerName string
+}
 
 // NewMySQLService creates a new MySQL provisioning service
 func NewMySQLService() *MySQLService {
-	return &MySQLService{}
+	return &MySQLService{
+		containerName: MySQLContainerName(),
+	}
 }
 
 // CreateDatabaseCustom provisions a MySQL database and matching user for a user project.
@@ -58,7 +90,7 @@ func (s *MySQLService) CreateDatabaseCustom(dbName, username, password string) e
 
 	// Check if database already exists
 	checkDBSQL := fmt.Sprintf("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s';", dbName)
-	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", "paas-mysql",
+	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword, "-N", "-e", checkDBSQL)
 	if err != nil {
 		return apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
@@ -69,7 +101,7 @@ func (s *MySQLService) CreateDatabaseCustom(dbName, username, password string) e
 
 	// Check if user already exists
 	checkUserSQL := fmt.Sprintf("SELECT User FROM mysql.user WHERE User = '%s';", username)
-	checkUserRes, err := utils.Run(30*time.Second, "docker", "exec", "paas-mysql",
+	checkUserRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword, "-N", "-e", checkUserSQL)
 	if err != nil {
 		return apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
@@ -78,7 +110,7 @@ func (s *MySQLService) CreateDatabaseCustom(dbName, username, password string) e
 		return apperr.New(409, "USER_ALREADY_EXISTS", fmt.Sprintf("MySQL user '%s' already exists", username))
 	}
 
-	res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("CREATE DATABASE `%s`;", dbName))
 	if err != nil {
@@ -86,7 +118,7 @@ func (s *MySQLService) CreateDatabaseCustom(dbName, username, password string) e
 	}
 
 	// Create user with connection limit to prevent tenant connection storms and SQL injection
-	res, err = utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	res, err = utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf(
 			"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'; ALTER USER '%s'@'%%' WITH MAX_USER_CONNECTIONS 15; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;",
@@ -95,11 +127,11 @@ func (s *MySQLService) CreateDatabaseCustom(dbName, username, password string) e
 	if err != nil {
 		// ROLLBACK: Drop the MySQL database created in the previous step
 		dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;", dbName)
-		_, _ = utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+		_, _ = utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 			"mysql", "-uroot", "-p"+rootPassword, "-e", dropDBSQL)
 		// Clean up the user in case it was partially created
 		dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%';", username)
-		_, _ = utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+		_, _ = utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 			"mysql", "-uroot", "-p"+rootPassword, "-e", dropUserSQL)
 
 		return apperr.New(500, "DB_PROVISION_FAILED", "Failed to create database user or grant permissions: "+res.Stderr)
@@ -124,7 +156,7 @@ func (s *MySQLService) DropDatabaseCustom(dbName, username string) error {
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
-	res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("DROP DATABASE IF EXISTS `%s`; DROP USER IF EXISTS '%s'@'%%';", dbName, username))
 	if err != nil {
@@ -145,7 +177,7 @@ func (s *MySQLService) CreateDatabase(dbName, password string) error {
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
 
-	res, err := utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`;", dbName))
 	if err != nil {
@@ -153,7 +185,7 @@ func (s *MySQLService) CreateDatabase(dbName, password string) error {
 	}
 
 	// Create user with connection limit to prevent tenant connection storms and SQL injection
-	res, err = utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	res, err = utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf(
 			"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; ALTER USER '%s'@'%%' IDENTIFIED BY '%s' WITH MAX_USER_CONNECTIONS 15; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;",
@@ -173,7 +205,7 @@ func (s *MySQLService) DropDatabase(dbName string) error {
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
-	_, err := utils.Run(1*time.Minute, "docker", "exec", "paas-mysql",
+	_, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("DROP DATABASE IF EXISTS `%s`; DROP USER IF EXISTS '%s'@'%%';", dbName, dbName))
 	return err
@@ -189,7 +221,7 @@ func (s *MySQLService) UpdatePassword(dbName, newPassword string) error {
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
-	res, err := utils.Run(30*time.Second, "docker", "exec", "paas-mysql",
+	res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;", dbName, newPassword))
 	if err != nil {
@@ -208,14 +240,14 @@ func (s *MySQLService) UpdateStatus(dbName string, suspend bool) error {
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
 
 	if suspend {
-		res, err := utils.Run(30*time.Second, "docker", "exec", "paas-mysql",
+		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"mysql", "-uroot", "-p"+rootPassword,
 			"-e", fmt.Sprintf("REVOKE ALL PRIVILEGES ON `%s`.* FROM '%s'@'%%'; ALTER USER '%s'@'%%' WITH MAX_USER_CONNECTIONS 0; FLUSH PRIVILEGES;", dbName, dbName, dbName))
 		if err != nil {
 			return apperr.New(500, "DB_SUSPEND_FAILED", "Failed to suspend MySQL database: "+res.Stderr)
 		}
 	} else {
-		res, err := utils.Run(30*time.Second, "docker", "exec", "paas-mysql",
+		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"mysql", "-uroot", "-p"+rootPassword,
 			"-e", fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; ALTER USER '%s'@'%%' WITH MAX_USER_CONNECTIONS 15; FLUSH PRIVILEGES;", dbName, dbName, dbName))
 		if err != nil {

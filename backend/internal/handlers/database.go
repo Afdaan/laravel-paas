@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	maxDatabaseImportBytes      = 5 * 1024 * 1024
-	maxDatabaseImportStatements = 200
+	maxDatabaseImportBytes              = 5 * 1024 * 1024
+	maxDatabaseImportStatements         = 200
 	databasePasswordInvalidCharsMessage = "Database password must not contain spaces or connection-string-breaking characters like \", ', `, \\, ;, @, #, /, or ?"
 )
 
@@ -191,8 +191,8 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 		c.Set(fiber.HeaderCacheControl, "no-store")
 		return c.JSON(fiber.Map{
 			"engine":   "mysql",
-			"host":     "paas-mysql",
-			"port":     3306,
+			"host":     infrastructure.MySQLContainerName(),
+			"port":     infrastructure.MySQLPort(),
 			"database": project.GetDatabaseName(),
 			"username": project.GetDatabaseName(),
 			"password": project.DatabasePassword,
@@ -305,9 +305,9 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		now := time.Now()
 		msg := "Credentials rotation env update"
 		errUpdate := h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
-			"deployment_status":      models.DepStatusQueued,
-			"deployment_job_id":      jobID,
-			"deployment_message":     msg,
+			"deployment_status":       models.DepStatusQueued,
+			"deployment_job_id":       jobID,
+			"deployment_message":      msg,
 			"deployment_started_at":   &now,
 			"deployment_heartbeat_at": &now,
 			"deployment_finished_at":  nil,
@@ -1587,11 +1587,11 @@ func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
 	var host string
 	var port int
 	if req.Engine == "postgresql" {
-		host = "paas-user-postgres"
-		port = 5432
+		host = infrastructure.PostgreSQLContainerName()
+		port = infrastructure.PostgreSQLPort()
 	} else {
-		host = "paas-mysql"
-		port = 3306
+		host = infrastructure.MySQLContainerName()
+		port = infrastructure.MySQLPort()
 	}
 
 	// Provision database in engine container
@@ -1733,7 +1733,6 @@ func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
 	if err := h.db.Save(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database status: " + err.Error()})
 	}
-
 
 	h.recordAuditLog(c, 0, "db_delete", "active", "deleted", "completed", "")
 

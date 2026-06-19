@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
@@ -518,8 +519,8 @@ func BackfillDatabaseInstances(db *gorm.DB) error {
 			Name:      p.GetDatabaseName(),
 			Username:  p.GetDatabaseName(),
 			Password:  p.DatabasePassword,
-			Host:      "paas-mysql",
-			Port:      3306,
+			Host:      infrastructure.MySQLContainerName(),
+			Port:      infrastructure.MySQLPort(),
 		}
 		if err := db.Create(&instance).Error; err != nil {
 			slog.Warn("Failed to backfill database instance", "project_id", p.ID, "error", err)

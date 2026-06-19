@@ -753,8 +753,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			pgService := infrastructure.NewPostgreSQLService()
 			dbErr = pgService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
 			if dbErr == nil && dbInstance != nil {
-				dbInstance.Host = "paas-user-postgres"
-				dbInstance.Port = 5432
+				dbInstance.Host = infrastructure.PostgreSQLContainerName()
+				dbInstance.Port = infrastructure.PostgreSQLPort()
 				dbInstance.Password = project.DatabasePassword
 				dbInstance.Status = models.DBStatusActive
 
@@ -784,8 +784,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		} else {
 			dbErr = w.mysqlService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
 			if dbErr == nil && dbInstance != nil {
-				dbInstance.Host = "paas-mysql"
-				dbInstance.Port = 3306
+				dbInstance.Host = infrastructure.MySQLContainerName()
+				dbInstance.Port = infrastructure.MySQLPort()
 				dbInstance.Password = project.DatabasePassword
 				dbInstance.Status = models.DBStatusActive
 
@@ -955,7 +955,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		project.LaravelVersion = ""
 		project.LanguageVersion = ""
 		project.IsManualVersion = false
-
 
 		updates["node_version"] = ""
 		updates["php_version"] = ""
