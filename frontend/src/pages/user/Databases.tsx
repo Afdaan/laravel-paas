@@ -29,14 +29,24 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { siPostgresql, siMysql } from 'simple-icons'
 
-// Brand-aware engine styling for list avatars/badges (Postgres = blue, MySQL = amber)
+// Official brand logos (simple-icons) + tint for list avatars/badges
 const ENGINE_META = {
-  postgresql: { glyph: 'PG', avatar: 'bg-blue-500/10 text-blue-500 border-blue-500/20', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
-  mysql: { glyph: 'My', avatar: 'bg-amber-500/10 text-amber-500 border-amber-500/20', badge: 'border-transparent bg-amber-500/10 text-amber-500' },
+  postgresql: { icon: siPostgresql, avatar: 'bg-blue-500/10 border-blue-500/20', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  mysql: { icon: siMysql, avatar: 'bg-sky-500/10 border-sky-500/20', badge: 'border-transparent bg-sky-600/10 text-sky-600' },
 } as const
 
 const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
+
+// Render a simple-icons brand glyph at its official color.
+function EngineIcon({ icon, className }: { icon: { path: string; hex: string; title: string }; className?: string }) {
+  return (
+    <svg role="img" aria-label={icon.title} viewBox="0 0 24 24" className={className} fill={`#${icon.hex}`}>
+      <path d={icon.path} />
+    </svg>
+  )
+}
 
 // One database entry in the sidebar list — accent bar (selected) + engine avatar.
 function DbRow({ db, selected, onSelect, t }: {
@@ -64,10 +74,10 @@ function DbRow({ db, selected, onSelect, t }: {
       )} />
       <div className="flex items-center gap-2.5">
         <span className={cn(
-          "shrink-0 w-8 h-8 rounded-lg border flex items-center justify-center text-[10px] font-bold tracking-tight",
+          "shrink-0 w-8 h-8 rounded-lg border flex items-center justify-center",
           meta.avatar
         )}>
-          {meta.glyph}
+          <EngineIcon icon={meta.icon} className="w-4 h-4" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
