@@ -45,10 +45,15 @@ type ProjectRepository interface {
 	ResolveInstallationID(userID uint, owner string) (int64, error)
 	VerifyInstallationID(installationID int64, owner string) (bool, error)
 	SaveDatabaseInstance(instance *models.DatabaseInstance) error
+	DB() *gorm.DB
 }
 
 type projectRepository struct {
 	db *gorm.DB
+}
+
+func (r *projectRepository) DB() *gorm.DB {
+	return r.db
 }
 
 func NewProjectRepository(db *gorm.DB) ProjectRepository {

@@ -150,12 +150,12 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	}
 
 	// Create project record inside the transaction
-	project, err := h.projectService.CreateProjectTx(tx, userID, role, req.Name, req.GithubURL, req.Branch, dbOption, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
+	project, err := h.projectService.CreateProjectTx(tx, userID, role, req.Name, req.GithubURL, req.Branch, dbOption, req.DatabaseName, req.DatabaseUsername, req.DatabasePassword, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
 	if err != nil {
 		tx.Rollback()
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Failed to create project",
+			"error": err.Error(),
 		})
 	}
 

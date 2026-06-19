@@ -1014,6 +1014,17 @@ export const translations = {
           generate: "⚡ Generate",
           info: "This database is classified as an additional item. Billing credits will apply in the future — currently free."
         },
+        validation: {
+          nameLowercase: "Database name must be strictly lowercase",
+          nameInvalid: "Database name must be 2-64 characters, start with a letter, and contain only lowercase alphanumeric characters or underscores",
+          nameReserved: "Database name '{{value}}' is a reserved SQL word",
+          usernameLowercase: "Database username must be strictly lowercase",
+          usernameInvalid: "Database username must be 2-32 characters, start with a letter, and contain only lowercase alphanumeric characters or underscores",
+          usernameReserved: "Database username '{{value}}' is a reserved SQL word",
+          passwordLength: "Database password must be 12-128 characters long",
+          passwordForbiddenChars: "Database password must not contain spaces or connection-string-breaking characters like \", ', `, \\, ;, @, #, /, or ?",
+          passwordComplexity: "Database password must contain at least one uppercase letter, one lowercase letter, and one number"
+        },
         existing: {
           title: "Select Existing Database",
           select: "Your Unattached Databases",
@@ -2646,6 +2657,17 @@ export const translations = {
           password: "Password",
           generate: "⚡ Generate",
           info: "Database ini tercatat sebagai item tambahan. Penggunaan kredit billing akan diterapkan di masa mendatang — saat ini gratis."
+        },
+        validation: {
+          nameLowercase: "Nama database harus menggunakan huruf kecil",
+          nameInvalid: "Nama database harus 2-64 karakter, diawali huruf, dan hanya berisi huruf kecil, angka, atau garis bawah",
+          nameReserved: "Nama database '{{value}}' adalah kata SQL yang dicadangkan",
+          usernameLowercase: "Username database harus menggunakan huruf kecil",
+          usernameInvalid: "Username database harus 2-32 karakter, diawali huruf, dan hanya berisi huruf kecil, angka, atau garis bawah",
+          usernameReserved: "Username database '{{value}}' adalah kata SQL yang dicadangkan",
+          passwordLength: "Password database harus 12-128 karakter",
+          passwordForbiddenChars: "Password database tidak boleh berisi spasi atau karakter yang merusak connection string seperti \", ', `, \\, ;, @, #, /, atau ?",
+          passwordComplexity: "Password database harus memiliki minimal satu huruf besar, satu huruf kecil, dan satu angka"
         },
         existing: {
           title: "Pilih Database yang Ada",

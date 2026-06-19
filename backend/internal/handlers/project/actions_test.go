@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"strings"
 	"unsafe"
 
 	"github.com/glebarez/sqlite"
@@ -376,4 +377,250 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("redis mock expectations were not met: %v", err)
 	}
+}
+
+func TestCreateProject_DatabaseValidation(t *testing.T) {
+	t.Run("uppercase database name", func(t *testing.T) {
+		app, _, mock := setupTestApp(t, "db_val_upper_name")
+		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+
+		reqPayload := CreateProjectRequest{
+			Name:           "Test Project",
+			GithubURL:      "https://github.com/test/repo",
+			Branch:         "main",
+			DatabaseOption: "new",
+			DatabaseName:   "UPPERCASE_DB",
+			DatabaseEngine: "mysql",
+		}
+		body, _ := json.Marshal(reqPayload)
+
+		req := httptest.NewRequest("POST", "/projects", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("failed to run request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
+		}
+	})
+
+	t.Run("uppercase database username", func(t *testing.T) {
+		app, _, mock := setupTestApp(t, "db_val_upper_user")
+		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+
+		reqPayload := CreateProjectRequest{
+			Name:             "Test Project",
+			GithubURL:        "https://github.com/test/repo",
+			Branch:           "main",
+			DatabaseOption:   "new",
+			DatabaseName:     "lowercase_db",
+			DatabaseUsername: "UPPERCASE_USER",
+			DatabaseEngine:   "mysql",
+		}
+		body, _ := json.Marshal(reqPayload)
+
+		req := httptest.NewRequest("POST", "/projects", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("failed to run request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
+		}
+	})
+
+	t.Run("weak database password", func(t *testing.T) {
+		app, _, mock := setupTestApp(t, "db_val_weak_pass")
+		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+
+		reqPayload := CreateProjectRequest{
+			Name:             "Test Project",
+			GithubURL:        "https://github.com/test/repo",
+			Branch:           "main",
+			DatabaseOption:   "new",
+			DatabaseName:     "lowercase_db",
+			DatabaseUsername: "lowercase_user",
+			DatabasePassword: "weak",
+			DatabaseEngine:   "mysql",
+		}
+		body, _ := json.Marshal(reqPayload)
+
+		req := httptest.NewRequest("POST", "/projects", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("failed to run request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
+		}
+	})
+
+	t.Run("distinct name and username persistence", func(t *testing.T) {
+		app, db, mock := setupTestApp(t, "db_val_distinct")
+		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
+		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
+		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.ExpectLLen("deployment:queue").SetVal(1)
+		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
+
+		reqPayload := CreateProjectRequest{
+			Name:             "distinctproj",
+			GithubURL:        "https://github.com/test/repo",
+			Branch:           "main",
+			DatabaseOption:   "new",
+			DatabaseName:     "customdb",
+			DatabaseUsername: "customuser",
+			DatabasePassword: "SecurePassword123",
+			DatabaseEngine:   "mysql",
+		}
+		body, _ := json.Marshal(reqPayload)
+
+		req := httptest.NewRequest("POST", "/projects", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("failed to run request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusCreated {
+			var respJSON map[string]string
+			_ = json.NewDecoder(resp.Body).Decode(&respJSON)
+			t.Fatalf("expected status 201, got %d. Error: %s", resp.StatusCode, respJSON["error"])
+		}
+
+		var createdProject models.Project
+		if err := db.Preload("DatabaseInstance").Where("name = ?", "distinctproj").First(&createdProject).Error; err != nil {
+			t.Fatalf("failed to find created project: %v", err)
+		}
+
+		if createdProject.DatabaseInstance == nil {
+			t.Fatalf("expected DatabaseInstance to be created and associated, got nil")
+		}
+
+		// DatabaseInstance Name gets the suffix appended, but Username should match exactly what was requested (or be distinct)
+		if createdProject.DatabaseInstance.Username != "customuser" {
+			t.Errorf("expected DatabaseInstance.Username to be 'customuser', got %q", createdProject.DatabaseInstance.Username)
+		}
+		if createdProject.DatabaseInstance.Password != "SecurePassword123" {
+			t.Errorf("expected DatabaseInstance.Password to be 'SecurePassword123', got %q", createdProject.DatabaseInstance.Password)
+		}
+	})
+
+	t.Run("spaced database username trimming", func(t *testing.T) {
+		app, db, mock := setupTestApp(t, "db_val_spaced_user")
+		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
+		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
+		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.ExpectLLen("deployment:queue").SetVal(1)
+		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
+
+		reqPayload := CreateProjectRequest{
+			Name:             "spacedproj",
+			GithubURL:        "https://github.com/test/repo",
+			Branch:           "main",
+			DatabaseOption:   "new",
+			DatabaseName:     "customdb",
+			DatabaseUsername: " customuser ",
+			DatabasePassword: "SecurePassword123",
+			DatabaseEngine:   "mysql",
+		}
+		body, _ := json.Marshal(reqPayload)
+
+		req := httptest.NewRequest("POST", "/projects", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("failed to run request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusCreated {
+			var respJSON map[string]string
+			_ = json.NewDecoder(resp.Body).Decode(&respJSON)
+			t.Fatalf("expected status 201, got %d. Error: %s", resp.StatusCode, respJSON["error"])
+		}
+
+		var createdProject models.Project
+		if err := db.Preload("DatabaseInstance").Where("name = ?", "spacedproj").First(&createdProject).Error; err != nil {
+			t.Fatalf("failed to find created project: %v", err)
+		}
+
+		if createdProject.DatabaseInstance.Username != "customuser" {
+			t.Errorf("expected DatabaseInstance.Username to be trimmed to 'customuser', got %q", createdProject.DatabaseInstance.Username)
+		}
+	})
+
+	t.Run("long project name username generation", func(t *testing.T) {
+		app, db, mock := setupTestApp(t, "db_val_long_name")
+		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
+		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
+		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.ExpectLLen("deployment:queue").SetVal(1)
+		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
+
+		reqPayload := CreateProjectRequest{
+			Name:           "this-is-a-very-long-project-name-to-test-generated-defaults-and-suffix-preservation",
+			GithubURL:      "https://github.com/test/repo",
+			Branch:         "main",
+			DatabaseOption: "new",
+			DatabaseEngine: "mysql",
+		}
+		body, _ := json.Marshal(reqPayload)
+
+		req := httptest.NewRequest("POST", "/projects", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("failed to run request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusCreated {
+			var respJSON map[string]string
+			_ = json.NewDecoder(resp.Body).Decode(&respJSON)
+			t.Fatalf("expected status 201, got %d. Error: %s", resp.StatusCode, respJSON["error"])
+		}
+
+		var createdProject models.Project
+		if err := db.Preload("DatabaseInstance").Where("name = ?", reqPayload.Name).First(&createdProject).Error; err != nil {
+			t.Fatalf("failed to find created project: %v", err)
+		}
+
+		// Extract suffix from subdomain
+		parts := strings.Split(createdProject.Subdomain, "-")
+		suffix := parts[len(parts)-1]
+
+		username := createdProject.DatabaseInstance.Username
+		if !strings.HasSuffix(username, suffix) {
+			t.Errorf("expected generated username %q to end with suffix %q", username, suffix)
+		}
+		if len(username) > 32 {
+			t.Errorf("expected generated username length to be <= 32, got %d (value: %q)", len(username), username)
+		}
+		if !strings.HasPrefix(username, "dbuser_") {
+			t.Errorf("expected generated username %q to start with 'dbuser_'", username)
+		}
+	})
 }

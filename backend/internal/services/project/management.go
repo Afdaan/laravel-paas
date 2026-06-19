@@ -186,12 +186,12 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
-	return s.CreateProjectTx(nil, userID, role, name, githubURL, branch, databaseOption, databaseName, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
+func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+	return s.CreateProjectTx(nil, userID, role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
 }
 
 // CreateProjectTx handles the initial creation of a project record within a transaction context
-func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	// Enforce per-user project limit (bypass for admins and superadmins)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
 		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
@@ -217,18 +217,99 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 
 	var dbName *string
 	var dbPassword string
+	var dbUsername string
 
 	if databaseOption == "new" {
+		// Validate database engine
+		engine, err := utils.ValidateDatabaseEngine(databaseEngine)
+		if err != nil {
+			return nil, apperr.New(400, "INVALID_DATABASE_ENGINE", err.Error())
+		}
+		databaseEngine = engine
+
+		// Determine target database name
 		tempDbName := databaseName
 		if tempDbName == "" {
 			tempDbName = strings.ReplaceAll(subdomain, "-", "_")
 		} else {
+			// Validate manual database name before formatting/suffixing
+			if err := utils.ValidateDatabaseName(tempDbName); err != nil {
+				return nil, apperr.New(400, "INVALID_DATABASE_NAME", err.Error())
+			}
 			tempDbName = fmt.Sprintf("%s_%s",
 				strings.Trim(strings.ReplaceAll(strings.ToLower(tempDbName), "-", "_"), "_"),
 				suffix)
 		}
+		// Also validate the final generated/suffixed database name
+		if err := utils.ValidateDatabaseName(tempDbName); err != nil {
+			return nil, apperr.New(400, "INVALID_DATABASE_NAME", err.Error())
+		}
 		dbName = &tempDbName
-		dbPassword = utils.GeneratePassword(16)
+
+		// Determine username
+		trimmedUsername := strings.TrimSpace(databaseUsername)
+		if trimmedUsername != "" {
+			if err := utils.ValidateDatabaseUsername(trimmedUsername); err != nil {
+				return nil, apperr.New(400, "INVALID_DATABASE_USERNAME", err.Error())
+			}
+			dbUsername = trimmedUsername
+		} else {
+			// Generate deterministic username: dbuser_<short-base>_<suffix>
+			cleanBase := strings.Trim(strings.ReplaceAll(strings.ToLower(name), "-", "_"), "_")
+			var sb strings.Builder
+			for _, char := range cleanBase {
+				if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' {
+					sb.WriteRune(char)
+				}
+			}
+			sanitizedBase := sb.String()
+			if len(sanitizedBase) > 18 {
+				sanitizedBase = sanitizedBase[:18]
+			}
+			sanitizedBase = strings.TrimSuffix(sanitizedBase, "_")
+
+			dbUsername = fmt.Sprintf("dbuser_%s_%s", sanitizedBase, suffix)
+			// Fallback if generated username is somehow invalid (e.g. reserved SQL word)
+			if err := utils.ValidateDatabaseUsername(dbUsername); err != nil {
+				dbUsername = fmt.Sprintf("dbuser_%s_%s", utils.GenerateRandom(11), suffix)
+			}
+		}
+
+		// Determine password
+		if databasePassword != "" {
+			if err := utils.ValidateDatabasePassword(databasePassword); err != nil {
+				return nil, apperr.New(400, "INVALID_DATABASE_PASSWORD", err.Error())
+			}
+			dbPassword = databasePassword
+		} else {
+			dbPassword = utils.GeneratePassword(16)
+			// Generated password should satisfy backend rules
+			if err := utils.ValidateDatabasePassword(dbPassword); err != nil {
+				return nil, apperr.New(500, "DATABASE_PASSWORD_GENERATION_FAILED", err.Error())
+			}
+		}
+
+		// Check global uniqueness for Database Name and Username across all non-deleted database instances
+		dbConn := tx
+		if dbConn == nil {
+			dbConn = s.projectRepo.DB()
+		}
+
+		var duplicateCount int64
+		if err := dbConn.Model(&models.DatabaseInstance{}).Where("name = ? AND status != ?", *dbName, models.DBStatusDeleted).Count(&duplicateCount).Error; err != nil {
+			return nil, err
+		}
+		if duplicateCount > 0 {
+			return nil, apperr.New(409, "DATABASE_NAME_CONFLICT", fmt.Sprintf("A database with name '%s' already exists in the system", *dbName))
+		}
+
+		var duplicateUserCount int64
+		if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
+			return nil, err
+		}
+		if duplicateUserCount > 0 {
+			return nil, apperr.New(409, "DATABASE_USER_CONFLICT", fmt.Sprintf("A database user with username '%s' already exists in the system", dbUsername))
+		}
 	}
 
 	expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
@@ -262,24 +343,19 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 	}
 
 	if databaseOption == "new" {
-		engine := "mysql"
-		if databaseEngine == "postgresql" {
-			engine = "postgresql"
-		}
-
 		host := infrastructure.MySQLContainerName()
 		port := infrastructure.MySQLPort()
-		if engine == "postgresql" {
+		if databaseEngine == "postgresql" {
 			host = infrastructure.PostgreSQLContainerName()
 			port = infrastructure.PostgreSQLPort()
 		}
 
 		instance := &models.DatabaseInstance{
 			UserID:            userID,
-			Engine:            engine,
+			Engine:            databaseEngine,
 			Status:            models.DBStatusActive,
 			Name:              *dbName,
-			Username:          *dbName,
+			Username:          dbUsername,
 			Password:          dbPassword,
 			Host:              host,
 			Port:              port,

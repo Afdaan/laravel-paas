@@ -67,6 +67,8 @@ interface ValidationErrors {
   name?: string;
   github_url?: string;
   database_name?: string;
+  database_username?: string;
+  database_password?: string;
   existing_database_uid?: string;
 }
 
@@ -96,6 +98,42 @@ const DatabaseEngineBadge = ({ engine, className }: { engine: DatabaseEngineOpti
   )
 }
 
+const reservedDatabaseWords = new Set([
+  "all", "alter", "and", "any", "as", "asc", "authorization",
+  "backup", "begin", "between", "break", "browse", "bulk", "by",
+  "cascade", "case", "check", "checkpoint", "close", "clustered",
+  "coalesce", "collate", "column", "commit", "compute", "constraint",
+  "contains", "containstable", "continue", "convert", "create", "cross",
+  "current", "current_date", "current_time", "current_timestamp", "current_user",
+  "cursor", "database", "dbcc", "deallocate", "declare", "default",
+  "delete", "deny", "desc", "disk", "distinct", "distributed",
+  "double", "drop", "dump", "else", "end", "errlvl", "escape",
+  "except", "exec", "execute", "exists", "exit", "external",
+  "fetch", "file", "fillfactor", "for", "foreign", "freetext",
+  "freetexttable", "from", "full", "function", "goto", "grant",
+  "group", "having", "holdlock", "identity", "identity_insert", "identitycol",
+  "if", "in", "index", "inner", "insert", "intersect", "into",
+  "is", "join", "key", "kill", "left", "like", "lineno",
+  "load", "merge", "national", "nocheck", "nonclustered", "not",
+  "null", "nullif", "of", "off", "offsets", "on", "once",
+  "only", "open", "opendatasource", "openquery", "openrowset", "openxml",
+  "option", "or", "order", "outer", "over", "percent", "pivot",
+  "plan", "precision", "primary", "print", "proc", "procedure",
+  "public", "raiserror", "read", "readtext", "reconfigure", "references",
+  "replication", "restore", "restrict", "return", "revert", "revoke",
+  "right", "rollback", "rowcount", "rowguidcol", "rule", "save",
+  "schema", "securityaudit", "select", "semantickeyphrasetable",
+  "semanticsimilaritydetailstable", "semanticsimilaritytable", "session_user", "set",
+  "setuser", "shutdown", "some", "statistics", "system_user", "table",
+  "tablesample", "textsize", "then", "to", "top", "tran", "transaction",
+  "trigger", "truncate", "try_convert", "tsequal", "union", "unique",
+  "unpivot", "update", "updatetext", "use", "user", "values",
+  "varying", "view", "waitfor", "when", "where", "while", "with",
+  "within", "writetext", "postgres", "root", "admin", "system", "mysql"
+]);
+
+const isReservedWord = (val: string) => reservedDatabaseWords.has(val.toLowerCase());
+
 function UserNewProject() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -109,6 +147,9 @@ function UserNewProject() {
   const [selectedInstallationId, setSelectedInstallationId] = useState<string>('')
   const [selectedRepoFullName, setSelectedRepoFullName] = useState<string>('')
   const [isGithubLoading, setIsGithubLoading] = useState<boolean>(false)
+
+  const [isDbNameManuallyEdited, setIsDbNameManuallyEdited] = useState(false)
+  const [isDbUserManuallyEdited, setIsDbUserManuallyEdited] = useState(false)
 
   const [formData, setFormData] = useState<NewProjectForm>({
     name: '',
@@ -132,12 +173,23 @@ function UserNewProject() {
   const [isLoadingDatabases, setIsLoadingDatabases] = useState(false)
 
   const generatePassword = useCallback(() => {
-    const safeChars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!$%-+*='
+    const lowerChars = 'abcdefghijklmnopqrstuvwxyz'
+    const upperChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    const digitChars = '0123456789'
+    const specialChars = '!$%-+*='
+    const allChars = lowerChars + upperChars + digitChars + specialChars
+
     let pass = ''
-    for (let i = 0; i < 20; i++) {
-      pass += safeChars.charAt(Math.floor(Math.random() * safeChars.length))
+    pass += lowerChars.charAt(Math.floor(Math.random() * lowerChars.length))
+    pass += upperChars.charAt(Math.floor(Math.random() * upperChars.length))
+    pass += digitChars.charAt(Math.floor(Math.random() * digitChars.length))
+    pass += specialChars.charAt(Math.floor(Math.random() * specialChars.length))
+
+    for (let i = 4; i < 16; i++) {
+      pass += allChars.charAt(Math.floor(Math.random() * allChars.length))
     }
-    return pass
+
+    return pass.split('').sort(() => 0.5 - Math.random()).join('')
   }, [])
 
   const loadExistingDatabases = useCallback(async () => {
@@ -401,6 +453,8 @@ function UserNewProject() {
         github_repo_owner: owner,
         github_repo_name: repoName,
       }))
+      setIsDbNameManuallyEdited(false)
+      setIsDbUserManuallyEdited(false)
 
       loadBranches(owner, repoName)
     }
@@ -415,6 +469,13 @@ function UserNewProject() {
       [name]: newValue
     }))
 
+    if (name === 'database_name') {
+      setIsDbNameManuallyEdited(true)
+    }
+    if (name === 'database_username') {
+      setIsDbUserManuallyEdited(true)
+    }
+
     if (name === 'name') {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
@@ -422,8 +483,8 @@ function UserNewProject() {
       const dbUser = `dbuser_${dbName.slice(0, 25)}`
       setFormData(prev => ({
         ...prev,
-        database_name: dbName,
-        database_username: dbUser
+        database_name: isDbNameManuallyEdited ? prev.database_name : dbName,
+        database_username: isDbUserManuallyEdited ? prev.database_username : dbUser
       }))
     }
 
@@ -436,9 +497,48 @@ function UserNewProject() {
     const errors: ValidationErrors = {}
     if (!formData.name.trim()) errors.name = t('common.validation.required', { field: t('newProject.displayName') })
     if (!formData.github_url.trim()) errors.github_url = t('common.validation.required', { field: t('newProject.repoUrl') })
-    if (formData.database_option === 'new' && !formData.database_name.trim()) {
-      errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+
+    if (formData.database_option === 'new') {
+      const dbName = formData.database_name.trim()
+      const dbUser = formData.database_username.trim()
+      const dbPass = formData.database_password
+
+      if (!dbName) {
+        errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
+      } else if (dbName !== dbName.toLowerCase()) {
+        errors.database_name = t('newProject.dbConfig.validation.nameLowercase')
+      } else if (!/^[a-z][a-z0-9_]{1,63}$/.test(dbName)) {
+        errors.database_name = t('newProject.dbConfig.validation.nameInvalid')
+      } else if (isReservedWord(dbName)) {
+        errors.database_name = t('newProject.dbConfig.validation.nameReserved', { value: dbName })
+      }
+
+      if (!dbUser) {
+        errors.database_username = t('common.validation.required', { field: t('newProject.dbConfig.configureNew.username') })
+      } else if (dbUser !== dbUser.toLowerCase()) {
+        errors.database_username = t('newProject.dbConfig.validation.usernameLowercase')
+      } else if (!/^[a-z][a-z0-9_]{1,31}$/.test(dbUser)) {
+        errors.database_username = t('newProject.dbConfig.validation.usernameInvalid')
+      } else if (isReservedWord(dbUser)) {
+        errors.database_username = t('newProject.dbConfig.validation.usernameReserved', { value: dbUser })
+      }
+
+      if (!dbPass) {
+        errors.database_password = t('common.validation.required', { field: t('newProject.dbConfig.configureNew.password') })
+      } else if (dbPass.length < 12 || dbPass.length > 128) {
+        errors.database_password = t('newProject.dbConfig.validation.passwordLength')
+      } else if (/[ "'`\\;@#/?]/.test(dbPass)) {
+        errors.database_password = t('newProject.dbConfig.validation.passwordForbiddenChars')
+      } else {
+        const hasUpper = /[A-Z]/.test(dbPass)
+        const hasLower = /[a-z]/.test(dbPass)
+        const hasDigit = /[0-9]/.test(dbPass)
+        if (!hasUpper || !hasLower || !hasDigit) {
+          errors.database_password = t('newProject.dbConfig.validation.passwordComplexity')
+        }
+      }
     }
+
     if (formData.database_option === 'existing' && !formData.existing_database_uid) {
       errors.existing_database_uid = t('newProject.dbConfig.existing.placeholder')
     }
@@ -1030,10 +1130,13 @@ function UserNewProject() {
                               id="database_username"
                               name="database_username"
                               value={formData.database_username}
-                              onChange={(e) => setFormData(prev => ({ ...prev, database_username: e.target.value }))}
+                              onChange={handleChange}
                               placeholder="db_user"
-                              className="h-11 rounded-xl bg-background"
+                              className={cn("h-11 rounded-xl bg-background", validationErrors.database_username && "border-destructive focus-visible:ring-destructive")}
                             />
+                            {validationErrors.database_username && (
+                              <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_username}</p>
+                            )}
                           </div>
                         </div>
 
@@ -1046,19 +1149,25 @@ function UserNewProject() {
                               id="database_password"
                               name="database_password"
                               value={formData.database_password}
-                              onChange={(e) => setFormData(prev => ({ ...prev, database_password: e.target.value }))}
+                              onChange={handleChange}
                               placeholder="Password"
-                              className="h-11 rounded-xl bg-background flex-1"
+                              className={cn("h-11 rounded-xl bg-background flex-1", validationErrors.database_password && "border-destructive focus-visible:ring-destructive")}
                             />
                             <Button
                               type="button"
                               variant="outline"
-                              onClick={() => setFormData(prev => ({ ...prev, database_password: generatePassword() }))}
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, database_password: generatePassword() }))
+                                setValidationErrors(prev => ({ ...prev, database_password: undefined }))
+                              }}
                               className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1 text-xs"
                             >
                               {t('newProject.dbConfig.configureNew.generate')}
                             </Button>
                           </div>
+                          {validationErrors.database_password && (
+                            <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_password}</p>
+                          )}
                         </div>
 
                         <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 flex gap-2.5 items-start">

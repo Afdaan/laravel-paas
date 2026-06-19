@@ -15,7 +15,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,49 +33,9 @@ import (
 )
 
 const (
-	maxDatabaseImportBytes              = 5 * 1024 * 1024
-	maxDatabaseImportStatements         = 200
-	databasePasswordInvalidCharsMessage = "Database password must not contain spaces or connection-string-breaking characters like \", ', `, \\, ;, @, #, /, or ?"
+	maxDatabaseImportBytes      = 5 * 1024 * 1024
+	maxDatabaseImportStatements = 200
 )
-
-var reservedDatabaseWords = map[string]struct{}{
-	"all": {}, "alter": {}, "and": {}, "any": {}, "as": {}, "asc": {}, "authorization": {},
-	"backup": {}, "begin": {}, "between": {}, "break": {}, "browse": {}, "bulk": {}, "by": {},
-	"cascade": {}, "case": {}, "check": {}, "checkpoint": {}, "close": {}, "clustered": {},
-	"coalesce": {}, "collate": {}, "column": {}, "commit": {}, "compute": {}, "constraint": {},
-	"contains": {}, "containstable": {}, "continue": {}, "convert": {}, "create": {}, "cross": {},
-	"current": {}, "current_date": {}, "current_time": {}, "current_timestamp": {}, "current_user": {},
-	"cursor": {}, "database": {}, "dbcc": {}, "deallocate": {}, "declare": {}, "default": {},
-	"delete": {}, "deny": {}, "desc": {}, "disk": {}, "distinct": {}, "distributed": {},
-	"double": {}, "drop": {}, "dump": {}, "else": {}, "end": {}, "errlvl": {}, "escape": {},
-	"except": {}, "exec": {}, "execute": {}, "exists": {}, "exit": {}, "external": {},
-	"fetch": {}, "file": {}, "fillfactor": {}, "for": {}, "foreign": {}, "freetext": {},
-	"freetexttable": {}, "from": {}, "full": {}, "function": {}, "goto": {}, "grant": {},
-	"group": {}, "having": {}, "holdlock": {}, "identity": {}, "identity_insert": {}, "identitycol": {},
-	"if": {}, "in": {}, "index": {}, "inner": {}, "insert": {}, "intersect": {}, "into": {},
-	"is": {}, "join": {}, "key": {}, "kill": {}, "left": {}, "like": {}, "lineno": {},
-	"load": {}, "merge": {}, "national": {}, "nocheck": {}, "nonclustered": {}, "not": {},
-	"null": {}, "nullif": {}, "of": {}, "off": {}, "offsets": {}, "on": {}, "once": {},
-	"only": {}, "open": {}, "opendatasource": {}, "openquery": {}, "openrowset": {}, "openxml": {},
-	"option": {}, "or": {}, "order": {}, "outer": {}, "over": {}, "percent": {}, "pivot": {},
-	"plan": {}, "precision": {}, "primary": {}, "print": {}, "proc": {}, "procedure": {},
-	"public": {}, "raiserror": {}, "read": {}, "readtext": {}, "reconfigure": {}, "references": {},
-	"replication": {}, "restore": {}, "restrict": {}, "return": {}, "revert": {}, "revoke": {},
-	"right": {}, "rollback": {}, "rowcount": {}, "rowguidcol": {}, "rule": {}, "save": {},
-	"schema": {}, "securityaudit": {}, "select": {}, "semantickeyphrasetable": {},
-	"semanticsimilaritydetailstable": {}, "semanticsimilaritytable": {}, "session_user": {}, "set": {},
-	"setuser": {}, "shutdown": {}, "some": {}, "statistics": {}, "system_user": {}, "table": {},
-	"tablesample": {}, "textsize": {}, "then": {}, "to": {}, "top": {}, "tran": {}, "transaction": {},
-	"trigger": {}, "truncate": {}, "try_convert": {}, "tsequal": {}, "union": {}, "unique": {},
-	"unpivot": {}, "update": {}, "updatetext": {}, "use": {}, "user": {}, "values": {},
-	"varying": {}, "view": {}, "waitfor": {}, "when": {}, "where": {}, "while": {}, "with": {},
-	"within": {}, "writetext": {}, "postgres": {}, "root": {}, "admin": {}, "system": {}, "mysql": {},
-}
-
-func isReservedDatabaseWord(value string) bool {
-	_, ok := reservedDatabaseWords[value]
-	return ok
-}
 
 // DatabaseHandler handles database management endpoints
 type DatabaseHandler struct {
@@ -1552,69 +1511,29 @@ func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
 	}
 
 	// Validate engine
-	req.Engine = strings.ToLower(req.Engine)
-	if req.Engine == "postgres" {
-		req.Engine = "postgresql"
-	}
-	if req.Engine != "mysql" && req.Engine != "postgresql" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database engine. Supported: mysql, postgresql"})
+	var err error
+	req.Engine, err = utils.ValidateDatabaseEngine(req.Engine)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	// Trim space if desired, and reject casing drift explicitly before mutation
 	req.Name = strings.TrimSpace(req.Name)
 	req.Username = strings.TrimSpace(req.Username)
 
-	if req.Name != strings.ToLower(req.Name) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database name must be strictly lowercase"})
-	}
-	if req.Username != strings.ToLower(req.Username) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database username must be strictly lowercase"})
+	// Validate name
+	if err := utils.ValidateDatabaseName(req.Name); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Regex pattern validations (re-use pattern defined in PostgreSQL/MySQL services)
-	// Spec:
-	// - Database Name: min 2, max 64, alphanumeric/underscore, must NOT start with number or underscore (must be lowercase)
-	// - Username: min 2, max 32, alphanumeric/underscore, MUST start with a letter (must be lowercase)
-	// - Password: min 12, max 128, must contain at least one uppercase, one lowercase, and one number. No spaces or connection-string-breaking characters.
-	var nameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,63}$`)
-	var userRegex = regexp.MustCompile(`^[a-z][a-z0-9_]{1,31}$`)
-
-	if !nameRegex.MatchString(req.Name) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database name must be 2-64 characters, start with a letter, and contain only alphanumeric characters or underscores"})
-	}
-	if !userRegex.MatchString(req.Username) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database username must be 2-32 characters, start with a letter, and contain only alphanumeric characters or underscores"})
+	// Validate username
+	if err := utils.ValidateDatabaseUsername(req.Username); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Password strength check
-	if len(req.Password) < 12 || len(req.Password) > 128 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database password must be 12-128 characters long"})
-	}
-	// Check spaces or connection-string-breaking characters: e.g. space, double quote, single quote, backtick, backslash, semicolon, @, #, /, ?
-	if strings.ContainsAny(req.Password, " \"'`\\;@#/?") {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": databasePasswordInvalidCharsMessage})
-	}
-	hasUpper := false
-	hasLower := false
-	hasDigit := false
-	for _, char := range req.Password {
-		if char >= 'A' && char <= 'Z' {
-			hasUpper = true
-		} else if char >= 'a' && char <= 'z' {
-			hasLower = true
-		} else if char >= '0' && char <= '9' {
-			hasDigit = true
-		}
-	}
-	if !hasUpper || !hasLower || !hasDigit {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database password must contain at least one uppercase letter, one lowercase letter, and one number"})
-	}
-
-	if isReservedDatabaseWord(req.Name) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("Database name '%s' is a reserved SQL word", req.Name)})
-	}
-	if isReservedDatabaseWord(req.Username) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("Database username '%s' is a reserved SQL word", req.Username)})
+	// Validate password
+	if err := utils.ValidateDatabasePassword(req.Password); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	// Check global uniqueness for Database Name and Username across all non-deleted database instances
