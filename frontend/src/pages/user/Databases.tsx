@@ -30,13 +30,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
-// Engine identity: one neutral cylinder avatar, distinguished by brand-color ring + badge.
+// Engine identity drives the badge + a thin ring accent on the avatar.
 const ENGINE_META = {
-  postgresql: { label: 'PostgreSQL', ring: 'ring-blue-500/40', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
-  mysql: { label: 'MySQL', ring: 'ring-teal-500/40', badge: 'border-transparent bg-teal-600/10 text-teal-600' },
+  postgresql: { label: 'PostgreSQL', short: 'PG', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  mysql: { label: 'MySQL', short: 'SQL', badge: 'border-transparent bg-teal-600/10 text-teal-600' },
 } as const
 
 const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
+
+// Hand-picked gradient palette — every entry is tuned to look good with white glyphs.
+// A database keeps the same avatar across reloads because the gradient is derived from its name.
+const AVATAR_GRADIENTS = [
+  'from-violet-500 to-indigo-600',
+  'from-blue-500 to-cyan-600',
+  'from-emerald-500 to-teal-600',
+  'from-amber-500 to-orange-600',
+  'from-rose-500 to-pink-600',
+  'from-fuchsia-500 to-purple-600',
+  'from-sky-500 to-blue-600',
+  'from-lime-500 to-green-600',
+] as const
+
+function avatarGradient(seed: string) {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length]
+}
 
 // One database entry in the sidebar list — accent bar (selected) + engine avatar.
 function DbRow({ db, selected, onSelect, t }: {
@@ -63,11 +82,17 @@ function DbRow({ db, selected, onSelect, t }: {
         selected ? 'opacity-100' : 'opacity-0'
       )} />
       <div className="flex items-center gap-2.5">
-        <span className={cn(
-          "shrink-0 w-9 h-9 rounded-lg bg-muted/60 text-foreground/80 flex items-center justify-center ring-1 ring-inset",
-          meta.ring
-        )}>
-          <DbIcon className="w-4 h-4" />
+        <span className="relative shrink-0">
+          <span className={cn(
+            "w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-sm bg-gradient-to-br ring-1 ring-inset ring-white/10",
+            avatarGradient(db.name)
+          )}>
+            <DbIcon className="w-[1.05rem] h-[1.05rem] drop-shadow-sm" />
+          </span>
+          {/* Engine marker badge tucked into the avatar corner */}
+          <span className="absolute -bottom-1 -right-1 px-1 h-3.5 min-w-3.5 rounded-full bg-card border border-border flex items-center justify-center text-[8px] font-bold leading-none text-muted-foreground">
+            {meta.short}
+          </span>
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
