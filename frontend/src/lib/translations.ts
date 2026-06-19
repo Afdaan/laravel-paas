@@ -127,6 +127,9 @@ export const translations = {
       noProjectsDesc: "You have no active projects yet. Create your first project to get started.",
       createFirstProject: "Create Your First Project",
       welcomeUser: "Welcome back, {{name}}",
+      goodMorning: "Good morning, {{name}}",
+      goodAfternoon: "Good afternoon, {{name}}",
+      goodEvening: "Good evening, {{name}}",
       projectStats: "You currently have {{count}} active projects",
     },
     login: {
@@ -1773,6 +1776,9 @@ export const translations = {
       noProjectsDesc: "Belum ada project aktif. Buat project pertama untuk memulai.",
       createFirstProject: "Create Your First Project",
       welcomeUser: "Selamat datang kembali, {{name}}",
+      goodMorning: "Selamat pagi, {{name}}",
+      goodAfternoon: "Selamat siang, {{name}}",
+      goodEvening: "Selamat malam, {{name}}",
       projectStats: "Total {{count}} project aktif saat ini",
     },
     login: {

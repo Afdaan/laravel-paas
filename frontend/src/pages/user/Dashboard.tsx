@@ -92,6 +92,14 @@ function UserDashboard() {
   const runningProjects = projects.filter(p => p.status === 'running').length
   const totalProjects = projects?.length || 0
 
+  // Time-of-day greeting keyed off the browser's local clock (getHours is local time)
+  const firstName = user?.name?.split(' ')[0] || t('common.user')
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours()
+    const key = hour < 12 ? 'dashboard.goodMorning' : hour < 18 ? 'dashboard.goodAfternoon' : 'dashboard.goodEvening'
+    return t(key, { name: firstName })
+  }, [t, firstName])
+
   // Top framework breakdown for the stat strip — gives the row real signal instead of two bare counts
   const frameworkBreakdown = useMemo(() => {
     const counts = new Map<string, number>()
@@ -111,7 +119,7 @@ function UserDashboard() {
             {t('dashboard.welcome')}, {user?.name}
           </h1>
           <p className="text-muted-foreground">
-            {t('dashboard.welcomeUser', { name: user?.name?.split(' ')[0] || t('common.user') })}. {t('dashboard.projectStats', { count: runningProjects })}.
+            {greeting}. {t('dashboard.projectStats', { count: runningProjects })}.
           </p>
         </div>
         <div className="flex items-center gap-2">
