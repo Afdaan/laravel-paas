@@ -59,8 +59,6 @@ RUN apk add --no-cache --virtual .build-deps \
         pdo \
         pdo_mysql \
         pdo_pgsql \
-        pdo_sqlite \
-        sqlite3 \
         mbstring \
         exif \
         pcntl \
