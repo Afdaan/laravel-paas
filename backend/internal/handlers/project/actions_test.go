@@ -271,6 +271,9 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	}
 	db.Create(&existingDb)
 
+	// Disable order matching because of concurrent requests interleaving Redis calls
+	mock.MatchExpectationsInOrder(false)
+
 	// Mock settings expectations for the successful request as valid JSON strings
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")

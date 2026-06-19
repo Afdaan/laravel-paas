@@ -974,6 +974,60 @@ export const translations = {
         failedToLink: "Failed to link GitHub installation",
         failedToLoadBranches: "Failed to load branches",
         failedToLoadRepos: "Failed to load repositories"
+      },
+      dbConfig: {
+        title: "Database Configuration",
+        subtitle: "Select how this project connects to a database",
+        options: {
+          none: {
+            label: "No Database",
+            desc: "App is stateless and does not require a database.",
+            badge: "FREE"
+          },
+          sqlite: {
+            label: "SQLite",
+            desc: "File-based, auto-setup. Perfect for low-cost hosting.",
+            badge: "FREE · INCLUDED"
+          },
+          new: {
+            label: "New Managed DB",
+            desc: "Provision a new MySQL or PostgreSQL database and attach it.",
+            badge: "ADDITIONAL ITEM"
+          },
+          existing: {
+            label: "Use Existing Database",
+            desc: "Attach an existing standalone database that you own.",
+            badge: "ALREADY OWNED"
+          },
+          external: {
+            label: "External Database",
+            desc: "Use a database from other providers (Supabase, PlanetScale, etc.).",
+            badge: "BRING YOUR OWN"
+          }
+        },
+        configureNew: {
+          title: "Configure New Database",
+          engine: "Database Engine",
+          name: "Database Name",
+          username: "Username",
+          password: "Password",
+          generate: "⚡ Generate",
+          info: "This database is classified as an additional item. Billing credits will apply in the future — currently free."
+        },
+        existing: {
+          title: "Select Existing Database",
+          select: "Your Unattached Databases",
+          placeholder: "Please select a database",
+          loading: "Loading your databases...",
+          emptyTitle: "No unattached databases found",
+          emptyDesc: "Go to Database Studio to create a standalone database first.",
+          info: "The selected database will be attached to this project. This database is already owned by you — no additional charges apply."
+        },
+        external: {
+          title: "External Database — Bring Your Own",
+          desc: "This project will run without a managed database from us. Configure your database credentials in the Environment Editor after the project is created.",
+          vars: "Required Environment Variables"
+        }
       }
     },
     databaseManager: {
@@ -2553,6 +2607,60 @@ export const translations = {
         failedToLink: "Gagal menghubungkan instalasi GitHub",
         failedToLoadBranches: "Gagal memuat daftar branch",
         failedToLoadRepos: "Gagal memuat daftar repository"
+      },
+      dbConfig: {
+        title: "Konfigurasi Database",
+        subtitle: "Pilih cara project ini terhubung ke database",
+        options: {
+          none: {
+            label: "Tanpa Database",
+            desc: "Aplikasi bersifat stateless dan tidak membutuhkan database sama sekali.",
+            badge: "GRATIS"
+          },
+          sqlite: {
+            label: "SQLite",
+            desc: "File-based, auto-setup. Sangat cocok untuk hosting hemat.",
+            badge: "GRATIS · TERMASUK"
+          },
+          new: {
+            label: "Managed DB Baru",
+            desc: "Buat database MySQL / PostgreSQL baru dan hubungkan langsung.",
+            badge: "ITEM TAMBAHAN"
+          },
+          existing: {
+            label: "Gunakan DB yang Ada",
+            desc: "Hubungkan database mandiri yang sudah Anda miliki (belum terhubung).",
+            badge: "SUDAH DIMILIKI"
+          },
+          external: {
+            label: "Database Eksternal",
+            desc: "Gunakan database dari provider lain (Supabase, PlanetScale, dll.).",
+            badge: "BAWA SENDIRI"
+          }
+        },
+        configureNew: {
+          title: "Konfigurasi Database Baru",
+          engine: "Mesin Database",
+          name: "Nama Database",
+          username: "Username",
+          password: "Password",
+          generate: "⚡ Generate",
+          info: "Database ini tercatat sebagai item tambahan. Penggunaan kredit billing akan diterapkan di masa mendatang — saat ini gratis."
+        },
+        existing: {
+          title: "Pilih Database yang Ada",
+          select: "Database Anda yang Belum Terhubung",
+          placeholder: "Silakan pilih database",
+          loading: "Memuat database Anda...",
+          emptyTitle: "Database tidak ditemukan",
+          emptyDesc: "Buka Database Studio untuk membuat database mandiri terlebih dahulu.",
+          info: "Database yang dipilih akan dihubungkan ke project ini. Database ini sudah Anda miliki — tidak ada biaya tambahan."
+        },
+        external: {
+          title: "Database Eksternal — Bawa Sendiri",
+          desc: "Project ini akan berjalan tanpa database terkelola dari kami. Atur kredensial database Anda di Editor Lingkungan setelah project dibuat.",
+          vars: "Variabel Lingkungan yang Dibutuhkan"
+        }
       }
     },
     databaseManager: {

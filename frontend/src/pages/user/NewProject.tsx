@@ -440,7 +440,7 @@ function UserNewProject() {
       errors.database_name = t('common.validation.required', { field: t('newProject.dbName') })
     }
     if (formData.database_option === 'existing' && !formData.existing_database_uid) {
-      errors.existing_database_uid = 'Please select a database'
+      errors.existing_database_uid = t('newProject.dbConfig.existing.placeholder')
     }
 
     setValidationErrors(errors)
@@ -882,9 +882,9 @@ function UserNewProject() {
                       </div>
                       <div className="flex flex-col">
                         <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                          Database Configuration
+                          {t('newProject.dbConfig.title')}
                         </Label>
-                        <span className="text-[10px] text-muted-foreground">Select how this project connects to a database</span>
+                        <span className="text-[10px] text-muted-foreground">{t('newProject.dbConfig.subtitle')}</span>
                       </div>
                     </div>
 
@@ -892,9 +892,9 @@ function UserNewProject() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {[
-                          { value: 'none', label: 'No Database', desc: 'App stateless, tidak butuh database sama sekali.', badge: 'FREE' },
-                          { value: 'sqlite', label: 'SQLite', desc: 'File-based, auto-setup. Cocok untuk hosting murah.', badge: 'FREE · INCLUDED' },
-                          { value: 'new', label: 'New Managed DB', desc: 'Provision MySQL / PostgreSQL baru, langsung attach.', badge: 'ADDITIONAL ITEM' },
+                          { value: 'none', key: 'none' as const, badgeClass: "border-border bg-muted/20 text-muted-foreground" },
+                          { value: 'sqlite', key: 'sqlite' as const, badgeClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-500" },
+                          { value: 'new', key: 'new' as const, badgeClass: "border-primary/20 bg-primary/10 text-primary" },
                         ].map((opt) => (
                           <Card
                             key={opt.value}
@@ -908,7 +908,7 @@ function UserNewProject() {
                           >
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                                <span className="font-bold text-sm text-foreground">{t(`newProject.dbConfig.options.${opt.key}.label`)}</span>
                                 <div className={cn(
                                   "w-4 h-4 rounded-full border flex items-center justify-center",
                                   formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
@@ -918,16 +918,14 @@ function UserNewProject() {
                                   )}
                                 </div>
                               </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{opt.desc}</p>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{t(`newProject.dbConfig.options.${opt.key}.desc`)}</p>
                             </div>
                             <div className="mt-4">
                               <span className={cn(
                                 "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
-                                opt.value === 'none' && "border-border bg-muted/20 text-muted-foreground",
-                                opt.value === 'sqlite' && "border-emerald-500/20 bg-emerald-500/10 text-emerald-500",
-                                opt.value === 'new' && "border-primary/20 bg-primary/10 text-primary"
+                                opt.badgeClass
                               )}>
-                                {opt.badge}
+                                {t(`newProject.dbConfig.options.${opt.key}.badge`)}
                               </span>
                             </div>
                           </Card>
@@ -936,8 +934,8 @@ function UserNewProject() {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {[
-                          { value: 'existing', label: 'Use Existing Database', desc: 'Attach database yang sudah kamu punya (unattached).', badge: 'ALREADY OWNED' },
-                          { value: 'external', label: 'External Database', desc: 'Pakai DB dari provider lain: Supabase, PlanetScale, dll.', badge: 'BRING YOUR OWN' },
+                          { value: 'existing', key: 'existing' as const, badgeClass: "border-amber-500/20 bg-amber-500/10 text-amber-500" },
+                          { value: 'external', key: 'external' as const, badgeClass: "border-purple-500/20 bg-purple-500/10 text-purple-500" },
                         ].map((opt) => (
                           <Card
                             key={opt.value}
@@ -951,7 +949,7 @@ function UserNewProject() {
                           >
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                                <span className="font-bold text-sm text-foreground">{t(`newProject.dbConfig.options.${opt.key}.label`)}</span>
                                 <div className={cn(
                                   "w-4 h-4 rounded-full border flex items-center justify-center",
                                   formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
@@ -961,15 +959,14 @@ function UserNewProject() {
                                   )}
                                 </div>
                               </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{opt.desc}</p>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{t(`newProject.dbConfig.options.${opt.key}.desc`)}</p>
                             </div>
                             <div className="mt-4">
                               <span className={cn(
                                 "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
-                                opt.value === 'existing' && "border-amber-500/20 bg-amber-500/10 text-amber-500",
-                                opt.value === 'external' && "border-purple-500/20 bg-purple-500/10 text-purple-500"
+                                opt.badgeClass
                               )}>
-                                {opt.badge}
+                                {t(`newProject.dbConfig.options.${opt.key}.badge`)}
                               </span>
                             </div>
                           </Card>
@@ -981,12 +978,12 @@ function UserNewProject() {
                     {formData.database_option === 'new' && (
                       <div className="p-5 rounded-xl border border-primary/20 bg-primary/5/30 backdrop-blur-sm space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
                         <Label className="text-xs font-bold uppercase tracking-widest text-primary">
-                          Configure New Database
+                          {t('newProject.dbConfig.configureNew.title')}
                         </Label>
 
                         <div className="space-y-2">
                           <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Database Engine
+                            {t('newProject.dbConfig.configureNew.engine')}
                           </Label>
                           <div className="grid grid-cols-2 gap-3">
                             {databaseEngines.map((engine) => (
@@ -1042,7 +1039,7 @@ function UserNewProject() {
 
                         <div className="space-y-2">
                           <Label htmlFor="database_password" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Password
+                            {t('newProject.dbConfig.configureNew.password')}
                           </Label>
                           <div className="flex gap-2">
                             <Input
@@ -1059,7 +1056,7 @@ function UserNewProject() {
                               onClick={() => setFormData(prev => ({ ...prev, database_password: generatePassword() }))}
                               className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1 text-xs"
                             >
-                              ⚡ Generate
+                              {t('newProject.dbConfig.configureNew.generate')}
                             </Button>
                           </div>
                         </div>
@@ -1067,7 +1064,7 @@ function UserNewProject() {
                         <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 flex gap-2.5 items-start">
                           <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                           <span className="text-[10px] text-muted-foreground leading-relaxed">
-                            Database ini tercatat sebagai <strong className="text-primary font-bold">additional item</strong>. Billing credit akan diterapkan di masa mendatang — saat ini gratis.
+                            {t('newProject.dbConfig.configureNew.info')}
                           </span>
                         </div>
                       </div>
@@ -1077,7 +1074,7 @@ function UserNewProject() {
                     {formData.database_option === 'existing' && (
                       <div className="p-5 rounded-xl border border-amber-500/20 bg-amber-500/5/30 backdrop-blur-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                         <Label className="text-xs font-bold uppercase tracking-widest text-amber-500">
-                          Select Existing Database
+                          {t('newProject.dbConfig.existing.title')}
                         </Label>
                         {validationErrors.existing_database_uid && (
                           <p className="text-xs text-destructive font-medium pl-1">{validationErrors.existing_database_uid}</p>
@@ -1086,17 +1083,17 @@ function UserNewProject() {
                         {isLoadingDatabases ? (
                           <div className="flex items-center justify-center p-6 gap-2 text-muted-foreground">
                             <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-                            <span className="text-sm font-medium">Loading your databases...</span>
+                            <span className="text-sm font-medium">{t('newProject.dbConfig.existing.loading')}</span>
                           </div>
                         ) : existingDatabases.length === 0 ? (
                           <div className="text-center p-6 border border-dashed rounded-xl space-y-1">
-                            <p className="text-sm font-semibold text-foreground/80">No unattached databases found</p>
-                            <p className="text-xs text-muted-foreground">Go to Database Studio to create a standalone database first.</p>
+                            <p className="text-sm font-semibold text-foreground/80">{t('newProject.dbConfig.existing.emptyTitle')}</p>
+                            <p className="text-xs text-muted-foreground">{t('newProject.dbConfig.existing.emptyDesc')}</p>
                           </div>
                         ) : (
                           <div className="space-y-3">
                             <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                              Your Unattached Databases
+                              {t('newProject.dbConfig.existing.select')}
                             </Label>
                             <div className="space-y-2">
                               {existingDatabases.map((db) => (
@@ -1119,7 +1116,7 @@ function UserNewProject() {
                                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                                     <div>
                                       <div className="font-mono text-sm font-bold text-foreground">{db.name}</div>
-                                      <div className="text-[10px] text-muted-foreground mt-0.5">Engine: {db.engine.toUpperCase()} · Unattached</div>
+                                      <div className="text-[10px] text-muted-foreground mt-0.5">Engine: {db.engine.toUpperCase()} · {t('databaseManager.unattached')}</div>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
@@ -1147,7 +1144,7 @@ function UserNewProject() {
                         <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 flex gap-2.5 items-start">
                           <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                           <span className="text-[10px] text-muted-foreground leading-relaxed">
-                            Database yang dipilih akan di-attach ke project ini. Database ini sudah tercatat sebagai <strong className="text-amber-500 font-bold">milikmu</strong> — tidak ada biaya tambahan saat attach.
+                            {t('newProject.dbConfig.existing.info')}
                           </span>
                         </div>
                       </div>
@@ -1157,18 +1154,18 @@ function UserNewProject() {
                     {formData.database_option === 'external' && (
                       <div className="p-5 rounded-xl border border-purple-500/20 bg-purple-500/5/30 backdrop-blur-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                         <Label className="text-xs font-bold uppercase tracking-widest text-purple-500">
-                          External Database — Bring Your Own
+                          {t('newProject.dbConfig.external.title')}
                         </Label>
                         <div className="flex gap-3 items-start">
                           <ExternalLink className="w-5 h-5 text-purple-500 shrink-0 mt-0.5" />
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Project ini akan berjalan tanpa managed database dari kami. Set kredensial database kamu di <strong className="text-purple-500 font-bold">Environment Editor</strong> setelah project dibuat.
+                            {t('newProject.dbConfig.external.desc')}
                           </p>
                         </div>
 
                         <div className="space-y-2 border-t border-purple-500/10 pt-3">
                           <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                            Variabel yang perlu diisi
+                            {t('newProject.dbConfig.external.vars')}
                           </Label>
                           <div className="flex flex-wrap gap-1.5">
                             {['DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'].map((val) => (
