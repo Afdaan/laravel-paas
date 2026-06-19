@@ -743,24 +743,33 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 
 		engine := "mysql"
+		dbName := project.GetDatabaseName()
+		dbUsername := dbName
+		dbPassword := project.DatabasePassword
 		var dbInstance *models.DatabaseInstance
 		if project.DatabaseInstance != nil {
 			engine = project.DatabaseInstance.Engine
 			dbInstance = project.DatabaseInstance
+			dbName = dbInstance.Name
+			dbUsername = dbInstance.Username
+			dbPassword = dbInstance.Password
+			if dbPassword == "" {
+				dbPassword = project.DatabasePassword
+			}
 		}
 
 		if engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			dbErr = pgService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
+			dbErr = pgService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
 			if dbErr == nil && dbInstance != nil {
 				dbInstance.Host = infrastructure.PostgreSQLContainerName()
 				dbInstance.Port = infrastructure.PostgreSQLPort()
-				dbInstance.Password = project.DatabasePassword
+				dbInstance.Password = dbPassword
 				dbInstance.Status = models.DBStatusActive
 
 				var version string
 				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					project.GetDatabaseName(), project.DatabasePassword, w.cfg.UserPGHost, w.cfg.UserPGPort, project.GetDatabaseName(),
+					dbUsername, dbPassword, dbInstance.Host, strconv.Itoa(dbInstance.Port), dbName,
 				)
 				dbConn, err := sql.Open("pgx", dsn)
 				if err == nil {
@@ -782,16 +791,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
 			}
 		} else {
-			dbErr = w.mysqlService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
+			dbErr = w.mysqlService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
 			if dbErr == nil && dbInstance != nil {
 				dbInstance.Host = infrastructure.MySQLContainerName()
 				dbInstance.Port = infrastructure.MySQLPort()
-				dbInstance.Password = project.DatabasePassword
+				dbInstance.Password = dbPassword
 				dbInstance.Status = models.DBStatusActive
 
 				var version string
-				dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
-					project.GetDatabaseName(), project.DatabasePassword, w.cfg.MYSQLHost, w.cfg.MYSQLPort, project.GetDatabaseName(),
+				dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+					dbUsername, dbPassword, dbInstance.Host, dbInstance.Port, dbName,
 				)
 				dbConn, err := sql.Open("mysql", dsn)
 				if err == nil {

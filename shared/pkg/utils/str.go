@@ -32,11 +32,27 @@ func GenerateRandom(length int) string {
 
 // GeneratePassword creates a random password with mixed case and digits using CSPRNG
 func GeneratePassword(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const lowerCharset = "abcdefghijklmnopqrstuvwxyz"
+	const upperCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const digitCharset = "0123456789"
+	const charset = lowerCharset + upperCharset + digitCharset
+	if length < 3 {
+		length = 3
+	}
 	result := make([]byte, length)
-	for i := range result {
+	requiredCharsets := []string{lowerCharset, upperCharset, digitCharset}
+	for i, requiredCharset := range requiredCharsets {
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(requiredCharset))))
+		result[i] = requiredCharset[num.Int64()]
+	}
+	for i := len(requiredCharsets); i < len(result); i++ {
 		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		result[i] = charset[num.Int64()]
+	}
+	for i := len(result) - 1; i > 0; i-- {
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		j := int(num.Int64())
+		result[i], result[j] = result[j], result[i]
 	}
 	return string(result)
 }
