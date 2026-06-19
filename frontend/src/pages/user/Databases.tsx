@@ -29,25 +29,14 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { siPostgresql, siMysql } from 'simple-icons'
 
-// Engine identity: monochrome glyph on neutral avatar, brand color carried by the ring.
-// MySQL glyph has heavier internal padding, so it renders slightly larger to match Postgres weight.
+// Engine identity: one neutral cylinder avatar, distinguished by brand-color ring + badge.
 const ENGINE_META = {
-  postgresql: { icon: siPostgresql, iconSize: 'w-[1.15rem] h-[1.15rem]', ring: 'ring-blue-500/40', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
-  mysql: { icon: siMysql, iconSize: 'w-[1.35rem] h-[1.35rem]', ring: 'ring-teal-500/40', badge: 'border-transparent bg-teal-600/10 text-teal-600' },
+  postgresql: { label: 'PostgreSQL', ring: 'ring-blue-500/40', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  mysql: { label: 'MySQL', ring: 'ring-teal-500/40', badge: 'border-transparent bg-teal-600/10 text-teal-600' },
 } as const
 
 const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
-
-// Render a simple-icons brand glyph as a single-color (currentColor) shape.
-function EngineIcon({ icon, className }: { icon: { path: string; title: string }; className?: string }) {
-  return (
-    <svg role="img" aria-label={icon.title} viewBox="0 0 24 24" className={className} fill="currentColor">
-      <path d={icon.path} />
-    </svg>
-  )
-}
 
 // One database entry in the sidebar list — accent bar (selected) + engine avatar.
 function DbRow({ db, selected, onSelect, t }: {
@@ -78,7 +67,7 @@ function DbRow({ db, selected, onSelect, t }: {
           "shrink-0 w-9 h-9 rounded-lg bg-muted/60 text-foreground/80 flex items-center justify-center ring-1 ring-inset",
           meta.ring
         )}>
-          <EngineIcon icon={meta.icon} className={meta.iconSize} />
+          <DbIcon className="w-4 h-4" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
