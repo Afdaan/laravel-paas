@@ -42,6 +42,7 @@ RUN apk add --no-cache \
     oniguruma-dev \
     icu-dev \
     libxml2-dev \
+    imagemagick \
     imagemagick-dev \
     libmemcached-dev \
     gmp-dev \
@@ -73,7 +74,8 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         ldap \
         xml \
         fileinfo \
-    && printf "\n" | pecl install redis imagick \
+    && printf "\n" | pecl install redis \
+    && printf "\n" | pecl install imagick \
     && docker-php-ext-enable redis imagick \
     && docker-php-source delete \
     && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \
