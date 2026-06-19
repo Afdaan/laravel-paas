@@ -30,6 +30,98 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
+// Brand-aware engine styling for list avatars/badges (Postgres = blue, MySQL = amber)
+const ENGINE_META = {
+  postgresql: { glyph: 'PG', avatar: 'bg-blue-500/10 text-blue-500 border-blue-500/20', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  mysql: { glyph: 'My', avatar: 'bg-amber-500/10 text-amber-500 border-amber-500/20', badge: 'border-transparent bg-amber-500/10 text-amber-500' },
+} as const
+
+const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
+
+// One database entry in the sidebar list — accent bar (selected) + engine avatar.
+function DbRow({ db, selected, onSelect, t }: {
+  db: DatabaseInstance
+  selected: boolean
+  onSelect: (id: number) => void
+  t: (key: string) => string
+}) {
+  const meta = engineMeta(db.engine)
+  const attached = db.project_id !== null
+  return (
+    <button
+      onClick={() => onSelect(db.id)}
+      className={cn(
+        "relative w-full text-left pl-3.5 pr-3 py-2.5 rounded-lg transition-all border group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        selected
+          ? 'bg-muted/40 border-primary/20 shadow-sm'
+          : 'border-transparent hover:bg-muted/40 hover:border-border/40'
+      )}
+    >
+      {/* Left accent bar marks the selected row (Linear/Vercel pattern) */}
+      <span className={cn(
+        "absolute left-0 top-1/2 -translate-y-1/2 h-7 w-0.5 rounded-full bg-primary transition-opacity",
+        selected ? 'opacity-100' : 'opacity-0'
+      )} />
+      <div className="flex items-center gap-2.5">
+        <span className={cn(
+          "shrink-0 w-8 h-8 rounded-lg border flex items-center justify-center text-[10px] font-bold tracking-tight",
+          meta.avatar
+        )}>
+          {meta.glyph}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className={cn(
+              "font-bold text-xs tracking-tight truncate",
+              selected ? 'text-primary' : 'text-foreground'
+            )}>
+              {db.name}
+            </span>
+            <span className={cn(
+              "shrink-0 w-1.5 h-1.5 rounded-full",
+              db.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'
+            )} />
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+            {attached && db.project ? (
+              <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px] font-semibold border-primary/20 bg-primary/5 text-primary max-w-[150px] truncate">
+                {db.project.name}
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground/60">{t('databaseManager.unattached')}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Section header + rows for a sidebar group (Unattached / Attached).
+function DbSection({ title, count, dbs, selectedDbId, onSelect, t }: {
+  title: string
+  count: number
+  dbs: DatabaseInstance[]
+  selectedDbId: number | null
+  onSelect: (id: number) => void
+  t: (key: string) => string
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 px-2 pb-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{title}</span>
+        <span className="text-[10px] font-semibold text-muted-foreground/50">{count}</span>
+        <span className="flex-1 h-px bg-border/60" />
+      </div>
+      <div className="space-y-1">
+        {dbs.map(db => (
+          <DbRow key={db.id} db={db} selected={selectedDbId === db.id} onSelect={onSelect} t={t} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Databases() {
   const { t } = useTranslation()
   const [databases, setDatabases] = useState<DatabaseInstance[]>([])
@@ -110,6 +202,10 @@ export default function Databases() {
       (db.project_id && db.project && db.project.name.toLowerCase().includes(search.toLowerCase()))
     )
   )
+
+  // Split into unattached / attached sections for the sidebar
+  const unattachedDbs = filteredDbs.filter(db => db.project_id === null)
+  const attachedDbs = filteredDbs.filter(db => db.project_id !== null)
 
   // Projects that do not have a database attached
   const attachableProjects = projects.filter(p => !p.database_instance)
@@ -438,50 +534,30 @@ export default function Databases() {
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto p-1.5 space-y-1 pt-2 scrollbar-thin">
+          <CardContent className="flex-1 overflow-y-auto p-1.5 pt-2 scrollbar-thin">
             {filteredDbs.length > 0 ? (
-              filteredDbs.map(db => (
-                <button
-                  key={db.id}
-                  onClick={() => setSelectedDbId(db.id)}
-                  className={cn(
-                    "w-full text-left p-3 rounded-lg transition-all border group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    selectedDbId === db.id
-                      ? 'bg-muted/30 border-primary/20 shadow-sm'
-                      : 'border-transparent hover:bg-muted/40 hover:border-border/40'
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className={cn(
-                      "font-bold text-xs tracking-tight truncate max-w-[150px]",
-                      selectedDbId === db.id ? 'text-primary' : 'text-foreground'
-                    )}>
-                      {db.name}
-                    </span>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <span className={cn(
-                        "w-1.5 h-1.5 rounded-full",
-                        db.status === 'active' ? 'bg-emerald-500 ' : 'bg-rose-500'
-                      )} />
-                      <Badge variant="outline" className={cn(
-                        "text-[10px] font-medium uppercase px-1.5 py-0 h-4",
-                        db.engine === 'mysql'
-                          ? 'border-transparent bg-amber-500/10 text-amber-500'
-                          : 'border-transparent bg-blue-500/10 text-blue-500'
-                      )}>
-                        {db.engine}
-                      </Badge>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1.5 border-t border-border/50 text-[10px] font-medium text-muted-foreground">
-                    <span>{db.project_id !== null ? t('databaseManager.attachedTo') : t('databaseManager.unattached')}</span>
-                    <span className={cn("truncate max-w-[100px] font-semibold", db.project_id !== null ? "text-primary" : "text-muted-foreground/50")}>
-                      {db.project_id !== null && db.project ? db.project.name : '—'}
-                    </span>
-                  </div>
-                </button>
-              ))
+              <div className="space-y-4">
+                {unattachedDbs.length > 0 && (
+                  <DbSection
+                    title={t('databaseManager.sectionUnattached')}
+                    count={unattachedDbs.length}
+                    dbs={unattachedDbs}
+                    selectedDbId={selectedDbId}
+                    onSelect={setSelectedDbId}
+                    t={t}
+                  />
+                )}
+                {attachedDbs.length > 0 && (
+                  <DbSection
+                    title={t('databaseManager.sectionAttached')}
+                    count={attachedDbs.length}
+                    dbs={attachedDbs}
+                    selectedDbId={selectedDbId}
+                    onSelect={setSelectedDbId}
+                    t={t}
+                  />
+                )}
+              </div>
             ) : (
               <div className="text-center py-12 text-muted-foreground font-semibold uppercase tracking-widest text-xs italic">
                 {t('databaseManager.noClusters')}
