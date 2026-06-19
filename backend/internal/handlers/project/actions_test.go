@@ -72,7 +72,7 @@ func setupTestApp(t *testing.T, dbName string) (*fiber.App, *gorm.DB, redismock.
 	// 4. Create handler dependencies
 	cfg := &config.Config{
 		JWTSecret:               "test-secret-key-1234567890-test-secret-key-1234567890",
-		UIDSalt:                  "test-salt",
+		UIDSalt:                 "test-salt",
 		CredentialEncryptionKey: "test-key-32-chars-long-123456789", // 32 bytes
 	}
 
@@ -362,6 +362,14 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	db.First(&checkDb, existingDb.ID)
 	if checkDb.ProjectID == nil {
 		t.Errorf("expected database to be attached to a project, but project_id is nil")
+	}
+
+	var attachedProject models.Project
+	if err := db.First(&attachedProject, *checkDb.ProjectID).Error; err != nil {
+		t.Fatalf("failed to load attached project: %v", err)
+	}
+	if attachedProject.DatabaseOption != "existing" {
+		t.Errorf("expected attached project database_option existing, got %q", attachedProject.DatabaseOption)
 	}
 
 	// Verify mock expectations

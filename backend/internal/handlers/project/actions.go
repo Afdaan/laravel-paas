@@ -173,9 +173,11 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 
 		project.DatabaseName = &existingDb.Name
 		project.DatabasePassword = existingDb.Password
+		project.DatabaseOption = "existing"
 		if err := tx.Model(project).Updates(map[string]interface{}{
 			"database_name":     project.DatabaseName,
 			"database_password": project.DatabasePassword,
+			"database_option":   project.DatabaseOption,
 		}).Error; err != nil {
 			tx.Rollback()
 			slog.Error("Failed to update project database details", "project_id", projID, "error", err)

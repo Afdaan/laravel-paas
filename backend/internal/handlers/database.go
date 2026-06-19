@@ -1278,6 +1278,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 		project.DatabaseName = &dbInst.Name
 		project.DatabasePassword = dbInst.Password
+		project.DatabaseOption = "existing"
 		if err := tx.Save(project).Error; err != nil {
 			return err
 		}
@@ -1347,6 +1348,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 		project.DatabaseName = nil
 		project.DatabasePassword = ""
+		project.DatabaseOption = "none"
 		if err := tx.Save(&project).Error; err != nil {
 			return err
 		}

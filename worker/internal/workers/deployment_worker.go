@@ -733,6 +733,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if project.DatabaseInstance == nil {
 			return // no PaaS database for this project, skip provisioning
 		}
+		if project.DatabaseOption != "new" {
+			return // existing/attached databases are already provisioned
+		}
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
 			if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
