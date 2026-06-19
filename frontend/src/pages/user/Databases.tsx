@@ -31,19 +31,19 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { cn } from '@/lib/utils'
 import { siPostgresql, siMysql } from 'simple-icons'
 
-// Official brand logos (simple-icons) + tint for list avatars/badges
+// Engine identity: monochrome glyph on neutral avatar, brand color carried by the ring.
+// MySQL glyph has heavier internal padding, so it renders slightly larger to match Postgres weight.
 const ENGINE_META = {
-  postgresql: { icon: siPostgresql, iconSize: 'w-5 h-5', avatar: 'bg-blue-500/10 border-blue-500/20', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
-  // MySQL glyph carries heavy internal padding — bump it up to match Postgres visual weight
-  mysql: { icon: siMysql, iconSize: 'w-[1.4rem] h-[1.4rem]', avatar: 'bg-sky-500/10 border-sky-500/20', badge: 'border-transparent bg-sky-600/10 text-sky-600' },
+  postgresql: { icon: siPostgresql, iconSize: 'w-[1.15rem] h-[1.15rem]', ring: 'ring-blue-500/40', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  mysql: { icon: siMysql, iconSize: 'w-[1.35rem] h-[1.35rem]', ring: 'ring-teal-500/40', badge: 'border-transparent bg-teal-600/10 text-teal-600' },
 } as const
 
 const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
 
-// Render a simple-icons brand glyph at its official color.
-function EngineIcon({ icon, className }: { icon: { path: string; hex: string; title: string }; className?: string }) {
+// Render a simple-icons brand glyph as a single-color (currentColor) shape.
+function EngineIcon({ icon, className }: { icon: { path: string; title: string }; className?: string }) {
   return (
-    <svg role="img" aria-label={icon.title} viewBox="0 0 24 24" className={className} fill={`#${icon.hex}`}>
+    <svg role="img" aria-label={icon.title} viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d={icon.path} />
     </svg>
   )
@@ -75,8 +75,8 @@ function DbRow({ db, selected, onSelect, t }: {
       )} />
       <div className="flex items-center gap-2.5">
         <span className={cn(
-          "shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center",
-          meta.avatar
+          "shrink-0 w-9 h-9 rounded-lg bg-muted/60 text-foreground/80 flex items-center justify-center ring-1 ring-inset",
+          meta.ring
         )}>
           <EngineIcon icon={meta.icon} className={meta.iconSize} />
         </span>
