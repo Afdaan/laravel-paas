@@ -23,7 +23,7 @@ docker rm -f "$MYSQL_CONTAINER_NAME" paas-postgres "$POSTGRES_CONTAINER_NAME" pa
 # 3. Siapkan Network & Folder (Pakai sudo untuk folder agar aman dari Permission Denied)
 echo "[INFO] Preparing storage folders..."
 docker network create paas-network 2>/dev/null || true
-sudo mkdir -p storage/mysql storage/postgres storage/projects
+sudo mkdir -p storage/mysql storage/postgres storage/projects storage/data storage/sqlite
 sudo chown -R $(id -u):$(id -g) storage/  # Ubah kepemilikan ke user saat ini
 
 # Pre-create SQLite persistent directories dynamically

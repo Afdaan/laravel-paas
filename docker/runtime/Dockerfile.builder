@@ -45,6 +45,7 @@ RUN apk add --no-cache \
     imagemagick \
     imagemagick-dev \
     libmemcached-dev \
+    openldap-dev \
     gmp-dev \
     postgresql-dev \
     sqlite-dev
@@ -55,6 +56,7 @@ RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > 
 # Install required PHP extensions for Composer builds
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
+    && docker-php-ext-configure ldap \
     && docker-php-ext-install -j$(nproc) \
         gd \
         zip \
@@ -71,6 +73,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         soap \
         sockets \
         gmp \
+        ldap \
         xml \
         fileinfo \
     && printf "\n" | pecl install redis \

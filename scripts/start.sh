@@ -54,14 +54,15 @@ init_vars() {
 
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
+    SQLITE_DATA_DIR="${SQLITE_DATA_DIR:-${PROJECT_ROOT}/storage/sqlite}"
     TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
 }
 
 prepare_env() {
     docker network create paas-network 2>/dev/null || true
-    sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+    sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
+    sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
+    sudo chmod 777 "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
 
     # Pre-create SQLite persistent directories dynamically
     if [ -d "$DATA_PATH" ]; then

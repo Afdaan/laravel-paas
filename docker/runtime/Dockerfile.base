@@ -5,6 +5,7 @@ FROM php:${PHP_VERSION}-fpm-alpine
 
 # Set build arguments for customization
 ARG INSTALL_REDIS=true
+ARG INSTALL_IMAGICK=true
 
 # Install core runtime dependencies (Nginx, Supervisor, libraries)
 # Removed heavy dev/build packages like git and icu-data-full to save ~40MB
@@ -46,12 +47,14 @@ RUN apk add --no-cache --virtual .build-deps \
         libxml2-dev \
         imagemagick-dev \
         libmemcached-dev \
+        openldap-dev \
         gmp-dev \
         postgresql-dev \
         sqlite-dev \
         linux-headers \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
+    && docker-php-ext-configure ldap \
     && docker-php-ext-install -j$(nproc) \
         pdo \
         pdo_mysql \
@@ -69,9 +72,13 @@ RUN apk add --no-cache --virtual .build-deps \
         soap \
         sockets \
         gmp \
+        ldap \
         fileinfo \
     && if [ "$INSTALL_REDIS" = "true" ]; then \
         printf "\n" | pecl install redis && docker-php-ext-enable redis; \
+    fi \
+    && if [ "$INSTALL_IMAGICK" = "true" ]; then \
+        printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
     fi \
     && find /usr/local/lib/php/extensions -name "*.so" -exec strip --strip-unneeded {} + \
     && strip --strip-unneeded /usr/local/bin/php /usr/local/sbin/php-fpm \

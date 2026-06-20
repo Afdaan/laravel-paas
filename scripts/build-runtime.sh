@@ -2,7 +2,7 @@
 # ==============================================================================
 # Laravel PaaS Runtime Builder
 # This script builds the optimized Docker images for PHP runtime versions 8.0 to 8.4.
-# Usage: ./build-runtime.sh [target] [--force]
+# Usage: ./build-runtime.sh [target] [--force] [--no-cache]
 # Targets:
 #   all      - Build all images (default)
 #   runtime  - Build only PHP runtime images
@@ -33,17 +33,28 @@ NC='\033[0m'
 # Parse arguments
 TARGET_ARG="all"
 FORCE_REBUILD=false
+NO_CACHE=false
 
 for arg in "$@"; do
-    if [[ "$arg" == "--force" ]]; then
-        FORCE_REBUILD=true
-    else
-        TARGET_ARG="$arg"
-    fi
+    case "$arg" in
+        --force)
+            FORCE_REBUILD=true
+            ;;
+        --no-cache)
+            NO_CACHE=true
+            ;;
+        *)
+            TARGET_ARG="$arg"
+            ;;
+    esac
 done
 
 if [ "$FORCE_REBUILD" = true ]; then
-    echo -e "${YELLOW}Force rebuild enabled.${NC}"
+    echo -e "${YELLOW}Force rebuild enabled. Docker cache remains enabled.${NC}"
+fi
+
+if [ "$NO_CACHE" = true ]; then
+    echo -e "${RED}No-cache rebuild enabled. This will rebuild layers from scratch.${NC}"
 fi
 
 # Split target and version
@@ -79,6 +90,57 @@ else
     echo -e "${YELLOW}[INFO] BuildKit remote builder (paas-builder) not found. Building locally on host daemon...${NC}"
 fi
 
+hash_file() {
+    sha256sum "$1" | awk '{print $1}'
+}
+
+image_label() {
+    local image=$1
+    local label=$2
+    docker image inspect "$image" --format "{{ index .Config.Labels \"$label\" }}" 2>/dev/null || true
+}
+
+should_build_image() {
+    local image=$1
+    local expected_hash=$2
+    local label_key=$3
+
+    if [ "$FORCE_REBUILD" = true ]; then
+        return 0
+    fi
+
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local current_hash
+    current_hash=$(image_label "$image" "$label_key")
+    if [ "$current_hash" != "$expected_hash" ]; then
+        return 0
+    fi
+
+    return 1
+}
+
+cache_args=()
+set_cache_args() {
+    local tag=$1
+    local registry_tag=$2
+    cache_args=()
+
+    if [ "$NO_CACHE" = true ]; then
+        cache_args+=("--no-cache")
+    else
+        cache_args+=("--cache-from" "$tag")
+        cache_args+=("--cache-from" "$registry_tag")
+    fi
+}
+
+RUNTIME_HASH=$(hash_file "$DOCKER_BASE")
+BUILDER_HASH=$(hash_file "$DOCKER_BUILDER")
+RUNTIME_HASH_LABEL="paas.runtime.dockerfile_hash"
+BUILDER_HASH_LABEL="paas.builder.dockerfile_hash"
+
 for VERSION in "${VERSIONS[@]}"; do
     # 1. Build Base Runtime
     if [[ "$TARGET" == "all" || "$TARGET" == "runtime" ]]; then
@@ -86,14 +148,17 @@ for VERSION in "${VERSIONS[@]}"; do
         reg_port=${REGISTRY_PORT:-"5000"}
         reg_host=${REGISTRY_HOST:-"127.0.0.1"}
 
-        if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_RUNTIME" >/dev/null 2>&1; then
-            echo -e "${GREEN}[SKIP] PHP ${VERSION} runtime already exists. Use --force to rebuild.${NC}"
+        if ! should_build_image "$TAG_RUNTIME" "$RUNTIME_HASH" "$RUNTIME_HASH_LABEL"; then
+            echo -e "${GREEN}[SKIP] PHP ${VERSION} runtime unchanged. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} runtime... ($TAG_RUNTIME)${NC}"
+            set_cache_args "$TAG_RUNTIME" "${reg_host}:${reg_port}/library/paas-runtime-php:${VERSION}-alpine"
 
             # Tag with registry hosts to avoid remote pulls and enable instant local resolution in BuildKit.
             $BUILD_CMD \
+                "${cache_args[@]}" \
                 --build-arg PHP_VERSION="${VERSION}" \
+                --label "${RUNTIME_HASH_LABEL}=${RUNTIME_HASH}" \
                 -f "${DOCKER_BASE}" \
                 -t "${TAG_RUNTIME}" \
                 -t "paas-registry:5000/library/paas-runtime-php:${VERSION}-alpine" \
@@ -115,14 +180,17 @@ for VERSION in "${VERSIONS[@]}"; do
         reg_port=${REGISTRY_PORT:-"5000"}
         reg_host=${REGISTRY_HOST:-"127.0.0.1"}
 
-        if [ "$FORCE_REBUILD" = false ] && docker image inspect "$TAG_BUILDER" >/dev/null 2>&1; then
-            echo -e "${GREEN}[SKIP] PHP ${VERSION} Unified Builder already exists. Use --force to rebuild.${NC}"
+        if ! should_build_image "$TAG_BUILDER" "$BUILDER_HASH" "$BUILDER_HASH_LABEL"; then
+            echo -e "${GREEN}[SKIP] PHP ${VERSION} Unified Builder unchanged. Use --force to rebuild.${NC}"
         else
             echo -e "${YELLOW}Building PHP ${VERSION} Unified Builder... ($TAG_BUILDER)${NC}"
+            set_cache_args "$TAG_BUILDER" "${reg_host}:${reg_port}/library/paas-builder-base:${VERSION}-alpine"
 
             # Tag with registry hosts to avoid remote pulls and enable instant local resolution in BuildKit.
             $BUILD_CMD \
+                "${cache_args[@]}" \
                 --build-arg PHP_VERSION="${VERSION}" \
+                --label "${BUILDER_HASH_LABEL}=${BUILDER_HASH}" \
                 -f "${DOCKER_BUILDER}" \
                 -t "${TAG_BUILDER}" \
                 -t "paas-registry:5000/library/paas-builder-base:${VERSION}-alpine" \

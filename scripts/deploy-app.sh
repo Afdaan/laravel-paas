@@ -58,12 +58,13 @@ HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
 # Path initialization for host-side volume mounting
 PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
 DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
+SQLITE_DATA_DIR="${SQLITE_DATA_DIR:-${PROJECT_ROOT}/storage/sqlite}"
 TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
 
 # Ensure directories exist and have correct permissions
-mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
 sudo mkdir -p /nix /var/cache/railpacks
-sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+sudo chmod 777 "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
 sudo chmod 777 /nix /var/cache/railpacks
 
 # Pre-create SQLite persistent directories dynamically
