@@ -171,14 +171,19 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
 		"--label", "paas.container_role=web",
+	)
 
-		// Standard Volume Mapping
+	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
-
-		imageName,
-	)
+	}
+	if project.DatabaseOption == "sqlite" {
+		hostSQLitePath := filepath.Join(hostPersistentPath, "sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database", hostSQLitePath))
+	}
+	runArgs = append(runArgs, volumes...)
+	runArgs = append(runArgs, imageName)
 
 	// 4.5. Append custom start command if provided
 	if project.StartCommand != "" {

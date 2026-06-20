@@ -62,6 +62,14 @@ prepare_env() {
     sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+
+    # Pre-create SQLite persistent directories dynamically
+    if [ -d "$DATA_PATH" ]; then
+        find "$DATA_PATH" -mindepth 3 -maxdepth 3 -type d -name "storage" 2>/dev/null | while read -r storage_dir; do
+            mkdir -p "$storage_dir/sqlite"
+            chmod 777 "$storage_dir/sqlite" 2>/dev/null || true
+        done
+    fi
 }
 
 # Helper to get next numeric tag for a service

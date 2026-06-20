@@ -381,6 +381,20 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		if err := w.redisService.ReleaseDeploymentLock(job.ProjectID, lockToken); err != nil {
 			slog.Warn("Failed to release lock for project", "id", job.ProjectID, "error", err)
 		}
+
+		// After lock is released, check if there is a pending env refresh marker
+		if hasPending, err := w.redisService.HasPendingEnvRefresh(job.ProjectID); err == nil && hasPending {
+			slog.Info("Detected pending env refresh marker after job completion, attempting quiet enqueue", "projectId", job.ProjectID)
+			jobID, errQueue := w.redisService.EnqueueEnvUpdateIfQuiet(job.ProjectID, job.UserID)
+			if errQueue != nil {
+				slog.Error("Failed to enqueue pending env update job", "projectId", job.ProjectID, "error", errQueue)
+			} else if jobID != "" {
+				slog.Info("Successfully enqueued pending env update job, clearing marker", "projectId", job.ProjectID, "jobId", jobID)
+				_, _ = w.redisService.ClearPendingEnvRefresh(job.ProjectID)
+			} else {
+				slog.Info("Project not quiet, keeping pending env refresh marker", "projectId", job.ProjectID)
+			}
+		}
 	}()
 
 	// Fetch project from database via repository
@@ -1161,7 +1175,29 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if _, err := w.projectService.SyncProjectNginxFrom(project, "deployment_promote"); err != nil {
-		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
+		slog.Error("Nginx sync failed during promote, rolling back", "subdomain", project.Subdomain, "error", err)
+		appendLog("ERROR: Failed to update public routing: " + err.Error())
+
+		if previousCommitHash != "" {
+			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+		}
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"last_commit_hash":     previousCommitHash,
+			"rollout_container_id": nil,
+		})
+		if cloneHash != "" {
+			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+		}
+
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Routing sync failed")
+
+		if errRm := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); errRm != nil {
+			slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", errRm)
+		}
+
+		w.updateProjectError(project, job.JobID, "[ROUTING_FAILED] Failed to update public routing: "+err.Error())
+		return
 	}
 
 	if err := w.projectService.PromoteRolloutContainer(project.ID, newContainerID); err != nil {

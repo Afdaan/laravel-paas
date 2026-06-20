@@ -29,6 +29,13 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	if err := os.MkdirAll(path, 0777); err != nil {
 		slog.Error("Failed to create storage path", "subdomain", project.Subdomain, "path", path, "error", err)
 	}
+
+	if project.DatabaseOption == "sqlite" {
+		sqlitePath := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "sqlite")
+		if err := os.MkdirAll(sqlitePath, 0777); err != nil {
+			slog.Error("Failed to create sqlite path", "subdomain", project.Subdomain, "path", sqlitePath, "error", err)
+		}
+	}
 	// Logic: Sync new files from Git Source to Persistent Storage
 	// We use 'cp -an' to copy non-existing files and preserve attributes
 	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "app")

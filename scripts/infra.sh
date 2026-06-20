@@ -26,6 +26,14 @@ docker network create paas-network 2>/dev/null || true
 sudo mkdir -p storage/mysql storage/postgres storage/projects
 sudo chown -R $(id -u):$(id -g) storage/  # Ubah kepemilikan ke user saat ini
 
+# Pre-create SQLite persistent directories dynamically
+if [ -d "storage/data" ]; then
+    find "storage/data" -mindepth 3 -maxdepth 3 -type d -name "storage" 2>/dev/null | while read -r storage_dir; do
+        mkdir -p "$storage_dir/sqlite"
+        chmod 777 "$storage_dir/sqlite" 2>/dev/null || true
+    done
+fi
+
 # 4. Jalankan MariaDB
 echo "[INFO] Starting MariaDB ($MYSQL_CONTAINER_NAME)..."
 docker run -d \

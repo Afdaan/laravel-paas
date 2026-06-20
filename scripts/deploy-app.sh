@@ -66,6 +66,14 @@ sudo mkdir -p /nix /var/cache/railpacks
 sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 sudo chmod 777 /nix /var/cache/railpacks
 
+# Pre-create SQLite persistent directories dynamically
+if [ -d "$DATA_PATH" ]; then
+    find "$DATA_PATH" -mindepth 3 -maxdepth 3 -type d -name "storage" 2>/dev/null | while read -r storage_dir; do
+        mkdir -p "$storage_dir/sqlite"
+        chmod 777 "$storage_dir/sqlite" 2>/dev/null || true
+    done
+fi
+
 # Helper to get next numeric tag for a service
 get_next_service_tag() {
     local service=$1

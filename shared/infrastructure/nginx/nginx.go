@@ -233,16 +233,28 @@ func (s *NginxWebhookService) sendRequest(payload WebhookPayload) (string, error
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("webhook request failed: %v", err)
+		slog.Error("Nginx webhook request failed with raw details", "subdomain", payload.Subdomain, "error", err)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return "", fmt.Errorf("webhook request timed out")
+		}
+		return "", fmt.Errorf("webhook request network failure")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("webhook returned status: %d", resp.StatusCode)
+		slog.Error("Nginx webhook returned non-2xx status", "subdomain", payload.Subdomain, "status", resp.StatusCode)
+		return "", fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
 	}
 
 	var webhookResp WebhookResponse
-	_ = json.NewDecoder(resp.Body).Decode(&webhookResp)
+	if err := json.NewDecoder(resp.Body).Decode(&webhookResp); err != nil {
+		slog.Error("Failed to decode Nginx webhook response", "subdomain", payload.Subdomain, "error", err)
+		return "", fmt.Errorf("invalid webhook response format")
+	}
+	if payload.Action == "sync" && webhookResp.ConfigHash == "" {
+		slog.Error("Nginx webhook returned empty config hash", "subdomain", payload.Subdomain)
+		return "", fmt.Errorf("empty config hash returned from webhook")
+	}
 
 	slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action, "hash", webhookResp.ConfigHash)
 	return webhookResp.ConfigHash, nil

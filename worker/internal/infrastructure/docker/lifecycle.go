@@ -52,12 +52,19 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
 		"--label", "paas.container_role=worker",
+	}
 
+	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
-		imageName,
 	}
+	if project.DatabaseOption == "sqlite" {
+		hostSQLitePath := filepath.Join(hostPersistentPath, "sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database", hostSQLitePath))
+	}
+	runArgs = append(runArgs, volumes...)
+	runArgs = append(runArgs, imageName)
 
 	// Append custom worker command
 	runArgs = append(runArgs, "sh", "-c", project.WorkerCommand)
@@ -216,13 +223,19 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
+	}
 
+	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
-
-		imageName,
 	}
+	if project.DatabaseOption == "sqlite" {
+		hostSQLitePath := filepath.Join(hostPersistentPath, "sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database", hostSQLitePath))
+	}
+	runArgs = append(runArgs, volumes...)
+	runArgs = append(runArgs, imageName)
 
 	res, err := utils.Run(3*time.Minute, "docker", runArgs...)
 	if err != nil {
