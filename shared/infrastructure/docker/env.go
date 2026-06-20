@@ -161,7 +161,9 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 								return nil, secretDecryptError(projectID, b.SecretStoreID, item.ID, err)
 							}
 						}
-						envMap[item.Key] = result.Plaintext
+						if !isSystemManagedEnvKey(item.Key) {
+							envMap[item.Key] = result.Plaintext
+						}
 						if result.UsedFallbackKey {
 							if err := rotateSecretValueToCurrentKey(s.db, userID, b.SecretStoreID, item.ID, item.LatestSnapshotVersion, projectID, currentKey, result.Plaintext); err != nil {
 								slog.Warn("Failed to re-encrypt SecretStore value with current credential key", "projectID", projectID, "secret_store_id", b.SecretStoreID, "item_id", item.ID, "error", err)
@@ -354,4 +356,13 @@ func rotateSecretValueToCurrentKey(db *gorm.DB, userID uint, storeID uint, itemI
 		}
 		return createManagedSecretActivityLogTx(tx, userID, storeID, item.ID, projectID, "Re-encrypted secret value with active credential key")
 	})
+}
+
+func isSystemManagedEnvKey(key string) bool {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "APP_NAME", "APP_URL":
+		return true
+	default:
+		return false
+	}
 }

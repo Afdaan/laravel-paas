@@ -99,6 +99,15 @@ func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint, ipAddr
 }
 
 func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if IsSystemManagedEnvKey(key) {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		var item models.SecretStoreItem
+		if errItem := s.db.Where("secret_store_id = ? AND UPPER(key) = ?", storeID, normalizedKey).First(&item).Error; errItem == nil {
+			s.db.Delete(&item)
+			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed system-managed secret key: "+normalizedKey, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
+	}
 	if s.IsBaselineMatchForStore(storeID, key, value) {
 		var item models.SecretStoreItem
 		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
@@ -173,6 +182,15 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 }
 
 func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if IsSystemManagedEnvKey(key) {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		var item models.SecretStoreItem
+		if errItem := s.db.Where("secret_store_id = ? AND UPPER(key) = ?", storeID, normalizedKey).First(&item).Error; errItem == nil {
+			s.db.Delete(&item)
+			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed system-managed secret key: "+normalizedKey, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
+	}
 	if s.IsBaselineMatchForStore(storeID, key, value) {
 		var item models.SecretStoreItem
 		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
@@ -474,7 +492,9 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 						return nil, secretDecryptError(project.ID, b.SecretStoreID, item.ID, err)
 					}
 				}
-				envMap[item.Key] = result.Plaintext
+				if !IsSystemManagedEnvKey(item.Key) {
+					envMap[item.Key] = result.Plaintext
+				}
 				if result.UsedFallbackKey {
 					if err := s.rotateSecretValueToCurrentKey(s.db, project.UserID, b.SecretStoreID, item.ID, item.LatestSnapshotVersion, project.ID, currentKey, result.Plaintext); err != nil {
 						slog.Warn("Failed to re-encrypt SecretStore value with current credential key", "projectID", project.ID, "secret_store_id", b.SecretStoreID, "item_id", item.ID, "error", err)
@@ -702,6 +722,17 @@ func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID
 	}
 }
 
+// IsSystemManagedEnvKey returns true for platform-owned variables that must
+// always come from project/domain state, never from SecretStore overrides.
+func IsSystemManagedEnvKey(key string) bool {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "APP_NAME", "APP_URL":
+		return true
+	default:
+		return false
+	}
+}
+
 // GetBaselineEnvMap generates Layer 1 + Layer 2 environment map for comparison.
 func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[string]string {
 	baseline := make(map[string]string)
@@ -879,6 +910,15 @@ func (s *SecretStoreService) BindSecretStoreTx(db *gorm.DB, userID uint, storeID
 func (s *SecretStoreService) SetSecretValueNoPropagateTx(db *gorm.DB, userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
 	if db == nil {
 		db = s.db
+	}
+	if IsSystemManagedEnvKey(key) {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		var item models.SecretStoreItem
+		if errItem := db.Where("secret_store_id = ? AND UPPER(key) = ?", storeID, normalizedKey).First(&item).Error; errItem == nil {
+			db.Delete(&item)
+			s.LogActivityTx(db, userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed system-managed secret key: "+normalizedKey, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
 	}
 	if s.IsBaselineMatchForStoreTx(db, storeID, key, value) {
 		var item models.SecretStoreItem

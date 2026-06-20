@@ -119,7 +119,7 @@ export function EnvironmentEditor({ uid, onSave, hasDatabaseInstance = false, pr
     baseline["APP_DEBUG"] = "false"
 
     // APP_URL
-    let appURL = `http://${project.subdomain}`
+    let appURL = project.url || (project.subdomain ? `http://${project.subdomain}` : '')
     let primaryDomain = ''
     let firstActiveDomain = ''
     if (project.custom_domains) {
