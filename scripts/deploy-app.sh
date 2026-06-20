@@ -62,7 +62,9 @@ SQLITE_DATA_DIR="${SQLITE_DATA_DIR:-${PROJECT_ROOT}/storage/sqlite}"
 TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
 
 # Ensure directories exist and have correct permissions
-mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
+mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+sudo mkdir -p "$SQLITE_DATA_DIR"
+sudo chown -R $(id -u):$(id -g) "$SQLITE_DATA_DIR"
 sudo mkdir -p /nix /var/cache/railpacks
 sudo chmod 777 "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
 sudo chmod 777 /nix /var/cache/railpacks
