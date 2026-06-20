@@ -25,6 +25,7 @@ import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
 import { getEngineDisplayName } from '../../components/database-studio/utils'
+import { DEFAULT_RUNTIME_VERSIONS } from '../../lib/runtimes'
 import { Project } from '../../types'
 
 const getFrameworkLabel = (framework?: string, fallback?: string) => {
@@ -32,8 +33,9 @@ const getFrameworkLabel = (framework?: string, fallback?: string) => {
   return framework
 }
 
+const isLaravelFramework = (framework?: string) => (framework || '').toLowerCase().includes('laravel')
+
 type FrameworkTone = {
-  spotlight: string
   surface: string
   border: string
   chip: string
@@ -45,7 +47,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw.includes('laravel') || fw.includes('php')) {
     return {
-      spotlight: 'text-rose-500',
       surface: 'bg-rose-500/15',
       border: 'ring-rose-500/20',
       chip: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-300',
@@ -55,7 +56,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw === 'go' || fw.includes('golang')) {
     return {
-      spotlight: 'text-cyan-500',
       surface: 'bg-cyan-500/15',
       border: 'ring-cyan-500/20',
       chip: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
@@ -65,7 +65,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw.includes('python') || fw.includes('django') || fw.includes('flask')) {
     return {
-      spotlight: 'text-amber-500',
       surface: 'bg-amber-500/15',
       border: 'ring-amber-500/20',
       chip: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300',
@@ -75,7 +74,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw.includes('next') || fw.includes('node') || fw.includes('express')) {
     return {
-      spotlight: 'text-slate-500 dark:text-white',
       surface: 'bg-slate-500/15 dark:bg-white/10',
       border: 'ring-slate-500/20 dark:ring-white/15',
       chip: 'border-slate-500/20 bg-slate-500/10 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-white',
@@ -84,7 +82,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
   }
 
   return {
-    spotlight: 'text-primary',
     surface: 'bg-primary/10',
     border: 'ring-primary/20',
     chip: 'border-primary/20 bg-primary/10 text-primary',
@@ -130,20 +127,16 @@ type ProjectCardProps = {
 function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess }: ProjectCardProps) {
   const { t } = useTranslation()
   const tone = getFrameworkTone(project.framework)
+  const isLaravel = isLaravelFramework(project.framework)
   const projectHost = project.url ? project.url.replace(/^https?:\/\//, '') : project.subdomain
-  const runtimeLabel = project.framework === 'Laravel' ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')
-  const runtimeValue = project.framework === 'Laravel'
-    ? (project.php_version ? `${t('projectDetail.settings.version')} ${project.php_version}` : t('projectDetail.metrics.inactive'))
+  const runtimeLabel = isLaravel ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')
+  const phpVersion = project.php_version?.trim() || DEFAULT_RUNTIME_VERSIONS.php
+  const runtimeValue = isLaravel
+    ? `${t('projectDetail.settings.version')} ${phpVersion}`
     : getFrameworkLabel(project.framework, t('common.general'))
   const databaseValue = project.database_name
     ? getEngineDisplayName(project.database_instance?.engine)
     : t('projectDetail.metrics.inactive')
-
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    event.currentTarget.style.setProperty('--spotlight-x', `${event.clientX - bounds.left}px`)
-    event.currentTarget.style.setProperty('--spotlight-y', `${event.clientY - bounds.top}px`)
-  }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.currentTarget !== event.target) return
@@ -160,24 +153,18 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
       aria-label={project.name}
       onClick={() => onNavigate(project.uid)}
       onKeyDown={handleKeyDown}
-      onPointerMove={handlePointerMove}
       className={cn(
-        'group relative flex h-full cursor-pointer overflow-hidden rounded-2xl border border-border/50 bg-card/80 p-0 py-0 shadow-sm shadow-black/5 outline-none transition-[transform,box-shadow,border-color,background-color] duration-300 ease-out hover:-translate-y-0.5 hover:border-border/80 hover:bg-card hover:shadow-xl hover:shadow-black/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-card/70 dark:shadow-black/30 dark:hover:shadow-black/40',
+        'group relative flex h-full cursor-pointer overflow-hidden rounded-2xl border border-border/50 bg-card/90 p-0 py-0 shadow-sm shadow-black/5 outline-none transition-[box-shadow,border-color,background-color] duration-200 ease-out hover:border-border/80 hover:bg-card hover:shadow-md hover:shadow-black/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-card/80 dark:shadow-black/30 dark:hover:shadow-black/30',
         tone.border
       )}
     >
-      <div
-        className={cn('pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-10 group-focus-visible:opacity-10', tone.spotlight)}
-        style={{ background: 'radial-gradient(420px circle at var(--spotlight-x,50%) var(--spotlight-y,50%), currentColor, transparent 72%)' }}
-        aria-hidden="true"
-      />
-      <div className={cn('pointer-events-none absolute inset-0 rounded-2xl opacity-0 ring-1 ring-inset transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100', tone.border)} aria-hidden="true" />
+      <div className={cn('pointer-events-none absolute inset-0 rounded-2xl opacity-0 ring-1 ring-inset transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100', tone.border)} aria-hidden="true" />
       <div className={cn('pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r', tone.divider)} aria-hidden="true" />
 
       <CardContent className="relative z-10 flex h-full flex-col p-6">
         <div className="mb-8 flex items-start justify-between gap-4">
-          <div className="relative transition-transform duration-300 ease-out group-hover:scale-[1.04]">
-            <div className={cn('absolute -inset-2 rounded-2xl blur-xl opacity-40 transition-opacity duration-300 group-hover:opacity-70', tone.surface)} aria-hidden="true" />
+          <div className="relative transition-transform duration-150 ease-out group-hover:scale-[1.02]">
+            <div className={cn('absolute -inset-1 rounded-2xl opacity-60 transition-opacity duration-150 group-hover:opacity-80', tone.surface)} aria-hidden="true" />
             <FrameworkIcon framework={project.framework} variant="tile" className="relative h-11 w-11" />
           </div>
           <StatusBadge status={project.status} />
