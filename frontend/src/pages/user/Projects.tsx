@@ -36,8 +36,6 @@ const getFrameworkLabel = (framework?: string, fallback?: string) => {
 const isLaravelFramework = (framework?: string) => (framework || '').toLowerCase().includes('laravel')
 
 type FrameworkTone = {
-  surface: string
-  border: string
   chip: string
   divider: string
 }
@@ -47,8 +45,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw.includes('laravel') || fw.includes('php')) {
     return {
-      surface: 'bg-rose-500/15',
-      border: 'ring-rose-500/20',
       chip: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-300',
       divider: 'from-rose-500/0 via-rose-500/60 to-rose-500/0',
     }
@@ -56,8 +52,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw === 'go' || fw.includes('golang')) {
     return {
-      surface: 'bg-cyan-500/15',
-      border: 'ring-cyan-500/20',
       chip: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
       divider: 'from-cyan-500/0 via-cyan-500/60 to-cyan-500/0',
     }
@@ -65,8 +59,6 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw.includes('python') || fw.includes('django') || fw.includes('flask')) {
     return {
-      surface: 'bg-amber-500/15',
-      border: 'ring-amber-500/20',
       chip: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300',
       divider: 'from-amber-500/0 via-amber-500/60 to-amber-500/0',
     }
@@ -74,16 +66,12 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
   if (fw.includes('next') || fw.includes('node') || fw.includes('express')) {
     return {
-      surface: 'bg-slate-500/15 dark:bg-white/10',
-      border: 'ring-slate-500/20 dark:ring-white/15',
       chip: 'border-slate-500/20 bg-slate-500/10 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-white',
       divider: 'from-slate-500/0 via-slate-500/50 to-slate-500/0 dark:from-white/0 dark:via-white/50 dark:to-white/0',
     }
   }
 
   return {
-    surface: 'bg-primary/10',
-    border: 'ring-primary/20',
     chip: 'border-primary/20 bg-primary/10 text-primary',
     divider: 'from-primary/0 via-primary/50 to-primary/0',
   }
@@ -91,26 +79,23 @@ const getFrameworkTone = (framework?: string): FrameworkTone => {
 
 const StatusBadge = ({ status }: { status: Project['status'] }) => {
   const { t } = useTranslation()
-  const configs: Record<Project['status'], { badge: string, dot: string, label: string, pulse?: boolean }> = {
+  const configs: Record<Project['status'], { badge: string, dot: string, label: string }> = {
     pending: { badge: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300', dot: 'bg-amber-500', label: t('status.pending') },
-    queued: { badge: 'border-purple-500/20 bg-purple-500/10 text-purple-700 dark:text-purple-300', dot: 'bg-purple-500', label: t('status.queued'), pulse: true },
-    deploying: { badge: 'border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300', dot: 'bg-blue-500', label: t('status.building'), pulse: true },
-    building: { badge: 'border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300', dot: 'bg-blue-500', label: t('status.building'), pulse: true },
-    running: { badge: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500', label: t('status.running'), pulse: true },
+    queued: { badge: 'border-purple-500/20 bg-purple-500/10 text-purple-700 dark:text-purple-300', dot: 'bg-purple-500', label: t('status.queued') },
+    deploying: { badge: 'border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300', dot: 'bg-blue-500', label: t('status.building') },
+    building: { badge: 'border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300', dot: 'bg-blue-500', label: t('status.building') },
+    running: { badge: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500', label: t('status.running') },
     failed: { badge: 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300', dot: 'bg-rose-500', label: t('status.failed') },
     error: { badge: 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300', dot: 'bg-rose-500', label: t('status.failed') },
     stopped: { badge: 'border-slate-500/20 bg-slate-500/10 text-slate-700 dark:text-slate-300', dot: 'bg-slate-500', label: t('status.stopped') },
-    restarting: { badge: 'border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300', dot: 'bg-indigo-500', label: t('status.restarting'), pulse: true },
+    restarting: { badge: 'border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300', dot: 'bg-indigo-500', label: t('status.restarting') },
   }
 
   const config = configs[status] || configs.pending
 
   return (
-    <Badge variant="outline" className={cn('inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-sm', config.badge)}>
-      <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
-        {config.pulse && <span className={cn('absolute inline-flex h-full w-full animate-ping rounded-full opacity-60', config.dot)} />}
-        <span className={cn('relative inline-flex h-2 w-2 rounded-full', config.dot)} />
-      </span>
+    <Badge variant="outline" className={cn('inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider', config.badge)}>
+      <span className={cn('h-2 w-2 shrink-0 rounded-full', config.dot)} aria-hidden="true" />
       {config.label}
     </Badge>
   )
@@ -153,19 +138,14 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
       aria-label={project.name}
       onClick={() => onNavigate(project.uid)}
       onKeyDown={handleKeyDown}
-      className={cn(
-        'group relative flex h-full cursor-pointer overflow-hidden rounded-2xl border border-border/50 bg-card/90 p-0 py-0 shadow-sm shadow-black/5 outline-none transition-[box-shadow,border-color,background-color] duration-200 ease-out hover:border-border/80 hover:bg-card hover:shadow-md hover:shadow-black/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-card/80 dark:shadow-black/30 dark:hover:shadow-black/30',
-        tone.border
-      )}
+      className="group relative flex h-full cursor-pointer overflow-hidden rounded-2xl border border-border/50 bg-card/95 p-0 py-0 outline-none transition-colors duration-150 hover:border-border/80 hover:bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-card/85"
     >
-      <div className={cn('pointer-events-none absolute inset-0 rounded-2xl opacity-0 ring-1 ring-inset transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100', tone.border)} aria-hidden="true" />
       <div className={cn('pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r', tone.divider)} aria-hidden="true" />
 
       <CardContent className="relative z-10 flex h-full flex-col p-6">
         <div className="mb-8 flex items-start justify-between gap-4">
-          <div className="relative transition-transform duration-150 ease-out group-hover:scale-[1.02]">
-            <div className={cn('absolute -inset-1 rounded-2xl opacity-60 transition-opacity duration-150 group-hover:opacity-80', tone.surface)} aria-hidden="true" />
-            <FrameworkIcon framework={project.framework} variant="tile" className="relative h-11 w-11" />
+          <div className="relative">
+            <FrameworkIcon framework={project.framework} variant="tile" className="h-11 w-11" />
           </div>
           <StatusBadge status={project.status} />
         </div>
@@ -175,7 +155,7 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
             {project.name}
           </h3>
           <div className="mb-3">
-            <Badge variant="outline" className={cn('gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider shadow-sm backdrop-blur-sm', tone.chip)}>
+            <Badge variant="outline" className={cn('gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider', tone.chip)}>
               <FrameworkIcon framework={project.framework} variant="plain" className="h-3.5 w-3.5" />
               {getFrameworkLabel(project.framework, t('common.general'))}
             </Badge>
@@ -185,7 +165,7 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-xs text-muted-foreground shadow-sm shadow-black/5 transition-[border-color,background-color,color] duration-150 hover:border-border hover:bg-muted hover:text-foreground dark:bg-background/20"
+            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors duration-150 hover:border-border hover:bg-muted hover:text-foreground dark:bg-background/20"
             title={projectHost}
           >
             <Globe className="h-3.5 w-3.5 shrink-0" />
@@ -226,13 +206,13 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-background/80 p-1 shadow-sm shadow-black/10 backdrop-blur-md transition-[opacity,transform,border-color,background-color] duration-200 sm:translate-x-1 sm:opacity-70 group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:translate-x-0 group-focus-within:opacity-100 dark:bg-background/40 dark:shadow-black/30">
+          <div className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-background/80 p-1 transition-opacity duration-150 sm:opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-background/40">
             <RestartButton
               projectId={project.uid}
               status={project.status}
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-full text-muted-foreground transition-transform hover:scale-[1.03] hover:text-foreground active:scale-[0.97]"
+              className="h-9 w-9 rounded-full text-muted-foreground transition-colors duration-150 hover:text-foreground"
               onStarted={() => onActionStarted(project.uid, 'restarting')}
               onSuccess={onSuccess}
             />
@@ -242,7 +222,7 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
               variant="ghost"
               size="icon"
               showOptions={false}
-              className="h-9 w-9 rounded-full text-muted-foreground transition-transform hover:scale-[1.03] hover:text-foreground active:scale-[0.97]"
+              className="h-9 w-9 rounded-full text-muted-foreground transition-colors duration-150 hover:text-foreground"
               onStarted={() => onActionStarted(project.uid, 'queued')}
               onSuccess={onSuccess}
             />
@@ -250,7 +230,7 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
               variant="ghost"
               size="icon"
               onClick={(e) => onDelete(project.uid, e)}
-              className="h-9 w-9 rounded-full text-muted-foreground transition-transform hover:scale-[1.03] hover:bg-destructive/10 hover:text-destructive active:scale-[0.97]"
+              className="h-9 w-9 rounded-full text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
               title={t('projectDetail.actions.delete')}
               aria-label={t('projectDetail.actions.delete')}
             >
@@ -263,11 +243,11 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
                 e.stopPropagation()
                 onNavigate(project.uid)
               }}
-              className="h-9 w-9 rounded-full transition-transform hover:scale-[1.03] active:scale-[0.97]"
+              className="h-9 w-9 rounded-full"
               title={project.name}
               aria-label={project.name}
             >
-              <ArrowRight className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5" />
+              <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
