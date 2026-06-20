@@ -47,7 +47,7 @@ RUN apk add --no-cache \
     libmemcached-dev \
     gmp-dev \
     postgresql-dev \
-    openldap-dev
+    sqlite-dev
 
 ENV TZ=Asia/Jakarta
 RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > /etc/timezone
@@ -55,13 +55,13 @@ RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > 
 # Install required PHP extensions for Composer builds
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
-    && docker-php-ext-configure ldap \
     && docker-php-ext-install -j$(nproc) \
         gd \
         zip \
         pdo \
         pdo_mysql \
         pdo_pgsql \
+        pdo_sqlite \
         mbstring \
         exif \
         pcntl \
@@ -71,7 +71,6 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         soap \
         sockets \
         gmp \
-        ldap \
         xml \
         fileinfo \
     && printf "\n" | pecl install redis \
