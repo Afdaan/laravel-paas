@@ -140,8 +140,6 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
       onKeyDown={handleKeyDown}
       className="group relative flex h-full cursor-pointer overflow-hidden rounded-2xl border border-border/50 bg-card/95 p-0 py-0 outline-none transition-colors duration-150 hover:border-border/80 hover:bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:bg-card/85"
     >
-      <div className={cn('pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r', tone.divider)} aria-hidden="true" />
-
       <CardContent className="relative z-10 flex h-full flex-col p-6">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="relative">
