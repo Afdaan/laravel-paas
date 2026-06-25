@@ -179,8 +179,13 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
 	}
 	if project.DatabaseOption == "sqlite" {
-		hostSQLitePath := filepath.Join(hostPersistentPath, "sqlite")
-		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database", hostSQLitePath))
+		// Fail-fast: ensure host sqlite file exists before Docker attempts bind-mount.
+		if err := s.storage.PrepareSQLiteHostFile(project); err != nil {
+			return "", fmt.Errorf("failed to prepare SQLite database file: %w", err)
+		}
+		// Mount only the sqlite file, not the directory, to preserve Laravel's database/migrations and database/seeders.
+		hostSQLiteFile := filepath.Join(hostPersistentPath, "sqlite", "database.sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database/database.sqlite", hostSQLiteFile))
 	}
 	runArgs = append(runArgs, volumes...)
 	runArgs = append(runArgs, imageName)

@@ -1071,6 +1071,70 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"port":                 project.Port,
 	})
 
+	// For SQLite Laravel projects, run migrations BEFORE healthcheck.
+	// The app cannot pass healthcheck without database tables (SQLSTATE no such table).
+	if project.Framework == "Laravel" && project.DatabaseOption == "sqlite" {
+		if ctx.Err() == context.Canceled {
+			slog.Info("Deployment cancelled before migrations, rolling back", "subdomain", project.Subdomain)
+			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
+
+			sharedDocker.GetCircuitBreaker().RecordFailure()
+			if previousCommitHash != "" {
+				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"last_commit_hash": previousCommitHash,
+			})
+			if cloneHash != "" {
+				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+			}
+
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
+			_ = w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID)
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id": nil,
+			})
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
+			return
+		}
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 55, "running_migrations", "Executing artisan migrate --force (pre-healthcheck for SQLite)")
+		slog.Info("Running database migrations before healthcheck (SQLite)", "subdomain", project.Subdomain)
+		appendLog(">> Running database migrations (SQLite: before healthcheck)...")
+		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
+			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+
+			sharedDocker.GetCircuitBreaker().RecordFailure()
+			if previousCommitHash != "" {
+				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"last_commit_hash": previousCommitHash,
+			})
+			if cloneHash != "" {
+				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+			}
+
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
+			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
+				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id": nil,
+			})
+			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			return
+		} else {
+			if strings.TrimSpace(output) != "" {
+				appendLog(strings.TrimRight(output, "\r\n"))
+			} else {
+				appendLog("✓ Database migrations ran successfully (nothing to migrate).")
+			}
+		}
+	}
+
 	appendLog(">> Starting container readiness checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
@@ -1105,7 +1169,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		appendLog("✓ Health check passed.")
 	}
 
-	if project.Framework == "Laravel" {
+	// For non-SQLite Laravel projects, run migrations after healthcheck (original behavior)
+	if project.Framework == "Laravel" && project.DatabaseOption != "sqlite" {
 		if ctx.Err() == context.Canceled {
 			slog.Info("Deployment cancelled before migrations, rolling back", "subdomain", project.Subdomain)
 			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")

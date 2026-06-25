@@ -58,22 +58,43 @@ HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
 # Path initialization for host-side volume mounting
 PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
 DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
-SQLITE_DATA_DIR="${SQLITE_DATA_DIR:-${PROJECT_ROOT}/storage/sqlite}"
 TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
 
-# Ensure directories exist and have correct permissions
-mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-sudo mkdir -p "$SQLITE_DATA_DIR"
-sudo chown -R $(id -u):$(id -g) "$SQLITE_DATA_DIR"
+# Deployment user identity for deterministic ownership
+APP_UID="${APP_UID:-$(id -u)}"
+APP_GID="${APP_GID:-$(id -g)}"
+
+# Ensure directories exist
+sudo mkdir -p "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 sudo mkdir -p /nix /var/cache/railpacks
-sudo chmod 777 "$DATA_PATH" "$SQLITE_DATA_DIR" "$TRAEFIK_DYNAMIC_DIR"
 sudo chmod 777 /nix /var/cache/railpacks
 
-# Pre-create SQLite persistent directories dynamically
+# Deterministic storage ownership and permission repair.
+# Ensures no root-owned nested dirs block container runtime writes.
+repair_storage_permissions() {
+    local target="$1"
+    if [ ! -d "$target" ]; then
+        return
+    fi
+    sudo chown -R "${APP_UID}:${APP_GID}" "$target"
+    find "$target" -type d -exec chmod 775 {} + 2>/dev/null || true
+    find "$target" -type f -exec chmod 664 {} + 2>/dev/null || true
+}
+
+repair_storage_permissions "$PROJECTS_PATH"
+repair_storage_permissions "$DATA_PATH"
+sudo chown "${APP_UID}:${APP_GID}" "$TRAEFIK_DYNAMIC_DIR"
+chmod 775 "$TRAEFIK_DYNAMIC_DIR"
+
+# Repair existing per-project SQLite dirs/files to safe permissions
 if [ -d "$DATA_PATH" ]; then
     find "$DATA_PATH" -mindepth 3 -maxdepth 3 -type d -name "storage" 2>/dev/null | while read -r storage_dir; do
-        mkdir -p "$storage_dir/sqlite"
-        chmod 777 "$storage_dir/sqlite" 2>/dev/null || true
+        if [ -d "$storage_dir/sqlite" ]; then
+            chmod 775 "$storage_dir/sqlite" 2>/dev/null || true
+            if [ -f "$storage_dir/sqlite/database.sqlite" ]; then
+                chmod 664 "$storage_dir/sqlite/database.sqlite" 2>/dev/null || true
+            fi
+        fi
     done
 fi
 
@@ -290,7 +311,7 @@ deploy_worker() {
         --restart unless-stopped \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "${PROJECTS_PATH}:/app/storage/projects" \
-        -v "${DATA_PATH}:/app/data" \
+        -v "${DATA_PATH}:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
         -v "${PROJECT_ROOT}/.env:/app/.env:ro" \

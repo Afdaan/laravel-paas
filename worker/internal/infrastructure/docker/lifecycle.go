@@ -60,8 +60,13 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
 	}
 	if project.DatabaseOption == "sqlite" {
-		hostSQLitePath := filepath.Join(hostPersistentPath, "sqlite")
-		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database", hostSQLitePath))
+		// Fail-fast: ensure host sqlite file exists before Docker attempts bind-mount.
+		if err := s.storage.PrepareSQLiteHostFile(project); err != nil {
+			return "", fmt.Errorf("failed to prepare SQLite database file: %w", err)
+		}
+		// Mount only the sqlite file to preserve Laravel's database/migrations and database/seeders.
+		hostSQLiteFile := filepath.Join(hostPersistentPath, "sqlite", "database.sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database/database.sqlite", hostSQLiteFile))
 	}
 	runArgs = append(runArgs, volumes...)
 	runArgs = append(runArgs, imageName)
@@ -231,8 +236,13 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
 	}
 	if project.DatabaseOption == "sqlite" {
-		hostSQLitePath := filepath.Join(hostPersistentPath, "sqlite")
-		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database", hostSQLitePath))
+		// Fail-fast: ensure host sqlite file exists before Docker attempts bind-mount.
+		if err := s.storage.PrepareSQLiteHostFile(project); err != nil {
+			return "", fmt.Errorf("failed to prepare SQLite database file: %w", err)
+		}
+		// Mount only the sqlite file to preserve Laravel's database/migrations and database/seeders.
+		hostSQLiteFile := filepath.Join(hostPersistentPath, "sqlite", "database.sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database/database.sqlite", hostSQLiteFile))
 	}
 	runArgs = append(runArgs, volumes...)
 	runArgs = append(runArgs, imageName)
@@ -511,26 +521,18 @@ func sanitizeDockerRunError(stderr string) string {
 	return "failed to start container: " + cleaned
 }
 
-// EnsureSQLiteFile runs initialization commands for SQLite inside the container
+// EnsureSQLiteFile ensures the SQLite database file exists inside the container with correct ownership.
+// Only touches the sqlite file itself — does NOT recursively chown/chmod /var/www/html/database
+// to preserve Laravel's migrations/ and seeders/ directories.
 func (s *DockerService) EnsureSQLiteFile(containerID string) error {
-	// First, check/create database directory inside the container
-	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "mkdir", "-p", "/var/www/html/database"); err != nil {
-		return fmt.Errorf("failed to create database directory: %w (stderr: %s)", err, res.Stderr)
-	}
-
-	// Run: docker exec -u root containerID touch /var/www/html/database/database.sqlite
+	// Ensure the sqlite file exists (it's bind-mounted, but touch is idempotent)
 	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "touch", "/var/www/html/database/database.sqlite"); err != nil {
 		return fmt.Errorf("failed to touch sqlite file: %w (stderr: %s)", err, res.Stderr)
 	}
 
-	// Run: docker exec -u root containerID chown -R www-data:www-data /var/www/html/database
-	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", "www-data:www-data", "/var/www/html/database"); err != nil {
-		return fmt.Errorf("failed to chown database directory: %w (stderr: %s)", err, res.Stderr)
-	}
-
-	// Run: docker exec -u root containerID chmod -R 775 /var/www/html/database
-	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chmod", "775", "/var/www/html/database"); err != nil {
-		return fmt.Errorf("failed to chmod database directory: %w (stderr: %s)", err, res.Stderr)
+	// Only chown/chmod the sqlite file, not the entire database directory
+	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "www-data:www-data", "/var/www/html/database/database.sqlite"); err != nil {
+		return fmt.Errorf("failed to chown sqlite file: %w (stderr: %s)", err, res.Stderr)
 	}
 	if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chmod", "664", "/var/www/html/database/database.sqlite"); err != nil {
 		return fmt.Errorf("failed to chmod sqlite file: %w (stderr: %s)", err, res.Stderr)
