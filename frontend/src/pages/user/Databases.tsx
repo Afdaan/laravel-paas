@@ -495,24 +495,230 @@ export default function Databases() {
     )
   }
 
+  const renderCreateDialog = () => (
+    <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+      <DialogContent className="max-w-lg">
+        <form onSubmit={handleCreateDatabase}>
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <DbIcon className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.createDatabaseTitle")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.createDatabaseDesc")}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {/* Engine Selection */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.engineLabel")}
+              </label>
+              <Select
+                value={createEngine}
+                onValueChange={(val) => setCreateEngine(val as 'mysql' | 'postgres')}
+              >
+                <SelectTrigger className="w-full text-xs">
+                  {createEngine === 'mysql' ? 'MySQL (v8.0)' : 'PostgreSQL (v15)'}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mysql" className="text-xs font-medium">MySQL (v8.0)</SelectItem>
+                  <SelectItem value="postgres" className="text-xs font-medium">PostgreSQL (v15)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Database Name */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.databaseNameLabel")} <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value.toLowerCase())}
+                placeholder={t("databaseManager.databaseNamePlaceholder")}
+                className="h-9 text-xs"
+                required
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Lowercase, alphanumeric & underscore only. Max 64 chars.
+              </p>
+            </div>
+
+            {/* Username */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.usernameLabel")} <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={createUsername}
+                onChange={(e) => setCreateUsername(e.target.value.toLowerCase())}
+                placeholder={t("databaseManager.usernamePlaceholder")}
+                className="h-9 text-xs"
+                required
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Lowercase, alphanumeric & underscore. Max 32 chars. Must start with a letter.
+              </p>
+            </div>
+
+            {/* Password */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.passwordLabel")} <span className="text-destructive">*</span>
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  value={createPassword}
+                  onChange={(e) => setCreatePassword(e.target.value)}
+                  placeholder={t("databaseManager.passwordPlaceholder")}
+                  className="h-9 text-xs font-mono"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={generatePassword}
+                  className="h-9 text-xs font-semibold px-3 shrink-0"
+                >
+                  Generate
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Min 12 chars. Must contain uppercase, lowercase, and a number. Cannot contain spaces or @, #, /, ?.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={() => setShowCreateModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.createDatabaseBtn")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+
+  const renderRevealDialog = () => (
+    <Dialog open={showRevealModal} onOpenChange={(open) => {
+      if (!open) {
+        setCreatedInstance(null)
+      }
+      setShowRevealModal(open)
+    }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3 text-amber-500 mb-2">
+            <AlertTriangle className="w-5 h-5 animate-pulse" />
+            <DialogTitle className="text-base font-semibold">Credentials Created Successfully</DialogTitle>
+          </div>
+          <DialogDescription className="text-xs leading-relaxed text-amber-500/95 font-medium">
+            Save this password now! Once this dialog is closed, you will not be able to retrieve it again.
+          </DialogDescription>
+        </DialogHeader>
+
+        {createdInstance && (
+          <div className="py-4 space-y-3">
+            <div className="rounded-lg bg-muted/40 border border-border/80 p-3 space-y-2.5 font-mono text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Engine</span>
+                <span className="text-foreground font-semibold">{createdInstance.engine.toUpperCase()}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Host</span>
+                <span className="text-foreground font-semibold">{createdInstance.host}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Port</span>
+                <span className="text-foreground font-semibold">{createdInstance.port}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Database</span>
+                <span className="text-foreground font-semibold">{createdInstance.name}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Username</span>
+                <span className="text-foreground font-semibold">{createdInstance.username}</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Password</span>
+                <span className="text-foreground font-semibold select-all bg-amber-500/10 px-1 rounded">{createdInstance.password}</span>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs font-medium"
+              onClick={() => {
+                const data = `Engine: ${createdInstance.engine.toUpperCase()}\nHost: ${createdInstance.host}\nPort: ${createdInstance.port}\nDatabase: ${createdInstance.name}\nUsername: ${createdInstance.username}\nPassword: ${createdInstance.password}`
+                navigator.clipboard.writeText(data)
+                toast.success(t('databaseManager.copiedAll') || 'All credentials copied to clipboard!')
+              }}
+            >
+              <Copy className="w-3.5 h-3.5 mr-2 shrink-0" />
+              {t('databaseManager.copyAll')}
+            </Button>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            className="w-full text-xs font-medium"
+            onClick={() => {
+              setCreatedInstance(null)
+              setShowRevealModal(false)
+            }}
+          >
+            I've saved my credentials
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   if (databases.length === 0) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 animate-in fade-in duration-500">
-        <div className="w-20 h-20 rounded-3xl bg-muted border flex items-center justify-center">
-          <PackageOpen className="w-10 h-10 text-muted-foreground" />
+      <>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 animate-in fade-in duration-500">
+          <div className="w-20 h-20 rounded-3xl bg-muted border flex items-center justify-center">
+            <PackageOpen className="w-10 h-10 text-muted-foreground" />
+          </div>
+          <div className="text-center max-w-sm space-y-2">
+            <h3 className="text-2xl font-bold tracking-tight">
+              {t('databaseManager.noDbsFound')}
+            </h3>
+            <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">
+              {t('databaseManager.noDbsDesc')}
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-3 mt-4">
+            <Button
+              onClick={() => {
+                setCreateEngine('mysql')
+                setCreateName('')
+                setCreateUsername('')
+                setCreatePassword('')
+                setShowCreateModal(true)
+              }}
+              className="font-bold uppercase gap-2"
+            >
+              <DbIcon className="w-4 h-4" />
+              {t('databaseManager.newDatabase')}
+            </Button>
+            <Link to="/projects/new" className={cn(buttonVariants({ variant: "outline" }), "text-xs")}>
+              {t('databaseManager.createProjectWithDb')}
+            </Link>
+          </div>
         </div>
-        <div className="text-center max-w-sm space-y-2">
-          <h3 className="text-2xl font-bold tracking-tight">
-            {t('databaseManager.noDbsFound')}
-          </h3>
-          <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">
-            {t('databaseManager.noDbsDesc')}
-          </p>
-        </div>
-        <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }), "mt-4")}>
-          {t('databaseManager.createProjectWithDb')}
-        </Link>
-      </div>
+        {renderCreateDialog()}
+        {renderRevealDialog()}
+      </>
     )
   }
 
@@ -1037,190 +1243,8 @@ export default function Databases() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Database Standalone Dialog */}
-      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="max-w-lg">
-          <form onSubmit={handleCreateDatabase}>
-            <DialogHeader>
-              <div className="flex items-center gap-3 text-primary mb-2">
-                <DbIcon className="w-5 h-5" />
-                <DialogTitle className="text-base font-semibold">{t("databaseManager.createDatabaseTitle")}</DialogTitle>
-              </div>
-              <DialogDescription className="text-xs leading-relaxed">
-                {t("databaseManager.createDatabaseDesc")}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="py-4 space-y-4">
-              {/* Engine Selection */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                  {t("databaseManager.engineLabel")}
-                </label>
-                <Select
-                  value={createEngine}
-                  onValueChange={(val) => setCreateEngine(val as 'mysql' | 'postgres')}
-                >
-                  <SelectTrigger className="w-full text-xs">
-                    {createEngine === 'mysql' ? 'MySQL (v8.0)' : 'PostgreSQL (v15)'}
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mysql" className="text-xs font-medium">MySQL (v8.0)</SelectItem>
-                    <SelectItem value="postgres" className="text-xs font-medium">PostgreSQL (v15)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Database Name */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                  {t("databaseManager.databaseNameLabel")} <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value.toLowerCase())}
-                  placeholder={t("databaseManager.databaseNamePlaceholder")}
-                  className="h-9 text-xs"
-                  required
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Lowercase, alphanumeric & underscore only. Max 64 chars.
-                </p>
-              </div>
-
-              {/* Username */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                  {t("databaseManager.usernameLabel")} <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  value={createUsername}
-                  onChange={(e) => setCreateUsername(e.target.value.toLowerCase())}
-                  placeholder={t("databaseManager.usernamePlaceholder")}
-                  className="h-9 text-xs"
-                  required
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Lowercase, alphanumeric & underscore. Max 32 chars. Must start with a letter.
-                </p>
-              </div>
-
-              {/* Password */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                  {t("databaseManager.passwordLabel")} <span className="text-destructive">*</span>
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    value={createPassword}
-                    onChange={(e) => setCreatePassword(e.target.value)}
-                    placeholder={t("databaseManager.passwordPlaceholder")}
-                    className="h-9 text-xs font-mono"
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={generatePassword}
-                    className="h-9 text-xs font-semibold px-3 shrink-0"
-                  >
-                    Generate
-                  </Button>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Min 12 chars. Must contain uppercase, lowercase, and a number. Cannot contain spaces or @, #, /, ?.
-                </p>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2">
-              <Button type="button" variant="ghost" onClick={() => setShowCreateModal(false)} className="text-xs font-medium">
-                {t("common.cancel")}
-              </Button>
-              <Button type="submit" disabled={isActionLoading} className="text-xs font-medium">
-                {t("databaseManager.createDatabaseBtn")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* One-Time Password Reveal Dialog */}
-      <Dialog open={showRevealModal} onOpenChange={(open) => {
-        if (!open) {
-          setCreatedInstance(null)
-        }
-        setShowRevealModal(open)
-      }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-amber-500 mb-2">
-              <AlertTriangle className="w-5 h-5 animate-pulse" />
-              <DialogTitle className="text-base font-semibold">Credentials Created Successfully</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed text-amber-500/95 font-medium">
-              Save this password now! Once this dialog is closed, you will not be able to retrieve it again.
-            </DialogDescription>
-          </DialogHeader>
-
-          {createdInstance && (
-            <div className="py-4 space-y-3">
-              <div className="rounded-lg bg-muted/40 border border-border/80 p-3 space-y-2.5 font-mono text-xs">
-                <div className="flex justify-between items-center py-1 border-b border-border/40">
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Engine</span>
-                  <span className="text-foreground font-semibold">{createdInstance.engine.toUpperCase()}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-border/40">
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Host</span>
-                  <span className="text-foreground font-semibold">{createdInstance.host}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-border/40">
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Port</span>
-                  <span className="text-foreground font-semibold">{createdInstance.port}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-border/40">
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Database</span>
-                  <span className="text-foreground font-semibold">{createdInstance.name}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-border/40">
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Username</span>
-                  <span className="text-foreground font-semibold">{createdInstance.username}</span>
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Password</span>
-                  <span className="text-foreground font-semibold select-all bg-amber-500/10 px-1 rounded">{createdInstance.password}</span>
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full text-xs font-medium"
-                onClick={() => {
-                  const data = `Engine: ${createdInstance.engine.toUpperCase()}\nHost: ${createdInstance.host}\nPort: ${createdInstance.port}\nDatabase: ${createdInstance.name}\nUsername: ${createdInstance.username}\nPassword: ${createdInstance.password}`
-                  navigator.clipboard.writeText(data)
-                  toast.success(t('databaseManager.copiedAll') || 'All credentials copied to clipboard!')
-                }}
-              >
-                <Copy className="w-3.5 h-3.5 mr-2 shrink-0" />
-                {t('databaseManager.copyAll')}
-              </Button>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              className="w-full text-xs font-medium"
-              onClick={() => {
-                setCreatedInstance(null)
-                setShowRevealModal(false)
-              }}
-            >
-              I've saved my credentials
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {renderCreateDialog()}
+      {renderRevealDialog()}
 
       {/* Confirmation Dialog: Delete DB */}
       <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
