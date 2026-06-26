@@ -217,12 +217,12 @@ func TestCreateProject_RollbackOnSecretStoreFailure(t *testing.T) {
 	app, db, mock := setupTestApp(t, "rollback_secretstore_db")
 
 	// Inject a GORM callback to force creation failure for secret_stores table
-	db.Callback().Create().Before("gorm:create").Register("fail_secret_stores", func(tx *gorm.DB) {
+	_ = db.Callback().Create().Before("gorm:create").Register("fail_secret_stores", func(tx *gorm.DB) {
 		if tx.Statement.Table == "secret_stores" {
-			tx.AddError(errors.New("mocked secret store creation failure"))
+			_ = tx.AddError(errors.New("mocked secret store creation failure"))
 		}
 	})
-	defer db.Callback().Create().Remove("fail_secret_stores")
+	defer func() { _ = db.Callback().Create().Remove("fail_secret_stores") }()
 
 	// Mock settings expectations as valid JSON strings
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")

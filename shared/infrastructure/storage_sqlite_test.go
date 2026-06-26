@@ -203,7 +203,7 @@ func TestPrepareSQLiteHostFile_FailsOnUnwritableParent(t *testing.T) {
 	if err := os.Chmod(storagePath, 0555); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(storagePath, 0755) // cleanup
+	defer func() { _ = os.Chmod(storagePath, 0755) }() // cleanup
 
 	err := svc.PrepareSQLiteHostFile(project)
 	if err == nil {

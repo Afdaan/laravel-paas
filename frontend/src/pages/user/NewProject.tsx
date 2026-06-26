@@ -197,7 +197,7 @@ function UserNewProject() {
     try {
       const response = await databaseAPI.listOwn()
       const dbs = response.data.databases || []
-      const unattached = dbs.filter((db: any) => db.project_id === null && db.status !== 'deleted')
+      const unattached = dbs.filter((db: DatabaseInstance) => db.project_id === null && db.status !== 'deleted')
       setExistingDatabases(unattached)
       if (unattached.length > 0) {
         setFormData(prev => ({
@@ -1004,7 +1004,7 @@ function UserNewProject() {
                                 ? "border-primary bg-primary/5 ring-1 ring-primary/25"
                                 : "border-border/80 bg-background/50"
                             )}
-                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as any }))}
+                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as typeof prev.database_option }))}
                           >
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
@@ -1045,7 +1045,7 @@ function UserNewProject() {
                                 ? "border-primary bg-primary/5 ring-1 ring-primary/25"
                                 : "border-border/80 bg-background/50"
                             )}
-                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as any }))}
+                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as typeof prev.database_option }))}
                           >
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
