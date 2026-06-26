@@ -140,6 +140,12 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 				"error": "Forbidden: You do not own this database",
 			})
 		}
+		if dbInst.Status != models.DBStatusActive {
+			tx.Rollback()
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Database is not active",
+			})
+		}
 		if dbInst.ProjectID != nil {
 			tx.Rollback()
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{

@@ -1197,7 +1197,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
 
-	// Fetch DatabaseInstance and validate ownership
+	// Fetch DatabaseInstance and validate ownership (pre-check for fast 404/403)
 	var dbInst models.DatabaseInstance
 	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
@@ -1206,12 +1206,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
 	}
 
-	// Verify database is not already attached to a project
-	if dbInst.ProjectID != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database is already attached to a project"})
-	}
-
-	// Fetch project by UID and validate ownership
+	// Fetch project by UID and validate ownership (pre-check for fast 404/403)
 	project, err := h.projectService.GetProjectByUID(req.ProjectUID)
 	if err != nil || project == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -1220,15 +1215,29 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this project"})
 	}
 
-	// Verify project does not already have a database attached
-	var count int64
-	h.db.Model(&models.DatabaseInstance{}).Where("project_id = ?", project.ID).Count(&count)
-	if count > 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Project already has a database attached"})
-	}
-
-	// Start a transaction to attach and sync cache
+	// Locked transaction: re-fetch and recheck to prevent concurrent attach race
 	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		// Lock database row and recheck availability
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", dbInst.ID).First(&dbInst).Error; err != nil {
+			return fmt.Errorf("database not found")
+		}
+		if dbInst.Status != models.DBStatusActive {
+			return fmt.Errorf("database is not active")
+		}
+		if dbInst.ProjectID != nil {
+			return fmt.Errorf("database is already attached to a project")
+		}
+
+		// Lock project row and recheck no DB already attached
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(project, project.ID).Error; err != nil {
+			return fmt.Errorf("project not found")
+		}
+		var count int64
+		tx.Model(&models.DatabaseInstance{}).Where("project_id = ?", project.ID).Count(&count)
+		if count > 0 {
+			return fmt.Errorf("project already has a database attached")
+		}
+
 		projID := project.ID
 		dbInst.ProjectID = &projID
 		if err := tx.Save(&dbInst).Error; err != nil {
@@ -1247,11 +1256,20 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 	if errTx != nil {
 		h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "failed", errTx.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errTx.Error()})
+		// Return 409 for race-detectable conflicts, 500 for other failures
+		errMsg := errTx.Error()
+		switch errMsg {
+		case "database is already attached to a project", "project already has a database attached", "database is not active":
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": errMsg})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errMsg})
 	}
 
-	// Propagate env updates (after commit)
-	_ = h.secretStoreService.PropagateDatabaseEnv(project)
+	// Propagate env updates (after commit). Report enqueue failure in audit.
+	if err := h.secretStoreService.PropagateDatabaseEnv(project); err != nil {
+		h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "env_sync_pending", "env propagation enqueue failed: "+err.Error())
+		return c.JSON(fiber.Map{"success": true, "message": "Database attached successfully", "env_sync": "pending"})
+	}
 
 	h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "completed", "")
 	return c.JSON(fiber.Map{"success": true, "message": "Database attached successfully"})
@@ -1273,7 +1291,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
 
-	// Fetch DatabaseInstance and validate ownership
+	// Fetch DatabaseInstance and validate ownership (pre-check for fast 404/403)
 	var dbInst models.DatabaseInstance
 	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
@@ -1288,7 +1306,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 	projectID := *dbInst.ProjectID
 
-	// Fetch project
+	// Fetch project (pre-check for fast 404/403)
 	var project models.Project
 	if err := h.db.First(&project, projectID).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -1298,8 +1316,21 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own the project associated with this database"})
 	}
 
-	// Start transaction to detach
+	// Locked transaction: re-fetch and recheck to prevent concurrent detach race
 	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		// Lock database row and recheck it's still attached
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dbInst, dbInst.ID).Error; err != nil {
+			return fmt.Errorf("database not found")
+		}
+		if dbInst.ProjectID == nil {
+			return fmt.Errorf("database is not attached to any project")
+		}
+
+		// Lock project row
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, project.ID).Error; err != nil {
+			return fmt.Errorf("project not found")
+		}
+
 		dbInst.ProjectID = nil
 		if err := tx.Save(&dbInst).Error; err != nil {
 			return err
@@ -1317,11 +1348,18 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 	if errTx != nil {
 		h.recordAuditLog(c, projectID, "db_detach", "active", "active", "failed", errTx.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errTx.Error()})
+		errMsg := errTx.Error()
+		if errMsg == "database is not attached to any project" {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": errMsg})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errMsg})
 	}
 
 	// Propagate env updates (removes DB_* vars since association is now nil, after commit)
-	_ = h.secretStoreService.PropagateDatabaseEnv(&project)
+	if err := h.secretStoreService.PropagateDatabaseEnv(&project); err != nil {
+		h.recordAuditLog(c, projectID, "db_detach", "active", "active", "env_sync_pending", "env propagation enqueue failed: "+err.Error())
+		return c.JSON(fiber.Map{"success": true, "message": "Database detached successfully", "env_sync": "pending"})
+	}
 
 	h.recordAuditLog(c, projectID, "db_detach", "active", "active", "completed", "")
 	return c.JSON(fiber.Map{"success": true, "message": "Database detached successfully"})
@@ -1350,6 +1388,9 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 	}
 	if dbInst.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+	if dbInst.Status != models.DBStatusActive {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is not active"})
 	}
 
 	// Connect and reset
@@ -1416,6 +1457,9 @@ func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
 	}
 	if dbInst.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+	if dbInst.Status != models.DBStatusActive {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is not active"})
 	}
 
 	newPassword := utils.GeneratePassword(16)
@@ -1632,6 +1676,9 @@ func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
 	}
 	if dbInst.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+	if dbInst.Status == models.DBStatusDeleted {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 
 	// Verify database is not attached (ProjectID must be nil)

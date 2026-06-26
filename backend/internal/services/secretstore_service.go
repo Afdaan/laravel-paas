@@ -363,17 +363,34 @@ func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, bindingID u
 	return nil
 }
 
+// PropagateDatabaseEnv enqueues an env update for the project after database attach/detach.
+// Returns an error if the enqueue itself fails, so callers can report degraded state.
 func (s *SecretStoreService) PropagateDatabaseEnv(project *models.Project) error {
 	var binding models.SecretStoreBinding
 	err := s.db.Where("project_id = ?", project.ID).First(&binding).Error
 	if err == nil {
-		utils.SafeGo(func() {
-			s.PropagateSecretStoreUpdates(binding.SecretStoreID)
-		})
-	} else {
-		utils.SafeGo(func() {
-			s.PropagateProjectEnvUpdate(project.ID, project.UserID)
-		})
+		// Has secret store binding — propagate via store synchronously to detect enqueue failures
+		var bindings []models.SecretStoreBinding
+		if err := s.db.Where("secret_store_id = ?", binding.SecretStoreID).Find(&bindings).Error; err != nil {
+			return fmt.Errorf("failed to lookup secret store bindings: %w", err)
+		}
+		var enqErr error
+		for _, b := range bindings {
+			var proj models.Project
+			if err := s.db.First(&proj, b.ProjectID).Error; err == nil {
+				if _, err := s.redisService.EnqueueDeployment(proj.ID, proj.UserID, "update_env"); err != nil {
+					slog.Error("Failed to enqueue update_env for bound project", "project_id", proj.ID, "error", err)
+					enqErr = err
+				}
+			}
+		}
+		return enqErr
+	}
+	// No secret store binding — direct env update enqueue
+	_, enqErr := s.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
+	if enqErr != nil {
+		slog.Error("Failed to enqueue update_env after database env propagation", "project_id", project.ID, "error", enqErr)
+		return fmt.Errorf("failed to enqueue environment update: %w", enqErr)
 	}
 	return nil
 }
