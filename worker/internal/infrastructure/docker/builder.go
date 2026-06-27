@@ -171,14 +171,24 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
 		"--label", "paas.container_role=web",
+	)
 
-		// Standard Volume Mapping
+	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/storage/app", hostPersistentPath),
 		"-v", fmt.Sprintf("%s:/app/data", hostPersistentPath),
-
-		imageName,
-	)
+	}
+	if project.DatabaseOption == "sqlite" {
+		// Fail-fast: ensure host sqlite file exists before Docker attempts bind-mount.
+		if err := s.storage.PrepareSQLiteHostFile(project); err != nil {
+			return "", fmt.Errorf("failed to prepare SQLite database file: %w", err)
+		}
+		// Mount only the sqlite file, not the directory, to preserve Laravel's database/migrations and database/seeders.
+		hostSQLiteFile := filepath.Join(hostPersistentPath, "sqlite", "database.sqlite")
+		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database/database.sqlite", hostSQLiteFile))
+	}
+	runArgs = append(runArgs, volumes...)
+	runArgs = append(runArgs, imageName)
 
 	// 4.5. Append custom start command if provided
 	if project.StartCommand != "" {
@@ -201,6 +211,13 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	}
 
 	mainContainerID := strings.TrimSpace(res.Stdout)
+
+	if project.DatabaseOption == "sqlite" {
+		if err := s.EnsureSQLiteFile(mainContainerID); err != nil {
+			_ = utils.RunSilent(30*time.Second, "docker", "rm", "-f", mainContainerID)
+			return "", fmt.Errorf("failed to initialize SQLite database: %w", err)
+		}
+	}
 
 	// 5. Start Worker Container if needed (for non-Laravel)
 	if project.Framework != "Laravel" && project.WorkerCommand != "" {

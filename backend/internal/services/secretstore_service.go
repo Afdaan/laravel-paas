@@ -99,6 +99,15 @@ func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint, ipAddr
 }
 
 func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if IsSystemManagedEnvKey(key) {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		var item models.SecretStoreItem
+		if errItem := s.db.Where("secret_store_id = ? AND UPPER(key) = ?", storeID, normalizedKey).First(&item).Error; errItem == nil {
+			s.db.Delete(&item)
+			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed system-managed secret key: "+normalizedKey, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
+	}
 	if s.IsBaselineMatchForStore(storeID, key, value) {
 		var item models.SecretStoreItem
 		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
@@ -173,6 +182,15 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 }
 
 func (s *SecretStoreService) SetSecretValueNoPropagate(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	if IsSystemManagedEnvKey(key) {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		var item models.SecretStoreItem
+		if errItem := s.db.Where("secret_store_id = ? AND UPPER(key) = ?", storeID, normalizedKey).First(&item).Error; errItem == nil {
+			s.db.Delete(&item)
+			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed system-managed secret key: "+normalizedKey, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
+	}
 	if s.IsBaselineMatchForStore(storeID, key, value) {
 		var item models.SecretStoreItem
 		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
@@ -345,17 +363,34 @@ func (s *SecretStoreService) UnbindSecretStore(userID uint, storeID, bindingID u
 	return nil
 }
 
+// PropagateDatabaseEnv enqueues an env update for the project after database attach/detach.
+// Returns an error if the enqueue itself fails, so callers can report degraded state.
 func (s *SecretStoreService) PropagateDatabaseEnv(project *models.Project) error {
 	var binding models.SecretStoreBinding
 	err := s.db.Where("project_id = ?", project.ID).First(&binding).Error
 	if err == nil {
-		utils.SafeGo(func() {
-			s.PropagateSecretStoreUpdates(binding.SecretStoreID)
-		})
-	} else {
-		utils.SafeGo(func() {
-			s.PropagateProjectEnvUpdate(project.ID, project.UserID)
-		})
+		// Has secret store binding — propagate via store synchronously to detect enqueue failures
+		var bindings []models.SecretStoreBinding
+		if err := s.db.Where("secret_store_id = ?", binding.SecretStoreID).Find(&bindings).Error; err != nil {
+			return fmt.Errorf("failed to lookup secret store bindings: %w", err)
+		}
+		var enqErr error
+		for _, b := range bindings {
+			var proj models.Project
+			if err := s.db.First(&proj, b.ProjectID).Error; err == nil {
+				if _, err := s.redisService.EnqueueDeployment(proj.ID, proj.UserID, "update_env"); err != nil {
+					slog.Error("Failed to enqueue update_env for bound project", "project_id", proj.ID, "error", err)
+					enqErr = err
+				}
+			}
+		}
+		return enqErr
+	}
+	// No secret store binding — direct env update enqueue
+	_, enqErr := s.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
+	if enqErr != nil {
+		slog.Error("Failed to enqueue update_env after database env propagation", "project_id", project.ID, "error", enqErr)
+		return fmt.Errorf("failed to enqueue environment update: %w", enqErr)
 	}
 	return nil
 }
@@ -385,7 +420,12 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	envMap["APP_DEBUG"] = "false"
 
 	// Resolve APP_URL dynamically based on custom domains
-	appURL := fmt.Sprintf("http://%s", project.Subdomain)
+	projectDomain := s.cfg.ProjectDomain
+	var settingVal models.Setting
+	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
+		projectDomain = settingVal.Value
+	}
+	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, projectDomain)
 	var primaryDomain string
 	var firstActiveDomain string
 	for _, d := range project.CustomDomains {
@@ -469,7 +509,9 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 						return nil, secretDecryptError(project.ID, b.SecretStoreID, item.ID, err)
 					}
 				}
-				envMap[item.Key] = result.Plaintext
+				if !IsSystemManagedEnvKey(item.Key) {
+					envMap[item.Key] = result.Plaintext
+				}
 				if result.UsedFallbackKey {
 					if err := s.rotateSecretValueToCurrentKey(s.db, project.UserID, b.SecretStoreID, item.ID, item.LatestSnapshotVersion, project.ID, currentKey, result.Plaintext); err != nil {
 						slog.Warn("Failed to re-encrypt SecretStore value with current credential key", "projectID", project.ID, "secret_store_id", b.SecretStoreID, "item_id", item.ID, "error", err)
@@ -697,6 +739,17 @@ func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID
 	}
 }
 
+// IsSystemManagedEnvKey returns true for platform-owned variables that must
+// always come from project/domain state, never from SecretStore overrides.
+func IsSystemManagedEnvKey(key string) bool {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "APP_NAME", "APP_URL":
+		return true
+	default:
+		return false
+	}
+}
+
 // GetBaselineEnvMap generates Layer 1 + Layer 2 environment map for comparison.
 func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[string]string {
 	baseline := make(map[string]string)
@@ -704,7 +757,12 @@ func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[stri
 	baseline["APP_ENV"] = "production"
 	baseline["APP_DEBUG"] = "false"
 
-	appURL := fmt.Sprintf("http://%s", project.Subdomain)
+	projectDomain := s.cfg.ProjectDomain
+	var settingVal models.Setting
+	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
+		projectDomain = settingVal.Value
+	}
+	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, projectDomain)
 	var primaryDomain string
 	var firstActiveDomain string
 	for _, d := range project.CustomDomains {
@@ -869,6 +927,15 @@ func (s *SecretStoreService) BindSecretStoreTx(db *gorm.DB, userID uint, storeID
 func (s *SecretStoreService) SetSecretValueNoPropagateTx(db *gorm.DB, userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
 	if db == nil {
 		db = s.db
+	}
+	if IsSystemManagedEnvKey(key) {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		var item models.SecretStoreItem
+		if errItem := db.Where("secret_store_id = ? AND UPPER(key) = ?", storeID, normalizedKey).First(&item).Error; errItem == nil {
+			db.Delete(&item)
+			s.LogActivityTx(db, userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed system-managed secret key: "+normalizedKey, ipAddress, userAgent)
+		}
+		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
 	}
 	if s.IsBaselineMatchForStoreTx(db, storeID, key, value) {
 		var item models.SecretStoreItem

@@ -127,6 +127,9 @@ export const translations = {
       noProjectsDesc: "You have no active projects yet. Create your first project to get started.",
       createFirstProject: "Create Your First Project",
       welcomeUser: "Welcome back, {{name}}",
+      goodMorning: "Good morning, {{name}}",
+      goodAfternoon: "Good afternoon, {{name}}",
+      goodEvening: "Good evening, {{name}}",
       projectStats: "You currently have {{count}} active projects",
     },
     login: {
@@ -974,6 +977,71 @@ export const translations = {
         failedToLink: "Failed to link GitHub installation",
         failedToLoadBranches: "Failed to load branches",
         failedToLoadRepos: "Failed to load repositories"
+      },
+      dbConfig: {
+        title: "Database Configuration",
+        subtitle: "Select how this project connects to a database",
+        options: {
+          none: {
+            label: "No Database",
+            desc: "App is stateless and does not require a database.",
+            badge: "FREE"
+          },
+          sqlite: {
+            label: "SQLite",
+            desc: "File-based, auto-setup. Perfect for low-cost hosting.",
+            badge: "FREE · INCLUDED"
+          },
+          new: {
+            label: "New Managed DB",
+            desc: "Provision a new MySQL or PostgreSQL database and attach it.",
+            badge: "ADDITIONAL ITEM"
+          },
+          existing: {
+            label: "Use Existing Database",
+            desc: "Attach an existing standalone database that you own.",
+            badge: "ALREADY OWNED"
+          },
+          external: {
+            label: "External Database",
+            desc: "Use a database from other providers (Supabase, PlanetScale, etc.).",
+            badge: "BRING YOUR OWN"
+          }
+        },
+        configureNew: {
+          title: "Configure New Database",
+          engine: "Database Engine",
+          name: "Database Name",
+          username: "Username",
+          password: "Password",
+          generate: "⚡ Generate",
+          info: "This database is classified as an additional item. Billing credits will apply in the future — currently free."
+        },
+        validation: {
+          nameLowercase: "Database name must be strictly lowercase",
+          nameInvalid: "Database name must be 2-64 characters, start with a letter, and contain only lowercase alphanumeric characters or underscores",
+          nameReserved: "Database name '{{value}}' is a reserved SQL word",
+          usernameLowercase: "Database username must be strictly lowercase",
+          usernameInvalid: "Database username must be 2-32 characters, start with a letter, and contain only lowercase alphanumeric characters or underscores",
+          usernameReserved: "Database username '{{value}}' is a reserved SQL word",
+          passwordLength: "Database password must be 12-128 characters long",
+          passwordForbiddenChars: "Database password must not contain spaces or connection-string-breaking characters like \", ', `, \\, ;, @, #, /, or ?",
+          passwordComplexity: "Database password must contain at least one uppercase letter, one lowercase letter, and one number"
+        },
+        existing: {
+          title: "Select Existing Database",
+          select: "Your Unattached Databases",
+          placeholder: "Please select a database",
+          loading: "Loading your databases...",
+          emptyTitle: "No unattached databases found",
+          emptyDesc: "Go to Database Studio to create a standalone database first.",
+          info: "The selected database will be attached to this project. This database is already owned by you — no additional charges apply."
+        },
+        external: {
+          title: "External Database — Bring Your Own",
+          desc: "This project will run without a managed database from us. Configure your database credentials in the Environment Editor after the project is created.",
+          vars: "Required Environment Variables"
+        }
       }
     },
     databaseManager: {
@@ -1027,6 +1095,8 @@ export const translations = {
       selectTarget: "Select Target Cluster",
       unattached: "Unattached",
       attachedTo: "Attached to",
+      sectionUnattached: "Unattached",
+      sectionAttached: "Attached",
       attach: "Attach",
       detach: "Detach",
       reinstall: "Reinstall Database",
@@ -1061,6 +1131,33 @@ export const translations = {
       activeSessions: "Active sessions",
       dangerZone: "Danger Zone",
       destructiveActions: "Destructive actions which cannot be undone.",
+      newDatabase: "New Database",
+      createDatabaseTitle: "Create Standalone Database",
+      createDatabaseDesc: "Provision a new MySQL or PostgreSQL database instance not bound to any project.",
+      databaseNameLabel: "Database Name",
+      databaseNamePlaceholder: "e.g. billing_prod",
+      usernameLabel: "Database Username",
+      usernamePlaceholder: "e.g. billing_user",
+      passwordLabel: "Database Password",
+      passwordPlaceholder: "Enter strong password...",
+      engineLabel: "Database Engine",
+      createDatabaseBtn: "Create Database",
+      deleteConfirmTitle: "Delete Standalone Database?",
+      deleteConfirmDesc: "This will permanently delete database \"{{name}}\" and all its data. Backups will be deleted as well. This action cannot be undone. Type database name to confirm.",
+      deleteDatabaseBtn: "Delete Database",
+      deleteSuccess: "Database deleted successfully",
+      cannotDeleteAttached: "Cannot delete database because it is attached to a project",
+      copyAll: "Copy All Credentials",
+      copiedAll: "All credentials copied to clipboard!",
+      dbNameInvalid: "Database name must start with a letter and contain lowercase alphanumeric/underscore",
+      dbNameLength: "Database name must be between 2 and 64 characters",
+      dbNameReserved: "Database name is reserved",
+      usernameInvalid: "Username must start with a letter and contain lowercase alphanumeric/underscore",
+      usernameLength: "Username must be between 2 and 32 characters",
+      usernameReserved: "Username is reserved",
+      passwordLength: "Password must be between 12 and 128 characters",
+      passwordComplexity: "Password must contain uppercase, lowercase, and a number",
+      passwordForbiddenChars: "Password cannot contain space, @, #, /, ?"
     },
     databaseStudio: {
       tabs: {
@@ -1679,6 +1776,9 @@ export const translations = {
       noProjectsDesc: "Belum ada project aktif. Buat project pertama untuk memulai.",
       createFirstProject: "Create Your First Project",
       welcomeUser: "Selamat datang kembali, {{name}}",
+      goodMorning: "Selamat pagi, {{name}}",
+      goodAfternoon: "Selamat siang, {{name}}",
+      goodEvening: "Selamat malam, {{name}}",
       projectStats: "Total {{count}} project aktif saat ini",
     },
     login: {
@@ -2526,6 +2626,71 @@ export const translations = {
         failedToLink: "Gagal menghubungkan instalasi GitHub",
         failedToLoadBranches: "Gagal memuat daftar branch",
         failedToLoadRepos: "Gagal memuat daftar repository"
+      },
+      dbConfig: {
+        title: "Konfigurasi Database",
+        subtitle: "Pilih cara project ini terhubung ke database",
+        options: {
+          none: {
+            label: "Tanpa Database",
+            desc: "Aplikasi bersifat stateless dan tidak membutuhkan database sama sekali.",
+            badge: "GRATIS"
+          },
+          sqlite: {
+            label: "SQLite",
+            desc: "File-based, auto-setup. Sangat cocok untuk hosting hemat.",
+            badge: "GRATIS · TERMASUK"
+          },
+          new: {
+            label: "Managed DB Baru",
+            desc: "Buat database MySQL / PostgreSQL baru dan hubungkan langsung.",
+            badge: "ITEM TAMBAHAN"
+          },
+          existing: {
+            label: "Gunakan DB yang Ada",
+            desc: "Hubungkan database mandiri yang sudah Anda miliki (belum terhubung).",
+            badge: "SUDAH DIMILIKI"
+          },
+          external: {
+            label: "Database Eksternal",
+            desc: "Gunakan database dari provider lain (Supabase, PlanetScale, dll.).",
+            badge: "BAWA SENDIRI"
+          }
+        },
+        configureNew: {
+          title: "Konfigurasi Database Baru",
+          engine: "Mesin Database",
+          name: "Nama Database",
+          username: "Username",
+          password: "Password",
+          generate: "⚡ Generate",
+          info: "Database ini tercatat sebagai item tambahan. Penggunaan kredit billing akan diterapkan di masa mendatang — saat ini gratis."
+        },
+        validation: {
+          nameLowercase: "Nama database harus menggunakan huruf kecil",
+          nameInvalid: "Nama database harus 2-64 karakter, diawali huruf, dan hanya berisi huruf kecil, angka, atau garis bawah",
+          nameReserved: "Nama database '{{value}}' adalah kata SQL yang dicadangkan",
+          usernameLowercase: "Username database harus menggunakan huruf kecil",
+          usernameInvalid: "Username database harus 2-32 karakter, diawali huruf, dan hanya berisi huruf kecil, angka, atau garis bawah",
+          usernameReserved: "Username database '{{value}}' adalah kata SQL yang dicadangkan",
+          passwordLength: "Password database harus 12-128 karakter",
+          passwordForbiddenChars: "Password database tidak boleh berisi spasi atau karakter yang merusak connection string seperti \", ', `, \\, ;, @, #, /, atau ?",
+          passwordComplexity: "Password database harus memiliki minimal satu huruf besar, satu huruf kecil, dan satu angka"
+        },
+        existing: {
+          title: "Pilih Database yang Ada",
+          select: "Database Anda yang Belum Terhubung",
+          placeholder: "Silakan pilih database",
+          loading: "Memuat database Anda...",
+          emptyTitle: "Database tidak ditemukan",
+          emptyDesc: "Buka Database Studio untuk membuat database mandiri terlebih dahulu.",
+          info: "Database yang dipilih akan dihubungkan ke project ini. Database ini sudah Anda miliki — tidak ada biaya tambahan."
+        },
+        external: {
+          title: "Database Eksternal — Bawa Sendiri",
+          desc: "Project ini akan berjalan tanpa database terkelola dari kami. Atur kredensial database Anda di Editor Lingkungan setelah project dibuat.",
+          vars: "Variabel Lingkungan yang Dibutuhkan"
+        }
       }
     },
     databaseManager: {
@@ -2579,6 +2744,8 @@ export const translations = {
       selectTarget: "Pilih Target Cluster",
       unattached: "Unattached",
       attachedTo: "Terhubung ke",
+      sectionUnattached: "Belum Terhubung",
+      sectionAttached: "Terhubung",
       attach: "Hubungkan",
       detach: "Lepaskan",
       reinstall: "Instal Ulang Database",
@@ -2613,6 +2780,33 @@ export const translations = {
       activeSessions: "Sesi aktif",
       dangerZone: "Zona Berbahaya",
       destructiveActions: "Tindakan destruktif yang tidak dapat dibatalkan.",
+      newDatabase: "Database Baru",
+      createDatabaseTitle: "Buat Database",
+      createDatabaseDesc: "Buat database MySQL atau PostgreSQL baru yang tidak terhubung ke project.",
+      databaseNameLabel: "Nama Database",
+      databaseNamePlaceholder: "contoh: billing_prod",
+      usernameLabel: "Username Database",
+      usernamePlaceholder: "contoh: billing_user",
+      passwordLabel: "Password Database",
+      passwordPlaceholder: "Masukkan password...",
+      engineLabel: "Database Engine",
+      createDatabaseBtn: "Buat Database",
+      deleteConfirmTitle: "Hapus Database?",
+      deleteConfirmDesc: "Ini akan menghapus database \"{{name}}\" beserta datanya secara permanen. Backup juga akan ikut terhapus. Aksi ini tidak dapat dibatalkan. Ketik nama database untuk mengonfirmasi.",
+      deleteDatabaseBtn: "Hapus Database",
+      deleteSuccess: "Database berhasil dihapus",
+      cannotDeleteAttached: "Tidak dapat menghapus database karena sedang terhubung ke project",
+      copyAll: "Salin Semua Kredensial",
+      copiedAll: "Semua kredensial berhasil disalin ke clipboard!",
+      dbNameInvalid: "Nama database harus diawali huruf dan hanya berisi huruf kecil, angka, atau garis bawah",
+      dbNameLength: "Nama database harus berukuran antara 2 sampai 64 karakter",
+      dbNameReserved: "Nama database ini dicadangkan oleh sistem",
+      usernameInvalid: "Username harus diawali huruf dan hanya berisi huruf kecil, angka, atau garis bawah",
+      usernameLength: "Username harus berukuran antara 2 sampai 32 karakter",
+      usernameReserved: "Username ini dicadangkan oleh sistem",
+      passwordLength: "Password harus berukuran antara 12 sampai 128 karakter",
+      passwordComplexity: "Password harus mengandung huruf besar, huruf kecil, dan angka",
+      passwordForbiddenChars: "Password tidak boleh mengandung spasi, @, #, /, ?"
     },
     databaseStudio: {
       tabs: {

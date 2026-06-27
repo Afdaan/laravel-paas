@@ -27,6 +27,7 @@ type CreateProjectRequest struct {
 	Name                 string `json:"name"`
 	GithubURL            string `json:"github_url"`
 	Branch               string `json:"branch"`
+	DatabaseOption       string `json:"database_option"`
 	DatabaseName         string `json:"database_name"`
 	BaseDirectory        string `json:"base_directory"`
 	BuildCommand         string `json:"build_command"`
@@ -34,6 +35,9 @@ type CreateProjectRequest struct {
 	QueueEnabled         bool   `json:"queue_enabled"`
 	EnableDatabase       bool   `json:"enable_database"`
 	DatabaseEngine       string `json:"database_engine"`
+	DatabaseUsername     string `json:"database_username"`
+	DatabasePassword     string `json:"database_password"`
+	ExistingDatabaseUID  string `json:"existing_database_uid"`
 	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
 	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
 	GithubRepoName       string `json:"github_repo_name,omitempty"`

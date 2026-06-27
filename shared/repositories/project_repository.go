@@ -24,6 +24,7 @@ type ProjectRepository interface {
 	ListByStatus(status models.ProjectStatus) ([]models.Project, error)
 	ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error)
 	Create(project *models.Project) error
+	CreateTx(tx *gorm.DB, project *models.Project) error
 	Update(project *models.Project) error
 	UpdateStatus(id uint, status models.ProjectStatus) error
 	UpdateMetadata(id uint, updates map[string]interface{}) error
@@ -44,10 +45,15 @@ type ProjectRepository interface {
 	ResolveInstallationID(userID uint, owner string) (int64, error)
 	VerifyInstallationID(installationID int64, owner string) (bool, error)
 	SaveDatabaseInstance(instance *models.DatabaseInstance) error
+	DB() *gorm.DB
 }
 
 type projectRepository struct {
 	db *gorm.DB
+}
+
+func (r *projectRepository) DB() *gorm.DB {
+	return r.db
 }
 
 func NewProjectRepository(db *gorm.DB) ProjectRepository {
@@ -162,6 +168,13 @@ func (r *projectRepository) ListByDeploymentStatuses(statuses []models.Deploymen
 }
 
 func (r *projectRepository) Create(project *models.Project) error {
+	return r.db.Create(project).Error
+}
+
+func (r *projectRepository) CreateTx(tx *gorm.DB, project *models.Project) error {
+	if tx != nil {
+		return tx.Create(project).Error
+	}
 	return r.db.Create(project).Error
 }
 

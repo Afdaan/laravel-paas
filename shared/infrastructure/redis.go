@@ -132,6 +132,61 @@ func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType stri
 	return jobID, nil
 }
 
+// EnqueueEnvUpdateIfQuiet enqueues an update_env job only if no other job for this project is queued or running
+func (r *RedisService) EnqueueEnvUpdateIfQuiet(projectID, userID uint) (string, error) {
+	// Check if already locked (running)
+	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
+	locked, err := r.client.Exists(r.ctx, lockKey).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to check lock status: %w", err)
+	}
+	if locked > 0 {
+		slog.Info("Project has active deployment lock, skipping env update enqueue", "projectId", projectID)
+		return "", nil
+	}
+
+	// Check if already in queue
+	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to read deployment queue: %w", err)
+	}
+	for _, res := range results {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(res), &job); err == nil && job.ProjectID == projectID {
+			slog.Info("Project already has a queued job, skipping env update enqueue", "projectId", projectID, "jobType", job.Type)
+			return "", nil
+		}
+	}
+
+	return r.EnqueueDeployment(projectID, userID, "update_env")
+}
+
+// SetPendingEnvRefresh sets a marker indicating that the project needs an env refresh
+func (r *RedisService) SetPendingEnvRefresh(projectID uint) error {
+	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
+	return r.client.Set(r.ctx, key, "true", 0).Err()
+}
+
+// HasPendingEnvRefresh checks if the project has a pending env refresh marker set
+func (r *RedisService) HasPendingEnvRefresh(projectID uint) (bool, error) {
+	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
+	val, err := r.client.Get(r.ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return val == "true", nil
+}
+
+// ClearPendingEnvRefresh removes the pending env refresh marker for the project
+func (r *RedisService) ClearPendingEnvRefresh(projectID uint) (bool, error) {
+	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
+	deleted, err := r.client.Del(r.ctx, key).Result()
+	return deleted > 0, err
+}
+
 // EnqueueDeploymentJob enqueues an existing DeploymentJob struct (used for retries)
 func (r *RedisService) EnqueueDeploymentJob(job *DeploymentJob) error {
 	data, err := json.Marshal(job)

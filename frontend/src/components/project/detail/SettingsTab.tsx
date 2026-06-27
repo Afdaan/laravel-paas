@@ -366,8 +366,8 @@ export function SettingsTab({
           <Card>
             <CardHeader>
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-600">
-                  <RefreshCw className="w-5 h-5" />
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+                  <GitBranch className="w-5 h-5" />
                 </div>
                 <div>
                   <CardTitle className="text-lg">{t('projectDetail.settings.branchTitle')}</CardTitle>
@@ -465,7 +465,7 @@ export function SettingsTab({
                     value={baseDirInput}
                     onChange={(e) => setBaseDirInput(e.target.value)}
                     placeholder={t('newProject.baseDirPlaceholder')}
-                    className="h-9 max-w-[240px] bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs"
+                    className="h-9 w-full bg-muted/20 border-muted-foreground/10 focus:border-primary/30 transition-all text-xs font-mono"
                   />
                 </div>
                 <p className="text-[9px] text-muted-foreground/60 italic pl-0.5 flex items-center gap-1.5 mt-1">
@@ -512,7 +512,7 @@ export function SettingsTab({
                       if (!project.database_instance) return
                       setIsDbActionLoading(true)
                       try {
-                        await databaseAPI.detach(project.database_instance.id)
+                        await databaseAPI.detach(project.database_instance.uid)
                         toast.success(t('common.success'))
                         setShowDbRedeployModal(true)
                       } catch (err: unknown) {
@@ -547,7 +547,7 @@ export function SettingsTab({
                       <SelectTrigger className="flex-1 h-9 px-3 text-xs bg-background/50 border-border hover:border-border/80">
                         <div className="flex items-center gap-2 text-left flex-1 min-w-0 pr-4">
                           {(() => {
-                            const db = databasesList.find(d => String(d.id) === selectedDbId)
+                            const db = databasesList.find(d => d.uid === selectedDbId)
                             return db ? (
                               <span className="truncate font-semibold text-foreground/90 text-xs">{db.name}</span>
                             ) : (
@@ -558,7 +558,7 @@ export function SettingsTab({
                       </SelectTrigger>
                       <SelectContent align="start" alignItemWithTrigger={false} className="bg-popover border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72 min-w-[var(--anchor-width)] w-[var(--anchor-width)]">
                         {databasesList.map(db => (
-                          <SelectItem key={db.id} value={String(db.id)} className="rounded-lg py-2 px-3 cursor-pointer">
+                          <SelectItem key={db.id} value={db.uid} className="rounded-lg py-2 px-3 cursor-pointer">
                             <div className="flex items-center gap-2 text-left">
                               <span className="font-semibold text-foreground text-xs">{db.name}</span>
                               <Badge variant="outline" className={cn(
@@ -584,7 +584,7 @@ export function SettingsTab({
                         if (!selectedDbId) return
                         setIsDbActionLoading(true)
                         try {
-                          await databaseAPI.attach(Number(selectedDbId), project.uid)
+                          await databaseAPI.attach(selectedDbId, project.uid)
                           toast.success(t('common.success'))
                           setShowDbRedeployModal(true)
                           setSelectedDbId('')

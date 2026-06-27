@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
@@ -96,6 +97,28 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
+	}
+
+	// 5.1. Populate empty UIDs for database_instances to support secure communications.
+	var emptyUIDInstances []models.DatabaseInstance
+	if err := db.Where("uid = ? OR uid IS NULL", "").Find(&emptyUIDInstances).Error; err != nil {
+		return fmt.Errorf("failed to scan for database instances with empty UIDs: %w", err)
+	}
+	for _, inst := range emptyUIDInstances {
+		newUID := utils.GenerateRandomUID()
+		if err := db.Model(&inst).Update("uid", newUID).Error; err != nil {
+			slog.Error("Failed to update database instance UID during backfill migration", "db_id", inst.ID, "error", err)
+			return fmt.Errorf("failed to backfill database instance UID for ID %d: %w", inst.ID, err)
+		}
+	}
+
+	// Verify that no database instances still have an empty/null UID
+	var count int64
+	if err := db.Model(&models.DatabaseInstance{}).Where("uid = ? OR uid IS NULL", "").Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to verify database instance UID backfill count: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("migration verification failed: %d database instances still have empty UIDs", count)
 	}
 
 	slog.Info("Defensive migration bootstrap completed successfully.")
@@ -496,8 +519,8 @@ func BackfillDatabaseInstances(db *gorm.DB) error {
 			Name:      p.GetDatabaseName(),
 			Username:  p.GetDatabaseName(),
 			Password:  p.DatabasePassword,
-			Host:      "paas-mysql",
-			Port:      3306,
+			Host:      infrastructure.MySQLContainerName(),
+			Port:      infrastructure.MySQLPort(),
 		}
 		if err := db.Create(&instance).Error; err != nil {
 			slog.Warn("Failed to backfill database instance", "project_id", p.ID, "error", err)

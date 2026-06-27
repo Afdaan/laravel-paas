@@ -49,6 +49,8 @@ init_vars() {
     HTTPS_PORT=${HTTPS_PORT:-443}
     APP_MODE=${APP_MODE:-"docker"}
     HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
+    MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
+    POSTGRES_CONTAINER_NAME=${POSTGRES_CONTAINER_NAME:-"paas-user-postgres"}
 
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
@@ -58,8 +60,39 @@ init_vars() {
 prepare_env() {
     docker network create paas-network 2>/dev/null || true
     sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    sudo chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+
+    # Deployment user identity for deterministic ownership
+    local APP_UID="${APP_UID:-$(id -u)}"
+    local APP_GID="${APP_GID:-$(id -g)}"
+
+    sudo chown -R "${APP_UID}:${APP_GID}" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+
+    # Deterministic storage permission repair: dirs 775, files 664.
+    # Prevents root-owned nested dirs from blocking container runtime writes.
+    repair_storage_permissions() {
+        local target="$1"
+        if [ ! -d "$target" ]; then
+            return
+        fi
+        find "$target" -type d -exec chmod 775 {} + 2>/dev/null || true
+        find "$target" -type f -exec chmod 664 {} + 2>/dev/null || true
+    }
+
+    repair_storage_permissions "$PROJECTS_PATH"
+    repair_storage_permissions "$DATA_PATH"
+    chmod 775 "$TRAEFIK_DYNAMIC_DIR"
+
+    # Repair existing per-project SQLite dirs/files to safe permissions
+    if [ -d "$DATA_PATH" ]; then
+        find "$DATA_PATH" -mindepth 3 -maxdepth 3 -type d -name "storage" 2>/dev/null | while read -r storage_dir; do
+            if [ -d "$storage_dir/sqlite" ]; then
+                chmod 775 "$storage_dir/sqlite" 2>/dev/null || true
+                if [ -f "$storage_dir/sqlite/database.sqlite" ]; then
+                    chmod 664 "$storage_dir/sqlite/database.sqlite" 2>/dev/null || true
+                fi
+            fi
+        done
+    fi
 }
 
 # Helper to get next numeric tag for a service
@@ -179,10 +212,10 @@ run_backups() {
     SECONDS_SINCE=$((CURRENT_TS - LAST_TS))
 
     if [ "$SKIP_BACKUP" != "true" ] && ([ "$FORCE_BACKUP" = "true" ] || [ $SECONDS_SINCE -ge 86400 ]); then
-        if docker ps --format '{{.Names}}' | grep -q "^paas-mysql$"; then
+        if docker ps --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_NAME}$"; then
             BACKUP_FILE="${PROJECT_ROOT}/storage/mysql-dump-$(date +%Y%m%d-%H%M%S).sql"
             echo -e "${YELLOW}[BACKUP] Running logical backup (mysqldump) for $MYSQL_DATABASE...${NC}"
-            docker exec paas-mysql mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" > "$BACKUP_FILE" 2>/dev/null
+            docker exec "$MYSQL_CONTAINER_NAME" mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" > "$BACKUP_FILE" 2>/dev/null
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}[SUCCESS] Backup complete: $(basename "$BACKUP_FILE")${NC}"
                 echo $CURRENT_TS > "$LAST_BACKUP_TS"
@@ -203,14 +236,14 @@ run_backups() {
 
 # 3. Individual Service Startup Blocks
 start_mysql() {
-    echo -e "${YELLOW}Starting MariaDB...${NC}"
-    docker rm -f paas-mysql 2>/dev/null || true
+    echo -e "${YELLOW}Starting MariaDB ($MYSQL_CONTAINER_NAME)...${NC}"
+    docker rm -f "$MYSQL_CONTAINER_NAME" 2>/dev/null || true
     if [ "$(stat -c '%u' "$DB_DATA_DIR")" != "999" ]; then
         echo -e "${YELLOW}Fixing storage/mysql owner to UID 999 (mysql)...${NC}"
         sudo chown -R 999:999 "$DB_DATA_DIR"
     fi
     docker run -d \
-        --name paas-mysql \
+        --name "$MYSQL_CONTAINER_NAME" \
         --network paas-network \
         --restart unless-stopped \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
@@ -236,10 +269,10 @@ start_postgres() {
 }
 
 start_user_postgres() {
-    echo -e "${YELLOW}Starting User PostgreSQL (paas-user-postgres)...${NC}"
-    docker rm -f paas-user-postgres 2>/dev/null || true
+    echo -e "${YELLOW}Starting User PostgreSQL ($POSTGRES_CONTAINER_NAME)...${NC}"
+    docker rm -f "$POSTGRES_CONTAINER_NAME" 2>/dev/null || true
     docker run -d \
-        --name paas-user-postgres \
+        --name "$POSTGRES_CONTAINER_NAME" \
         --network paas-network \
         --restart unless-stopped \
         -e POSTGRES_USER="postgres" \
@@ -358,7 +391,7 @@ start_backend() {
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
-        -e MYSQL_HOST=paas-mysql \
+        -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e MYSQL_USER="$MYSQL_USER" \
         -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
@@ -374,7 +407,7 @@ start_backend() {
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
-        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
@@ -401,7 +434,7 @@ start_worker() {
         --restart unless-stopped \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "${PROJECTS_PATH}:/app/storage/projects" \
-        -v "${DATA_PATH}:/app/data" \
+        -v "${DATA_PATH}:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
         -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
@@ -429,8 +462,9 @@ start_worker() {
         -e CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS="${CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS:-false}" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
-        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
@@ -497,7 +531,7 @@ show_status() {
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
-    local services=("paas-mysql" "paas-postgres" "paas-user-postgres" "paas-redis" "paas-traefik" "paas-buildkit" "paas-backend" "paas-worker-manager" "paas-frontend")
+    local services=("$MYSQL_CONTAINER_NAME" "paas-postgres" "$POSTGRES_CONTAINER_NAME" "paas-redis" "paas-traefik" "paas-buildkit" "paas-backend" "paas-worker-manager" "paas-frontend")
     for s in "${services[@]}"; do
         local status="not_created"
         local ip="-"
@@ -528,9 +562,9 @@ show_status() {
 service_menu() {
     while true; do
         echo -e "\n${YELLOW}=== Start Individual Service ===${NC}"
-        echo "1) MySQL (paas-mysql)"
+        echo "1) MySQL ($MYSQL_CONTAINER_NAME)"
         echo "2) PostgreSQL (paas-postgres)"
-        echo "3) User PostgreSQL (paas-user-postgres)"
+        echo "3) User PostgreSQL ($POSTGRES_CONTAINER_NAME)"
         echo "4) Redis (paas-redis)"
         echo "5) Traefik (paas-traefik)"
         echo "6) BuildKit (paas-buildkit)"

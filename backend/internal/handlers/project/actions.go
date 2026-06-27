@@ -13,6 +13,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"gorm.io/gorm/clause"
 )
 
 // Create handles project creation
@@ -89,11 +90,154 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		}
 	}
 
-	project, err := h.projectService.CreateProject(userID, role, req.Name, req.GithubURL, req.Branch, req.DatabaseName, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.EnableDatabase, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
+	// Fallback mapping for DatabaseOption
+	dbOption := req.DatabaseOption
+	if dbOption == "" {
+		if req.EnableDatabase {
+			dbOption = "new"
+		} else {
+			dbOption = "none"
+		}
+	}
+
+	switch dbOption {
+	case "none", "sqlite", "new", "existing", "external":
+		// Valid options
+	default:
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid database_option. Must be one of: none, sqlite, new, existing, external",
+		})
+	}
+
+	tx := h.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Validate and lock existing database if option is "existing"
+	var existingDb *models.DatabaseInstance
+	if dbOption == "existing" {
+		if req.ExistingDatabaseUID == "" {
+			tx.Rollback()
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "existing_database_uid is required when database_option is existing",
+			})
+		}
+		var dbInst models.DatabaseInstance
+		// Acquire row lock to prevent race conditions on concurrent attachment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uid = ?", req.ExistingDatabaseUID).First(&dbInst).Error; err != nil {
+			tx.Rollback()
+			slog.Warn("Existing database not found during locking", "uid", req.ExistingDatabaseUID, "error", err)
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Database not found",
+			})
+		}
+		if dbInst.UserID != userID {
+			tx.Rollback()
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "Forbidden: You do not own this database",
+			})
+		}
+		if dbInst.Status != models.DBStatusActive {
+			tx.Rollback()
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Database is not active",
+			})
+		}
+		if dbInst.ProjectID != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Database is already attached to another project",
+			})
+		}
+		existingDb = &dbInst
+	}
+
+	// Create project record inside the transaction
+	project, err := h.projectService.CreateProjectTx(tx, userID, role, req.Name, req.GithubURL, req.Branch, dbOption, req.DatabaseName, req.DatabaseUsername, req.DatabasePassword, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
 	if err != nil {
+		tx.Rollback()
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Failed to create project",
+			"error": err.Error(),
+		})
+	}
+
+	// Handle attachment for "existing" database inside transaction
+	if dbOption == "existing" && existingDb != nil {
+		projID := project.ID
+		existingDb.ProjectID = &projID
+		if err := tx.Save(existingDb).Error; err != nil {
+			tx.Rollback()
+			slog.Error("Failed to attach existing database", "project_id", projID, "database_uid", req.ExistingDatabaseUID, "error", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to attach existing database",
+			})
+		}
+
+		project.DatabaseName = &existingDb.Name
+		project.DatabasePassword = existingDb.Password
+		project.DatabaseOption = "existing"
+		if err := tx.Model(project).Updates(map[string]interface{}{
+			"database_name":     project.DatabaseName,
+			"database_password": project.DatabasePassword,
+			"database_option":   project.DatabaseOption,
+		}).Error; err != nil {
+			tx.Rollback()
+			slog.Error("Failed to update project database details", "project_id", projID, "error", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to update project database details",
+			})
+		}
+	}
+
+	// Handle environment injection for SQLite inside transaction
+	if dbOption == "sqlite" {
+		store, errStore := h.secretStoreService.CreateSecretStoreTx(tx, userID, fmt.Sprintf("Environment Secrets (%s)", project.Name), "Managed variables for project "+project.Name, c.IP(), c.Get("User-Agent"))
+		if errStore != nil {
+			tx.Rollback()
+			slog.Error("Failed to create secret store container for SQLite", "project_id", project.ID, "error", errStore)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to create secret store container for SQLite",
+			})
+		}
+		_, errBind := h.secretStoreService.BindSecretStoreTx(tx, userID, store.ID, project.ID, "production", c.IP(), c.Get("User-Agent"))
+		if errBind != nil {
+			tx.Rollback()
+			slog.Error("Failed to bind secret store container for SQLite", "project_id", project.ID, "store_id", store.ID, "error", errBind)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to bind secret store container for SQLite",
+			})
+		}
+		if _, errSet := h.secretStoreService.SetSecretValueNoPropagateTx(tx, userID, store.ID, "DB_CONNECTION", "sqlite", c.IP(), c.Get("User-Agent")); errSet != nil {
+			tx.Rollback()
+			slog.Error("Failed to set SQLite DB_CONNECTION", "project_id", project.ID, "store_id", store.ID, "error", errSet)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to set SQLite database connection settings",
+			})
+		}
+		if _, errSet := h.secretStoreService.SetSecretValueNoPropagateTx(tx, userID, store.ID, "DB_DATABASE", "/var/www/html/database/database.sqlite", c.IP(), c.Get("User-Agent")); errSet != nil {
+			tx.Rollback()
+			slog.Error("Failed to set SQLite DB_DATABASE", "project_id", project.ID, "store_id", store.ID, "error", errSet)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to set SQLite database path settings",
+			})
+		}
+		if _, errSet := h.secretStoreService.SetSecretValueNoPropagateTx(tx, userID, store.ID, "DB_FOREIGN_KEYS", "true", c.IP(), c.Get("User-Agent")); errSet != nil {
+			tx.Rollback()
+			slog.Error("Failed to set SQLite DB_FOREIGN_KEYS", "project_id", project.ID, "store_id", store.ID, "error", errSet)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to set SQLite database foreign key settings",
+			})
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		slog.Error("Transaction commit failed during project creation", "user_id", userID, "error", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Transaction commit failed",
 		})
 	}
 

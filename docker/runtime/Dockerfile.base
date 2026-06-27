@@ -27,6 +27,7 @@ RUN apk add --no-cache \
     openldap \
     gmp \
     libpq \
+    sqlite-libs \
     tzdata
 
 ENV TZ=Asia/Jakarta
@@ -49,6 +50,7 @@ RUN apk add --no-cache --virtual .build-deps \
         openldap-dev \
         gmp-dev \
         postgresql-dev \
+        sqlite-dev \
         linux-headers \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
@@ -57,6 +59,7 @@ RUN apk add --no-cache --virtual .build-deps \
         pdo \
         pdo_mysql \
         pdo_pgsql \
+        pdo_sqlite \
         mbstring \
         exif \
         pcntl \

@@ -77,7 +77,12 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 	envMap["APP_DEBUG"] = "false"
 
 	// Resolve APP_URL dynamically based on custom domains
-	appURL := fmt.Sprintf("http://%s", subdomain)
+	projectDomain := s.cfg.ProjectDomain
+	var settingVal models.Setting
+	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
+		projectDomain = settingVal.Value
+	}
+	appURL := fmt.Sprintf("http://%s.%s", subdomain, projectDomain)
 	var domains []models.CustomDomain
 	if err := s.db.Where("project_id = ? AND status IN (?)", projectID, []string{string(models.DomainStatusActive), string(models.DomainStatusSSLActive)}).Order("created_at ASC").Find(&domains).Error; err == nil {
 		var primaryDomain string
@@ -156,7 +161,9 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 								return nil, secretDecryptError(projectID, b.SecretStoreID, item.ID, err)
 							}
 						}
-						envMap[item.Key] = result.Plaintext
+						if !isSystemManagedEnvKey(item.Key) {
+							envMap[item.Key] = result.Plaintext
+						}
 						if result.UsedFallbackKey {
 							if err := rotateSecretValueToCurrentKey(s.db, userID, b.SecretStoreID, item.ID, item.LatestSnapshotVersion, projectID, currentKey, result.Plaintext); err != nil {
 								slog.Warn("Failed to re-encrypt SecretStore value with current credential key", "projectID", projectID, "secret_store_id", b.SecretStoreID, "item_id", item.ID, "error", err)
@@ -349,4 +356,13 @@ func rotateSecretValueToCurrentKey(db *gorm.DB, userID uint, storeID uint, itemI
 		}
 		return createManagedSecretActivityLogTx(tx, userID, storeID, item.ID, projectID, "Re-encrypted secret value with active credential key")
 	})
+}
+
+func isSystemManagedEnvKey(key string) bool {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "APP_NAME", "APP_URL":
+		return true
+	default:
+		return false
+	}
 }

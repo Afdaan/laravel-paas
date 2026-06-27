@@ -23,9 +23,14 @@ fi
 # Use the application user for migration (as it has global '%' access by default)
 MYSQL_USER=${MYSQL_USER:-"paas"}
 MYSQL_PASSWORD=${MYSQL_PASSWORD:-""}
+MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
+MYSQL_HOST=${MYSQL_HOST:-"$MYSQL_CONTAINER_NAME"}
+MYSQL_PORT=${MYSQL_PORT:-"3306"}
+PG_HOST=${PG_HOST:-"paas-postgres"}
+PG_PORT=${PG_PORT:-"5432"}
 
 if [ -z "$MYSQL_PASSWORD" ]; then
-    echo -n "Enter MySQL password for user '$MYSQL_USER' at 'paas-mysql': "
+    echo -n "Enter MySQL password for user '$MYSQL_USER' at '$MYSQL_HOST': "
     read -rs MYSQL_PASSWORD
     echo ""
 fi
@@ -51,7 +56,7 @@ else
     echo ""
 fi
 
-docker exec -e MYSQL_PWD="$M_ROOT_PASS" paas-mysql mysql -u"root" -e "
+docker exec -e MYSQL_PWD="$M_ROOT_PASS" "$MYSQL_CONTAINER_NAME" mysql -u"root" -e "
 CREATE USER IF NOT EXISTS '$M_MIGRATOR_USER'@'%' IDENTIFIED BY '$M_MIGRATOR_PASS';
 ALTER USER '$M_MIGRATOR_USER'@'%' IDENTIFIED VIA mysql_native_password USING PASSWORD('$M_MIGRATOR_PASS');
 GRANT ALL PRIVILEGES ON $MYSQL_DATABASE.* TO '$M_MIGRATOR_USER'@'%';
@@ -70,8 +75,8 @@ LOAD_FILE="${PROJECT_ROOT}/scripts/migration.load"
 echo "[INFO] Generating load configuration..."
 cat <<EOF > "$LOAD_FILE"
 LOAD DATABASE
-     FROM mysql://$M_MIGRATOR_USER:$M_MIGRATOR_PASS@paas-mysql:3306/$MYSQL_DATABASE
-     INTO postgresql://${PG_USER}:${ENCODED_PG_PASS}@paas-postgres:5432/${PG_DATABASE}
+     FROM mysql://$M_MIGRATOR_USER:$M_MIGRATOR_PASS@${MYSQL_HOST}:${MYSQL_PORT}/$MYSQL_DATABASE
+     INTO postgresql://${PG_USER}:${ENCODED_PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}
 
  ALTER SCHEMA '$MYSQL_DATABASE' RENAME TO 'public'
 
@@ -91,7 +96,7 @@ EXIT_CODE=$?
 
 # 6. Cleanup
 echo "[INFO] Cleaning up temporary migrator user..."
-docker exec -e MYSQL_PWD="$M_ROOT_PASS" paas-mysql mysql -u"root" -e "DROP USER '$M_MIGRATOR_USER'@'%';" 2>/dev/null
+docker exec -e MYSQL_PWD="$M_ROOT_PASS" "$MYSQL_CONTAINER_NAME" mysql -u"root" -e "DROP USER '$M_MIGRATOR_USER'@'%';" 2>/dev/null
 rm -f "$LOAD_FILE"
 
 if [ $EXIT_CODE -eq 0 ]; then

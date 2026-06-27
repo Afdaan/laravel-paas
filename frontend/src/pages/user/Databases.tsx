@@ -30,6 +30,123 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
+// Engine identity drives the badge + a thin ring accent on the avatar.
+const ENGINE_META = {
+  postgresql: { label: 'PostgreSQL', short: 'PG', badge: 'border-transparent bg-blue-500/10 text-blue-500' },
+  mysql: { label: 'MySQL', short: 'SQL', badge: 'border-transparent bg-teal-600/10 text-teal-600' },
+} as const
+
+const engineMeta = (engine: string) => ENGINE_META[engine as keyof typeof ENGINE_META] ?? ENGINE_META.postgresql
+
+// Hand-picked gradient palette — every entry is tuned to look good with white glyphs.
+// A database keeps the same avatar across reloads because the gradient is derived from its name.
+const AVATAR_GRADIENTS = [
+  'from-violet-500 to-indigo-600',
+  'from-blue-500 to-cyan-600',
+  'from-emerald-500 to-teal-600',
+  'from-amber-500 to-orange-600',
+  'from-rose-500 to-pink-600',
+  'from-fuchsia-500 to-purple-600',
+  'from-sky-500 to-blue-600',
+  'from-lime-500 to-green-600',
+] as const
+
+function avatarGradient(seed: string) {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length]
+}
+
+// One database entry in the sidebar list — accent bar (selected) + engine avatar.
+function DbRow({ db, selected, onSelect, t }: {
+  db: DatabaseInstance
+  selected: boolean
+  onSelect: (id: number) => void
+  t: (key: string) => string
+}) {
+  const meta = engineMeta(db.engine)
+  const attached = db.project_id !== null
+  return (
+    <button
+      onClick={() => onSelect(db.id)}
+      className={cn(
+        "relative w-full text-left pl-3.5 pr-3 py-2.5 rounded-lg transition-all border group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        selected
+          ? 'bg-muted/40 border-primary/20 shadow-sm'
+          : 'border-transparent hover:bg-muted/40 hover:border-border/40'
+      )}
+    >
+      {/* Left accent bar marks the selected row (Linear/Vercel pattern) */}
+      <span className={cn(
+        "absolute left-0 top-1/2 -translate-y-1/2 h-7 w-0.5 rounded-full bg-primary transition-opacity",
+        selected ? 'opacity-100' : 'opacity-0'
+      )} />
+      <div className="flex items-center gap-2.5">
+        <span className="relative shrink-0">
+          <span className={cn(
+            "w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-sm bg-gradient-to-br ring-1 ring-inset ring-white/10",
+            avatarGradient(db.name)
+          )}>
+            <DbIcon className="w-[1.05rem] h-[1.05rem] drop-shadow-sm" />
+          </span>
+          {/* Engine marker badge tucked into the avatar corner */}
+          <span className="absolute -bottom-1 -right-1 px-1 h-3.5 min-w-3.5 rounded-full bg-card border border-border flex items-center justify-center text-[8px] font-bold leading-none text-muted-foreground">
+            {meta.short}
+          </span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className={cn(
+              "font-bold text-xs tracking-tight truncate",
+              selected ? 'text-primary' : 'text-foreground'
+            )}>
+              {db.name}
+            </span>
+            <span className={cn(
+              "shrink-0 w-1.5 h-1.5 rounded-full",
+              db.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'
+            )} />
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+            {attached && db.project ? (
+              <Badge variant="outline" className="h-4 px-1.5 py-0 text-[10px] font-semibold border-primary/20 bg-primary/5 text-primary max-w-[150px] truncate">
+                {db.project.name}
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground/60">{t('databaseManager.unattached')}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Section header + rows for a sidebar group (Unattached / Attached).
+function DbSection({ title, count, dbs, selectedDbId, onSelect, t }: {
+  title: string
+  count: number
+  dbs: DatabaseInstance[]
+  selectedDbId: number | null
+  onSelect: (id: number) => void
+  t: (key: string) => string
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 px-2 pb-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{title}</span>
+        <span className="text-[10px] font-semibold text-muted-foreground/50">{count}</span>
+        <span className="flex-1 h-px bg-border/60" />
+      </div>
+      <div className="space-y-1">
+        {dbs.map(db => (
+          <DbRow key={db.id} db={db} selected={selectedDbId === db.id} onSelect={onSelect} t={t} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Databases() {
   const { t } = useTranslation()
   const [databases, setDatabases] = useState<DatabaseInstance[]>([])
@@ -46,9 +163,26 @@ export default function Databases() {
   const [showRedeployModal, setShowRedeployModal] = useState(false)
   const [showAttachModal, setShowAttachModal] = useState(false)
   const [showDetachModal, setShowDetachModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showRevealModal, setShowRevealModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [redeployProjectUid, setRedeployProjectUid] = useState<string>('')
+
+  // Form states for standalone DB creation
+  const [createEngine, setCreateEngine] = useState<'mysql' | 'postgres'>('mysql')
+  const [createName, setCreateName] = useState('')
+  const [createUsername, setCreateUsername] = useState('')
+  const [createPassword, setCreatePassword] = useState('')
+  const [createdInstance, setCreatedInstance] = useState<{
+    name: string
+    username: string
+    password: string
+    host: string
+    port: number
+    engine: string
+  } | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -56,7 +190,7 @@ export default function Databases() {
         databaseAPI.listOwn(),
         projectsAPI.listOwn()
       ])
-      const dbs = dbRes.data.databases || []
+      const dbs = (dbRes.data.databases || []).filter((db: DatabaseInstance) => db.status !== 'deleted')
       const projs = projRes.data.data || []
       setDatabases(dbs)
       setProjects(projs)
@@ -87,10 +221,16 @@ export default function Databases() {
 
   // Filter databases
   const filteredDbs = databases.filter(db =>
-    db.name.toLowerCase().includes(search.toLowerCase()) ||
-    db.engine.toLowerCase().includes(search.toLowerCase()) ||
-    (db.project_id && db.project && db.project.name.toLowerCase().includes(search.toLowerCase()))
+    db.status !== 'deleted' && (
+      db.name.toLowerCase().includes(search.toLowerCase()) ||
+      db.engine.toLowerCase().includes(search.toLowerCase()) ||
+      (db.project_id && db.project && db.project.name.toLowerCase().includes(search.toLowerCase()))
+    )
   )
+
+  // Split into unattached / attached sections for the sidebar
+  const unattachedDbs = filteredDbs.filter(db => db.project_id === null)
+  const attachedDbs = filteredDbs.filter(db => db.project_id !== null)
 
   // Projects that do not have a database attached
   const attachableProjects = projects.filter(p => !p.database_instance)
@@ -100,7 +240,7 @@ export default function Databases() {
     if (!selectedDb || !selectedProjectId) return
     setIsActionLoading(true)
     try {
-      await databaseAPI.attach(selectedDb.id, selectedProjectId)
+      await databaseAPI.attach(selectedDb.uid, selectedProjectId)
       toast.success(t('common.success'))
 
       // Prompt for redeploy
@@ -124,7 +264,7 @@ export default function Databases() {
     setIsActionLoading(true)
     try {
       const projectUid = selectedDb.project_id ? selectedDb.project?.uid : undefined
-      await databaseAPI.detach(selectedDb.id)
+      await databaseAPI.detach(selectedDb.uid)
       toast.success(t('common.success'))
 
       if (projectUid) {
@@ -150,7 +290,7 @@ export default function Databases() {
     }
     setIsActionLoading(true)
     try {
-      await databaseAPI.resetInstance(selectedDb.id)
+      await databaseAPI.resetInstance(selectedDb.uid)
       toast.success(t('databaseManager.querySuccess'))
       setShowResetModal(false)
       setConfirmText('')
@@ -172,7 +312,7 @@ export default function Databases() {
     }
     setIsActionLoading(true)
     try {
-      const res = await databaseAPI.reinstallInstance(selectedDb.id)
+      const res = await databaseAPI.reinstallInstance(selectedDb.uid)
       toast.success(t('databaseManager.backupSuccess'))
       setShowReinstallModal(false)
       setConfirmText('')
@@ -207,6 +347,145 @@ export default function Databases() {
     }
   }
 
+  const generatePassword = () => {
+    const allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!$%^&*_+='
+    const len = allowedChars.length
+    const maxValid = 256 - (256 % len)
+    let password = ''
+    let count = 0
+    while (password.length < 20 && count < 1000) {
+      const tempArray = new Uint8Array(20 - password.length)
+      window.crypto.getRandomValues(tempArray)
+      for (let i = 0; i < tempArray.length; i++) {
+        if (tempArray[i] < maxValid) {
+          password += allowedChars[tempArray[i] % len]
+        }
+      }
+      count++
+    }
+    if (password.length < 20) {
+      const fallbackArray = new Uint8Array(20)
+      window.crypto.getRandomValues(fallbackArray)
+      for (let i = 0; i < 20; i++) {
+        password += allowedChars[fallbackArray[i] % len]
+      }
+    }
+    setCreatePassword(password)
+  }
+
+  const handleCreateDatabase = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const dbNameRegex = /^[a-z][a-z0-9_]{1,63}$/
+    if (!dbNameRegex.test(createName)) {
+      toast.error(t('databaseManager.dbNameInvalid') || 'Database name must start with a letter and contain lowercase alphanumeric/underscore')
+      return
+    }
+    if (createName.length < 2 || createName.length > 64) {
+      toast.error(t('databaseManager.dbNameLength') || 'Database name must be between 2 and 64 characters')
+      return
+    }
+    const reservedDbs = ['mysql', 'postgres', 'information_schema', 'performance_schema', 'sys', 'template0', 'template1']
+    if (reservedDbs.includes(createName)) {
+      toast.error(t('databaseManager.dbNameReserved') || 'Database name is reserved')
+      return
+    }
+
+    const usernameRegex = /^[a-z][a-z0-9_]*$/
+    if (!usernameRegex.test(createUsername)) {
+      toast.error(t('databaseManager.usernameInvalid') || 'Username must start with a letter and contain lowercase alphanumeric/underscore')
+      return
+    }
+    if (createUsername.length < 2 || createUsername.length > 32) {
+      toast.error(t('databaseManager.usernameLength') || 'Username must be between 2 and 32 characters')
+      return
+    }
+    const reservedUsers = ['root', 'admin', 'postgres', 'mysql', 'superuser', 'replication']
+    if (reservedUsers.includes(createUsername)) {
+      toast.error(t('databaseManager.usernameReserved') || 'Username is reserved')
+      return
+    }
+
+    if (createPassword.length < 12 || createPassword.length > 128) {
+      toast.error(t('databaseManager.passwordLength') || 'Password must be between 12 and 128 characters')
+      return
+    }
+    if (!/[A-Z]/.test(createPassword) || !/[a-z]/.test(createPassword) || !/[0-9]/.test(createPassword)) {
+      toast.error(t('databaseManager.passwordComplexity') || 'Password must contain uppercase, lowercase, and a number')
+      return
+    }
+    if (/[\s@#/?]/.test(createPassword)) {
+      toast.error(t('databaseManager.passwordForbiddenChars') || 'Password cannot contain space, @, #, /, ?')
+      return
+    }
+
+    setIsActionLoading(true)
+    try {
+      const res = await databaseAPI.create({
+        engine: createEngine,
+        name: createName,
+        username: createUsername,
+        password: createPassword
+      })
+
+      const dbInst = res.data.database
+      setCreatedInstance({
+        name: createName,
+        username: createUsername,
+        password: createPassword,
+        host: dbInst.host || 'localhost',
+        port: dbInst.port || (createEngine === 'mysql' ? 3306 : 5432),
+        engine: createEngine
+      })
+
+      setCreateName('')
+      setCreateUsername('')
+      setCreatePassword('')
+      setCreateEngine('mysql')
+      setShowCreateModal(false)
+      setShowRevealModal(true)
+
+      await fetchData()
+      if (dbInst && dbInst.id) {
+        setSelectedDbId(dbInst.id)
+      }
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } }
+      toast.error(err.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  const handleDeleteDatabase = async () => {
+    if (!selectedDb) return
+    if (selectedDb.project_id !== null) {
+      toast.error(t('databaseManager.cannotDeleteAttached'))
+      return
+    }
+    if (confirmText !== selectedDb.name) {
+      toast.error(t('common.error'))
+      return
+    }
+
+    setIsActionLoading(true)
+    try {
+      await databaseAPI.delete(selectedDb.uid)
+      toast.success(t('databaseManager.deleteSuccess'))
+      setShowDeleteModal(false)
+      setConfirmText('')
+
+      // Clear selectedDbId and trigger fetch
+      setSelectedDbId(null)
+      await fetchData()
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } }
+      toast.error(err.response?.data?.error || t('common.error'))
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
@@ -216,24 +495,230 @@ export default function Databases() {
     )
   }
 
+  const renderCreateDialog = () => (
+    <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+      <DialogContent className="max-w-lg">
+        <form onSubmit={handleCreateDatabase}>
+          <DialogHeader>
+            <div className="flex items-center gap-3 text-primary mb-2">
+              <DbIcon className="w-5 h-5" />
+              <DialogTitle className="text-base font-semibold">{t("databaseManager.createDatabaseTitle")}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs leading-relaxed">
+              {t("databaseManager.createDatabaseDesc")}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {/* Engine Selection */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.engineLabel")}
+              </label>
+              <Select
+                value={createEngine}
+                onValueChange={(val) => setCreateEngine(val as 'mysql' | 'postgres')}
+              >
+                <SelectTrigger className="w-full text-xs">
+                  {createEngine === 'mysql' ? 'MySQL (v8.0)' : 'PostgreSQL (v15)'}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mysql" className="text-xs font-medium">MySQL (v8.0)</SelectItem>
+                  <SelectItem value="postgres" className="text-xs font-medium">PostgreSQL (v15)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Database Name */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.databaseNameLabel")} <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value.toLowerCase())}
+                placeholder={t("databaseManager.databaseNamePlaceholder")}
+                className="h-9 text-xs"
+                required
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Lowercase, alphanumeric & underscore only. Max 64 chars.
+              </p>
+            </div>
+
+            {/* Username */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.usernameLabel")} <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={createUsername}
+                onChange={(e) => setCreateUsername(e.target.value.toLowerCase())}
+                placeholder={t("databaseManager.usernamePlaceholder")}
+                className="h-9 text-xs"
+                required
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Lowercase, alphanumeric & underscore. Max 32 chars. Must start with a letter.
+              </p>
+            </div>
+
+            {/* Password */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                {t("databaseManager.passwordLabel")} <span className="text-destructive">*</span>
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  value={createPassword}
+                  onChange={(e) => setCreatePassword(e.target.value)}
+                  placeholder={t("databaseManager.passwordPlaceholder")}
+                  className="h-9 text-xs font-mono"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={generatePassword}
+                  className="h-9 text-xs font-semibold px-3 shrink-0"
+                >
+                  Generate
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Min 12 chars. Must contain uppercase, lowercase, and a number. Cannot contain spaces or @, #, /, ?.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={() => setShowCreateModal(false)} className="text-xs font-medium">
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" disabled={isActionLoading} className="text-xs font-medium">
+              {t("databaseManager.createDatabaseBtn")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+
+  const renderRevealDialog = () => (
+    <Dialog open={showRevealModal} onOpenChange={(open) => {
+      if (!open) {
+        setCreatedInstance(null)
+      }
+      setShowRevealModal(open)
+    }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3 text-amber-500 mb-2">
+            <AlertTriangle className="w-5 h-5 animate-pulse" />
+            <DialogTitle className="text-base font-semibold">Credentials Created Successfully</DialogTitle>
+          </div>
+          <DialogDescription className="text-xs leading-relaxed text-amber-500/95 font-medium">
+            Save this password now! Once this dialog is closed, you will not be able to retrieve it again.
+          </DialogDescription>
+        </DialogHeader>
+
+        {createdInstance && (
+          <div className="py-4 space-y-3">
+            <div className="rounded-lg bg-muted/40 border border-border/80 p-3 space-y-2.5 font-mono text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Engine</span>
+                <span className="text-foreground font-semibold">{createdInstance.engine.toUpperCase()}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Host</span>
+                <span className="text-foreground font-semibold">{createdInstance.host}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Port</span>
+                <span className="text-foreground font-semibold">{createdInstance.port}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Database</span>
+                <span className="text-foreground font-semibold">{createdInstance.name}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Username</span>
+                <span className="text-foreground font-semibold">{createdInstance.username}</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Password</span>
+                <span className="text-foreground font-semibold select-all bg-amber-500/10 px-1 rounded">{createdInstance.password}</span>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs font-medium"
+              onClick={() => {
+                const data = `Engine: ${createdInstance.engine.toUpperCase()}\nHost: ${createdInstance.host}\nPort: ${createdInstance.port}\nDatabase: ${createdInstance.name}\nUsername: ${createdInstance.username}\nPassword: ${createdInstance.password}`
+                navigator.clipboard.writeText(data)
+                toast.success(t('databaseManager.copiedAll') || 'All credentials copied to clipboard!')
+              }}
+            >
+              <Copy className="w-3.5 h-3.5 mr-2 shrink-0" />
+              {t('databaseManager.copyAll')}
+            </Button>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            className="w-full text-xs font-medium"
+            onClick={() => {
+              setCreatedInstance(null)
+              setShowRevealModal(false)
+            }}
+          >
+            I've saved my credentials
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   if (databases.length === 0) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 animate-in fade-in duration-500">
-        <div className="w-20 h-20 rounded-3xl bg-muted border flex items-center justify-center">
-          <PackageOpen className="w-10 h-10 text-muted-foreground" />
+      <>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 animate-in fade-in duration-500">
+          <div className="w-20 h-20 rounded-3xl bg-muted border flex items-center justify-center">
+            <PackageOpen className="w-10 h-10 text-muted-foreground" />
+          </div>
+          <div className="text-center max-w-sm space-y-2">
+            <h3 className="text-2xl font-bold tracking-tight">
+              {t('databaseManager.noDbsFound')}
+            </h3>
+            <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">
+              {t('databaseManager.noDbsDesc')}
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-3 mt-4">
+            <Button
+              onClick={() => {
+                setCreateEngine('mysql')
+                setCreateName('')
+                setCreateUsername('')
+                setCreatePassword('')
+                setShowCreateModal(true)
+              }}
+              className="font-bold uppercase gap-2"
+            >
+              <DbIcon className="w-4 h-4" />
+              {t('databaseManager.newDatabase')}
+            </Button>
+            <Link to="/projects/new" className={cn(buttonVariants({ variant: "outline" }), "text-xs")}>
+              {t('databaseManager.createProjectWithDb')}
+            </Link>
+          </div>
         </div>
-        <div className="text-center max-w-sm space-y-2">
-          <h3 className="text-2xl font-bold tracking-tight">
-            {t('databaseManager.noDbsFound')}
-          </h3>
-          <p className="text-muted-foreground text-sm font-medium leading-relaxed italic">
-            {t('databaseManager.noDbsDesc')}
-          </p>
-        </div>
-        <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }), "mt-4")}>
-          {t('databaseManager.createProjectWithDb')}
-        </Link>
-      </div>
+        {renderCreateDialog()}
+        {renderRevealDialog()}
+      </>
     )
   }
 
@@ -244,16 +729,32 @@ export default function Databases() {
       <div className="w-full lg:w-72 flex-shrink-0 flex flex-col">
         <Card className="flex flex-col overflow-hidden h-full pt-0 shadow-sm">
           <CardHeader className="bg-muted/30 border-b py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                <DbIcon className="w-4 h-4" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold tracking-tight uppercase">{t('common.databases')}</h2>
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t('databaseManager.activeInstances')}</p>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                  <DbIcon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold tracking-tight uppercase">{t('common.databases')}</h2>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t('databaseManager.activeInstances')}</p>
+                </div>
               </div>
             </div>
-            <div className="relative mt-3">
+            <Button
+              onClick={() => {
+                setCreateEngine('mysql')
+                setCreateName('')
+                setCreateUsername('')
+                setCreatePassword('')
+                setShowCreateModal(true)
+              }}
+              size="sm"
+              className="w-full text-xs font-bold uppercase gap-1.5 mb-2 shadow-sm"
+            >
+              <DbIcon className="w-3.5 h-3.5 shrink-0" />
+              {t('databaseManager.newDatabase')}
+            </Button>
+            <div className="relative mt-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 placeholder={t('databaseManager.searchSchema')}
@@ -264,50 +765,30 @@ export default function Databases() {
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto p-1.5 space-y-1 pt-2 scrollbar-thin">
+          <CardContent className="flex-1 overflow-y-auto p-1.5 pt-2 scrollbar-thin">
             {filteredDbs.length > 0 ? (
-              filteredDbs.map(db => (
-                <button
-                  key={db.id}
-                  onClick={() => setSelectedDbId(db.id)}
-                  className={cn(
-                    "w-full text-left p-3 rounded-lg transition-all border group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    selectedDbId === db.id
-                      ? 'bg-muted/30 border-primary/20 shadow-sm'
-                      : 'border-transparent hover:bg-muted/40 hover:border-border/40'
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className={cn(
-                      "font-bold text-xs tracking-tight truncate max-w-[150px]",
-                      selectedDbId === db.id ? 'text-primary' : 'text-foreground'
-                    )}>
-                      {db.name}
-                    </span>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <span className={cn(
-                        "w-1.5 h-1.5 rounded-full",
-                        db.status === 'active' ? 'bg-emerald-500 ' : 'bg-rose-500'
-                      )} />
-                      <Badge variant="outline" className={cn(
-                        "text-[10px] font-medium uppercase px-1.5 py-0 h-4",
-                        db.engine === 'mysql'
-                          ? 'border-transparent bg-amber-500/10 text-amber-500'
-                          : 'border-transparent bg-blue-500/10 text-blue-500'
-                      )}>
-                        {db.engine}
-                      </Badge>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1.5 border-t border-border/50 text-[10px] font-medium text-muted-foreground">
-                    <span>{db.project_id !== null ? t('databaseManager.attachedTo') : t('databaseManager.unattached')}</span>
-                    <span className={cn("truncate max-w-[100px] font-semibold", db.project_id !== null ? "text-primary" : "text-muted-foreground/50")}>
-                      {db.project_id !== null && db.project ? db.project.name : '—'}
-                    </span>
-                  </div>
-                </button>
-              ))
+              <div className="space-y-4">
+                {unattachedDbs.length > 0 && (
+                  <DbSection
+                    title={t('databaseManager.sectionUnattached')}
+                    count={unattachedDbs.length}
+                    dbs={unattachedDbs}
+                    selectedDbId={selectedDbId}
+                    onSelect={setSelectedDbId}
+                    t={t}
+                  />
+                )}
+                {attachedDbs.length > 0 && (
+                  <DbSection
+                    title={t('databaseManager.sectionAttached')}
+                    count={attachedDbs.length}
+                    dbs={attachedDbs}
+                    selectedDbId={selectedDbId}
+                    onSelect={setSelectedDbId}
+                    t={t}
+                  />
+                )}
+              </div>
             ) : (
               <div className="text-center py-12 text-muted-foreground font-semibold uppercase tracking-widest text-xs italic">
                 {t('databaseManager.noClusters')}
@@ -551,7 +1032,8 @@ export default function Databases() {
                         setConfirmText('')
                         setShowResetModal(true)
                       }}
-                      className="text-xs font-bold uppercase gap-1.5"
+                      disabled={selectedDb.status === 'deleted'}
+                      className="text-xs font-bold uppercase gap-1.5 disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5 shrink-0" />
                       {t('databaseManager.reset')}
@@ -564,12 +1046,33 @@ export default function Databases() {
                         setConfirmText('')
                         setShowReinstallModal(true)
                       }}
-                      className="text-xs font-bold uppercase gap-1.5"
+                      disabled={selectedDb.status === 'deleted'}
+                      className="text-xs font-bold uppercase gap-1.5 disabled:opacity-50"
                     >
                       <RefreshCw className="w-3.5 h-3.5 shrink-0" />
                       {t('databaseManager.reinstall')}
                     </Button>
+
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={selectedDb.project_id !== null || selectedDb.status === 'deleted'}
+                      onClick={() => {
+                        setConfirmText('')
+                        setShowDeleteModal(true)
+                      }}
+                      className="text-xs font-bold uppercase gap-1.5 disabled:opacity-50"
+                      title={selectedDb.project_id !== null ? t('databaseManager.cannotDeleteAttached') : undefined}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      {t('databaseManager.deleteDatabaseBtn')}
+                    </Button>
                   </div>
+                  {selectedDb.project_id !== null && (
+                    <p className="text-[10px] text-muted-foreground italic mt-1">
+                      * {t('databaseManager.cannotDeleteAttached')}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -671,35 +1174,12 @@ export default function Databases() {
         </DialogContent>
       </Dialog>
 
-      {/* Detach Database Confirmation Dialog */}
-      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.detachConfirmDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
-            </Button>
-            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.detach")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Confirmation Dialog: Reinstall DB */}
       <Dialog open={showReinstallModal} onOpenChange={setShowReinstallModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-6 h-6 " />
+              <AlertTriangle className="w-6 h-6" />
               <DialogTitle className="text-base font-semibold">{t('databaseManager.reinstallConfirm')}</DialogTitle>
             </div>
             <DialogDescription className="text-xs leading-relaxed">
@@ -735,75 +1215,6 @@ export default function Databases() {
         </DialogContent>
       </Dialog>
 
-      {/* Detach Database Confirmation Dialog */}
-      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.detachConfirmDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
-            </Button>
-            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.detach")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Attach Database Confirmation Dialog */}
-      <Dialog open={showAttachModal} onOpenChange={setShowAttachModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-primary mb-2">
-              <DbIcon className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.attachConfirm")}</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.attachConfirmDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowAttachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
-            </Button>
-            <Button onClick={() => { setShowAttachModal(false); handleAttach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.attach")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Detach Database Confirmation Dialog */}
-      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.detachConfirmDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
-            </Button>
-            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.detach")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Redeploy Confirmation Dialog */}
       <Dialog open={showRedeployModal} onOpenChange={setShowRedeployModal}>
         <DialogContent className="max-w-md">
@@ -832,70 +1243,45 @@ export default function Databases() {
         </DialogContent>
       </Dialog>
 
-      {/* Detach Database Confirmation Dialog */}
-      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
+      {renderCreateDialog()}
+      {renderRevealDialog()}
+
+      {/* Confirmation Dialog: Delete DB */}
+      <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-3 text-destructive mb-2">
               <AlertTriangle className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
+              <DialogTitle className="text-base font-semibold">{t('databaseManager.deleteConfirmTitle')}</DialogTitle>
             </div>
             <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.detachConfirmDesc")}
+              {t('databaseManager.deleteConfirmDesc', { name: selectedDb?.name || '' })}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
-            </Button>
-            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.detach")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Attach Database Confirmation Dialog */}
-      <Dialog open={showAttachModal} onOpenChange={setShowAttachModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-primary mb-2">
-              <DbIcon className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.attachConfirm")}</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.attachConfirmDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowAttachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
-            </Button>
-            <Button onClick={() => { setShowAttachModal(false); handleAttach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.attach")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="py-4 space-y-2">
+            <p className="text-xs text-muted-foreground font-medium mb-1.5">
+              {t('databaseManager.typeToConfirm', { name: selectedDb?.name || '' })}
+            </p>
+            <Input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={selectedDb?.name}
+              className="h-9 text-xs font-mono"
+            />
+          </div>
 
-      {/* Detach Database Confirmation Dialog */}
-      <Dialog open={showDetachModal} onOpenChange={setShowDetachModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 text-destructive mb-2">
-              <AlertTriangle className="w-5 h-5" />
-              <DialogTitle className="text-base font-semibold">{t("databaseManager.detachConfirm")}</DialogTitle>
-            </div>
-            <DialogDescription className="text-xs leading-relaxed">
-              {t("databaseManager.detachConfirmDesc")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setShowDetachModal(false)} className="text-xs font-medium">
-              {t("common.cancel")}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowDeleteModal(false)} className="text-xs font-medium">
+              {t('common.cancel')}
             </Button>
-            <Button variant="destructive" onClick={() => { setShowDetachModal(false); handleDetach(); }} disabled={isActionLoading} className="text-xs font-medium">
-              {t("databaseManager.detach")}
+            <Button
+              variant="destructive"
+              onClick={handleDeleteDatabase}
+              disabled={confirmText !== selectedDb?.name || isActionLoading}
+              className="text-xs font-medium"
+            >
+              {t('databaseManager.deleteDatabaseBtn')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -381,6 +381,20 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		if err := w.redisService.ReleaseDeploymentLock(job.ProjectID, lockToken); err != nil {
 			slog.Warn("Failed to release lock for project", "id", job.ProjectID, "error", err)
 		}
+
+		// After lock is released, check if there is a pending env refresh marker
+		if hasPending, err := w.redisService.HasPendingEnvRefresh(job.ProjectID); err == nil && hasPending {
+			slog.Info("Detected pending env refresh marker after job completion, attempting quiet enqueue", "projectId", job.ProjectID)
+			jobID, errQueue := w.redisService.EnqueueEnvUpdateIfQuiet(job.ProjectID, job.UserID)
+			if errQueue != nil {
+				slog.Error("Failed to enqueue pending env update job", "projectId", job.ProjectID, "error", errQueue)
+			} else if jobID != "" {
+				slog.Info("Successfully enqueued pending env update job, clearing marker", "projectId", job.ProjectID, "jobId", jobID)
+				_, _ = w.redisService.ClearPendingEnvRefresh(job.ProjectID)
+			} else {
+				slog.Info("Project not quiet, keeping pending env refresh marker", "projectId", job.ProjectID)
+			}
+		}
 	}()
 
 	// Fetch project from database via repository
@@ -733,6 +747,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if project.DatabaseInstance == nil {
 			return // no PaaS database for this project, skip provisioning
 		}
+		if project.DatabaseOption != "new" {
+			return // existing/attached databases are already provisioned
+		}
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
 			if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
@@ -743,24 +760,33 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 
 		engine := "mysql"
+		dbName := project.GetDatabaseName()
+		dbUsername := dbName
+		dbPassword := project.DatabasePassword
 		var dbInstance *models.DatabaseInstance
 		if project.DatabaseInstance != nil {
 			engine = project.DatabaseInstance.Engine
 			dbInstance = project.DatabaseInstance
+			dbName = dbInstance.Name
+			dbUsername = dbInstance.Username
+			dbPassword = dbInstance.Password
+			if dbPassword == "" {
+				dbPassword = project.DatabasePassword
+			}
 		}
 
 		if engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			dbErr = pgService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
+			dbErr = pgService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
 			if dbErr == nil && dbInstance != nil {
-				dbInstance.Host = "paas-user-postgres"
-				dbInstance.Port = 5432
-				dbInstance.Password = project.DatabasePassword
+				dbInstance.Host = infrastructure.PostgreSQLContainerName()
+				dbInstance.Port = infrastructure.PostgreSQLPort()
+				dbInstance.Password = dbPassword
 				dbInstance.Status = models.DBStatusActive
 
 				var version string
 				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					project.GetDatabaseName(), project.DatabasePassword, w.cfg.UserPGHost, w.cfg.UserPGPort, project.GetDatabaseName(),
+					dbUsername, dbPassword, dbInstance.Host, strconv.Itoa(dbInstance.Port), dbName,
 				)
 				dbConn, err := sql.Open("pgx", dsn)
 				if err == nil {
@@ -782,16 +808,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
 			}
 		} else {
-			dbErr = w.mysqlService.CreateDatabase(project.GetDatabaseName(), project.DatabasePassword)
+			dbErr = w.mysqlService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
 			if dbErr == nil && dbInstance != nil {
-				dbInstance.Host = "paas-mysql"
-				dbInstance.Port = 3306
-				dbInstance.Password = project.DatabasePassword
+				dbInstance.Host = infrastructure.MySQLContainerName()
+				dbInstance.Port = infrastructure.MySQLPort()
+				dbInstance.Password = dbPassword
 				dbInstance.Status = models.DBStatusActive
 
 				var version string
-				dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
-					project.GetDatabaseName(), project.DatabasePassword, w.cfg.MYSQLHost, w.cfg.MYSQLPort, project.GetDatabaseName(),
+				dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+					dbUsername, dbPassword, dbInstance.Host, dbInstance.Port, dbName,
 				)
 				dbConn, err := sql.Open("mysql", dsn)
 				if err == nil {
@@ -956,7 +982,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		project.LanguageVersion = ""
 		project.IsManualVersion = false
 
-
 		updates["node_version"] = ""
 		updates["php_version"] = ""
 		updates["laravel_version"] = ""
@@ -1046,6 +1071,70 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"port":                 project.Port,
 	})
 
+	// For SQLite Laravel projects, run migrations BEFORE healthcheck.
+	// The app cannot pass healthcheck without database tables (SQLSTATE no such table).
+	if project.Framework == "Laravel" && project.DatabaseOption == "sqlite" {
+		if ctx.Err() == context.Canceled {
+			slog.Info("Deployment cancelled before migrations, rolling back", "subdomain", project.Subdomain)
+			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
+
+			sharedDocker.GetCircuitBreaker().RecordFailure()
+			if previousCommitHash != "" {
+				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"last_commit_hash": previousCommitHash,
+			})
+			if cloneHash != "" {
+				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+			}
+
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
+			_ = w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID)
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id": nil,
+			})
+			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
+			return
+		}
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 55, "running_migrations", "Executing artisan migrate --force (pre-healthcheck for SQLite)")
+		slog.Info("Running database migrations before healthcheck (SQLite)", "subdomain", project.Subdomain)
+		appendLog(">> Running database migrations (SQLite: before healthcheck)...")
+		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
+			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+
+			sharedDocker.GetCircuitBreaker().RecordFailure()
+			if previousCommitHash != "" {
+				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"last_commit_hash": previousCommitHash,
+			})
+			if cloneHash != "" {
+				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+			}
+
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
+			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
+				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
+			}
+			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id": nil,
+			})
+			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			return
+		} else {
+			if strings.TrimSpace(output) != "" {
+				appendLog(strings.TrimRight(output, "\r\n"))
+			} else {
+				appendLog("✓ Database migrations ran successfully (nothing to migrate).")
+			}
+		}
+	}
+
 	appendLog(">> Starting container readiness checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
@@ -1080,7 +1169,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		appendLog("✓ Health check passed.")
 	}
 
-	if project.Framework == "Laravel" {
+	// For non-SQLite Laravel projects, run migrations after healthcheck (original behavior)
+	if project.Framework == "Laravel" && project.DatabaseOption != "sqlite" {
 		if ctx.Err() == context.Canceled {
 			slog.Info("Deployment cancelled before migrations, rolling back", "subdomain", project.Subdomain)
 			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
@@ -1150,7 +1240,29 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if _, err := w.projectService.SyncProjectNginxFrom(project, "deployment_promote"); err != nil {
-		slog.Error("Nginx sync failed", "subdomain", project.Subdomain, "error", err)
+		slog.Error("Nginx sync failed during promote, rolling back", "subdomain", project.Subdomain, "error", err)
+		appendLog("ERROR: Failed to update public routing: " + err.Error())
+
+		if previousCommitHash != "" {
+			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
+			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
+		}
+		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"last_commit_hash":     previousCommitHash,
+			"rollout_container_id": nil,
+		})
+		if cloneHash != "" {
+			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
+		}
+
+		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Routing sync failed")
+
+		if errRm := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); errRm != nil {
+			slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", errRm)
+		}
+
+		w.updateProjectError(project, job.JobID, "[ROUTING_FAILED] Failed to update public routing: "+err.Error())
+		return
 	}
 
 	if err := w.projectService.PromoteRolloutContainer(project.ID, newContainerID); err != nil {

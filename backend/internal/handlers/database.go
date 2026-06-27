@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -149,8 +150,8 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 		c.Set(fiber.HeaderCacheControl, "no-store")
 		return c.JSON(fiber.Map{
 			"engine":   "mysql",
-			"host":     "paas-mysql",
-			"port":     3306,
+			"host":     infrastructure.MySQLContainerName(),
+			"port":     infrastructure.MySQLPort(),
 			"database": project.GetDatabaseName(),
 			"username": project.GetDatabaseName(),
 			"password": project.DatabasePassword,
@@ -207,12 +208,12 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		// 1. Update password inside container engine
 		if instance.Engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdatePassword(instance.Name, newPassword); err != nil {
+			if err := pgService.UpdatePassword(instance.Username, newPassword); err != nil {
 				return err
 			}
 		} else {
 			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdatePassword(instance.Name, newPassword); err != nil {
+			if err := mysqlService.UpdatePassword(instance.Username, newPassword); err != nil {
 				return err
 			}
 		}
@@ -263,9 +264,9 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		now := time.Now()
 		msg := "Credentials rotation env update"
 		errUpdate := h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
-			"deployment_status":      models.DepStatusQueued,
-			"deployment_job_id":      jobID,
-			"deployment_message":     msg,
+			"deployment_status":       models.DepStatusQueued,
+			"deployment_job_id":       jobID,
+			"deployment_message":      msg,
 			"deployment_started_at":   &now,
 			"deployment_heartbeat_at": &now,
 			"deployment_finished_at":  nil,
@@ -314,13 +315,13 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 	if req.Suspend {
 		if instance.Engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdateStatus(instance.Name, true); err != nil {
+			if err := pgService.UpdateStatus(instance.Name, instance.Username, true); err != nil {
 				slog.Warn("Failed to suspend PostgreSQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to suspend PostgreSQL database"})
 			}
 		} else {
 			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdateStatus(instance.Name, true); err != nil {
+			if err := mysqlService.UpdateStatus(instance.Name, instance.Username, true); err != nil {
 				slog.Warn("Failed to suspend MySQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to suspend MySQL database"})
 			}
@@ -329,13 +330,13 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 	} else {
 		if instance.Engine == "postgresql" {
 			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdateStatus(instance.Name, false); err != nil {
+			if err := pgService.UpdateStatus(instance.Name, instance.Username, false); err != nil {
 				slog.Warn("Failed to resume PostgreSQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resume PostgreSQL database"})
 			}
 		} else {
 			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdateStatus(instance.Name, false); err != nil {
+			if err := mysqlService.UpdateStatus(instance.Name, instance.Username, false); err != nil {
 				slog.Warn("Failed to resume MySQL database", "project_id", project.ID, "error", err.Error())
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resume MySQL database"})
 			}
@@ -369,7 +370,7 @@ func (h *DatabaseHandler) GetOverview(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(instance.Name, instance.Password)
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to connect to project database for overview", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to database"})
@@ -419,13 +420,13 @@ func (h *DatabaseHandler) GetSchema(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(instance.Name, instance.Password)
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to retrieve project database tables", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve tables"})
 	}
 
-	columnsMap, fksMap, schemaErr := h.databaseService.GetAllSchemaMetadata(instance.Name, instance.Password)
+	columnsMap, fksMap, schemaErr := h.databaseService.GetAllSchemaMetadata(instance)
 	if schemaErr != nil {
 		slog.Warn("Failed to retrieve project database schema metadata", "project_id", project.ID, "error", schemaErr.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table metadata"})
@@ -482,7 +483,7 @@ func (h *DatabaseHandler) ExecuteDesignerAction(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 	}
 
-	err = h.databaseService.ExecuteDesignerAction(instance.Name, instance.Password, req)
+	err = h.databaseService.ExecuteDesignerAction(instance, req)
 	if err != nil {
 		h.recordAuditLog(c, project.ID, "db_designer_"+req.Action, req.TableName, req.NewName, "failed", err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database designer operation failed"})
@@ -615,7 +616,11 @@ func (h *DatabaseHandler) DownloadBackup(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server config error"})
 	}
 	absBackupPath, err := filepath.Abs(backup.Path)
-	if err != nil || !strings.HasPrefix(absBackupPath, absProjectsPath) {
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server config error"})
+	}
+	rel, err := filepath.Rel(absProjectsPath, absBackupPath)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Unauthorized file path"})
 	}
 
@@ -637,7 +642,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
 	}
 
-	tables, err := h.databaseService.ListProjectTables(instance.Name, instance.Password)
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to list project database tables for metrics", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve database metrics"})
@@ -651,7 +656,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 	}
 
 	// Enforce dynamic active connections check in the engine container
-	db, err := h.databaseService.ConnectToProjectDB(instance.Name, instance.Password)
+	db, err := h.databaseService.ConnectToDatabaseInstance(instance)
 	activeConnections := 0
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -828,7 +833,12 @@ func (h *DatabaseHandler) ListTables(c *fiber.Ctx) error {
 		return err
 	}
 
-	tables, err := h.databaseService.ListProjectTables(project.GetDatabaseName(), project.DatabasePassword)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	tables, err := h.databaseService.ListProjectTables(instance)
 	if err != nil {
 		slog.Warn("Failed to list project tables", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -851,7 +861,12 @@ func (h *DatabaseHandler) GetTableStructure(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Table name required"})
 	}
 
-	columns, err := h.databaseService.GetTableStructure(project.GetDatabaseName(), project.DatabasePassword, tableName)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	columns, err := h.databaseService.GetTableStructure(instance, tableName)
 	if err != nil {
 		slog.Warn("Failed to get table structure", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table structure"})
@@ -880,7 +895,12 @@ func (h *DatabaseHandler) GetTableData(c *fiber.Ctx) error {
 		limit = 200
 	}
 
-	columns, rows, total, err := h.databaseService.GetTableData(project.GetDatabaseName(), project.DatabasePassword, tableName, page, limit)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	columns, rows, total, err := h.databaseService.GetTableData(instance, tableName, page, limit)
 	if err != nil {
 		slog.Warn("Failed to get table data", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve table data"})
@@ -916,7 +936,12 @@ func (h *DatabaseHandler) DeleteTableRow(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key and value are required"})
 	}
 
-	deleted, err := h.databaseService.DeleteTableRow(project.GetDatabaseName(), project.DatabasePassword, tableName, req.PrimaryKey, req.Value)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	deleted, err := h.databaseService.DeleteTableRow(instance, tableName, req.PrimaryKey, req.Value)
 	if err != nil {
 		slog.Warn("Failed to delete table row", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete row"})
@@ -953,7 +978,12 @@ func (h *DatabaseHandler) UpdateTableRow(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "primary_key, value, and updates map are required"})
 	}
 
-	updated, err := h.databaseService.UpdateTableRow(project.GetDatabaseName(), project.DatabasePassword, tableName, req.PrimaryKey, req.Value, req.Updates)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	updated, err := h.databaseService.UpdateTableRow(instance, tableName, req.PrimaryKey, req.Value, req.Updates)
 	if err != nil {
 		slog.Warn("Failed to update table row", "project_id", project.ID, "table", tableName, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update row"})
@@ -977,7 +1007,12 @@ func (h *DatabaseHandler) ExecuteQuery(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	result, err := h.databaseService.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, req.Query)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	result, err := h.databaseService.ExecuteRawQuery(instance, req.Query)
 	if err != nil {
 		appErr, ok := err.(*apperr.AppError)
 		if ok && appErr != nil {
@@ -1000,7 +1035,12 @@ func (h *DatabaseHandler) ExportDatabase(c *fiber.Ctx) error {
 		return err
 	}
 
-	dump, err := h.databaseService.GenerateProjectDump(project.GetDatabaseName(), project.DatabasePassword)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	dump, err := h.databaseService.GenerateProjectDump(instance)
 	if err != nil {
 		slog.Warn("Failed to export database", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to export database"})
@@ -1030,6 +1070,11 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{"error": "SQL import payload is too large"})
 	}
 
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
 	statements := services.SplitSQLStatements(req.SQL)
 	if len(statements) > maxDatabaseImportStatements {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "SQL import contains too many statements"})
@@ -1042,7 +1087,7 @@ func (h *DatabaseHandler) ImportDatabase(c *fiber.Ctx) error {
 		if stmt == "" {
 			continue
 		}
-		res, err := h.databaseService.ExecuteRawQuery(project.GetDatabaseName(), project.DatabasePassword, stmt)
+		res, err := h.databaseService.ExecuteRawQuery(instance, stmt)
 		if err != nil {
 			errors = append(errors, "Statement execution failed")
 		} else {
@@ -1066,7 +1111,12 @@ func (h *DatabaseHandler) ResetDatabase(c *fiber.Ctx) error {
 		return err
 	}
 
-	dropped, err := h.databaseService.ResetProjectDatabase(project.GetDatabaseName(), project.DatabasePassword)
+	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned"})
+	}
+
+	dropped, err := h.databaseService.ResetProjectDatabase(instance)
 	if err != nil {
 		slog.Warn("Failed to reset database", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database"})
@@ -1114,7 +1164,7 @@ func (h *DatabaseHandler) ListUserDatabases(c *fiber.Ctx) error {
 	}
 
 	var databases []models.DatabaseInstance
-	if err := h.db.Preload("Project").Where("user_id = ?", userID).Find(&databases).Error; err != nil {
+	if err := h.db.Preload("Project").Where("user_id = ? AND status != ?", userID, models.DBStatusDeleted).Find(&databases).Error; err != nil {
 		slog.Error("Failed to list user databases", "userID", userID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to list databases"})
 	}
@@ -1126,10 +1176,9 @@ func (h *DatabaseHandler) ListUserDatabases(c *fiber.Ctx) error {
 
 // AttachDatabase attaches a database to a project
 func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	var req struct {
@@ -1148,21 +1197,16 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
 
-	// Fetch DatabaseInstance and validate ownership
+	// Fetch DatabaseInstance and validate ownership (pre-check for fast 404/403)
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
 	}
 
-	// Verify database is not already attached to a project
-	if dbInst.ProjectID != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database is already attached to a project"})
-	}
-
-	// Fetch project by UID and validate ownership
+	// Fetch project by UID and validate ownership (pre-check for fast 404/403)
 	project, err := h.projectService.GetProjectByUID(req.ProjectUID)
 	if err != nil || project == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -1171,15 +1215,29 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this project"})
 	}
 
-	// Verify project does not already have a database attached
-	var count int64
-	h.db.Model(&models.DatabaseInstance{}).Where("project_id = ?", project.ID).Count(&count)
-	if count > 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Project already has a database attached"})
-	}
-
-	// Start a transaction to attach and sync cache
+	// Locked transaction: re-fetch and recheck to prevent concurrent attach race
 	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		// Lock database row and recheck availability
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", dbInst.ID).First(&dbInst).Error; err != nil {
+			return fmt.Errorf("database not found")
+		}
+		if dbInst.Status != models.DBStatusActive {
+			return fmt.Errorf("database is not active")
+		}
+		if dbInst.ProjectID != nil {
+			return fmt.Errorf("database is already attached to a project")
+		}
+
+		// Lock project row and recheck no DB already attached
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(project, project.ID).Error; err != nil {
+			return fmt.Errorf("project not found")
+		}
+		var count int64
+		tx.Model(&models.DatabaseInstance{}).Where("project_id = ?", project.ID).Count(&count)
+		if count > 0 {
+			return fmt.Errorf("project already has a database attached")
+		}
+
 		projID := project.ID
 		dbInst.ProjectID = &projID
 		if err := tx.Save(&dbInst).Error; err != nil {
@@ -1188,6 +1246,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 		project.DatabaseName = &dbInst.Name
 		project.DatabasePassword = dbInst.Password
+		project.DatabaseOption = "existing"
 		if err := tx.Save(project).Error; err != nil {
 			return err
 		}
@@ -1197,11 +1256,20 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 	if errTx != nil {
 		h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "failed", errTx.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errTx.Error()})
+		// Return 409 for race-detectable conflicts, 500 for other failures
+		errMsg := errTx.Error()
+		switch errMsg {
+		case "database is already attached to a project", "project already has a database attached", "database is not active":
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": errMsg})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errMsg})
 	}
 
-	// Propagate env updates (after commit)
-	_ = h.secretStoreService.PropagateDatabaseEnv(project)
+	// Propagate env updates (after commit). Report enqueue failure in audit.
+	if err := h.secretStoreService.PropagateDatabaseEnv(project); err != nil {
+		h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "env_sync_pending", "env propagation enqueue failed: "+err.Error())
+		return c.JSON(fiber.Map{"success": true, "message": "Database attached successfully", "env_sync": "pending"})
+	}
 
 	h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "completed", "")
 	return c.JSON(fiber.Map{"success": true, "message": "Database attached successfully"})
@@ -1209,10 +1277,9 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 
 // DetachDatabase detaches a database from its project
 func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1224,9 +1291,9 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
 
-	// Fetch DatabaseInstance and validate ownership
+	// Fetch DatabaseInstance and validate ownership (pre-check for fast 404/403)
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
@@ -1239,7 +1306,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 	projectID := *dbInst.ProjectID
 
-	// Fetch project
+	// Fetch project (pre-check for fast 404/403)
 	var project models.Project
 	if err := h.db.First(&project, projectID).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -1249,8 +1316,21 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own the project associated with this database"})
 	}
 
-	// Start transaction to detach
+	// Locked transaction: re-fetch and recheck to prevent concurrent detach race
 	errTx := h.db.Transaction(func(tx *gorm.DB) error {
+		// Lock database row and recheck it's still attached
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dbInst, dbInst.ID).Error; err != nil {
+			return fmt.Errorf("database not found")
+		}
+		if dbInst.ProjectID == nil {
+			return fmt.Errorf("database is not attached to any project")
+		}
+
+		// Lock project row
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, project.ID).Error; err != nil {
+			return fmt.Errorf("project not found")
+		}
+
 		dbInst.ProjectID = nil
 		if err := tx.Save(&dbInst).Error; err != nil {
 			return err
@@ -1258,6 +1338,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 		project.DatabaseName = nil
 		project.DatabasePassword = ""
+		project.DatabaseOption = "none"
 		if err := tx.Save(&project).Error; err != nil {
 			return err
 		}
@@ -1267,11 +1348,18 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 	if errTx != nil {
 		h.recordAuditLog(c, projectID, "db_detach", "active", "active", "failed", errTx.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errTx.Error()})
+		errMsg := errTx.Error()
+		if errMsg == "database is not attached to any project" {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": errMsg})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errMsg})
 	}
 
 	// Propagate env updates (removes DB_* vars since association is now nil, after commit)
-	_ = h.secretStoreService.PropagateDatabaseEnv(&project)
+	if err := h.secretStoreService.PropagateDatabaseEnv(&project); err != nil {
+		h.recordAuditLog(c, projectID, "db_detach", "active", "active", "env_sync_pending", "env propagation enqueue failed: "+err.Error())
+		return c.JSON(fiber.Map{"success": true, "message": "Database detached successfully", "env_sync": "pending"})
+	}
 
 	h.recordAuditLog(c, projectID, "db_detach", "active", "active", "completed", "")
 	return c.JSON(fiber.Map{"success": true, "message": "Database detached successfully"})
@@ -1279,10 +1367,9 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 
 // ResetDatabaseInstance wipes all data in the database
 func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1296,15 +1383,18 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
 	}
+	if dbInst.Status != models.DBStatusActive {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is not active"})
+	}
 
 	// Connect and reset
-	conn, err := h.databaseService.ConnectToProjectDB(dbInst.Name, dbInst.Password)
+	conn, err := h.databaseService.ConnectToDatabaseInstance(&dbInst)
 	if err != nil {
 		slog.Error("Failed to connect to database for reset", "db", dbInst.Name, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to database"})
@@ -1334,7 +1424,7 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 		_, _ = conn.ExecContext(ctx, fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s;", escapedUsername))
 	} else {
 		// MySQL reset
-		_, err := h.databaseService.ResetProjectDatabase(dbInst.Name, dbInst.Password)
+		_, err := h.databaseService.ResetProjectDatabase(&dbInst)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reset database: " + err.Error()})
 		}
@@ -1346,10 +1436,9 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 
 // ReinstallDatabaseInstance drops and recreates the database schema, rotating credentials
 func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
-	dbIDStr := c.Params("id")
-	dbID, err := strconv.ParseUint(dbIDStr, 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid database ID"})
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
 	}
 
 	uidVal := c.Locals("user_id")
@@ -1363,11 +1452,14 @@ func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
 
 	// Fetch DatabaseInstance and validate ownership
 	var dbInst models.DatabaseInstance
-	if err := h.db.First(&dbInst, uint(dbID)).Error; err != nil {
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 	}
 	if dbInst.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+	if dbInst.Status != models.DBStatusActive {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is not active"})
 	}
 
 	newPassword := utils.GeneratePassword(16)
@@ -1435,5 +1527,230 @@ func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
 		"success":          true,
 		"message":          "Database reinstalled and password rotated successfully",
 		"redeployRequired": redeployRequired,
+	})
+}
+
+// CreateDatabase request body definition
+type CreateDatabaseRequest struct {
+	Engine   string `json:"engine"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// CreateDatabase handles creation of a standalone database instance
+func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
+	var req CreateDatabaseRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Validate engine
+	var err error
+	req.Engine, err = utils.ValidateDatabaseEngine(req.Engine)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Trim space if desired, and reject casing drift explicitly before mutation
+	req.Name = strings.TrimSpace(req.Name)
+	req.Username = strings.TrimSpace(req.Username)
+
+	// Validate name
+	if err := utils.ValidateDatabaseName(req.Name); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate username
+	if err := utils.ValidateDatabaseUsername(req.Username); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate password
+	if err := utils.ValidateDatabasePassword(req.Password); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Check global uniqueness for Database Name and Username across all non-deleted database instances
+	var duplicateCount int64
+	h.db.Model(&models.DatabaseInstance{}).Where("name = ? AND status != ?", req.Name, models.DBStatusDeleted).Count(&duplicateCount)
+	if duplicateCount > 0 {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": fmt.Sprintf("A database with name '%s' already exists in the system", req.Name)})
+	}
+
+	var duplicateUserCount int64
+	h.db.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", req.Username, models.DBStatusDeleted).Count(&duplicateUserCount)
+	if duplicateUserCount > 0 {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": fmt.Sprintf("A database user with username '%s' already exists in the system", req.Username)})
+	}
+
+	// Determine host & port based on engine
+	var host string
+	var port int
+	if req.Engine == "postgresql" {
+		host = infrastructure.PostgreSQLContainerName()
+		port = infrastructure.PostgreSQLPort()
+	} else {
+		host = infrastructure.MySQLContainerName()
+		port = infrastructure.MySQLPort()
+	}
+
+	// Provision database in engine container
+	if req.Engine == "postgresql" {
+		pgService := infrastructure.NewPostgreSQLService()
+		if err := pgService.CreateDatabaseCustom(req.Name, req.Username, req.Password); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision PostgreSQL database: " + err.Error()})
+		}
+	} else {
+		mysqlService := infrastructure.NewMySQLService()
+		if err := mysqlService.CreateDatabaseCustom(req.Name, req.Username, req.Password); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision MySQL database: " + err.Error()})
+		}
+	}
+
+	// Create DatabaseInstance record
+	dbInst := &models.DatabaseInstance{
+		UserID:            userID,
+		Engine:            req.Engine,
+		Name:              req.Name,
+		Username:          req.Username, // Use actual requested username instead of hardcoded req.Name
+		Password:          req.Password,
+		Host:              host,
+		Port:              port,
+		Status:            models.DBStatusActive,
+		StorageAllocation: 1073741824, // 1GB -> TODO to make configurable by plan or user input in future
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+
+	if err := h.db.Create(dbInst).Error; err != nil {
+		// Compensating cleanup on DB insert failure to prevent orphan physical DBs
+		slog.Error("Failed to save database instance record. Initiating compensating cleanup.", "error", err.Error())
+		if req.Engine == "postgresql" {
+			pgService := infrastructure.NewPostgreSQLService()
+			_ = pgService.DropDatabaseCustom(req.Name, req.Username)
+		} else {
+			mysqlService := infrastructure.NewMySQLService()
+			_ = mysqlService.DropDatabaseCustom(req.Name, req.Username)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save database record: " + err.Error()})
+	}
+
+	h.recordAuditLog(c, 0, "db_create", "", "active", "completed", "")
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"success":  true,
+		"database": dbInst,
+	})
+}
+
+// DeleteDatabase handles deletion of a database instance (only if unattached)
+func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
+	dbUID := c.Params("uid")
+	if dbUID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Database UID is required"})
+	}
+
+	uidVal := c.Locals("user_id")
+	if uidVal == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	userID, ok := uidVal.(uint)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	// Fetch DatabaseInstance and validate ownership
+	var dbInst models.DatabaseInstance
+	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+	if dbInst.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
+	}
+	if dbInst.Status == models.DBStatusDeleted {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	}
+
+	// Verify database is not attached (ProjectID must be nil)
+	if dbInst.ProjectID != nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is currently attached to a project. Detach it first."})
+	}
+
+	// Drop schema & user in engine container
+	if dbInst.Engine == "postgresql" {
+		pgService := infrastructure.NewPostgreSQLService()
+		if err := pgService.DropDatabaseCustom(dbInst.Name, dbInst.Username); err != nil {
+			slog.Error("Failed to drop PostgreSQL database", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop physical PostgreSQL database: " + err.Error()})
+		}
+	} else {
+		mysqlService := infrastructure.NewMySQLService()
+		if err := mysqlService.DropDatabaseCustom(dbInst.Name, dbInst.Username); err != nil {
+			slog.Error("Failed to drop MySQL database", "db", dbInst.Name, "error", err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop physical MySQL database: " + err.Error()})
+		}
+	}
+
+	// Delete related backups (file + record)
+	var backups []models.DatabaseBackup
+	if err := h.db.Where("database_instance_id = ?", dbInst.ID).Find(&backups).Error; err == nil {
+		for _, backup := range backups {
+			// Delete backup files safely using validated paths and existing storage conventions
+			if backup.Path != "" {
+				// Prevent path traversal
+				cleanedPath := filepath.Clean(backup.Path)
+				// Resolve absolute path to check containment
+				absPath, err := filepath.Abs(cleanedPath)
+				if err != nil {
+					slog.Error("Failed to resolve absolute path of backup file", "path", backup.Path, "error", err.Error())
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve backup file path: " + err.Error()})
+				}
+
+				absDataPath, err := filepath.Abs(h.cfg.DataPath)
+				if err != nil {
+					slog.Error("Failed to resolve absolute data path", "error", err.Error())
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve storage data path: " + err.Error()})
+				}
+
+				// The backup file must reside inside h.cfg.DataPath to prevent arbitrary file deletion (such as /etc or root dirs)
+				rel, err := filepath.Rel(absDataPath, absPath)
+				if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+					if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+						slog.Error("Failed to delete physical database backup file", "path", absPath, "error", err.Error())
+						return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete backup file: " + err.Error()})
+					}
+				} else {
+					slog.Error("Backup file path is outside the allowed storage directory", "path", absPath, "allowed", absDataPath)
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Security violation: Backup path is outside the allowed storage directory"})
+				}
+			}
+			if err := h.db.Delete(&backup).Error; err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete backup record: " + err.Error()})
+			}
+		}
+	}
+
+	// Soft delete the DatabaseInstance record: Set status = "deleted"
+	dbInst.Status = models.DBStatusDeleted
+	dbInst.ProjectID = nil // explicitly clear just in case
+	if err := h.db.Save(&dbInst).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database status: " + err.Error()})
+	}
+
+	h.recordAuditLog(c, 0, "db_delete", "active", "deleted", "completed", "")
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Database deleted successfully",
 	})
 }

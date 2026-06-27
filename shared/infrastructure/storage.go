@@ -29,6 +29,29 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	if err := os.MkdirAll(path, 0777); err != nil {
 		slog.Error("Failed to create storage path", "subdomain", project.Subdomain, "path", path, "error", err)
 	}
+
+	if project.DatabaseOption == "sqlite" {
+		sqlitePath := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "sqlite")
+		if err := os.MkdirAll(sqlitePath, 0775); err != nil {
+			slog.Error("Failed to create sqlite path", "subdomain", project.Subdomain, "path", sqlitePath, "error", err)
+		}
+
+		// Ensure the SQLite database file exists on host so Docker bind-mounts it as a file,
+		// not a directory. This prevents the mount from hiding Laravel's database/migrations and database/seeders.
+		sqliteFile := filepath.Join(sqlitePath, "database.sqlite")
+		f, err := os.OpenFile(sqliteFile, os.O_CREATE|os.O_RDWR, 0664)
+		if err != nil {
+			slog.Error("Failed to ensure sqlite file on host", "subdomain", project.Subdomain, "path", sqliteFile, "error", err)
+		} else {
+			f.Close()
+			if err := os.Chmod(sqliteFile, 0664); err != nil {
+				slog.Error("Failed to chmod sqlite file", "subdomain", project.Subdomain, "path", sqliteFile, "error", err)
+			}
+		}
+		if err := os.Chmod(sqlitePath, 0775); err != nil {
+			slog.Error("Failed to chmod sqlite dir", "subdomain", project.Subdomain, "path", sqlitePath, "error", err)
+		}
+	}
 	// Logic: Sync new files from Git Source to Persistent Storage
 	// We use 'cp -an' to copy non-existing files and preserve attributes
 	projectSourceStorage := filepath.Join(s.cfg.ProjectsPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "app")
@@ -52,6 +75,13 @@ func (s *StorageService) EnsurePersistentPath(project *models.Project) string {
 	fullUserPath := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID))
 	if err := s.ChmodRecursive(fullUserPath, 0777); err != nil {
 		slog.Error("Failed to apply storage permissions", "userId", project.UserID, "path", fullUserPath, "error", err)
+	}
+
+	// Re-apply stricter sqlite file permissions after the blanket recursive chmod.
+	// The sqlite file should be 0664 (not world-executable) for security.
+	if project.DatabaseOption == "sqlite" {
+		sqliteFile := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "sqlite", "database.sqlite")
+		_ = os.Chmod(sqliteFile, 0664)
 	}
 
 	return path
@@ -86,6 +116,36 @@ func (s *StorageService) ChmodRecursive(path string, mode os.FileMode) error {
 func (s *StorageService) GetPersistentHostPath(project *models.Project) string {
 	s.EnsurePersistentPath(project)
 	return filepath.Join(s.cfg.HostDataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage")
+}
+
+// PrepareSQLiteHostFile ensures the host sqlite directory and database file exist before Docker
+// bind-mount. Unlike EnsurePersistentPath which logs-and-continues, this returns an error so
+// callers can fail-fast and rollback the deployment instead of starting a broken container.
+func (s *StorageService) PrepareSQLiteHostFile(project *models.Project) error {
+	if project.DatabaseOption != "sqlite" {
+		return nil
+	}
+
+	sqliteDir := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain, "storage", "sqlite")
+	if err := os.MkdirAll(sqliteDir, 0775); err != nil {
+		return fmt.Errorf("failed to create sqlite storage directory: %w", err)
+	}
+	if err := os.Chmod(sqliteDir, 0775); err != nil {
+		return fmt.Errorf("failed to chmod sqlite storage directory: %w", err)
+	}
+
+	sqliteFile := filepath.Join(sqliteDir, "database.sqlite")
+	f, err := os.OpenFile(sqliteFile, os.O_CREATE|os.O_RDWR, 0664)
+	if err != nil {
+		return fmt.Errorf("failed to create sqlite database file: %w", err)
+	}
+	f.Close()
+
+	if err := os.Chmod(sqliteFile, 0664); err != nil {
+		return fmt.Errorf("failed to chmod sqlite database file: %w", err)
+	}
+
+	return nil
 }
 
 // GetProjectsHostPath returns the project path as seen by the Host OS

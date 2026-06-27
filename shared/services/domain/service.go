@@ -216,6 +216,20 @@ func (s *DomainService) TransitionState(domain *models.CustomDomain, nextState m
 	// Update dynamic Traefik routing configuration to reflect the state change
 	if project, err := s.projectRepo.GetByID(domain.ProjectID); err == nil {
 		_ = traefik.WriteProjectDynamicFile(s.cfg, project, project.CustomDomains)
+		if nextState == models.DomainStatusActive {
+			slog.Info("Custom domain transitioned to active, setting pending env refresh marker", "domain", domain.Domain, "projectId", project.ID)
+			_ = s.redisService.SetPendingEnvRefresh(project.ID)
+
+			slog.Info("Enqueuing env update to refresh APP_URL", "domain", domain.Domain, "projectId", project.ID)
+			jobID, errQueue := s.redisService.EnqueueEnvUpdateIfQuiet(project.ID, project.UserID)
+			if errQueue != nil {
+				slog.Error("Failed to enqueue env update deployment job on domain activation", "projectId", project.ID, "error", errQueue)
+			} else if jobID != "" {
+				// Successfully enqueued immediately because project was quiet.
+				// This job will compile the latest env, so we can clear the pending marker now.
+				_, _ = s.redisService.ClearPendingEnvRefresh(project.ID)
+			}
+		}
 	}
 	return nil
 }

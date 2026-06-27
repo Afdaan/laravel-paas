@@ -47,6 +47,8 @@ init_vars() {
     HTTPS_PORT=${HTTPS_PORT:-443}
     APP_MODE=${APP_MODE:-"docker"}
     HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
+    MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
+    POSTGRES_CONTAINER_NAME=${POSTGRES_CONTAINER_NAME:-"paas-user-postgres"}
 
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
@@ -150,14 +152,14 @@ deploy_with_anti_downtime() {
 
 # 2. Individual Service Start/Stop Controllers
 start_mysql() {
-    echo -e "${YELLOW}Starting MariaDB (paas-mysql)...${NC}"
+    echo -e "${YELLOW}Starting MariaDB ($MYSQL_CONTAINER_NAME)...${NC}"
     prepare_env
-    docker rm -f paas-mysql 2>/dev/null || true
+    docker rm -f "$MYSQL_CONTAINER_NAME" 2>/dev/null || true
     if [ "$(stat -c '%u' "$DB_DATA_DIR")" != "999" ]; then
         sudo chown -R 999:999 "$DB_DATA_DIR"
     fi
     docker run -d \
-        --name paas-mysql \
+        --name "$MYSQL_CONTAINER_NAME" \
         --network paas-network \
         --restart unless-stopped \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
@@ -169,9 +171,9 @@ start_mysql() {
 }
 
 stop_mysql() {
-    echo -e "${YELLOW}Stopping MariaDB (paas-mysql)...${NC}"
-    docker stop paas-mysql 2>/dev/null || true
-    docker rm paas-mysql 2>/dev/null || true
+    echo -e "${YELLOW}Stopping MariaDB ($MYSQL_CONTAINER_NAME)...${NC}"
+    docker stop "$MYSQL_CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$MYSQL_CONTAINER_NAME" 2>/dev/null || true
 }
 
 start_postgres() {
@@ -196,11 +198,11 @@ stop_postgres() {
 }
 
 start_user_postgres() {
-    echo -e "${YELLOW}Starting User PostgreSQL (paas-user-postgres)...${NC}"
+    echo -e "${YELLOW}Starting User PostgreSQL ($POSTGRES_CONTAINER_NAME)...${NC}"
     prepare_env
-    docker rm -f paas-user-postgres 2>/dev/null || true
+    docker rm -f "$POSTGRES_CONTAINER_NAME" 2>/dev/null || true
     docker run -d \
-        --name paas-user-postgres \
+        --name "$POSTGRES_CONTAINER_NAME" \
         --network paas-network \
         --restart unless-stopped \
         -e POSTGRES_USER="postgres" \
@@ -212,9 +214,9 @@ start_user_postgres() {
 }
 
 stop_user_postgres() {
-    echo -e "${YELLOW}Stopping User PostgreSQL (paas-user-postgres)...${NC}"
-    docker stop paas-user-postgres 2>/dev/null || true
-    docker rm paas-user-postgres 2>/dev/null || true
+    echo -e "${YELLOW}Stopping User PostgreSQL ($POSTGRES_CONTAINER_NAME)...${NC}"
+    docker stop "$POSTGRES_CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$POSTGRES_CONTAINER_NAME" 2>/dev/null || true
 }
 
 start_redis() {
@@ -304,7 +306,7 @@ start_backend() {
         -e PG_USER="$PG_USER" \
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
-        -e MYSQL_HOST=paas-mysql \
+        -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e MYSQL_USER="$MYSQL_USER" \
         -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
@@ -320,7 +322,7 @@ start_backend() {
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
-        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
@@ -381,9 +383,10 @@ start_worker() {
         -e CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS="${CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS:-false}" \
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
+        -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
-        -e USER_PG_HOST="${USER_PG_HOST:-paas-user-postgres}" \
+        -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
@@ -453,7 +456,7 @@ show_status() {
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
-    local services=("paas-mysql" "paas-postgres" "paas-user-postgres" "paas-redis" "paas-traefik" "paas-backend" "paas-worker-manager" "paas-frontend")
+    local services=("$MYSQL_CONTAINER_NAME" "paas-postgres" "$POSTGRES_CONTAINER_NAME" "paas-redis" "paas-traefik" "paas-backend" "paas-worker-manager" "paas-frontend")
     for s in "${services[@]}"; do
         local status="not_created"
         local ip="-"
@@ -518,9 +521,9 @@ restart_service() {
 service_menu() {
     while true; do
         echo -e "\n${YELLOW}=== Manage Individual Service ===${NC}"
-        echo "1) MySQL (paas-mysql)"
+        echo "1) MySQL ($MYSQL_CONTAINER_NAME)"
         echo "2) PostgreSQL (paas-postgres)"
-        echo "3) User PostgreSQL (paas-user-postgres)"
+        echo "3) User PostgreSQL ($POSTGRES_CONTAINER_NAME)"
         echo "4) Redis (paas-redis)"
         echo "5) Traefik (paas-traefik)"
         echo "6) Backend (paas-backend)"
@@ -614,12 +617,12 @@ case "$1" in
         ;;
     --clean)
         echo "[CLEAN] Removing platform containers..."
-        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis paas-mysql paas-postgres paas-user-postgres 2>/dev/null || true
+        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis "$MYSQL_CONTAINER_NAME" paas-postgres "$POSTGRES_CONTAINER_NAME" 2>/dev/null || true
         echo "[SUCCESS] Containers removed"
         ;;
     --purge)
         echo "[PURGE] Removing platform containers and volumes..."
-        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis paas-mysql paas-postgres paas-user-postgres 2>/dev/null || true
+        docker rm -f paas-frontend paas-backend paas-worker-manager paas-traefik paas-redis "$MYSQL_CONTAINER_NAME" paas-postgres "$POSTGRES_CONTAINER_NAME" 2>/dev/null || true
         docker volume rm paas-redis-data paas-letsencrypt 2>/dev/null || true
         echo "[SUCCESS] Containers removed; Redis and TLS volumes purged (MySQL & PG data preserved)"
         ;;

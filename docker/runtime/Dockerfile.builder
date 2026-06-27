@@ -42,11 +42,13 @@ RUN apk add --no-cache \
     oniguruma-dev \
     icu-dev \
     libxml2-dev \
+    imagemagick \
     imagemagick-dev \
     libmemcached-dev \
+    openldap-dev \
     gmp-dev \
     postgresql-dev \
-    openldap-dev
+    sqlite-dev
 
 ENV TZ=Asia/Jakarta
 RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > /etc/timezone
@@ -61,6 +63,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         pdo \
         pdo_mysql \
         pdo_pgsql \
+        pdo_sqlite \
         mbstring \
         exif \
         pcntl \
@@ -73,7 +76,8 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         ldap \
         xml \
         fileinfo \
-    && printf "\n" | pecl install redis imagick \
+    && printf "\n" | pecl install redis \
+    && printf "\n" | pecl install imagick \
     && docker-php-ext-enable redis imagick \
     && docker-php-source delete \
     && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \

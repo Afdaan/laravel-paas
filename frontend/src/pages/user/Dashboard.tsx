@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { projectsAPI } from '../../services/api'
 import useAuthStore from '../../stores/authStore'
@@ -6,11 +6,9 @@ import useTranslation from '../../lib/useTranslation'
 import { toast } from 'sonner'
 import {
   Rocket,
-  Activity,
   CheckCircle2,
   Package,
   ExternalLink,
-  ArrowRight,
   Plus,
   Clock,
   AlertCircle,
@@ -94,8 +92,26 @@ function UserDashboard() {
   const runningProjects = projects.filter(p => p.status === 'running').length
   const totalProjects = projects?.length || 0
 
+  // Time-of-day greeting keyed off the browser's local clock (getHours is local time)
+  const firstName = user?.name?.split(' ')[0] || t('common.user')
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours()
+    const key = hour < 12 ? 'dashboard.goodMorning' : hour < 18 ? 'dashboard.goodAfternoon' : 'dashboard.goodEvening'
+    return t(key, { name: firstName })
+  }, [t, firstName])
+
+  // Top framework breakdown for the stat strip — gives the row real signal instead of two bare counts
+  const frameworkBreakdown = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const p of projects) {
+      const fw = p.framework || t('common.general')
+      counts.set(fw, (counts.get(fw) || 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+  }, [projects, t])
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b">
         <div>
@@ -103,44 +119,57 @@ function UserDashboard() {
             {t('dashboard.welcome')}, {user?.name}
           </h1>
           <p className="text-muted-foreground">
-            {t('dashboard.welcomeUser', { name: user?.name?.split(' ')[0] || t('common.user') })}. {t('dashboard.projectStats', { count: runningProjects })}.
+            {greeting}. {t('dashboard.projectStats', { count: runningProjects })}.
           </p>
         </div>
-        <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }))}>
-          <Plus className="w-4 h-4 mr-2" />
-          {t('common.newProject')}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link to="/feedback" className={cn(buttonVariants({ variant: "ghost" }), "gap-2 text-muted-foreground hover:text-foreground")}>
+            <Zap className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('dashboard.needHelp')}</span>
+          </Link>
+          <Link to="/projects/new" className={cn(buttonVariants({ variant: "default" }))}>
+            <Plus className="w-4 h-4 mr-2" />
+            {t('common.newProject')}
+          </Link>
+        </div>
       </div>
 
-      {/* Core Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard
-          label={t('dashboard.totalProjects')}
-          value={totalProjects}
-          icon={Package}
-        />
-        <StatCard
-          label={t('dashboard.runningProjects')}
-          value={runningProjects}
-          icon={Activity}
-          suffix={`/ ${totalProjects}`}
-        />
-        <Card className="bg-primary/5 hover:bg-primary/10 transition-colors border-primary/20 group relative overflow-hidden">
-          <CardContent className="p-6 flex flex-col justify-between h-full relative z-10">
-            <div>
-              <Zap className="w-8 h-8 text-primary mb-4" />
-              <h3 className="text-lg font-bold tracking-tight mb-1">{t('dashboard.needHelp')}</h3>
-              <p className="text-muted-foreground text-sm">{t('dashboard.getSupport')}</p>
-            </div>
-            <Link to="/feedback" className="flex items-center gap-2 text-foreground font-semibold text-sm hover:text-primary transition-colors mt-6 group-hover:gap-3">
-              {t('dashboard.supportTicket')} <ArrowRight className="w-4 h-4" />
-            </Link>
-          </CardContent>
-          <div className="absolute right-0 bottom-0 pointer-events-none opacity-10 transform translate-x-1/4 translate-y-1/4 transition-transform group-hover:scale-110">
-            <Zap className="w-48 h-48" />
+      {/* Compact Stat Strip */}
+      <Card className="bg-card/50 border-border/50">
+        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <Package className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-lg font-bold tracking-tight tabular-nums">{totalProjects}</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('dashboard.totalProjects')}</span>
           </div>
-        </Card>
-      </div>
+
+          <div className="h-5 w-px bg-border/60" />
+
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2 shrink-0">
+              {runningProjects > 0 && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60" />}
+              <span className={cn("relative inline-flex rounded-full h-2 w-2", runningProjects > 0 ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+            </span>
+            <span className="text-lg font-bold tracking-tight tabular-nums">{runningProjects}<span className="text-sm text-muted-foreground font-semibold">/{totalProjects}</span></span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('dashboard.runningProjects')}</span>
+          </div>
+
+          {frameworkBreakdown.length > 0 && (
+            <>
+              <div className="hidden sm:block h-5 w-px bg-border/60" />
+              <div className="hidden sm:flex items-center gap-x-5 gap-y-2 flex-wrap">
+                {frameworkBreakdown.map(([fw, count]) => (
+                  <span key={fw} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <FrameworkIcon framework={fw} variant="plain" className="w-3.5 h-3.5 shrink-0" />
+                    <span className="font-mono">{fw}</span>
+                    <span className="font-bold text-foreground/80 tabular-nums">{count}</span>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Activity Table */}
       <Card>
@@ -249,27 +278,6 @@ function UserDashboard() {
         )}
       </Card>
     </div>
-  )
-}
-
-function StatCard({ label, value, icon: Icon, suffix }: { label: string, value: number, icon: React.ElementType, suffix?: string }) {
-  return (
-    <Card className="hover:border-primary/30 transition-colors group">
-      <CardContent className="p-6">
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-1 mt-1">{label}</p>
-            <div className="flex items-baseline gap-2">
-              <h3 className="text-4xl font-bold tracking-tight">{value}</h3>
-              {suffix && <span className="text-xl text-muted-foreground font-semibold">{suffix}</span>}
-            </div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-muted border flex items-center justify-center group-hover:scale-110 transition-transform text-muted-foreground">
-            <Icon className="w-6 h-6" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }
 

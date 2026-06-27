@@ -219,10 +219,12 @@ func Setup(
 	// -----------------------------
 	databases := protected.Group("/databases")
 	databases.Get("/", databaseHandler.ListUserDatabases)
-	databases.Post("/:id/attach", databaseHandler.AttachDatabase)
-	databases.Post("/:id/detach", databaseHandler.DetachDatabase)
-	databases.Post("/:id/reset", databaseHandler.ResetDatabaseInstance)
-	databases.Post("/:id/reinstall", databaseHandler.ReinstallDatabaseInstance)
+	databases.Post("/", databaseHandler.CreateDatabase)
+	databases.Delete("/:uid", databaseHandler.DeleteDatabase)
+	databases.Post("/:uid/attach", databaseHandler.AttachDatabase)
+	databases.Post("/:uid/detach", databaseHandler.DetachDatabase)
+	databases.Post("/:uid/reset", databaseHandler.ResetDatabaseInstance)
+	databases.Post("/:uid/reinstall", databaseHandler.ReinstallDatabaseInstance)
 
 	// -----------------------------
 	// Project Routes (Users)
