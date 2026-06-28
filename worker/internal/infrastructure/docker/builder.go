@@ -716,20 +716,15 @@ func (s *DockerService) detectGithubPackageScopes(buildPath string, envVars map[
 		return splitNpmScopes(configuredScopes)
 	}
 
-	packageFiles := []string{"package-lock.json", "package.json"}
-	scopePattern := regexp.MustCompile(`@([A-Za-z0-9][A-Za-z0-9._-]*)/`)
 	scopes := make(map[string]struct{})
-	for _, file := range packageFiles {
-		data, err := os.ReadFile(filepath.Join(buildPath, file))
-		if err != nil {
-			continue
+	for _, pkg := range detectGithubPackagesFromLockfile(filepath.Join(buildPath, "package-lock.json")) {
+		if scope := npmScope(pkg); scope != "" {
+			scopes[scope] = struct{}{}
 		}
-		content := string(data)
-		if file == "package-lock.json" && !strings.Contains(content, "npm.pkg.github.com") {
-			continue
-		}
-		for _, match := range scopePattern.FindAllStringSubmatch(content, -1) {
-			scopes[match[1]] = struct{}{}
+	}
+	if len(scopes) == 0 {
+		for _, scope := range detectScopedPackagesFromPackageJSON(filepath.Join(buildPath, "package.json")) {
+			scopes[scope] = struct{}{}
 		}
 	}
 
@@ -738,6 +733,62 @@ func (s *DockerService) detectGithubPackageScopes(buildPath string, envVars map[
 		result = append(result, scope)
 	}
 	return result
+}
+
+func detectGithubPackagesFromLockfile(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "npm.pkg.github.com") {
+		return nil
+	}
+
+	type lockPackage struct {
+		Resolved string `json:"resolved"`
+	}
+	type lockfile struct {
+		Packages     map[string]lockPackage `json:"packages"`
+		Dependencies map[string]lockPackage `json:"dependencies"`
+	}
+	var lock lockfile
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return nil
+	}
+
+	packages := make([]string, 0)
+	for path, pkg := range lock.Packages {
+		if strings.Contains(pkg.Resolved, "npm.pkg.github.com") {
+			packages = append(packages, strings.TrimPrefix(path, "node_modules/"))
+		}
+	}
+	for name, pkg := range lock.Dependencies {
+		if strings.Contains(pkg.Resolved, "npm.pkg.github.com") {
+			packages = append(packages, name)
+		}
+	}
+	return packages
+}
+
+func detectScopedPackagesFromPackageJSON(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	scopePattern := regexp.MustCompile(`"(@[A-Za-z0-9][A-Za-z0-9._-]*/[^"/]+)"\s*:`)
+	packages := make([]string, 0)
+	for _, match := range scopePattern.FindAllStringSubmatch(string(data), -1) {
+		packages = append(packages, match[1])
+	}
+	return packages
+}
+
+func npmScope(packageName string) string {
+	if !strings.HasPrefix(packageName, "@") {
+		return ""
+	}
+	parts := strings.SplitN(strings.TrimPrefix(packageName, "@"), "/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[0]
 }
 
 func splitNpmScopes(value string) []string {

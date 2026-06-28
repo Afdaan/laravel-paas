@@ -91,6 +91,10 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 // sanitizeBuildError strips internal build system noise from stderr output
 // and returns only the lines that are actionable by the end user using regex error classifiers.
 func sanitizeBuildError(stderr string) string {
+	if msg := utils.NpmRegistryAuthErrorMessage(stderr); msg != "" {
+		return msg
+	}
+
 	lines := strings.Split(stderr, "\n")
 
 	// Define actionable error patterns
@@ -100,6 +104,7 @@ func sanitizeBuildError(stderr string) string {
 		regexp.MustCompile(`(?i)Failed\s*to\s*compile`),
 		regexp.MustCompile(`(?i)Your\s*requirements\s*could\s*not\s*be\s*resolved`),
 		regexp.MustCompile(`(?i)npm\s+ERR!`),
+		regexp.MustCompile(`(?i)npm\s+error`),
 		regexp.MustCompile(`(?i)yarn\s+error`),
 		regexp.MustCompile(`(?i)command\s+failed\s+with\s+exit\s+code`),
 		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
