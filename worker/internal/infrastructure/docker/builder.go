@@ -678,16 +678,80 @@ func (s *DockerService) prepareNpmAuthConfig(buildPath string, project *models.P
 	}
 
 	npmrcPath := filepath.Join(buildPath, ".npmrc")
-	if _, err := os.Stat(npmrcPath); err == nil {
-		return "", nil, nil
+	var previousContent []byte
+	var previousMode os.FileMode = 0644
+	if stat, err := os.Stat(npmrcPath); err == nil {
+		previousMode = stat.Mode().Perm()
+		previousContent, err = os.ReadFile(npmrcPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed read existing npm config: %w", err)
+		}
 	}
 
-	content := fmt.Sprintf("@salesflows:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\nalways-auth=true\n", envVars["NODE_AUTH_TOKEN"])
+	npmrcLines := []string{strings.TrimSpace(string(previousContent))}
+	for _, scope := range s.detectGithubPackageScopes(buildPath, envVars) {
+		npmrcLines = append(npmrcLines, fmt.Sprintf("@%s:registry=https://npm.pkg.github.com", scope))
+	}
+	npmrcLines = append(npmrcLines,
+		fmt.Sprintf("//npm.pkg.github.com/:_authToken=%s", envVars["NODE_AUTH_TOKEN"]),
+		"always-auth=true",
+	)
+	content := strings.TrimSpace(strings.Join(npmrcLines, "\n")) + "\n"
 	if err := os.WriteFile(npmrcPath, []byte(content), 0600); err != nil {
 		return "", nil, fmt.Errorf("failed create npm auth config: %w", err)
 	}
 
-	return npmrcPath, func() { _ = os.Remove(npmrcPath) }, nil
+	return npmrcPath, func() {
+		if previousContent != nil {
+			_ = os.WriteFile(npmrcPath, previousContent, previousMode)
+			return
+		}
+		_ = os.Remove(npmrcPath)
+	}, nil
+}
+
+func (s *DockerService) detectGithubPackageScopes(buildPath string, envVars map[string]string) []string {
+	configuredScopes := strings.TrimSpace(envVars["NPM_GITHUB_SCOPES"])
+	if configuredScopes != "" {
+		return splitNpmScopes(configuredScopes)
+	}
+
+	packageFiles := []string{"package-lock.json", "package.json"}
+	scopePattern := regexp.MustCompile(`@([A-Za-z0-9][A-Za-z0-9._-]*)/`)
+	scopes := make(map[string]struct{})
+	for _, file := range packageFiles {
+		data, err := os.ReadFile(filepath.Join(buildPath, file))
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		if file == "package-lock.json" && !strings.Contains(content, "npm.pkg.github.com") {
+			continue
+		}
+		for _, match := range scopePattern.FindAllStringSubmatch(content, -1) {
+			scopes[match[1]] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(scopes))
+	for scope := range scopes {
+		result = append(result, scope)
+	}
+	return result
+}
+
+func splitNpmScopes(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	})
+	scopes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		scope := strings.TrimPrefix(strings.TrimSpace(part), "@")
+		if scope != "" {
+			scopes = append(scopes, scope)
+		}
+	}
+	return scopes
 }
 
 // injectDefaultRailpackConfig writes an optimized railpack.json for the project.
