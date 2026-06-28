@@ -23,6 +23,7 @@ COPY package*.json pnpm-lock.yaml* yarn.lock* bun.lock* ./
 
 # Auto-detect package manager and install JS dependencies with caching and performance flags
 RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=secret,id=npmrc,target=/root/.npmrc \
     --mount=type=cache,target=/root/.local/share/pnpm/store \
     --mount=type=cache,target=/root/.cache/yarn \
     --mount=type=cache,target=/root/.bun/install/cache \

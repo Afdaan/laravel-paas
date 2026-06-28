@@ -299,6 +299,12 @@ stdout_logfile_backups=5
 		}
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("BUILD_COMMAND=%s", cmdStr))
 	}
+	if npmrcPath, cleanup, err := s.prepareNpmAuthConfig(buildPath, project); err != nil {
+		return err
+	} else if npmrcPath != "" {
+		defer cleanup()
+		buildArgs = append(buildArgs, "--secret", fmt.Sprintf("id=npmrc,src=%s", npmrcPath))
+	}
 	if project.NodeVersion != "" {
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("NODE_VERSION=%s", project.NodeVersion))
 	}
@@ -506,7 +512,10 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 					portRegex := regexp.MustCompile(`(?i)(?:\bport\b|PORT\s*=\s*|\b-p\b)\s*=?\s*(\d+)`)
 					if matches := portRegex.FindStringSubmatch(startScript); len(matches) > 1 {
 						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 && pVal <= 65535 {
-							if project.Port == nil { project.Port = &pVal; slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal) }
+							if project.Port == nil {
+								project.Port = &pVal
+								slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal)
+							}
 
 						}
 					}
@@ -614,6 +623,11 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 		_ = os.Remove(filepath.Join(buildPath, "Caddyfile"))
 	}()
+	if _, cleanup, err := s.prepareNpmAuthConfig(buildPath, project); err != nil {
+		return err
+	} else if cleanup != nil {
+		defer cleanup()
+	}
 
 	// Inject optimized railpack.json configuration using resolved commands and stack type
 	s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"], stack, project, staticDir, noCache)
@@ -654,6 +668,26 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	return nil
+}
+
+func (s *DockerService) prepareNpmAuthConfig(buildPath string, project *models.Project) (string, func(), error) {
+	projectEnvPath := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env")
+	envVars, err := s.ParseProjectEnv(projectEnvPath)
+	if err != nil || envVars["NODE_AUTH_TOKEN"] == "" {
+		return "", nil, nil
+	}
+
+	npmrcPath := filepath.Join(buildPath, ".npmrc")
+	if _, err := os.Stat(npmrcPath); err == nil {
+		return "", nil, nil
+	}
+
+	content := fmt.Sprintf("@salesflows:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\nalways-auth=true\n", envVars["NODE_AUTH_TOKEN"])
+	if err := os.WriteFile(npmrcPath, []byte(content), 0600); err != nil {
+		return "", nil, fmt.Errorf("failed create npm auth config: %w", err)
+	}
+
+	return npmrcPath, func() { _ = os.Remove(npmrcPath) }, nil
 }
 
 // injectDefaultRailpackConfig writes an optimized railpack.json for the project.
