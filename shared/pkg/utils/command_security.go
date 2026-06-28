@@ -64,25 +64,132 @@ var commandRegistry = map[string]frameworkCommands{
 	},
 	"Node.js": {
 		Allowed: map[string]bool{
-			"install": true,
-			"build":   true,
-			"start":   true,
-			"test":    true,
+			"npm":  true,
+			"npx":  true,
+			"pnpm": true,
+			"yarn": true,
+			"bun":  true,
+			"node": true,
 		},
 		BlockedPatterns: []string{
 			"rm -rf",
 			"npm publish",
+			"pnpm publish",
 			"yarn publish",
+			"bun publish",
+		},
+	},
+	"Go": {
+		Allowed: map[string]bool{
+			"go":   true,
+			"make": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"go install",
+		},
+	},
+	"Python": {
+		Allowed: map[string]bool{
+			"python":   true,
+			"python3":  true,
+			"pip":      true,
+			"pip3":     true,
+			"poetry":   true,
+			"flask":    true,
+			"django":   true,
+			"manage":   true,
+			"celery":   true,
+			"gunicorn": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"pip install",
+		},
+	},
+	"Ruby": {
+		Allowed: map[string]bool{
+			"ruby":    true,
+			"rails":   true,
+			"rake":    true,
+			"bundle":  true,
+			"bundler": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"gem push",
+		},
+	},
+	"Rust": {
+		Allowed: map[string]bool{
+			"cargo": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"cargo publish",
+		},
+	},
+	"Java": {
+		Allowed: map[string]bool{
+			"java":      true,
+			"mvn":       true,
+			"gradle":    true,
+			"./gradlew": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"mvn deploy",
+			"gradle publish",
+		},
+	},
+	"PHP": {
+		Allowed: map[string]bool{
+			"php":      true,
+			"composer": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"composer global",
+		},
+	},
+	"Static": {
+		Allowed: map[string]bool{
+			"npm":  true,
+			"npx":  true,
+			"pnpm": true,
+			"yarn": true,
+			"bun":  true,
+			"node": true,
+		},
+		BlockedPatterns: []string{
+			"rm -rf",
+			"npm publish",
 		},
 	},
 }
 
+var javascriptFrameworks = map[string]string{
+	"Next.js":    "Node.js",
+	"Nuxt.js":    "Node.js",
+	"Vite":       "Node.js",
+	"React":      "Node.js",
+	"Vue":        "Node.js",
+	"Svelte":     "Node.js",
+	"Angular":    "Node.js",
+	"TypeScript": "Node.js",
+	"Golang":     "Go",
+}
+
 // ValidateCommand checks if a command is allowed for a given framework
 func ValidateCommand(framework string, command string) error {
+	if normalized, ok := javascriptFrameworks[framework]; ok {
+		framework = normalized
+	}
+
 	rules, exists := commandRegistry[framework]
 	if !exists {
-		// Default behavior for unknown frameworks: reject all for safety
-		return fmt.Errorf("security rules not defined for framework: %s", framework)
+		framework = "Node.js"
+		rules = commandRegistry[framework]
 	}
 
 	// Normalize command: trim whitespace and get the base command (first word)
@@ -98,8 +205,8 @@ func ValidateCommand(framework string, command string) error {
 
 	// 1. Check against blocked patterns (Prefix match)
 	for _, pattern := range rules.BlockedPatterns {
-		if baseCommand == pattern || strings.HasPrefix(baseCommand, pattern) {
-			return fmt.Errorf("command '%s' is restricted for security reasons", baseCommand)
+		if trimmed == pattern || strings.HasPrefix(trimmed, pattern+" ") || strings.Contains(trimmed, "&& "+pattern) || strings.Contains(trimmed, "; "+pattern) {
+			return fmt.Errorf("command '%s' is restricted for security reasons", pattern)
 		}
 	}
 

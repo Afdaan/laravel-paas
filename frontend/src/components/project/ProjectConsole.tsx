@@ -18,6 +18,7 @@ interface ProjectConsoleProps {
 
 export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
   const { t } = useTranslation()
+  const isLaravelProject = project.framework === 'Laravel'
   const [consoleCommand, setConsoleCommand] = useState('')
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
@@ -67,9 +68,9 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     })
   }
 
-  const executeArtisan = async (cmd: string) => {
+  const executeConsoleCommand = async (cmd: string) => {
     setIsExecuting(true)
-    setConsoleOutput(prev => prev + `\n$ php artisan ${cmd}\n`)
+    setConsoleOutput(prev => prev + `\n$ ${isLaravelProject ? `php artisan ${cmd}` : cmd}\n`)
 
     try {
       const response = await projectsAPI.runArtisan(uid, cmd)
@@ -89,7 +90,7 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     if (!uid || !consoleCommand.trim()) return
 
     const cmd = consoleCommand.trim()
-    const isDestructive = cmd === 'migrate:fresh' || cmd.startsWith('migrate:fresh ')
+    const isDestructive = isLaravelProject && (cmd === 'migrate:fresh' || cmd.startsWith('migrate:fresh '))
 
     if (isDestructive) {
       setConfirmModal({
@@ -100,11 +101,11 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
         isOpen: true,
         onConfirm: () => {
           setConfirmModal(prev => ({ ...prev, isOpen: false }))
-          executeArtisan(cmd)
+          executeConsoleCommand(cmd)
         }
       })
     } else {
-      executeArtisan(cmd)
+      executeConsoleCommand(cmd)
     }
   }
 
@@ -160,10 +161,10 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
           <div className="text-amber-400/80 mb-6 flex flex-col gap-2 border-b border-white/5 pb-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
               <AlertTriangle size={14} />
-              <span>{project.framework === 'Laravel' ? 'Prefix: php artisan' : 'Security Advisory'}</span>
+              <span>{isLaravelProject ? 'Prefix: php artisan' : 'Security Advisory'}</span>
             </div>
             <p className="text-[10px] text-zinc-500 leading-relaxed max-w-2xl italic">
-              {project.framework === 'Laravel'
+              {isLaravelProject
                 ? t('projectDetail.console.artisanPrefix')
                 : 'Use standard CLI commands. Commands are executed in the project root. Dangerous operations are restricted.'}
             </p>
@@ -185,13 +186,13 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
         </div>
 
         <form onSubmit={handleConsoleSubmit} className="p-4 bg-zinc-900/80 border-t border-white/5 flex gap-3">
-          {project.framework === 'Laravel' && (
+          {isLaravelProject && (
             <div className="flex items-center px-4 bg-zinc-800 rounded font-mono text-[10px] font-bold text-zinc-500 border border-white/5">php artisan</div>
           )}
           <Input
             value={consoleCommand}
             onChange={e => setConsoleCommand(e.target.value)}
-            placeholder={project.framework === 'Laravel' ? 'migrate --seed' : 'npm run build'}
+            placeholder={isLaravelProject ? 'migrate --seed' : 'npm run build'}
             disabled={isExecuting}
             className="flex-1 bg-zinc-800/50 border-white/10 text-white font-mono text-xs focus-visible:ring-1 focus-visible:ring-primary h-10 shadow-inner"
           />
