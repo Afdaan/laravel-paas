@@ -18,6 +18,13 @@ interface ProjectConsoleProps {
   project: Project
 }
 
+const ESCAPE_CHAR = String.fromCharCode(27)
+const ANSI_ESCAPE_PATTERN = new RegExp(`(?:${ESCAPE_CHAR}\\[[0-?]*[ -/]*[@-~]|${ESCAPE_CHAR}[@-_])`, 'g')
+
+function stripAnsi(line: string) {
+  return line.replace(ANSI_ESCAPE_PATTERN, '').replace(/\r/g, '')
+}
+
 function ProjectConsole({ uid, project }: ProjectConsoleProps) {
   const { t } = useTranslation()
   const isLaravelProject = project.framework === 'Laravel'
@@ -39,7 +46,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
   const consoleView = useMemo(() => {
     if (!consoleOutput) return { lines: [] as string[], offset: 0 }
     const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
-    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
+    const lines = visibleOutput.split('\n').map(stripAnsi).filter(l => l.trim() !== '' || l === '')
     if (lines.length <= 300) return { lines, offset: 0 }
     return { lines: lines.slice(-300), offset: lines.length - 300 }
   }, [consoleOutput, consoleClearedLength])
