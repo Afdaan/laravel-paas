@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import BuildLogsConsole from '@/components/BuildLogsConsole'
 import { Project } from '@/types'
 
@@ -6,7 +7,7 @@ interface BuildTabProps {
   onDeploymentEvent: () => void
 }
 
-export function BuildTab({ project, onDeploymentEvent }: BuildTabProps) {
+export const BuildTab = memo(function BuildTab({ project, onDeploymentEvent }: BuildTabProps) {
   if (!project) return null
 
   return (
@@ -18,4 +19,4 @@ export function BuildTab({ project, onDeploymentEvent }: BuildTabProps) {
       onDeploymentEvent={onDeploymentEvent}
     />
   )
-}
+})

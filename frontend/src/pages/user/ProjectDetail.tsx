@@ -617,14 +617,21 @@ function UserProjectDetail() {
     }
   }, [uid, logType])
 
+  const lastStatsRef = useRef<string | null>(null)
   const fetchStats = useCallback(async () => {
     if (!uid) return
     try {
       const response = await projectsAPI.stats(uid)
-      setStats(response.data)
+      const next = JSON.stringify(response.data)
+      if (next !== lastStatsRef.current) {
+        lastStatsRef.current = next
+        setStats(response.data)
+      }
     } catch (error) {
-      // Stats may not be available for non-running containers
-      setStats(null)
+      if (lastStatsRef.current !== null) {
+        lastStatsRef.current = null
+        setStats(null)
+      }
     }
   }, [uid])
 
@@ -655,7 +662,7 @@ function UserProjectDetail() {
 
 
   const { visibleLogLines, logOffset } = useMemo(() => {
-    if (!logs) return { visibleLogLines: [], logOffset: 0 }
+    if (!logs || activeTab !== 'logs') return { visibleLogLines: [], logOffset: 0 }
 
     const clearedForType = clearedLogsMap[logType] || ''
     let visibleLogs = logs
@@ -682,17 +689,17 @@ function UserProjectDetail() {
     }
 
     const lines = visibleLogs.split('\n').map(normalizeLogLine).filter(l => l.trim() !== '' || l === '')
-    const slicedLines = lines.length > 500 ? lines.slice(-500) : lines
-    const offset = lines.length > 500 ? lines.length - 500 : 0
+    const slicedLines = lines.length > 300 ? lines.slice(-300) : lines
+    const offset = lines.length > 300 ? lines.length - 300 : 0
 
     return { visibleLogLines: slicedLines, logOffset: offset }
-  }, [logs, clearedLogsMap, logType])
+  }, [logs, clearedLogsMap, logType, activeTab])
 
   const visibleLogsText = useMemo(() => visibleLogLines.join('\n'), [visibleLogLines])
 
 
 
-  const handleClearLogs = () => {
+  const handleClearLogs = useCallback(() => {
     setConfirmModal({
       title: t('projectDetail.actions.clear'),
       message: t('common.confirmClearLogs') || 'Confirm clearing the logs? New logs will still appear.',
@@ -704,7 +711,7 @@ function UserProjectDetail() {
         toast.success(t('common.success'))
       }
     })
-  }
+  }, [t, logType, logs])
 
 
 
@@ -897,6 +904,7 @@ function UserProjectDetail() {
     // another project's branch, commands, Git source, or runtime defaults.
     setProject(null)
     setStats(null)
+    lastStatsRef.current = null
     setLogs('')
     setRuntimeEvents([])
     setBranchesList([])
@@ -1389,6 +1397,7 @@ function UserProjectDetail() {
             <DomainsTab
               project={project}
               onDomainsChanged={fetchProject}
+              isActive={activeTab === 'domains'}
             />
           )}
         </TabsContent>

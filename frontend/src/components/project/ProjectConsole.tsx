@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { Terminal as TerminalIcon, Copy, AlertTriangle, RefreshCw } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
@@ -18,7 +18,7 @@ interface ProjectConsoleProps {
   project: Project
 }
 
-export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
+function ProjectConsole({ uid, project }: ProjectConsoleProps) {
   const { t } = useTranslation()
   const isLaravelProject = project.framework === 'Laravel'
   const [consoleCommand, setConsoleCommand] = useState('')
@@ -36,25 +36,21 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     confirmText: t('common.confirm')
   })
 
-  const consoleLines = useMemo(() => {
-    if (!consoleOutput) return []
+  const consoleView = useMemo(() => {
+    if (!consoleOutput) return { lines: [] as string[], offset: 0 }
     const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
     const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.slice(-500) : lines
-  }, [consoleOutput, consoleClearedLength])
-
-  const consoleOffset = useMemo(() => {
-    if (!consoleOutput) return 0
-    const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
-    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.length - 500 : 0
+    if (lines.length <= 300) return { lines, offset: 0 }
+    return { lines: lines.slice(-300), offset: lines.length - 300 }
   }, [consoleOutput, consoleClearedLength])
 
   useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'auto' })
-    }
-  }, [consoleLines])
+    if (!logsEndRef.current) return
+    const frame = requestAnimationFrame(() => {
+      logsEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [consoleView.lines])
 
   const handleClearConsole = () => {
     setConfirmModal({
@@ -178,11 +174,8 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
             </p>
           </div>
 
-          {consoleLines.length > 0 ? consoleLines.map((line: string, i: number) => (
-            <div key={i} className={cn("flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors", line.startsWith('$') ? "text-primary mt-2 font-bold" : "text-zinc-400")}>
-              <span className="shrink-0 text-zinc-800 select-none w-6 text-right font-light">{consoleOffset + i + 1}</span>
-              <span className="break-all whitespace-pre-wrap">{line}</span>
-            </div>
+          {consoleView.lines.length > 0 ? consoleView.lines.map((line: string, i: number) => (
+            <ConsoleLine key={`${consoleView.offset + i}-${line}`} line={line} lineNumber={consoleView.offset + i + 1} />
           )) : (
             <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4">
               <TerminalIcon size={48} />
@@ -194,17 +187,17 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
         </div>
 
         <form onSubmit={handleConsoleSubmit} className="border-t border-white/5 bg-zinc-900/80 p-4">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950/70 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
+          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/70 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
             {isLaravelProject && (
-              <div className="hidden h-9 items-center rounded-lg border border-white/10 bg-white/[0.04] px-3 font-mono text-[10px] font-semibold tracking-wide text-zinc-500 sm:flex">php artisan</div>
+              <div className="hidden h-9 shrink-0 items-center rounded-lg border border-white/10 bg-white/[0.04] px-4 font-mono text-[10px] font-semibold tracking-wide text-zinc-500 sm:flex">php artisan</div>
             )}
-            <div className="flex h-9 w-7 shrink-0 items-center justify-center font-mono text-xs text-emerald-400/80">$</div>
+            <div className="flex h-9 w-5 shrink-0 items-center justify-center font-mono text-[13px] leading-none text-emerald-400/80">$</div>
             <Input
               value={consoleCommand}
               onChange={e => setConsoleCommand(e.target.value)}
               placeholder={isLaravelProject ? 'migrate --seed' : 'npm run build'}
               disabled={isExecuting}
-              className="h-9 flex-1 border-0 bg-transparent px-0 font-mono text-[13px] text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
+              className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-[13px] leading-5 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
             />
             <Button type="submit" disabled={isExecuting || !consoleCommand.trim()} size="sm" className="h-9 rounded-lg px-5 text-[10px] font-bold uppercase tracking-[0.18em] shadow-none disabled:bg-zinc-700 disabled:text-zinc-400">{t('projectDetail.actions.execute')}</Button>
           </div>
@@ -213,3 +206,23 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     </>
   )
 }
+
+interface ConsoleLineProps {
+  line: string
+  lineNumber: number
+}
+
+const ConsoleLine = memo(function ConsoleLine({ line, lineNumber }: ConsoleLineProps) {
+  return (
+    <div className={cn("group -mx-2 flex gap-4 rounded px-2 py-0.5 transition-colors hover:bg-white/[0.05]", line.startsWith('$') ? "mt-2 font-bold text-primary" : "text-zinc-400")}>
+      <span className="w-6 shrink-0 select-none text-right font-light text-zinc-800">{lineNumber}</span>
+      <span className="break-all whitespace-pre-wrap">{line}</span>
+    </div>
+  )
+})
+
+export default memo(ProjectConsole, (prev, next) => (
+  prev.uid === next.uid &&
+  prev.project.id === next.project.id &&
+  prev.project.framework === next.project.framework
+))

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Activity, Copy, ChevronsDown, RefreshCw } from 'lucide-react'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,7 @@ interface LogsTabProps {
   onRefreshLogs: () => void
 }
 
-export function LogsTab({
+export const LogsTab = memo(function LogsTab({
   project,
   logType,
   setLogType,
@@ -124,4 +125,4 @@ export function LogsTab({
       </div>
     </Card>
   )
-}
+})

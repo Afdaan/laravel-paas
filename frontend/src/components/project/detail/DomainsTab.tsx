@@ -7,9 +7,10 @@ import { CustomDomainManager } from '@/components/project/CustomDomainManager'
 interface DomainsTabProps {
   project: Project
   onDomainsChanged: () => void
+  isActive?: boolean
 }
 
-export function DomainsTab({ project, onDomainsChanged }: DomainsTabProps) {
+export function DomainsTab({ project, onDomainsChanged, isActive }: DomainsTabProps) {
   const { t } = useTranslation()
 
   if (!project) return null
@@ -33,6 +34,7 @@ export function DomainsTab({ project, onDomainsChanged }: DomainsTabProps) {
           subdomain={project.subdomain!}
           projectUrl={project.url}
           onDomainsChanged={onDomainsChanged}
+          isActive={isActive}
         />
       </CardContent>
     </Card>
