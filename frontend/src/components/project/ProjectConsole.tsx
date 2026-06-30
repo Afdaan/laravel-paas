@@ -193,18 +193,21 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
           <div ref={logsEndRef} />
         </div>
 
-        <form onSubmit={handleConsoleSubmit} className="p-4 bg-zinc-900/80 border-t border-white/5 flex gap-3">
-          {isLaravelProject && (
-            <div className="flex items-center px-4 bg-zinc-800 rounded font-mono text-[10px] font-bold text-zinc-500 border border-white/5">php artisan</div>
-          )}
-          <Input
-            value={consoleCommand}
-            onChange={e => setConsoleCommand(e.target.value)}
-            placeholder={isLaravelProject ? 'migrate --seed' : 'npm run build'}
-            disabled={isExecuting}
-            className="flex-1 bg-zinc-800/50 border-white/10 text-white font-mono text-xs focus-visible:ring-1 focus-visible:ring-primary h-10 shadow-inner"
-          />
-          <Button type="submit" disabled={isExecuting || !consoleCommand.trim()} size="sm" className="h-10 px-6 font-bold uppercase tracking-widest text-[10px]">{t('projectDetail.actions.execute')}</Button>
+        <form onSubmit={handleConsoleSubmit} className="border-t border-white/5 bg-zinc-900/80 p-4">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950/70 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
+            {isLaravelProject && (
+              <div className="hidden h-9 items-center rounded-lg border border-white/10 bg-white/[0.04] px-3 font-mono text-[10px] font-semibold tracking-wide text-zinc-500 sm:flex">php artisan</div>
+            )}
+            <div className="flex h-9 w-7 shrink-0 items-center justify-center font-mono text-xs text-emerald-400/80">$</div>
+            <Input
+              value={consoleCommand}
+              onChange={e => setConsoleCommand(e.target.value)}
+              placeholder={isLaravelProject ? 'migrate --seed' : 'npm run build'}
+              disabled={isExecuting}
+              className="h-9 flex-1 border-0 bg-transparent px-0 font-mono text-[13px] text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
+            />
+            <Button type="submit" disabled={isExecuting || !consoleCommand.trim()} size="sm" className="h-9 rounded-lg px-5 text-[10px] font-bold uppercase tracking-[0.18em] shadow-none disabled:bg-zinc-700 disabled:text-zinc-400">{t('projectDetail.actions.execute')}</Button>
+          </div>
         </form>
       </Card>
     </>
