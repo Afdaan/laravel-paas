@@ -777,6 +777,9 @@ export const translations = {
         destructiveTitle: "Destructive Command Warning",
         destructiveMessage: "Warning: Running 'migrate:fresh' will DROP all tables and delete all data in your database! Since this application is in production/live mode, this action cannot be undone. Do you really wish to proceed?",
         destructiveConfirm: "Yes, proceed",
+        destructiveWarning: "This command may change application files, dependencies, queues, or data. It will be logged before execution.",
+        shellEvalWarning: "This script execution may run arbitrary code inside your container, modifying files, dependencies, queues, data, or network behavior. It will be audited.",
+        runCommand: "Run command",
       },
       secrets: {
         desc: "Application environment configuration (.env)",
@@ -2426,6 +2429,9 @@ export const translations = {
         destructiveTitle: "Peringatan Command Destruktif",
         destructiveMessage: "Peringatan: Menjalankan 'migrate:fresh' akan menghapus (DROP) semua tabel dan seluruh data di database Anda! Karena aplikasi sedang berjalan di production/live mode, tindakan ini tidak dapat dibatalkan. Apakah Anda yakin ingin melanjutkan?",
         destructiveConfirm: "Ya, lanjutkan",
+        destructiveWarning: "Perintah ini dapat mengubah file aplikasi, dependensi, antrean, atau data. Akan dicatat sebelum dieksekusi.",
+        shellEvalWarning: "Eksekusi script ini dapat menjalankan kode arbitrer di dalam container, mengubah file, dependensi, antrean, data, atau jaringan. Akan diaudit.",
+        runCommand: "Jalankan perintah",
       },
       secrets: {
         desc: "Konfigurasi environment aplikasi (.env)",

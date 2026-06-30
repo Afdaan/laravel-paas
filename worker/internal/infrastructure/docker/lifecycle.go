@@ -42,9 +42,6 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--restart", "unless-stopped",
 		"--cpus", cpuLimit,
 		"--memory", memoryLimit,
-		"--memory-swap", memoryLimit,
-		"--security-opt=no-new-privileges:true",
-		"--pids-limit=250",
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
 
 		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
@@ -53,6 +50,8 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
 		"--label", "paas.container_role=worker",
 	}
+
+	runArgs = append(runArgs, TenantHardeningArgs(memoryLimit)...)
 
 	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
@@ -219,9 +218,6 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
-		"--memory-swap", finalMemory,
-		"--security-opt=no-new-privileges:true",
-		"--pids-limit=250",
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
@@ -234,6 +230,8 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 	}
+
+	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
 
 	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),

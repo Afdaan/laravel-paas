@@ -10,6 +10,8 @@ import ConfirmationModal from '../ConfirmationModal'
 import { projectsAPI } from '../../services/api'
 import { Project } from '../../types'
 import { cn } from '@/lib/utils'
+import { needsCommandConfirmation, commandWarningType } from '@/lib/commandSafety'
+
 
 interface ProjectConsoleProps {
   uid: string
@@ -90,23 +92,29 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     if (!uid || !consoleCommand.trim()) return
 
     const cmd = consoleCommand.trim()
-    const isDestructive = isLaravelProject && (cmd === 'migrate:fresh' || cmd.startsWith('migrate:fresh '))
 
-    if (isDestructive) {
+    if (needsCommandConfirmation(cmd)) {
+      const warningType = commandWarningType(cmd)
       setConfirmModal({
-        title: t('projectDetail.console.destructiveTitle') || 'Destructive Command Warning',
-        message: t('projectDetail.console.destructiveMessage') || 'Warning: Running this command will drop all tables and delete all data!',
-        type: 'danger',
-        confirmText: t('projectDetail.console.destructiveConfirm') || 'Yes, proceed',
+        title: t('projectDetail.console.destructiveTitle') || 'Command Warning',
+        message: (
+          <span className="space-y-2 block">
+            <span className="block">{t(warningType === 'shell-eval' ? 'projectDetail.console.shellEvalWarning' : 'projectDetail.console.destructiveWarning')}</span>
+            <code className="block rounded bg-muted px-2 py-1 font-mono text-xs text-foreground break-all">{isLaravelProject ? `php artisan ${cmd}` : cmd}</code>
+          </span>
+        ),
+        type: 'warning',
+        confirmText: t('projectDetail.console.runCommand') || 'Run command',
         isOpen: true,
         onConfirm: () => {
           setConfirmModal(prev => ({ ...prev, isOpen: false }))
           executeConsoleCommand(cmd)
         }
       })
-    } else {
-      executeConsoleCommand(cmd)
+      return
     }
+
+    executeConsoleCommand(cmd)
   }
 
   return (
@@ -166,7 +174,7 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
             <p className="text-[10px] text-zinc-500 leading-relaxed max-w-2xl italic">
               {isLaravelProject
                 ? t('projectDetail.console.artisanPrefix')
-                : 'Use standard CLI commands. Commands are executed in the project root. Dangerous operations are restricted.'}
+                : 'Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.'}
             </p>
           </div>
 

@@ -2,217 +2,154 @@ package utils
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode"
 )
 
-// frameworkCommands defines the security rules for a specific framework/runtime
-type frameworkCommands struct {
-	Allowed         map[string]bool
-	BlockedPatterns []string
-}
-
-// commandRegistry stores security rules for all supported frameworks
-var commandRegistry = map[string]frameworkCommands{
-	"Laravel": {
-		Allowed: map[string]bool{
-			"cache:clear":      true,
-			"cache:forget":     true,
-			"config:cache":     true,
-			"config:clear":     true,
-			"route:cache":      true,
-			"route:clear":      true,
-			"route:list":       true,
-			"view:cache":       true,
-			"view:clear":       true,
-			"optimize":         true,
-			"optimize:clear":   true,
-			"list":             true,
-			"about":            true,
-			"env":              true,
-			"storage:link":     true,
-			"key:generate":     true,
-			"migrate":          true,
-			"migrate:fresh":    true,
-			"db:seed":          true,
-			"livewire:publish": true,
-		},
-		BlockedPatterns: []string{
-			"migrate:reset",
-			"migrate:rollback",
-			"tinker",
-			"make:",
-			"down",
-			"up",
-			"serve",
-			"schedule:run",
-			"schedule:work",
-			"queue:work",
-			"queue:listen",
-			"queue:restart",
-			"queue:retry",
-			"queue:forget",
-			"queue:flush",
-			"queue:prune-batches",
-			"optimize:v2",
-			"stub:publish",
-			"vendor:publish",
-			"install",
-			"test",
-			"pest",
-			"clear-compiled",
-		},
-	},
-	"Node.js": {
-		Allowed: map[string]bool{
-			"npm":  true,
-			"npx":  true,
-			"pnpm": true,
-			"yarn": true,
-			"bun":  true,
-			"node": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"npm publish",
-			"pnpm publish",
-			"yarn publish",
-			"bun publish",
-		},
-	},
-	"Go": {
-		Allowed: map[string]bool{
-			"go":   true,
-			"make": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"go install",
-		},
-	},
-	"Python": {
-		Allowed: map[string]bool{
-			"python":   true,
-			"python3":  true,
-			"pip":      true,
-			"pip3":     true,
-			"poetry":   true,
-			"flask":    true,
-			"django":   true,
-			"manage":   true,
-			"celery":   true,
-			"gunicorn": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"pip install",
-		},
-	},
-	"Ruby": {
-		Allowed: map[string]bool{
-			"ruby":    true,
-			"rails":   true,
-			"rake":    true,
-			"bundle":  true,
-			"bundler": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"gem push",
-		},
-	},
-	"Rust": {
-		Allowed: map[string]bool{
-			"cargo": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"cargo publish",
-		},
-	},
-	"Java": {
-		Allowed: map[string]bool{
-			"java":      true,
-			"mvn":       true,
-			"gradle":    true,
-			"./gradlew": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"mvn deploy",
-			"gradle publish",
-		},
-	},
-	"PHP": {
-		Allowed: map[string]bool{
-			"php":      true,
-			"composer": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"composer global",
-		},
-	},
-	"Static": {
-		Allowed: map[string]bool{
-			"npm":  true,
-			"npx":  true,
-			"pnpm": true,
-			"yarn": true,
-			"bun":  true,
-			"node": true,
-		},
-		BlockedPatterns: []string{
-			"rm -rf",
-			"npm publish",
-		},
-	},
-}
-
-var javascriptFrameworks = map[string]string{
-	"Next.js":    "Node.js",
-	"Nuxt.js":    "Node.js",
-	"Vite":       "Node.js",
-	"React":      "Node.js",
-	"Vue":        "Node.js",
-	"Svelte":     "Node.js",
-	"Angular":    "Node.js",
-	"TypeScript": "Node.js",
-	"Golang":     "Go",
-}
-
-// ValidateCommand checks if a command is allowed for a given framework
-func ValidateCommand(framework string, command string) error {
-	if normalized, ok := javascriptFrameworks[framework]; ok {
-		framework = normalized
+// BaseCommand returns the base executable name (first token) from a command string.
+func BaseCommand(command string) string {
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return "<empty>"
 	}
 
-	rules, exists := commandRegistry[framework]
-	if !exists {
-		framework = "Node.js"
-		rules = commandRegistry[framework]
+	var first strings.Builder
+	inQuote := false
+	var quoteChar rune
+
+	for _, r := range trimmed {
+		if inQuote {
+			if r == quoteChar {
+				inQuote = false
+			}
+			first.WriteRune(r)
+			continue
+		}
+		if r == '\'' || r == '"' {
+			inQuote = true
+			quoteChar = r
+			first.WriteRune(r)
+			continue
+		}
+		if unicode.IsSpace(r) {
+			break
+		}
+		first.WriteRune(r)
 	}
 
-	// Normalize command: trim whitespace and get the base command (first word)
+	result := first.String()
+	if len(result) > 64 {
+		result = result[:64]
+	}
+	return strings.ToLower(result)
+}
+
+var blockedCommandNames = []string{
+	// Container/runtime control. Docker socket or privileged runtime access can become host control.
+	"docker",
+	"podman",
+	"kubectl",
+	"helm",
+	"crictl",
+	"ctr",
+	"nerdctl",
+	"runc",
+
+	// Namespace, kernel, mount, and network mutation.
+	"nsenter",
+	"unshare",
+	"mount",
+	"umount",
+	"swapon",
+	"swapoff",
+	"modprobe",
+	"insmod",
+	"rmmod",
+	"sysctl",
+	"iptables",
+	"ip6tables",
+	"nft",
+	"tc",
+	"ip",
+	"route",
+	"ifconfig",
+
+	// Init/service control.
+	"systemctl",
+	"service",
+	"journalctl",
+	"reboot",
+	"shutdown",
+	"halt",
+	"poweroff",
+	"init",
+
+	// Privilege/account changes.
+	"sudo",
+	"su",
+	"passwd",
+	"useradd",
+	"usermod",
+	"groupadd",
+	"groupmod",
+}
+
+var blockedCommandNameRegex = regexp.MustCompile(
+	`(?:^|[\s'` + "`" + `";|&()])` +
+		`(?:` + strings.Join(blockedCommandNames, "|") + `)` +
+		`(?:[\s'` + "`" + `";|&()]|$)`,
+)
+
+var blockedCommandFragments = []string{
+	// Resource exhaustion.
+	":(){:|:&};:",
+
+	// Cloud metadata endpoints.
+	"169.254.169.254",
+	"fd00:ec2::254",
+	"fd20:ce::254",
+	"100.100.100.200",
+	"metadata.google.internal",
+
+	// Runtime sockets, host namespaces, Kubernetes tokens, and kernel escape surfaces.
+	"/var/run/docker.sock",
+	"/run/docker.sock",
+	"/proc/1/ns",
+	"/var/run/secrets/kubernetes.io/serviceaccount",
+	"/sys/fs/cgroup",
+	"release_agent",
+	"/proc/sys/kernel/core_pattern",
+	"/dev/mem",
+	"/dev/kmsg",
+
+	// Destructive root-level filesystem/device operations (multi-word, substring matched).
+	"rm -rf /",
+	"rm -fr /",
+	"rm -rf /*",
+	"rm -fr /*",
+	"chmod -R 777 /",
+	"mkfs",
+	"dd if=",
+}
+
+// ValidateCommand blocks commands that can damage the PaaS runtime or escape the project container.
+// Application-level commands are allowed; frontend confirmation and audit logs handle risky app actions.
+func ValidateCommand(command string) error {
 	trimmed := strings.TrimSpace(command)
 	if trimmed == "" {
 		return fmt.Errorf("command cannot be empty")
 	}
 
-	// For security, we usually only care about the first part of the command
-	// e.g. "migrate --force" -> "migrate"
-	parts := strings.Fields(trimmed)
-	baseCommand := parts[0]
-
-	// 1. Check against blocked patterns (Prefix match)
-	for _, pattern := range rules.BlockedPatterns {
-		if trimmed == pattern || strings.HasPrefix(trimmed, pattern+" ") || strings.Contains(trimmed, "&& "+pattern) || strings.Contains(trimmed, "; "+pattern) {
-			return fmt.Errorf("command '%s' is restricted for security reasons", pattern)
+	lower := strings.ToLower(trimmed)
+	for _, fragment := range blockedCommandFragments {
+		if strings.Contains(lower, fragment) {
+			return fmt.Errorf("command contains restricted pattern '%s' for platform security reasons", fragment)
 		}
 	}
 
-	// 2. Check against allowlist (Exact match)
-	if !rules.Allowed[baseCommand] {
-		return fmt.Errorf("command '%s' is not in the allowed list for %s", baseCommand, framework)
+	if blockedCommandNameRegex.MatchString(lower) {
+		return fmt.Errorf("command contains a restricted platform binary operand")
 	}
 
 	return nil

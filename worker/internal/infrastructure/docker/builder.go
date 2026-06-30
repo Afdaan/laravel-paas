@@ -149,6 +149,8 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 	}
 
+	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
+
 	if isWebFacing {
 		runArgs = append(runArgs,
 			"--label", "traefik.enable=true",
