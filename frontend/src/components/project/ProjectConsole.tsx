@@ -194,7 +194,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
         </div>
 
         <form onSubmit={handleConsoleSubmit} className="border-t border-white/5 bg-zinc-900/80 p-4">
-          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/70 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
+          <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-zinc-950/70 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
             {isLaravelProject && (
               <div className="hidden h-9 shrink-0 items-center rounded-lg border border-white/10 bg-white/[0.04] px-4 font-mono text-[10px] font-semibold tracking-wide text-zinc-500 sm:flex">php artisan</div>
             )}
@@ -204,7 +204,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
               onChange={e => setConsoleCommand(e.target.value)}
               placeholder={isLaravelProject ? 'migrate --seed' : 'npm run build'}
               disabled={isExecuting}
-              className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-[13px] leading-5 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
+              className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 font-mono text-[13px] leading-5 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
             />
             <Button type="submit" disabled={isExecuting || !consoleCommand.trim()} size="sm" className="h-9 rounded-lg px-5 text-[10px] font-bold uppercase tracking-[0.18em] shadow-none disabled:bg-zinc-700 disabled:text-zinc-400">{t('projectDetail.actions.execute')}</Button>
           </div>
