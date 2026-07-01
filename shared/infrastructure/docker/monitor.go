@@ -522,7 +522,7 @@ func parseMemoryBytes(memStr string) float64 {
 	}
 }
 
-// ExecProjectCommand runs commands inside container (artisan for Laravel, direct binary execution for others)
+// ExecProjectCommand runs commands inside the project container.
 // Tokenized arguments bypass intermediate shells (sh -c) to eliminate command injection vulnerabilities.
 func (s *DockerService) ExecProjectCommand(project *models.Project, command string) (string, error) {
 	containerID := ""
@@ -547,33 +547,19 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 
 	parser := utils.NewSecureCommandParser(true)
 
-	// Prepare execution args based on framework
-	var fullArgs []string
-	if project.Framework == "Laravel" {
-		cmdStr := parseArtisanMigrationCommand(command)
-		tokens, err := parser.Tokenize(cmdStr)
-		if err != nil {
-			return "", fmt.Errorf("command security validation failed: %w", err)
+	// Fix permissions as root before running as www-data to avoid "Permission denied" errors in Laravel logs/cache.
+	if project.Framework == "Laravel" && user != "root" {
+		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
+			slog.Warn("Failed to fix permissions before command execution", "error", err, "stderr", res.Stderr)
 		}
-
-		// Fix permissions as root before running as www-data to avoid "Permission denied" errors in logs/cache
-		if user != "root" {
-			if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", user+":"+user, "storage", "bootstrap/cache"); err != nil {
-				slog.Warn("Failed to fix permissions before command execution", "error", err, "stderr", res.Stderr)
-			}
-		}
-
-		fullArgs = []string{"exec", "-u", user, containerID, "php", "artisan"}
-		fullArgs = append(fullArgs, tokens...)
-	} else {
-		// For other frameworks (Node.js, Go, etc.), tokenize and run command directly
-		tokens, err := parser.Tokenize(command)
-		if err != nil {
-			return "", fmt.Errorf("command security validation failed: %w", err)
-		}
-		fullArgs = []string{"exec", "-u", user, containerID}
-		fullArgs = append(fullArgs, tokens...)
 	}
+
+	tokens, err := parser.Tokenize(command)
+	if err != nil {
+		return "", fmt.Errorf("command security validation failed: %w", err)
+	}
+	fullArgs := []string{"exec", "-u", user, containerID}
+	fullArgs = append(fullArgs, tokens...)
 
 	res, err := utils.Run(2*time.Minute, "docker", fullArgs...)
 
@@ -586,35 +572,6 @@ func (s *DockerService) ExecProjectCommand(project *models.Project, command stri
 	}
 
 	return output, nil
-}
-
-// parseArtisanMigrationCommand deterministically inspects an artisan command string.
-// If the command is an operational database migration or seed command, it enforces non-interactive and force execution flags.
-func parseArtisanMigrationCommand(cmdStr string) string {
-	fields := strings.Fields(cmdStr)
-	if len(fields) == 0 {
-		return cmdStr
-	}
-
-	cmdName := fields[0]
-	isMigration := false
-	switch cmdName {
-	case "migrate", "migrate:fresh", "migrate:refresh", "migrate:rollback", "migrate:reset", "db:seed":
-		isMigration = true
-	}
-
-	if !isMigration {
-		return cmdStr
-	}
-
-	result := cmdStr
-	if !strings.Contains(result, "--no-interaction") && !strings.Contains(result, "-n") {
-		result += " --no-interaction"
-	}
-	if !strings.Contains(result, "--force") {
-		result += " --force"
-	}
-	return result
 }
 
 // RemoveImage removes a project's docker image

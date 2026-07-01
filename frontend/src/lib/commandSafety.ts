@@ -25,14 +25,18 @@ const shellEvalPatterns = [
 
 export type CommandWarningType = 'app-risky' | 'shell-eval'
 
+function normalizeCommandForWarning(command: string) {
+  return command.trim().toLowerCase().replace(/^php\s+artisan\s+/, '')
+}
+
 export function needsCommandConfirmation(command: string) {
-  const normalized = command.trim().toLowerCase()
+  const normalized = normalizeCommandForWarning(command)
   return riskyCommandPatterns.some(pattern => pattern.test(normalized)) ||
     shellEvalPatterns.some(pattern => pattern.test(normalized))
 }
 
 export function commandWarningType(command: string): CommandWarningType {
-  const normalized = command.trim().toLowerCase()
+  const normalized = normalizeCommandForWarning(command)
   if (shellEvalPatterns.some(pattern => pattern.test(normalized))) return 'shell-eval'
   return 'app-risky'
 }

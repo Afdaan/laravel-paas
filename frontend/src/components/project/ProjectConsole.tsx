@@ -75,7 +75,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
 
   const executeConsoleCommand = async (cmd: string) => {
     setIsExecuting(true)
-    setConsoleOutput(prev => prev + `\n$ ${isLaravelProject ? `php artisan ${cmd}` : cmd}\n`)
+    setConsoleOutput(prev => prev + `\n$ ${cmd}\n`)
 
     try {
       const response = await projectsAPI.runArtisan(uid, cmd)
@@ -95,6 +95,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     if (!uid || !consoleCommand.trim()) return
 
     const cmd = consoleCommand.trim()
+    if (!cmd) return
 
     if (needsCommandConfirmation(cmd)) {
       const warningType = commandWarningType(cmd)
@@ -103,7 +104,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
         message: (
           <span className="space-y-2 block">
             <span className="block">{t(warningType === 'shell-eval' ? 'projectDetail.console.shellEvalWarning' : 'projectDetail.console.destructiveWarning')}</span>
-            <code className="block rounded bg-muted px-2 py-1 font-mono text-xs text-foreground break-all">{isLaravelProject ? `php artisan ${cmd}` : cmd}</code>
+            <code className="block rounded bg-muted px-2 py-1 font-mono text-xs text-foreground break-all">{cmd}</code>
           </span>
         ),
         type: 'warning',
@@ -172,11 +173,11 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
           <div className="text-amber-400/80 mb-6 flex flex-col gap-2 border-b border-white/5 pb-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
               <AlertTriangle size={14} />
-              <span>{isLaravelProject ? 'Prefix: php artisan' : 'Security Advisory'}</span>
+              <span>{isLaravelProject ? 'Terminal Console' : 'Security Advisory'}</span>
             </div>
             <p className="text-[10px] text-zinc-500 leading-relaxed max-w-2xl italic">
               {isLaravelProject
-                ? t('projectDetail.console.artisanPrefix')
+                ? 'Run commands in the project root. Use php artisan for Artisan commands.'
                 : 'Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.'}
             </p>
           </div>
@@ -195,14 +196,11 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
 
         <form onSubmit={handleConsoleSubmit} className="border-t border-white/5 bg-zinc-900/80 p-4">
           <div className="flex items-center gap-5 rounded-xl border border-white/10 bg-zinc-950/70 px-6 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
-            {isLaravelProject && (
-              <div className="hidden h-9 shrink-0 items-center rounded-lg border border-white/10 bg-white/[0.04] px-4 font-mono text-[10px] font-semibold tracking-wide text-zinc-500 sm:flex">php artisan</div>
-            )}
             <div className="flex h-9 w-7 shrink-0 items-center justify-center font-mono text-[13px] leading-none text-emerald-400/80">$</div>
             <Input
               value={consoleCommand}
               onChange={e => setConsoleCommand(e.target.value)}
-              placeholder={isLaravelProject ? 'migrate --seed' : 'npm run build'}
+              placeholder={isLaravelProject ? 'php artisan migrate --seed' : 'npm run build'}
               disabled={isExecuting}
               className="h-9 min-w-0 flex-1 border-0 bg-transparent px-3 font-mono text-[13px] leading-5 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
             />
