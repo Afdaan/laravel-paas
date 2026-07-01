@@ -78,7 +78,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     setConsoleOutput(prev => prev + `\n$ ${cmd}\n`)
 
     try {
-      const response = await projectsAPI.runArtisan(uid, cmd)
+      const response = await projectsAPI.runConsoleCommand(uid, cmd)
       setConsoleOutput(prev => prev + response.data.output + '\n')
       setConsoleCommand('')
     } catch (error: unknown) {
@@ -176,9 +176,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
               <span>{isLaravelProject ? 'Terminal Console' : 'Security Advisory'}</span>
             </div>
             <p className="text-[10px] text-zinc-500 leading-relaxed max-w-2xl italic">
-              {isLaravelProject
-                ? 'Run commands in the project root. Use php artisan for Artisan commands.'
-                : 'Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.'}
+              Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.
             </p>
           </div>
 

@@ -182,8 +182,8 @@ export const projectsAPI = {
   stats: (id: number | string) =>
     api.get(`/projects/${id}/stats`),
 
-  runArtisan: (id: number | string, command: string) =>
-    api.post(`/projects/${id}/artisan`, { command }),
+  runConsoleCommand: (id: number | string, command: string) =>
+    api.post(`/projects/${id}/console`, { command }),
 
   getEnv: (id: number | string) =>
     api.get(`/projects/${id}/env`),

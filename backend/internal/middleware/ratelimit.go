@@ -90,7 +90,7 @@ var (
 	loginLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per IP
 	queryLimiter   = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
 	proxyLimiter   = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
-	artisanLimiter = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
+	consoleLimiter = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
 	importLimiter  = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
 )
 
@@ -173,12 +173,12 @@ func RateLimitProxy() fiber.Handler {
 	}
 }
 
-// RateLimitArtisan applies rate limiting to artisan command execution
-func RateLimitArtisan() fiber.Handler {
+// RateLimitConsole applies rate limiting to project console command execution.
+func RateLimitConsole() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		projectID := c.Params("id")
-		key := "artisan:" + c.IP() + ":" + projectID
-		if !artisanLimiter.Allow(key) {
+		key := "console:" + c.IP() + ":" + projectID
+		if !consoleLimiter.Allow(key) {
 			return apperr.New(429, "RATE_LIMITED", "Too many command executions. Please wait")
 		}
 		return c.Next()

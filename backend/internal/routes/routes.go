@@ -248,7 +248,7 @@ func Setup(
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
 	projects.Get("/:id/deployment-events/stream", projectHandler.StreamDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
-	projects.Post("/:id/artisan", middleware.RateLimitArtisan(), projectHandler.RunArtisan)
+	projects.Post("/:id/console", middleware.RateLimitConsole(), projectHandler.RunConsoleCommand)
 	projects.Get("/:id/env", projectHandler.GetEnv)
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
 

@@ -361,13 +361,13 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	})
 }
 
-// RunArtisanRequest represents artisan command payload
-type RunArtisanRequest struct {
+// RunConsoleCommandRequest represents a project console command payload.
+type RunConsoleCommandRequest struct {
 	Command string `json:"command"`
 }
 
-// RunArtisan executes an artisan command
-func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
+// RunConsoleCommand executes a command inside a project container.
+func (h *ProjectHandler) RunConsoleCommand(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -377,7 +377,7 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Container not running"})
 	}
 
-	var req RunArtisanRequest
+	var req RunConsoleCommandRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
@@ -409,7 +409,7 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 
 	output, err := h.projectService.ExecCommand(project, req.Command)
 	if err != nil {
-		slog.Warn("Artisan command returned error",
+		slog.Warn("Project console command returned error",
 			"project_id", project.ID,
 			"command_base", utils.BaseCommand(req.Command),
 			"error", err.Error(),

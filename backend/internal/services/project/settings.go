@@ -4,7 +4,7 @@ import (
 	"github.com/laravel-paas/shared/models"
 )
 
-// ExecCommand executes a command in the container (automatically handles artisan for Laravel)
+// ExecCommand executes a command in the project container.
 func (s *ProjectService) ExecCommand(project *models.Project, command string) (string, error) {
 	return s.dockerService.ExecProjectCommand(project, command)
 }
