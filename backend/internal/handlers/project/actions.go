@@ -361,13 +361,13 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	})
 }
 
-// RunArtisanRequest represents artisan command payload
-type RunArtisanRequest struct {
+// RunConsoleCommandRequest represents a project console command payload.
+type RunConsoleCommandRequest struct {
 	Command string `json:"command"`
 }
 
-// RunArtisan executes an artisan command
-func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
+// RunConsoleCommand executes a command inside a project container.
+func (h *ProjectHandler) RunConsoleCommand(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -377,7 +377,7 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Container not running"})
 	}
 
-	var req RunArtisanRequest
+	var req RunConsoleCommandRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
@@ -391,21 +391,27 @@ func (h *ProjectHandler) RunArtisan(c *fiber.Ctx) error {
 		framework = "Laravel" // Default fallback
 	}
 
-	if err := utils.ValidateCommand(framework, req.Command); err != nil {
+	if err := utils.ValidateCommand(req.Command); err != nil {
 		slog.Warn("Blocked command attempt",
 			"project_id", project.ID,
 			"framework", framework,
-			"command", req.Command,
+			"command_base", utils.BaseCommand(req.Command),
 			"reason", err.Error(),
 		)
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	slog.Info("Project console command accepted",
+		"project_id", project.ID,
+		"framework", framework,
+		"command_base", utils.BaseCommand(req.Command),
+	)
+
 	output, err := h.projectService.ExecCommand(project, req.Command)
 	if err != nil {
-		slog.Warn("Artisan command returned error",
+		slog.Warn("Project console command returned error",
 			"project_id", project.ID,
-			"command", req.Command,
+			"command_base", utils.BaseCommand(req.Command),
 			"error", err.Error(),
 		)
 		// We return 200 even if the command failed, because the "execution" was successful.

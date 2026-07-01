@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, memo } from 'react'
 import { Terminal as TerminalIcon, Copy, AlertTriangle, RefreshCw } from 'lucide-react'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
@@ -10,14 +10,24 @@ import ConfirmationModal from '../ConfirmationModal'
 import { projectsAPI } from '../../services/api'
 import { Project } from '../../types'
 import { cn } from '@/lib/utils'
+import { needsCommandConfirmation, commandWarningType } from '@/lib/commandSafety'
+
 
 interface ProjectConsoleProps {
   uid: string
   project: Project
 }
 
-export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
+const ESCAPE_CHAR = String.fromCharCode(27)
+const ANSI_ESCAPE_PATTERN = new RegExp(`(?:${ESCAPE_CHAR}\\[[0-?]*[ -/]*[@-~]|${ESCAPE_CHAR}[@-_])`, 'g')
+
+function stripAnsi(line: string) {
+  return line.replace(ANSI_ESCAPE_PATTERN, '').replace(/\r/g, '')
+}
+
+function ProjectConsole({ uid, project }: ProjectConsoleProps) {
   const { t } = useTranslation()
+  const isLaravelProject = project.framework === 'Laravel'
   const [consoleCommand, setConsoleCommand] = useState('')
   const [consoleOutput, setConsoleOutput] = useState('')
   const [consoleClearedLength, setConsoleClearedLength] = useState(0)
@@ -33,25 +43,21 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     confirmText: t('common.confirm')
   })
 
-  const consoleLines = useMemo(() => {
-    if (!consoleOutput) return []
+  const consoleView = useMemo(() => {
+    if (!consoleOutput) return { lines: [] as string[], offset: 0 }
     const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
-    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.slice(-500) : lines
-  }, [consoleOutput, consoleClearedLength])
-
-  const consoleOffset = useMemo(() => {
-    if (!consoleOutput) return 0
-    const visibleOutput = consoleClearedLength > 0 ? consoleOutput.substring(consoleClearedLength) : consoleOutput
-    const lines = visibleOutput.split('\n').filter(l => l.trim() !== '' || l === '')
-    return lines.length > 500 ? lines.length - 500 : 0
+    const lines = visibleOutput.split('\n').map(stripAnsi).filter(l => l.trim() !== '' || l === '')
+    if (lines.length <= 300) return { lines, offset: 0 }
+    return { lines: lines.slice(-300), offset: lines.length - 300 }
   }, [consoleOutput, consoleClearedLength])
 
   useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'auto' })
-    }
-  }, [consoleLines])
+    if (!logsEndRef.current) return
+    const frame = requestAnimationFrame(() => {
+      logsEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [consoleView.lines])
 
   const handleClearConsole = () => {
     setConfirmModal({
@@ -67,12 +73,12 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     })
   }
 
-  const executeArtisan = async (cmd: string) => {
+  const executeConsoleCommand = async (cmd: string) => {
     setIsExecuting(true)
-    setConsoleOutput(prev => prev + `\n$ php artisan ${cmd}\n`)
+    setConsoleOutput(prev => prev + `\n$ ${cmd}\n`)
 
     try {
-      const response = await projectsAPI.runArtisan(uid, cmd)
+      const response = await projectsAPI.runConsoleCommand(uid, cmd)
       setConsoleOutput(prev => prev + response.data.output + '\n')
       setConsoleCommand('')
     } catch (error: unknown) {
@@ -89,23 +95,30 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
     if (!uid || !consoleCommand.trim()) return
 
     const cmd = consoleCommand.trim()
-    const isDestructive = cmd === 'migrate:fresh' || cmd.startsWith('migrate:fresh ')
+    if (!cmd) return
 
-    if (isDestructive) {
+    if (needsCommandConfirmation(cmd)) {
+      const warningType = commandWarningType(cmd)
       setConfirmModal({
-        title: t('projectDetail.console.destructiveTitle') || 'Destructive Command Warning',
-        message: t('projectDetail.console.destructiveMessage') || 'Warning: Running this command will drop all tables and delete all data!',
-        type: 'danger',
-        confirmText: t('projectDetail.console.destructiveConfirm') || 'Yes, proceed',
+        title: t('projectDetail.console.destructiveTitle') || 'Command Warning',
+        message: (
+          <span className="space-y-2 block">
+            <span className="block">{t(warningType === 'shell-eval' ? 'projectDetail.console.shellEvalWarning' : 'projectDetail.console.destructiveWarning')}</span>
+            <code className="block rounded bg-muted px-2 py-1 font-mono text-xs text-foreground break-all">{cmd}</code>
+          </span>
+        ),
+        type: 'warning',
+        confirmText: t('projectDetail.console.runCommand') || 'Run command',
         isOpen: true,
         onConfirm: () => {
           setConfirmModal(prev => ({ ...prev, isOpen: false }))
-          executeArtisan(cmd)
+          executeConsoleCommand(cmd)
         }
       })
-    } else {
-      executeArtisan(cmd)
+      return
     }
+
+    executeConsoleCommand(cmd)
   }
 
   return (
@@ -160,20 +173,15 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
           <div className="text-amber-400/80 mb-6 flex flex-col gap-2 border-b border-white/5 pb-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
               <AlertTriangle size={14} />
-              <span>{project.framework === 'Laravel' ? 'Prefix: php artisan' : 'Security Advisory'}</span>
+              <span>{isLaravelProject ? 'Terminal Console' : 'Security Advisory'}</span>
             </div>
             <p className="text-[10px] text-zinc-500 leading-relaxed max-w-2xl italic">
-              {project.framework === 'Laravel'
-                ? t('projectDetail.console.artisanPrefix')
-                : 'Use standard CLI commands. Commands are executed in the project root. Dangerous operations are restricted.'}
+              Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.
             </p>
           </div>
 
-          {consoleLines.length > 0 ? consoleLines.map((line: string, i: number) => (
-            <div key={i} className={cn("flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors", line.startsWith('$') ? "text-primary mt-2 font-bold" : "text-zinc-400")}>
-              <span className="shrink-0 text-zinc-800 select-none w-6 text-right font-light">{consoleOffset + i + 1}</span>
-              <span className="break-all whitespace-pre-wrap">{line}</span>
-            </div>
+          {consoleView.lines.length > 0 ? consoleView.lines.map((line: string, i: number) => (
+            <ConsoleLine key={`${consoleView.offset + i}-${line}`} line={line} lineNumber={consoleView.offset + i + 1} />
           )) : (
             <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4">
               <TerminalIcon size={48} />
@@ -184,20 +192,40 @@ export default function ProjectConsole({ uid, project }: ProjectConsoleProps) {
           <div ref={logsEndRef} />
         </div>
 
-        <form onSubmit={handleConsoleSubmit} className="p-4 bg-zinc-900/80 border-t border-white/5 flex gap-3">
-          {project.framework === 'Laravel' && (
-            <div className="flex items-center px-4 bg-zinc-800 rounded font-mono text-[10px] font-bold text-zinc-500 border border-white/5">php artisan</div>
-          )}
-          <Input
-            value={consoleCommand}
-            onChange={e => setConsoleCommand(e.target.value)}
-            placeholder={project.framework === 'Laravel' ? 'migrate --seed' : 'npm run build'}
-            disabled={isExecuting}
-            className="flex-1 bg-zinc-800/50 border-white/10 text-white font-mono text-xs focus-visible:ring-1 focus-visible:ring-primary h-10 shadow-inner"
-          />
-          <Button type="submit" disabled={isExecuting || !consoleCommand.trim()} size="sm" className="h-10 px-6 font-bold uppercase tracking-widest text-[10px]">{t('projectDetail.actions.execute')}</Button>
+        <form onSubmit={handleConsoleSubmit} className="border-t border-white/5 bg-zinc-900/80 p-4">
+          <div className="flex items-center gap-5 rounded-xl border border-white/10 bg-zinc-950/70 px-6 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_18px_60px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25">
+            <div className="flex h-9 w-7 shrink-0 items-center justify-center font-mono text-[13px] leading-none text-emerald-400/80">$</div>
+            <Input
+              value={consoleCommand}
+              onChange={e => setConsoleCommand(e.target.value)}
+              placeholder={isLaravelProject ? 'php artisan migrate --seed' : 'npm run build'}
+              disabled={isExecuting}
+              className="h-9 min-w-0 flex-1 border-0 bg-transparent px-3 font-mono text-[13px] leading-5 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
+            />
+            <Button type="submit" disabled={isExecuting || !consoleCommand.trim()} size="sm" className="h-9 rounded-lg px-5 text-[10px] font-bold uppercase tracking-[0.18em] shadow-none disabled:bg-zinc-700 disabled:text-zinc-400">{t('projectDetail.actions.execute')}</Button>
+          </div>
         </form>
       </Card>
     </>
   )
 }
+
+interface ConsoleLineProps {
+  line: string
+  lineNumber: number
+}
+
+const ConsoleLine = memo(function ConsoleLine({ line, lineNumber }: ConsoleLineProps) {
+  return (
+    <div className={cn("group -mx-2 flex gap-4 rounded px-2 py-0.5 transition-colors hover:bg-white/[0.05]", line.startsWith('$') ? "mt-2 font-bold text-primary" : "text-zinc-400")}>
+      <span className="w-6 shrink-0 select-none text-right font-light text-zinc-800">{lineNumber}</span>
+      <span className="break-all whitespace-pre-wrap">{line}</span>
+    </div>
+  )
+})
+
+export default memo(ProjectConsole, (prev, next) => (
+  prev.uid === next.uid &&
+  prev.project.id === next.project.id &&
+  prev.project.framework === next.project.framework
+))

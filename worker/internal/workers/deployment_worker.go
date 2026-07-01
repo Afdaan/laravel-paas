@@ -1533,7 +1533,11 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 		sanitizedMsg = fmt.Sprintf("%s\n\nPaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
 	}
 
-	w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg)
+	if !w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg) {
+		if err := w.projectRepo.UpdateDeploymentStatus(project.ID, models.DepStatusFailed, sanitizedMsg, project.DeploymentProgress, jobID); err != nil {
+			slog.Error("Failed to force deployment failure status", "projectId", project.ID, "jobId", jobID, "error", err)
+		}
+	}
 	msg := sanitizedMsg
 	project.ErrorLog = &msg
 

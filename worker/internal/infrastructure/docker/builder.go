@@ -149,6 +149,8 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 	}
 
+	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
+
 	if isWebFacing {
 		runArgs = append(runArgs,
 			"--label", "traefik.enable=true",
@@ -298,6 +300,12 @@ stdout_logfile_backups=5
 			cmdStr = "php artisan " + cmdStr
 		}
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("BUILD_COMMAND=%s", cmdStr))
+	}
+	if npmrcPath, cleanup, err := s.prepareNpmAuthConfig(buildPath, project); err != nil {
+		return err
+	} else if npmrcPath != "" {
+		defer cleanup()
+		buildArgs = append(buildArgs, "--secret", fmt.Sprintf("id=npmrc,src=%s", npmrcPath))
 	}
 	if project.NodeVersion != "" {
 		buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("NODE_VERSION=%s", project.NodeVersion))
@@ -506,7 +514,10 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 					portRegex := regexp.MustCompile(`(?i)(?:\bport\b|PORT\s*=\s*|\b-p\b)\s*=?\s*(\d+)`)
 					if matches := portRegex.FindStringSubmatch(startScript); len(matches) > 1 {
 						if pVal, errP := strconv.Atoi(matches[1]); errP == nil && pVal > 0 && pVal <= 65535 {
-							if project.Port == nil { project.Port = &pVal; slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal) }
+							if project.Port == nil {
+								project.Port = &pVal
+								slog.Info("Parsed custom port override from package.json start script", "subdomain", project.Subdomain, "port", pVal)
+							}
 
 						}
 					}
@@ -614,6 +625,11 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		}
 		_ = os.Remove(filepath.Join(buildPath, "Caddyfile"))
 	}()
+	if _, cleanup, err := s.prepareNpmAuthConfig(buildPath, project); err != nil {
+		return err
+	} else if cleanup != nil {
+		defer cleanup()
+	}
 
 	// Inject optimized railpack.json configuration using resolved commands and stack type
 	s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"], stack, project, staticDir, noCache)
@@ -654,6 +670,141 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	return nil
+}
+
+func (s *DockerService) prepareNpmAuthConfig(buildPath string, project *models.Project) (string, func(), error) {
+	projectEnvPath := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env")
+	envVars, err := s.ParseProjectEnv(projectEnvPath)
+	if err != nil || envVars["NODE_AUTH_TOKEN"] == "" {
+		return "", nil, nil
+	}
+
+	npmrcPath := filepath.Join(buildPath, ".npmrc")
+	var previousContent []byte
+	var previousMode os.FileMode = 0644
+	if stat, err := os.Stat(npmrcPath); err == nil {
+		previousMode = stat.Mode().Perm()
+		previousContent, err = os.ReadFile(npmrcPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed read existing npm config: %w", err)
+		}
+	}
+
+	npmrcLines := []string{strings.TrimSpace(string(previousContent))}
+	for _, scope := range s.detectGithubPackageScopes(buildPath, envVars) {
+		npmrcLines = append(npmrcLines, fmt.Sprintf("@%s:registry=https://npm.pkg.github.com", scope))
+	}
+	npmrcLines = append(npmrcLines,
+		fmt.Sprintf("//npm.pkg.github.com/:_authToken=%s", envVars["NODE_AUTH_TOKEN"]),
+		"always-auth=true",
+	)
+	content := strings.TrimSpace(strings.Join(npmrcLines, "\n")) + "\n"
+	if err := os.WriteFile(npmrcPath, []byte(content), 0600); err != nil {
+		return "", nil, fmt.Errorf("failed create npm auth config: %w", err)
+	}
+
+	return npmrcPath, func() {
+		if previousContent != nil {
+			_ = os.WriteFile(npmrcPath, previousContent, previousMode)
+			return
+		}
+		_ = os.Remove(npmrcPath)
+	}, nil
+}
+
+func (s *DockerService) detectGithubPackageScopes(buildPath string, envVars map[string]string) []string {
+	configuredScopes := strings.TrimSpace(envVars["NPM_GITHUB_SCOPES"])
+	if configuredScopes != "" {
+		return splitNpmScopes(configuredScopes)
+	}
+
+	scopes := make(map[string]struct{})
+	for _, pkg := range detectGithubPackagesFromLockfile(filepath.Join(buildPath, "package-lock.json")) {
+		if scope := npmScope(pkg); scope != "" {
+			scopes[scope] = struct{}{}
+		}
+	}
+	if len(scopes) == 0 {
+		for _, scope := range detectScopedPackagesFromPackageJSON(filepath.Join(buildPath, "package.json")) {
+			scopes[scope] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(scopes))
+	for scope := range scopes {
+		result = append(result, scope)
+	}
+	return result
+}
+
+func detectGithubPackagesFromLockfile(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "npm.pkg.github.com") {
+		return nil
+	}
+
+	type lockPackage struct {
+		Resolved string `json:"resolved"`
+	}
+	type lockfile struct {
+		Packages     map[string]lockPackage `json:"packages"`
+		Dependencies map[string]lockPackage `json:"dependencies"`
+	}
+	var lock lockfile
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return nil
+	}
+
+	packages := make([]string, 0)
+	for path, pkg := range lock.Packages {
+		if strings.Contains(pkg.Resolved, "npm.pkg.github.com") {
+			packages = append(packages, strings.TrimPrefix(path, "node_modules/"))
+		}
+	}
+	for name, pkg := range lock.Dependencies {
+		if strings.Contains(pkg.Resolved, "npm.pkg.github.com") {
+			packages = append(packages, name)
+		}
+	}
+	return packages
+}
+
+func detectScopedPackagesFromPackageJSON(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	scopePattern := regexp.MustCompile(`"(@[A-Za-z0-9][A-Za-z0-9._-]*/[^"/]+)"\s*:`)
+	packages := make([]string, 0)
+	for _, match := range scopePattern.FindAllStringSubmatch(string(data), -1) {
+		packages = append(packages, match[1])
+	}
+	return packages
+}
+
+func npmScope(packageName string) string {
+	if !strings.HasPrefix(packageName, "@") {
+		return ""
+	}
+	parts := strings.SplitN(strings.TrimPrefix(packageName, "@"), "/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[0]
+}
+
+func splitNpmScopes(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	})
+	scopes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		scope := strings.TrimPrefix(strings.TrimSpace(part), "@")
+		if scope != "" {
+			scopes = append(scopes, scope)
+		}
+	}
+	return scopes
 }
 
 // injectDefaultRailpackConfig writes an optimized railpack.json for the project.

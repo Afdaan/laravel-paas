@@ -187,7 +187,7 @@ export const translations = {
         db: { title: "Database Provisioning", desc: "One-click MySQL isolated schema creation for each user project." },
         edge: { title: "Global Edge Routing", desc: "Immediate SSL/TLS termination on our global infrastructure." },
         php: { title: "Runtime Isolation", desc: "Run multiple PHP versions (8.0 - 8.4) in isolated namespaces." },
-        access: { title: "Integrated Console", desc: "Direct artisan commands and shell access from the dashboard." },
+        access: { title: "Integrated Console", desc: "Run project commands directly from the dashboard." },
         secure: { title: "Security Guardrails", desc: "Automatic firewall rules and resource quota enforcement." }
       },
       infra: {
@@ -769,14 +769,16 @@ export const translations = {
         deployError: "Deployment Error",
       },
       console: {
-        header: "Artisan Console",
-        shell: "Artisan Shell",
+        header: "Terminal Console",
+        shell: "Terminal Shell",
         terminalReady: "Terminal Ready",
         executing: "Running command",
-        artisanPrefix: "Commands are prefixed with 'php artisan' automatically.",
         destructiveTitle: "Destructive Command Warning",
         destructiveMessage: "Warning: Running 'migrate:fresh' will DROP all tables and delete all data in your database! Since this application is in production/live mode, this action cannot be undone. Do you really wish to proceed?",
         destructiveConfirm: "Yes, proceed",
+        destructiveWarning: "This command may change application files, dependencies, queues, or data. It will be logged before execution.",
+        shellEvalWarning: "This script execution may run arbitrary code inside your container, modifying files, dependencies, queues, data, or network behavior. It will be audited.",
+        runCommand: "Run command",
       },
       secrets: {
         desc: "Application environment configuration (.env)",
@@ -1836,7 +1838,7 @@ export const translations = {
         db: { title: "Database Provisioning", desc: "Pembuatan schema MySQL terisolasi dalam satu klik untuk setiap project." },
         edge: { title: "Global Edge Routing", desc: "Terminasi SSL/TLS instan pada infrastruktur global." },
         php: { title: "Runtime Isolation", desc: "Menjalankan berbagai versi PHP (8.0 - 8.4) dalam namespace yang terisolasi." },
-        access: { title: "Integrated Console", desc: "Akses perintah artisan dan shell langsung dari dashboard." },
+        access: { title: "Integrated Console", desc: "Jalankan command project langsung dari dashboard." },
         secure: { title: "Security Guardrails", desc: "Aturan firewall otomatis dan penegakan kuota resource." }
       },
       infra: {
@@ -2418,14 +2420,16 @@ export const translations = {
         deployError: "Deployment Error",
       },
       console: {
-        header: "Artisan Console",
-        shell: "Artisan Shell",
+        header: "Terminal Console",
+        shell: "Terminal Shell",
         terminalReady: "Terminal Ready",
         executing: "Menjalankan perintah",
-        artisanPrefix: "Perintah otomatis diawali dengan 'php artisan'.",
         destructiveTitle: "Peringatan Command Destruktif",
         destructiveMessage: "Peringatan: Menjalankan 'migrate:fresh' akan menghapus (DROP) semua tabel dan seluruh data di database Anda! Karena aplikasi sedang berjalan di production/live mode, tindakan ini tidak dapat dibatalkan. Apakah Anda yakin ingin melanjutkan?",
         destructiveConfirm: "Ya, lanjutkan",
+        destructiveWarning: "Perintah ini dapat mengubah file aplikasi, dependensi, antrean, atau data. Akan dicatat sebelum dieksekusi.",
+        shellEvalWarning: "Eksekusi script ini dapat menjalankan kode arbitrer di dalam container, mengubah file, dependensi, antrean, data, atau jaringan. Akan diaudit.",
+        runCommand: "Jalankan perintah",
       },
       secrets: {
         desc: "Konfigurasi environment aplikasi (.env)",

@@ -42,9 +42,6 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--restart", "unless-stopped",
 		"--cpus", cpuLimit,
 		"--memory", memoryLimit,
-		"--memory-swap", memoryLimit,
-		"--security-opt=no-new-privileges:true",
-		"--pids-limit=250",
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
 
 		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
@@ -53,6 +50,8 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
 		"--label", "paas.container_role=worker",
 	}
+
+	runArgs = append(runArgs, TenantHardeningArgs(memoryLimit)...)
 
 	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
@@ -91,6 +90,10 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 // sanitizeBuildError strips internal build system noise from stderr output
 // and returns only the lines that are actionable by the end user using regex error classifiers.
 func sanitizeBuildError(stderr string) string {
+	if msg := utils.NpmRegistryAuthErrorMessage(stderr); msg != "" {
+		return msg
+	}
+
 	lines := strings.Split(stderr, "\n")
 
 	// Define actionable error patterns
@@ -100,6 +103,7 @@ func sanitizeBuildError(stderr string) string {
 		regexp.MustCompile(`(?i)Failed\s*to\s*compile`),
 		regexp.MustCompile(`(?i)Your\s*requirements\s*could\s*not\s*be\s*resolved`),
 		regexp.MustCompile(`(?i)npm\s+ERR!`),
+		regexp.MustCompile(`(?i)npm\s+error`),
 		regexp.MustCompile(`(?i)yarn\s+error`),
 		regexp.MustCompile(`(?i)command\s+failed\s+with\s+exit\s+code`),
 		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
@@ -214,9 +218,6 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
-		"--memory-swap", finalMemory,
-		"--security-opt=no-new-privileges:true",
-		"--pids-limit=250",
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
@@ -229,6 +230,8 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
 		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 	}
+
+	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
 
 	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),

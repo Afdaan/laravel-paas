@@ -24,6 +24,7 @@ interface CustomDomainManagerProps {
   subdomain: string
   projectUrl?: string
   onDomainsChanged?: () => void
+  isActive?: boolean
 }
 
 // Helper to calculate DNS Host (Dynamic & Supports Multi-part TLDs)
@@ -147,7 +148,7 @@ const getRefinedEvent = (eventType: string, rawMessage: string, t: (key: string,
   return { title, desc }
 }
 
-export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomainsChanged }: CustomDomainManagerProps) {
+export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomainsChanged, isActive = true }: CustomDomainManagerProps) {
   const { t, language } = useTranslation()
   const [domains, setDomains] = useState<CustomDomain[]>([])
 
@@ -215,14 +216,15 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
   }, [projectId, t, selectedDomainId])
 
   useEffect(() => {
+    if (!isActive) return
     fetchDomains()
-  }, [fetchDomains])
+  }, [fetchDomains, isActive])
 
 
 
   // Real-time project-wide EventSource connection for live domain list state and audit log streaming
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || !isActive) return;
 
     let eventSource: EventSource | null = null;
     let isSubscribed = true;
@@ -361,7 +363,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
       if (eventSource) eventSource.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, isActive]);
 
   // Helper to format and display error toasts with premium Title/Description layout
   const showErrorToast = useCallback((rawMessage: string) => {

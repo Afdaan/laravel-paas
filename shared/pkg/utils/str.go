@@ -342,6 +342,10 @@ func GetSmartSuggestion(errorMsg string) string {
 	}
 
 	// 4. Dependency & Lockfile Conflicts
+	if suggestion := NpmRegistryAuthSuggestion(errorMsg); suggestion != "" {
+		return suggestion
+	}
+
 	if strings.Contains(errorMsg, "npm ERR! code ERESOLVE") ||
 		strings.Contains(errorMsg, "composer.lock was created for") ||
 		strings.Contains(errorMsg, "Could not find a version that satisfies the requirement") {
@@ -354,5 +358,61 @@ func GetSmartSuggestion(errorMsg string) string {
 		return "No start command was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings."
 	}
 
+	return ""
+}
+
+func NpmRegistryAuthErrorMessage(errorMsg string) string {
+	if !strings.Contains(errorMsg, "E401") {
+		return ""
+	}
+
+	host := detectNpmRegistryHost(errorMsg)
+	if host == "" {
+		return ""
+	}
+
+	packageName := detectNpmPackageSpecifier(errorMsg)
+	if packageName == "" {
+		packageName = "private npm package"
+	}
+
+	return fmt.Sprintf("Private npm registry authentication failed for %s from %s. Configure the project npm auth token with read access to this package and ensure .npmrc maps the package scope to https://%s.", packageName, host, host)
+}
+
+func NpmRegistryAuthSuggestion(errorMsg string) string {
+	if NpmRegistryAuthErrorMessage(errorMsg) == "" && !strings.Contains(errorMsg, "Private npm registry authentication failed") {
+		return ""
+	}
+	return "Private npm registry rejected the npm token. Verify the token can read the package, organization SSO is authorized if required, and the package scope maps to the correct registry host."
+}
+
+func detectNpmRegistryHost(errorMsg string) string {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`https?://([^/\s]+)/`),
+		regexp.MustCompile(`//([^/\s]+):_authToken`),
+	}
+	for _, pattern := range patterns {
+		for _, match := range pattern.FindAllStringSubmatch(errorMsg, -1) {
+			if len(match) == 2 && strings.Contains(match[1], ".") {
+				return match[1]
+			}
+		}
+	}
+	return ""
+}
+
+func detectNpmPackageSpecifier(errorMsg string) string {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`/download/(@[^/]+/[^/]+)/([^/\s]+)`),
+		regexp.MustCompile(`(@[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)@([A-Za-z0-9][^\s]*)`),
+		regexp.MustCompile(`(@[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)`),
+	}
+	for _, pattern := range patterns {
+		if match := pattern.FindStringSubmatch(errorMsg); len(match) >= 3 {
+			return fmt.Sprintf("%s@%s", match[1], match[2])
+		} else if len(match) == 2 {
+			return match[1]
+		}
+	}
 	return ""
 }
