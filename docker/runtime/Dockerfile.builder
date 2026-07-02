@@ -17,6 +17,7 @@ FROM php:${PHP_VERSION}-cli-alpine
 # Re-declare ARGs for internal use
 ARG PHP_VERSION
 ARG NODE_VERSION
+ARG PHP_BUILD_JOBS=5
 
 # Install system build dependencies (minimal needed for PHP extensions and general building)
 RUN apk add --no-cache \
@@ -57,7 +58,7 @@ RUN cp /usr/share/zoneinfo/Asia/Jakarta /etc/localtime && echo "Asia/Jakarta" > 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
     && docker-php-ext-configure ldap \
-    && docker-php-ext-install -j$(nproc) \
+    && docker-php-ext-install -j${PHP_BUILD_JOBS} \
         gd \
         zip \
         pdo \
