@@ -6,6 +6,7 @@ FROM php:${PHP_VERSION}-fpm-alpine
 # Set build arguments for customization
 ARG INSTALL_REDIS=true
 ARG INSTALL_IMAGICK=true
+ARG PHP_BUILD_JOBS=4
 
 # Install core runtime dependencies (Nginx, Supervisor, libraries)
 # Removed heavy dev/build packages like git and icu-data-full to save ~40MB
@@ -55,7 +56,7 @@ RUN apk add --no-cache --virtual .build-deps \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
     && docker-php-ext-configure ldap \
-    && docker-php-ext-install -j$(nproc) \
+    && docker-php-ext-install -j${PHP_BUILD_JOBS} \
         pdo \
         pdo_mysql \
         pdo_pgsql \
