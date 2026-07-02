@@ -77,8 +77,10 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         ldap \
         xml \
         fileinfo \
-    && printf "\n" | pecl install redis \
-    && printf "\n" | pecl install imagick \
+    && (pecl channel-update pecl.php.net >/dev/null || true) \
+    && pecl_install() { for attempt in 1 2 3; do printf "\n" | pecl install "$1" && return 0; sleep $((attempt * 5)); done; return 1; } \
+    && pecl_install redis \
+    && pecl_install imagick \
     && docker-php-ext-enable redis imagick \
     && docker-php-source delete \
     && find /usr/lib/python* -name "__pycache__" -exec rm -rf {} + \

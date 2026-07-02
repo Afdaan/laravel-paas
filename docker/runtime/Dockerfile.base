@@ -75,11 +75,13 @@ RUN apk add --no-cache --virtual .build-deps \
         gmp \
         ldap \
         fileinfo \
+    && (pecl channel-update pecl.php.net >/dev/null || true) \
+    && pecl_install() { for attempt in 1 2 3; do printf "\n" | pecl install "$1" && return 0; sleep $((attempt * 5)); done; return 1; } \
     && if [ "$INSTALL_REDIS" = "true" ]; then \
-        printf "\n" | pecl install redis && docker-php-ext-enable redis; \
+        pecl_install redis && docker-php-ext-enable redis; \
     fi \
     && if [ "$INSTALL_IMAGICK" = "true" ]; then \
-        printf "\n" | pecl install imagick && docker-php-ext-enable imagick; \
+        pecl_install imagick && docker-php-ext-enable imagick; \
     fi \
     && find /usr/local/lib/php/extensions -name "*.so" -exec strip --strip-unneeded {} + \
     && strip --strip-unneeded /usr/local/bin/php /usr/local/sbin/php-fpm \
