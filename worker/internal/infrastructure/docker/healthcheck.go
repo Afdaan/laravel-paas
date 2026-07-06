@@ -55,24 +55,9 @@ func (s *DockerService) probeHTTP(ctx context.Context, url string) error {
 
 // AdvancedHealthcheck runs a production readiness probe with exponential backoff and a stabilization monitoring window.
 // logCallback is optional and used for appending events directly to the user deployment timeline.
-func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string, logCallback func(string)) error {
+func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models.Project, containerID string, logCallback func(string), exposure models.RuntimeExposure) error {
 	slog.Info("Starting advanced healthcheck probe", "projectId", project.ID, "containerId", containerID)
-	announce := func(message string) {
-		if logCallback != nil {
-			logCallback(message)
-		}
-	}
-
-	// Determine if container exposes a web port
-	isWebFacing := false
-	if project.Port != nil {
-		isWebFacing = *project.Port > 0
-	} else if project.Framework == "Laravel" {
-		isWebFacing = true
-	}
-
-	if !isWebFacing {
-		announce(">> Checking container status for non-web application...")
+	if !exposure.WebFacing {
 		running, runErr := s.IsContainerRunning(containerID)
 		if runErr != nil {
 			return fmt.Errorf("failed to check container running status: %w", runErr)
@@ -81,9 +66,15 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 			logs, _ := s.GetLogs(containerID, 15)
 			return fmt.Errorf("[RUNTIME_FAILED] Container stopped unexpectedly. Last logs:\n%s", logs)
 		}
-		announce("✓ Container is running (non-web application fast path).")
-		slog.Info("Non-web application health check completed (container running)", "containerId", containerID)
+
+		slog.Info("Skipping HTTP readiness probe for non-web project", "subdomain", project.Subdomain, "framework", project.Framework, "resolution_reason", exposure.Reason)
 		return nil
+	}
+	internalPort := fmt.Sprintf("%d", exposure.Port)
+	announce := func(message string) {
+		if logCallback != nil {
+			logCallback(message)
+		}
 	}
 
 	announce(">> Starting readiness probe and stabilization checks...")
@@ -132,7 +123,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 			}
 			ip, ipErr := s.GetContainerIP(containerID)
 			if ipErr == nil {
-				url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
+				url := fmt.Sprintf("http://%s:%s%s", ip, internalPort, project.GetHealthCheckPath())
 				if err := s.probeHTTP(ctx, url); err == nil {
 					isReady = true
 					break
@@ -182,7 +173,7 @@ func (s *DockerService) AdvancedHealthcheck(ctx context.Context, project *models
 
 	announce(">> Re-confirming HTTP readiness after stabilization...")
 	ip, _ := s.GetContainerIP(containerID)
-	url := fmt.Sprintf("http://%s:%s%s", ip, project.GetInternalPort(), project.GetHealthCheckPath())
+	url := fmt.Sprintf("http://%s:%s%s", ip, internalPort, project.GetHealthCheckPath())
 	if err := s.probeHTTP(ctx, url); err != nil {
 		logs, _ := s.GetLogs(containerID, 15) // Trimmed to last 15 lines of developer logs
 		return fmt.Errorf("[RUNTIME_FAILED] HTTP probe failed during stabilization window. Error: %w.\n\n💡 Tip: Ensure your application is listening on the 0.0.0.0 host, is using the $PORT environment variable, and returns a 200 OK status code at the root path (/).\n\nLast logs:\n%s", err, logs)

@@ -107,7 +107,7 @@ function UserDashboard() {
       const fw = p.framework || t('common.general')
       counts.set(fw, (counts.get(fw) || 0) + 1)
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   }, [projects, t])
 
   return (

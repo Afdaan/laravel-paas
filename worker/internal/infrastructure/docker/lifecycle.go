@@ -198,7 +198,31 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
 	serviceName := project.Subdomain
 
-	internalPort := project.GetInternalPort()
+	detectedPort, detectErr := s.DetectExposedPort(imageName)
+	exposure := project.ResolveRuntimeExposure(0)
+	if detectErr == nil {
+		exposure = project.ResolveRuntimeExposure(detectedPort)
+	}
+	if exposure.Reason == models.RuntimeExposureReasonImageExpose {
+		p := detectedPort
+		project.Port = &p
+		if s.GetDB() != nil {
+			s.GetDB().Model(project).UpdateColumn("port", detectedPort)
+		}
+	}
+	internalPort := fmt.Sprintf("%d", exposure.Port)
+	slog.Info("Resolved runtime exposure",
+		"subdomain", project.Subdomain,
+		"framework", project.Framework,
+		"web_facing", exposure.WebFacing,
+		"resolved_port", exposure.Port,
+		"resolution_reason", exposure.Reason,
+		"detected_exposed_port", detectedPort,
+		"manual_port_set", project.Port != nil,
+	)
+	if exposure.Reason == models.RuntimeExposureReasonUnknownFramework {
+		return "", fmt.Errorf("internal port could not be resolved; set project internal port to expose this app publicly, or set it to 0 for a private worker-only service")
+	}
 
 	finalCPUs := models.DefaultDockerCPULimit
 	if project.CPULimit != nil {
@@ -221,17 +245,22 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
-
-		"--label", "traefik.enable=true",
-		"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
-			routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
-		"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=/health", serviceName),
-		"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
 	}
 
 	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
+	if exposure.WebFacing {
+		runArgs = append(runArgs,
+			"--label", "traefik.enable=true",
+			"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
+				routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
+			"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
+			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
+			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=%s", serviceName, project.GetHealthCheckPath()),
+			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
+		)
+	} else {
+		runArgs = append(runArgs, "--label", "traefik.enable=false")
+	}
 
 	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),

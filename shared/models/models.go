@@ -169,21 +169,67 @@ type Project struct {
 	DatabaseInstance *DatabaseInstance `gorm:"foreignKey:ProjectID" json:"database_instance,omitempty"`
 }
 
+type RuntimeExposure struct {
+	WebFacing bool
+	Port      int
+	Reason    string
+}
+
+const (
+	RuntimeExposureReasonManualPort       = "manual_port"
+	RuntimeExposureReasonImageExpose      = "image_expose"
+	RuntimeExposureReasonFrameworkDefault = "framework_default"
+	RuntimeExposureReasonUnknownFramework = "unknown_framework"
+	RuntimeExposureReasonDisabledPort     = "disabled_port"
+)
+
+func (p *Project) ResolveRuntimeExposure(detectedPort int) RuntimeExposure {
+	if p.Port != nil {
+		if *p.Port > 0 {
+			return RuntimeExposure{WebFacing: true, Port: *p.Port, Reason: RuntimeExposureReasonManualPort}
+		}
+
+		return RuntimeExposure{WebFacing: false, Port: 0, Reason: RuntimeExposureReasonDisabledPort}
+	}
+
+	if detectedPort > 0 {
+		return RuntimeExposure{WebFacing: true, Port: detectedPort, Reason: RuntimeExposureReasonImageExpose}
+	}
+
+	if port, ok := knownFrameworkPort(p.Framework); ok {
+		return RuntimeExposure{WebFacing: true, Port: port, Reason: RuntimeExposureReasonFrameworkDefault}
+	}
+
+	return RuntimeExposure{WebFacing: false, Port: 0, Reason: RuntimeExposureReasonUnknownFramework}
+}
+
+func knownFrameworkPort(framework string) (int, bool) {
+	switch {
+	case strings.EqualFold(framework, "Laravel"):
+		return 80, true
+	case strings.EqualFold(framework, "Next.js"),
+		strings.EqualFold(framework, "Nuxt.js"),
+		strings.EqualFold(framework, "Node.js"),
+		strings.EqualFold(framework, "React"),
+		strings.EqualFold(framework, "Vue"),
+		strings.EqualFold(framework, "Svelte"),
+		strings.EqualFold(framework, "Angular"),
+		strings.EqualFold(framework, "TypeScript"),
+		strings.EqualFold(framework, "Vite"):
+		return 3000, true
+	}
+
+	return 0, false
+}
+
 // GetInternalPort returns the target port for Traefik routing
 func (p *Project) GetInternalPort() string {
-	if p.Port != nil {
-		return fmt.Sprintf("%d", *p.Port)
+	exposure := p.ResolveRuntimeExposure(0)
+	if exposure.Port <= 0 {
+		return ""
 	}
-	if strings.EqualFold(p.Framework, "Laravel") {
-		return "80"
-	}
-	if strings.EqualFold(p.Framework, "Next.js") || strings.EqualFold(p.Framework, "Nuxt.js") {
-		return "3000"
-	}
-	if strings.EqualFold(p.Framework, "Node.js") || strings.EqualFold(p.Framework, "React") || strings.EqualFold(p.Framework, "Vue") || strings.EqualFold(p.Framework, "Svelte") || strings.EqualFold(p.Framework, "Angular") || strings.EqualFold(p.Framework, "TypeScript") || strings.EqualFold(p.Framework, "Vite") {
-		return "3000"
-	}
-	return "8080"
+
+	return fmt.Sprintf("%d", exposure.Port)
 }
 
 // GetHealthCheckPath returns the configured health check path, or "/" for most frameworks ("/health" for Laravel).

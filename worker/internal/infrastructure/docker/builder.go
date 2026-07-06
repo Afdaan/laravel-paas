@@ -92,7 +92,11 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	// 3.5. NEW: Dynamic Port Detection from Image Metadata
 	// If port hasn't been manually set by user, try to detect it from image metadata
 	detectedPort, detectErr := s.DetectExposedPort(imageName)
-	if detectErr == nil && project.Port == nil && detectedPort > 0 {
+	exposure := project.ResolveRuntimeExposure(0)
+	if detectErr == nil {
+		exposure = project.ResolveRuntimeExposure(detectedPort)
+	}
+	if exposure.Reason == models.RuntimeExposureReasonImageExpose {
 		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
 		p := detectedPort
 		project.Port = &p
@@ -102,7 +106,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	}
 
 	// 4. Determine Final Internal Port for Traefik
-	internalPort = project.GetInternalPort()
+	internalPort = fmt.Sprintf("%d", exposure.Port)
 
 	// 5. Start Web Container
 	s.storage.EnsurePersistentPath(project)
@@ -123,16 +127,21 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		finalMemory = memoryLimit
 	}
 
-	// Web-facing if port is explicitly > 0, or if it's a legacy Laravel app with no port defined.
-	// If project.Port is nil here, it means the user didn't set a port AND no port was detected from the image.
-	isWebFacing := false
-	if project.Port != nil {
-		isWebFacing = *project.Port > 0
-	} else if project.Framework == "Laravel" {
-		isWebFacing = true
-	}
-	if !isWebFacing {
-		slog.Info("Project classified as non-web", "subdomain", project.Subdomain, "framework", project.Framework)
+	slog.Info("Resolved runtime exposure",
+		"subdomain", project.Subdomain,
+		"framework", project.Framework,
+		"web_facing", exposure.WebFacing,
+		"resolved_port", exposure.Port,
+		"resolution_reason", exposure.Reason,
+		"detected_exposed_port", detectedPort,
+		"manual_port_set", project.Port != nil,
+	)
+	if exposure.Reason == models.RuntimeExposureReasonUnknownFramework {
+		message := "Internal port could not be resolved. Set the project internal port to expose this app publicly, or set it to 0 for a private worker-only service."
+		if logCallback != nil {
+			logCallback("ERROR: " + message)
+		}
+		return "", apperr.New(400, "PORT_RESOLUTION_REQUIRED", message)
 	}
 
 	runArgs := []string{
@@ -151,7 +160,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
 
-	if isWebFacing {
+	if exposure.WebFacing {
 		runArgs = append(runArgs,
 			"--label", "traefik.enable=true",
 			"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",

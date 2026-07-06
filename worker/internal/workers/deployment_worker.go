@@ -925,6 +925,11 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			break
 		}
 	}
+	if packagePath := w.dockerService.FindFileRecursively(buildPath, "package.json", 1, 3); packagePath != "" {
+		if framework := detectJSFrameworkFromPackage(packagePath); framework != "" {
+			project.Framework = framework
+		}
+	}
 
 	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
 	if langVersion != "" && !project.IsManualVersion {
@@ -1138,7 +1143,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	appendLog(">> Starting container readiness checks...")
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
 
-	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog); err != nil {
+	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog, project.ResolveRuntimeExposure(0)); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
 
@@ -1319,6 +1324,48 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
 		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}()
+}
+
+func detectJSFrameworkFromPackage(packagePath string) string {
+	data, err := os.ReadFile(packagePath)
+	if err != nil {
+		return ""
+	}
+
+	var manifest struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ""
+	}
+
+	hasDependency := func(name string) bool {
+		if _, ok := manifest.Dependencies[name]; ok {
+			return true
+		}
+		_, ok := manifest.DevDependencies[name]
+		return ok
+	}
+
+	switch {
+	case hasDependency("next"):
+		return "Next.js"
+	case hasDependency("nuxt") || hasDependency("@nuxt/kit"):
+		return "Nuxt.js"
+	case hasDependency("@angular/core") || hasDependency("@angular/cli"):
+		return "Angular"
+	case hasDependency("svelte") || hasDependency("@sveltejs/kit"):
+		return "Svelte"
+	case hasDependency("vue"):
+		return "Vue"
+	case hasDependency("react") || hasDependency("react-dom"):
+		return "React"
+	case hasDependency("typescript"):
+		return "TypeScript"
+	}
+
+	return "Node.js"
 }
 
 // cleanupJobTracking safely removes sequence tracking state for a completed or terminated job to prevent memory leaks.

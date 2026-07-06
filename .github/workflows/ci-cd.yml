@@ -12,6 +12,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: self-hosted
+    env:
+      PROD_SSH: paas-prod
+      PROD_DIR: /mainData/laravel-paas
 
     steps:
       - name: Checkout Code
@@ -84,24 +87,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          TARGET_DIR="/opt/laravel-paas"
+          ssh "$PROD_SSH" bash -s -- "$PROD_DIR" "${{ github.ref_name }}" <<'REMOTE'
+          set -euo pipefail
 
-          cd "$TARGET_DIR"
+          PROD_DIR="$1"
+          GIT_REF="$2"
 
-          git config --global --add safe.directory "$TARGET_DIR"
+          cd "$PROD_DIR"
+
+          git config --global --add safe.directory "$PROD_DIR"
 
           git fetch origin
-
-          git checkout "${{ github.ref_name }}"
-          git reset --hard "origin/${{ github.ref_name }}"
+          git checkout "$GIT_REF"
+          git reset --hard "origin/$GIT_REF"
+          REMOTE
 
       - name: Conditional Deployment
         run: |
           set -euo pipefail
-
-          cd /opt/laravel-paas
-
-          chmod +x ./scripts/deploy-app.sh
 
           BACKEND="${{ steps.filter.outputs.backend }}"
           WORKER="${{ steps.filter.outputs.worker }}"
@@ -124,6 +127,20 @@ jobs:
           if [ "$FRONTEND" = "true" ]; then
             NEED_FRONTEND=true
           fi
+
+          ssh "$PROD_SSH" bash -s -- "$PROD_DIR" "$NEED_BACKEND" "$NEED_WORKER" "$NEED_FRONTEND" "$DEPLOY_SCRIPTS" "$CI" <<'REMOTE'
+          set -euo pipefail
+
+          PROD_DIR="$1"
+          NEED_BACKEND="$2"
+          NEED_WORKER="$3"
+          NEED_FRONTEND="$4"
+          DEPLOY_SCRIPTS="$5"
+          CI="$6"
+
+          cd "$PROD_DIR"
+
+          chmod +x ./scripts/deploy-app.sh
 
           if [ "$NEED_BACKEND" = "true" ] && [ "$NEED_WORKER" = "true" ] && [ "$NEED_FRONTEND" = "true" ]; then
             echo "[CI/CD] Full stack changes detected. Deploying ALL."
@@ -154,15 +171,22 @@ jobs:
               fi
             fi
           fi
+          REMOTE
 
       - name: Notification on Success
         if: success()
         run: |
           set +x
 
-          if [ -f /opt/laravel-paas/.env ]; then
+          ssh "$PROD_SSH" bash -s -- "$PROD_DIR" "${{ github.ref_name }}" <<'REMOTE'
+          set +x
+
+          PROD_DIR="$1"
+          GIT_REF="$2"
+
+          if [ -f "$PROD_DIR/.env" ]; then
             set -a
-            source /opt/laravel-paas/.env
+            source "$PROD_DIR/.env"
             set +a
           fi
 
@@ -170,7 +194,7 @@ jobs:
             exit 0
           fi
 
-          cd /opt/laravel-paas
+          cd "$PROD_DIR"
 
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -178,7 +202,7 @@ jobs:
             | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
 
           MSG="DEPLOY SUCCESS%0A"
-          MSG="${MSG}Branch: ${{ github.ref_name }}%0A"
+          MSG="${MSG}Branch: $GIT_REF%0A"
           MSG="${MSG}Commit: $COMMIT_HASH%0A"
           MSG="${MSG}Log: $LAST_COMMIT_MSG"
 
@@ -193,15 +217,22 @@ jobs:
               -d parse_mode="HTML" \
               > /dev/null
           done
+          REMOTE
 
       - name: Notification on Failure
         if: failure()
         run: |
           set +x
 
-          if [ -f /opt/laravel-paas/.env ]; then
+          ssh "$PROD_SSH" bash -s -- "$PROD_DIR" "${{ github.ref_name }}" <<'REMOTE'
+          set +x
+
+          PROD_DIR="$1"
+          GIT_REF="$2"
+
+          if [ -f "$PROD_DIR/.env" ]; then
             set -a
-            source /opt/laravel-paas/.env
+            source "$PROD_DIR/.env"
             set +a
           fi
 
@@ -209,12 +240,12 @@ jobs:
             exit 0
           fi
 
-          cd /opt/laravel-paas
+          cd "$PROD_DIR"
 
           COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
           MSG="DEPLOY FAILED%0A"
-          MSG="${MSG}Branch: ${{ github.ref_name }}%0A"
+          MSG="${MSG}Branch: $GIT_REF%0A"
           MSG="${MSG}Commit: $COMMIT_HASH"
 
           TELEGRAM_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -228,3 +259,4 @@ jobs:
               -d parse_mode="HTML" \
               > /dev/null
           done
+          REMOTE
