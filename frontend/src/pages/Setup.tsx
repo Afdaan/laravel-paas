@@ -231,7 +231,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
         </Card>
 
         <p className="text-center text-muted-foreground mt-8 text-xs">
-          Secure initialization powered by Laravel PaaS
+          Secure initialization powered by Runara
         </p>
       </div>
     </div>

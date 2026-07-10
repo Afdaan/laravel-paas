@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Stage 2: Production
 FROM alpine:3.19
 
-LABEL maintainer="Laravel PaaS"
+LABEL maintainer="Runara"
 LABEL description="Backend API Service"
 
 ENV TZ=Asia/Jakarta

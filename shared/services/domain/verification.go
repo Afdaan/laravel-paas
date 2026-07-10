@@ -386,7 +386,7 @@ httpLoop:
 			err = errReq
 			break httpLoop
 		}
-		req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+		req.Header.Set("User-Agent", "Runara-Healthcheck/1.0")
 
 		startHTTP := time.Now()
 		resp, err = client.Do(req)
@@ -403,7 +403,7 @@ httpLoop:
 				targetURL = fmt.Sprintf("http://%s", domain.Domain)
 				req, _ = http.NewRequestWithContext(checkCtx, "GET", targetURL, nil)
 				if req != nil {
-					req.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+					req.Header.Set("User-Agent", "Runara-Healthcheck/1.0")
 					startHTTP = time.Now()
 					resp, err = client.Do(req)
 					latency = time.Since(startHTTP).Milliseconds()
@@ -434,7 +434,7 @@ httpLoop:
 					upURL := fmt.Sprintf("%s://%s/up", scheme, domain.Domain)
 					upReq, _ := http.NewRequestWithContext(checkCtx, "GET", upURL, nil)
 					if upReq != nil {
-						upReq.Header.Set("User-Agent", "LaravelPaaS-Healthcheck/1.0")
+						upReq.Header.Set("User-Agent", "Runara-Healthcheck/1.0")
 						if upResp, upErr := client.Do(upReq); upErr == nil && upResp != nil {
 							upBytes, _ := io.ReadAll(upResp.Body)
 							upStr := string(upBytes)

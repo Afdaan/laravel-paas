@@ -1,5 +1,5 @@
 // ===========================================
-// Laravel PaaS Backend - Main Entry Point
+// Runara Backend - Main Entry Point
 // ===========================================
 package main
 

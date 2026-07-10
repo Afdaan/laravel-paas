@@ -177,7 +177,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	}
 
 	runArgs = append(runArgs,
-		// PaaS metadata labels
+		// Runara metadata labels
 		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
@@ -1016,7 +1016,7 @@ func (s *DockerService) injectDockerIgnore(projectPath string, logCallback func(
 		// The old template had "/build/" and "/dist/" but the new one does not.
 		// If they have our exact old signature header, or specifically the old build exclusions, we overwrite.
 		content := string(currentData)
-		if strings.Contains(content, "# Laravel PaaS - Docker Ignore File") && strings.Contains(content, "/build/") && strings.Contains(content, "/dist/") {
+		if strings.Contains(content, "# Runara - Docker Ignore File") && strings.Contains(content, "/build/") && strings.Contains(content, "/dist/") {
 			slog.Info("Found older generated .dockerignore template, updating to new version to improve caching", "path", ignorePath)
 		} else {
 			shouldScan = true

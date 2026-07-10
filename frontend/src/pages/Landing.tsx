@@ -68,7 +68,7 @@ export default function Landing() {
               <div className="w-8 h-8 bg-primary text-primary-foreground rounded-md flex items-center justify-center font-bold tracking-tighter">
                 LP
               </div>
-              <span className="font-bold tracking-tight group-hover:text-primary transition-colors">Laravel PaaS</span>
+              <span className="font-bold tracking-tight group-hover:text-primary transition-colors">Runara</span>
             </Link>
 
             <div className="hidden md:flex items-center gap-6">
@@ -256,8 +256,8 @@ export default function Landing() {
       <footer className="py-12 px-6 border-t bg-background">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 bg-primary text-primary-foreground rounded flex items-center justify-center text-xs font-bold font-mono">LP</div>
-            <span className="text-sm font-semibold tracking-tight">Laravel PaaS {t('common.logoSub')}</span>
+            <div className="w-6 h-6 bg-primary text-primary-foreground rounded flex items-center justify-center text-xs font-bold font-mono">R</div>
+            <span className="text-sm font-semibold tracking-tight">Runara {t('common.logoSub')}</span>
           </div>
           <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">
             &copy; {new Date().getFullYear()} Advanced Analytics Cluster.

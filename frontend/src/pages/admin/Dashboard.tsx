@@ -1,5 +1,5 @@
 // ===========================================
-// Admin Dashboard (PaaS Infrastructure)
+// Admin Dashboard (Runara Infrastructure)
 // ===========================================
 
 import { useState, useEffect, memo, useCallback } from 'react'

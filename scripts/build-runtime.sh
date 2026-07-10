@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Laravel PaaS Runtime Builder
+# Runara Runtime Builder
 # This script builds the optimized Docker images for PHP runtime versions 8.0 to 8.4.
 # Usage: ./build-runtime.sh [target] [--force] [--no-cache]
 # Targets:
@@ -61,7 +61,7 @@ fi
 IFS=':' read -r TARGET VERSION_FILTER <<< "$TARGET_ARG"
 TARGET=${TARGET:-"all"}
 
-echo -e "${BLUE}Building Laravel PaaS Runtime Images (Target: ${TARGET_ARG})...${NC}"
+echo -e "${BLUE}Building Runara Runtime Images (Target: ${TARGET_ARG})...${NC}"
 
 # Versions to build
 ALL_VERSIONS=("8.0" "8.1" "8.2" "8.3" "8.4")

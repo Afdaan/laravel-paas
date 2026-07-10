@@ -133,7 +133,7 @@ var blockedCommandFragments = []string{
 	"dd if=",
 }
 
-// ValidateCommand blocks commands that can damage the PaaS runtime or escape the project container.
+// ValidateCommand blocks commands that can damage the Runara runtime or escape the project container.
 // Application-level commands are allowed; frontend confirmation and audit logs handle risky app actions.
 func ValidateCommand(command string) error {
 	trimmed := strings.TrimSpace(command)

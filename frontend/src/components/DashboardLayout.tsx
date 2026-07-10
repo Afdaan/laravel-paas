@@ -410,18 +410,18 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   navigate(isAdmin ? '/admin/dashboard' : '/dashboard');
                 }
               }}
-              title="PaaS"
+              title="Runara"
               style={{ width: isVisualExpanded ? 'calc(100% - 32px)' : '40px' }}
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <span className="text-xs font-bold tracking-tighter">LP</span>
+                <span className="text-xs font-bold tracking-tighter">R</span>
               </div>
               <div className={`min-w-0 text-left transition-all ease-in-out ${
                 isVisualExpanded
                   ? 'opacity-100 max-w-[150px] ml-3 duration-300 delay-100'
                   : 'opacity-0 max-w-0 overflow-hidden ml-0 duration-75'
               }`}>
-                <h1 className="truncate text-base font-semibold tracking-tight whitespace-nowrap">PaaS</h1>
+                <h1 className="truncate text-base font-semibold tracking-tight whitespace-nowrap">Runara</h1>
                 <p className="truncate text-[10px] font-medium text-muted-foreground whitespace-nowrap">
                   {isAdmin ? t('common.globalAdmin') : t('common.user')}
                 </p>

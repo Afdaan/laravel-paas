@@ -1,6 +1,6 @@
 # Nginx Webhook Proxy (Python Version)
 
-This script acts as a bridge between the **Laravel PaaS Backend** and the **Remote Nginx VPS**. It automatically manages Nginx configurations and SSL certificates (via Certbot) when projects are created or deleted.
+This script acts as a bridge between the **Runara Backend** and the **Remote Nginx VPS**. It automatically manages Nginx configurations and SSL certificates (via Certbot) when projects are created or deleted.
 
 ## 🚀 Installation on Nginx VPS
 
@@ -32,7 +32,7 @@ Create a `.env` file based on `.env.example`:
 cp .env.example .env
 nano .env
 ```
-Make sure `WEBHOOK_KEY` matches the `NGINX_WEBHOOK_KEY` in your PaaS Backend `.env`.
+Make sure `WEBHOOK_KEY` matches the `NGINX_WEBHOOK_KEY` in your Runara Backend `.env`.
 
 ### 5. Deployment with Systemd
 Copy the service file to systemd:
@@ -45,7 +45,7 @@ sudo systemctl start paas-webhook
 
 ## 🛠 Features
 - **Auto-SSL**: Automatically provisions Let's Encrypt certificates.
-- **Port Detection**: Proxies traffic to the correct internal port of the PaaS VPS.
+- **Port Detection**: Proxies traffic to the correct internal port of the Runara VPS.
 - **Security**: Authorized via shared secret key.
 - **Monorepo Support**: Organizes configs into subdirectories per user.
 - **Rate Limiting**: Includes built-in Nginx rate limiting templates.

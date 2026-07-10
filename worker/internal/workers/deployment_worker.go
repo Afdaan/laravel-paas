@@ -745,7 +745,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	go func() {
 		defer wg.Done()
 		if project.DatabaseInstance == nil {
-			return // no PaaS database for this project, skip provisioning
+			return // no Runara database for this project, skip provisioning
 		}
 		if project.DatabaseOption != "new" {
 			return // existing/attached databases are already provisioned
@@ -1577,7 +1577,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	// Get smart suggestion based on centralized utility classifiers
 	suggestion := utils.GetSmartSuggestion(errorMsg)
 	if suggestion != "" {
-		sanitizedMsg = fmt.Sprintf("%s\n\nPaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
+		sanitizedMsg = fmt.Sprintf("%s\n\nRunara Recommendation:\n- %s", sanitizedMsg, suggestion)
 	}
 
 	if !w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg) {

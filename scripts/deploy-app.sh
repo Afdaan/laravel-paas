@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# Laravel PaaS CI/CD Deployment Script
+# Runara CI/CD Deployment Script
 # Only builds and deploys the specified application components (frontend/backend)
 # Usage: ./deploy-app.sh [target]
 # Targets:

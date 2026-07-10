@@ -140,7 +140,7 @@ RUN rm -rf /app/node_modules \
 # Stage 2: Production (Optimized Runtime)
 FROM paas-registry:5000/library/paas-runtime-php:8.3-alpine
 
-LABEL maintainer="Laravel PaaS"
+LABEL maintainer="Runara"
 LABEL description="Laravel with PHP 8.3 (Dynamic & Fast)"
 
 # Copy extension requirements

@@ -414,7 +414,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 
 	envMap := make(map[string]string)
 
-	// Layer 1: PaaS defaults.
+	// Layer 1: Runara defaults.
 	envMap["APP_NAME"] = project.Name
 	envMap["APP_ENV"] = environment
 	envMap["APP_DEBUG"] = "false"

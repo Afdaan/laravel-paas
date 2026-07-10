@@ -44,7 +44,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"--memory", memoryLimit,
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
 
-		// Standard PaaS metadata labels for deterministic container reconciliation and cleanup
+		// Standard Runara metadata labels for deterministic container reconciliation and cleanup
 		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),

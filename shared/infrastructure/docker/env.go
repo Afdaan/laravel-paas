@@ -71,7 +71,7 @@ func (s *DockerService) CompileEnvForProject(projectID uint, userID uint, subdom
 
 	envMap := make(map[string]string)
 
-	// Layer 1: PaaS defaults.
+	// Layer 1: Runara defaults.
 	envMap["APP_NAME"] = subdomain
 	envMap["APP_ENV"] = envName
 	envMap["APP_DEBUG"] = "false"
