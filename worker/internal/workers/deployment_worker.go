@@ -945,7 +945,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"runtime_version", detection.RuntimeVersion,
 		"source", detection.Source,
 	)
-	appendLog(fmt.Sprintf(">> Runtime detected: %s (source: %s)", detection.Framework, detection.Source))
+	appendLog(fmt.Sprintf(">> Runtime detected: %s", detection.Framework))
 
 	finalPHPVersion := project.PHPVersion
 	if finalPHPVersion == "" {

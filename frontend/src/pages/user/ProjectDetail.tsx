@@ -122,6 +122,7 @@ function UserProjectDetail() {
     const hash = window.location.hash.replace('#', '')
     return isProjectDetailTab(hash) ? hash : 'project'
   })()
+  const [openedBuildTabProjectUid, setOpenedBuildTabProjectUid] = useState(activeTab === 'build' ? uid : undefined)
   const setActiveTab = useCallback((tab: string) => {
     setSearchParams(prev => {
       prev.set('tab', tab)
@@ -131,6 +132,11 @@ function UserProjectDetail() {
       return prev
     }, { replace: true })
   }, [setSearchParams])
+  useEffect(() => {
+    if (activeTab === 'build' && uid) {
+      setOpenedBuildTabProjectUid(uid)
+    }
+  }, [activeTab, uid])
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
   const isActionPendingRef = useRef(false)
@@ -1315,8 +1321,8 @@ function UserProjectDetail() {
           />
         </TabsContent>
 
-        <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && (
+        <TabsContent value="build" className="pt-0" keepMounted>
+          {openedBuildTabProjectUid === uid && project && (
             <BuildTab
               project={project}
               onDeploymentEvent={handleDeploymentEvent}
