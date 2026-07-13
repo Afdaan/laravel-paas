@@ -536,7 +536,7 @@ export const translations = {
         types: {
           registered: {
             title: "Domain Registered Successfully",
-            desc: "The custom domain has been successfully registered in the PaaS platform routing engine."
+            desc: "The custom domain has been successfully registered in the Runara routing engine."
           },
           transferred: {
             title: "Domain Ownership Transferred",
@@ -592,7 +592,7 @@ export const translations = {
         rescan: "Re-scan",
         domain: "Domain",
         dnsOk: "DNS OK",
-        edge: "PaaS Edge",
+        edge: "Runara Edge",
         statusActive: "STATUS: ACTIVE",
         statusPending: "STATUS: PENDING",
         initScan: "Initialize System Scan",
@@ -610,6 +610,7 @@ export const translations = {
         unitOf: "of {{total}} {{unit}}",
         standardRuntime: "Managed Stack",
         managedStack: "Managed Stack",
+        detectedSource: "Latest source detection",
         customRuntime: "Custom Version",
         noDb: "No SQL Engine",
         queue: "Queue Worker",
@@ -1237,7 +1238,7 @@ export const translations = {
           reveal: "Reveal Password",
           hide: "Hide Password",
           privateAccessTitle: "Private Mesh Access Only",
-          privateAccessDesc: "This database is isolated within the PaaS internal virtual network. Public port access is blocked by default for tenant data protection.",
+          privateAccessDesc: "This database is isolated within the Runara internal virtual network. Public port access is blocked by default for tenant data protection.",
           copyConfig: "Copy Configuration",
           tabEnv: "Laravel .env",
           tabUri: "Connection URL",
@@ -2243,7 +2244,7 @@ export const translations = {
         rescan: "Re-scan",
         domain: "Domain",
         dnsOk: "DNS OK",
-        edge: "PaaS Edge",
+        edge: "Runara Edge",
         statusActive: "STATUS: ACTIVE",
         statusPending: "STATUS: PENDING",
         initScan: "Initialize System Scan",
@@ -2261,6 +2262,7 @@ export const translations = {
         unitOf: "dari {{total}} {{unit}}",
         standardRuntime: "Managed Stack",
         managedStack: "Managed Stack",
+        detectedSource: "Deteksi source terbaru",
         customRuntime: "Versi Kustom",
         noDb: "Tanpa Database",
         queue: "Queue Worker",
@@ -2888,7 +2890,7 @@ export const translations = {
           reveal: "Reveal Password",
           hide: "Hide Password",
           privateAccessTitle: "Akses Jaringan Privat Terisolasi (Private Mesh Access Only)",
-          privateAccessDesc: "Database ini terisolasi di dalam virtual network internal PaaS. Akses port publik ditutup secara default demi perlindungan data tenant.",
+          privateAccessDesc: "Database ini terisolasi di dalam virtual network internal Runara. Akses port publik ditutup secara default demi perlindungan data tenant.",
           copyConfig: "Salin Konfigurasi",
           tabEnv: "Laravel .env",
           tabUri: "Connection URL",

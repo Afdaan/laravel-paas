@@ -25,7 +25,10 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	projectPath := project.GetProjectPath(s.cfg.ProjectsPath)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
-	buildPath := s.ResolveBuildPath(projectPath, project.BaseDirectory)
+	buildPath, resolveErr := s.ResolveBuildPath(projectPath, project.BaseDirectory)
+	if resolveErr != nil {
+		return "", resolveErr
+	}
 
 	// 2. Prepare Environment
 	if err := s.CreateEnvFile(project, projectDomain, isInitial); err != nil {
@@ -74,6 +77,24 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	} else {
 		slog.Info("Using Railpack build strategy", "subdomain", project.Subdomain)
 		err = s.railpackBuild(ctx, project, buildPath, imageName, logFilePath, noCache, logCallback)
+		if err == nil {
+			validationErr := s.validateImageStartupArtifacts(imageName)
+			if validationErr != nil && !noCache {
+				slog.Warn("Railpack image validation failed; retrying without build cache", "subdomain", project.Subdomain, "error", validationErr)
+				if logCallback != nil {
+					logCallback(">> WARNING: Built image is missing its required startup file. Retrying once without build cache...")
+				}
+				_ = utils.RunSilent(time.Minute, "docker", "rmi", "-f", imageName)
+				err = s.railpackBuild(ctx, project, buildPath, imageName, logFilePath, true, logCallback)
+				if err == nil {
+					validationErr = s.validateImageStartupArtifacts(imageName)
+				}
+			}
+			if err == nil && validationErr != nil {
+				slog.Error("Railpack produced an invalid runtime image", "subdomain", project.Subdomain, "error", validationErr)
+				return "", apperr.New(500, "INVALID_RUNTIME_IMAGE", "Build produced an incomplete runtime image: required startup file '/start-container.sh' is missing. Deployment stopped before replacing the running version.")
+			}
+		}
 	}
 
 	if err != nil {
@@ -177,7 +198,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	}
 
 	runArgs = append(runArgs,
-		// PaaS metadata labels
+		// Runara metadata labels
 		"--label", fmt.Sprintf("paas.project_id=%d", project.ID),
 		"--label", fmt.Sprintf("paas.project_subdomain=%s", project.Subdomain),
 		"--label", fmt.Sprintf("paas.rollout_created_at=%d", timestamp),
@@ -348,6 +369,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		"build",
 		"--name", imageName,
 		"--cache-key", cacheKey,
+		"--error-missing-start",
 	}
 	envs := map[string]string{
 		"NPM_CONFIG_JOBS":             "2",
@@ -453,7 +475,10 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	// Find all package.json files up to depth 3 to support monorepos
-	packageJSONs := s.findNestedPackageJSONs(buildPath, 1, 3)
+	packageJSONs := []string(nil)
+	if usesNodeBuildTemplate(project.Framework) {
+		packageJSONs = s.findNestedPackageJSONs(buildPath, 1, 3)
+	}
 	var targetPackageJSON string
 	if len(packageJSONs) == 1 {
 		targetPackageJSON = packageJSONs[0]
@@ -497,21 +522,17 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			}
 		}
 
-		isStaticNode := false
 		isNextJS := false
 		isNuxtJS := false
 		hasStartScript := false
+		hasBuildScript := false
 		data, err := os.ReadFile(targetPackageJSON)
 		if err == nil {
 			content := string(data)
 			hasStartScript = strings.Contains(content, "\"start\"") || strings.Contains(content, "'start'")
-			hasBuildScript := strings.Contains(content, "\"build\"") || strings.Contains(content, "'build'")
+			hasBuildScript = strings.Contains(content, "\"build\"") || strings.Contains(content, "'build'")
 			isNextJS = strings.Contains(content, "\"next\"")
 			isNuxtJS = strings.Contains(content, "\"nuxt\"")
-
-			if !hasStartScript && (hasBuildScript || hasViteConfig) {
-				isStaticNode = true
-			}
 
 			// Parse package.json start script to detect custom port configurations (SRE/Infrastructure Improvement)
 			type PackageJSON struct {
@@ -550,8 +571,8 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			pkgManager = "yarn"
 		}
 
-		if isStaticNode || isStaticFramework {
-			isStaticFramework = true
+		isStaticFramework = shouldUseStaticNodeHosting(isStaticFramework, hasStartScript, hasBuildScript, hasViteConfig)
+		if isStaticFramework {
 			outputDir := s.detectStaticOutputDir(targetPackageJSON)
 			finalOutputDir := outputDir
 			if relDir != "." {
@@ -601,14 +622,16 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	// Detect runtime technology stack based on files and project models
-	stack := "nodejs" // default
+	stack := ""
 	if project.Framework == "Go" || project.Framework == "Golang" {
 		stack = "golang"
 	} else if project.Framework == "Python" {
 		stack = "python"
 	} else if isStaticFramework {
 		stack = "static"
-	} else {
+	} else if usesNodeBuildTemplate(project.Framework) {
+		stack = "nodejs"
+	} else if project.Framework == "" || project.Framework == "Other" {
 		// File-based auto-detection fallback
 		if _, err := os.Stat(filepath.Join(buildPath, "go.mod")); err == nil {
 			stack = "golang"
@@ -641,7 +664,15 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	// Inject optimized railpack.json configuration using resolved commands and stack type
-	s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"], stack, project, staticDir, noCache)
+	if stack != "" {
+		s.injectDefaultRailpackConfig(buildPath, envs["RAILPACK_BUILD_CMD"], envs["RAILPACK_START_CMD"], stack, project, staticDir, noCache)
+	}
+	if buildCommand := envs["RAILPACK_BUILD_CMD"]; buildCommand != "" {
+		buildArgs = append(buildArgs, "--build-cmd", buildCommand)
+	}
+	if startCommand := envs["RAILPACK_START_CMD"]; startCommand != "" {
+		buildArgs = append(buildArgs, "--start-cmd", startCommand)
+	}
 
 	// Finalize build command with path
 	buildArgs = append(buildArgs, buildPath)
@@ -679,6 +710,65 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	return nil
+}
+
+func usesNodeBuildTemplate(framework string) bool {
+	switch framework {
+	case "Node.js", "Next.js", "Vite", "React", "Vue", "Nuxt.js", "Svelte", "Angular", "TypeScript":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldUseStaticNodeHosting(frameworkHint, hasStartScript, hasBuildScript, hasViteConfig bool) bool {
+	return !hasStartScript && (frameworkHint || hasBuildScript || hasViteConfig)
+}
+
+func (s *DockerService) validateImageStartupArtifacts(imageName string) error {
+	res, err := utils.Run(30*time.Second, "docker", "image", "inspect", imageName)
+	if err != nil {
+		return fmt.Errorf("inspect runtime image: %w", err)
+	}
+
+	var images []struct {
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+			Cmd        []string `json:"Cmd"`
+		} `json:"Config"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &images); err != nil || len(images) != 1 {
+		return fmt.Errorf("decode runtime image metadata")
+	}
+	if !commandReferencesPath(images[0].Config.Entrypoint, images[0].Config.Cmd, "/start-container.sh") {
+		return nil
+	}
+
+	_, err = utils.Run(30*time.Second, "docker", "run", "--rm",
+		"--network", "none",
+		"--read-only",
+		"--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges:true",
+		"--pids-limit", "16",
+		"--memory", "64m",
+		"--entrypoint", "/bin/sh",
+		imageName, "-c", "test -x /start-container.sh",
+	)
+	if err != nil {
+		return fmt.Errorf("required startup file /start-container.sh is missing or not executable")
+	}
+	return nil
+}
+
+func commandReferencesPath(entrypoint, command []string, path string) bool {
+	for _, argument := range append(append([]string{}, entrypoint...), command...) {
+		for _, token := range strings.Fields(argument) {
+			if strings.Trim(token, "'\"") == path {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *DockerService) prepareNpmAuthConfig(buildPath string, project *models.Project) (string, func(), error) {
@@ -1016,7 +1106,7 @@ func (s *DockerService) injectDockerIgnore(projectPath string, logCallback func(
 		// The old template had "/build/" and "/dist/" but the new one does not.
 		// If they have our exact old signature header, or specifically the old build exclusions, we overwrite.
 		content := string(currentData)
-		if strings.Contains(content, "# Laravel PaaS - Docker Ignore File") && strings.Contains(content, "/build/") && strings.Contains(content, "/dist/") {
+		if strings.Contains(content, "# Runara - Docker Ignore File") && strings.Contains(content, "/build/") && strings.Contains(content, "/dist/") {
 			slog.Info("Found older generated .dockerignore template, updating to new version to improve caching", "path", ignorePath)
 		} else {
 			shouldScan = true

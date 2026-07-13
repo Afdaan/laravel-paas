@@ -1,5 +1,5 @@
 // ===========================================
-// Laravel PaaS Standalone Worker Daemon
+// Runara Standalone Worker Daemon
 // ===========================================
 // Entry point for containerized worker cluster nodes.
 // Processes deployment queue, builds containers,

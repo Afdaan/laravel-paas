@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '@/components/FrameworkIcon'
+import { getDisplayedFramework } from '@/lib/runtimes'
 
 interface ProjectData {
   id: number;
@@ -34,6 +35,7 @@ interface ProjectData {
   subdomain: string;
   url: string;
   framework: string;
+  detected_framework?: string;
   database_name?: string;
   created_at: string;
 }
@@ -226,7 +228,7 @@ function UserDashboard() {
                           className="flex h-10 w-10 items-center justify-center rounded-lg border bg-muted transition-colors hover:border-primary/40 hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/20"
                           title={project.name}
                         >
-                          <FrameworkIcon framework={project.framework} variant="compact" className="w-7 h-7" />
+                          <FrameworkIcon framework={getDisplayedFramework(project)} variant="compact" className="w-7 h-7" />
                         </Link>
                         <div>
                           <Link
@@ -237,8 +239,8 @@ function UserDashboard() {
                             {project.name}
                           </Link>
                           <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
-                            <FrameworkIcon framework={project.framework} variant="plain" className="w-3 h-3" />
-                            <span className="text-xs font-mono">{project.framework || t('common.general')}</span>
+                            <FrameworkIcon framework={getDisplayedFramework(project)} variant="plain" className="w-3 h-3" />
+                            <span className="text-xs font-mono">{getDisplayedFramework(project) || t('common.general')}</span>
                           </div>
                         </div>
                       </div>

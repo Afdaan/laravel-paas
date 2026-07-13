@@ -1,6 +1,6 @@
-# Laravel PaaS (Platform as a Service)
+# Runara
 
-A production-grade, self-hosted Platform as a Service (PaaS) engine designed to orchestrate and host isolated, high-performance Laravel applications using Docker. This platform focuses on robust administrative control, developer resource isolation, and automated zero-downtime deployment workflows.
+A production-grade, self-hosted platform designed to orchestrate and host isolated, high-performance Laravel applications using Docker. Runara focuses on robust administrative control, developer resource isolation, and automated zero-downtime deployment workflows.
 
 ---
 

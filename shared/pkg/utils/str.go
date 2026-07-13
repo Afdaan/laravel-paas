@@ -17,7 +17,11 @@ import (
 	"strings"
 )
 
-var ansiEscapePattern = regexp.MustCompile(`(?:\x1B\[[0-?]*[ -/]*[@-~]|\x1B[@-_])`)
+var (
+	ansiEscapePattern       = regexp.MustCompile(`(?:\x1B\[[0-?]*[ -/]*[@-~]|\x1B[@-_])`)
+	migrationNamePattern    = regexp.MustCompile(`(?m)^\s*([0-9]{4}_[0-9]{2}_[0-9]{2}_[0-9]{6}_[A-Za-z0-9_]+)\s+.*\bFAIL\b`)
+	existingRelationPattern = regexp.MustCompile(`(?i)(?:table|relation)\s+[` + "`" + `'\"]?([A-Za-z0-9_.-]+)[` + "`" + `'\"]?\s+already exists`)
+)
 
 // GenerateRandom creates a random alphanumeric string of given length using CSPRNG
 func GenerateRandom(length int) string {
@@ -128,8 +132,10 @@ func SanitizeError(errStr string) string {
 	if strings.Contains(errStr, "CLONE_FAILED") || strings.Contains(errStr, "Failed to clone repository") {
 		return "Failed to clone repository. Please verify your repository URL, branch configuration, or GitHub connection permissions."
 	}
-	if strings.Contains(errStr, "MIGRATION_FAILED") || strings.Contains(errStr, "Migrations failed") {
-		return "Database migrations failed during deployment. Please review your migration scripts or database connections."
+	if strings.Contains(errStr, "MIGRATION_FAILED") ||
+		strings.Contains(errStr, "MIGRATION_SCHEMA_CONFLICT") ||
+		strings.Contains(errStr, "Migrations failed") {
+		return MigrationFailureSummary(errStr)
 	}
 	if strings.Contains(errStr, "TIMEOUT_EXCEEDED") || strings.Contains(errStr, "watchdog kill") {
 		return "Deployment timed out. The build or startup phase took longer than the configured maximum time limit."
@@ -316,6 +322,10 @@ func RedactInfrastructureDetails(errorMsg string, sensitiveValues []string) stri
 
 // GetSmartSuggestion parses raw deployment error messages and returns highly actionable suggestions.
 func GetSmartSuggestion(errorMsg string) string {
+	if MigrationErrorCode(errorMsg) == "MIGRATION_SCHEMA_CONFLICT" {
+		return "Migration history and database schema are out of sync. Existing databases must not rerun a consolidated create-all migration. Back up the database, verify the existing schema, then repair the baseline through a controlled one-time process or replace it with forward-only migrations. Do not delete tables, skip migrations, or edit migration history automatically."
+	}
+
 	// 1. Database Connection Failures
 	if strings.Contains(errorMsg, "connection refused") ||
 		strings.Contains(errorMsg, "Access denied for user") ||
@@ -359,6 +369,44 @@ func GetSmartSuggestion(errorMsg string) string {
 	}
 
 	return ""
+}
+
+// MigrationErrorCode classifies migration failures without mutating application schema or migration history.
+func MigrationErrorCode(errorMsg string) string {
+	if strings.Contains(errorMsg, "SQLSTATE[42S01]") ||
+		strings.Contains(errorMsg, "SQLSTATE[42P07]") ||
+		existingRelationPattern.MatchString(errorMsg) {
+		return "MIGRATION_SCHEMA_CONFLICT"
+	}
+
+	return "MIGRATION_FAILED"
+}
+
+// MigrationFailureSummary preserves actionable application context while warning about non-transactional schema changes.
+func MigrationFailureSummary(errorMsg string) string {
+	warning := "Application rollout stopped. Database changes completed before this failure were not automatically rolled back."
+	if MigrationErrorCode(errorMsg) != "MIGRATION_SCHEMA_CONFLICT" {
+		return "Database migrations failed during deployment. " + warning + " Review the migration logs and application database configuration."
+	}
+
+	relationName := ""
+	if match := existingRelationPattern.FindStringSubmatch(errorMsg); len(match) == 2 {
+		relationName = match[1]
+	}
+	migrationName := ""
+	if match := migrationNamePattern.FindStringSubmatch(errorMsg); len(match) == 2 {
+		migrationName = match[1]
+	}
+
+	conflict := "Database migration schema conflict: an object the migration tried to create already exists."
+	if relationName != "" {
+		conflict = fmt.Sprintf("Database migration schema conflict: table or relation `%s` already exists.", relationName)
+	}
+	if migrationName != "" {
+		conflict = strings.TrimSuffix(conflict, ".") + fmt.Sprintf(" while running `%s`.", migrationName)
+	}
+
+	return conflict + " " + warning
 }
 
 func NpmRegistryAuthErrorMessage(errorMsg string) string {

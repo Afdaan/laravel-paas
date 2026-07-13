@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Laravel PaaS Start Script
+# Runara Start Script
 # Starts infrastructure & platform containers selectively or interactively
 # ==============================================================================
 
@@ -501,7 +501,7 @@ start_all() {
     start_backend
     start_worker
     start_frontend
-    echo -e "${GREEN}[SUCCESS] Laravel PaaS is running!${NC}"
+    echo -e "${GREEN}[SUCCESS] Runara is running!${NC}"
     if [ "$HTTP_PORT" != "80" ]; then
         echo -e "${GREEN}Dashboard: http://$BASE_DOMAIN:$HTTP_PORT${NC}"
     else
@@ -527,7 +527,7 @@ start_service() {
 
 # 4. Status Checker
 show_status() {
-    echo -e "\n${GREEN}=== Laravel PaaS Container Status ===${NC}"
+    echo -e "\n${GREEN}=== Runara Container Status ===${NC}"
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
@@ -592,7 +592,7 @@ service_menu() {
 
 interactive_menu() {
     while true; do
-        echo -e "${YELLOW}=== Laravel PaaS Startup Panel ===${NC}"
+        echo -e "${YELLOW}=== Runara Startup Panel ===${NC}"
         echo "1) Start/Restart All Services"
         echo "2) Start/Restart Specific Service"
         echo "3) Show Container Status"

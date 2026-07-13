@@ -1,5 +1,5 @@
 [Unit]
-Description=Laravel PaaS Nginx Webhook Proxy
+Description=Runara Nginx Webhook Proxy
 After=network.target nginx.service
 
 [Service]

@@ -1,121 +1,124 @@
 package docker
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 )
 
-// ===========================================
-// Docker Service
-// ===========================================
-// Manages Docker containers for user projects
-// ===========================================
-// DockerService handles all Docker operations
 type DockerService struct {
 	cfg     *config.Config
 	storage *infrastructure.StorageService
 	db      *gorm.DB
 }
 
-// ResolveBuildPath picks a safe build root under a project's folder.
-// If baseDirectory is invalid or escapes the project path, it falls back to auto-detection.
-func (s *DockerService) ResolveBuildPath(projectPath string, baseDirectory string) string {
+func (s *DockerService) ResolveBuildPath(projectPath, baseDirectory string) (string, error) {
 	if strings.TrimSpace(baseDirectory) == "" {
-		return s.GetBuildPath(projectPath)
+		return s.GetBuildPath(projectPath), nil
 	}
 
 	clean := filepath.Clean(baseDirectory)
-	// Disallow absolute paths and traversal.
-	if filepath.IsAbs(clean) || clean == "." || clean == string(os.PathSeparator) || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || clean == ".." {
-		slog.Warn("Invalid base_directory; falling back to auto-detection", "base_directory", baseDirectory)
-		return s.GetBuildPath(projectPath)
+	if filepath.IsAbs(clean) || clean == "." || clean == string(os.PathSeparator) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || strings.ContainsRune(baseDirectory, '\\') {
+		return "", apperr.New(400, "INVALID_BASE_DIRECTORY", "Configured base directory is invalid.")
 	}
 
 	candidate := filepath.Join(projectPath, clean)
 	if !utils.IsPathWithinRoot(projectPath, candidate) {
-		slog.Warn("base_directory escapes project root; falling back to auto-detection", "base_directory", baseDirectory)
-		return s.GetBuildPath(projectPath)
+		return "", apperr.New(400, "INVALID_BASE_DIRECTORY", "Configured base directory is invalid.")
 	}
-
 	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-		return candidate
+		return candidate, nil
 	}
-
-	return s.GetBuildPath(projectPath)
+	return "", apperr.New(400, "INVALID_BASE_DIRECTORY", "Configured base directory does not exist.")
 }
 
-// NewDockerService creates a new Docker service
 func NewDockerService(cfg *config.Config, storage *infrastructure.StorageService, db *gorm.DB) *DockerService {
-	return &DockerService{
-		cfg:     cfg,
-		storage: storage,
-		db:      db,
-	}
+	return &DockerService{cfg: cfg, storage: storage, db: db}
 }
 
 func (s *DockerService) GetDB() *gorm.DB {
 	return s.db
 }
 
-// GetBuildPath recursively finds the first directory containing project markers
 func (s *DockerService) GetBuildPath(root string) string {
-	markers := []string{
-		"artisan",
-		"composer.json",
-		"package.json",
-		"go.mod",
-		"requirements.txt",
-		"Gemfile",
-		"Cargo.toml",
-		"mix.exs",
-		"index.html",
-		"Staticfile",
+	markers := map[string]int{
+		"artisan":          100,
+		"composer.json":    80,
+		"index.php":        80,
+		"go.mod":           80,
+		"go.work":          80,
+		"pyproject.toml":   80,
+		"requirements.txt": 80,
+		"Pipfile":          80,
+		"Gemfile":          80,
+		"Cargo.toml":       80,
+		"pom.xml":          80,
+		"build.gradle":     80,
+		"build.gradle.kts": 80,
+		"mix.exs":          80,
+		"deno.json":        80,
+		"deno.jsonc":       80,
+		"gleam.toml":       80,
+		"CMakeLists.txt":   80,
+		"meson.build":      80,
+		"package.json":     50,
+		"start.sh":         50,
+		"index.html":       30,
+		"Staticfile":       30,
 	}
-
-	// 1. Check root first
-	for _, marker := range markers {
-		if _, err := os.Stat(filepath.Join(root, marker)); err == nil {
-			return root
+	markerPatterns := map[string]int{"*.csproj": 80}
+	priority := map[string]int{"backend": 15, "app": 14, "server": 13, "api": 12, "frontend": 11, "web": 10, "ui": 9}
+	type candidate struct {
+		path  string
+		bonus int
+	}
+	candidates := []candidate{{path: root, bonus: 20}}
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") || entry.Name() == "node_modules" || entry.Name() == "vendor" {
+				continue
+			}
+			candidates = append(candidates, candidate{path: filepath.Join(root, entry.Name()), bonus: priority[entry.Name()]})
 		}
 	}
 
-	// 2. If not at root, check first-level subdirectories (dynamic monorepo)
-	// We only check 1 level deep to avoid accidental detection of nested vendor/node_modules
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return root
-	}
-
-	// Priority subdirectories for monorepos and common project structures
-	priorityDirs := []string{"backend", "app", "server", "api", "frontend", "web", "ui", "public", "src"}
-
-	for _, pDir := range priorityDirs {
-		pPath := filepath.Join(root, pDir)
-		for _, marker := range markers {
-			if _, err := os.Stat(filepath.Join(pPath, marker)); err == nil {
-				return pPath
+	bestPath := root
+	bestScore := 0
+	for _, candidate := range candidates {
+		strongestMarker := 0
+		secondMarker := 0
+		for marker, weight := range markers {
+			if info, err := os.Lstat(filepath.Join(candidate.path, marker)); err == nil && info.Mode().IsRegular() {
+				strongestMarker, secondMarker = rankMarker(weight, strongestMarker, secondMarker)
 			}
 		}
-	}
-
-	// Fallback to searching all non-hidden directories
-	for _, entry := range entries {
-		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
-			dirPath := filepath.Join(root, entry.Name())
-			for _, marker := range markers {
-				if _, err := os.Stat(filepath.Join(dirPath, marker)); err == nil {
-					return dirPath
-				}
+		for pattern, weight := range markerPatterns {
+			if matches, _ := filepath.Glob(filepath.Join(candidate.path, pattern)); len(matches) > 0 {
+				strongestMarker, secondMarker = rankMarker(weight, strongestMarker, secondMarker)
 			}
 		}
+		markerScore := strongestMarker + secondMarker/4
+		score := candidate.bonus + markerScore
+		if markerScore > 0 && score > bestScore {
+			bestPath = candidate.path
+			bestScore = score
+		}
 	}
+	return bestPath
+}
 
-	return root
+func rankMarker(weight, strongest, second int) (int, int) {
+	if weight > strongest {
+		return weight, strongest
+	}
+	if weight > second {
+		return strongest, weight
+	}
+	return strongest, second
 }

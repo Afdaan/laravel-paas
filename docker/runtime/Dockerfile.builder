@@ -1,4 +1,4 @@
-# Unified Builder Base Image for Laravel PaaS
+# Unified Builder Base Image for Runara
 # Contains PHP, Composer, Node.js, Pnpm, and Bun
 
 # Global ARGs for multi-stage selection

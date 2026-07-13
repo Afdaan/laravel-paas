@@ -87,6 +87,7 @@ export interface Project {
   start_command?: string;
   node_version?: string;
   framework?: string;
+  detected_framework?: string;
   language_version?: string;
   cpu_limit?: number;
   memory_limit?: string;

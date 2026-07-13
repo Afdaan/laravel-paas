@@ -43,7 +43,7 @@ func Setup(
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: handlers.ErrorHandler,
-		AppName:      "Laravel PaaS API",
+		AppName:      "Runara API",
 	})
 
 	// ===========================================
@@ -185,7 +185,7 @@ func Setup(
 	admin.Get("/domains", domainHandler.ListGlobal)
 	admin.Get("/domains/metrics", domainHandler.ListGlobalMetrics)
 
-	// System monitoring (PaaS style)
+	// System monitoring (Runara style)
 	admin.Get("/system/stats", systemHandler.GetStats)
 	admin.Post("/system/prune", systemHandler.PruneSystem)
 

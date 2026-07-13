@@ -1,4 +1,4 @@
-# Optimized Base Image for Laravel PaaS Runtime
+# Optimized Base Image for Runara Runtime
 # This image contains all necessary PHP extensions pre-compiled to speed up project builds.
 ARG PHP_VERSION=8.3
 FROM php:${PHP_VERSION}-fpm-alpine

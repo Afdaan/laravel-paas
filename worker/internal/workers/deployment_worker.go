@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,6 +53,8 @@ type DeploymentWorker struct {
 	stopChan chan struct{}
 	wg       sync.WaitGroup
 }
+
+const migrationPartialChangesWarning = "WARNING: Application rollout stopped, but database changes completed before this failure were not automatically rolled back."
 
 // NewDeploymentWorker creates a new deployment worker
 func NewDeploymentWorker(
@@ -745,7 +748,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	go func() {
 		defer wg.Done()
 		if project.DatabaseInstance == nil {
-			return // no PaaS database for this project, skip provisioning
+			return // no Runara database for this project, skip provisioning
 		}
 		if project.DatabaseOption != "new" {
 			return // existing/attached databases are already provisioned
@@ -880,60 +883,22 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	appendLog(logMsg)
 
-	buildPath := w.dockerService.ResolveBuildPath(projectPath, project.BaseDirectory)
-
-	type marker struct {
-		file string
-		name string
-	}
-	markers := []marker{
-		{"artisan", "Laravel"},
-		{"next.config.js", "Next.js"},
-		{"next.config.mjs", "Next.js"},
-		{"next.config.ts", "Next.js"},
-		{"nuxt.config.js", "Nuxt.js"},
-		{"nuxt.config.mjs", "Nuxt.js"},
-		{"nuxt.config.ts", "Nuxt.js"},
-		{"vite.config.js", "Vite"},
-		{"vite.config.mjs", "Vite"},
-		{"vite.config.ts", "Vite"},
-		{"vite.config.mts", "Vite"},
-		{"src/App.tsx", "React"},
-		{"src/App.jsx", "React"},
-		{"src/App.vue", "Vue"},
-		{"src/main.js", "Node.js"},
-		{"svelte.config.js", "Svelte"},
-		{"angular.json", "Angular"},
-		{"package.json", "Node.js"},
-		{"tsconfig.json", "TypeScript"},
-		{"go.mod", "Go"},
-		{"requirements.txt", "Python"},
-		{"main.py", "Python"},
-		{"Gemfile", "Ruby"},
-		{"Cargo.toml", "Rust"},
-		{"pom.xml", "Java"},
-		{"build.gradle", "Java"},
-		{"composer.json", "PHP"},
-		{"index.html", "Static"},
+	buildPath, err := w.dockerService.ResolveBuildPath(projectPath, project.BaseDirectory)
+	if err != nil {
+		appendLog("ERROR: " + err.Error())
+		w.updateProjectError(project, job.JobID, err.Error())
+		return
 	}
 
 	oldFramework := project.Framework
-	project.Framework = "Other"
-	for _, m := range markers {
-		if foundPath := w.dockerService.FindFileRecursively(buildPath, m.file, 1, 3); foundPath != "" {
-			project.Framework = m.name
-			break
-		}
-	}
-	if packagePath := w.dockerService.FindFileRecursively(buildPath, "package.json", 1, 3); packagePath != "" {
-		if framework := detectJSFrameworkFromPackage(packagePath); framework != "" {
-			project.Framework = framework
-		}
-	}
-
-	langVersion, _ := w.versionService.DetectRuntimeVersion(buildPath, project.Framework)
-	if langVersion != "" && !project.IsManualVersion {
-		project.LanguageVersion = langVersion
+	detection := w.detectProjectRuntime(ctx, project, buildPath)
+	project.Framework = detection.Framework
+	if project.Framework != oldFramework {
+		project.NodeVersion = ""
+		project.PHPVersion = ""
+		project.LaravelVersion = ""
+		project.LanguageVersion = ""
+		project.IsManualVersion = false
 	}
 
 	if project.Framework == "Laravel" {
@@ -946,56 +911,45 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		} else if project.PHPVersion == "" {
 			project.PHPVersion = "8.4"
 		}
-	} else {
-		isJS := false
-		jsFrameworks := []string{"Node.js", "Next.js", "Vite", "React", "Vue", "Nuxt.js", "Svelte", "Angular", "TypeScript"}
-		for _, f := range jsFrameworks {
-			if project.Framework == f {
-				isJS = true
-				break
-			}
+	} else if isJSFramework(project.Framework) {
+		if !project.IsManualVersion {
+			project.NodeVersion = detection.RuntimeVersion
+			project.LanguageVersion = detection.RuntimeVersion
 		}
-		if isJS {
-			if langVersion != "" && !project.IsManualVersion {
-				project.NodeVersion = langVersion
+	} else if !project.IsManualVersion {
+		project.LanguageVersion = detection.RuntimeVersion
+	}
+
+	if detection.RuntimeVersion == "" && !project.IsManualVersion {
+		if version, err := w.versionService.DetectRuntimeVersion(buildPath, project.Framework); err == nil {
+			if isJSFramework(project.Framework) {
+				project.NodeVersion = version
+			}
+			if project.Framework != "Laravel" {
+				project.LanguageVersion = version
 			}
 		}
 	}
 
 	updates := map[string]interface{}{
-		"framework": project.Framework,
+		"framework":         project.Framework,
+		"language_version":  project.LanguageVersion,
+		"node_version":      project.NodeVersion,
+		"php_version":       project.PHPVersion,
+		"laravel_version":   project.LaravelVersion,
+		"is_manual_version": project.IsManualVersion,
 	}
-	if project.LanguageVersion != "" {
-		updates["language_version"] = project.LanguageVersion
-	}
-	if project.NodeVersion != "" {
-		updates["node_version"] = project.NodeVersion
-	}
-	if project.PHPVersion != "" {
-		updates["php_version"] = project.PHPVersion
-	}
-	if project.LaravelVersion != "" {
-		updates["laravel_version"] = project.LaravelVersion
-	}
-
-	// Reset stale metadata if framework changed to prevent cross-framework configuration leakage (SRE guard)
-	if project.Framework != oldFramework {
-
-		project.NodeVersion = ""
-		project.PHPVersion = ""
-		project.LaravelVersion = ""
-		project.LanguageVersion = ""
-		project.IsManualVersion = false
-
-		updates["node_version"] = ""
-		updates["php_version"] = ""
-		updates["laravel_version"] = ""
-		updates["language_version"] = ""
-		updates["is_manual_version"] = false
-	}
-
-	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
-		slog.Warn("Failed to update project metadata", "id", project.ID, "error", err)
+	slog.Info("Detected project runtime",
+		"subdomain", project.Subdomain,
+		"framework", detection.Framework,
+		"provider", detection.Provider,
+		"runtime", detection.Runtime,
+		"runtime_version", detection.RuntimeVersion,
+		"source", detection.Source,
+	)
+	appendLog(fmt.Sprintf(">> Runtime detected: %s", detection.Framework))
+	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{"detected_framework": detection.Framework}); err != nil {
+		slog.Warn("Failed to persist detected runtime candidate", "id", project.ID, "error", err)
 	}
 
 	finalPHPVersion := project.PHPVersion
@@ -1107,8 +1061,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Running database migrations before healthcheck (SQLite)", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations (SQLite: before healthcheck)...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
-			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+			migrationErrorCode := utils.MigrationErrorCode(output)
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "errorCode", migrationErrorCode, "error", err)
+			appendLog(fmt.Sprintf("ERROR [%s]: Migrations failed:\n%s", migrationErrorCode, utils.SanitizeLogOutput(output)))
+			appendLog(migrationPartialChangesWarning)
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
 			if previousCommitHash != "" {
@@ -1129,7 +1085,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
@@ -1204,8 +1160,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
-			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+			migrationErrorCode := utils.MigrationErrorCode(output)
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "errorCode", migrationErrorCode, "error", err)
+			appendLog(fmt.Sprintf("ERROR [%s]: Migrations failed:\n%s", migrationErrorCode, utils.SanitizeLogOutput(output)))
+			appendLog(migrationPartialChangesWarning)
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
 			if previousCommitHash != "" {
@@ -1226,7 +1184,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
@@ -1274,6 +1232,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Error("Failed to promote rollout container", "id", project.ID, "error", err)
 		appendLog("ERROR: Failed to promote deployment: " + err.Error())
 	} else {
+		if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
+			slog.Warn("Failed to promote detected runtime metadata", "id", project.ID, "error", err)
+		}
 		appendLog("✓ Release promoted successfully.")
 	}
 	project.Status = models.StatusRunning
@@ -1327,6 +1288,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 }
 
 func detectJSFrameworkFromPackage(packagePath string) string {
+	info, err := os.Lstat(packagePath)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
 	data, err := os.ReadFile(packagePath)
 	if err != nil {
 		return ""
@@ -1335,6 +1300,7 @@ func detectJSFrameworkFromPackage(packagePath string) string {
 	var manifest struct {
 		Dependencies    map[string]string `json:"dependencies"`
 		DevDependencies map[string]string `json:"devDependencies"`
+		Scripts         map[string]string `json:"scripts"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return ""
@@ -1353,6 +1319,8 @@ func detectJSFrameworkFromPackage(packagePath string) string {
 		return "Next.js"
 	case hasDependency("nuxt") || hasDependency("@nuxt/kit"):
 		return "Nuxt.js"
+	case hasDependency("express") || hasDependency("fastify") || hasDependency("koa") || hasDependency("hono") || hasDependency("@nestjs/core"):
+		return "Node.js"
 	case hasDependency("@angular/core") || hasDependency("@angular/cli"):
 		return "Angular"
 	case hasDependency("svelte") || hasDependency("@sveltejs/kit"):
@@ -1361,11 +1329,251 @@ func detectJSFrameworkFromPackage(packagePath string) string {
 		return "Vue"
 	case hasDependency("react") || hasDependency("react-dom"):
 		return "React"
-	case hasDependency("typescript"):
-		return "TypeScript"
 	}
 
 	return "Node.js"
+}
+
+type projectRuntimeDetection struct {
+	Framework      string
+	Provider       string
+	Runtime        string
+	RuntimeVersion string
+	Source         string
+}
+
+type railpackProjectInfo struct {
+	Success           bool                       `json:"success"`
+	DetectedProviders []string                   `json:"detectedProviders"`
+	Metadata          map[string]string          `json:"metadata"`
+	ResolvedPackages  map[string]railpackPackage `json:"resolvedPackages"`
+}
+
+type railpackPackage struct {
+	RequestedVersion string `json:"requestedVersion"`
+	ResolvedVersion  string `json:"resolvedVersion"`
+}
+
+func (w *DeploymentWorker) detectProjectRuntime(ctx context.Context, project *models.Project, buildPath string) projectRuntimeDetection {
+	args := []string{"info", "--format", "json"}
+	if project.BuildCommand != "" {
+		args = append(args, "--build-cmd", project.BuildCommand)
+	}
+	if project.StartCommand != "" {
+		args = append(args, "--start-cmd", project.StartCommand)
+	}
+	args = append(args, buildPath)
+
+	res, err := utils.RunCtx(ctx, 20*time.Second, "railpack", args...)
+	if err == nil {
+		var info railpackProjectInfo
+		if json.Unmarshal([]byte(res.Stdout), &info) == nil && info.Success {
+			if detection := runtimeDetectionFromRailpack(info, buildPath); detection.Framework != "Other" {
+				return detection
+			}
+		}
+	} else {
+		slog.Warn("Railpack runtime inspection failed; using marker fallback", "path", buildPath, "error", err)
+	}
+	if isLaravelManifest(buildPath) {
+		return projectRuntimeDetection{Framework: "Laravel", Provider: "php", Runtime: "laravel", Source: "manifest"}
+	}
+
+	detection := w.detectProjectRuntimeFallback(buildPath)
+	detection.Source = "markers"
+	return detection
+}
+
+func runtimeDetectionFromRailpack(info railpackProjectInfo, buildPath string) projectRuntimeDetection {
+	provider := ""
+	if strings.EqualFold(info.Metadata["phpLaravel"], "true") {
+		provider = "php"
+	} else if len(info.DetectedProviders) > 0 {
+		provider = strings.ToLower(info.DetectedProviders[0])
+	} else {
+		provider = strings.ToLower(info.Metadata["providers"])
+	}
+
+	detection := projectRuntimeDetection{Provider: provider, Source: "railpack", Framework: "Other"}
+	switch provider {
+	case "php":
+		if strings.EqualFold(info.Metadata["phpLaravel"], "true") {
+			detection.Framework = "Laravel"
+			detection.Runtime = "laravel"
+		} else {
+			detection.Framework = "PHP"
+			detection.Runtime = "php"
+		}
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "php", 2)
+	case "node":
+		detection.Runtime = strings.ToLower(info.Metadata["nodeRuntime"])
+		switch detection.Runtime {
+		case "next":
+			detection.Framework = "Next.js"
+		case "nuxt":
+			detection.Framework = "Nuxt.js"
+		case "vite":
+			detection.Framework = "Vite"
+		default:
+			detection.Framework = detectJSFrameworkFromPackage(filepath.Join(buildPath, "package.json"))
+			if detection.Framework == "" {
+				detection.Framework = "Node.js"
+			}
+		}
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "node", 1)
+	case "golang", "go":
+		detection.Framework = "Go"
+		detection.Runtime = "go"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "go", 2)
+	case "python":
+		detection.Framework = "Python"
+		detection.Runtime = strings.ToLower(info.Metadata["pythonRuntime"])
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "python", 2)
+	case "ruby":
+		detection.Framework = "Ruby"
+		detection.Runtime = "ruby"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "ruby", 2)
+	case "java":
+		detection.Framework = "Java"
+		detection.Runtime = "java"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "java", 2)
+	case "rust":
+		detection.Framework = "Rust"
+		detection.Runtime = "rust"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "rust", 2)
+	case "elixir":
+		detection.Framework = "Elixir"
+		detection.Runtime = "elixir"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "elixir", 2)
+	case "deno":
+		detection.Framework = "Deno"
+		detection.Runtime = "deno"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "deno", 2)
+	case "dotnet":
+		detection.Framework = ".NET"
+		detection.Runtime = "dotnet"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "dotnet", 2)
+	case "gleam":
+		detection.Framework = "Gleam"
+		detection.Runtime = "gleam"
+		detection.RuntimeVersion = railpackRuntimeVersion(info, "gleam", 2)
+	case "cpp":
+		detection.Framework = "C/C++"
+		detection.Runtime = "cpp"
+	case "shell":
+		detection.Framework = "Shell"
+		detection.Runtime = "shell"
+	case "staticfile":
+		detection.Framework = "Static"
+		detection.Runtime = "static"
+	}
+	return detection
+}
+
+func railpackRuntimeVersion(info railpackProjectInfo, packageName string, parts int) string {
+	pkg, ok := info.ResolvedPackages[packageName]
+	if !ok {
+		return ""
+	}
+	version := pkg.RequestedVersion
+	if version == "" || strings.EqualFold(version, "latest") {
+		version = pkg.ResolvedVersion
+	}
+	matches := regexp.MustCompile(`\d+`).FindAllString(version, parts)
+	return strings.Join(matches, ".")
+}
+
+func isLaravelManifest(buildPath string) bool {
+	artisanInfo, err := os.Lstat(filepath.Join(buildPath, "artisan"))
+	if err != nil || !artisanInfo.Mode().IsRegular() {
+		return false
+	}
+	composerPath := filepath.Join(buildPath, "composer.json")
+	composerInfo, err := os.Lstat(composerPath)
+	if err != nil || !composerInfo.Mode().IsRegular() {
+		return false
+	}
+	data, err := os.ReadFile(composerPath)
+	if err != nil {
+		return false
+	}
+	var composer struct {
+		Require map[string]string `json:"require"`
+	}
+	if json.Unmarshal(data, &composer) != nil {
+		return false
+	}
+	_, ok := composer.Require["laravel/framework"]
+	return ok
+}
+
+func (w *DeploymentWorker) detectProjectRuntimeFallback(buildPath string) projectRuntimeDetection {
+	type marker struct {
+		file string
+		name string
+	}
+	markers := []marker{
+		{"artisan", "Laravel"},
+		{"go.mod", "Go"},
+		{"requirements.txt", "Python"},
+		{"main.py", "Python"},
+		{"Gemfile", "Ruby"},
+		{"Cargo.toml", "Rust"},
+		{"pom.xml", "Java"},
+		{"build.gradle", "Java"},
+		{"build.gradle.kts", "Java"},
+		{"composer.json", "PHP"},
+		{"mix.exs", "Elixir"},
+		{"deno.json", "Deno"},
+		{"deno.jsonc", "Deno"},
+		{"gleam.toml", "Gleam"},
+		{"CMakeLists.txt", "C/C++"},
+		{"meson.build", "C/C++"},
+		{"start.sh", "Shell"},
+		{"next.config.js", "Next.js"},
+		{"next.config.mjs", "Next.js"},
+		{"next.config.ts", "Next.js"},
+		{"nuxt.config.js", "Nuxt.js"},
+		{"nuxt.config.mjs", "Nuxt.js"},
+		{"nuxt.config.ts", "Nuxt.js"},
+		{"vite.config.js", "Vite"},
+		{"vite.config.mjs", "Vite"},
+		{"vite.config.ts", "Vite"},
+		{"vite.config.mts", "Vite"},
+		{"src/App.tsx", "React"},
+		{"src/App.jsx", "React"},
+		{"src/App.vue", "Vue"},
+		{"src/main.js", "Node.js"},
+		{"svelte.config.js", "Svelte"},
+		{"angular.json", "Angular"},
+		{"package.json", "Node.js"},
+		{"tsconfig.json", "TypeScript"},
+		{"index.html", "Static"},
+	}
+
+	detection := projectRuntimeDetection{Framework: "Other"}
+	for _, marker := range markers {
+		if info, err := os.Lstat(filepath.Join(buildPath, marker.file)); err == nil && info.Mode().IsRegular() {
+			detection.Framework = marker.name
+			break
+		}
+	}
+	if !isJSFramework(detection.Framework) {
+		return detection
+	}
+	if detected := detectJSFrameworkFromPackage(filepath.Join(buildPath, "package.json")); detected != "" {
+		detection.Framework = detected
+	}
+	return detection
+}
+
+func isJSFramework(framework string) bool {
+	switch framework {
+	case "Node.js", "Next.js", "Vite", "React", "Vue", "Nuxt.js", "Svelte", "Angular", "TypeScript":
+		return true
+	default:
+		return false
+	}
 }
 
 // cleanupJobTracking safely removes sequence tracking state for a completed or terminated job to prevent memory leaks.
@@ -1577,7 +1785,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	// Get smart suggestion based on centralized utility classifiers
 	suggestion := utils.GetSmartSuggestion(errorMsg)
 	if suggestion != "" {
-		sanitizedMsg = fmt.Sprintf("%s\n\nPaaS Recommendation:\n- %s", sanitizedMsg, suggestion)
+		sanitizedMsg = fmt.Sprintf("%s\n\nRunara Recommendation:\n- %s", sanitizedMsg, suggestion)
 	}
 
 	if !w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg) {

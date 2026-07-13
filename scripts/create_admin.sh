@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 cd "$(dirname "$0")/.."
 
 echo -e "${BLUE}===========================================${NC}"
-echo -e "${BLUE}     Laravel PaaS - Create Admin User     ${NC}"
+echo -e "${BLUE}     Runara - Create Admin User     ${NC}"
 echo -e "${BLUE}===========================================${NC}"
 echo ""
 

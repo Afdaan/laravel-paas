@@ -662,7 +662,7 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if instance.Engine == "postgresql" {
-			// Exclude connections originating from the PaaS backend itself (using secure salted app name)
+			// Exclude connections originating from the Runara backend itself (using secure salted app name)
 			appHash := sha256.Sum256([]byte(h.cfg.UIDSalt))
 			appName := fmt.Sprintf("paas-backend-%x", appHash[:8])
 

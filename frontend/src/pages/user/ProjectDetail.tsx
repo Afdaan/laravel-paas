@@ -41,7 +41,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
-import { DEFAULT_RUNTIME_VERSIONS } from '@/lib/runtimes'
+import { DEFAULT_RUNTIME_VERSIONS, getDisplayedFramework } from '@/lib/runtimes'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import ProjectConsole from '../../components/project/ProjectConsole'
@@ -122,6 +122,7 @@ function UserProjectDetail() {
     const hash = window.location.hash.replace('#', '')
     return isProjectDetailTab(hash) ? hash : 'project'
   })()
+  const [openedBuildTabProjectUid, setOpenedBuildTabProjectUid] = useState(activeTab === 'build' ? uid : undefined)
   const setActiveTab = useCallback((tab: string) => {
     setSearchParams(prev => {
       prev.set('tab', tab)
@@ -131,6 +132,11 @@ function UserProjectDetail() {
       return prev
     }, { replace: true })
   }, [setSearchParams])
+  useEffect(() => {
+    if (activeTab === 'build' && uid) {
+      setOpenedBuildTabProjectUid(uid)
+    }
+  }, [activeTab, uid])
   const [logType, setLogType] = useState<'web' | 'worker'>('web')
   const logsEndRef = useRef<HTMLDivElement>(null)
   const isActionPendingRef = useRef(false)
@@ -452,6 +458,7 @@ function UserProjectDetail() {
     }
   }, [checkpoints, project?.last_commit_hash])
 
+  const displayedFramework = getDisplayedFramework(project)
   const isNodeRelated = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project?.framework || '')
 
   const consecutiveErrorsRef = useRef(0)
@@ -481,18 +488,21 @@ function UserProjectDetail() {
 
   const frameworkDetail = useMemo(() => {
     if (!project) return t('projectDetail.metrics.managedStack')
-    if (project.framework === 'Laravel') {
+    if (project.detected_framework && project.detected_framework !== project.framework) {
+      return t('projectDetail.metrics.detectedSource')
+    }
+    if (displayedFramework === 'Laravel') {
       return project.php_version ? `PHP ${project.php_version.replace('.dynamic', '')}` : 'PHP Stack'
     }
-    const isNode = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(project.framework || '')
+    const isNode = ['Node.js', 'Next.js', 'Vite', 'React', 'Vue', 'Nuxt.js', 'Svelte', 'Angular', 'TypeScript'].includes(displayedFramework || '')
     if (isNode) {
       return project.node_version ? `Node.js ${project.node_version}` : 'Node.js Stack'
     }
     if (project.language_version) {
-      return `${project.framework} ${project.language_version}`
+      return `${displayedFramework} ${project.language_version}`
     }
     return t('projectDetail.metrics.managedStack')
-  }, [project, t])
+  }, [displayedFramework, project, t])
 
   const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
   const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
@@ -985,7 +995,10 @@ function UserProjectDetail() {
   if (!project) return null
   const projectUrl = project.url || `https://${project.subdomain}.${window.location.hostname}`
   const isLaravelProject = project.framework === 'Laravel'
+  const isDisplayedLaravelProject = displayedFramework === 'Laravel'
+  const isDetectedFrameworkCandidate = Boolean(project.detected_framework && project.detected_framework !== project.framework)
   const isStopped = project.status === 'stopped'
+  const displayedFrameworkLabel = displayedFramework && displayedFramework !== 'Other' ? displayedFramework : t('common.general')
   const frameworkLabel = project.framework && project.framework !== 'Other' ? project.framework : t('common.general')
 
   return (
@@ -1208,9 +1221,9 @@ function UserProjectDetail() {
         />
         <MetricCard
           title={t('projectDetail.metrics.framework')}
-          value={frameworkLabel}
+          value={displayedFrameworkLabel}
           subtext={frameworkDetail}
-          renderIcon={(className) => <FrameworkIcon framework={project.framework} variant="plain" className={className} />}
+          renderIcon={(className) => <FrameworkIcon framework={displayedFramework} variant="plain" className={className} />}
         />
         {project.database_instance ? (
           <MetricCard
@@ -1275,8 +1288,10 @@ function UserProjectDetail() {
         <TabsContent value="project" className="pt-4">
           <OverviewTab
             project={project}
+            displayedFramework={displayedFramework}
+            isDetectedFrameworkCandidate={isDetectedFrameworkCandidate}
             projectUrl={projectUrl}
-            isLaravelProject={isLaravelProject}
+            isLaravelProject={isDisplayedLaravelProject}
             activeCommit={activeCommit}
             onTabChange={setActiveTab}
           />
@@ -1315,8 +1330,8 @@ function UserProjectDetail() {
           />
         </TabsContent>
 
-        <TabsContent value="build" className="pt-0">
-          {activeTab === 'build' && project && (
+        <TabsContent value="build" className="pt-0" keepMounted>
+          {openedBuildTabProjectUid === uid && project && (
             <BuildTab
               project={project}
               onDeploymentEvent={handleDeploymentEvent}

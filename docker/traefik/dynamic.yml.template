@@ -41,7 +41,7 @@ http:
         accessControlMaxAge: 100
         addVaryHeader: true
 
-  # Routers for PaaS platform
+  # Routers for Runara platform
   routers:
     # User projects (highest priority - subdomain matching)
     user-projects:

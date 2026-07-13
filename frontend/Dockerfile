@@ -25,7 +25,7 @@ RUN npm run build
 # Stage 2: Production with Nginx
 FROM nginx:1.27-alpine
 
-LABEL maintainer="Laravel PaaS"
+LABEL maintainer="Runara"
 LABEL description="Frontend Dashboard"
 
 ENV TZ=Asia/Jakarta

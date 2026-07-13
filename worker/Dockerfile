@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Stage 2: Production
 FROM debian:bookworm-slim
 
-LABEL maintainer="Laravel PaaS"
+LABEL maintainer="Runara"
 LABEL description="Standalone Worker Daemon"
 
 ENV TZ=Asia/Jakarta

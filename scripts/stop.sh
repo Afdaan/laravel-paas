@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Laravel PaaS Management & Control Panel Script
+# Runara Management & Control Panel Script
 # Allows selective, interactive, or argument-driven management of all services
 # ==============================================================================
 
@@ -452,7 +452,7 @@ stop_all() {
 
 # 3. Diagnostic & State Display
 show_status() {
-    echo -e "\n${GREEN}=== Laravel PaaS Container Status ===${NC}"
+    echo -e "\n${GREEN}=== Runara Container Status ===${NC}"
     echo -e "------------------------------------------------------------"
     printf " %-22s | %-18s | %-15s\n" "Service Name" "Status" "IP Address"
     echo -e "------------------------------------------------------------"
@@ -567,7 +567,7 @@ service_menu() {
 
 interactive_menu() {
     while true; do
-        echo -e "${YELLOW}=== Laravel PaaS Control Panel ===${NC}"
+        echo -e "${YELLOW}=== Runara Control Panel ===${NC}"
         echo "1) Start/Restart All Services"
         echo "2) Stop All Services"
         echo "3) Manage Individual Service"
