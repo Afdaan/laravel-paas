@@ -54,6 +54,8 @@ type DeploymentWorker struct {
 	wg       sync.WaitGroup
 }
 
+const migrationPartialChangesWarning = "WARNING: Application rollout stopped, but database changes completed before this failure were not automatically rolled back."
+
 // NewDeploymentWorker creates a new deployment worker
 func NewDeploymentWorker(
 	cfg *config.Config,
@@ -1056,8 +1058,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Running database migrations before healthcheck (SQLite)", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations (SQLite: before healthcheck)...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
-			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+			migrationErrorCode := utils.MigrationErrorCode(output)
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "errorCode", migrationErrorCode, "error", err)
+			appendLog(fmt.Sprintf("ERROR [%s]: Migrations failed:\n%s", migrationErrorCode, utils.SanitizeLogOutput(output)))
+			appendLog(migrationPartialChangesWarning)
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
 			if previousCommitHash != "" {
@@ -1078,7 +1082,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
@@ -1153,8 +1157,10 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
-			slog.Error("Migrations failed", "subdomain", project.Subdomain, "error", err)
-			appendLog("ERROR: Migrations failed:\n" + utils.SanitizeLogOutput(output))
+			migrationErrorCode := utils.MigrationErrorCode(output)
+			slog.Error("Migrations failed", "subdomain", project.Subdomain, "errorCode", migrationErrorCode, "error", err)
+			appendLog(fmt.Sprintf("ERROR [%s]: Migrations failed:\n%s", migrationErrorCode, utils.SanitizeLogOutput(output)))
+			appendLog(migrationPartialChangesWarning)
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
 			if previousCommitHash != "" {
@@ -1175,7 +1181,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
 				"rollout_container_id": nil,
 			})
-			w.updateProjectError(project, job.JobID, "[MIGRATION_FAILED] Migrations failed: "+err.Error()+"\n\nOutput:\n"+output)
+			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
 			if strings.TrimSpace(output) != "" {
