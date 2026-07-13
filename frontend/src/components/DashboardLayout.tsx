@@ -5,6 +5,7 @@ import useTranslation from '../lib/useTranslation'
 import { projectsAPI } from '../services/api'
 import { Project } from '../types'
 import { FrameworkIcon } from './FrameworkIcon'
+import { getDisplayedFramework } from '@/lib/runtimes'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { usePolling } from '@/lib/usePolling'
 import {
@@ -639,7 +640,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              {showProjectSwitcher && (
                <DropdownMenu>
                  <DropdownMenuTrigger className="group flex h-11 min-w-0 max-w-[380px] items-center gap-3 rounded-lg border border-border bg-card px-3.5 py-2 text-left shadow-sm transition-colors hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/20">
-                   <FrameworkIcon framework={activeProject?.framework} variant="compact" className="h-8 w-8 shrink-0" />
+                   <FrameworkIcon framework={getDisplayedFramework(activeProject)} variant="compact" className="h-8 w-8 shrink-0" />
                    <div className="min-w-0 flex-1">
                      <div className="truncate text-sm font-semibold leading-tight">
                        {activeProject?.name || activeProjectUID}
@@ -667,7 +668,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                            onClick={() => navigate(`/projects/${project.uid}`)}
                            className={`flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2.5 ${isActive ? 'bg-accent text-accent-foreground' : ''}`}
                          >
-                           <FrameworkIcon framework={project.framework} variant="compact" className="h-8 w-8 shrink-0" />
+                           <FrameworkIcon framework={getDisplayedFramework(project)} variant="compact" className="h-8 w-8 shrink-0" />
                            <div className="min-w-0 flex-1">
                              <div className="truncate text-sm font-medium leading-none">{project.name}</div>
                              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">

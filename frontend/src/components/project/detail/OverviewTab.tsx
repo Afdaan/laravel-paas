@@ -8,13 +8,15 @@ import { FrameworkIcon } from '@/components/FrameworkIcon'
 
 interface OverviewTabProps {
   project: Project
+  displayedFramework?: string
+  isDetectedFrameworkCandidate: boolean
   projectUrl: string
   isLaravelProject: boolean
   activeCommit: { sha: string; shortSha: string; message: string } | null
   onTabChange: (tab: string) => void
 }
 
-export function OverviewTab({ project, projectUrl, isLaravelProject, activeCommit, onTabChange }: OverviewTabProps) {
+export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCandidate, projectUrl, isLaravelProject, activeCommit, onTabChange }: OverviewTabProps) {
   const { t } = useTranslation()
 
   return (
@@ -156,10 +158,12 @@ export function OverviewTab({ project, projectUrl, isLaravelProject, activeCommi
               <div className="p-3 rounded-lg bg-muted border">
                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 block">{t('projectDetail.settings.version')}</label>
                 <div className="flex items-center gap-1.5 font-bold text-xs uppercase">
-                  <FrameworkIcon framework={project.framework} variant="plain" className="w-3.5 h-3.5" />
-                  {isLaravelProject
+                  <FrameworkIcon framework={displayedFramework} variant="plain" className="w-3.5 h-3.5" />
+                  {isDetectedFrameworkCandidate
+                    ? displayedFramework
+                    : isLaravelProject
                     ? (project.laravel_version || 'Laravel 10')
-                    : (project.framework && project.framework !== 'Other' ? `${project.framework} ${project.language_version || ''}` : t('common.general'))}
+                    : (displayedFramework && displayedFramework !== 'Other' ? `${displayedFramework} ${project.language_version || ''}` : t('common.general'))}
                 </div>
               </div>
             </div>

@@ -11,6 +11,11 @@ export const DEFAULT_RUNTIME_VERSIONS = {
   python: '3.13',
 };
 
+export function getDisplayedFramework(project?: { framework?: string; detected_framework?: string } | null) {
+  // Keep runtime controls on the promoted framework while showing the latest source detection.
+  return project?.detected_framework || project?.framework
+}
+
 export const RUNTIME_VERSIONS: Record<string, RuntimeVersion[]> = {
   php: [
     { value: '8.0', label: 'PHP 8.0' },

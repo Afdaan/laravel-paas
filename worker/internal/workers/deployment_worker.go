@@ -948,6 +948,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"source", detection.Source,
 	)
 	appendLog(fmt.Sprintf(">> Runtime detected: %s", detection.Framework))
+	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{"detected_framework": detection.Framework}); err != nil {
+		slog.Warn("Failed to persist detected runtime candidate", "id", project.ID, "error", err)
+	}
 
 	finalPHPVersion := project.PHPVersion
 	if finalPHPVersion == "" {

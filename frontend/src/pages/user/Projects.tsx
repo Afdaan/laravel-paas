@@ -25,7 +25,7 @@ import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import { RestartButton } from '../../components/project/RestartButton'
 import { getEngineDisplayName } from '../../components/database-studio/utils'
-import { DEFAULT_RUNTIME_VERSIONS } from '../../lib/runtimes'
+import { DEFAULT_RUNTIME_VERSIONS, getDisplayedFramework } from '../../lib/runtimes'
 import { Project } from '../../types'
 
 const getFrameworkLabel = (framework?: string, fallback?: string) => {
@@ -111,14 +111,16 @@ type ProjectCardProps = {
 
 function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess }: ProjectCardProps) {
   const { t } = useTranslation()
-  const tone = getFrameworkTone(project.framework)
-  const isLaravel = isLaravelFramework(project.framework)
+  const displayedFramework = getDisplayedFramework(project)
+  const isDetectedFrameworkCandidate = Boolean(project.detected_framework && project.detected_framework !== project.framework)
+  const tone = getFrameworkTone(displayedFramework)
+  const isLaravel = isLaravelFramework(displayedFramework)
   const projectHost = project.url ? project.url.replace(/^https?:\/\//, '') : project.subdomain
-  const runtimeLabel = isLaravel ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')
+  const runtimeLabel = isLaravel && !isDetectedFrameworkCandidate ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')
   const phpVersion = project.php_version?.trim() || DEFAULT_RUNTIME_VERSIONS.php
-  const runtimeValue = isLaravel
+  const runtimeValue = isLaravel && !isDetectedFrameworkCandidate
     ? `${t('projectDetail.settings.version')} ${phpVersion}`
-    : getFrameworkLabel(project.framework, t('common.general'))
+    : getFrameworkLabel(displayedFramework, t('common.general'))
   const databaseValue = project.database_name
     ? getEngineDisplayName(project.database_instance?.engine)
     : t('projectDetail.metrics.inactive')
@@ -143,7 +145,7 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
       <CardContent className="relative z-10 flex h-full flex-col p-6">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="relative">
-            <FrameworkIcon framework={project.framework} variant="tile" className="h-11 w-11" />
+            <FrameworkIcon framework={displayedFramework} variant="tile" className="h-11 w-11" />
           </div>
           <StatusBadge status={project.status} />
         </div>
@@ -154,8 +156,8 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
           </h3>
           <div className="mb-3">
             <Badge variant="outline" className={cn('gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider', tone.chip)}>
-              <FrameworkIcon framework={project.framework} variant="plain" className="h-3.5 w-3.5" />
-              {getFrameworkLabel(project.framework, t('common.general'))}
+              <FrameworkIcon framework={displayedFramework} variant="plain" className="h-3.5 w-3.5" />
+              {getFrameworkLabel(displayedFramework, t('common.general'))}
             </Badge>
           </div>
           <a
