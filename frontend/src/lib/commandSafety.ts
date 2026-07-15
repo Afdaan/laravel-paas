@@ -2,6 +2,7 @@ const riskyCommandPatterns = [
   /^migrate:fresh(?:\s|$)/,
   /^migrate:reset(?:\s|$)/,
   /^migrate:rollback(?:\s|$)/,
+  /^db:seed(?:\s|$)/,
   /^db:wipe(?:\s|$)/,
   /^schema:dump(?:\s|$)/,
   /^queue:flush(?:\s|$)/,

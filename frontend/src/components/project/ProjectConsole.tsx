@@ -176,7 +176,9 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
               <span>{isLaravelProject ? 'Terminal Console' : 'Security Advisory'}</span>
             </div>
             <p className="text-[10px] text-zinc-500 leading-relaxed max-w-2xl italic">
-              Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.
+              {isLaravelProject
+                ? 'Run full commands from the project root. Production seeders require explicit confirmation: php artisan db:seed --force --no-interaction.'
+                : 'Use standard CLI commands. Commands are executed in the project root. Platform-dangerous commands are restricted. Risky app commands require confirmation.'}
             </p>
           </div>
 
@@ -198,7 +200,7 @@ function ProjectConsole({ uid, project }: ProjectConsoleProps) {
             <Input
               value={consoleCommand}
               onChange={e => setConsoleCommand(e.target.value)}
-              placeholder={isLaravelProject ? 'php artisan migrate --seed' : 'npm run build'}
+              placeholder={isLaravelProject ? 'php artisan db:seed --force --no-interaction' : 'npm run build'}
               disabled={isExecuting}
               className="h-9 min-w-0 flex-1 border-0 bg-transparent px-3 font-mono text-[13px] leading-5 text-zinc-100 shadow-none placeholder:text-zinc-600 focus-visible:ring-0"
             />
