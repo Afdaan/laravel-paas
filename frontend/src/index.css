@@ -117,6 +117,73 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Landing tokens stay isolated from dashboard theme state and portal content. */
+.runara-landing,
+.runara-surface {
+  color-scheme: dark;
+  --background: oklch(0.168 0.022 285.75);
+  --foreground: oklch(0.885 0.04 277.71);
+  --card: oklch(0.215 0.025 284.06);
+  --card-foreground: oklch(0.885 0.04 277.71);
+  --popover: oklch(0.215 0.025 284.06);
+  --popover-foreground: oklch(0.885 0.04 277.71);
+  --primary: oklch(0.787 0.119 304.77);
+  --primary-foreground: oklch(0.168 0.022 285.75);
+  --secondary: oklch(0.297 0.027 281.8);
+  --secondary-foreground: oklch(0.885 0.04 277.71);
+  --muted: oklch(0.297 0.027 281.8);
+  --muted-foreground: oklch(0.76 0.04 278.64);
+  --accent: oklch(0.85 0.078 209.29);
+  --accent-foreground: oklch(0.168 0.022 285.75);
+  --signal: oklch(0.82 0.103 60.74);
+  --border: oklch(0.518 0.035 280.12 / 78%);
+  --input: oklch(0.518 0.035 280.12 / 68%);
+  --ring: oklch(0.85 0.078 209.29);
+  position: relative;
+  isolation: isolate;
+}
+
+.runara-press {
+  box-shadow: 4px 4px 0 var(--foreground);
+}
+
+.runara-press:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--foreground);
+}
+
+.runara-press:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--foreground);
+}
+
+.text-signal {
+  color: var(--signal);
+}
+
+.border-signal {
+  border-color: var(--signal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runara-press,
+  .runara-press:hover,
+  .runara-press:active {
+    transform: none !important;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .runara-landing *,
+  .runara-surface * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -154,17 +221,6 @@
 
   input[type=number] {
     -moz-appearance: textfield;
-  }
-}
-
-@layer components {
-  button:hover svg {
-    @apply translate-y-[-1px] transition-transform duration-300 ease-out;
-    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1));
-  }
-
-  button:active svg {
-    @apply translate-y-0 scale-95;
   }
 }
 
@@ -257,4 +313,10 @@
   overflow: visible !important;
   text-overflow: clip !important;
   line-height: 1.4 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
 }

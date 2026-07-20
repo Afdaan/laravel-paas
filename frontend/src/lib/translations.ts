@@ -133,77 +133,102 @@ export const translations = {
       projectStats: "You currently have {{count}} active projects",
     },
     login: {
-      signIn: "Authenticate",
+      signIn: "Sign in",
       email: "Email",
-      emailPlaceholder: "user@paas.id",
+      emailPlaceholder: "name@example.com",
       password: "Password",
-      passwordPlaceholder: "Enter password...",
-      loggingIn: "Verifying credentials...",
-      failed: "Authentication failed. Check your credentials.",
+      passwordPlaceholder: "Enter your password",
+      loggingIn: "Signing in...",
+      failed: "Sign in failed. Check your email and password.",
       welcomeBack: "Welcome back, {{name}}!",
-      backToHome: "Return Home",
+      backToHome: "Back to home",
       emailRequired: "Email is required.",
       passwordRequired: "Password is required.",
-      platformVersion: "Engine Version {{version}}",
-      support: "Infrastructure Support",
-      desc: "Enter your email and password",
+      showPassword: "Show password",
+      hidePassword: "Hide password",
+      desc: "Enter your email and password.",
     },
     landing: {
-      features: "Features",
-      workflow: "Workflow",
-      infrastructure: "Infrastructure",
-      signIn: "Sign In",
+      skipToContent: "Skip to main content",
+      primaryNavigation: "Primary navigation",
+      signIn: "Sign in",
       dashboard: "Dashboard",
-      heroBadge: "Next Gen Hosting for Users",
-      heroTitle: "Laravel deployment, reimagined for users.",
-      heroSubtitle: "A minimalist cloud platform that automates your repository orchestration, database provisioning, and SSL routing. Focus on code, not infrastructure.",
-      goDashboard: "Go to Dashboard",
-      deployFirst: "Deploy your first project",
-      viewSource: "View Source Code",
-      builtPrecision: "Built for precision.",
-      precisionDesc: "Every technical hurdle between your repository and a live URL has been automated by our engineering core.",
-      stopConfiguring: "Stop configuring. Start building.",
-      finalCTA: "Join hundreds of users currently shipping their Laravel projects on the fastest platform in the cluster.",
-      readyDeploy: "Ready to deploy?",
-      returnDashboard: "Return to Dashboard",
-      terminal: {
-        header: "bash",
-        init: "Initializing project context...",
-        pull: "git clone repository --depth=1",
-        inject: "orchestrating environment variables...",
-        composer: "composer install --no-dev --optimize-autoloader",
-        installing: "Installing dependencies (34/34)",
-        sqlite: "provisioning isolated database engine...",
-        mapping: "Mapping subdomain cluster to container:8000",
-        success: "Deployment successful. URL generated."
+      nav: { features: "Features", workflow: "Deployment process", security: "Security" },
+      language: { toggle: "Change language", label: "Language" },
+      hero: {
+        title: "Deploy your applications on your infrastructure.",
+        description: "Connect a Git repository, let Railpack detect and build the application, then manage deployments, domains, databases, and runtime operations from Runara.",
+        cta: "Deploy a project",
+        ctaDashboard: "Open dashboard",
+        secondaryCta: "See how deployment works"
       },
-      workflowSteps: [
-        { title: "Git Orchestration", url: "laravel-paas clone git@github.com:repo/app.git" },
-        { title: "Environment Injection", url: "laravel-paas set-env APP_ENV=production" },
-        { title: "Compute Provisioning", url: "laravel-paas up --scale-worker=1" }
-      ],
-      featureList: {
-        atomic: { title: "Atomic Redundancy", desc: "Automatic container migration if a node in the cluster fails." },
-        db: { title: "Database Provisioning", desc: "One-click MySQL isolated schema creation for each user project." },
-        edge: { title: "Global Edge Routing", desc: "Immediate SSL/TLS termination on our global infrastructure." },
-        php: { title: "Runtime Isolation", desc: "Run multiple PHP versions (8.0 - 8.4) in isolated namespaces." },
-        access: { title: "Integrated Console", desc: "Run project commands directly from the dashboard." },
-        secure: { title: "Security Guardrails", desc: "Automatic firewall rules and resource quota enforcement." }
+      stack: {
+        eyebrow: "Supported runtimes",
+        title: "Deploy applications Railpack can build.",
+        description: "Runtime detection depends on repository contents and Railpack configuration."
       },
-      infra: {
-        title: "Engine Architecture",
-        desc: "Our infrastructure is built on a distributed cluster that handles the entire deployment pipeline with zero manual configuration.",
-        cpu: { title: "Hypervisor CPU", desc: "Dedicated compute cycles with hard quotas for stable runtime benchmarks." },
-        healing: { title: "Self-Healing Nodes", desc: "Infrastructure auto-recovers from any crashed containers within 5 seconds." },
-        maria: { title: "DB Cluster", desc: "High-performance isolated schemas with automated snapshots and recovery." },
-        docker: { title: "Orchestration", desc: "Docker-driven architecture for identical local and production environments." },
-        list: [
-          "Enterprise-grade SSL/TLS certificates",
-          "Automated daily backup registry",
-          "Internal isolated private networking",
-          "Horizontal scaling across 4 regions"
-        ]
-      }
+      features: {
+        title: "Manage deployments and infrastructure in one place.",
+        description: "Runara brings release controls, runtime operations, databases, domains, and configuration into one self-hosted dashboard.",
+        groups: {
+          releaseControl: {
+            label: "Deployments", title: "Control each release.", description: "Connect source code, queue deployments, run configured checks, promote releases, and roll back when needed.",
+            items: {
+              source: { term: "Git source", description: "Connect an account, repository, and branch; push webhooks can start deployments." },
+              queue: { term: "Ordered queue", description: "Deployments wait for a worker and execute in order." },
+              gate: { term: "Configured checks", description: "Evaluate the runtime checks configured for the candidate." },
+              rollback: { term: "Recorded rollback", description: "Use a cached image when available; otherwise rebuild the selected revision." },
+              runtime: { term: "Railpack detection", description: "Detect runtime and framework signals from repository contents and Railpack output." }
+            }
+          },
+          operate: {
+            label: "Runtime", title: "Operate your applications.", description: "View logs, run guarded commands, supervise workers, and set resource limits.",
+            items: {
+              logs: { term: "Build and runtime logs", description: "Stream output to the dashboard while work runs." },
+              console: { term: "Application commands", description: "Run application commands with checks and explicit confirmation for risky operations." },
+              workers: { term: "Background workers", description: "Supervise background processes in separate containers." },
+              limits: { term: "CPU and memory", description: "Set limits for project and worker containers." }
+            }
+          },
+          dataEdge: {
+            label: "Data and domains", title: "Manage application dependencies.", description: "Provision databases, manage configuration, connect domains, and handle TLS from the same dashboard.",
+            items: {
+              databases: { term: "MySQL or PostgreSQL", description: "Provision, attach, detach, back up, restore, import, or export project data." },
+              studio: { term: "Database Studio", description: "Browse schemas, edit rows, and run SQL from the dashboard." },
+              domains: { term: "Domains, DNS, TLS", description: "Connect custom domains, diagnose DNS, and handle certificates through the proxy." },
+              configuration: { term: "Environment and SecretStore", description: "Manage project values and reusable encrypted secret bindings." }
+            }
+          }
+        }
+      },
+      workflow: {
+        title: "Ship a new version without taking the current one offline.",
+        description: "Runara builds and checks the replacement while the current release keeps serving traffic. Only a healthy replacement takes over.",
+        checks: {
+          build: { title: "Build", description: "Railpack packages the selected revision into a new container next to the one already running." },
+          readiness: { title: "Readiness", description: "The new container has to answer its health check and pass any configured release commands before it can take traffic." },
+          release: { title: "Handover", description: "Traffic moves to the new container, then the previous one is stopped." }
+        },
+        outcome: "If the replacement fails any check, Runara leaves it stopped and keeps the current release live. To roll back, redeploy an earlier revision — Runara reuses a cached image when one exists."
+      },
+      trust: {
+        title: "Built-in controls for daily operations.",
+        description: "Runara is a self-hosted control plane for application code, runtime resources, and release records. These are product controls, not a claim of third-party certification.",
+        transparency: { title: "Transparency", description: "An external security review has not been completed. Statements here describe controls present in the product, not an audit or certification." },
+        items: {
+          records: { title: "Operation records", description: "Verified deployment operations, database actions, domain events, and guarded console execution write operation records." },
+          commands: { title: "Command checks", description: "Console commands are checked before execution; risky operations require explicit confirmation." },
+          limits: { title: "Resource limits", description: "Projects and supervised workers run with CPU and memory limits configured through the platform." },
+          roles: { title: "Platform roles", description: "User, admin, and superadmin roles separate project access from platform administration." }
+        }
+      },
+      final: {
+        title: "Deploy your next project with Runara.",
+        description: "Connect a repository, let Railpack detect the build, and manage the deployment from your own infrastructure.",
+        cta: "Deploy a project",
+        dashboard: "Open dashboard"
+      },
+      footer: { tagline: "Self-hosted application release control", copyright: "© {{year}} Runara" }
     },
     admin: {
       platformDashboard: "Platform Dashboard",
@@ -1785,77 +1810,102 @@ export const translations = {
       projectStats: "Total {{count}} project aktif saat ini",
     },
     login: {
-      signIn: "Authenticate",
+      signIn: "Masuk",
       email: "Email",
-      emailPlaceholder: "user@paas.id",
-      password: "Security Passphrase",
-      passwordPlaceholder: "Masukkan password...",
-      loggingIn: "Memverifikasi...",
-      failed: "Autentikasi gagal. Periksa kembali kredensial.",
+      emailPlaceholder: "nama@contoh.com",
+      password: "Password",
+      passwordPlaceholder: "Masukkan password",
+      loggingIn: "Sedang masuk...",
+      failed: "Gagal masuk. Periksa email dan password Anda.",
       welcomeBack: "Selamat datang kembali, {{name}}!",
-      backToHome: "Kembali ke Home",
+      backToHome: "Kembali ke beranda",
       emailRequired: "Email wajib diisi.",
-      passwordRequired: "Passphrase wajib diisi.",
-      platformVersion: "Engine Version {{version}}",
-      support: "Infrastructure Support",
-      desc: "Masukkan Email dan Password.",
+      passwordRequired: "Password wajib diisi.",
+      showPassword: "Tampilkan password",
+      hidePassword: "Sembunyikan password",
+      desc: "Masukkan email dan password Anda.",
     },
     landing: {
-      features: "Features",
-      workflow: "Workflow",
-      infrastructure: "Infrastructure",
-      signIn: "Sign In",
+      skipToContent: "Lewati ke konten utama",
+      primaryNavigation: "Navigasi utama",
+      signIn: "Masuk",
       dashboard: "Dashboard",
-      heroBadge: "Modern Cloud Hosting untuk User",
-      heroTitle: "Laravel deployment\njadi lebih instan.",
-      heroSubtitle: "Otomatisasi repository orchestration, database provisioning, dan SSL routing. Fokus pada code, bukan infrastruktur.",
-      goDashboard: "Buka Dashboard",
-      deployFirst: "Deploy Project Pertama",
-      viewSource: "Lihat Source Code",
-      builtPrecision: "Dibuat untuk skalabilitas.",
-      precisionDesc: "Seluruh hambatan teknis dari repository hingga live URL telah diotomatisasi oleh engineering core.",
-      stopConfiguring: "Berhenti konfigurasi. Mulai coding.",
-      finalCTA: "Bergabung dengan user lain yang telah melakukan deployment project Laravel.",
-      readyDeploy: "Siap untuk deploy?",
-      returnDashboard: "Ke Dashboard",
-      terminal: {
-        header: "bash",
-        init: "Initializing project context...",
-        pull: "git clone repository --depth=1",
-        inject: "orchestrating environment variables...",
-        composer: "composer install --no-dev --optimize-autoloader",
-        installing: "Installing dependencies (34/34)",
-        sqlite: "provisioning isolated database engine...",
-        mapping: "Mapping subdomain cluster to container:8000",
-        success: "Deployment successful. URL generated."
+      nav: { features: "Fitur", workflow: "Proses deployment", security: "Keamanan" },
+      language: { toggle: "Ganti bahasa", label: "Bahasa" },
+      hero: {
+        title: "Deploy aplikasi di infrastruktur Anda sendiri.",
+        description: "Hubungkan repository Git, biarkan Railpack mendeteksi dan mem-build aplikasi, lalu kelola deployment, domain, database, dan operasi runtime dari Runara.",
+        cta: "Deploy project",
+        ctaDashboard: "Buka dashboard",
+        secondaryCta: "Lihat proses deployment"
       },
-      workflowSteps: [
-        { title: "Git Orchestration", url: "laravel-paas clone git@github.com:repo/app.git" },
-        { title: "Environment Injection", url: "laravel-paas set-env APP_ENV=production" },
-        { title: "Compute Provisioning", url: "laravel-paas up --scale-worker=1" }
-      ],
-      featureList: {
-        atomic: { title: "Atomic Redundancy", desc: "Migrasi container otomatis jika salah satu node dalam cluster gagal." },
-        db: { title: "Database Provisioning", desc: "Pembuatan schema MySQL terisolasi dalam satu klik untuk setiap project." },
-        edge: { title: "Global Edge Routing", desc: "Terminasi SSL/TLS instan pada infrastruktur global." },
-        php: { title: "Runtime Isolation", desc: "Menjalankan berbagai versi PHP (8.0 - 8.4) dalam namespace yang terisolasi." },
-        access: { title: "Integrated Console", desc: "Jalankan command project langsung dari dashboard." },
-        secure: { title: "Security Guardrails", desc: "Aturan firewall otomatis dan penegakan kuota resource." }
+      stack: {
+        eyebrow: "Runtime yang didukung",
+        title: "Deploy aplikasi yang dapat di-build Railpack.",
+        description: "Deteksi runtime bergantung pada isi repository dan konfigurasi Railpack."
       },
-      infra: {
-        title: "Arsitektur Engine",
-        desc: "Infrastruktur dibangun di atas cluster terdistribusi yang menangani seluruh pipeline deployment tanpa konfigurasi manual.",
-        cpu: { title: "Hypervisor CPU", desc: "Siklus komputasi dedikasi dengan kuota keras untuk runtime benchmark yang stabil." },
-        healing: { title: "Self-Healing Nodes", desc: "Infrastruktur otomatis memulihkan container yang crash dalam 5 detik." },
-        maria: { title: "DB Cluster", desc: "Schema terisolasi kinerja tinggi dengan snapshot dan pemulihan otomatis." },
-        docker: { title: "Orchestration", desc: "Arsitektur Docker-driven untuk environment lokal dan produksi yang identik." },
-        list: [
-          "Sertifikat SSL/TLS kelas enterprise",
-          "Registri backup harian otomatis",
-          "Internal isolated private networking",
-          "Scalling horizontal di 4 region"
-        ]
-      }
+      features: {
+        title: "Kelola deployment dan infrastruktur di satu tempat.",
+        description: "Runara menyatukan kendali release, operasi runtime, database, domain, dan konfigurasi dalam satu dashboard self-hosted.",
+        groups: {
+          releaseControl: {
+            label: "Deployment", title: "Kendalikan setiap release.", description: "Hubungkan source code, antrekan deployment, jalankan pemeriksaan, aktifkan release, dan lakukan rollback saat diperlukan.",
+            items: {
+              source: { term: "Source Git", description: "Hubungkan akun, repository, dan branch; webhook push dapat memulai deployment." },
+              queue: { term: "Antrean berurutan", description: "Deployment menunggu worker lalu dieksekusi sesuai urutan." },
+              gate: { term: "Pemeriksaan terkonfigurasi", description: "Evaluasi pemeriksaan runtime yang dikonfigurasi untuk kandidat." },
+              rollback: { term: "Rollback tercatat", description: "Gunakan cached image jika tersedia; jika tidak, build ulang revisi terpilih." },
+              runtime: { term: "Deteksi Railpack", description: "Deteksi sinyal runtime dan framework dari isi repository serta output Railpack." }
+            }
+          },
+          operate: {
+            label: "Runtime", title: "Operasikan aplikasi Anda.", description: "Lihat log, jalankan command dengan pengamanan, awasi worker, dan atur batas resource.",
+            items: {
+              logs: { term: "Log build dan runtime", description: "Stream output ke dashboard selama proses berjalan." },
+              console: { term: "Command aplikasi", description: "Jalankan command aplikasi dengan pemeriksaan dan konfirmasi eksplisit untuk operasi berisiko." },
+              workers: { term: "Background worker", description: "Awasi proses background dalam container terpisah." },
+              limits: { term: "CPU dan memori", description: "Tetapkan batas untuk container project dan worker." }
+            }
+          },
+          dataEdge: {
+            label: "Data dan domain", title: "Kelola kebutuhan aplikasi.", description: "Sediakan database, kelola konfigurasi, hubungkan domain, dan tangani TLS dari dashboard yang sama.",
+            items: {
+              databases: { term: "MySQL atau PostgreSQL", description: "Provision, attach, detach, backup, restore, import, atau export data project." },
+              studio: { term: "Database Studio", description: "Jelajahi skema, edit baris, dan jalankan SQL dari dashboard." },
+              domains: { term: "Domain, DNS, TLS", description: "Hubungkan custom domain, diagnosis DNS, dan tangani sertifikat melalui proxy." },
+              configuration: { term: "Environment dan SecretStore", description: "Kelola nilai project dan binding secret terenkripsi yang dapat digunakan ulang." }
+            }
+          }
+        }
+      },
+      workflow: {
+        title: "Rilis versi baru tanpa mematikan versi yang aktif.",
+        description: "Runara mem-build dan memeriksa versi pengganti selagi versi aktif tetap melayani traffic. Hanya versi pengganti yang sehat yang mengambil alih.",
+        checks: {
+          build: { title: "Build", description: "Railpack memaketkan revisi yang dipilih menjadi container baru di samping container yang sedang berjalan." },
+          readiness: { title: "Readiness", description: "Container baru harus lolos health check dan menjalankan command release yang dikonfigurasi sebelum menerima traffic." },
+          release: { title: "Peralihan", description: "Traffic berpindah ke container baru, lalu container sebelumnya dihentikan." }
+        },
+        outcome: "Jika versi pengganti gagal salah satu pemeriksaan, Runara membiarkannya berhenti dan mempertahankan versi aktif. Untuk rollback, deploy ulang revisi sebelumnya — Runara memakai cached image bila tersedia."
+      },
+      trust: {
+        title: "Kontrol bawaan untuk operasi sehari-hari.",
+        description: "Runara adalah control plane self-hosted untuk kode aplikasi, resource runtime, dan catatan release. Ini menjelaskan kontrol produk, bukan klaim sertifikasi pihak ketiga.",
+        transparency: { title: "Transparansi", description: "Review keamanan eksternal belum dilakukan. Pernyataan di sini menjelaskan kontrol yang tersedia di produk, bukan audit atau sertifikasi." },
+        items: {
+          records: { title: "Catatan operasi", description: "Operasi deployment terverifikasi, aksi database, event domain, dan eksekusi console terjaga menulis catatan operasi." },
+          commands: { title: "Pemeriksaan command", description: "Command console diperiksa sebelum eksekusi; operasi berisiko memerlukan konfirmasi eksplisit." },
+          limits: { title: "Batas resource", description: "Project dan worker tersupervisi berjalan dengan batas CPU dan memori yang diatur melalui platform." },
+          roles: { title: "Role platform", description: "Role user, admin, dan superadmin memisahkan akses project dari administrasi platform." }
+        }
+      },
+      final: {
+        title: "Deploy project berikutnya dengan Runara.",
+        description: "Hubungkan repository, biarkan Railpack mendeteksi build, lalu kelola deployment di infrastruktur Anda sendiri.",
+        cta: "Deploy project",
+        dashboard: "Buka dashboard"
+      },
+      footer: { tagline: "Kendali release aplikasi self-hosted", copyright: "© {{year}} Runara" }
     },
     admin: {
       platformDashboard: "Infrastructure Dashboard",
