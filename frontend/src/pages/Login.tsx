@@ -5,9 +5,10 @@ import { systemAPI } from '../services/api'
 import { AxiosError } from 'axios'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
-import { ArrowRight, ArrowLeft, Loader2, Eye, EyeOff, Sun, Moon } from 'lucide-react'
+import { ArrowRight, ArrowLeft, Eye, EyeOff, Sun, Moon } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTheme } from '@/components/ThemeProvider'
@@ -198,7 +199,7 @@ function Login() {
                 <Button type="submit" size="lg" className="min-h-12 w-full font-bold" disabled={isLoading}>
                   {isLoading ? (
                     <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      <Spinner className="size-4" />
                       {t('login.loggingIn')}
                     </>
                   ) : (

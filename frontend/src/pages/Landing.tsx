@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { MotionConfig, motion, useReducedMotion } from 'framer-motion'
+import { animate, MotionConfig, motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,10 @@ const supportedStacks = [
 
 const trustItems = ['records', 'commands', 'limits', 'roles'] as const
 const motionEase = [0.22, 1, 0.36, 1] as const
+const sectionReveal = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
+}
 
 function BrandMark({ className }: { className?: string }) {
   return <img src="/runara-icon.png" alt="" className={cn('block size-9 object-contain', className)} />
@@ -38,6 +42,8 @@ export default function Landing() {
   const { t, language } = useTranslation()
   const { token, user } = useAuthStore()
   const reduceMotion = useReducedMotion()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollAnimationRef = useRef<ReturnType<typeof animate> | null>(null)
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
   const appPath = token ? (isAdmin ? '/admin/dashboard' : '/dashboard') : '/login'
 
@@ -45,9 +51,38 @@ export default function Landing() {
     document.documentElement.lang = language
   }, [language])
 
+  const scrollToSection = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    const container = scrollRef.current
+    const target = document.querySelector<HTMLElement>(href)
+
+    if (!container || !target || reduceMotion) return
+
+    event.preventDefault()
+    window.history.pushState(null, '', href)
+    const moveFocus = event.detail === 0
+    const destination = container.scrollTop + target.getBoundingClientRect().top - container.getBoundingClientRect().top
+
+    scrollAnimationRef.current?.stop()
+    scrollAnimationRef.current = animate(container.scrollTop, destination, {
+      duration: 1.1,
+      ease: motionEase,
+      onUpdate: (value) => {
+        container.scrollTop = value
+      },
+      onComplete: () => {
+        if (moveFocus) target.focus({ preventScroll: true })
+      },
+    })
+  }
+
   return (
     <MotionConfig reducedMotion="user">
-      <div className="runara-landing h-full overflow-x-clip overflow-y-auto bg-background font-sans text-foreground antialiased">
+      <div
+        ref={scrollRef}
+        className="runara-landing h-full overflow-x-clip overflow-y-auto bg-background font-sans text-foreground antialiased"
+        onWheel={() => scrollAnimationRef.current?.stop()}
+        onTouchStart={() => scrollAnimationRef.current?.stop()}
+      >
         <a href="#main-content" className="sr-only z-[100] min-h-11 bg-primary px-4 py-3 font-semibold text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-ring">
           {t('landing.skipToContent')}
         </a>
@@ -61,7 +96,7 @@ export default function Landing() {
               </Link>
               <div className="hidden items-center gap-5 md:flex">
                 {navLinks.map(([href, label]) => (
-                  <a key={href} href={href} className="flex min-h-11 items-center border-b border-transparent text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <a key={href} href={href} onClick={(event) => scrollToSection(event, href)} className="flex min-h-11 items-center border-b border-transparent text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {t(label)}
                   </a>
                 ))}
@@ -96,7 +131,7 @@ export default function Landing() {
                         {token ? t('landing.hero.ctaDashboard') : t('landing.hero.cta')}
                         <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                       </Button>
-                      <a href="#workflow" className="flex min-h-12 items-center border-b border-foreground px-1 text-sm font-bold transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <a href="#workflow" onClick={(event) => scrollToSection(event, '#workflow')} className="flex min-h-12 items-center border-b border-foreground px-1 text-sm font-bold transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         {t('landing.hero.secondaryCta')}
                       </a>
                     </div>
@@ -116,7 +151,14 @@ export default function Landing() {
           </section>
 
           <section id="workflow" className="scroll-mt-4 border-b border-border px-4 py-16 sm:px-6 sm:py-24 lg:px-10 lg:py-28">
-            <div className="mx-auto max-w-[90rem]">
+            <motion.div
+              className="mx-auto max-w-[90rem]"
+              variants={sectionReveal}
+              initial={reduceMotion ? false : 'hidden'}
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{ duration: reduceMotion ? 0 : 0.45, ease: motionEase }}
+            >
               <div className="max-w-4xl">
                 <h2 id="release-route-title" className="text-balance text-4xl font-bold leading-[0.95] tracking-[-0.045em] sm:text-6xl">{t('landing.workflow.title')}</h2>
                 <p className="mt-6 max-w-[65ch] text-base font-medium leading-7 text-muted-foreground">{t('landing.workflow.description')}</p>
@@ -132,11 +174,18 @@ export default function Landing() {
               </dl>
 
               <p className="mt-8 max-w-[70ch] text-sm leading-7 text-muted-foreground">{t('landing.workflow.outcome')}</p>
-            </div>
+            </motion.div>
           </section>
 
           <section id="features" className="scroll-mt-4 border-b border-border px-4 py-16 sm:px-6 sm:py-24 lg:px-10 lg:py-28">
-            <div className="mx-auto max-w-[90rem]">
+            <motion.div
+              className="mx-auto max-w-[90rem]"
+              variants={sectionReveal}
+              initial={reduceMotion ? false : 'hidden'}
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{ duration: reduceMotion ? 0 : 0.45, ease: motionEase }}
+            >
               <div className="max-w-4xl">
                 <h2 className="text-balance text-4xl font-bold leading-[0.95] tracking-[-0.045em] sm:text-6xl">{t('landing.features.title')}</h2>
                 <p className="mt-6 max-w-[65ch] text-base font-medium leading-7 text-muted-foreground">{t('landing.features.description')}</p>
@@ -163,11 +212,18 @@ export default function Landing() {
                   </article>
                 ))}
               </div>
-            </div>
+            </motion.div>
           </section>
 
           <section id="security" className="scroll-mt-4 bg-primary text-primary-foreground">
-            <div className="mx-auto max-w-[90rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10 lg:py-28">
+            <motion.div
+              className="mx-auto max-w-[90rem] px-4 py-16 sm:px-6 sm:py-24 lg:px-10 lg:py-28"
+              variants={sectionReveal}
+              initial={reduceMotion ? false : 'hidden'}
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{ duration: reduceMotion ? 0 : 0.45, ease: motionEase }}
+            >
               <div className="min-w-0">
                 <h2 className="max-w-6xl break-words text-balance text-4xl font-bold leading-[0.92] tracking-[-0.05em] sm:text-7xl lg:text-8xl">{t('landing.trust.title')}</h2>
                 <p className="mt-8 max-w-3xl text-lg font-semibold leading-8">{t('landing.trust.description')}</p>
@@ -184,11 +240,18 @@ export default function Landing() {
                 <p className="font-bold">{t('landing.trust.transparency.title')}</p>
                 <p className="text-sm font-medium leading-6">{t('landing.trust.transparency.description')}</p>
               </div>
-            </div>
+            </motion.div>
           </section>
 
           <section className="border-b border-border px-4 py-16 sm:px-6 sm:py-24 lg:px-10 lg:py-28">
-            <div className="mx-auto grid min-w-0 max-w-[90rem] gap-10 lg:grid-cols-12 lg:items-end">
+            <motion.div
+              className="mx-auto grid min-w-0 max-w-[90rem] gap-10 lg:grid-cols-12 lg:items-end"
+              variants={sectionReveal}
+              initial={reduceMotion ? false : 'hidden'}
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{ duration: reduceMotion ? 0 : 0.45, ease: motionEase }}
+            >
               <div className="min-w-0 lg:col-span-9">
                 <h2 className="max-w-5xl break-words text-balance text-4xl font-bold leading-[0.92] tracking-[-0.05em] sm:text-7xl">{t('landing.final.title')}</h2>
                 <p className="mt-7 max-w-[65ch] text-base leading-7 text-muted-foreground">{t('landing.final.description')}</p>
@@ -199,7 +262,7 @@ export default function Landing() {
                   <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                 </Button>
               </div>
-            </div>
+            </motion.div>
           </section>
         </main>
 

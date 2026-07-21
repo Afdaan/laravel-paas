@@ -143,6 +143,13 @@
   isolation: isolate;
 }
 
+/* Radial bar spinner (see components/ui/spinner.tsx): each bar fades from full
+   to dim, staggered by animationDelay, giving the sequential trail effect. */
+@keyframes spinner-bar {
+  0% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
+
 .runara-press {
   box-shadow: 4px 4px 0 var(--foreground);
 }

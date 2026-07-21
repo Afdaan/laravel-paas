@@ -1815,7 +1815,7 @@ export const translations = {
       emailPlaceholder: "nama@contoh.com",
       password: "Password",
       passwordPlaceholder: "Masukkan password",
-      loggingIn: "Sedang masuk...",
+      loggingIn: "Memverifikasi...",
       failed: "Gagal masuk. Periksa email dan password Anda.",
       welcomeBack: "Selamat datang kembali, {{name}}!",
       backToHome: "Kembali ke beranda",
