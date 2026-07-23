@@ -1,8 +1,9 @@
 import { useEffect, useRef, type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { animate, MotionConfig, motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Moon, Sun } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
+import { useTheme } from '@/components/ThemeProvider'
 import { Button } from '@/components/ui/button'
 import useTranslation from '@/lib/useTranslation'
 import { cn } from '@/lib/utils'
@@ -41,6 +42,8 @@ function BrandMark({ className }: { className?: string }) {
 export default function Landing() {
   const { t, language } = useTranslation()
   const { token, user } = useAuthStore()
+  const { theme, setTheme } = useTheme()
+  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   const reduceMotion = useReducedMotion()
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollAnimationRef = useRef<ReturnType<typeof animate> | null>(null)
@@ -80,6 +83,7 @@ export default function Landing() {
       <div
         ref={scrollRef}
         className="runara-landing h-full overflow-x-clip overflow-y-auto bg-background font-sans text-foreground antialiased"
+        data-theme={isDark ? 'dark' : 'light'}
         onWheel={() => scrollAnimationRef.current?.stop()}
         onTouchStart={() => scrollAnimationRef.current?.stop()}
       >
@@ -102,8 +106,19 @@ export default function Landing() {
                 ))}
               </div>
             </div>
-            <div className="runara-surface flex shrink-0 items-center gap-2">
-              <LanguageSwitcher className="size-11 rounded-sm border" forceDark />
+            <div className="flex shrink-0 items-center gap-2">
+              <LanguageSwitcher className="size-11 rounded-lg border" forceDark={isDark} />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                className="size-11 rounded-lg"
+                aria-label={t('common.theme')}
+                title={t('common.theme')}
+              >
+                {isDark ? <Sun className="size-4" aria-hidden="true" /> : <Moon className="size-4" aria-hidden="true" />}
+              </Button>
               <Button nativeButton={false} size="sm" className="min-h-11 min-w-11 px-3 font-bold sm:px-4" render={<Link to={appPath} />}>
                 <span className="hidden sm:inline">{token ? t('landing.dashboard') : t('landing.signIn')}</span>
                 <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />

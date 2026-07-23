@@ -8,6 +8,7 @@ import useTranslation from '../lib/useTranslation'
 import { ArrowRight, ArrowLeft, Eye, EyeOff, Sun, Moon } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -96,13 +97,13 @@ function Login() {
             <span className="text-base font-extrabold tracking-[-0.03em]">Runara</span>
           </Link>
           <div className={isDark ? 'runara-surface flex items-center gap-2' : 'flex items-center gap-2'}>
-            <LanguageSwitcher className="size-11 rounded-sm border" forceDark={isDark} />
+            <LanguageSwitcher className="size-11 rounded-lg border" forceDark={isDark} />
             <Button
               type="button"
               variant="outline"
               size="icon"
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              className="size-11 rounded-sm"
+              className="size-11 rounded-lg"
               aria-label={t('common.theme')}
               title={t('common.theme')}
             >
@@ -113,105 +114,108 @@ function Login() {
       </header>
 
       <main className="flex min-h-[calc(100%_-_5rem)] items-center px-4 py-10 sm:px-6 sm:py-16 lg:px-10">
-        <div className="mx-auto w-full max-w-lg">
+        <div className="mx-auto w-full max-w-md">
           <Button
-            variant="ghost"
-            size="sm"
-            className="mb-6 min-h-11 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
-            render={<Link to="/" />}
-            nativeButton={false}
-          >
-            <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
-            {t('login.backToHome')}
-          </Button>
+              variant="ghost"
+              size="sm"
+              className="mb-6 min-h-11 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
+              render={<Link to="/" />}
+              nativeButton={false}
+            >
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
+              {t('login.backToHome')}
+            </Button>
 
-          <section className="border border-border bg-card" aria-labelledby="login-title">
-            <header className="border-b border-border px-5 py-6 sm:px-8 sm:py-8">
-              <h1 id="login-title" className="text-3xl font-bold tracking-[-0.04em] sm:text-4xl">{t('login.signIn')}</h1>
-              <p className="mt-3 max-w-sm leading-6 text-muted-foreground">{t('login.desc')}</p>
-            </header>
-            <div className="px-5 py-6 sm:px-8 sm:py-8">
-              <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-                <div className="space-y-2">
-                  <Label htmlFor="email" className={validationErrors.email ? 'text-destructive' : 'text-foreground'}>
-                    {t('login.email')}
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value)
-                      if (validationErrors.email) setValidationErrors((prev) => ({ ...prev, email: null }))
-                    }}
-                    aria-invalid={!!validationErrors.email}
-                    aria-describedby={validationErrors.email ? 'email-error' : undefined}
-                    className="h-11 border-border bg-background"
-                    placeholder={t('login.emailPlaceholder')}
-                    autoComplete="email"
-                    autoFocus
-                  />
-                  {validationErrors.email && (
-                    <p id="email-error" role="alert" className="text-xs font-medium text-destructive">{validationErrors.email}</p>
-                  )}
+            <Card className="gap-0 border border-border py-0 shadow-xl shadow-foreground/5" aria-labelledby="login-title">
+              <CardHeader className="items-center gap-4 border-b border-border px-5 py-8 text-center sm:px-8 sm:py-10">
+                <img src="/runara-icon.png" alt="" className="mx-auto size-11 object-contain" />
+                <div>
+                  <h1 id="login-title" className="text-3xl font-extrabold tracking-[-0.045em] sm:text-4xl">{t('login.eyebrow')}</h1>
+                  <p className="mt-3 max-w-sm leading-6 text-muted-foreground">{t('login.desc')}</p>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password" className={validationErrors.password ? 'text-destructive' : 'text-foreground'}>
-                    {t('login.password')}
-                  </Label>
-                  <div className="relative">
+              </CardHeader>
+              <CardContent className="px-5 py-6 sm:px-8 sm:py-8">
+                <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className={validationErrors.email ? 'text-destructive' : 'text-foreground'}>
+                      {t('login.email')}
+                    </Label>
                     <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
+                      id="email"
+                      type="email"
+                      value={email}
                       onChange={(e) => {
-                        setPassword(e.target.value)
-                        if (validationErrors.password) setValidationErrors((prev) => ({ ...prev, password: null }))
+                        setEmail(e.target.value)
+                        if (validationErrors.email) setValidationErrors((prev) => ({ ...prev, email: null }))
                       }}
-                      aria-invalid={!!validationErrors.password}
-                      aria-describedby={validationErrors.password ? 'password-error' : undefined}
-                      className="h-11 border-border bg-background pr-12"
-                      placeholder={t('login.passwordPlaceholder')}
-                      autoComplete="current-password"
+                      aria-invalid={!!validationErrors.email}
+                      aria-describedby={validationErrors.email ? 'email-error' : undefined}
+                      className="h-11 border-border bg-background"
+                      placeholder={t('login.emailPlaceholder')}
+                      autoComplete="email"
+                      autoFocus
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setShowPassword((prev) => !prev)
-                      }}
-                      className="absolute right-0 top-0 size-11 text-muted-foreground hover:text-foreground"
-                      aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-                      aria-pressed={showPassword}
-                    >
-                      {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
-                    </Button>
+                    {validationErrors.email && (
+                      <p id="email-error" role="alert" className="text-xs font-medium text-destructive">{validationErrors.email}</p>
+                    )}
                   </div>
-                  {validationErrors.password && (
-                    <p id="password-error" role="alert" className="text-xs font-medium text-destructive">{validationErrors.password}</p>
-                  )}
-                </div>
 
-                <Button type="submit" size="lg" className="min-h-12 w-full font-bold" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Spinner className="size-4" />
-                      {t('login.loggingIn')}
-                    </>
-                  ) : (
-                    <>
-                      {t('login.signIn')}
-                      <ArrowRight className="size-4" aria-hidden="true" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            </div>
-          </section>
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className={validationErrors.password ? 'text-destructive' : 'text-foreground'}>
+                      {t('login.password')}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value)
+                          if (validationErrors.password) setValidationErrors((prev) => ({ ...prev, password: null }))
+                        }}
+                        aria-invalid={!!validationErrors.password}
+                        aria-describedby={validationErrors.password ? 'password-error' : undefined}
+                        className="h-11 border-border bg-background pr-12"
+                        placeholder={t('login.passwordPlaceholder')}
+                        autoComplete="current-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setShowPassword((prev) => !prev)
+                        }}
+                        className="absolute right-0 top-0 size-11 text-muted-foreground hover:text-foreground"
+                        aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                      </Button>
+                    </div>
+                    {validationErrors.password && (
+                      <p id="password-error" role="alert" className="text-xs font-medium text-destructive">{validationErrors.password}</p>
+                    )}
+                  </div>
+
+                  <Button type="submit" size="lg" className="min-h-12 w-full font-bold" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Spinner className="size-4" />
+                        {t('login.loggingIn')}
+                      </>
+                    ) : (
+                      <>
+                        {t('login.signIn')}
+                        <ArrowRight className="size-4" aria-hidden="true" />
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
         </div>
       </main>
     </div>
