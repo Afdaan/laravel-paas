@@ -414,9 +414,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
               title="Runara"
               style={{ width: isVisualExpanded ? 'calc(100% - 32px)' : '40px' }}
             >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <span className="text-xs font-bold tracking-tighter">R</span>
-              </div>
+              <img src="/runara-icon.png" alt="" className="size-8 shrink-0 object-contain" />
               <div className={`min-w-0 text-left transition-all ease-in-out ${
                 isVisualExpanded
                   ? 'opacity-100 max-w-[150px] ml-3 duration-300 delay-100'
