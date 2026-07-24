@@ -1837,7 +1837,7 @@ export const translations = {
       nav: { features: "Fitur", workflow: "Cara deploy", security: "FAQ" },
       language: { toggle: "Ganti bahasa", label: "Bahasa" },
       hero: {
-        title: "Deploy aplikasi. Biar Runara urus sisanya.",
+        title: "Deploy aplikasi di Runara",
         description: "Connect repo Git, biar Railpack yang detect dan build aplikasi. Kelola deploy, domain, database, dan runtime dari satu dashboard.",
         cta: "Deploy aplikasi",
         ctaDashboard: "Buka dashboard",
