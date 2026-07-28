@@ -4,13 +4,93 @@ on:
   push:
     branches:
       - "**"
+  pull_request:
 
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: runara_billing_test
+          POSTGRES_USER: runara
+          POSTGRES_PASSWORD: runara
+        options: >-
+          --health-cmd "pg_isready -U runara -d runara_billing_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      BILLING_TEST_DATABASE_URL: postgres://runara:runara@localhost:5432/runara_billing_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@0a12c4c30c7b1459b839ed93c8aefbd7f7d2c10d # v5.0.2
+        with:
+          go-version: '1.22'
+      - name: Test and scan Go modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0
+          for module in backend shared worker; do
+            (cd "$module" && go vet ./... && go test ./... && govulncheck ./...) 2>&1 | tee "reports/${module}-go.txt"
+            (cd "$module" && cyclonedx-gomod mod -json -output "../reports/${module}.cdx.json")
+          done
+      - name: Test PostgreSQL billing schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd shared && go test -tags=integration ./database -run TestBillingPostgres) 2>&1 | tee reports/billing-postgres.txt
+      - uses: actions/setup-node@1e60f620b9541d9d1a79b4de2b0e4db7e605a10d # v4.0.3
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Lint, audit, build, and generate frontend SBOM
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run lint
+          npm audit --audit-level=high --json > ../reports/npm-audit.json
+          npm run build
+          npx --yes @cyclonedx/cyclonedx-npm@1.20.0 --output-file ../reports/frontend.cdx.json
+      - name: Scan committed secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOTOOLCHAIN=go1.23.8 go install github.com/zricethezav/gitleaks/v8@v8.28.0
+          gitleaks detect --source . --baseline-path .gitleaks/baseline.json --redact --report-format json --report-path reports/gitleaks.json
+      - name: Check launch and Traefik policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/check-worker-secret-isolation.sh
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        if: always()
+        with:
+          name: security-evidence-${{ github.sha }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 30
+
   deploy:
+    needs: checks
+    if: github.event_name == 'push'
     runs-on: self-hosted
     env:
       PROD_SSH: paas-prod
@@ -18,7 +98,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
@@ -50,7 +130,7 @@ jobs:
           echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Detect Changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@6852f92c20ea7fd3b0c25de3b5112db3a98da050 # v3
         id: filter
         with:
           base: ${{ steps.base-commit.outputs.base_sha }}

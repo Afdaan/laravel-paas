@@ -62,6 +62,13 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		return fmt.Errorf("failed database_instances table migration: %w", err)
 	}
 
+	// Reconcile legacy billing package identity before AutoMigrate creates versioned indexes.
+	if isPostgres(db) && db.Migrator().HasTable(&models.TopupPackage{}) {
+		if err := reconcileTopupPackageIdentity(db); err != nil {
+			return err
+		}
+	}
+
 	// 5. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
@@ -76,6 +83,7 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.IdempotentOperation{},
 		&models.PendingReconcile{},
 		&models.AuditLog{},
+		&models.ImpersonationAudit{},
 		&models.GithubAppInstallation{},
 		&models.DatabaseInstance{},
 		&models.DatabaseBackup{},
@@ -84,6 +92,15 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.SecretStoreItemValue{},
 		&models.SecretStoreBinding{},
 		&models.SecretStoreActivityLog{},
+		&models.Wallet{},
+		&models.WalletLedgerEntry{},
+		&models.TopupPackage{},
+		&models.Topup{},
+		&models.BillableSpec{},
+		&models.BillableResource{},
+		&models.Invoice{},
+		&models.InvoiceItem{},
+		&models.PaymentEvent{},
 	}
 
 	for _, m := range modelsList {
@@ -218,6 +235,17 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"idempotent_operations", "uni_idempotent_operations_key", []string{"key"}},
 		{"pending_reconciles", "uni_pending_reconciles_domain_id", []string{"domain_id"}},
 		{"database_instances", "uni_database_instances_project_id", []string{"project_id"}},
+		{"wallets", "uni_wallets_user_id", []string{"user_id"}},
+		{"wallets", "uni_wallets_id_user_id", []string{"id", "user_id"}},
+		{"wallet_ledger_entries", "uni_wallet_ledger_entries_idempotency_key", []string{"idempotency_key"}},
+		{"topup_packages", "uni_topup_packages_identity_version", []string{"provider", "currency", "credits", "version"}},
+		{"topups", "uni_topups_wallet_client_key", []string{"wallet_id", "client_idempotency_key"}},
+		{"topups", "uni_topups_provider_order", []string{"provider", "provider_order_id"}},
+		{"billable_specs", "uni_billable_specs_slug_version", []string{"type", "slug", "version"}},
+		{"billable_resources", "uni_billable_resources_type_resource", []string{"type", "resource_id"}},
+		{"invoices", "uni_invoices_user_period", []string{"user_id", "period_start", "period_end"}},
+		{"invoices", "uni_invoices_idempotency_key", []string{"idempotency_key"}},
+		{"payment_events", "uni_payment_events_event_key", []string{"event_key"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -381,6 +409,180 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile SecretStoreBinding unique constraint
 	_ = EnsureConstraint(db, &models.SecretStoreBinding{}, "uni_secret_store_bindings_proj_store_env", "UNIQUE (project_id, secret_store_id, environment)")
 
+	if err := reconcileBillingSchema(db); err != nil {
+		return err
+	}
+	if err := repairBillingCatalog(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func reconcileTopupPackageIdentity(db *gorm.DB) error {
+	if err := db.Exec(`
+		ALTER TABLE topup_packages ADD COLUMN IF NOT EXISTS version integer;
+		UPDATE topup_packages SET version = 1 WHERE version IS NULL;
+		ALTER TABLE topup_packages ALTER COLUMN version SET DEFAULT 1;
+		ALTER TABLE topup_packages ALTER COLUMN version SET NOT NULL;
+		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_provider_currency_credits;
+		DROP INDEX IF EXISTS uni_topup_packages_provider_currency_credits;
+		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_identity_version;
+		DROP INDEX IF EXISTS uni_topup_packages_identity_version;
+		ALTER TABLE topup_packages ADD CONSTRAINT uni_topup_packages_identity_version UNIQUE (provider, currency, credits, version);
+	`).Error; err != nil {
+		return fmt.Errorf("migrate topup package identity: %w", err)
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uni_topup_packages_one_active
+		ON topup_packages (provider, currency, credits)
+		WHERE is_active;
+	`).Error; err != nil {
+		return fmt.Errorf("create active topup package index: %w", err)
+	}
+	return nil
+}
+
+func reconcileBillingSchema(db *gorm.DB) error {
+	if isPostgres(db) {
+		if err := db.Exec("ALTER TABLE wallets DROP CONSTRAINT IF EXISTS chk_wallets_balance_nonnegative").Error; err != nil {
+			return fmt.Errorf("remove wallet nonnegative constraint: %w", err)
+		}
+	}
+
+	constraints := []struct {
+		model any
+		name  string
+		check string
+	}{
+		{&models.Wallet{}, "uni_wallets_user_id", "UNIQUE (user_id)"},
+		{&models.Wallet{}, "uni_wallets_id_user_id", "UNIQUE (id, user_id)"},
+		{&models.WalletLedgerEntry{}, "uni_wallet_ledger_entries_idempotency_key", "UNIQUE (idempotency_key)"},
+		{&models.TopupPackage{}, "uni_topup_packages_identity_version", "UNIQUE (provider, currency, credits, version)"},
+		{&models.Topup{}, "uni_topups_wallet_client_key", "UNIQUE (wallet_id, client_idempotency_key)"},
+		{&models.Topup{}, "uni_topups_provider_order", "UNIQUE (provider, provider_order_id)"},
+		{&models.BillableSpec{}, "uni_billable_specs_slug_version", "UNIQUE (type, slug, version)"},
+		{&models.BillableResource{}, "uni_billable_resources_type_resource", "UNIQUE (type, resource_id)"},
+		{&models.Invoice{}, "uni_invoices_user_period", "UNIQUE (user_id, period_start, period_end)"},
+		{&models.Invoice{}, "uni_invoices_idempotency_key", "UNIQUE (idempotency_key)"},
+		{&models.Invoice{}, "fk_invoices_wallet_owner", "FOREIGN KEY (wallet_id, user_id) REFERENCES wallets (id, user_id) ON DELETE RESTRICT ON UPDATE RESTRICT"},
+		{&models.PaymentEvent{}, "uni_payment_events_event_key", "UNIQUE (event_key)"},
+	}
+	for _, constraint := range constraints {
+		if err := EnsureConstraint(db, constraint.model, constraint.name, constraint.check); err != nil {
+			return err
+		}
+	}
+	if !isPostgres(db) {
+		return nil
+	}
+
+	foreignKeys := []struct {
+		model     any
+		name, col string
+		reference string
+	}{
+		{&models.Wallet{}, "fk_wallets_user", "user_id", "users"},
+		{&models.WalletLedgerEntry{}, "fk_wallet_ledger_entries_wallet", "wallet_id", "wallets"},
+		{&models.WalletLedgerEntry{}, "fk_wallet_ledger_entries_created_by", "created_by", "users"},
+		{&models.Topup{}, "fk_topups_wallet", "wallet_id", "wallets"},
+		{&models.Topup{}, "fk_topups_package", "topup_package_id", "topup_packages"},
+		{&models.BillableResource{}, "fk_billable_resources_user", "user_id", "users"},
+		{&models.BillableResource{}, "fk_billable_resources_spec", "spec_id", "billable_specs"},
+		{&models.Invoice{}, "fk_invoices_user", "user_id", "users"},
+		{&models.InvoiceItem{}, "fk_invoice_items_invoice", "invoice_id", "invoices"},
+		{&models.InvoiceItem{}, "fk_invoice_items_resource", "billable_resource_id", "billable_resources"},
+		{&models.InvoiceItem{}, "fk_invoice_items_spec", "spec_id", "billable_specs"},
+	}
+	for _, fk := range foreignKeys {
+		if err := EnsureForeignKey(db, fk.model, fk.name, fk.col, fk.reference, "id", "RESTRICT", "RESTRICT"); err != nil {
+			return err
+		}
+	}
+
+	checks := []struct {
+		model      any
+		name, rule string
+	}{
+		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_nonzero", "amount_credits <> 0"},
+		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_type", "type IN ('topup', 'topup_reversal', 'invoice_debit', 'invoice_refund', 'adjustment')"},
+		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_direction", "(type IN ('topup', 'invoice_refund') AND amount_credits > 0) OR (type IN ('topup_reversal', 'invoice_debit') AND amount_credits < 0) OR type = 'adjustment'"},
+		{&models.TopupPackage{}, "chk_topup_packages_positive", "credits > 0 AND amount_minor > 0 AND version > 0"},
+		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider = 'midtrans' AND currency = 'IDR'"},
+		{&models.Topup{}, "chk_topups_positive", "credits > 0 AND amount_minor > 0"},
+		{&models.Topup{}, "chk_topups_provider_currency", "provider = 'midtrans' AND currency = 'IDR'"},
+		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'refunded', 'chargeback')"},
+		{&models.BillableSpec{}, "chk_billable_specs_type", "type IN ('project', 'database')"},
+		{&models.BillableSpec{}, "chk_billable_specs_positive", "cpu_millicores > 0 AND memory_mb > 0 AND storage_gb > 0 AND monthly_credits > 0 AND version > 0"},
+		{&models.BillableResource{}, "chk_billable_resources_type", "type IN ('project', 'database')"},
+		{&models.BillableResource{}, "chk_billable_resources_status", "billing_status IN ('active', 'payment_due', 'suspended')"},
+		{&models.BillableResource{}, "chk_billable_resources_period", "next_invoice_at > current_period_start"},
+		{&models.Invoice{}, "chk_invoices_total_nonnegative", "total_credits >= 0"},
+		{&models.Invoice{}, "chk_invoices_status", "status IN ('pending', 'paid', 'payment_due', 'void')"},
+		{&models.Invoice{}, "chk_invoices_period", "period_end > period_start"},
+		{&models.InvoiceItem{}, "chk_invoice_items_credits_nonnegative", "credits >= 0"},
+		{&models.PaymentEvent{}, "chk_payment_events_provider", "provider = 'midtrans'"},
+	}
+	for _, check := range checks {
+		if err := EnsureConstraint(db, check.model, check.name, "CHECK ("+check.rule+")"); err != nil {
+			return err
+		}
+	}
+
+	if err := db.Exec(`
+		CREATE OR REPLACE FUNCTION reject_wallet_ledger_entry_mutation() RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION 'wallet ledger entries are append-only';
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_topup_package_price_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.credits <> OLD.credits OR NEW.currency <> OLD.currency
+				OR NEW.amount_minor <> OLD.amount_minor OR NEW.provider <> OLD.provider THEN
+				RAISE EXCEPTION 'topup package prices are immutable';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_impersonation_audit_mutation() RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION 'impersonation audit entries are append-only';
+		END;
+		$$ LANGUAGE plpgsql;
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_trigger
+				WHERE tgname = 'trg_wallet_ledger_entries_append_only'
+					AND tgrelid = 'wallet_ledger_entries'::regclass
+			) THEN
+				CREATE TRIGGER trg_wallet_ledger_entries_append_only
+				BEFORE UPDATE OR DELETE ON wallet_ledger_entries
+				FOR EACH ROW EXECUTE FUNCTION reject_wallet_ledger_entry_mutation();
+			END IF;
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_trigger
+				WHERE tgname = 'trg_topup_packages_immutable_price'
+					AND tgrelid = 'topup_packages'::regclass
+			) THEN
+				CREATE TRIGGER trg_topup_packages_immutable_price
+				BEFORE UPDATE ON topup_packages
+				FOR EACH ROW EXECUTE FUNCTION reject_topup_package_price_mutation();
+			END IF;
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_trigger
+				WHERE tgname = 'trg_impersonation_audits_append_only'
+					AND tgrelid = 'impersonation_audits'::regclass
+			) THEN
+				CREATE TRIGGER trg_impersonation_audits_append_only
+				BEFORE UPDATE OR DELETE ON impersonation_audits
+				FOR EACH ROW EXECUTE FUNCTION reject_impersonation_audit_mutation();
+			END IF;
+		END;
+		$$;
+	`).Error; err != nil {
+		return fmt.Errorf("create wallet ledger append-only trigger: %w", err)
+	}
 	return nil
 }
 

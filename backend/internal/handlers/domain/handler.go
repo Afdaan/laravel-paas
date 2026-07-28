@@ -77,8 +77,6 @@ func (h *DomainHandler) RegisterRoutes(r fiber.Router) {
 	r.Get("/:domainID/diagnostic", h.Diagnostic)
 	r.Post("/:domainID/transfer", h.Transfer)
 	r.Get("/:domainID/events", h.ListEvents)
-	r.Get("/:domainID/events/stream", h.StreamEvents)
-	r.Get("/events/stream", h.StreamProjectEvents)
 }
 
 func (h *DomainHandler) List(c *fiber.Ctx) error {

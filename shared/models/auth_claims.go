@@ -2,11 +2,16 @@ package models
 
 import "github.com/golang-jwt/jwt/v5"
 
-// JWTClaims defines the JWT payload structure for authentication
+type TokenUse string
+
+const (
+	TokenUseSession TokenUse = "session"
+	TokenUseStream  TokenUse = "stream"
+)
+
+// JWTClaims keeps browser-session identity in standard subject claim only.
 type JWTClaims struct {
-	UserID     uint   `json:"user_id"`
-	Email      string `json:"email"`
-	Role       string `json:"role"`
-	StreamOnly bool   `json:"stream_only,omitempty"`
+	TokenUse       TokenUse `json:"token_use"`
+	ImpersonatorID uint     `json:"impersonator_id,omitempty"`
 	jwt.RegisteredClaims
 }

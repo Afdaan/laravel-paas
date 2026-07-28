@@ -6,11 +6,13 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 )
 
@@ -56,10 +58,13 @@ func IsInternalIP(ip string) bool {
 	return ipNet.Contains(parsed)
 }
 
-// InternalOnly restricts operational endpoints to loopback/private mesh callers.
-func InternalOnly() fiber.Handler {
+const internalAPIHeader = "X-Internal-Token"
+
+// InternalOnly requires an internal service capability, never network identity.
+func InternalOnly(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if !IsInternalIP(c.IP()) {
+		provided := c.Get(internalAPIHeader)
+		if cfg == nil || cfg.InternalAPIToken == "" || len(provided) != len(cfg.InternalAPIToken) || subtle.ConstantTimeCompare([]byte(provided), []byte(cfg.InternalAPIToken)) != 1 {
 			return apperr.ErrForbidden
 		}
 		return c.Next()
@@ -67,7 +72,7 @@ func InternalOnly() fiber.Handler {
 }
 
 // ProxyAuth middleware validates that proxy access is from authenticated users
-func ProxyAuth(cfgJWTSecret string, redis Blacklister, userService ActivityTracker) fiber.Handler {
+func ProxyAuth() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// For subdomain proxy, we don't require JWT but we validate the subdomain maps to a valid project
 		// The ProxyToProject handler already validates this by checking DB/cache

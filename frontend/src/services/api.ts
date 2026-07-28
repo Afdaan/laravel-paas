@@ -18,7 +18,7 @@ const api = axios.create({
 export const getCSRFToken = () => {
   const token = document.cookie
     .split('; ')
-    .find((row) => row.startsWith('paas_csrf='))
+    .find((row) => row.startsWith(`${import.meta.env.PROD ? '__Host-paas_csrf' : 'paas_csrf'}=`))
     ?.split('=')[1]
 
   return token ? decodeURIComponent(token) : ''

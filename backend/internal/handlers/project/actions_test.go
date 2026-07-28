@@ -287,7 +287,6 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
 	// Mock settings expectations checked at the end of successful create (PopulateURL)
-	mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -476,8 +475,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 		mock.ExpectLLen("deployment:queue").SetVal(1)
-		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
-
 		reqPayload := CreateProjectRequest{
 			Name:             "distinctproj",
 			GithubURL:        "https://github.com/test/repo",
@@ -531,8 +528,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 		mock.ExpectLLen("deployment:queue").SetVal(1)
-		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
-
 		reqPayload := CreateProjectRequest{
 			Name:             "spacedproj",
 			GithubURL:        "https://github.com/test/repo",
@@ -578,8 +573,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 		mock.ExpectLLen("deployment:queue").SetVal(1)
-		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
-
 		reqPayload := CreateProjectRequest{
 			Name:           "this-is-a-very-long-project-name-to-test-generated-defaults-and-suffix-preservation",
 			GithubURL:      "https://github.com/test/repo",

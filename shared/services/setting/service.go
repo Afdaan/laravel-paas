@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/laravel-paas/shared/apperr"
+
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
@@ -70,6 +72,9 @@ func (s *SettingService) ListAllModels() ([]models.Setting, error) {
 // Update settings from a map of interface values (handling type conversion)
 func (s *SettingService) UpdateBulk(settings map[string]interface{}) error {
 	for key, value := range settings {
+		if key == models.SettingBaseDomain || key == models.SettingProjectDomain {
+			return apperr.New(409, "SETTING_MANAGED_BY_ENV", "Domain settings are managed by deployment configuration")
+		}
 		// Convert any incoming type (bool, float, etc) to string
 		strValue := fmt.Sprintf("%v", value)
 		if err := s.repo.Upsert(key, strValue); err != nil {

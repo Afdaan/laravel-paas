@@ -657,6 +657,17 @@ type AuditLog struct {
 	CreatedAt    time.Time `gorm:"index" json:"created_at"`
 }
 
+// ImpersonationAudit retains minimal immutable actor/effective-user transitions.
+type ImpersonationAudit struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	ActorUserID     *uint     `gorm:"index" json:"actor_user_id,omitempty"`
+	EffectiveUserID *uint     `gorm:"index" json:"effective_user_id,omitempty"`
+	Event           string    `gorm:"size:30;not null" json:"event"`
+	Result          string    `gorm:"size:30;not null" json:"result"`
+	SourceIP        string    `gorm:"size:45" json:"source_ip"`
+	CreatedAt       time.Time `gorm:"index" json:"created_at"`
+}
+
 // ===========================================
 // GithubAppInstallation Model
 // ===========================================
@@ -823,4 +834,220 @@ func (p *Project) GetDatabaseName() string {
 		return ""
 	}
 	return *p.DatabaseName
+}
+
+// ===========================================
+// Billing Models
+// ===========================================
+
+type WalletLedgerEntryType string
+
+const (
+	WalletLedgerEntryTopup         WalletLedgerEntryType = "topup"
+	WalletLedgerEntryTopupReversal WalletLedgerEntryType = "topup_reversal"
+	WalletLedgerEntryInvoiceDebit  WalletLedgerEntryType = "invoice_debit"
+	WalletLedgerEntryInvoiceRefund WalletLedgerEntryType = "invoice_refund"
+	WalletLedgerEntryAdjustment    WalletLedgerEntryType = "adjustment"
+)
+
+type TopupStatus string
+
+const (
+	TopupStatusPending    TopupStatus = "pending"
+	TopupStatusPaid       TopupStatus = "paid"
+	TopupStatusFailed     TopupStatus = "failed"
+	TopupStatusExpired    TopupStatus = "expired"
+	TopupStatusRefunded   TopupStatus = "refunded"
+	TopupStatusChargeback TopupStatus = "chargeback"
+)
+
+type BillableType string
+
+const (
+	BillableTypeProject  BillableType = "project"
+	BillableTypeDatabase BillableType = "database"
+)
+
+type BillableResourceStatus string
+
+const (
+	BillableResourceStatusActive     BillableResourceStatus = "active"
+	BillableResourceStatusPaymentDue BillableResourceStatus = "payment_due"
+	BillableResourceStatusSuspended  BillableResourceStatus = "suspended"
+)
+
+type InvoiceStatus string
+
+const (
+	InvoiceStatusPending    InvoiceStatus = "pending"
+	InvoiceStatusPaid       InvoiceStatus = "paid"
+	InvoiceStatusPaymentDue InvoiceStatus = "payment_due"
+	InvoiceStatusVoid       InvoiceStatus = "void"
+)
+
+const (
+	BillingCurrencyIDR      = "IDR"
+	BillingProviderMidtrans = "midtrans"
+)
+
+// Wallet keeps the cached credit balance for one user. Phase 2 prevents ordinary debits
+// from overdrawing under a row lock; compensating reversals may create debt.
+type Wallet struct {
+	ID             uint      `gorm:"primaryKey;uniqueIndex:uni_wallets_id_user_id" json:"id"`
+	UserID         uint      `gorm:"uniqueIndex:uni_wallets_user_id;uniqueIndex:uni_wallets_id_user_id;not null" json:"user_id"`
+	User           User      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT,OnUpdate:RESTRICT" json:"-"`
+	BalanceCredits int64     `gorm:"not null;default:0" json:"balance_credits"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// WalletLedgerEntry is immutable credit movement. PostgreSQL migration rejects updates and deletes.
+type WalletLedgerEntry struct {
+	ID             uint                  `gorm:"primaryKey" json:"id"`
+	WalletID       uint                  `gorm:"not null;index:idx_wallet_ledger_entries_wallet_id" json:"wallet_id"`
+	Wallet         Wallet                `gorm:"foreignKey:WalletID" json:"-"`
+	Type           WalletLedgerEntryType `gorm:"size:30;not null" json:"type"`
+	AmountCredits  int64                 `gorm:"not null" json:"amount_credits"`
+	BalanceAfter   int64                 `gorm:"not null" json:"balance_after"`
+	ReferenceType  *string               `gorm:"size:50" json:"reference_type,omitempty"`
+	ReferenceID    *string               `gorm:"size:255" json:"reference_id,omitempty"`
+	IdempotencyKey string                `gorm:"uniqueIndex:uni_wallet_ledger_entries_idempotency_key;size:255;not null" json:"idempotency_key"`
+	CreatedBy      *uint                 `gorm:"index:idx_wallet_ledger_entries_created_by" json:"created_by,omitempty"`
+	Creator        *User                 `gorm:"-" json:"-"`
+	CreatedAt      time.Time             `json:"created_at"`
+}
+
+func (entry WalletLedgerEntry) Validate() error {
+	if entry.AmountCredits == 0 {
+		return fmt.Errorf("wallet ledger amount must not be zero")
+	}
+	switch entry.Type {
+	case WalletLedgerEntryTopup, WalletLedgerEntryInvoiceRefund:
+		if entry.AmountCredits > 0 {
+			return nil
+		}
+	case WalletLedgerEntryTopupReversal, WalletLedgerEntryInvoiceDebit:
+		if entry.AmountCredits < 0 {
+			return nil
+		}
+	case WalletLedgerEntryAdjustment:
+		return nil
+	default:
+		return fmt.Errorf("invalid wallet ledger entry type %q", entry.Type)
+	}
+	return fmt.Errorf("invalid amount direction for wallet ledger entry type %q", entry.Type)
+}
+
+func (entry *WalletLedgerEntry) BeforeCreate(tx *gorm.DB) error {
+	return entry.Validate()
+}
+
+// TopupPackage is an immutable-price catalog row. Repricing creates a new version.
+type TopupPackage struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Credits     int64     `gorm:"uniqueIndex:uni_topup_packages_identity_version;not null" json:"credits"`
+	Currency    string    `gorm:"uniqueIndex:uni_topup_packages_identity_version;size:3;not null" json:"currency"`
+	AmountMinor int64     `gorm:"not null" json:"amount_minor"`
+	Provider    string    `gorm:"uniqueIndex:uni_topup_packages_identity_version;size:30;not null" json:"provider"`
+	Version     int       `gorm:"uniqueIndex:uni_topup_packages_identity_version;not null;default:1" json:"version"`
+	IsActive    bool      `gorm:"not null;default:true" json:"is_active"`
+	SortOrder   int       `gorm:"not null;default:0" json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Topup persists provider-facing state only; payment processing arrives in Phase 4.
+type Topup struct {
+	ID                    uint          `gorm:"primaryKey" json:"id"`
+	WalletID              uint          `gorm:"uniqueIndex:uni_topups_wallet_client_key;not null;index:idx_topups_wallet_id" json:"wallet_id"`
+	Wallet                Wallet        `gorm:"foreignKey:WalletID" json:"-"`
+	TopupPackageID        *uint         `gorm:"index:idx_topups_package_id" json:"topup_package_id,omitempty"`
+	TopupPackage          *TopupPackage `gorm:"foreignKey:TopupPackageID" json:"-"`
+	ClientIdempotencyKey  string        `gorm:"uniqueIndex:uni_topups_wallet_client_key;size:255;not null" json:"client_idempotency_key"`
+	Provider              string        `gorm:"uniqueIndex:uni_topups_provider_order;size:30;not null" json:"provider"`
+	ProviderOrderID       string        `gorm:"uniqueIndex:uni_topups_provider_order;size:255;not null" json:"provider_order_id"`
+	ProviderTransactionID *string       `gorm:"index:idx_topups_provider_transaction_id;size:255" json:"provider_transaction_id,omitempty"`
+	AmountMinor           int64         `gorm:"not null" json:"amount_minor"`
+	Currency              string        `gorm:"size:3;not null" json:"currency"`
+	Credits               int64         `gorm:"not null" json:"credits"`
+	Status                TopupStatus   `gorm:"size:20;not null;default:pending" json:"status"`
+	PaidAt                *time.Time    `json:"paid_at,omitempty"`
+	CreatedAt             time.Time     `json:"created_at"`
+	UpdatedAt             time.Time     `json:"updated_at"`
+}
+
+// BillableSpec is versioned catalog pricing for project and database resources.
+type BillableSpec struct {
+	ID                  uint         `gorm:"primaryKey" json:"id"`
+	Type                BillableType `gorm:"uniqueIndex:uni_billable_specs_slug_version;size:20;not null" json:"type"`
+	Name                string       `gorm:"size:100;not null" json:"name"`
+	Slug                string       `gorm:"uniqueIndex:uni_billable_specs_slug_version;size:100;not null" json:"slug"`
+	CPUMillicores       int          `gorm:"not null" json:"cpu_millicores"`
+	MemoryMB            int          `gorm:"not null" json:"memory_mb"`
+	StorageGB           int          `gorm:"not null" json:"storage_gb"`
+	MonthlyCredits      int64        `gorm:"not null" json:"monthly_credits"`
+	ConnectionLimit     *int         `json:"connection_limit,omitempty"`
+	BackupRetentionDays *int         `json:"backup_retention_days,omitempty"`
+	Version             int          `gorm:"uniqueIndex:uni_billable_specs_slug_version;not null;default:1" json:"version"`
+	IsActive            bool         `gorm:"not null;default:true" json:"is_active"`
+	CreatedAt           time.Time    `json:"created_at"`
+	UpdatedAt           time.Time    `json:"updated_at"`
+}
+
+// BillableResource links a platform project/database to its owner and price version.
+type BillableResource struct {
+	ID                 uint                   `gorm:"primaryKey" json:"id"`
+	UserID             uint                   `gorm:"not null;index:idx_billable_resources_user_id" json:"user_id"`
+	User               User                   `gorm:"foreignKey:UserID" json:"-"`
+	Type               BillableType           `gorm:"uniqueIndex:uni_billable_resources_type_resource;size:20;not null" json:"type"`
+	ResourceID         uint                   `gorm:"uniqueIndex:uni_billable_resources_type_resource;not null" json:"resource_id"`
+	SpecID             uint                   `gorm:"not null;index:idx_billable_resources_spec_id" json:"spec_id"`
+	Spec               BillableSpec           `gorm:"foreignKey:SpecID" json:"-"`
+	BillingStatus      BillableResourceStatus `gorm:"size:20;not null;default:active" json:"billing_status"`
+	CurrentPeriodStart time.Time              `gorm:"not null" json:"current_period_start"`
+	NextInvoiceAt      time.Time              `gorm:"not null" json:"next_invoice_at"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+}
+
+// Invoice aggregates one user's charges for an exact billing period.
+type Invoice struct {
+	ID             uint          `gorm:"primaryKey" json:"id"`
+	UserID         uint          `gorm:"uniqueIndex:uni_invoices_user_period;not null;index:idx_invoices_user_id" json:"user_id"`
+	User           User          `gorm:"foreignKey:UserID" json:"-"`
+	WalletID       uint          `gorm:"not null;index:idx_invoices_wallet_id" json:"wallet_id"`
+	Wallet         Wallet        `gorm:"-" json:"-"`
+	PeriodStart    time.Time     `gorm:"uniqueIndex:uni_invoices_user_period;not null" json:"period_start"`
+	PeriodEnd      time.Time     `gorm:"uniqueIndex:uni_invoices_user_period;not null" json:"period_end"`
+	TotalCredits   int64         `gorm:"not null" json:"total_credits"`
+	Status         InvoiceStatus `gorm:"size:20;not null;default:pending" json:"status"`
+	IdempotencyKey string        `gorm:"uniqueIndex:uni_invoices_idempotency_key;size:255;not null" json:"idempotency_key"`
+	DueAt          *time.Time    `json:"due_at,omitempty"`
+	PaidAt         *time.Time    `json:"paid_at,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+}
+
+type InvoiceItem struct {
+	ID                 uint             `gorm:"primaryKey" json:"id"`
+	InvoiceID          uint             `gorm:"not null;index:idx_invoice_items_invoice_id" json:"invoice_id"`
+	Invoice            Invoice          `gorm:"foreignKey:InvoiceID" json:"-"`
+	BillableResourceID uint             `gorm:"not null;index:idx_invoice_items_billable_resource_id" json:"billable_resource_id"`
+	BillableResource   BillableResource `gorm:"foreignKey:BillableResourceID" json:"-"`
+	SpecID             uint             `gorm:"not null;index:idx_invoice_items_spec_id" json:"spec_id"`
+	Spec               BillableSpec     `gorm:"foreignKey:SpecID" json:"-"`
+	Description        string           `gorm:"size:500;not null" json:"description"`
+	Credits            int64            `gorm:"not null" json:"credits"`
+	CreatedAt          time.Time        `json:"created_at"`
+}
+
+// PaymentEvent stores minimal validated provider payloads for later reconciliation.
+type PaymentEvent struct {
+	ID              uint       `gorm:"primaryKey" json:"id"`
+	Provider        string     `gorm:"size:30;not null" json:"provider"`
+	EventKey        string     `gorm:"uniqueIndex:uni_payment_events_event_key;size:255;not null" json:"event_key"`
+	ProviderOrderID string     `gorm:"index:idx_payment_events_provider_order_id;size:255;not null" json:"provider_order_id"`
+	PayloadJSON     string     `gorm:"type:jsonb;not null" json:"-"`
+	ProcessedAt     *time.Time `json:"processed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }

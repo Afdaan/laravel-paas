@@ -552,17 +552,20 @@ func (r *RedisService) DeleteCache(key string) error {
 	return r.client.Del(r.ctx, key).Err()
 }
 
-// AddToBlacklist adds a token to the blacklist
-func (r *RedisService) AddToBlacklist(token string, expiration time.Duration) error {
-	key := fmt.Sprintf("blacklist:%s", token)
-	return r.client.Set(r.ctx, key, true, expiration).Err()
+const revokedJTIPrefix = "auth:revoked:"
+
+// RevokeJTI blocks one session until its exact JWT expiry.
+func (r *RedisService) RevokeJTI(jti string, expiration time.Duration) error {
+	if expiration <= 0 {
+		return nil
+	}
+	return r.client.Set(r.ctx, revokedJTIPrefix+jti, true, expiration).Err()
 }
 
-// IsBlacklisted checks if a token is blacklisted
-func (r *RedisService) IsBlacklisted(token string) bool {
-	key := fmt.Sprintf("blacklist:%s", token)
-	exists, err := r.client.Exists(r.ctx, key).Result()
-	return err == nil && exists > 0
+// IsJTIRevoked returns Redis failure so authentication can fail closed.
+func (r *RedisService) IsJTIRevoked(jti string) (bool, error) {
+	exists, err := r.client.Exists(r.ctx, revokedJTIPrefix+jti).Result()
+	return exists > 0, err
 }
 
 // RateLimit checks and increments a rate limit counter

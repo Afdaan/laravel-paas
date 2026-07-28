@@ -14,6 +14,7 @@ import (
 	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -98,9 +99,61 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&setting).Error; err != nil {
 				slog.Warn("Failed to create default setting", "key", setting.Key, "error", err)
 			}
+			continue
 		}
+		if setting.Key == models.SettingBaseDomain || setting.Key == models.SettingProjectDomain {
+			if err := db.Model(&existing).Update("value", setting.Value).Error; err != nil {
+				return fmt.Errorf("sync %s from environment: %w", setting.Key, err)
+			}
+		}
+	}
+
+	if err := repairBillingCatalog(db); err != nil {
+		return err
+	}
+	if err := seedBillingCatalog(db); err != nil {
+		return err
 	}
 
 	slog.Info("Database seeding completed")
 	return nil
 }
+
+func repairBillingCatalog(db *gorm.DB) error {
+	result := db.Model(&models.BillableSpec{}).
+		Where("type = ? AND name = ? AND slug = ? AND version = ? AND cpu_millicores = ? AND memory_mb = ? AND storage_gb = ? AND connection_limit = ? AND backup_retention_days = ? AND monthly_credits = ?", models.BillableTypeDatabase, "Large", "large", 1, 2000, 4096, 50, 600000, 30, 400000).
+		Updates(map[string]any{"connection_limit": 200, "monthly_credits": 600000})
+	if result.Error != nil {
+		return fmt.Errorf("repair billing database large catalog: %w", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		slog.Info("Repaired seeded billing database large catalog", "rows", result.RowsAffected)
+	}
+	return nil
+}
+
+func seedBillingCatalog(db *gorm.DB) error {
+	specs := []models.BillableSpec{
+		{Type: models.BillableTypeProject, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100000, Version: 1, IsActive: true},
+		{Type: models.BillableTypeProject, Name: "Medium", Slug: "medium", CPUMillicores: 1000, MemoryMB: 2048, StorageGB: 10, MonthlyCredits: 200000, Version: 1, IsActive: true},
+		{Type: models.BillableTypeProject, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 20, MonthlyCredits: 400000, Version: 1, IsActive: true},
+		{Type: models.BillableTypeDatabase, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 10, ConnectionLimit: intPtr(50), BackupRetentionDays: intPtr(7), MonthlyCredits: 150000, Version: 1, IsActive: true},
+		{Type: models.BillableTypeDatabase, Name: "Medium", Slug: "medium", CPUMillicores: 1000, MemoryMB: 2048, StorageGB: 25, ConnectionLimit: intPtr(100), BackupRetentionDays: intPtr(14), MonthlyCredits: 300000, Version: 1, IsActive: true},
+		{Type: models.BillableTypeDatabase, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 50, ConnectionLimit: intPtr(200), BackupRetentionDays: intPtr(30), MonthlyCredits: 600000, Version: 1, IsActive: true},
+	}
+	for _, spec := range specs {
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&spec).Error; err != nil {
+			return fmt.Errorf("seed billing spec %s/%s: %w", spec.Type, spec.Slug, err)
+		}
+	}
+
+	for index, credits := range []int64{100000, 250000, 500000, 1000000} {
+		pkg := models.TopupPackage{Credits: credits, Currency: models.BillingCurrencyIDR, AmountMinor: credits, Provider: models.BillingProviderMidtrans, Version: 1, IsActive: true, SortOrder: index + 1}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&pkg).Error; err != nil {
+			return fmt.Errorf("seed topup package %d: %w", credits, err)
+		}
+	}
+	return nil
+}
+
+func intPtr(value int) *int { return &value }

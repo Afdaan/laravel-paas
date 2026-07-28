@@ -1,18 +1,15 @@
-// ===========================================
-// JWT Middleware
-// ===========================================
-// Handles authentication via JWT tokens
-// ===========================================
 package middleware
 
 import (
 	"crypto/subtle"
-	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/laravel-paas/backend/internal/services"
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 )
 
@@ -21,162 +18,157 @@ const (
 	AdminCookieName   = "paas_admin_session"
 	CSRFCookieName    = "paas_csrf"
 	CSRFHeaderName    = "X-CSRF-Token"
+
+	legacySessionCookieName = SessionCookieName
+	legacyAdminCookieName   = AdminCookieName
+	legacyCSRFCookieName    = CSRFCookieName
 )
 
-// Blacklister abstraction to avoid circular dependencies with services package
-type Blacklister interface {
-	IsBlacklisted(token string) bool
+func CookieNames(cfg *config.Config) (session, admin, csrf string) {
+	if strings.EqualFold(cfg.AppEnv, "production") {
+		return "__Host-paas_session", "__Host-paas_admin_session", "__Host-paas_csrf"
+	}
+	return legacySessionCookieName, legacyAdminCookieName, legacyCSRFCookieName
 }
 
-// CurrentUserProvider refreshes auth-sensitive user state from storage instead of trusting stale JWT claims.
 type CurrentUserProvider interface {
 	GetUserByID(id uint) (*models.User, error)
 }
 
-// ActivityTracker abstraction
 type ActivityTracker interface {
 	UpdateActivity(userID uint, ip string, forceLoginUpdate bool)
 }
 
-// JWTAuth middleware validates JWT tokens and checks against Redis blacklist.
-// Security Context: Exposing long-lived primary JWTs in URL query parameters is dangerous
-// because URLs are logged in reverse proxy access logs, browser history, and analytics.
-// To prevent token leakage, standard API endpoints require Authorization header Bearer tokens.
-// Streaming endpoints (SSE) use short-lived (60s) ephemeral tokens via stream_token query param.
-func JWTAuth(secret string, redis Blacklister, userProvider CurrentUserProvider, tracker ActivityTracker) fiber.Handler {
+func JWTAuth(cfg *config.Config, auth *services.AuthService, userProvider CurrentUserProvider, tracker ActivityTracker) fiber.Handler {
+	return jwtAuth(cfg, auth, userProvider, tracker, models.TokenUseSession, false)
+}
+
+func JWTStreamAuth(cfg *config.Config, auth *services.AuthService, userProvider CurrentUserProvider, tracker ActivityTracker) fiber.Handler {
+	return jwtAuth(cfg, auth, userProvider, tracker, models.TokenUseStream, true)
+}
+
+func jwtAuth(cfg *config.Config, auth *services.AuthService, userProvider CurrentUserProvider, tracker ActivityTracker, expectedUse models.TokenUse, allowStreamToken bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		sessionCookie, adminCookie, csrfCookie := CookieNames(cfg)
+		currentCookie := c.Cookies(sessionCookie)
+		legacyCookie := c.Cookies(legacySessionCookieName)
+		if strings.EqualFold(cfg.AppEnv, "production") && legacyCookie != "" {
+			clearLegacyCookies(c, cfg)
+			if currentCookie == "" {
+				return apperr.ErrUnauthorized
+			}
+		}
+
 		authHeader := c.Get("Authorization")
+		if authHeader != "" && currentCookie != "" {
+			return apperr.New(401, "AMBIGUOUS_AUTH", "Multiple credentials are not allowed")
+		}
+
 		var tokenString string
-		var tokenFromCookie bool
-		var tokenFromQuery bool
-
-		path := c.Path()
-		isStreamEndpoint := strings.HasSuffix(path, "/stream")
-
-		if isStreamEndpoint && c.Query("stream_token") != "" {
+		fromCookie := false
+		if allowStreamToken && c.Query("stream_token") != "" {
 			tokenString = c.Query("stream_token")
-			tokenFromQuery = true
+		} else if currentCookie != "" {
+			tokenString, fromCookie = currentCookie, true
 		} else if authHeader != "" {
-			parts := strings.Split(authHeader, " ")
+			parts := strings.Fields(authHeader)
 			if len(parts) != 2 || parts[0] != "Bearer" {
 				return apperr.New(401, "INVALID_AUTH", "Invalid authorization format")
 			}
 			tokenString = parts[1]
-		} else if cookieToken := c.Cookies(SessionCookieName); cookieToken != "" {
-			tokenString = cookieToken
-			tokenFromCookie = true
 		}
-
 		if tokenString == "" {
 			return apperr.ErrUnauthorized
 		}
 
-		if tokenFromCookie && isUnsafeMethod(c.Method()) && !validCSRF(c) {
+		claims, err := auth.Verify(tokenString, expectedUse)
+		if err != nil {
+			return err
+		}
+		revoked, err := auth.IsRevoked(claims)
+		if err != nil {
+			return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
+		}
+		if revoked {
+			return apperr.New(401, "TOKEN_REVOKED", "This session has been invalidated")
+		}
+		if fromCookie && isUnsafeMethod(c.Method()) && !validCSRF(c, cfg, claims.ID, csrfCookie) {
 			return apperr.New(403, "CSRF_FAILED", "Invalid request integrity token")
 		}
-
-		// Check Blacklist
-		if redis != nil && redis.IsBlacklisted(tokenString) {
-			return apperr.New(401, "TOKEN_BLACKLISTED", "This session has been invalidated")
+		if fromCookie && isUnsafeMethod(c.Method()) && !validOrigin(c, cfg.FrontendURL) {
+			return apperr.New(403, "ORIGIN_FAILED", "Invalid request origin")
+		}
+		if c.Get("Sec-Fetch-Site") == "cross-site" {
+			return apperr.New(403, "ORIGIN_FAILED", "Cross-site request denied")
 		}
 
-		// Parse and validate token
-		token, err := jwt.ParseWithClaims(tokenString, &models.JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(secret), nil
-		})
-
-		if err != nil || !token.Valid {
+		userID, _ := strconv.ParseUint(claims.Subject, 10, 64)
+		user, err := userProvider.GetUserByID(uint(userID))
+		if err != nil {
 			return apperr.New(401, "TOKEN_INVALID", "Invalid or expired session")
 		}
-
-		// Store claims in context
-		claims, ok := token.Claims.(*models.JWTClaims)
-		if !ok {
-			return apperr.ErrUnauthorized
-		}
-
-		// Security constraint: Ephemeral stream tokens cannot be reused for standard API auth
-		if claims.StreamOnly && !isStreamEndpoint {
-			return apperr.New(403, "FORBIDDEN", "Ephemeral stream tokens are restricted exclusively to streaming endpoints")
-		}
-		// Security constraint: Standard long-lived tokens cannot be passed via query string to stream endpoints
-		if isStreamEndpoint && tokenFromQuery && !claims.StreamOnly {
-			return apperr.New(403, "FORBIDDEN", "Primary tokens cannot be passed via query strings. Please use an ephemeral stream token.")
-		}
-
-		currentRole := claims.Role
-		if userProvider != nil && !claims.StreamOnly {
-			user, err := userProvider.GetUserByID(claims.UserID)
-			if err != nil {
-				return apperr.New(401, "TOKEN_INVALID", "Invalid or expired session")
+		impersonating := false
+		if claims.ImpersonatorID != 0 {
+			backup := c.Cookies(adminCookie)
+			adminClaims, err := auth.Verify(backup, models.TokenUseSession)
+			if err != nil || adminClaims.ImpersonatorID != 0 || adminClaims.Subject != strconv.FormatUint(uint64(claims.ImpersonatorID), 10) {
+				return apperr.New(401, "TOKEN_INVALID", "Invalid administrator session")
 			}
-			currentRole = string(user.Role)
+			revoked, err := auth.IsRevoked(adminClaims)
+			if err != nil || revoked {
+				return apperr.New(401, "TOKEN_INVALID", "Invalid administrator session")
+			}
+			admin, err := userProvider.GetUserByID(claims.ImpersonatorID)
+			if err != nil || !admin.IsAdmin() {
+				return apperr.New(403, "FORBIDDEN", "Administrator access required")
+			}
+			c.Locals("actor_user_id", claims.ImpersonatorID)
+			impersonating = true
 		}
-
-		c.Locals("user_id", claims.UserID)
-		c.Locals("email", claims.Email)
-		c.Locals("role", currentRole)
+		c.Locals("user_id", user.ID)
+		c.Locals("role", string(user.Role))
 		c.Locals("token", tokenString)
-		c.Locals("impersonating", c.Cookies(AdminCookieName) != "")
-
-		// Update activity (non-blocking)
+		c.Locals("claims", claims)
+		c.Locals("impersonating", impersonating)
 		if tracker != nil {
-			go tracker.UpdateActivity(claims.UserID, c.IP(), false)
+			go tracker.UpdateActivity(user.ID, c.IP(), false)
 		}
-
 		return c.Next()
 	}
 }
 
 func isUnsafeMethod(method string) bool {
-	switch method {
-	case fiber.MethodGet, fiber.MethodHead, fiber.MethodOptions:
+	return method != fiber.MethodGet && method != fiber.MethodHead && method != fiber.MethodOptions
+}
+
+func validCSRF(c *fiber.Ctx, cfg *config.Config, jti, csrfCookie string) bool {
+	cookieToken, headerToken := c.Cookies(csrfCookie), c.Get(CSRFHeaderName)
+	if cookieToken == "" || headerToken == "" || len(cookieToken) != len(headerToken) || subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) != 1 {
 		return false
-	default:
-		return true
+	}
+	return services.ValidateCSRFToken(cfg.CSRFSecret, cfg.CSRFPreviousSecrets, jti, headerToken)
+}
+
+func validOrigin(c *fiber.Ctx, expected string) bool {
+	origin := c.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	a, errA := url.Parse(origin)
+	b, errB := url.Parse(expected)
+	return errA == nil && errB == nil && a.Scheme == b.Scheme && a.Host == b.Host && a.Path == "" && a.RawQuery == "" && a.Fragment == ""
+}
+
+func clearLegacyCookies(c *fiber.Ctx, _ *config.Config) {
+	for _, name := range []string{legacySessionCookieName, legacyAdminCookieName, legacyCSRFCookieName} {
+		c.Cookie(&fiber.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HTTPOnly: name != legacyCSRFCookieName, Secure: true, SameSite: "Strict"})
 	}
 }
 
-func validCSRF(c *fiber.Ctx) bool {
-	cookieToken := c.Cookies(CSRFCookieName)
-	headerToken := c.Get(CSRFHeaderName)
-	if cookieToken == "" || headerToken == "" || len(cookieToken) != len(headerToken) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) == 1
-}
-
-// RequireAdmin middleware ensures user has admin privileges
 func RequireAdmin() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		roleVal := c.Locals("role")
-		if roleVal == nil {
-			return apperr.ErrUnauthorized
-		}
-
-		role, ok := roleVal.(string)
-		if !ok || (role != string(models.RoleSuperAdmin) && role != string(models.RoleAdmin)) {
-			return apperr.ErrForbidden
-		}
-		return c.Next()
-	}
+	return RequireRole(models.RoleAdmin, models.RoleSuperAdmin)
 }
 
-// RequireSuperAdmin middleware ensures user is superadmin
 func RequireSuperAdmin() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		roleVal := c.Locals("role")
-		if roleVal == nil {
-			return apperr.ErrUnauthorized
-		}
-
-		role, ok := roleVal.(string)
-		if !ok || role != string(models.RoleSuperAdmin) {
-			return apperr.ErrForbidden
-		}
-		return c.Next()
-	}
+	return RequireRole(models.RoleSuperAdmin)
 }

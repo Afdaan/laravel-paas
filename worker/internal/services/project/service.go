@@ -84,7 +84,7 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		"name", project.Name,
 		"subdomain", project.Subdomain)
 
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+	projectDomain := s.cfg.ProjectDomain
 	if err := s.nginxService.DeleteProject(project, projectDomain); err != nil {
 		slog.Warn("Failed to delete project from Nginx proxy", "subdomain", project.Subdomain, "error", err)
 	}
@@ -170,7 +170,7 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 		"loadedCustomDomains", loadedDomains,
 		"verifiedCustomDomains", verifiedDomains)
 
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+	projectDomain := s.cfg.ProjectDomain
 	serverNames := append([]string{freshProject.GetFullDomain(projectDomain)}, verifiedDomains...)
 	if len(freshProject.CustomDomains) > 0 && len(verifiedDomains) == 0 {
 		metrics.GetCollector().IncrNginxReloadFailedTotal()
@@ -211,7 +211,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 	if logFunc == nil {
 		logFunc = func(string) {}
 	}
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+	projectDomain := s.cfg.ProjectDomain
 
 	if project.ContainerID == nil || *project.ContainerID == "" {
 		return nil

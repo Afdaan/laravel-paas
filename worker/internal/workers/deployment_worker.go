@@ -505,7 +505,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Applying environment configuration")
 		if project.ContainerID == nil || *project.ContainerID == "" {
 			appendLog(">> Project is stopped. Regenerating environment configuration on disk...")
-			projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+			projectDomain := w.cfg.ProjectDomain
 			if err := w.dockerService.CreateEnvFile(project, projectDomain, false); err != nil {
 				appendLog("✗ Failed to regenerate environment configuration on disk: " + err.Error())
 				slog.Error("Failed to create env file for stopped project", "subdomain", project.Subdomain, "error", err)
@@ -968,7 +968,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		oldWorkerContainerID = &oldHelpWorker
 	}
 
-	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+	projectDomain := w.cfg.ProjectDomain
 
 	cpuPercentStr := w.getSetting(models.SettingCPULimit, models.DefaultCPULimit)
 	cpuPercent, _ := strconv.ParseFloat(cpuPercentStr, 64)
@@ -1874,7 +1874,7 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc fun
 	if logFunc == nil {
 		logFunc = func(string) {}
 	}
-	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+	projectDomain := w.cfg.ProjectDomain
 
 	logFunc("")
 	logFunc(">> Regenerating environment configuration...")
@@ -1901,7 +1901,7 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFun
 	if logFunc == nil {
 		logFunc = func(string) {}
 	}
-	projectDomain := w.getSetting(models.SettingProjectDomain, w.cfg.ProjectDomain)
+	projectDomain := w.cfg.ProjectDomain
 
 	logFunc("")
 	logFunc(">> Refreshing environment configuration...")

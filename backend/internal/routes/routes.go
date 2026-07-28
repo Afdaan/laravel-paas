@@ -6,6 +6,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -42,14 +44,23 @@ func Setup(
 	secretStoreService *services.SecretStoreService,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
-		ErrorHandler: handlers.ErrorHandler,
-		AppName:      "Runara API",
+		ErrorHandler:            handlers.ErrorHandler,
+		AppName:                 "Runara API",
+		BodyLimit:               4 * 1024 * 1024,
+		ReadTimeout:             15 * time.Second,
+		WriteTimeout:            30 * time.Second,
+		IdleTimeout:             60 * time.Second,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		EnableIPValidation:      true,
+		TrustedProxies:          cfg.TrustedProxyCIDRs,
 	})
 
 	// ===========================================
 	// Global Middlewares
 	// ===========================================
 	app.Use(recover.New())
+	app.Use(middleware.RequestSecurity())
 	app.Use(logger.New(logger.Config{
 		Next: func(c *fiber.Ctx) bool {
 			// Skip logging for high-frequency polling endpoints to keep console clean
@@ -79,16 +90,16 @@ func Setup(
 	})
 
 	// Prometheus Metrics Endpoint
-	app.Get("/metrics", middleware.InternalOnly(), metrics.PrometheusHandler())
+	app.Get("/metrics", middleware.InternalOnly(cfg), metrics.PrometheusHandler())
 
 	// API Routes
 	api := app.Group("/api")
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
+	authHandler := handlers.NewAuthHandler(authService, cfg, userService, db)
 	userHandler := handlers.NewUserHandler(userService)
 	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, db, redisService, projectService, userService, dockerService, secretStoreService)
-	settingHandler := handlers.NewSettingHandler(settingService)
+	settingHandler := handlers.NewSettingHandler(settingService, cfg)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 	databaseHandler := handlers.NewDatabaseHandler(db, cfg, databaseService, projectService, redisService, secretStoreService)
@@ -99,7 +110,7 @@ func Setup(
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
 	// ===========================================
-	proxyGroup := app.Group("/proxy", middleware.ProxyAuth(cfg.JWTSecret, redisService, userService))
+	proxyGroup := app.Group("/proxy", middleware.ProxyAuth())
 	proxyGroup.Use(middleware.RateLimitProxy())
 	proxyGroup.Use(middleware.ValidateProxyTarget())
 	proxyGroup.All("/*", projectHandler.ProxyToProject)
@@ -107,7 +118,7 @@ func Setup(
 	// -----------------------------
 	// Auth Routes (public, rate limited)
 	// -----------------------------
-	auth := api.Group("/auth")
+	auth := api.Group("/auth", middleware.NoStore(), middleware.MaxBody(8*1024))
 	auth.Post("/login", middleware.RateLimitLogin(redisService), authHandler.Login)
 	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
 
@@ -121,20 +132,28 @@ func Setup(
 	// -----------------------------
 	// Internal System Routes (Publicly accessible but meant for internal mesh network)
 	// -----------------------------
-	internal := api.Group("/internal", middleware.InternalOnly())
+	internal := api.Group("/internal", middleware.InternalOnly(cfg))
 	internal.Get("/traefik/config", domainHandler.GetTraefikConfig)
+
+	// Stream routes accept short-lived stream tokens only on explicit endpoints.
+	streamAuth := middleware.JWTStreamAuth(cfg, authService, userService, userService)
+	api.Get("/projects/:id/logs/stream", streamAuth, projectHandler.StreamLogs)
+	api.Get("/projects/:id/build-logs/stream", streamAuth, projectHandler.StreamBuildLogs)
+	api.Get("/projects/:id/deployment-events/stream", streamAuth, projectHandler.StreamDeploymentEvents)
+	api.Get("/projects/:id/domains/:domainID/events/stream", streamAuth, domainHandler.StreamEvents)
+	api.Get("/projects/:id/domains/events/stream", streamAuth, domainHandler.StreamProjectEvents)
 
 	// -----------------------------
 	// Protected Routes
 	// -----------------------------
-	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService, userService))
+	protected := api.Group("", middleware.JWTAuth(cfg, authService, userService, userService))
 
 	// Auth (protected)
-	protected.Post("/auth/logout", authHandler.Logout)
-	protected.Get("/auth/me", authHandler.Me)
-	protected.Put("/auth/profile", authHandler.UpdateProfile)
-	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
-	protected.Post("/auth/return-to-admin", authHandler.ReturnToAdmin)
+	protected.Post("/auth/logout", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.Logout)
+	protected.Get("/auth/me", middleware.NoStore(), authHandler.Me)
+	protected.Put("/auth/profile", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.UpdateProfile)
+	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.GenerateStreamToken)
+	protected.Post("/auth/return-to-admin", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.ReturnToAdmin)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -242,11 +261,8 @@ func Setup(
 	projects.Post("/:id/restart", projectHandler.Restart)
 	projects.Delete("/:id", projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
-	projects.Get("/:id/logs/stream", projectHandler.StreamLogs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
-	projects.Get("/:id/build-logs/stream", projectHandler.StreamBuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
-	projects.Get("/:id/deployment-events/stream", projectHandler.StreamDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
 	projects.Post("/:id/console", middleware.RateLimitConsole(), projectHandler.RunConsoleCommand)
 	projects.Get("/:id/env", projectHandler.GetEnv)

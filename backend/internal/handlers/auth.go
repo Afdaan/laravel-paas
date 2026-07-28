@@ -1,14 +1,9 @@
-// ===========================================
-// Auth Handler
-// ===========================================
-// Handles login, logout, and user session
-// ===========================================
 package handlers
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,281 +13,236 @@ import (
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"gorm.io/gorm"
 )
 
-// AuthHandler handles authentication endpoints
 type AuthHandler struct {
 	service     *services.AuthService
 	userService *services.UserService
 	cfg         *config.Config
+	db          *gorm.DB
 }
 
-// NewAuthHandler creates a new auth handler
-func NewAuthHandler(service *services.AuthService, cfg *config.Config, userService *services.UserService) *AuthHandler {
-	return &AuthHandler{
-		service:     service,
-		userService: userService,
-		cfg:         cfg,
-	}
+func NewAuthHandler(service *services.AuthService, cfg *config.Config, userService *services.UserService, db *gorm.DB) *AuthHandler {
+	return &AuthHandler{service: service, cfg: cfg, userService: userService, db: db}
 }
 
-// LoginRequest represents login payload
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-// Login authenticates user and returns JWT token
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var req LoginRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.ErrBadRequest
-	}
-
-	if req.Email == "" || req.Password == "" {
+	if err := c.BodyParser(&req); err != nil || req.Email == "" || req.Password == "" {
 		return apperr.NewBadRequest("Email and password are required")
 	}
-
 	user, err := h.service.Authenticate(req.Email, req.Password)
 	if err != nil {
 		return err
 	}
-
-	token, err := h.service.GenerateToken(user)
+	issued, err := h.service.IssueSession(user, 0)
 	if err != nil {
 		return err
 	}
-
-	h.setSessionCookies(c, token, "")
-
-	// Track login activity
+	h.setSessionCookies(c, issued, "")
 	go h.userService.UpdateActivity(user.ID, c.IP(), true)
-
-	return c.JSON(fiber.Map{
-		"user": user,
-	})
+	return c.JSON(fiber.Map{"user": user})
 }
 
-// Logout invalidates user session
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-	if token == "" || token == authHeader {
-		token = c.Cookies(middleware.SessionCookieName)
-	}
-
-	if token != "" && token != authHeader {
-		// Blacklist for the remaining duration
-		if err := h.service.Logout(token, time.Duration(h.cfg.JWTExpiryHours)*time.Hour); err != nil {
-			slog.Warn("Failed to logout token", "error", err)
+	claims, _ := c.Locals("claims").(*models.JWTClaims)
+	if claims != nil {
+		if err := h.service.Revoke(claims); err != nil {
+			return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
 		}
 	}
-
-	adminToken := c.Cookies(middleware.AdminCookieName)
-	if adminToken != "" {
-		if err := h.service.Logout(adminToken, time.Duration(h.cfg.JWTExpiryHours)*time.Hour); err != nil {
-			slog.Warn("Failed to logout admin token", "error", err)
+	_, adminCookie, _ := middleware.CookieNames(h.cfg)
+	if backup := c.Cookies(adminCookie); backup != "" {
+		if adminClaims, err := h.service.Verify(backup, models.TokenUseSession); err == nil {
+			if err := h.service.Revoke(adminClaims); err != nil {
+				return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
+			}
 		}
 	}
-
 	h.clearSessionCookies(c)
-
-	return c.JSON(fiber.Map{
-		"message": "Logged out successfully",
-	})
+	return c.JSON(fiber.Map{"message": "Logged out successfully"})
 }
 
-// Me returns current user information
 func (h *AuthHandler) Me(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
-
+	userID, _ := c.Locals("user_id").(uint)
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
 		return err
 	}
-
-	if impersonating, ok := c.Locals("impersonating").(bool); ok && impersonating {
+	if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
 		c.Set("X-Impersonating", "true")
 	}
-
 	return c.JSON(user)
 }
 
-// UpdateProfileRequest represents profile update payload
 type UpdateProfileRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password,omitempty"`
 }
 
-// UpdateProfile updates the current authenticated user's profile
 func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
-
+	userID, _ := c.Locals("user_id").(uint)
 	var req UpdateProfileRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperr.ErrBadRequest
 	}
-
 	user, err := h.userService.UpdateUser(userID, req.Name, req.Email, req.Password)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return apperr.NewBadRequest("Failed to update profile")
 	}
-
 	return c.JSON(user)
 }
 
-// GenerateStreamToken generates a short-lived (60s) ephemeral stream JWT intended exclusively for SSE endpoints
 func (h *AuthHandler) GenerateStreamToken(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
-
+	userID, _ := c.Locals("user_id").(uint)
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
 		return err
 	}
-
 	token, err := h.service.GenerateStreamToken(user)
 	if err != nil {
 		return err
 	}
-
-	return c.JSON(fiber.Map{
-		"token": token,
-	})
+	return c.JSON(fiber.Map{"token": token})
 }
 
-// LoginAsUser generates a JWT token for the specified user, allowing administrators to impersonate them.
 func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
-	targetUserID, err := c.ParamsInt("id")
+	if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
+		h.auditImpersonation(c, nil, nil, "start", "rejected")
+		return apperr.New(409, "ALREADY_IMPERSONATING", "Return to the administrator session first")
+	}
+	actorID, _ := c.Locals("user_id").(uint)
+	actor, err := h.userService.GetUserByID(actorID)
+	if err != nil || !actor.IsAdmin() {
+		h.auditImpersonation(c, &actorID, nil, "start", "rejected")
+		return apperr.ErrForbidden
+	}
+	targetID, err := c.ParamsInt("id")
 	if err != nil {
 		return apperr.NewBadRequest("Invalid user ID")
 	}
-
-	// Make sure the user exists
-	targetUser, err := h.userService.GetUserByID(uint(targetUserID))
-	if err != nil {
-		return apperr.NewBadRequest("User not found")
-	}
-
-	// Make sure an admin is not trying to target another admin/superadmin to escalate privileges
-	if targetUser.Role != models.RoleUser {
+	target, err := h.userService.GetUserByID(uint(targetID))
+	if err != nil || target.Role != models.RoleUser {
+		h.auditImpersonation(c, &actor.ID, nil, "start", "rejected")
 		return apperr.New(403, "FORBIDDEN", "Cannot impersonate administrator accounts")
 	}
-
-	// Generate JWT token for the target user
-	token, err := h.service.GenerateToken(targetUser)
+	backup, _ := c.Locals("token").(string)
+	issued, err := h.service.IssueSession(target, actor.ID)
 	if err != nil {
 		return err
 	}
-
-	adminToken := c.Cookies(middleware.AdminCookieName)
-	if adminToken == "" {
-		adminToken, _ = c.Locals("token").(string)
+	if err := h.auditImpersonation(c, &actor.ID, &target.ID, "start", "succeeded"); err != nil {
+		return apperr.New(503, "AUDIT_UNAVAILABLE", "Impersonation audit is temporarily unavailable")
 	}
-	if adminToken == "" {
-		return apperr.ErrUnauthorized
-	}
-
-	// Optionally: Record the login attempt by the admin acting as the user
-	go h.userService.UpdateActivity(targetUser.ID, c.IP(), true)
-
-	h.setSessionCookies(c, token, adminToken)
-
-	return c.JSON(fiber.Map{
-		"user": targetUser,
-	})
+	h.setSessionCookies(c, issued, backup)
+	go h.userService.UpdateActivity(target.ID, c.IP(), true)
+	return c.JSON(fiber.Map{"user": target})
 }
 
-// ReturnToAdmin restores the original admin session after an impersonation flow.
 func (h *AuthHandler) ReturnToAdmin(c *fiber.Ctx) error {
-	adminToken := c.Cookies(middleware.AdminCookieName)
-	if adminToken == "" {
+	claims, _ := c.Locals("claims").(*models.JWTClaims)
+	if claims == nil || claims.ImpersonatorID == 0 {
 		return apperr.ErrUnauthorized
 	}
-
-	h.setSessionCookies(c, adminToken, "")
-
-	return c.JSON(fiber.Map{
-		"message": "Returned to admin session",
-	})
+	_, adminCookie, _ := middleware.CookieNames(h.cfg)
+	backup := c.Cookies(adminCookie)
+	adminClaims, err := h.service.Verify(backup, models.TokenUseSession)
+	if err != nil || adminClaims.ImpersonatorID != 0 || adminClaims.Subject != strconv.FormatUint(uint64(claims.ImpersonatorID), 10) {
+		return apperr.ErrUnauthorized
+	}
+	revoked, err := h.service.IsRevoked(adminClaims)
+	if err != nil || revoked {
+		return apperr.ErrUnauthorized
+	}
+	admin, err := h.userService.GetUserByID(claims.ImpersonatorID)
+	if err != nil || !admin.IsAdmin() {
+		return apperr.ErrForbidden
+	}
+	effectiveUserID, _ := strconv.ParseUint(claims.Subject, 10, 64)
+	effectiveID := uint(effectiveUserID)
+	if err := h.auditImpersonation(c, &admin.ID, &effectiveID, "return", "attempted"); err != nil {
+		return apperr.New(503, "AUDIT_UNAVAILABLE", "Impersonation audit is temporarily unavailable")
+	}
+	if err := h.service.Revoke(claims); err != nil {
+		h.auditImpersonationBestEffort(c, &admin.ID, &effectiveID, "return", "rejected")
+		return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
+	}
+	if err := h.service.Revoke(adminClaims); err != nil {
+		h.auditImpersonationBestEffort(c, &admin.ID, &effectiveID, "return", "rejected")
+		return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
+	}
+	issued, err := h.service.IssueSession(admin, 0)
+	if err != nil {
+		h.auditImpersonationBestEffort(c, &admin.ID, &effectiveID, "return", "rejected")
+		return err
+	}
+	if err := h.auditImpersonation(c, &admin.ID, &effectiveID, "return", "succeeded"); err != nil {
+		return apperr.New(503, "AUDIT_UNAVAILABLE", "Impersonation audit is temporarily unavailable")
+	}
+	h.setSessionCookies(c, issued, "")
+	return c.JSON(fiber.Map{"message": "Returned to admin session"})
 }
 
-func (h *AuthHandler) setSessionCookies(c *fiber.Ctx, sessionToken string, adminToken string) {
-	maxAge := h.cfg.JWTExpiryHours * 60 * 60
-	expires := time.Now().Add(time.Duration(h.cfg.JWTExpiryHours) * time.Hour)
-	secure := strings.HasPrefix(h.cfg.FrontendURL, "https://")
-	csrfToken := generateCSRFToken()
-
-	c.Cookie(&fiber.Cookie{
-		Name:     middleware.SessionCookieName,
-		Value:    sessionToken,
-		Path:     "/",
-		MaxAge:   maxAge,
-		Expires:  expires,
-		HTTPOnly: true,
-		Secure:   secure,
-		SameSite: "Strict",
-	})
-
-	c.Cookie(&fiber.Cookie{
-		Name:     middleware.CSRFCookieName,
-		Value:    csrfToken,
-		Path:     "/",
-		MaxAge:   maxAge,
-		Expires:  expires,
-		HTTPOnly: false,
-		Secure:   secure,
-		SameSite: "Strict",
-	})
-
-	if adminToken != "" {
-		c.Cookie(&fiber.Cookie{
-			Name:     middleware.AdminCookieName,
-			Value:    adminToken,
-			Path:     "/",
-			MaxAge:   maxAge,
-			Expires:  expires,
-			HTTPOnly: true,
-			Secure:   secure,
-			SameSite: "Strict",
-		})
-		return
+func (h *AuthHandler) auditImpersonation(c *fiber.Ctx, actorID, effectiveUserID *uint, event, result string) error {
+	if h.db == nil {
+		return fmt.Errorf("impersonation audit database unavailable")
 	}
+	return h.db.Create(&models.ImpersonationAudit{
+		ActorUserID:     actorID,
+		EffectiveUserID: effectiveUserID,
+		Event:           event,
+		Result:          result,
+		SourceIP:        c.IP(),
+	}).Error
+}
 
-	c.Cookie(&fiber.Cookie{
-		Name:     middleware.AdminCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		Expires:  time.Now().Add(-time.Hour),
-		HTTPOnly: true,
-		Secure:   secure,
-		SameSite: "Strict",
-	})
+func (h *AuthHandler) auditImpersonationBestEffort(c *fiber.Ctx, actorID, effectiveUserID *uint, event, result string) {
+	if err := h.auditImpersonation(c, actorID, effectiveUserID, event, result); err != nil {
+		slog.Error("failed to write impersonation audit", "event", event, "result", result, "error", err)
+	}
+}
+
+func (h *AuthHandler) setSessionCookies(c *fiber.Ctx, issued *services.IssuedSession, adminToken string) {
+	sessionName, adminName, csrfName := middleware.CookieNames(h.cfg)
+	expires := issued.Claims.ExpiresAt.Time
+	maxAge := int(time.Until(expires).Seconds())
+	secure := strings.EqualFold(h.cfg.AppEnv, "production")
+	for _, cookie := range []*fiber.Cookie{
+		{Name: sessionName, Value: issued.Token, Path: "/", MaxAge: maxAge, Expires: expires, HTTPOnly: true, Secure: secure, SameSite: "Strict"},
+		{Name: csrfName, Value: issued.CSRFToken, Path: "/", MaxAge: maxAge, Expires: expires, HTTPOnly: false, Secure: secure, SameSite: "Strict"},
+	} {
+		c.Cookie(cookie)
+	}
+	if adminToken != "" {
+		c.Cookie(&fiber.Cookie{Name: adminName, Value: adminToken, Path: "/", MaxAge: maxAge, Expires: expires, HTTPOnly: true, Secure: secure, SameSite: "Strict"})
+	} else {
+		c.Cookie(&fiber.Cookie{Name: adminName, Value: "", Path: "/", MaxAge: -1, HTTPOnly: true, Secure: secure, SameSite: "Strict"})
+	}
+	if strings.EqualFold(h.cfg.AppEnv, "production") {
+		h.clearLegacyCookies(c)
+	}
 }
 
 func (h *AuthHandler) clearSessionCookies(c *fiber.Ctx) {
-	secure := strings.HasPrefix(h.cfg.FrontendURL, "https://")
-	for _, name := range []string{middleware.SessionCookieName, middleware.AdminCookieName, middleware.CSRFCookieName} {
-		c.Cookie(&fiber.Cookie{
-			Name:     name,
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			Expires:  time.Now().Add(-time.Hour),
-			HTTPOnly: name != middleware.CSRFCookieName,
-			Secure:   secure,
-			SameSite: "Strict",
-		})
+	sessionName, adminName, csrfName := middleware.CookieNames(h.cfg)
+	secure := strings.EqualFold(h.cfg.AppEnv, "production")
+	for _, name := range []string{sessionName, adminName, csrfName} {
+		c.Cookie(&fiber.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HTTPOnly: name != csrfName, Secure: secure, SameSite: "Strict"})
+	}
+	if strings.EqualFold(h.cfg.AppEnv, "production") {
+		h.clearLegacyCookies(c)
 	}
 }
 
-func generateCSRFToken() string {
-	var bytes [32]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
-		return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+func (h *AuthHandler) clearLegacyCookies(c *fiber.Ctx) {
+	for _, name := range []string{middleware.SessionCookieName, middleware.AdminCookieName, middleware.CSRFCookieName} {
+		c.Cookie(&fiber.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HTTPOnly: name != middleware.CSRFCookieName, Secure: true, SameSite: "Strict"})
 	}
-	return hex.EncodeToString(bytes[:])
 }

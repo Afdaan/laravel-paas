@@ -252,6 +252,7 @@ deploy_backend() {
         -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE="$APP_MODE" \
+        -e INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
         -e HOST_DATA_PATH="$DATA_PATH" \
@@ -314,7 +315,6 @@ deploy_worker() {
         -v "${DATA_PATH}:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
-        -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE=docker \
@@ -333,7 +333,6 @@ deploy_worker() {
         -e REDIS_HOST=paas-redis \
         -e REDIS_PORT="${REDIS_PORT:-6379}" \
         -e REDIS_PASSWORD="$REDIS_PASSWORD" \
-        -e JWT_SECRET="$JWT_SECRET" \
         -e UID_SALT="$UID_SALT" \
         -e CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
         -e CREDENTIAL_ENCRYPTION_KEY_PREVIOUS="${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}" \

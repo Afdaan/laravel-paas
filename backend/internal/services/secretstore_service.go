@@ -420,12 +420,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	envMap["APP_DEBUG"] = "false"
 
 	// Resolve APP_URL dynamically based on custom domains
-	projectDomain := s.cfg.ProjectDomain
-	var settingVal models.Setting
-	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
-		projectDomain = settingVal.Value
-	}
-	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, projectDomain)
+	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, s.cfg.ProjectDomain)
 	var primaryDomain string
 	var firstActiveDomain string
 	for _, d := range project.CustomDomains {
@@ -757,12 +752,7 @@ func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[stri
 	baseline["APP_ENV"] = "production"
 	baseline["APP_DEBUG"] = "false"
 
-	projectDomain := s.cfg.ProjectDomain
-	var settingVal models.Setting
-	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
-		projectDomain = settingVal.Value
-	}
-	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, projectDomain)
+	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, s.cfg.ProjectDomain)
 	var primaryDomain string
 	var firstActiveDomain string
 	for _, d := range project.CustomDomains {

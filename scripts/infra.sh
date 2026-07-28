@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/traefik-config.sh"
+
 # 1. Load environment variables dengan cara yang lebih bersih
 if [ -f .env ]; then
     echo "[INFO] Loading .env file..."
@@ -15,6 +17,11 @@ MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-"rootpassword"}
 MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
 MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
 POSTGRES_CONTAINER_NAME=${POSTGRES_CONTAINER_NAME:-"paas-user-postgres"}
+BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
+PROJECT_DOMAIN=${PROJECT_DOMAIN:-"$BASE_DOMAIN"}
+TRAEFIK_DYNAMIC_DIR=${TRAEFIK_DYNAMIC_DIR:-"$(pwd)/docker/traefik/dynamic"}
+mkdir -p "$TRAEFIK_DYNAMIC_DIR"
+chmod 700 "$TRAEFIK_DYNAMIC_DIR"
 
 # 2. Bersihkan kontainer lama
 echo "[INFO] Cleaning old infrastructure..."
@@ -88,6 +95,19 @@ docker run -d \
     redis:alpine $REDIS_CMD
 
 # 7. Jalankan Traefik
+TRAEFIK_TEMPLATE="$(pwd)/docker/traefik/traefik.yml.template"
+DYNAMIC_TEMPLATE="$(pwd)/docker/traefik/dynamic.yml.template"
+DYNAMIC_CONFIG="$TRAEFIK_DYNAMIC_DIR/dynamic.yml"
+if [ ! -f "$DYNAMIC_TEMPLATE" ]; then
+    echo "[ERROR] Traefik dynamic template not found."
+    exit 1
+fi
+if ! TRAEFIK_CONFIG=$(render_traefik_static_config "$TRAEFIK_TEMPLATE"); then
+    echo "[ERROR] Failed to render Traefik static config."
+    exit 1
+fi
+sed -e "s/{{BASE_DOMAIN}}/$BASE_DOMAIN/g" -e "s/{{PROJECT_DOMAIN}}/$PROJECT_DOMAIN/g" "$DYNAMIC_TEMPLATE" > "$DYNAMIC_CONFIG"
+
 echo "[INFO] Starting Traefik..."
 docker run -d \
     --name paas-traefik \
@@ -96,7 +116,8 @@ docker run -d \
     -p 80:80 \
     -p 443:443 \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
-    -v "$(pwd)/docker/traefik/traefik.yml:/traefik.yml:ro" \
+    -v "$TRAEFIK_CONFIG:/traefik.yml:ro" \
+    -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:ro" \
     traefik:v3.6
 
 # 7.5. Jalankan Registry

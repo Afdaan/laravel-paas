@@ -13,7 +13,7 @@ http:
       headers:
         frameDeny: true
         contentTypeNosniff: true
-        browserXssFilter: true
+        permissionsPolicy: "geolocation=(), microphone=(), camera=()"
         referrerPolicy: "strict-origin-when-cross-origin"
         customResponseHeaders:
           X-Powered-By: ""
@@ -24,28 +24,11 @@ http:
         average: 100
         burst: 50
 
-    # CORS for API
-    cors:
-      headers:
-        accessControlAllowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - OPTIONS
-        accessControlAllowHeaders:
-          - Content-Type
-          - Authorization
-        accessControlAllowOriginList:
-          - "*"
-        accessControlMaxAge: 100
-        addVaryHeader: true
-
   # Routers for Runara platform
   routers:
     # User projects (highest priority - subdomain matching)
     user-projects:
-      rule: "Host(`*.{{PROJECT_DOMAIN}}`) || Host(`*.{{BASE_DOMAIN}}`)"
+      rule: "Host(`*.{{PROJECT_DOMAIN}}`)"
       service: dynamic-projects
       entryPoints:
         - web
@@ -61,7 +44,6 @@ http:
         - web
       priority: 100
       middlewares:
-        - cors
         - security-headers
         - rate-limit
 

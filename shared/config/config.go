@@ -7,11 +7,25 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
+
+type JWTPreviousKey struct {
+	ID       string
+	Secret   string
+	NotAfter time.Time
+}
+
+type CSRFPreviousSecret struct {
+	ID       string
+	Secret   string
+	NotAfter time.Time
+}
 
 // Config holds all application configuration
 type Config struct {
@@ -42,8 +56,24 @@ type Config struct {
 	UserPGPassword string
 
 	// JWT
-	JWTSecret      string
-	JWTExpiryHours int
+	JWTSecret           string
+	JWTKeyID            string
+	JWTPreviousKeys     []JWTPreviousKey
+	JWTPreviousKeysErr  error
+	JWTIssuer           string
+	JWTAudience         string
+	JWTExpiryHours      int
+	CSRFSecret          string
+	CSRFPreviousSecrets []CSRFPreviousSecret
+	CSRFPreviousErr     error
+
+	// Billing rollout
+	BillingEnabled      bool
+	BillingTopupEnabled bool
+	MidtransServerKey   string
+	MidtransClientKey   string
+	MidtransMerchantID  string
+	MidtransProduction  bool
 
 	// UID Obfuscation
 	UIDSalt string
@@ -54,10 +84,14 @@ type Config struct {
 	RedisPassword string
 
 	// Domain
-	BaseDomain    string
-	ProjectDomain string
-	FrontendURL   string
-	ACMEEmail     string
+	BaseDomain                  string
+	ProjectDomain               string
+	FrontendURL                 string
+	ACMEEmail                   string
+	TrustedProxyCIDRs           []string
+	TrustedProxyCIDRsConfigured bool
+	TrustedProxyCIDRsErr        error
+	InternalAPIToken            string
 
 	// Docker
 	DockerSocket      string
@@ -131,6 +165,14 @@ func Load() *Config {
 		traefikDynamicDir = getEnv("TRAEFIK_DYNAMIC_DIR", "./docker/traefik/dynamic")
 	}
 
+	jwtPreviousKeys, jwtPreviousErr := parseJWTPreviousKeys(getEnv("JWT_PREVIOUS_KEYS", ""))
+	csrfPreviousSecrets, csrfPreviousErr := parseCSRFPreviousSecrets(getEnv("CSRF_SECRET_PREVIOUS", ""))
+	trustedProxyCIDRsRaw, trustedProxyCIDRsConfigured := os.LookupEnv("TRUSTED_PROXY_CIDRS")
+	if !trustedProxyCIDRsConfigured {
+		trustedProxyCIDRsRaw = "127.0.0.1/32"
+	}
+	trustedProxyCIDRs, trustedProxyCIDRsErr := parseCIDRList(trustedProxyCIDRsRaw)
+
 	cfg := &Config{
 		// App
 		AppMode:      appMode,
@@ -159,8 +201,24 @@ func Load() *Config {
 		UserPGPassword: getEnv("USER_PG_PASSWORD", "user-pg-rootpassword"),
 
 		// JWT
-		JWTSecret:      getEnv("JWT_SECRET", "change-this-secret"),
-		JWTExpiryHours: getEnvInt("JWT_EXPIRY_HOURS", 24),
+		JWTSecret:           getEnv("JWT_SECRET", "change-this-secret"),
+		JWTKeyID:            getEnv("JWT_KEY_ID", "primary"),
+		JWTPreviousKeys:     jwtPreviousKeys,
+		JWTPreviousKeysErr:  jwtPreviousErr,
+		JWTIssuer:           getEnv("JWT_ISSUER", "runara"),
+		JWTAudience:         getEnv("JWT_AUDIENCE", "runara-api"),
+		JWTExpiryHours:      getEnvInt("JWT_EXPIRY_HOURS", 24),
+		CSRFSecret:          getEnv("CSRF_SECRET", "change-this-csrf-secret"),
+		CSRFPreviousSecrets: csrfPreviousSecrets,
+		CSRFPreviousErr:     csrfPreviousErr,
+
+		// Billing rollout
+		BillingEnabled:      getEnvBool("BILLING_ENABLED", false),
+		BillingTopupEnabled: getEnvBool("BILLING_TOPUP_ENABLED", false),
+		MidtransServerKey:   getEnv("MIDTRANS_SERVER_KEY", ""),
+		MidtransClientKey:   getEnv("MIDTRANS_CLIENT_KEY", ""),
+		MidtransMerchantID:  getEnv("MIDTRANS_MERCHANT_ID", ""),
+		MidtransProduction:  getEnvBool("MIDTRANS_IS_PRODUCTION", false),
 
 		// UID Obfuscation
 		UIDSalt: getEnv("UID_SALT", "change-this-salt"),
@@ -171,10 +229,14 @@ func Load() *Config {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 
 		// Domain
-		BaseDomain:    getEnv("BASE_DOMAIN", "localhost"),
-		ProjectDomain: getEnv("PROJECT_DOMAIN", getEnv("BASE_DOMAIN", "localhost")),
-		FrontendURL:   getEnv("FRONTEND_URL", "http://localhost:5173"),
-		ACMEEmail:     getEnv("ACME_EMAIL", "admin@localhost"),
+		BaseDomain:                  getEnv("BASE_DOMAIN", "localhost"),
+		ProjectDomain:               getEnv("PROJECT_DOMAIN", getEnv("BASE_DOMAIN", "localhost")),
+		FrontendURL:                 getEnv("FRONTEND_URL", "http://localhost:5173"),
+		ACMEEmail:                   getEnv("ACME_EMAIL", "admin@localhost"),
+		TrustedProxyCIDRs:           trustedProxyCIDRs,
+		TrustedProxyCIDRsConfigured: trustedProxyCIDRsConfigured,
+		TrustedProxyCIDRsErr:        trustedProxyCIDRsErr,
+		InternalAPIToken:            getEnv("INTERNAL_API_TOKEN", ""),
 
 		// Docker & Paths
 		DockerSocket:      getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
@@ -230,21 +292,33 @@ func Load() *Config {
 
 // ValidateProductionSecurity fails closed when production boot would use known weak secrets.
 func (c *Config) ValidateProductionSecurity() error {
+	return c.validateProductionSecurity(true)
+}
+
+// ValidateProductionWorkerSecurity excludes browser-only signing secrets from worker processes.
+func (c *Config) ValidateProductionWorkerSecurity() error {
+	return c.validateProductionSecurity(false)
+}
+
+func (c *Config) validateProductionSecurity(includeAuth bool) error {
 	if !strings.EqualFold(c.AppEnv, "production") {
 		return nil
 	}
 
 	weakSecrets := map[string]string{
-		"JWT_SECRET":                c.JWTSecret,
 		"UID_SALT":                  c.UIDSalt,
 		"CREDENTIAL_ENCRYPTION_KEY": c.CredentialEncryptionKey,
 	}
 	defaults := map[string]string{
-		"JWT_SECRET":                "change-this-secret",
 		"UID_SALT":                  "change-this-salt",
 		"CREDENTIAL_ENCRYPTION_KEY": "default-fallback-encryption-key-for-dev",
 	}
-
+	if includeAuth {
+		weakSecrets["JWT_SECRET"] = c.JWTSecret
+		weakSecrets["CSRF_SECRET"] = c.CSRFSecret
+		defaults["JWT_SECRET"] = "change-this-secret"
+		defaults["CSRF_SECRET"] = "change-this-csrf-secret"
+	}
 	for key, value := range weakSecrets {
 		if value == "" || value == defaults[key] || strings.Contains(strings.ToLower(value), "change-me") || strings.Contains(strings.ToLower(value), "placeholder") || len(value) < 32 {
 			return fmt.Errorf("%s must be configured with a strong production secret", key)
@@ -257,7 +331,55 @@ func (c *Config) ValidateProductionSecurity() error {
 			}
 		}
 	}
-
+	if !c.TrustedProxyCIDRsConfigured || c.TrustedProxyCIDRsErr != nil || len(c.TrustedProxyCIDRs) == 0 {
+		return fmt.Errorf("TRUSTED_PROXY_CIDRS must be explicitly configured in production")
+	}
+	if includeAuth && !ValidInternalAPIToken(c.InternalAPIToken) {
+		return fmt.Errorf("INTERNAL_API_TOKEN must be 64 lowercase hexadecimal characters")
+	}
+	if includeAuth {
+		if c.JWTKeyID == "" || !ValidJWTKeyID(c.JWTKeyID) {
+			return fmt.Errorf("JWT_KEY_ID is invalid")
+		}
+		if c.JWTPreviousKeysErr != nil || len(c.JWTPreviousKeys) > 3 {
+			return fmt.Errorf("JWT_PREVIOUS_KEYS is invalid or exceeds maximum of 3 keys")
+		}
+		for _, key := range c.JWTPreviousKeys {
+			if !ValidJWTKeyID(key.ID) || key.ID == c.JWTKeyID || len(key.Secret) < 32 {
+				return fmt.Errorf("JWT_PREVIOUS_KEYS contains an invalid key")
+			}
+		}
+		if c.CSRFPreviousErr != nil || len(c.CSRFPreviousSecrets) > 3 {
+			return fmt.Errorf("CSRF_SECRET_PREVIOUS is invalid or exceeds maximum of 3 secrets")
+		}
+		for _, secret := range c.CSRFPreviousSecrets {
+			if !ValidJWTKeyID(secret.ID) || len(secret.Secret) < 32 {
+				return fmt.Errorf("CSRF_SECRET_PREVIOUS contains an invalid secret")
+			}
+		}
+	}
+	baseDomain, err := NormalizeHostname(c.BaseDomain)
+	if err != nil {
+		return fmt.Errorf("BASE_DOMAIN: %w", err)
+	}
+	projectDomain, err := NormalizeHostname(c.ProjectDomain)
+	if err != nil {
+		return fmt.Errorf("PROJECT_DOMAIN: %w", err)
+	}
+	if _, err := NormalizeOrigin(c.FrontendURL); err != nil {
+		return fmt.Errorf("FRONTEND_URL: %w", err)
+	}
+	if err := distinctRegistrableDomains(baseDomain, projectDomain); err != nil {
+		return err
+	}
+	c.BaseDomain = baseDomain
+	c.ProjectDomain = projectDomain
+	if c.BillingTopupEnabled && !c.BillingEnabled {
+		return fmt.Errorf("BILLING_TOPUP_ENABLED requires BILLING_ENABLED=true")
+	}
+	if includeAuth && c.BillingEnabled && (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") {
+		return fmt.Errorf("Midtrans credentials are required when BILLING_ENABLED=true")
+	}
 	return nil
 }
 
@@ -267,6 +389,72 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// parseJWTPreviousKeys expects comma-separated key_id|secret|not_after_utc entries.
+func parseJWTPreviousKeys(value string) ([]JWTPreviousKey, error) {
+	if value == "" {
+		return nil, nil
+	}
+	keys := make([]JWTPreviousKey, 0)
+	seen := make(map[string]struct{})
+	for _, entry := range strings.Split(value, ",") {
+		parts := strings.SplitN(strings.TrimSpace(entry), "|", 3)
+		if len(parts) != 3 || !ValidJWTKeyID(parts[0]) || parts[1] == "" {
+			return nil, fmt.Errorf("invalid previous JWT key")
+		}
+		notAfter, err := time.Parse(time.RFC3339, parts[2])
+		if err != nil {
+			return nil, fmt.Errorf("invalid previous JWT key expiry")
+		}
+		if _, duplicate := seen[parts[0]]; duplicate {
+			return nil, fmt.Errorf("duplicate previous JWT key ID")
+		}
+		seen[parts[0]] = struct{}{}
+		keys = append(keys, JWTPreviousKey{ID: parts[0], Secret: parts[1], NotAfter: notAfter.UTC()})
+	}
+	return keys, nil
+}
+
+// parseCSRFPreviousSecrets expects comma-separated key_id|secret|not_after_utc entries.
+func parseCSRFPreviousSecrets(value string) ([]CSRFPreviousSecret, error) {
+	if value == "" {
+		return nil, nil
+	}
+	secrets := make([]CSRFPreviousSecret, 0)
+	seen := make(map[string]struct{})
+	for _, entry := range strings.Split(value, ",") {
+		parts := strings.SplitN(strings.TrimSpace(entry), "|", 3)
+		if len(parts) != 3 || !ValidJWTKeyID(parts[0]) || parts[1] == "" {
+			return nil, fmt.Errorf("invalid previous CSRF secret")
+		}
+		notAfter, err := time.Parse(time.RFC3339, parts[2])
+		if err != nil {
+			return nil, fmt.Errorf("invalid previous CSRF secret expiry")
+		}
+		if _, duplicate := seen[parts[0]]; duplicate {
+			return nil, fmt.Errorf("duplicate previous CSRF secret ID")
+		}
+		seen[parts[0]] = struct{}{}
+		secrets = append(secrets, CSRFPreviousSecret{ID: parts[0], Secret: parts[1], NotAfter: notAfter.UTC()})
+	}
+	return secrets, nil
+}
+
+func parseCIDRList(value string) ([]string, error) {
+	parts := strings.Split(value, ",")
+	cidrs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		cidr := strings.TrimSpace(part)
+		if cidr == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return nil, fmt.Errorf("invalid CIDR")
+		}
+		cidrs = append(cidrs, cidr)
+	}
+	return cidrs, nil
 }
 
 func parseSecretList(value string) []string {

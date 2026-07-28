@@ -127,7 +127,7 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 		"loadedCustomDomains", loadedDomains,
 		"verifiedCustomDomains", verifiedDomains)
 
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+	projectDomain := s.cfg.ProjectDomain
 	serverNames := append([]string{freshProject.GetFullDomain(projectDomain)}, verifiedDomains...)
 	if len(freshProject.CustomDomains) > 0 && len(verifiedDomains) == 0 {
 		metrics.GetCollector().IncrNginxReloadFailedTotal()

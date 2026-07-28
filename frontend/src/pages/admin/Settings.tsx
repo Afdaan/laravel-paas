@@ -70,7 +70,7 @@ const AdminSettings = () => {
       // Convert all values to strings as backend expects map[string]string
       const payload: Record<string, string> = {}
       Object.entries(settings).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
+        if (key !== 'base_domain' && key !== 'project_domain' && value !== undefined && value !== null) {
           payload[key] = String(value)
         }
       })
@@ -135,7 +135,8 @@ const AdminSettings = () => {
               </div>
               <Input
                 value={settings.base_domain || ''}
-                onChange={(e) => handleChange('base_domain', e.target.value)}
+                readOnly
+                aria-readonly="true"
                 placeholder={t('admin.settings.coreFqdnPlaceholder')}
               />
               <p className="text-xs text-muted-foreground flex items-center gap-2">
@@ -150,7 +151,8 @@ const AdminSettings = () => {
               </Label>
               <Input
                 value={settings.project_domain || ''}
-                onChange={(e) => handleChange('project_domain', e.target.value)}
+                readOnly
+                aria-readonly="true"
                 placeholder={t('admin.settings.projectPoolPlaceholder')}
               />
               <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10 flex items-center gap-3">

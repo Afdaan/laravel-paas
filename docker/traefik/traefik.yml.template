@@ -4,7 +4,7 @@
 
 api:
   dashboard: true
-  insecure: true
+  insecure: false
 
 entryPoints:
   web:
@@ -25,9 +25,10 @@ providers:
     watch: true
   http:
     endpoint: "http://paas-backend:8080/api/internal/traefik/config"
+    headers:
+      X-Internal-Token: "__INTERNAL_API_TOKEN__"
     pollInterval: "2s"
     pollTimeout: "5s"
-
 
 log:
   level: INFO

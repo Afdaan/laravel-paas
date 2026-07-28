@@ -11,6 +11,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/traefik-config.sh"
 
 # 1. Environment & Paths
 init_vars() {
@@ -38,7 +39,8 @@ init_vars() {
     MYSQL_DATABASE=${MYSQL_DATABASE:-"paas"}
     BASE_DOMAIN=${BASE_DOMAIN:-"localhost"}
     ACME_EMAIL=${ACME_EMAIL:-"admin@localhost"}
-    JWT_SECRET=${JWT_SECRET:-"change-me-please-12345"}
+    JWT_SECRET=${JWT_SECRET:-""}
+    CSRF_SECRET=${CSRF_SECRET:-""}
     MYSQL_PASSWORD=${MYSQL_PASSWORD:-"$MYSQL_ROOT_PASSWORD"}
     PG_PASSWORD=${PG_PASSWORD:-"pgrootpassword"}
     PG_USER=${PG_USER:-"postgres"}
@@ -55,6 +57,11 @@ init_vars() {
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
     TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-${PROJECT_ROOT}/docker/traefik/dynamic}"
+
+    if [ "${APP_ENV:-production}" = "production" ] && { [ -z "$JWT_SECRET" ] || [ -z "$CSRF_SECRET" ]; }; then
+        echo -e "${RED}[ERROR] JWT_SECRET and CSRF_SECRET are required in production.${NC}"
+        exit 1
+    fi
 }
 
 prepare_env() {
@@ -80,7 +87,7 @@ prepare_env() {
 
     repair_storage_permissions "$PROJECTS_PATH"
     repair_storage_permissions "$DATA_PATH"
-    chmod 775 "$TRAEFIK_DYNAMIC_DIR"
+    chmod 700 "$TRAEFIK_DYNAMIC_DIR"
 
     # Repair existing per-project SQLite dirs/files to safe permissions
     if [ -d "$DATA_PATH" ]; then
@@ -335,12 +342,17 @@ start_buildkit() {
 start_traefik() {
     echo -e "${YELLOW}Starting Traefik...${NC}"
     docker rm -f paas-traefik 2>/dev/null || true
-    local traefik_conf="${PROJECT_ROOT}/docker/traefik/traefik.yml"
+    local traefik_template="${PROJECT_ROOT}/docker/traefik/traefik.yml.template"
+    local traefik_conf
     local dynamic_template="${PROJECT_ROOT}/docker/traefik/dynamic.yml.template"
     local dynamic_conf="${TRAEFIK_DYNAMIC_DIR}/dynamic.yml"
 
-    if [ ! -f "$traefik_conf" ]; then
-        echo -e "${RED}Error: traefik.yml not found${NC}"
+    if [ ! -f "$traefik_template" ]; then
+        echo -e "${RED}Error: traefik.yml.template not found${NC}"
+        return 1
+    fi
+    if ! traefik_conf=$(render_traefik_static_config "$traefik_template"); then
+        echo -e "${RED}Error: failed to render Traefik static config.${NC}"
         return 1
     fi
     if [ -f "$dynamic_template" ]; then
@@ -358,7 +370,7 @@ start_traefik() {
         -p ${HTTPS_PORT}:443 \
         -v /var/run/docker.sock:/var/run/docker.sock:ro \
         -v "${traefik_conf}:/traefik.yml:ro" \
-        -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
+        -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:ro" \
         -v paas-letsencrypt:/letsencrypt \
         traefik:v3.6
 }
@@ -374,7 +386,6 @@ start_backend() {
         --network paas-network \
         --restart unless-stopped \
         -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "${PROJECTS_PATH}:/app/storage/projects" \
         -v "${DATA_PATH}:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
@@ -382,6 +393,10 @@ start_backend() {
         -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE="$APP_MODE" \
+        -e APP_ENV="${APP_ENV:-production}" \
+        -e FRONTEND_URL="${FRONTEND_URL:-http://$BASE_DOMAIN}" \
+        -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
+        -e INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
         -e HOST_DATA_PATH="$DATA_PATH" \
@@ -400,6 +415,18 @@ start_backend() {
         -e REDIS_PORT="${REDIS_PORT:-6379}" \
         -e REDIS_PASSWORD="$REDIS_PASSWORD" \
         -e JWT_SECRET="$JWT_SECRET" \
+        -e JWT_KEY_ID="${JWT_KEY_ID:-primary}" \
+        -e JWT_PREVIOUS_KEYS="${JWT_PREVIOUS_KEYS:-}" \
+        -e JWT_ISSUER="${JWT_ISSUER:-runara}" \
+        -e JWT_AUDIENCE="${JWT_AUDIENCE:-runara-api}" \
+        -e CSRF_SECRET="$CSRF_SECRET" \
+        -e CSRF_SECRET_PREVIOUS="${CSRF_SECRET_PREVIOUS:-}" \
+        -e BILLING_ENABLED="${BILLING_ENABLED:-false}" \
+        -e BILLING_TOPUP_ENABLED="${BILLING_TOPUP_ENABLED:-false}" \
+        -e MIDTRANS_SERVER_KEY="${MIDTRANS_SERVER_KEY:-}" \
+        -e MIDTRANS_CLIENT_KEY="${MIDTRANS_CLIENT_KEY:-}" \
+        -e MIDTRANS_MERCHANT_ID="${MIDTRANS_MERCHANT_ID:-}" \
+        -e MIDTRANS_IS_PRODUCTION="${MIDTRANS_IS_PRODUCTION:-false}" \
         -e UID_SALT="$UID_SALT" \
         -e CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
         -e CREDENTIAL_ENCRYPTION_KEY_PREVIOUS="${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}" \
@@ -437,7 +464,6 @@ start_worker() {
         -v "${DATA_PATH}:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
-        -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE=docker \
@@ -455,7 +481,6 @@ start_worker() {
         -e REDIS_HOST=paas-redis \
         -e REDIS_PORT="${REDIS_PORT:-6379}" \
         -e REDIS_PASSWORD="$REDIS_PASSWORD" \
-        -e JWT_SECRET="$JWT_SECRET" \
         -e UID_SALT="$UID_SALT" \
         -e CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
         -e CREDENTIAL_ENCRYPTION_KEY_PREVIOUS="${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}" \
