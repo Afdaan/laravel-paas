@@ -14,6 +14,8 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -55,6 +57,98 @@ type DeploymentWorker struct {
 }
 
 const migrationPartialChangesWarning = "WARNING: Application rollout stopped, but database changes completed before this failure were not automatically rolled back."
+
+type managedDatabaseConnection struct {
+	driverName     string
+	dsn            string
+	versionQuery   string
+	defaultVersion string
+}
+
+func ensureManagedDatabase(verify func() (string, error), provision func() error) (string, error) {
+	version, verifyErr := verify()
+	if verifyErr == nil {
+		return version, nil
+	}
+
+	provisionErr := provision()
+	version, verifyErr = verify()
+	if verifyErr == nil {
+		return version, nil
+	}
+	if provisionErr != nil {
+		return "", provisionErr
+	}
+
+	return "", fmt.Errorf("database provisioning verification failed: %w", verifyErr)
+}
+
+func buildManagedDatabaseConnection(engine, host string, port int, dbName, username, password string) (managedDatabaseConnection, error) {
+	switch engine {
+	case "mysql":
+		config := mysqlDriver.NewConfig()
+		config.User = username
+		config.Passwd = password
+		config.Net = "tcp"
+		config.Addr = net.JoinHostPort(host, strconv.Itoa(port))
+		config.DBName = dbName
+
+		return managedDatabaseConnection{
+			driverName:     "mysql",
+			dsn:            config.FormatDSN(),
+			versionQuery:   "SELECT @@version",
+			defaultVersion: "MySQL 8.0",
+		}, nil
+	case "postgresql":
+		connectionURL := &url.URL{
+			Scheme: "postgres",
+			User:   url.UserPassword(username, password),
+			Host:   net.JoinHostPort(host, strconv.Itoa(port)),
+			Path:   "/" + dbName,
+		}
+		query := connectionURL.Query()
+		query.Set("sslmode", "disable")
+		connectionURL.RawQuery = query.Encode()
+
+		return managedDatabaseConnection{
+			driverName:     "pgx",
+			dsn:            connectionURL.String(),
+			versionQuery:   "SELECT version()",
+			defaultVersion: "PostgreSQL 15",
+		}, nil
+	default:
+		return managedDatabaseConnection{}, fmt.Errorf("unsupported managed database engine %q", engine)
+	}
+}
+
+func inspectManagedDatabase(ctx context.Context, engine, host string, port int, dbName, username, password string) (string, error) {
+	connection, err := buildManagedDatabaseConnection(engine, host, port, dbName, username, password)
+	if err != nil {
+		return "", err
+	}
+
+	dbConn, err := sql.Open(connection.driverName, connection.dsn)
+	if err != nil {
+		return "", err
+	}
+	defer dbConn.Close()
+
+	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := dbConn.PingContext(verifyCtx); err != nil {
+		return "", err
+	}
+
+	var version string
+	if err := dbConn.QueryRowContext(verifyCtx, connection.versionQuery).Scan(&version); err != nil || version == "" {
+		return connection.defaultVersion, nil
+	}
+	if engine == "postgresql" {
+		version = strings.Split(version, " on ")[0]
+	}
+
+	return version, nil
+}
 
 // NewDeploymentWorker creates a new deployment worker
 func NewDeploymentWorker(
@@ -778,63 +872,43 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 		}
 
-		if engine == "postgresql" {
-			pgService := infrastructure.NewPostgreSQLService()
-			dbErr = pgService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
-			if dbErr == nil && dbInstance != nil {
-				dbInstance.Host = infrastructure.PostgreSQLContainerName()
-				dbInstance.Port = infrastructure.PostgreSQLPort()
-				dbInstance.Password = dbPassword
-				dbInstance.Status = models.DBStatusActive
+		var host string
+		var port int
+		switch engine {
+		case "mysql":
+			host = infrastructure.MySQLContainerName()
+			port = infrastructure.MySQLPort()
+		case "postgresql":
+			host = infrastructure.PostgreSQLContainerName()
+			port = infrastructure.PostgreSQLPort()
+		default:
+			dbErr = fmt.Errorf("unsupported managed database engine %q", engine)
+			return
+		}
 
-				var version string
-				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-					dbUsername, dbPassword, dbInstance.Host, strconv.Itoa(dbInstance.Port), dbName,
-				)
-				dbConn, err := sql.Open("pgx", dsn)
-				if err == nil {
-					ctxDB, cancelDB := context.WithTimeout(ctx, 5*time.Second)
-					_ = dbConn.QueryRowContext(ctxDB, "SELECT version()").Scan(&version)
-					cancelDB()
-					dbConn.Close()
-				}
-				if version == "" {
-					version = "PostgreSQL 15"
-				} else {
-					// Clean up the verbose PostgreSQL version output
-					parts := strings.Split(version, " on ")
-					if len(parts) > 0 {
-						version = parts[0]
-					}
-				}
-				dbInstance.Version = version
-				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
+		verifyDatabase := func() (string, error) {
+			return inspectManagedDatabase(ctx, engine, host, port, dbName, dbUsername, dbPassword)
+		}
+		provisionDatabase := func() error {
+			switch engine {
+			case "mysql":
+				return w.mysqlService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
+			case "postgresql":
+				return infrastructure.NewPostgreSQLService().CreateDatabaseCustom(dbName, dbUsername, dbPassword)
+			default:
+				return fmt.Errorf("unsupported managed database engine %q", engine)
 			}
-		} else {
-			dbErr = w.mysqlService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
-			if dbErr == nil && dbInstance != nil {
-				dbInstance.Host = infrastructure.MySQLContainerName()
-				dbInstance.Port = infrastructure.MySQLPort()
-				dbInstance.Password = dbPassword
-				dbInstance.Status = models.DBStatusActive
+		}
 
-				var version string
-				dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-					dbUsername, dbPassword, dbInstance.Host, dbInstance.Port, dbName,
-				)
-				dbConn, err := sql.Open("mysql", dsn)
-				if err == nil {
-					ctxDB, cancelDB := context.WithTimeout(ctx, 5*time.Second)
-					_ = dbConn.QueryRowContext(ctxDB, "SELECT @@version").Scan(&version)
-					cancelDB()
-					dbConn.Close()
-				}
-				if version == "" {
-					version = "MySQL 8.0"
-				}
-				dbInstance.Version = version
-				_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
-			}
+		var version string
+		version, dbErr = ensureManagedDatabase(verifyDatabase, provisionDatabase)
+		if dbErr == nil && dbInstance != nil {
+			dbInstance.Host = host
+			dbInstance.Port = port
+			dbInstance.Password = dbPassword
+			dbInstance.Status = models.DBStatusActive
+			dbInstance.Version = version
+			_ = w.projectRepo.SaveDatabaseInstance(dbInstance)
 		}
 	}()
 
