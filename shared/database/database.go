@@ -6,8 +6,10 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
@@ -120,16 +122,33 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 }
 
 func repairBillingCatalog(db *gorm.DB) error {
-	result := db.Model(&models.BillableSpec{}).
-		Where("type = ? AND name = ? AND slug = ? AND version = ? AND cpu_millicores = ? AND memory_mb = ? AND storage_gb = ? AND connection_limit = ? AND backup_retention_days = ? AND monthly_credits = ?", models.BillableTypeDatabase, "Large", "large", 1, 2000, 4096, 50, 600000, 30, 400000).
-		Updates(map[string]any{"connection_limit": 200, "monthly_credits": 600000})
-	if result.Error != nil {
-		return fmt.Errorf("repair billing database large catalog: %w", result.Error)
+	var incorrect models.BillableSpec
+	err := db.Where("type = ? AND name = ? AND slug = ? AND version = ? AND is_active = ? AND cpu_millicores = ? AND memory_mb = ? AND storage_gb = ? AND connection_limit = ? AND backup_retention_days = ? AND monthly_credits = ?", models.BillableTypeDatabase, "Large", "large", 1, true, 2000, 4096, 50, 600000, 30, 400000).First(&incorrect).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
 	}
-	if result.RowsAffected > 0 {
-		slog.Info("Repaired seeded billing database large catalog", "rows", result.RowsAffected)
+	if err != nil {
+		return fmt.Errorf("find incorrect billing database large catalog: %w", err)
 	}
-	return nil
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&incorrect).Update("is_active", false).Error; err != nil {
+			return fmt.Errorf("retire incorrect billing database large catalog: %w", err)
+		}
+		corrected := incorrect
+		corrected.ID = 0
+		corrected.ConnectionLimit = intPtr(200)
+		corrected.MonthlyCredits = 600000
+		corrected.Version++
+		corrected.IsActive = true
+		corrected.CreatedAt = time.Time{}
+		corrected.UpdatedAt = time.Time{}
+		if err := tx.Create(&corrected).Error; err != nil {
+			return fmt.Errorf("create corrected billing database large catalog: %w", err)
+		}
+		slog.Info("Replaced incorrect seeded billing database large catalog", "retired_spec_id", incorrect.ID, "replacement_spec_id", corrected.ID)
+		return nil
+	})
 }
 
 func seedBillingCatalog(db *gorm.DB) error {

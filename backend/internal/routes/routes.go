@@ -19,6 +19,7 @@ import (
 	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/services/billing"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -106,6 +107,7 @@ func Setup(
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 	secretStoreHandler := handlers.NewSecretStoreHandler(db, cfg, secretStoreService)
+	billingHandler := handlers.NewBillingHandler(billing.NewCatalogService(db))
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
@@ -154,6 +156,11 @@ func Setup(
 	protected.Put("/auth/profile", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.UpdateProfile)
 	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.GenerateStreamToken)
 	protected.Post("/auth/return-to-admin", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.ReturnToAdmin)
+	protected.Post("/auth/re-auth", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitLogin(redisService), authHandler.Reauthenticate)
+
+	// Billing catalog remains available while payment collection stays disabled.
+	billingRoutes := protected.Group("/billing", middleware.NoStore())
+	billingRoutes.Get("/catalog", billingHandler.ListActiveCatalog)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -172,6 +179,12 @@ func Setup(
 	// Admin Routes
 	// -----------------------------
 	admin := protected.Group("/admin", middleware.RequireAdmin())
+	adminBilling := admin.Group("/billing", middleware.NoStore())
+	adminBilling.Get("/catalog", billingHandler.ListCatalog)
+	adminBilling.Get("/wallets/:userID", billingHandler.GetWallet)
+	superadminBilling := adminBilling.Group("", middleware.RequireSuperAdmin(), middleware.RequireRecentBillingAuthentication(cfg))
+	superadminBilling.Post("/specs", middleware.MaxBody(8*1024), billingHandler.CreateBillableSpec)
+	superadminBilling.Post("/topup-packages", middleware.MaxBody(8*1024), billingHandler.CreateTopupPackage)
 
 	// User management
 	admin.Get("/users", userHandler.List)

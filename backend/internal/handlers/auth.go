@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -41,7 +42,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	issued, err := h.service.IssueSession(user, 0)
+	issued, err := h.service.IssuePasswordAuthenticatedSession(user)
 	if err != nil {
 		return err
 	}
@@ -85,6 +86,42 @@ type UpdateProfileRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password,omitempty"`
+}
+
+type ReauthenticateRequest struct {
+	Password string `json:"password"`
+}
+
+func (h *AuthHandler) Reauthenticate(c *fiber.Ctx) error {
+	if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
+		return apperr.New(403, "IMPERSONATION_FORBIDDEN", "Impersonated sessions cannot authenticate billing changes")
+	}
+	claims, _ := c.Locals("claims").(*models.JWTClaims)
+	userID, _ := c.Locals("user_id").(uint)
+	sessionName, _, _ := middleware.CookieNames(h.cfg)
+	sessionToken := c.Cookies(sessionName)
+	currentToken, _ := c.Locals("token").(string)
+	if claims == nil || userID == 0 || sessionToken == "" || subtle.ConstantTimeCompare([]byte(sessionToken), []byte(currentToken)) != 1 {
+		return apperr.ErrUnauthorized
+	}
+
+	var req ReauthenticateRequest
+	if err := c.BodyParser(&req); err != nil || req.Password == "" {
+		return apperr.NewBadRequest("Password is required")
+	}
+	user, err := h.service.Reauthenticate(userID, req.Password)
+	if err != nil {
+		return err
+	}
+	issued, err := h.service.IssuePasswordAuthenticatedSession(user)
+	if err != nil {
+		return err
+	}
+	if err := h.service.Revoke(claims); err != nil {
+		return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
+	}
+	h.setSessionCookies(c, issued, "")
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {

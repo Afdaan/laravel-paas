@@ -37,7 +37,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@0a12c4c30c7b1459b839ed93c8aefbd7f7d2c10d # v5.0.2
         with:
-          go-version: '1.22'
+          go-version: "1.22"
       - name: Test and scan Go modules
         shell: bash
         run: |
@@ -53,10 +53,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd shared && go test -tags=integration ./database -run TestBillingPostgres) 2>&1 | tee reports/billing-postgres.txt
+          (cd shared && go test -tags=integration ./database) 2>&1 | tee reports/billing-postgres.txt
+          (cd backend && go test -tags=integration ./internal/services/billing) 2>&1 | tee reports/wallet-postgres.txt
       - uses: actions/setup-node@1e60f620b9541d9d1a79b4de2b0e4db7e605a10d # v4.0.3
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Lint, audit, build, and generate frontend SBOM

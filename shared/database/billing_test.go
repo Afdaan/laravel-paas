@@ -72,8 +72,12 @@ func TestRepairBillingCatalogOnlyFixesKnownBadRow(t *testing.T) {
 	if err := repairBillingCatalog(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.First(&bad, bad.ID).Error; err != nil || pointerValue(bad.ConnectionLimit) != 200 || bad.MonthlyCredits != 600000 {
-		t.Fatalf("known bad row not repaired: %#v, %v", bad, err)
+	if err := db.First(&bad, bad.ID).Error; err != nil || bad.IsActive {
+		t.Fatalf("known bad row not retired: %#v, %v", bad, err)
+	}
+	var corrected models.BillableSpec
+	if err := db.Where("type = ? AND slug = ? AND version = ?", models.BillableTypeDatabase, "large", 2).First(&corrected).Error; err != nil || !corrected.IsActive || pointerValue(corrected.ConnectionLimit) != 200 || corrected.MonthlyCredits != 600000 {
+		t.Fatalf("corrected replacement missing: %#v, %v", corrected, err)
 	}
 
 	custom := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Custom", Slug: "custom", CPUMillicores: 1, MemoryMB: 1, StorageGB: 1, ConnectionLimit: intPtr(600000), MonthlyCredits: 400000, Version: 1, IsActive: true}

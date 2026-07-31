@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/services"
@@ -22,6 +23,7 @@ const (
 	legacySessionCookieName = SessionCookieName
 	legacyAdminCookieName   = AdminCookieName
 	legacyCSRFCookieName    = CSRFCookieName
+	billingRecentAuthWindow = 5 * time.Minute
 )
 
 func CookieNames(cfg *config.Config) (session, admin, csrf string) {
@@ -171,4 +173,24 @@ func RequireAdmin() fiber.Handler {
 
 func RequireSuperAdmin() fiber.Handler {
 	return RequireRole(models.RoleSuperAdmin)
+}
+
+// RequireRecentBillingAuthentication permits only a freshly password-authenticated browser session.
+func RequireRecentBillingAuthentication(cfg *config.Config) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
+			return apperr.New(403, "IMPERSONATION_FORBIDDEN", "Impersonated sessions cannot change billing settings")
+		}
+		claims, _ := c.Locals("claims").(*models.JWTClaims)
+		currentToken, _ := c.Locals("token").(string)
+		sessionName, _, _ := CookieNames(cfg)
+		sessionToken := c.Cookies(sessionName)
+		if claims == nil || sessionToken == "" || subtle.ConstantTimeCompare([]byte(sessionToken), []byte(currentToken)) != 1 {
+			return apperr.ErrUnauthorized
+		}
+		if claims.AuthTime == nil || time.Since(claims.AuthTime.Time) > billingRecentAuthWindow || claims.AuthTime.After(time.Now().UTC().Add(30*time.Second)) {
+			return apperr.New(403, "RECENT_AUTH_REQUIRED", "Recent password authentication is required")
+		}
+		return c.Next()
+	}
 }

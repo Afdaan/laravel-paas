@@ -9,9 +9,10 @@ const (
 	TokenUseStream  TokenUse = "stream"
 )
 
-// JWTClaims keeps browser-session identity in standard subject claim only.
+// JWTClaims keeps browser-session identity and authentication freshness.
 type JWTClaims struct {
-	TokenUse       TokenUse `json:"token_use"`
-	ImpersonatorID uint     `json:"impersonator_id,omitempty"`
+	TokenUse       TokenUse         `json:"token_use"`
+	ImpersonatorID uint             `json:"impersonator_id,omitempty"`
+	AuthTime       *jwt.NumericDate `json:"auth_time,omitempty"`
 	jwt.RegisteredClaims
 }

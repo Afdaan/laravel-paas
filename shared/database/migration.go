@@ -22,11 +22,31 @@ import (
 	"gorm.io/gorm"
 )
 
+const defensiveMigrationLockIdentity = "runara:defensive-migration-bootstrap"
+
 // DefensiveMigrationBootstrap orchestrates the safe migration pipeline.
 // Existence checks matter because historical databases experience schema drift
 // over time across different environments. Blindly dropping or renaming constraints
 // can cause production outages or duplicated indexes if the names do not match perfectly.
 func DefensiveMigrationBootstrap(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return defensiveMigrationBootstrap(db)
+	}
+	// Session scope keeps the lock across non-transactional concurrent index DDL.
+	return db.Connection(func(connection *gorm.DB) (migrationErr error) {
+		if err := connection.Exec("SELECT pg_advisory_lock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error; err != nil {
+			return fmt.Errorf("acquire database migration lock: %w", err)
+		}
+		defer func() {
+			if err := connection.Exec("SELECT pg_advisory_unlock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error; err != nil && migrationErr == nil {
+				migrationErr = fmt.Errorf("release database migration lock: %w", err)
+			}
+		}()
+		return defensiveMigrationBootstrap(connection)
+	})
+}
+
+func defensiveMigrationBootstrap(db *gorm.DB) error {
 	slog.Info("Starting defensive database migration bootstrap...")
 
 	// 1. Verify GORM and Database compatibility / connectivity.
@@ -94,6 +114,7 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.SecretStoreActivityLog{},
 		&models.Wallet{},
 		&models.WalletLedgerEntry{},
+		&models.BillingAuditEvent{},
 		&models.TopupPackage{},
 		&models.Topup{},
 		&models.BillableSpec{},
@@ -109,6 +130,12 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		if err := db.AutoMigrate(m); err != nil {
 			return fmt.Errorf("AutoMigrate failed for table %s: %w", tableName, err)
 		}
+	}
+	if err := reconcileDuplicateActiveBillingCatalog(db); err != nil {
+		return err
+	}
+	if err := ensureActiveCatalogIndexes(db); err != nil {
+		return err
 	}
 
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
@@ -427,11 +454,93 @@ func reconcileTopupPackageIdentity(db *gorm.DB) error {
 		ALTER TABLE topup_packages ALTER COLUMN version SET NOT NULL;
 		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_provider_currency_credits;
 		DROP INDEX IF EXISTS uni_topup_packages_provider_currency_credits;
+	`).Error; err != nil {
+		return fmt.Errorf("migrate topup package version: %w", err)
+	}
+
+	correct, err := hasTopupPackageIdentityVersionConstraint(db)
+	if err != nil {
+		return err
+	}
+	if correct {
+		return nil
+	}
+
+	if err := db.Exec(`
 		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_identity_version;
 		DROP INDEX IF EXISTS uni_topup_packages_identity_version;
 		ALTER TABLE topup_packages ADD CONSTRAINT uni_topup_packages_identity_version UNIQUE (provider, currency, credits, version);
 	`).Error; err != nil {
-		return fmt.Errorf("migrate topup package identity: %w", err)
+		return fmt.Errorf("reconcile topup package identity: %w", err)
+	}
+	return nil
+}
+
+func hasTopupPackageIdentityVersionConstraint(db *gorm.DB) (bool, error) {
+	var exists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_constraint
+			WHERE conrelid = 'topup_packages'::regclass
+			  AND conname = 'uni_topup_packages_identity_version'
+			  AND contype = 'u'
+			  AND pg_get_constraintdef(oid) = 'UNIQUE (provider, currency, credits, version)'
+		)
+	`).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("check topup package identity constraint: %w", err)
+	}
+	return exists, nil
+}
+
+func reconcileDuplicateActiveBillingCatalog(db *gorm.DB) error {
+	if !isPostgres(db) || !db.Migrator().HasTable(&models.TopupPackage{}) || !db.Migrator().HasTable(&models.BillableSpec{}) {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		topupResult := tx.Exec(`
+			WITH ranked AS (
+				SELECT id, ROW_NUMBER() OVER (
+					PARTITION BY provider, currency, credits
+					ORDER BY version DESC, id DESC
+				) AS rank
+				FROM topup_packages
+				WHERE is_active
+			)
+			UPDATE topup_packages
+			SET is_active = false, updated_at = NOW()
+			WHERE id IN (SELECT id FROM ranked WHERE rank > 1);
+		`)
+		if topupResult.Error != nil {
+			return fmt.Errorf("deactivate duplicate active topup packages: %w", topupResult.Error)
+		}
+
+		specResult := tx.Exec(`
+			WITH ranked AS (
+				SELECT id, ROW_NUMBER() OVER (
+					PARTITION BY type, slug
+					ORDER BY version DESC, id DESC
+				) AS rank
+				FROM billable_specs
+				WHERE is_active
+			)
+			UPDATE billable_specs
+			SET is_active = false, updated_at = NOW()
+			WHERE id IN (SELECT id FROM ranked WHERE rank > 1);
+		`)
+		if specResult.Error != nil {
+			return fmt.Errorf("deactivate duplicate active billable specs: %w", specResult.Error)
+		}
+		if topupResult.RowsAffected > 0 || specResult.RowsAffected > 0 {
+			slog.Warn("Reconciled duplicate active billing catalog rows", "deactivated_topup_packages", topupResult.RowsAffected, "deactivated_billable_specs", specResult.RowsAffected)
+		}
+		return nil
+	})
+}
+
+func ensureActiveCatalogIndexes(db *gorm.DB) error {
+	if !isPostgres(db) || !db.Migrator().HasTable(&models.TopupPackage{}) || !db.Migrator().HasTable(&models.BillableSpec{}) {
+		return nil
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS uni_topup_packages_one_active
@@ -439,6 +548,13 @@ func reconcileTopupPackageIdentity(db *gorm.DB) error {
 		WHERE is_active;
 	`).Error; err != nil {
 		return fmt.Errorf("create active topup package index: %w", err)
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uni_billable_specs_one_active
+		ON billable_specs (type, slug)
+		WHERE is_active;
+	`).Error; err != nil {
+		return fmt.Errorf("create active billable spec index: %w", err)
 	}
 	return nil
 }
@@ -537,9 +653,30 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		$$ LANGUAGE plpgsql;
 		CREATE OR REPLACE FUNCTION reject_topup_package_price_mutation() RETURNS trigger AS $$
 		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'topup packages cannot be deleted';
+			END IF;
 			IF NEW.credits <> OLD.credits OR NEW.currency <> OLD.currency
-				OR NEW.amount_minor <> OLD.amount_minor OR NEW.provider <> OLD.provider THEN
+				OR NEW.amount_minor <> OLD.amount_minor OR NEW.provider <> OLD.provider
+				OR NEW.version <> OLD.version THEN
 				RAISE EXCEPTION 'topup package prices are immutable';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_billable_spec_price_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'billable specs cannot be deleted';
+			END IF;
+			IF NEW.type IS DISTINCT FROM OLD.type OR NEW.name IS DISTINCT FROM OLD.name
+				OR NEW.slug IS DISTINCT FROM OLD.slug OR NEW.cpu_millicores IS DISTINCT FROM OLD.cpu_millicores
+				OR NEW.memory_mb IS DISTINCT FROM OLD.memory_mb OR NEW.storage_gb IS DISTINCT FROM OLD.storage_gb
+				OR NEW.monthly_credits IS DISTINCT FROM OLD.monthly_credits
+				OR NEW.connection_limit IS DISTINCT FROM OLD.connection_limit
+				OR NEW.backup_retention_days IS DISTINCT FROM OLD.backup_retention_days
+				OR NEW.version IS DISTINCT FROM OLD.version THEN
+				RAISE EXCEPTION 'billable spec prices are immutable';
 			END IF;
 			RETURN NEW;
 		END;
@@ -549,39 +686,33 @@ func reconcileBillingSchema(db *gorm.DB) error {
 			RAISE EXCEPTION 'impersonation audit entries are append-only';
 		END;
 		$$ LANGUAGE plpgsql;
-		DO $$
+		CREATE OR REPLACE FUNCTION reject_billing_audit_event_mutation() RETURNS trigger AS $$
 		BEGIN
-			IF NOT EXISTS (
-				SELECT 1 FROM pg_trigger
-				WHERE tgname = 'trg_wallet_ledger_entries_append_only'
-					AND tgrelid = 'wallet_ledger_entries'::regclass
-			) THEN
-				CREATE TRIGGER trg_wallet_ledger_entries_append_only
-				BEFORE UPDATE OR DELETE ON wallet_ledger_entries
-				FOR EACH ROW EXECUTE FUNCTION reject_wallet_ledger_entry_mutation();
-			END IF;
-			IF NOT EXISTS (
-				SELECT 1 FROM pg_trigger
-				WHERE tgname = 'trg_topup_packages_immutable_price'
-					AND tgrelid = 'topup_packages'::regclass
-			) THEN
-				CREATE TRIGGER trg_topup_packages_immutable_price
-				BEFORE UPDATE ON topup_packages
-				FOR EACH ROW EXECUTE FUNCTION reject_topup_package_price_mutation();
-			END IF;
-			IF NOT EXISTS (
-				SELECT 1 FROM pg_trigger
-				WHERE tgname = 'trg_impersonation_audits_append_only'
-					AND tgrelid = 'impersonation_audits'::regclass
-			) THEN
-				CREATE TRIGGER trg_impersonation_audits_append_only
-				BEFORE UPDATE OR DELETE ON impersonation_audits
-				FOR EACH ROW EXECUTE FUNCTION reject_impersonation_audit_mutation();
-			END IF;
+			RAISE EXCEPTION 'billing audit events are append-only';
 		END;
-		$$;
+		$$ LANGUAGE plpgsql;
+		DROP TRIGGER IF EXISTS trg_wallet_ledger_entries_append_only ON wallet_ledger_entries;
+		CREATE TRIGGER trg_wallet_ledger_entries_append_only
+		BEFORE UPDATE OR DELETE ON wallet_ledger_entries
+		FOR EACH ROW EXECUTE FUNCTION reject_wallet_ledger_entry_mutation();
+		DROP TRIGGER IF EXISTS trg_topup_packages_immutable_price ON topup_packages;
+		CREATE TRIGGER trg_topup_packages_immutable_price
+		BEFORE UPDATE OR DELETE ON topup_packages
+		FOR EACH ROW EXECUTE FUNCTION reject_topup_package_price_mutation();
+		DROP TRIGGER IF EXISTS trg_billable_specs_immutable_price ON billable_specs;
+		CREATE TRIGGER trg_billable_specs_immutable_price
+		BEFORE UPDATE OR DELETE ON billable_specs
+		FOR EACH ROW EXECUTE FUNCTION reject_billable_spec_price_mutation();
+		DROP TRIGGER IF EXISTS trg_impersonation_audits_append_only ON impersonation_audits;
+		CREATE TRIGGER trg_impersonation_audits_append_only
+		BEFORE UPDATE OR DELETE ON impersonation_audits
+		FOR EACH ROW EXECUTE FUNCTION reject_impersonation_audit_mutation();
+		DROP TRIGGER IF EXISTS trg_billing_audit_events_append_only ON billing_audit_events;
+		CREATE TRIGGER trg_billing_audit_events_append_only
+		BEFORE UPDATE OR DELETE ON billing_audit_events
+		FOR EACH ROW EXECUTE FUNCTION reject_billing_audit_event_mutation();
 	`).Error; err != nil {
-		return fmt.Errorf("create wallet ledger append-only trigger: %w", err)
+		return fmt.Errorf("create billing immutability triggers: %w", err)
 	}
 	return nil
 }

@@ -956,6 +956,23 @@ type TopupPackage struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// BillingAuditEvent records append-only, high-impact catalog changes.
+type BillingAuditEvent struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	ActorUserID     uint      `gorm:"not null;index:idx_billing_audit_events_actor_user_id" json:"actor_user_id"`
+	EffectiveUserID uint      `gorm:"not null;index:idx_billing_audit_events_effective_user_id" json:"effective_user_id"`
+	ActorRole       string    `gorm:"size:30;not null" json:"actor_role"`
+	SourceIP        string    `gorm:"size:45;not null" json:"source_ip"`
+	Reason          string    `gorm:"size:500;not null" json:"reason"`
+	Event           string    `gorm:"size:50;not null;index:idx_billing_audit_events_event" json:"event"`
+	TargetType      string    `gorm:"size:30;not null" json:"target_type"`
+	TargetID        uint      `gorm:"not null;index:idx_billing_audit_events_target" json:"target_id"`
+	BeforeJSON      string    `gorm:"type:text;not null" json:"before_json"`
+	AfterJSON       string    `gorm:"type:text;not null" json:"after_json"`
+	RequestID       string    `gorm:"size:64;not null;index:idx_billing_audit_events_request_id" json:"request_id"`
+	CreatedAt       time.Time `gorm:"index" json:"created_at"`
+}
+
 // Topup persists provider-facing state only; payment processing arrives in Phase 4.
 type Topup struct {
 	ID                    uint          `gorm:"primaryKey" json:"id"`

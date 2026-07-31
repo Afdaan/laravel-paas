@@ -47,7 +47,20 @@ func (s *AuthService) Authenticate(email, password string) (*models.User, error)
 }
 
 func (s *AuthService) IssueSession(user *models.User, impersonatorID uint) (*IssuedSession, error) {
-	claims := s.newClaims(user.ID, models.TokenUseSession, s.cfg.JWTAudience, s.cfg.JWTExpiryHours, impersonatorID)
+	return s.issueSession(user, impersonatorID, nil)
+}
+
+// IssuePasswordAuthenticatedSession creates a browser session eligible for recent-auth checks.
+func (s *AuthService) IssuePasswordAuthenticatedSession(user *models.User) (*IssuedSession, error) {
+	authenticatedAt := time.Now().UTC()
+	return s.issueSession(user, 0, &authenticatedAt)
+}
+
+func (s *AuthService) issueSession(user *models.User, impersonatorID uint, authenticatedAt *time.Time) (*IssuedSession, error) {
+	if user == nil || user.ID == 0 {
+		return nil, apperr.New(401, "AUTH_FAILED", "Invalid email or password")
+	}
+	claims := s.newClaims(user.ID, models.TokenUseSession, s.cfg.JWTAudience, s.cfg.JWTExpiryHours, impersonatorID, authenticatedAt)
 	token, err := s.sign(claims)
 	if err != nil {
 		return nil, err
@@ -59,11 +72,22 @@ func (s *AuthService) IssueSession(user *models.User, impersonatorID uint) (*Iss
 	return &IssuedSession{Token: token, CSRFToken: csrfToken, Claims: claims}, nil
 }
 
-func (s *AuthService) GenerateStreamToken(user *models.User) (string, error) {
-	return s.sign(s.newClaims(user.ID, models.TokenUseStream, s.cfg.JWTAudience+"-stream", 0, 0))
+func (s *AuthService) Reauthenticate(userID uint, password string) (*models.User, error) {
+	if userID == 0 || password == "" {
+		return nil, apperr.New(401, "AUTH_FAILED", "Invalid email or password")
+	}
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
+		return nil, apperr.New(401, "AUTH_FAILED", "Invalid email or password")
+	}
+	return user, nil
 }
 
-func (s *AuthService) newClaims(userID uint, tokenUse models.TokenUse, audience string, expiryHours int, impersonatorID uint) *models.JWTClaims {
+func (s *AuthService) GenerateStreamToken(user *models.User) (string, error) {
+	return s.sign(s.newClaims(user.ID, models.TokenUseStream, s.cfg.JWTAudience+"-stream", 0, 0, nil))
+}
+
+func (s *AuthService) newClaims(userID uint, tokenUse models.TokenUse, audience string, expiryHours int, impersonatorID uint, authenticatedAt *time.Time) *models.JWTClaims {
 	now := time.Now().UTC()
 	ttl := 60 * time.Second
 	if tokenUse == models.TokenUseSession {
@@ -72,6 +96,7 @@ func (s *AuthService) newClaims(userID uint, tokenUse models.TokenUse, audience 
 	return &models.JWTClaims{
 		TokenUse:       tokenUse,
 		ImpersonatorID: impersonatorID,
+		AuthTime:       numericDate(authenticatedAt),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.cfg.JWTIssuer,
 			Subject:   strconv.FormatUint(uint64(userID), 10),
@@ -82,6 +107,13 @@ func (s *AuthService) newClaims(userID uint, tokenUse models.TokenUse, audience 
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
+}
+
+func numericDate(value *time.Time) *jwt.NumericDate {
+	if value == nil {
+		return nil
+	}
+	return jwt.NewNumericDate(value.UTC())
 }
 
 func (s *AuthService) sign(claims *models.JWTClaims) (string, error) {
@@ -127,6 +159,9 @@ func (s *AuthService) validClaimTimes(claims *models.JWTClaims, expectedUse mode
 		return false
 	}
 	if claims.NotBefore.After(claims.IssuedAt.Time) || claims.IssuedAt.After(claims.ExpiresAt.Time) {
+		return false
+	}
+	if claims.AuthTime != nil && (claims.AuthTime.After(claims.IssuedAt.Time) || claims.AuthTime.After(claims.ExpiresAt.Time)) {
 		return false
 	}
 	maxLifetime := time.Duration(s.cfg.JWTExpiryHours)*time.Hour + 30*time.Second

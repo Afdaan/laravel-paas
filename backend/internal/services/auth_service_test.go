@@ -40,3 +40,24 @@ func TestCSRFTokenBindsSessionAndExpiresPreviousSecret(t *testing.T) {
 		t.Fatal("expired previous secret accepted")
 	}
 }
+
+func TestIssuePasswordAuthenticatedSessionSetsAuthTime(t *testing.T) {
+	service := &AuthService{cfg: &config.Config{
+		JWTSecret: "abcdefghijklmnopqrstuvwxyz123456", JWTKeyID: "current", JWTIssuer: "runara", JWTAudience: "runara-api", JWTExpiryHours: 24, CSRFSecret: "abcdefghijklmnopqrstuvwxyz123456",
+	}}
+	user := &models.User{ID: 1}
+	issued, err := service.IssuePasswordAuthenticatedSession(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issued.Claims.AuthTime == nil || !issued.Claims.AuthTime.Equal(issued.Claims.IssuedAt.Time) {
+		t.Fatalf("password-authenticated session missing matching auth time: %#v", issued.Claims)
+	}
+	impersonated, err := service.IssueSession(user, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if impersonated.Claims.AuthTime != nil {
+		t.Fatalf("impersonated session inherited password authentication: %#v", impersonated.Claims)
+	}
+}
