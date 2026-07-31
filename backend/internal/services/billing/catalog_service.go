@@ -75,6 +75,7 @@ type CatalogSpec struct {
 }
 
 type CatalogPackage struct {
+	ID          uint   `json:"id"`
 	Credits     int64  `json:"credits"`
 	Currency    string `json:"currency"`
 	AmountMinor int64  `json:"amount_minor"`
@@ -455,6 +456,7 @@ func catalogSpecFromModel(spec models.BillableSpec) CatalogSpec {
 
 func catalogPackageFromModel(topupPackage models.TopupPackage) CatalogPackage {
 	return CatalogPackage{
+		ID:          topupPackage.ID,
 		Credits:     topupPackage.Credits,
 		Currency:    topupPackage.Currency,
 		AmountMinor: topupPackage.AmountMinor,

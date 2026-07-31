@@ -98,66 +98,9 @@ func (s *WalletService) apply(ctx context.Context, mutation LedgerMutation, cred
 
 	var result MutationResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		existing, err := findMutationByKey(tx, mutation, credit)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			result = *existing
-			return nil
-		}
-
-		wallet, err := getOrCreateLockedWallet(tx, mutation.UserID)
-		if err != nil {
-			return err
-		}
-
-		existing, err = findMutationByKey(tx, mutation, credit)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			result = *existing
-			return nil
-		}
-
-		signedAmount := mutation.AmountCredits
-		if !credit {
-			signedAmount = -signedAmount
-			if mutation.EntryType != models.WalletLedgerEntryTopupReversal && wallet.BalanceCredits < mutation.AmountCredits {
-				return ErrInsufficientBalance
-			}
-		}
-		balanceAfter, err := addCredits(wallet.BalanceCredits, signedAmount)
-		if err != nil {
-			return err
-		}
-
-		entry := models.WalletLedgerEntry{
-			WalletID:       wallet.ID,
-			Type:           mutation.EntryType,
-			AmountCredits:  signedAmount,
-			BalanceAfter:   balanceAfter,
-			IdempotencyKey: mutation.IdempotencyKey,
-			CreatedBy:      mutation.CreatedBy,
-		}
-		if mutation.ReferenceType != "" {
-			entry.ReferenceType = &mutation.ReferenceType
-			entry.ReferenceID = &mutation.ReferenceID
-		}
-		if err := tx.Create(&entry).Error; err != nil {
-			return fmt.Errorf("create wallet ledger entry: %w", err)
-		}
-		if err := tx.Model(&wallet).Update("balance_credits", balanceAfter).Error; err != nil {
-			return fmt.Errorf("update wallet balance: %w", err)
-		}
-
-		result = MutationResult{
-			WalletID:     wallet.ID,
-			BalanceAfter: balanceAfter,
-			LedgerEntry:  entry,
-		}
-		return nil
+		var applyErr error
+		result, applyErr = s.applyInTransaction(tx, mutation, credit)
+		return applyErr
 	})
 	if err == nil {
 		return result, nil
@@ -171,6 +114,73 @@ func (s *WalletService) apply(ctx context.Context, mutation LedgerMutation, cred
 		return MutationResult{}, lookupErr
 	}
 	return MutationResult{}, err
+}
+
+func (s *WalletService) applyInTransaction(tx *gorm.DB, mutation LedgerMutation, credit bool) (MutationResult, error) {
+	if s == nil || s.db == nil || tx == nil {
+		return MutationResult{}, ErrServiceUnavailable
+	}
+	if err := validateMutation(mutation, credit); err != nil {
+		return MutationResult{}, err
+	}
+
+	existing, err := findMutationByKey(tx, mutation, credit)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+
+	wallet, err := getOrCreateLockedWallet(tx, mutation.UserID)
+	if err != nil {
+		return MutationResult{}, err
+	}
+
+	existing, err = findMutationByKey(tx, mutation, credit)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+
+	signedAmount := mutation.AmountCredits
+	if !credit {
+		signedAmount = -signedAmount
+		if mutation.EntryType != models.WalletLedgerEntryTopupReversal && wallet.BalanceCredits < mutation.AmountCredits {
+			return MutationResult{}, ErrInsufficientBalance
+		}
+	}
+	balanceAfter, err := addCredits(wallet.BalanceCredits, signedAmount)
+	if err != nil {
+		return MutationResult{}, err
+	}
+
+	entry := models.WalletLedgerEntry{
+		WalletID:       wallet.ID,
+		Type:           mutation.EntryType,
+		AmountCredits:  signedAmount,
+		BalanceAfter:   balanceAfter,
+		IdempotencyKey: mutation.IdempotencyKey,
+		CreatedBy:      mutation.CreatedBy,
+	}
+	if mutation.ReferenceType != "" {
+		entry.ReferenceType = &mutation.ReferenceType
+		entry.ReferenceID = &mutation.ReferenceID
+	}
+	if err := tx.Create(&entry).Error; err != nil {
+		return MutationResult{}, fmt.Errorf("create wallet ledger entry: %w", err)
+	}
+	if err := tx.Model(&wallet).Update("balance_credits", balanceAfter).Error; err != nil {
+		return MutationResult{}, fmt.Errorf("update wallet balance: %w", err)
+	}
+
+	return MutationResult{
+		WalletID:     wallet.ID,
+		BalanceAfter: balanceAfter,
+		LedgerEntry:  entry,
+	}, nil
 }
 
 func (s *WalletService) validateContext(ctx context.Context) error {

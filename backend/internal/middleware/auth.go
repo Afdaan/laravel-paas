@@ -175,6 +175,15 @@ func RequireSuperAdmin() fiber.Handler {
 	return RequireRole(models.RoleSuperAdmin)
 }
 
+func RequireNoBillingImpersonation() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
+			return apperr.New(403, "IMPERSONATION_FORBIDDEN", "Impersonated sessions cannot create or reconcile payments")
+		}
+		return c.Next()
+	}
+}
+
 // RequireRecentBillingAuthentication permits only a freshly password-authenticated browser session.
 func RequireRecentBillingAuthentication(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {

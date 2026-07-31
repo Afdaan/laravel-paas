@@ -79,7 +79,7 @@ func Setup(
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.FrontendURL,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-CSRF-Token",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-CSRF-Token,Idempotency-Key",
 		AllowCredentials: true,
 	}))
 
@@ -107,7 +107,10 @@ func Setup(
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 	secretStoreHandler := handlers.NewSecretStoreHandler(db, cfg, secretStoreService)
-	billingHandler := handlers.NewBillingHandler(billing.NewCatalogService(db))
+	billingHandler := handlers.NewBillingHandlerWithTopups(
+		billing.NewCatalogService(db),
+		billing.NewTopupService(db, billing.NewWalletService(db), cfg, billing.NewMidtransClient(cfg)),
+	)
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
@@ -123,6 +126,7 @@ func Setup(
 	auth := api.Group("/auth", middleware.NoStore(), middleware.MaxBody(8*1024))
 	auth.Post("/login", middleware.RateLimitLogin(redisService), authHandler.Login)
 	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
+	api.Post("/webhooks/midtrans", middleware.NoStore(), middleware.MaxBody(8*1024), billingHandler.MidtransWebhook)
 
 	// -----------------------------
 	// System Init (public, rate limited)
@@ -161,6 +165,9 @@ func Setup(
 	// Billing catalog remains available while payment collection stays disabled.
 	billingRoutes := protected.Group("/billing", middleware.NoStore())
 	billingRoutes.Get("/catalog", billingHandler.ListActiveCatalog)
+	billingMutations := billingRoutes.Group("", middleware.RequireNoBillingImpersonation())
+	billingMutations.Post("/topups", middleware.MaxBody(8*1024), billingHandler.CreateTopup)
+	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), billingHandler.ReconcileTopup)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -182,7 +189,7 @@ func Setup(
 	adminBilling := admin.Group("/billing", middleware.NoStore())
 	adminBilling.Get("/catalog", billingHandler.ListCatalog)
 	adminBilling.Get("/wallets/:userID", billingHandler.GetWallet)
-	superadminBilling := adminBilling.Group("", middleware.RequireSuperAdmin(), middleware.RequireRecentBillingAuthentication(cfg))
+	superadminBilling := adminBilling.Group("", middleware.RequireSuperAdmin(), middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg))
 	superadminBilling.Post("/specs", middleware.MaxBody(8*1024), billingHandler.CreateBillableSpec)
 	superadminBilling.Post("/topup-packages", middleware.MaxBody(8*1024), billingHandler.CreateTopupPackage)
 
