@@ -122,11 +122,7 @@ func TestEnqueueEnvUpdateIfQuiet_QuietSuccess(t *testing.T) {
 		`{"project_id":99,"user_id":1,"type":"deploy","job_id":"other-job"}`,
 	})
 
-	// RemoveFromQueue checks in EnqueueDeployment
-	mock.ExpectLRange("deployment:queue", 0, -1).SetVal([]string{})
-	mock.ExpectZRange("deployment:delayed_queue", 0, -1).SetVal([]string{})
-
-	// Push and HIncr in EnqueueDeployment
+	// Push and HIncr in EnqueueDeploymentNonDestructive.
 	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 	mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 

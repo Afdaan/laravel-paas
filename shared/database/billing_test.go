@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/laravel-paas/shared/models"
@@ -15,10 +16,78 @@ func billingTestDB(t *testing.T, name string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&models.BillableSpec{}, &models.TopupPackage{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Project{}, &models.DatabaseInstance{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.TopupPackage{}); err != nil {
 		t.Fatalf("migrate billing catalog: %v", err)
 	}
 	return db
+}
+
+func TestBackfillBillableResourceAnchorsUsesEarliestInvoicePeriod(t *testing.T) {
+	db := billingTestDB(t, t.Name())
+	resource := models.BillableResource{UserID: 1, Type: models.BillableTypeProject, ResourceID: 1, SpecID: 1, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: time.Date(2025, time.February, 28, 0, 0, 0, 0, time.UTC), NextInvoiceAt: time.Date(2025, time.March, 28, 0, 0, 0, 0, time.UTC)}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	firstStart := time.Date(2025, time.January, 29, 0, 0, 0, 0, time.UTC)
+	invoice := models.Invoice{UserID: 1, WalletID: 1, PeriodStart: firstStart, PeriodEnd: firstStart.AddDate(0, 1, 0), Status: models.InvoiceStatusPaid, IdempotencyKey: "invoice-anchor-29"}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: 1, Description: "anchor", Credits: 1}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillBillableResourceAnchors(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingAnchorDay != 29 || resource.BillingAnchorMonthEnd {
+		t.Fatalf("anchor=%d month_end=%t", resource.BillingAnchorDay, resource.BillingAnchorMonthEnd)
+	}
+}
+
+func TestBackfillBillableResourceAnchorsFailsWithoutInvoiceEvidence(t *testing.T) {
+	db := billingTestDB(t, t.Name())
+	resource := models.BillableResource{UserID: 1, Type: models.BillableTypeProject, ResourceID: 1, SpecID: 1, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: time.Date(2025, time.February, 28, 0, 0, 0, 0, time.UTC), NextInvoiceAt: time.Date(2025, time.March, 28, 0, 0, 0, 0, time.UTC)}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := backfillBillableResourceAnchors(db); err == nil {
+		t.Fatal("missing invoice evidence allowed anchor backfill")
+	}
+}
+
+func TestEnsureBillableResourceCoverageBlocksUnmappedResources(t *testing.T) {
+	db := billingTestDB(t, t.Name())
+	user := models.User{Email: "billing-coverage@example.test", Password: "test", Name: "Billing Coverage"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Coverage", GithubURL: "https://github.com/example/coverage", Subdomain: "coverage", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	database := models.DatabaseInstance{UserID: user.ID, Engine: "mysql", Status: models.DBStatusActive, Name: "coverage_db", Username: "coverage_user", Password: "test", Host: "mysql", Port: 3306}
+	if err := db.Create(&database).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureBillableResourceCoverage(db); err == nil {
+		t.Fatal("unmapped resources allowed billing activation")
+	}
+	periodStart := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
+	for _, resource := range []models.BillableResource{
+		{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: 1, CurrentPeriodStart: periodStart, NextInvoiceAt: periodStart.Add(time.Hour)},
+		{UserID: user.ID, Type: models.BillableTypeDatabase, ResourceID: database.ID, SpecID: 1, CurrentPeriodStart: periodStart, NextInvoiceAt: periodStart.Add(time.Hour)},
+	} {
+		if err := db.Create(&resource).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ensureBillableResourceCoverage(db); err != nil {
+		t.Fatalf("mapped resources blocked billing activation: %v", err)
+	}
 }
 
 func TestSeedBillingCatalogIsIdempotent(t *testing.T) {

@@ -7,25 +7,32 @@ import (
 	"io"
 	"mime"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services/billing"
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/models"
 )
 
 type BillingHandler struct {
-	catalog *billing.CatalogService
-	topups  *billing.TopupService
+	catalog     *billing.CatalogService
+	topups      *billing.TopupService
+	suspensions *billing.SuspensionService
 }
 
 func NewBillingHandler(catalog *billing.CatalogService) *BillingHandler {
 	return &BillingHandler{catalog: catalog}
 }
 
-func NewBillingHandlerWithTopups(catalog *billing.CatalogService, topups *billing.TopupService) *BillingHandler {
-	return &BillingHandler{catalog: catalog, topups: topups}
+func NewBillingHandlerWithTopups(catalog *billing.CatalogService, topups *billing.TopupService, suspensions ...*billing.SuspensionService) *BillingHandler {
+	var suspensionService *billing.SuspensionService
+	if len(suspensions) > 0 {
+		suspensionService = suspensions[0]
+	}
+	return &BillingHandler{catalog: catalog, topups: topups, suspensions: suspensionService}
 }
 
 func (h *BillingHandler) ListActiveCatalog(c *fiber.Ctx) error {
@@ -57,6 +64,92 @@ func (h *BillingHandler) GetWallet(c *fiber.Ctx) error {
 		return err
 	}
 	return c.JSON(view)
+}
+
+func (h *BillingHandler) ListWallets(c *fiber.Ctx) error {
+	page, limit, err := billingCollectionPagination(c)
+	if err != nil {
+		return err
+	}
+	view, err := h.catalog.ListAdminWallets(c.UserContext(), page, limit)
+	if err != nil {
+		return mapCatalogError(err)
+	}
+	return c.JSON(view)
+}
+
+func (h *BillingHandler) ListInvoices(c *fiber.Ctx) error {
+	page, limit, err := billingCollectionPagination(c)
+	if err != nil {
+		return err
+	}
+	view, err := h.catalog.ListAdminInvoices(c.UserContext(), page, limit)
+	if err != nil {
+		return mapCatalogError(err)
+	}
+	return c.JSON(view)
+}
+
+func (h *BillingHandler) ListTopups(c *fiber.Ctx) error {
+	page, limit, err := billingCollectionPagination(c)
+	if err != nil {
+		return err
+	}
+	view, err := h.catalog.ListAdminTopups(c.UserContext(), page, limit)
+	if err != nil {
+		return mapCatalogError(err)
+	}
+	return c.JSON(view)
+}
+
+func (h *BillingHandler) ListSuspensions(c *fiber.Ctx) error {
+	if h.suspensions == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing service is unavailable")
+	}
+	views, err := h.suspensions.SuspensionViews(c.UserContext(), time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	return c.JSON(views)
+}
+
+func (h *BillingHandler) GetOwnPaymentDueStatus(c *fiber.Ctx) error {
+	if h.suspensions == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing service is unavailable")
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	views, err := h.suspensions.SuspensionViewsForUser(c.UserContext(), userID, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	response := make([]ownPaymentDueView, 0, len(views))
+	for _, view := range views {
+		response = append(response, ownPaymentDueView{
+			ResourceID:     view.ResourceID,
+			ResourceType:   view.ResourceType,
+			Status:         view.Status,
+			OldestDueAt:    view.OldestDueAt,
+			PaymentDueDays: view.PaymentDueDays,
+		})
+	}
+	return c.JSON(response)
+}
+
+func (h *BillingHandler) GetOwnBillingOverview(c *fiber.Ctx) error {
+	userID, _ := c.Locals("user_id").(uint)
+	overview, err := h.catalog.GetOwnBillingOverview(c.UserContext(), userID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(overview)
+}
+
+type ownPaymentDueView struct {
+	ResourceID     uint                          `json:"resource_id"`
+	ResourceType   models.BillableType           `json:"resource_type"`
+	Status         models.BillableResourceStatus `json:"status"`
+	OldestDueAt    *time.Time                    `json:"oldest_due_at,omitempty"`
+	PaymentDueDays int                           `json:"payment_due_days"`
 }
 
 func (h *BillingHandler) CreateTopup(c *fiber.Ctx) error {
@@ -163,6 +256,25 @@ func (h *BillingHandler) topupService() *billing.TopupService {
 		return h.topups
 	}
 	return billing.NewTopupService(nil, nil, nil, nil)
+}
+
+func billingCollectionPagination(c *fiber.Ctx) (int, int, error) {
+	page, err := strconv.Atoi(c.Query("page", "1"))
+	if err != nil || page < 1 {
+		return 0, 0, apperr.NewBadRequest("Invalid billing collection page")
+	}
+	limit, err := strconv.Atoi(c.Query("limit", "25"))
+	if err != nil || limit < 1 || limit > 100 {
+		return 0, 0, apperr.NewBadRequest("Invalid billing collection limit")
+	}
+	return page, limit, nil
+}
+
+func mapCatalogError(err error) error {
+	if errors.Is(err, billing.ErrInvalidCatalogInput) {
+		return apperr.NewBadRequest("Invalid billing collection query")
+	}
+	return err
 }
 
 func mapTopupError(err error) error {

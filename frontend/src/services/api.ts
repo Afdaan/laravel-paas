@@ -5,6 +5,7 @@
 // ===========================================
 
 import axios, { InternalAxiosRequestConfig, AxiosError, AxiosRequestConfig } from 'axios'
+import type { BillingOverview, BillingStatus, TopupPackage, BillingCatalogSpec } from '@/types'
 
 // Create axios instance
 const api = axios.create({
@@ -355,7 +356,7 @@ export const databaseAPI = {
   reinstallInstance: (dbUid: string) =>
     api.post(`/databases/${dbUid}/reinstall`),
 
-  create: (data: { engine: string; name: string; username: string; password: string }) =>
+  create: (data: { engine: string; name: string; username: string; password: string; billable_spec_id: number }) =>
     api.post('/databases', data),
 
   delete: (uid: string) =>
@@ -397,6 +398,31 @@ export const domainsAPI = {
 
   transfer: (projectId: number | string, domainId: number | string, targetProjectUid: string) =>
     api.post(`/projects/${projectId}/domains/${domainId}/transfer`, { target_project_uid: targetProjectUid }),
+}
+
+export const billingAPI = {
+  catalog: () =>
+    api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/billing/catalog'),
+
+  overview: () =>
+    api.get<BillingOverview>('/billing/overview'),
+
+  status: () =>
+    api.get<BillingStatus[]>('/billing/status'),
+
+  createTopup: (topupPackageID: number, idempotencyKey: string) =>
+    api.post<{ payment_url?: string }>('/billing/topups', { topup_package_id: topupPackageID }, { headers: { 'Idempotency-Key': idempotencyKey } }),
+
+  reconcileTopup: (topupID: number) => api.post(`/billing/topups/${topupID}/reconcile`),
+
+  adminCatalog: () => api.get('/admin/billing/catalog'),
+  adminSuspensions: () => api.get('/admin/billing/suspensions'),
+  adminWallet: (userID: number) => api.get(`/admin/billing/wallets/${userID}`),
+  adminWallets: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/wallets', { params }),
+  adminInvoices: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/invoices', { params }),
+  adminTopups: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/topups', { params }),
+  createSpec: (data: unknown) => api.post('/admin/billing/specs', data),
+  createTopupPackage: (data: unknown) => api.post('/admin/billing/topup-packages', data),
 }
 
 export const secretStoreAPI = {

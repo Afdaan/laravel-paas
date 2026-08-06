@@ -71,6 +71,85 @@ func TestTopupWebhookCreditsOnceAndReversesRefund(t *testing.T) {
 	}
 }
 
+func TestTopupRefundMovesActiveResourcesToPaymentDueWhenWalletBecomesNegative(t *testing.T) {
+	db, user, service, _ := topupServiceFixture(t)
+	now := time.Now().UTC()
+	project := models.Project{UserID: user.ID, Name: "Refund debt", GithubURL: "https://github.com/example/refund-debt", Subdomain: "refund-debt", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	connectionLimit := 10
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Refund debt", Slug: "refund-debt", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, ConnectionLimit: &connectionLimit, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	view, err := service.Create(context.Background(), user.ID, "topup-refund-debt", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "settlement", "accept", "refund-debt-paid")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.wallets.Debit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryInvoiceDebit, AmountCredits: topup.Credits, IdempotencyKey: "invoice:refund-debt:debit", ReferenceType: "invoice", ReferenceID: "refund-debt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "refund", "", "refund-debt-paid")); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue {
+		t.Fatalf("billing status=%s", resource.BillingStatus)
+	}
+	var paymentDueInvoice models.Invoice
+	if err := db.Where("idempotency_key = ?", fmt.Sprintf("topup:%d:payment-due", topup.ID)).First(&paymentDueInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if paymentDueInvoice.Status != models.InvoiceStatusPaymentDue || paymentDueInvoice.DueAt == nil || paymentDueInvoice.TotalCredits != 0 {
+		t.Fatalf("payment-due invoice=%#v", paymentDueInvoice)
+	}
+	var paymentDueItem models.InvoiceItem
+	if err := db.Where("invoice_id = ? AND billable_resource_id = ?", paymentDueInvoice.ID, resource.ID).First(&paymentDueItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	if paymentDueItem.Credits != 0 || paymentDueItem.SpecID != resource.SpecID {
+		t.Fatalf("payment-due invoice item=%#v", paymentDueItem)
+	}
+	recovery, err := service.Create(context.Background(), user.ID, "topup-refund-debt-recovery", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recoveryTopup models.Topup
+	if err := db.First(&recoveryTopup, recovery.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotification(recoveryTopup.ProviderOrderID, "settlement", "accept", "refund-debt-recovery-paid")); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("recovered billing status=%s", resource.BillingStatus)
+	}
+	if err := db.First(&paymentDueInvoice, paymentDueInvoice.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if paymentDueInvoice.Status != models.InvoiceStatusPaid || paymentDueInvoice.PaidAt == nil {
+		t.Fatalf("recovered payment-due invoice=%#v", paymentDueInvoice)
+	}
+}
+
 func TestTopupReconcileUsesVerifiedProviderStatus(t *testing.T) {
 	db, user, service, gateway := topupServiceFixture(t)
 	view, err := service.Create(context.Background(), user.ID, "topup-reconcile", TopupInput{PackageID: 1})
@@ -90,6 +169,50 @@ func TestTopupReconcileUsesVerifiedProviderStatus(t *testing.T) {
 		t.Fatalf("view=%#v statusCalls=%d", view, gateway.statusCalls)
 	}
 	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 100000, 1)
+}
+
+func TestTopupWebhookRetriesPaymentDueInvoicesAfterCommit(t *testing.T) {
+	db, user, service, _ := topupServiceFixture(t)
+	now := time.Now().UTC()
+	project := models.Project{UserID: user.ID, Name: "Payment Due", GithubURL: "https://github.com/example/payment-due", Subdomain: "payment-due", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Project", Slug: "payment-due", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusPaymentDue, CurrentPeriodStart: now.AddDate(0, -1, 0), NextInvoiceAt: now.Add(-time.Second), BillingAnchorDay: now.AddDate(0, -1, 0).Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	view, err := service.Create(context.Background(), user.ID, "topup-invoice-retry", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "settlement", "accept", "invoice-retry")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive || !resource.NextInvoiceAt.After(now) {
+		t.Fatalf("resource=%#v", resource)
+	}
+	var invoice models.Invoice
+	if err := db.First(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if invoice.Status != models.InvoiceStatusPaid || invoice.TotalCredits != spec.MonthlyCredits {
+		t.Fatalf("invoice=%#v", invoice)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 99900, 2)
 }
 
 type fakeMidtransGateway struct {
@@ -144,7 +267,7 @@ func topupServiceFixture(t *testing.T) (*gorm.DB, models.User, *TopupService, *f
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Project{}, &models.ProjectSuspensionTask{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.PaymentEvent{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: fmt.Sprintf("%s@example.test", t.Name()), Password: "test", Name: "Topup"}

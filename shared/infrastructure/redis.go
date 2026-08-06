@@ -73,13 +73,19 @@ func (r *RedisService) Ping(ctx context.Context) error {
 
 // DeploymentJob represents a deployment job in the queue
 type DeploymentJob struct {
-	ProjectID  uint       `json:"project_id"`
-	UserID     uint       `json:"user_id"`
-	Type       string     `json:"type"` // "deploy" or "redeploy"
-	EnqueuedAt time.Time  `json:"enqueued_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	JobID      string     `json:"job_id"`
-	RetryCount int        `json:"retry_count"`
+	ProjectID               uint       `json:"project_id"`
+	UserID                  uint       `json:"user_id"`
+	Type                    string     `json:"type"` // "deploy" or "redeploy"
+	BillingSuspension       bool       `json:"billing_suspension,omitempty"`
+	BillingResume           bool       `json:"billing_resume,omitempty"`
+	BillingSuspensionTaskID uint       `json:"billing_suspension_task_id,omitempty"`
+	EnvSyncGeneration       uint       `json:"env_sync_generation,omitempty"`
+	EnqueuedAt              time.Time  `json:"enqueued_at"`
+	StartedAt               *time.Time `json:"started_at,omitempty"`
+	HeartbeatAt             *time.Time `json:"heartbeat_at,omitempty"`
+	JobID                   string     `json:"job_id"`
+	RetryCount              int        `json:"retry_count"`
+	queuePayload            string
 }
 
 // DeploymentLeaseMetadata stores structured JSON metadata for a deployment job-scoped lease
@@ -94,12 +100,41 @@ type DeploymentLeaseMetadata struct {
 }
 
 const (
-	deploymentQueueKey        = "deployment:queue"
-	deploymentDelayedQueueKey = "deployment:delayed_queue"
-	deploymentLockKey         = "deployment:lock"
-	deploymentStatsKey        = "deployment:stats"
-	deploymentLeaseKeyPrefix  = "deployment:lease"
+	deploymentQueueKey           = "deployment:queue"
+	deploymentProcessingQueueKey = "deployment:processing_queue"
+	deploymentDelayedQueueKey    = "deployment:delayed_queue"
+	deploymentLockKey            = "deployment:lock"
+	deploymentStatsKey           = "deployment:stats"
+	deploymentLeaseKeyPrefix     = "deployment:lease"
 )
+
+var (
+	claimDeploymentJobScript = redis.NewScript(`
+local raw = redis.call("lpop", KEYS[1])
+if not raw then return false end
+local job = cjson.decode(raw)
+job.started_at = ARGV[1]
+job.heartbeat_at = ARGV[1]
+local claimed = cjson.encode(job)
+redis.call("rpush", KEYS[2], claimed)
+return claimed
+`)
+	requeueClaimedDeploymentJobScript = redis.NewScript(`
+if redis.call("lrem", KEYS[1], 1, ARGV[1]) == 1 then
+    redis.call("rpush", KEYS[2], ARGV[2])
+    return 1
+end
+return 0
+`)
+)
+
+var replaceClaimedDeploymentJobScript = redis.NewScript(`
+if redis.call("lrem", KEYS[1], 1, ARGV[1]) == 1 then
+    redis.call("rpush", KEYS[1], ARGV[2])
+    return 1
+end
+return 0
+`)
 
 // EnqueueDeployment adds a deployment job to the queue with deduplication
 func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType string) (string, error) {
@@ -132,6 +167,74 @@ func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType stri
 	return jobID, nil
 }
 
+func (r *RedisService) EnqueueDeploymentNonDestructive(projectID, userID uint, deployType string) (string, error) {
+	jobID := utils.GenerateRandomUID()
+	job := DeploymentJob{ProjectID: projectID, UserID: userID, Type: deployType, EnqueuedAt: time.Now(), JobID: jobID}
+	data, err := json.Marshal(job)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal job: %w", err)
+	}
+	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+		return "", fmt.Errorf("failed to enqueue job: %w", err)
+	}
+	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
+	return jobID, nil
+}
+
+// EnqueueBillingSuspensionStop preserves the origin so stale stop jobs can be fenced at execution.
+func (r *RedisService) EnqueueBillingSuspensionStop(projectID, userID, taskID uint) (string, error) {
+	if taskID == 0 {
+		return "", fmt.Errorf("billing suspension task is required")
+	}
+	jobID := utils.GenerateRandomUID()
+	job := DeploymentJob{ProjectID: projectID, UserID: userID, Type: "stop", BillingSuspension: true, BillingSuspensionTaskID: taskID, EnqueuedAt: time.Now(), JobID: jobID}
+	data, err := json.Marshal(job)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal billing suspension job: %w", err)
+	}
+	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+		return "", fmt.Errorf("failed to enqueue billing suspension job: %w", err)
+	}
+	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
+	return jobID, nil
+}
+
+// EnqueueBillingSuspensionResume starts only runtime identities recorded by the billing stop task.
+func (r *RedisService) EnqueueBillingSuspensionResume(projectID, userID, taskID uint) (string, error) {
+	if taskID == 0 {
+		return "", fmt.Errorf("billing suspension task is required")
+	}
+	jobID := utils.GenerateRandomUID()
+	job := DeploymentJob{ProjectID: projectID, UserID: userID, Type: "start", BillingResume: true, BillingSuspensionTaskID: taskID, EnqueuedAt: time.Now(), JobID: jobID}
+	data, err := json.Marshal(job)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal billing resume job: %w", err)
+	}
+	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+		return "", fmt.Errorf("failed to enqueue billing resume job: %w", err)
+	}
+	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
+	return jobID, nil
+}
+
+// EnqueueDeploymentEnvSync queues one durable environment-generation acknowledgement.
+func (r *RedisService) EnqueueDeploymentEnvSync(projectID, userID, generation uint) (string, error) {
+	if generation == 0 {
+		return "", fmt.Errorf("environment sync generation is required")
+	}
+	jobID := utils.GenerateRandomUID()
+	job := DeploymentJob{ProjectID: projectID, UserID: userID, Type: "update_env", EnvSyncGeneration: generation, EnqueuedAt: time.Now(), JobID: jobID}
+	data, err := json.Marshal(job)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal environment sync job: %w", err)
+	}
+	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+		return "", fmt.Errorf("failed to enqueue environment sync job: %w", err)
+	}
+	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
+	return jobID, nil
+}
+
 // EnqueueEnvUpdateIfQuiet enqueues an update_env job only if no other job for this project is queued or running
 func (r *RedisService) EnqueueEnvUpdateIfQuiet(projectID, userID uint) (string, error) {
 	// Check if already locked (running)
@@ -158,7 +261,7 @@ func (r *RedisService) EnqueueEnvUpdateIfQuiet(projectID, userID uint) (string, 
 		}
 	}
 
-	return r.EnqueueDeployment(projectID, userID, "update_env")
+	return r.EnqueueDeploymentNonDestructive(projectID, userID, "update_env")
 }
 
 // SetPendingEnvRefresh sets a marker indicating that the project needs an env refresh
@@ -202,30 +305,117 @@ func (r *RedisService) EnqueueDeploymentJob(job *DeploymentJob) error {
 	return nil
 }
 
-// DequeueDeployment removes and returns the next job from the queue
+// DequeueDeployment atomically claims the next job into durable processing storage.
 func (r *RedisService) DequeueDeployment(timeout time.Duration) (*DeploymentJob, error) {
-	// Blocking left pop with timeout
-	result, err := r.client.BLPop(r.ctx, timeout, deploymentQueueKey).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, nil // No jobs available
+	deadline := time.Now().Add(timeout)
+	for {
+		now := time.Now().UTC()
+		result, err := claimDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentQueueKey, deploymentProcessingQueueKey}, now.Format(time.RFC3339Nano)).Result()
+		if err != nil && err != redis.Nil {
+			return nil, fmt.Errorf("claim deployment job: %w", err)
 		}
-		return nil, fmt.Errorf("failed to dequeue job: %w", err)
+		if raw, ok := result.(string); ok && raw != "" {
+			var job DeploymentJob
+			if err := json.Unmarshal([]byte(raw), &job); err != nil {
+				_ = r.client.LRem(r.ctx, deploymentProcessingQueueKey, 1, raw).Err()
+				return nil, fmt.Errorf("unmarshal claimed deployment job: %w", err)
+			}
+			job.queuePayload = raw
+			return &job, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, nil
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
+}
 
-	if len(result) < 2 {
-		return nil, fmt.Errorf("invalid queue response")
+// AcknowledgeDeployment removes a successfully handled claimed job.
+func (r *RedisService) AcknowledgeDeployment(job *DeploymentJob) error {
+	if job == nil || job.queuePayload == "" {
+		return nil
 	}
-
-	var job DeploymentJob
-	if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
+	if err := r.client.LRem(r.ctx, deploymentProcessingQueueKey, 1, job.queuePayload).Err(); err != nil {
+		return fmt.Errorf("acknowledge deployment job: %w", err)
 	}
+	return nil
+}
 
-	now := time.Now()
-	job.StartedAt = &now
+// RequeueDeploymentJob returns a claimed job to the active queue without affecting other jobs.
+func (r *RedisService) RequeueDeploymentJob(job *DeploymentJob) error {
+	if job == nil || job.queuePayload == "" {
+		return fmt.Errorf("claimed deployment job payload is required")
+	}
+	claimedPayload := job.queuePayload
+	job.StartedAt = nil
+	job.HeartbeatAt = nil
+	job.queuePayload = ""
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal deployment job for requeue: %w", err)
+	}
+	if _, err := requeueClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey, deploymentQueueKey}, claimedPayload, payload).Result(); err != nil {
+		return fmt.Errorf("requeue claimed deployment job: %w", err)
+	}
+	return nil
+}
 
-	return &job, nil
+// RequeueExpiredDeploymentJobs returns abandoned processing jobs to the active queue.
+func (r *RedisService) RequeueExpiredDeploymentJobs(lease time.Duration) error {
+	if lease <= 0 {
+		return fmt.Errorf("deployment processing lease must be positive")
+	}
+	entries, err := r.client.LRange(r.ctx, deploymentProcessingQueueKey, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("list claimed deployment jobs: %w", err)
+	}
+	cutoff := time.Now().UTC().Add(-lease)
+	for _, entry := range entries {
+		var job DeploymentJob
+		if err := json.Unmarshal([]byte(entry), &job); err != nil {
+			continue
+		}
+		lastHeartbeat := job.HeartbeatAt
+		if lastHeartbeat == nil {
+			lastHeartbeat = job.StartedAt
+		}
+		if lastHeartbeat == nil || lastHeartbeat.After(cutoff) {
+			continue
+		}
+		job.StartedAt = nil
+		job.HeartbeatAt = nil
+		payload, err := json.Marshal(job)
+		if err != nil {
+			return fmt.Errorf("marshal expired deployment job: %w", err)
+		}
+		if _, err := requeueClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey, deploymentQueueKey}, entry, payload).Result(); err != nil {
+			return fmt.Errorf("requeue expired deployment job: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *RedisService) RenewDeploymentProcessingHeartbeat(job *DeploymentJob) error {
+	if job == nil || job.queuePayload == "" {
+		return fmt.Errorf("claimed deployment job payload is required")
+	}
+	previousPayload := job.queuePayload
+	now := time.Now().UTC()
+	job.HeartbeatAt = &now
+	job.queuePayload = ""
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal deployment processing heartbeat: %w", err)
+	}
+	result, err := replaceClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey}, previousPayload, payload).Result()
+	if err != nil {
+		return fmt.Errorf("renew deployment processing heartbeat: %w", err)
+	}
+	if changed, ok := result.(int64); !ok || changed != 1 {
+		return fmt.Errorf("deployment processing claim missing")
+	}
+	job.queuePayload = string(payload)
+	return nil
 }
 
 // GetQueueLength returns the number of jobs in the queue
@@ -842,8 +1032,6 @@ func (r *RedisService) SubscribeCancellation(ctx context.Context, projectID uint
 
 // EnqueueDelayedDeploymentJob adds a deployment job to the durable delayed ZSET queue
 func (r *RedisService) EnqueueDelayedDeploymentJob(job *DeploymentJob, delay time.Duration) error {
-	_ = r.RemoveFromQueue(job.ProjectID)
-
 	data, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("failed to marshal job: %w", err)
@@ -905,7 +1093,14 @@ func (r *RedisService) AcquireDeploymentLease(jobID string, metadata *Deployment
 	if err != nil {
 		return fmt.Errorf("failed to marshal deployment lease metadata: %w", err)
 	}
-	return r.client.Set(r.ctx, key, string(data), ttl).Err()
+	acquired, err := r.client.SetNX(r.ctx, key, string(data), ttl).Result()
+	if err != nil {
+		return fmt.Errorf("create deployment lease: %w", err)
+	}
+	if !acquired {
+		return fmt.Errorf("deployment lease already held for job %s", jobID)
+	}
+	return nil
 }
 
 // RenewDeploymentLease safely renews a deployment lease verifying worker ownership via Lua script.

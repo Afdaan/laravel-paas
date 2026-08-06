@@ -3,6 +3,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -136,6 +137,54 @@ func TestBillingPostgres(t *testing.T) {
 	if err := db.Model(&spec).Update("monthly_credits", 1).Error; err == nil {
 		t.Fatal("billable spec price mutation allowed")
 	}
+	periodStart := time.Now().UTC().Truncate(time.Second)
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: uint(time.Now().UTC().UnixNano()), SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: periodStart, NextInvoiceAt: periodStart.AddDate(0, 1, 0), BillingAnchorDay: periodStart.Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	invoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: periodStart, PeriodEnd: periodStart.AddDate(0, 1, 0), Status: models.InvoiceStatusPending, IdempotencyKey: fmt.Sprintf("invoice-immutable-%d", user.ID)}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "PostgreSQL immutability test", Credits: 1}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&invoice).Update("period_start", periodStart.AddDate(0, 1, 0)).Error; err == nil {
+		t.Fatal("invoice period mutation allowed")
+	}
+	if err := db.Model(&invoice).Update("status", models.InvoiceStatusPaymentDue).Error; err != nil {
+		t.Fatalf("invoice status mutation rejected: %v", err)
+	}
+	if err := db.Model(&item).Update("credits", 2).Error; err == nil {
+		t.Fatal("invoice item identity mutation allowed")
+	}
+	if err := db.Delete(&item).Error; err == nil {
+		t.Fatal("invoice item deletion allowed")
+	}
+	if err := db.Delete(&invoice).Error; err == nil {
+		t.Fatal("invoice deletion allowed")
+	}
+	topup := models.Topup{
+		WalletID:             wallet.ID,
+		ClientIdempotencyKey: fmt.Sprintf("topup-provider-identity-%d", user.ID),
+		Provider:             string(models.BillingProviderMidtrans),
+		ProviderOrderID:      fmt.Sprintf("order-provider-identity-%d", user.ID),
+		AmountMinor:          10000,
+		Currency:             string(models.BillingCurrencyIDR),
+		Credits:              100,
+		Status:               models.TopupStatusPending,
+	}
+	if err := db.Create(&topup).Error; err != nil {
+		t.Fatal(err)
+	}
+	transactionID := "midtrans-transaction-1"
+	if err := db.Model(&topup).Update("provider_transaction_id", transactionID).Error; err != nil {
+		t.Fatalf("initial provider transaction ID rejected: %v", err)
+	}
+	if err := db.Model(&topup).Update("provider_transaction_id", "midtrans-transaction-2").Error; err == nil {
+		t.Fatal("provider transaction ID mutation allowed")
+	}
 	audit := models.BillingAuditEvent{ActorUserID: user.ID, EffectiveUserID: user.ID, ActorRole: string(models.RoleSuperAdmin), SourceIP: "127.0.0.1", Reason: "PostgreSQL immutability test", Event: "billable_spec.repriced", TargetType: "billable_spec", TargetID: spec.ID, BeforeJSON: "{}", AfterJSON: "{}", RequestID: "billing-postgres-test"}
 	if err := db.Create(&audit).Error; err != nil {
 		t.Fatal(err)
@@ -166,13 +215,17 @@ func TestDefensiveMigrationBootstrapWaitsForSessionLock(t *testing.T) {
 	}
 
 	if err := db.Connection(func(connection *gorm.DB) error {
-		if err := connection.Exec("SELECT pg_advisory_lock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error; err != nil {
+		sessionConn, err := postgresSessionConn(connection)
+		if err != nil {
+			return err
+		}
+		if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_lock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
 			return err
 		}
 		locked := true
 		defer func() {
 			if locked {
-				_ = connection.Exec("SELECT pg_advisory_unlock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error
+				_, _ = sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity)
 			}
 		}()
 
@@ -183,7 +236,7 @@ func TestDefensiveMigrationBootstrapWaitsForSessionLock(t *testing.T) {
 			return fmt.Errorf("migration bypassed session lock: %w", err)
 		case <-time.After(100 * time.Millisecond):
 		}
-		if err := connection.Exec("SELECT pg_advisory_unlock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error; err != nil {
+		if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
 			return err
 		}
 		locked = false

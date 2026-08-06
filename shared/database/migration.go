@@ -7,13 +7,17 @@
 package database
 
 import (
+	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -32,18 +36,35 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	if !isPostgres(db) {
 		return defensiveMigrationBootstrap(db)
 	}
-	// Session scope keeps the lock across non-transactional concurrent index DDL.
-	return db.Connection(func(connection *gorm.DB) (migrationErr error) {
-		if err := connection.Exec("SELECT pg_advisory_lock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error; err != nil {
-			return fmt.Errorf("acquire database migration lock: %w", err)
+	// Hold a dedicated session lock while migrations run through GORM's normal
+	// pool. GORM AutoMigrate requires *sql.DB and can panic when bound directly
+	// to *sql.Conn; PostgreSQL advisory locks are session-scoped globally.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get database for migration lock: %w", err)
+	}
+	sessionConn, err := sqlDB.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("open migration lock session: %w", err)
+	}
+	defer sessionConn.Close()
+	if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_lock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
+		return fmt.Errorf("acquire database migration lock: %w", err)
+	}
+	defer func() {
+		if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
+			slog.Error("Failed to release database migration lock", "error", err)
 		}
-		defer func() {
-			if err := connection.Exec("SELECT pg_advisory_unlock(hashtextextended(?, 0))", defensiveMigrationLockIdentity).Error; err != nil && migrationErr == nil {
-				migrationErr = fmt.Errorf("release database migration lock: %w", err)
-			}
-		}()
-		return defensiveMigrationBootstrap(connection)
-	})
+	}()
+	return defensiveMigrationBootstrap(db)
+}
+
+func postgresSessionConn(db *gorm.DB) (*sql.Conn, error) {
+	connection, ok := db.Statement.ConnPool.(*sql.Conn)
+	if !ok {
+		return nil, fmt.Errorf("expected PostgreSQL session connection, got %T", db.Statement.ConnPool)
+	}
+	return connection, nil
 }
 
 func defensiveMigrationBootstrap(db *gorm.DB) error {
@@ -65,16 +86,18 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 
 	// 4. Clean up duplicate deployment events before applying new unique indexes.
 	// This resolves SQLSTATE 23505 duplicate key violations during AutoMigrate.
-	slog.Info("Cleaning up duplicate deployment events...")
-	if err := db.Exec(`
-		DELETE FROM deployment_events a
-		USING deployment_events b
-		WHERE a.project_id = b.project_id
-		  AND a.job_id = b.job_id
-		  AND a.sequence_number = b.sequence_number
-		  AND a.id < b.id
-	`).Error; err != nil {
-		slog.Warn("Failed to clean duplicate deployment events", "error", err)
+	if db.Migrator().HasTable(&models.DeploymentEvent{}) {
+		slog.Info("Cleaning up duplicate deployment events...")
+		if err := db.Exec(`
+			DELETE FROM deployment_events a
+			USING deployment_events b
+			WHERE a.project_id = b.project_id
+			  AND a.job_id = b.job_id
+			  AND a.sequence_number = b.sequence_number
+			  AND a.id < b.id
+		`).Error; err != nil {
+			slog.Warn("Failed to clean duplicate deployment events", "error", err)
+		}
 	}
 
 	// 4.5 Migrate database_instances table fields user_id and project_id.
@@ -106,6 +129,13 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.ImpersonationAudit{},
 		&models.GithubAppInstallation{},
 		&models.DatabaseInstance{},
+		&models.DatabaseCleanupTask{},
+		&models.DatabaseReinstallRecoveryTask{},
+		&models.DatabaseCredentialRotationTask{},
+		&models.ProjectEnvSyncTask{},
+		&models.ProjectDeletionTask{},
+		&models.ProjectSuspensionTask{},
+		&models.DatabaseStatusOperationTask{},
 		&models.DatabaseBackup{},
 		&models.SecretStore{},
 		&models.SecretStoreItem{},
@@ -137,6 +167,9 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	if err := ensureActiveCatalogIndexes(db); err != nil {
 		return err
 	}
+	if err := backfillBillableResourceAnchors(db); err != nil {
+		return err
+	}
 
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
@@ -165,8 +198,6 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 		return fmt.Errorf("migration verification failed: %d database instances still have empty UIDs", count)
 	}
 
-	slog.Info("Defensive migration bootstrap completed successfully.")
-
 	cfg := config.Load()
 
 	// Perform filesystem migration to user tenant subdirectories.
@@ -183,6 +214,11 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	if err := BackfillDatabaseInstances(db); err != nil {
 		slog.Warn("Failed to backfill database instances", "error", err)
 	}
+	if cfg.BillingEnabled {
+		if err := ensureBillableResourceCoverage(db); err != nil {
+			return err
+		}
+	}
 
 	// Backfill Laravel APP_KEY for existing Laravel projects.
 	if err := BackfillLaravelAppKeys(db, cfg); err != nil {
@@ -194,6 +230,56 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 		slog.Warn("Failed to backfill primary custom domains", "error", err)
 	}
 
+	slog.Info("Defensive migration bootstrap completed successfully.")
+	return nil
+}
+
+func ensureBillableResourceCoverage(db *gorm.DB) error {
+	var unmappedProjects int64
+	if err := db.Model(&models.Project{}).
+		Where("status <> ?", models.StatusDeleting).
+		Where("NOT EXISTS (SELECT 1 FROM billable_resources WHERE billable_resources.type = ? AND billable_resources.resource_id = projects.id)", models.BillableTypeProject).
+		Count(&unmappedProjects).Error; err != nil {
+		return fmt.Errorf("check unmapped billable projects: %w", err)
+	}
+	var unmappedDatabases int64
+	if err := db.Model(&models.DatabaseInstance{}).
+		Where("status <> ?", models.DBStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM billable_resources WHERE billable_resources.type = ? AND billable_resources.resource_id = database_instances.id)", models.BillableTypeDatabase).
+		Count(&unmappedDatabases).Error; err != nil {
+		return fmt.Errorf("check unmapped billable databases: %w", err)
+	}
+	if unmappedProjects == 0 && unmappedDatabases == 0 {
+		return nil
+	}
+	return fmt.Errorf("billing activation blocked: %d project(s) and %d database(s) require explicit billable-spec mapping", unmappedProjects, unmappedDatabases)
+}
+
+func backfillBillableResourceAnchors(db *gorm.DB) error {
+	var resources []models.BillableResource
+	if err := db.Model(&models.BillableResource{}).Where("billing_anchor_day = ?", 0).Find(&resources).Error; err != nil {
+		return fmt.Errorf("list billable resources without anchor: %w", err)
+	}
+	for _, resource := range resources {
+		var firstInvoice models.Invoice
+		if err := db.Model(&models.Invoice{}).
+			Select("invoices.*").
+			Joins("JOIN invoice_items ON invoice_items.invoice_id = invoices.id").
+			Where("invoice_items.billable_resource_id = ?", resource.ID).
+			Order("invoices.period_start ASC, invoice_items.id ASC").
+			First(&firstInvoice).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("billing anchor for resource %d is unprovable; add an explicit billing anchor before enabling billing", resource.ID)
+			}
+			return fmt.Errorf("load first invoice for billable resource %d: %w", resource.ID, err)
+		}
+		anchorStart := firstInvoice.PeriodStart.UTC()
+		anchorDay := anchorStart.Day()
+		monthEnd := anchorDay == time.Date(anchorStart.Year(), anchorStart.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		if err := db.Model(&resource).Updates(map[string]any{"billing_anchor_day": anchorDay, "billing_anchor_month_end": monthEnd}).Error; err != nil {
+			return fmt.Errorf("backfill billable resource anchor %d: %w", resource.ID, err)
+		}
+	}
 	return nil
 }
 
@@ -272,6 +358,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"billable_resources", "uni_billable_resources_type_resource", []string{"type", "resource_id"}},
 		{"invoices", "uni_invoices_user_period", []string{"user_id", "period_start", "period_end"}},
 		{"invoices", "uni_invoices_idempotency_key", []string{"idempotency_key"}},
+		{"invoice_items", "uni_invoice_items_invoice_resource", []string{"invoice_id", "billable_resource_id"}},
 		{"payment_events", "uni_payment_events_event_key", []string{"event_key"}},
 	}
 
@@ -581,6 +668,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.BillableResource{}, "uni_billable_resources_type_resource", "UNIQUE (type, resource_id)"},
 		{&models.Invoice{}, "uni_invoices_user_period", "UNIQUE (user_id, period_start, period_end)"},
 		{&models.Invoice{}, "uni_invoices_idempotency_key", "UNIQUE (idempotency_key)"},
+		{&models.InvoiceItem{}, "uni_invoice_items_invoice_resource", "UNIQUE (invoice_id, billable_resource_id)"},
 		{&models.Invoice{}, "fk_invoices_wallet_owner", "FOREIGN KEY (wallet_id, user_id) REFERENCES wallets (id, user_id) ON DELETE RESTRICT ON UPDATE RESTRICT"},
 		{&models.PaymentEvent{}, "uni_payment_events_event_key", "UNIQUE (event_key)"},
 	}
@@ -633,6 +721,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.BillableResource{}, "chk_billable_resources_type", "type IN ('project', 'database')"},
 		{&models.BillableResource{}, "chk_billable_resources_status", "billing_status IN ('active', 'payment_due', 'suspended')"},
 		{&models.BillableResource{}, "chk_billable_resources_period", "next_invoice_at > current_period_start"},
+		{&models.BillableResource{}, "chk_billable_resources_anchor_day", "billing_anchor_day BETWEEN 1 AND 31"},
 		{&models.Invoice{}, "chk_invoices_total_nonnegative", "total_credits >= 0"},
 		{&models.Invoice{}, "chk_invoices_status", "status IN ('pending', 'paid', 'payment_due', 'void')"},
 		{&models.Invoice{}, "chk_invoices_period", "period_end > period_start"},
@@ -681,6 +770,72 @@ func reconcileBillingSchema(db *gorm.DB) error {
 			RETURN NEW;
 		END;
 		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_invoice_identity_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'invoices cannot be deleted';
+			END IF;
+			IF NEW.user_id IS DISTINCT FROM OLD.user_id OR NEW.wallet_id IS DISTINCT FROM OLD.wallet_id
+				OR NEW.period_start IS DISTINCT FROM OLD.period_start OR NEW.period_end IS DISTINCT FROM OLD.period_end
+				OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key THEN
+				RAISE EXCEPTION 'invoice identity fields are immutable';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+	CREATE OR REPLACE FUNCTION reject_invoice_item_identity_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'invoice items cannot be deleted';
+			END IF;
+			IF NEW.invoice_id IS DISTINCT FROM OLD.invoice_id OR NEW.billable_resource_id IS DISTINCT FROM OLD.billable_resource_id
+				OR NEW.spec_id IS DISTINCT FROM OLD.spec_id OR NEW.description IS DISTINCT FROM OLD.description
+				OR NEW.credits IS DISTINCT FROM OLD.credits THEN
+				RAISE EXCEPTION 'invoice item identity fields are immutable';
+			END IF;
+			RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	CREATE OR REPLACE FUNCTION reject_topup_economic_mutation() RETURNS trigger AS $$
+	BEGIN
+		IF TG_OP = 'DELETE' THEN
+			RAISE EXCEPTION 'topups cannot be deleted';
+		END IF;
+		IF NEW.wallet_id IS DISTINCT FROM OLD.wallet_id
+			OR NEW.topup_package_id IS DISTINCT FROM OLD.topup_package_id
+			OR NEW.client_idempotency_key IS DISTINCT FROM OLD.client_idempotency_key
+			OR NEW.provider IS DISTINCT FROM OLD.provider
+			OR NEW.provider_order_id IS DISTINCT FROM OLD.provider_order_id
+			OR (OLD.provider_transaction_id IS NOT NULL AND NEW.provider_transaction_id IS DISTINCT FROM OLD.provider_transaction_id)
+			OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
+			OR NEW.currency IS DISTINCT FROM OLD.currency
+			OR NEW.credits IS DISTINCT FROM OLD.credits THEN
+			RAISE EXCEPTION 'topup economic and provider identity fields are immutable';
+		END IF;
+		IF OLD.paid_at IS NOT NULL AND NEW.paid_at IS DISTINCT FROM OLD.paid_at THEN
+			RAISE EXCEPTION 'topup paid timestamp is immutable once set';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	CREATE OR REPLACE FUNCTION reject_payment_event_mutation() RETURNS trigger AS $$
+	BEGIN
+		IF TG_OP = 'DELETE' THEN
+			RAISE EXCEPTION 'payment events cannot be deleted';
+		END IF;
+		IF NEW.provider IS DISTINCT FROM OLD.provider
+			OR NEW.event_key IS DISTINCT FROM OLD.event_key
+			OR NEW.provider_order_id IS DISTINCT FROM OLD.provider_order_id
+			OR NEW.payload_json IS DISTINCT FROM OLD.payload_json
+			OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+			RAISE EXCEPTION 'payment event evidence is append-only';
+		END IF;
+		IF OLD.processed_at IS NOT NULL AND NEW.processed_at IS DISTINCT FROM OLD.processed_at THEN
+			RAISE EXCEPTION 'payment event processed timestamp is immutable once set';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
 		CREATE OR REPLACE FUNCTION reject_impersonation_audit_mutation() RETURNS trigger AS $$
 		BEGIN
 			RAISE EXCEPTION 'impersonation audit entries are append-only';
@@ -703,6 +858,22 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		CREATE TRIGGER trg_billable_specs_immutable_price
 		BEFORE UPDATE OR DELETE ON billable_specs
 		FOR EACH ROW EXECUTE FUNCTION reject_billable_spec_price_mutation();
+		DROP TRIGGER IF EXISTS trg_invoices_immutable_identity ON invoices;
+		CREATE TRIGGER trg_invoices_immutable_identity
+		BEFORE UPDATE OR DELETE ON invoices
+		FOR EACH ROW EXECUTE FUNCTION reject_invoice_identity_mutation();
+	DROP TRIGGER IF EXISTS trg_invoice_items_immutable_identity ON invoice_items;
+	CREATE TRIGGER trg_invoice_items_immutable_identity
+	BEFORE UPDATE OR DELETE ON invoice_items
+	FOR EACH ROW EXECUTE FUNCTION reject_invoice_item_identity_mutation();
+	DROP TRIGGER IF EXISTS trg_topups_immutable_economic_identity ON topups;
+	CREATE TRIGGER trg_topups_immutable_economic_identity
+	BEFORE UPDATE OR DELETE ON topups
+	FOR EACH ROW EXECUTE FUNCTION reject_topup_economic_mutation();
+	DROP TRIGGER IF EXISTS trg_payment_events_append_only ON payment_events;
+	CREATE TRIGGER trg_payment_events_append_only
+	BEFORE UPDATE OR DELETE ON payment_events
+	FOR EACH ROW EXECUTE FUNCTION reject_payment_event_mutation();
 		DROP TRIGGER IF EXISTS trg_impersonation_audits_append_only ON impersonation_audits;
 		CREATE TRIGGER trg_impersonation_audits_append_only
 		BEFORE UPDATE OR DELETE ON impersonation_audits
@@ -762,11 +933,13 @@ func EnsureForeignKey(db *gorm.DB, model interface{}, fkName string, column stri
 }
 
 func verifyCompatibility(db *gorm.DB) error {
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get underlying SQL DB: %w", err)
+	if db == nil {
+		return errors.New("database handle is nil")
 	}
-	if err := sqlDB.Ping(); err != nil {
+	// db.Connection installs a session-scoped *sql.Conn so PostgreSQL advisory
+	// locks span the full migration. gorm.DB() rejects that connection type;
+	// execute the probe through the active GORM session instead.
+	if err := db.Exec("SELECT 1").Error; err != nil {
 		return fmt.Errorf("database ping failed: %w", err)
 	}
 
@@ -1146,7 +1319,11 @@ func migrateDatabaseInstancesTable(db *gorm.DB) error {
 	}
 
 	// 1. Add user_id column if not exists
-	if !db.Migrator().HasColumn(&models.DatabaseInstance{}, "user_id") {
+	hasUserID, err := databaseInstancesHasUserID(db)
+	if err != nil {
+		return err
+	}
+	if !hasUserID {
 		slog.Info("Migrating database_instances: adding user_id column")
 		if isPostgres(db) {
 			if err := db.Exec("ALTER TABLE database_instances ADD COLUMN user_id INTEGER;").Error; err != nil {
@@ -1188,4 +1365,23 @@ func migrateDatabaseInstancesTable(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func databaseInstancesHasUserID(db *gorm.DB) (bool, error) {
+	if !isPostgres(db) {
+		return db.Migrator().HasColumn(&models.DatabaseInstance{}, "user_id"), nil
+	}
+	var exists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = CURRENT_SCHEMA()
+			  AND table_name = 'database_instances'
+			  AND column_name = 'user_id'
+		)
+	`).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("check database_instances.user_id column: %w", err)
+	}
+	return exists, nil
 }

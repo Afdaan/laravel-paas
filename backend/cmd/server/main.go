@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	domainHandlerPkg "github.com/laravel-paas/backend/internal/handlers/domain"
 	"github.com/laravel-paas/backend/internal/routes"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/services/billing"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/database"
@@ -93,6 +95,19 @@ func main() {
 	domainService := domainServicePkg.NewDomainService(cfg, db, redisService, projectService, projectRepo)
 	domainHandler := domainHandlerPkg.NewDomainHandler(cfg, db, redisService, domainService, projectService)
 	secretStoreService := services.NewSecretStoreService(db, cfg, redisService)
+	billingCtx, cancelBilling := context.WithCancel(context.Background())
+	go services.NewDatabaseCleanupService(db, cfg.ProjectsPath).Run(billingCtx)
+	go services.NewDatabaseReinstallRecoveryService(db, secretStoreService).Run(billingCtx)
+	go services.NewDatabaseCredentialRotationService(db).Run(billingCtx)
+	go services.NewProjectEnvSyncService(db, redisService).Run(billingCtx)
+	go services.NewDatabaseStatusOperationService(db).Run(billingCtx)
+	go projectServicePkg.NewDeletionDispatcher(db, redisService).Run(billingCtx)
+	if cfg.BillingEnabled {
+		invoiceService := billing.NewInvoiceService(db, billing.NewWalletService(db))
+		go billing.NewInvoiceScheduler(invoiceService).Run(billingCtx)
+		go billing.NewSuspensionService(db, cfg).Run(billingCtx)
+		go billing.NewProjectSuspensionDispatcher(db, redisService).Run(billingCtx)
+	}
 
 	// Initialize server
 	app := routes.Setup(db, cfg, redisService, dockerService, storageService, projectService, userService, settingService, authService, databaseService, feedbackService, domainHandler, secretStoreService)
@@ -120,6 +135,7 @@ func main() {
 		}
 
 		// Shutdown DomainService background pollers/checks
+		cancelBilling()
 		domainService.Shutdown()
 
 		slog.Info("All systems stopped. Goodbye!")

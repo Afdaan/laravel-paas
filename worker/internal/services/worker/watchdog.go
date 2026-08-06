@@ -280,10 +280,14 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 
 					if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
 						slog.Info("Central watchdog: removing orphaned rollout container instance", "containerId", *project.RolloutContainerID)
-						_ = w.dockerService.RemoveContainer(*project.RolloutContainerID, nil)
-						_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-							"rollout_container_id": nil,
-						})
+						if err := w.dockerService.RemoveContainer(*project.RolloutContainerID, project.RolloutWorkerContainerID); err != nil {
+							slog.Error("Central watchdog: failed to cleanup orphaned rollout", "projectId", project.ID, "error", err)
+						} else if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+							"rollout_container_id":        nil,
+							"rollout_worker_container_id": nil,
+						}); err != nil {
+							slog.Error("Central watchdog: failed to clear rollout checkpoint", "projectId", project.ID, "error", err)
+						}
 					}
 				}
 			}
@@ -520,8 +524,6 @@ func (w *CentralWatchdog) recordAutoHealingEvent(projectID uint, eventType strin
 	}
 }
 
-
-
 func (w *CentralWatchdog) getActiveLogPath(project *models.Project, jobID string) string {
 	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 	if jobID != "" && jobID != "unknown" {
@@ -547,6 +549,9 @@ func (w *CentralWatchdog) autoHealingCheck() {
 
 	for i := range runningProjects {
 		project := runningProjects[i]
+		if !w.billingAllowsAutoHealing(project.ID) {
+			continue
+		}
 
 		// Check Web Container
 		if project.ContainerID != nil && *project.ContainerID != "" {
@@ -569,6 +574,7 @@ func (w *CentralWatchdog) autoHealingCheck() {
 					slog.Error("Central watchdog: auto-healing: failed to restart web container", "projectId", project.ID, "error", err)
 				} else {
 					w.recordAutoHealingEvent(project.ID, "auto_healing_restart", "Auto-healing: Restarted container", project.DeploymentJobID)
+					w.compensateAutoHealingBillingRace(project.ID, *project.ContainerID)
 				}
 			}
 		}
@@ -594,10 +600,38 @@ func (w *CentralWatchdog) autoHealingCheck() {
 					slog.Error("Central watchdog: auto-healing: failed to restart worker container", "projectId", project.ID, "error", err)
 				} else {
 					w.recordAutoHealingEvent(project.ID, "auto_healing_restart", "Auto-healing: Restarted worker container", project.DeploymentJobID)
+					w.compensateAutoHealingBillingRace(project.ID, *project.WorkerContainerID)
 				}
 			}
 		}
 	}
+}
+
+func (w *CentralWatchdog) billingAllowsAutoHealing(projectID uint) bool {
+	if w == nil || w.cfg == nil || !w.cfg.BillingEnabled {
+		return true
+	}
+	var resource models.BillableResource
+	if err := w.projectRepo.DB().Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+		slog.Error("Central watchdog: billing state unavailable; skipping auto-healing", "project_id", projectID, "error", err)
+		return false
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive {
+		slog.Info("Central watchdog: skipping auto-healing for non-active billing resource", "project_id", projectID, "billing_status", resource.BillingStatus)
+		return false
+	}
+	return true
+}
+
+func (w *CentralWatchdog) compensateAutoHealingBillingRace(projectID uint, containerID string) {
+	if w.billingAllowsAutoHealing(projectID) {
+		return
+	}
+	if err := w.dockerService.StopContainer(containerID); err != nil {
+		slog.Error("Central watchdog: failed to stop container after billing suspension race", "project_id", projectID, "container_id", containerID, "error", err)
+		return
+	}
+	w.recordAutoHealingEvent(projectID, "auto_healing_billing_reverted", "Auto-healing restart reverted because billing suspension became active", nil)
 }
 
 // StartGitHubStatusReconciler runs a background loop that periodically synchronizes any failed or pending GitHub commit statuses.

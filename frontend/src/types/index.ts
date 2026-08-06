@@ -203,3 +203,64 @@ export interface DatabaseMetrics {
   active_connections: number;
   size_kb: number;
 }
+
+export interface BillingCatalogSpec {
+  id: number;
+  type: 'project' | 'database';
+  name: string;
+  slug: string;
+  cpu_millicores: number;
+  memory_mb: number;
+  storage_gb: number;
+  monthly_credits: number;
+  connection_limit?: number;
+  backup_retention_days?: number;
+}
+
+export interface TopupPackage {
+  id: number;
+  credits: number;
+  currency: string;
+  amount_minor: number;
+  sort_order: number;
+}
+
+export interface BillingOverview {
+  wallet: {
+    balance_credits: number;
+    ledger_entries: Array<{
+      type: string;
+      amount_credits: number;
+      balance_after: number;
+      created_at: string;
+    }>;
+  };
+  invoices: Array<{
+    id: number;
+    period_start: string;
+    period_end: string;
+    total_credits: number;
+    status: string;
+    due_at?: string;
+    paid_at?: string;
+    created_at: string;
+  }>;
+  topups: Array<{
+    id: number;
+    credits: number;
+    amount_minor: number;
+    currency: string;
+    status: string;
+    paid_at?: string;
+    created_at: string;
+  }>;
+  upcoming_required_credits: number;
+}
+
+export interface BillingStatus {
+  resource_id: number;
+  resource_type: 'project' | 'database';
+  status: 'active' | 'payment_due' | 'suspended';
+  oldest_due_at?: string;
+  payment_due_days: number;
+}

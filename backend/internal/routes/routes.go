@@ -110,6 +110,7 @@ func Setup(
 	billingHandler := handlers.NewBillingHandlerWithTopups(
 		billing.NewCatalogService(db),
 		billing.NewTopupService(db, billing.NewWalletService(db), cfg, billing.NewMidtransClient(cfg)),
+		billing.NewSuspensionService(db, cfg),
 	)
 
 	// ===========================================
@@ -165,6 +166,8 @@ func Setup(
 	// Billing catalog remains available while payment collection stays disabled.
 	billingRoutes := protected.Group("/billing", middleware.NoStore())
 	billingRoutes.Get("/catalog", billingHandler.ListActiveCatalog)
+	billingRoutes.Get("/overview", billingHandler.GetOwnBillingOverview)
+	billingRoutes.Get("/status", billingHandler.GetOwnPaymentDueStatus)
 	billingMutations := billingRoutes.Group("", middleware.RequireNoBillingImpersonation())
 	billingMutations.Post("/topups", middleware.MaxBody(8*1024), billingHandler.CreateTopup)
 	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), billingHandler.ReconcileTopup)
@@ -188,7 +191,11 @@ func Setup(
 	admin := protected.Group("/admin", middleware.RequireAdmin())
 	adminBilling := admin.Group("/billing", middleware.NoStore())
 	adminBilling.Get("/catalog", billingHandler.ListCatalog)
+	adminBilling.Get("/wallets", billingHandler.ListWallets)
 	adminBilling.Get("/wallets/:userID", billingHandler.GetWallet)
+	adminBilling.Get("/invoices", billingHandler.ListInvoices)
+	adminBilling.Get("/topups", billingHandler.ListTopups)
+	adminBilling.Get("/suspensions", billingHandler.ListSuspensions)
 	superadminBilling := adminBilling.Group("", middleware.RequireSuperAdmin(), middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg))
 	superadminBilling.Post("/specs", middleware.MaxBody(8*1024), billingHandler.CreateBillableSpec)
 	superadminBilling.Post("/topup-packages", middleware.MaxBody(8*1024), billingHandler.CreateTopupPackage)
@@ -241,10 +248,10 @@ func Setup(
 	secretstores.Put("/:id", secretStoreHandler.Update)
 	secretstores.Delete("/:id", secretStoreHandler.Delete)
 	secretstores.Post("/:id/secrets", secretStoreHandler.SetSecret)
-	secretstores.Post("/:id/items/:itemID/reveal", secretStoreHandler.RevealSecret)
+	secretstores.Post("/:id/items/:itemID/reveal", middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg), secretStoreHandler.RevealSecret)
 	secretstores.Post("/:id/bindings", secretStoreHandler.Bind)
 	secretstores.Delete("/:id/bindings/:bindingID", secretStoreHandler.Unbind)
-	secretstores.Post("/:id/export", secretStoreHandler.Export)
+	secretstores.Post("/:id/export", middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg), secretStoreHandler.Export)
 	secretstores.Post("/:id/import", secretStoreHandler.Import)
 
 	// SecretStore Item Management (Milestone 2)
@@ -258,19 +265,19 @@ func Setup(
 	// -----------------------------
 	databases := protected.Group("/databases")
 	databases.Get("/", databaseHandler.ListUserDatabases)
-	databases.Post("/", databaseHandler.CreateDatabase)
-	databases.Delete("/:uid", databaseHandler.DeleteDatabase)
-	databases.Post("/:uid/attach", databaseHandler.AttachDatabase)
-	databases.Post("/:uid/detach", databaseHandler.DetachDatabase)
-	databases.Post("/:uid/reset", databaseHandler.ResetDatabaseInstance)
-	databases.Post("/:uid/reinstall", databaseHandler.ReinstallDatabaseInstance)
+	databases.Post("/", middleware.RequireNoBillingImpersonation(), databaseHandler.CreateDatabase)
+	databases.Delete("/:uid", middleware.RequireNoBillingImpersonation(), databaseHandler.DeleteDatabase)
+	databases.Post("/:uid/attach", middleware.RequireNoBillingImpersonation(), databaseHandler.AttachDatabase)
+	databases.Post("/:uid/detach", middleware.RequireNoBillingImpersonation(), databaseHandler.DetachDatabase)
+	databases.Post("/:uid/reset", middleware.RequireNoBillingImpersonation(), databaseHandler.ResetDatabaseInstance)
+	databases.Post("/:uid/reinstall", middleware.RequireNoBillingImpersonation(), databaseHandler.ReinstallDatabaseInstance)
 
 	// -----------------------------
 	// Project Routes (Users)
 	// -----------------------------
 	projects := protected.Group("/projects")
 	projects.Get("/", projectHandler.ListOwn)
-	projects.Post("/", projectHandler.Create)
+	projects.Post("/", middleware.RequireNoBillingImpersonation(), projectHandler.Create)
 	projects.Get("/:id", projectHandler.Get)
 	projects.Get("/:id/branches", projectHandler.ListBranches)
 	projects.Put("/:id", projectHandler.Update)
@@ -279,7 +286,7 @@ func Setup(
 	projects.Post("/:id/stop", projectHandler.Stop)
 	projects.Post("/:id/start", projectHandler.Start)
 	projects.Post("/:id/restart", projectHandler.Restart)
-	projects.Delete("/:id", projectHandler.Delete)
+	projects.Delete("/:id", middleware.RequireNoBillingImpersonation(), projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
@@ -294,30 +301,33 @@ func Setup(
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	projects.Post("/:id/database/credentials", databaseHandler.GetCredentials)
-	projects.Post("/:id/database/rotate-credentials", databaseHandler.RotateCredentials)
-	projects.Post("/:id/database/status", databaseHandler.UpdateStatus)
-	projects.Get("/:id/database/overview", databaseHandler.GetOverview)
-	projects.Get("/:id/database/schema", databaseHandler.GetSchema)
-	projects.Post("/:id/database/designer", databaseHandler.ExecuteDesignerAction)
-	projects.Get("/:id/database/backups", databaseHandler.ListBackups)
-	projects.Post("/:id/database/backups", databaseHandler.CreateBackup)
-	projects.Post("/:id/database/backups/:backup/restore", databaseHandler.RestoreBackup)
-	projects.Delete("/:id/database/backups/:backup", databaseHandler.DeleteBackup)
-	projects.Get("/:id/database/backups/:backup/download", databaseHandler.DownloadBackup)
-	projects.Get("/:id/database/metrics", databaseHandler.GetMetrics)
-	projects.Post("/:id/database/transfer", databaseHandler.TransferDatabase)
+	projectDatabases := projects.Group("/:id/database")
+	projectDatabases.Get("/overview", databaseHandler.GetOverview)
+	projectDatabases.Get("/schema", databaseHandler.GetSchema)
+	projectDatabases.Get("/backups", databaseHandler.ListBackups)
+	projectDatabases.Get("/backups/:backup/download", databaseHandler.DownloadBackup)
+	projectDatabases.Get("/metrics", databaseHandler.GetMetrics)
+
+	projectDatabaseMutations := projectDatabases.Group("", middleware.RequireNoBillingImpersonation())
+	projectDatabaseMutations.Post("/credentials", middleware.RequireRecentBillingAuthentication(cfg), databaseHandler.GetCredentials)
+	projectDatabaseMutations.Post("/rotate-credentials", databaseHandler.RotateCredentials)
+	projectDatabaseMutations.Post("/status", databaseHandler.UpdateStatus)
+	projectDatabaseMutations.Post("/designer", databaseHandler.ExecuteDesignerAction)
+	projectDatabaseMutations.Post("/backups", databaseHandler.CreateBackup)
+	projectDatabaseMutations.Post("/backups/:backup/restore", databaseHandler.RestoreBackup)
+	projectDatabaseMutations.Delete("/backups/:backup", databaseHandler.DeleteBackup)
+	projectDatabaseMutations.Post("/transfer", databaseHandler.TransferDatabase)
 
 	// Fallback/Legacy endpoints
-	projects.Get("/:id/database/tables", databaseHandler.ListTables)
-	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
-	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)
-	projects.Delete("/:id/database/tables/:table/rows", databaseHandler.DeleteTableRow)
-	projects.Put("/:id/database/tables/:table/rows", databaseHandler.UpdateTableRow)
-	projects.Post("/:id/database/query", middleware.RateLimitQuery(), databaseHandler.ExecuteQuery)
-	projects.Get("/:id/database/export", databaseHandler.ExportDatabase)
-	projects.Post("/:id/database/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
-	projects.Post("/:id/database/reset", databaseHandler.ResetDatabase)
+	projectDatabases.Get("/tables", databaseHandler.ListTables)
+	projectDatabases.Get("/tables/:table", databaseHandler.GetTableStructure)
+	projectDatabases.Get("/tables/:table/data", databaseHandler.GetTableData)
+	projectDatabases.Get("/export", databaseHandler.ExportDatabase)
+	projectDatabaseMutations.Delete("/tables/:table/rows", databaseHandler.DeleteTableRow)
+	projectDatabaseMutations.Put("/tables/:table/rows", databaseHandler.UpdateTableRow)
+	projectDatabaseMutations.Post("/query", middleware.RateLimitQuery(), databaseHandler.ExecuteQuery)
+	projectDatabaseMutations.Post("/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
+	projectDatabaseMutations.Post("/reset", databaseHandler.ResetDatabase)
 
 	return app
 }

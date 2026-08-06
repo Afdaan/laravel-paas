@@ -31,6 +31,8 @@ const (
 	maxTopupPackageAmount     = 1000000000
 	maxTopupPackageSortOrder  = 10000
 	maxBillingAuditReason     = 500
+	maxAdminCollectionPage    = 1000000
+	maxAdminCollectionLimit   = 100
 )
 
 type BillableSpecInput struct {
@@ -39,7 +41,7 @@ type BillableSpecInput struct {
 	Slug                string              `json:"slug"`
 	CPUMillicores       int                 `json:"cpu_millicores"`
 	MemoryMB            int                 `json:"memory_mb"`
-	StorageGB           int                 `json:"storage_gb"`
+	StorageGB           int                 `json:"storage_gb,omitempty"`
 	MonthlyCredits      int64               `json:"monthly_credits"`
 	ConnectionLimit     *int                `json:"connection_limit,omitempty"`
 	BackupRetentionDays *int                `json:"backup_retention_days,omitempty"`
@@ -63,6 +65,7 @@ type AuditContext struct {
 }
 
 type CatalogSpec struct {
+	ID                  uint                `json:"id"`
 	Type                models.BillableType `json:"type"`
 	Name                string              `json:"name"`
 	Slug                string              `json:"slug"`
@@ -129,6 +132,58 @@ type WalletView struct {
 	LedgerEntries  []WalletLedgerEntryView `json:"ledger_entries"`
 }
 
+type InvoiceView struct {
+	ID           uint                 `json:"id"`
+	PeriodStart  time.Time            `json:"period_start"`
+	PeriodEnd    time.Time            `json:"period_end"`
+	TotalCredits int64                `json:"total_credits"`
+	Status       models.InvoiceStatus `json:"status"`
+	DueAt        *time.Time           `json:"due_at,omitempty"`
+	PaidAt       *time.Time           `json:"paid_at,omitempty"`
+	CreatedAt    time.Time            `json:"created_at"`
+}
+
+type TopupHistoryView struct {
+	ID          uint               `json:"id"`
+	Credits     int64              `json:"credits"`
+	AmountMinor int64              `json:"amount_minor"`
+	Currency    string             `json:"currency"`
+	Status      models.TopupStatus `json:"status"`
+	PaidAt      *time.Time         `json:"paid_at,omitempty"`
+	CreatedAt   time.Time          `json:"created_at"`
+}
+
+type OwnBillingOverview struct {
+	Wallet                  WalletView         `json:"wallet"`
+	Invoices                []InvoiceView      `json:"invoices"`
+	Topups                  []TopupHistoryView `json:"topups"`
+	UpcomingRequiredCredits int64              `json:"upcoming_required_credits"`
+}
+
+// AdminCollection is a bounded, sanitized billing history page.
+type AdminCollection[T any] struct {
+	Data  []T   `json:"data"`
+	Page  int   `json:"page"`
+	Limit int   `json:"limit"`
+	Total int64 `json:"total"`
+}
+
+type AdminWalletView struct {
+	UserID         uint      `json:"user_id"`
+	BalanceCredits int64     `json:"balance_credits"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type AdminInvoiceView struct {
+	UserID uint `json:"user_id"`
+	InvoiceView
+}
+
+type AdminTopupView struct {
+	UserID uint `json:"user_id"`
+	TopupHistoryView
+}
+
 type CatalogService struct {
 	db *gorm.DB
 }
@@ -151,6 +206,50 @@ func (s *CatalogService) ListAll(ctx context.Context) (AdminCatalog, error) {
 		return AdminCatalog{}, err
 	}
 	return adminCatalogFromModels(specs, packages), nil
+}
+
+func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint) (OwnBillingOverview, error) {
+	if err := s.validateContext(ctx); err != nil {
+		return OwnBillingOverview{}, err
+	}
+	if userID == 0 {
+		return OwnBillingOverview{}, ErrInvalidCatalogInput
+	}
+
+	overview := OwnBillingOverview{
+		Wallet:   WalletView{LedgerEntries: []WalletLedgerEntryView{}},
+		Invoices: []InvoiceView{},
+		Topups:   []TopupHistoryView{},
+	}
+	if wallet, err := s.GetWalletView(ctx, userID); err == nil {
+		overview.Wallet = wallet
+	} else if !errors.Is(err, ErrWalletNotFound) {
+		return OwnBillingOverview{}, err
+	}
+
+	var invoices []models.Invoice
+	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("period_start DESC, id DESC").Limit(50).Find(&invoices).Error; err != nil {
+		return OwnBillingOverview{}, fmt.Errorf("list own invoices: %w", err)
+	}
+	for _, invoice := range invoices {
+		overview.Invoices = append(overview.Invoices, InvoiceView{ID: invoice.ID, PeriodStart: invoice.PeriodStart, PeriodEnd: invoice.PeriodEnd, TotalCredits: invoice.TotalCredits, Status: invoice.Status, DueAt: invoice.DueAt, PaidAt: invoice.PaidAt, CreatedAt: invoice.CreatedAt})
+	}
+
+	var topups []models.Topup
+	if err := s.db.WithContext(ctx).Joins("JOIN wallets ON wallets.id = topups.wallet_id").Where("wallets.user_id = ?", userID).Order("topups.created_at DESC, topups.id DESC").Limit(50).Find(&topups).Error; err != nil {
+		return OwnBillingOverview{}, fmt.Errorf("list own topups: %w", err)
+	}
+	for _, topup := range topups {
+		overview.Topups = append(overview.Topups, TopupHistoryView{ID: topup.ID, Credits: topup.Credits, AmountMinor: topup.AmountMinor, Currency: topup.Currency, Status: topup.Status, PaidAt: topup.PaidAt, CreatedAt: topup.CreatedAt})
+	}
+	if err := s.db.WithContext(ctx).Model(&models.BillableResource{}).
+		Joins("JOIN billable_specs ON billable_specs.id = billable_resources.spec_id").
+		Where("billable_resources.user_id = ? AND billable_resources.billing_status = ?", userID, models.BillableResourceStatusActive).
+		Select("COALESCE(SUM(billable_specs.monthly_credits), 0)").
+		Scan(&overview.UpcomingRequiredCredits).Error; err != nil {
+		return OwnBillingOverview{}, fmt.Errorf("sum upcoming billing requirement: %w", err)
+	}
+	return overview, nil
 }
 
 func (s *CatalogService) listModels(ctx context.Context, activeOnly bool) ([]models.BillableSpec, []models.TopupPackage, error) {
@@ -328,6 +427,103 @@ func (s *CatalogService) GetWalletView(ctx context.Context, userID uint) (Wallet
 	return view, nil
 }
 
+func (s *CatalogService) ListAdminWallets(ctx context.Context, page, limit int) (AdminCollection[AdminWalletView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[AdminWalletView]{}, err
+	}
+	if err := s.validateContext(ctx); err != nil {
+		return AdminCollection[AdminWalletView]{}, err
+	}
+
+	query := s.db.WithContext(ctx).Model(&models.Wallet{})
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return AdminCollection[AdminWalletView]{}, fmt.Errorf("count wallets: %w", err)
+	}
+
+	var wallets []models.Wallet
+	if err := query.Order("updated_at DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&wallets).Error; err != nil {
+		return AdminCollection[AdminWalletView]{}, fmt.Errorf("list wallets: %w", err)
+	}
+	result := AdminCollection[AdminWalletView]{Data: make([]AdminWalletView, 0, len(wallets)), Page: page, Limit: limit, Total: total}
+	for _, wallet := range wallets {
+		result.Data = append(result.Data, AdminWalletView{UserID: wallet.UserID, BalanceCredits: wallet.BalanceCredits, UpdatedAt: wallet.UpdatedAt})
+	}
+	return result, nil
+}
+
+func (s *CatalogService) ListAdminInvoices(ctx context.Context, page, limit int) (AdminCollection[AdminInvoiceView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[AdminInvoiceView]{}, err
+	}
+	if err := s.validateContext(ctx); err != nil {
+		return AdminCollection[AdminInvoiceView]{}, err
+	}
+
+	query := s.db.WithContext(ctx).Model(&models.Invoice{})
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return AdminCollection[AdminInvoiceView]{}, fmt.Errorf("count invoices: %w", err)
+	}
+
+	var invoices []models.Invoice
+	if err := query.Order("created_at DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&invoices).Error; err != nil {
+		return AdminCollection[AdminInvoiceView]{}, fmt.Errorf("list invoices: %w", err)
+	}
+	result := AdminCollection[AdminInvoiceView]{Data: make([]AdminInvoiceView, 0, len(invoices)), Page: page, Limit: limit, Total: total}
+	for _, invoice := range invoices {
+		result.Data = append(result.Data, AdminInvoiceView{UserID: invoice.UserID, InvoiceView: invoiceViewFromModel(invoice)})
+	}
+	return result, nil
+}
+
+func (s *CatalogService) ListAdminTopups(ctx context.Context, page, limit int) (AdminCollection[AdminTopupView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[AdminTopupView]{}, err
+	}
+	if err := s.validateContext(ctx); err != nil {
+		return AdminCollection[AdminTopupView]{}, err
+	}
+
+	query := s.db.WithContext(ctx).Model(&models.Topup{}).Joins("JOIN wallets ON wallets.id = topups.wallet_id")
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return AdminCollection[AdminTopupView]{}, fmt.Errorf("count topups: %w", err)
+	}
+
+	type topupWithUser struct {
+		models.Topup
+		UserID uint `gorm:"column:billing_user_id"`
+	}
+	var topups []topupWithUser
+	if err := query.Select("topups.*, wallets.user_id AS billing_user_id").Order("topups.created_at DESC, topups.id DESC").Offset((page - 1) * limit).Limit(limit).Scan(&topups).Error; err != nil {
+		return AdminCollection[AdminTopupView]{}, fmt.Errorf("list topups: %w", err)
+	}
+	result := AdminCollection[AdminTopupView]{Data: make([]AdminTopupView, 0, len(topups)), Page: page, Limit: limit, Total: total}
+	for _, topup := range topups {
+		result.Data = append(result.Data, AdminTopupView{UserID: topup.UserID, TopupHistoryView: topupHistoryViewFromModel(topup.Topup)})
+	}
+	return result, nil
+}
+
+func normalizeAdminCollectionPage(page, limit int) (int, int, error) {
+	if page < 1 || page > maxAdminCollectionPage || limit < 1 || limit > maxAdminCollectionLimit {
+		return 0, 0, ErrInvalidCatalogInput
+	}
+	return page, limit, nil
+}
+
+func invoiceViewFromModel(invoice models.Invoice) InvoiceView {
+	return InvoiceView{ID: invoice.ID, PeriodStart: invoice.PeriodStart, PeriodEnd: invoice.PeriodEnd, TotalCredits: invoice.TotalCredits, Status: invoice.Status, DueAt: invoice.DueAt, PaidAt: invoice.PaidAt, CreatedAt: invoice.CreatedAt}
+}
+
+func topupHistoryViewFromModel(topup models.Topup) TopupHistoryView {
+	return TopupHistoryView{ID: topup.ID, Credits: topup.Credits, AmountMinor: topup.AmountMinor, Currency: topup.Currency, Status: topup.Status, PaidAt: topup.PaidAt, CreatedAt: topup.CreatedAt}
+}
+
 func (s *CatalogService) validateContext(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return ErrCatalogServiceUnavailable
@@ -441,16 +637,28 @@ func adminCatalogFromModels(specs []models.BillableSpec, packages []models.Topup
 }
 
 func catalogSpecFromModel(spec models.BillableSpec) CatalogSpec {
+	storageGB := spec.StorageGB
+	cpuMillicores := spec.CPUMillicores
+	memoryMB := spec.MemoryMB
+	backupRetentionDays := spec.BackupRetentionDays
+	if spec.Type == models.BillableTypeDatabase {
+		// Managed database tiers currently enforce only connection limits.
+		storageGB = 0
+		cpuMillicores = 0
+		memoryMB = 0
+		backupRetentionDays = nil
+	}
 	return CatalogSpec{
+		ID:                  spec.ID,
 		Type:                spec.Type,
 		Name:                spec.Name,
 		Slug:                spec.Slug,
-		CPUMillicores:       spec.CPUMillicores,
-		MemoryMB:            spec.MemoryMB,
-		StorageGB:           spec.StorageGB,
+		CPUMillicores:       cpuMillicores,
+		MemoryMB:            memoryMB,
+		StorageGB:           storageGB,
 		MonthlyCredits:      spec.MonthlyCredits,
 		ConnectionLimit:     spec.ConnectionLimit,
-		BackupRetentionDays: spec.BackupRetentionDays,
+		BackupRetentionDays: backupRetentionDays,
 	}
 }
 

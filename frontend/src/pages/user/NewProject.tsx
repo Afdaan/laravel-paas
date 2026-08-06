@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { projectsAPI, githubAPI, databaseAPI } from '../../services/api'
+import { projectsAPI, githubAPI, databaseAPI, billingAPI } from '../../services/api'
 import { AxiosError } from 'axios'
 import useTranslation from '../../lib/useTranslation'
-import { GithubAppInstallation, GithubRepository, DatabaseInstance } from '../../types'
+import { GithubAppInstallation, GithubRepository, DatabaseInstance, BillingCatalogSpec } from '../../types'
 import {
   Rocket,
   Database,
@@ -61,6 +61,8 @@ interface NewProjectForm {
   github_installation_id?: number;
   github_repo_owner?: string;
   github_repo_name?: string;
+  billable_spec_id: number;
+  database_billable_spec_id: number;
 }
 
 interface ValidationErrors {
@@ -70,6 +72,8 @@ interface ValidationErrors {
   database_username?: string;
   database_password?: string;
   existing_database_uid?: string;
+  billable_spec_id?: string;
+  database_billable_spec_id?: string;
 }
 
 const databaseEngines = [
@@ -167,10 +171,36 @@ function UserNewProject() {
     database_option: 'new',
     database_engine: 'mysql',
     existing_database_uid: '',
+    billable_spec_id: 0,
+    database_billable_spec_id: 0,
   })
+  const [billingSpecs, setBillingSpecs] = useState<BillingCatalogSpec[]>([])
+  const [billingCatalogError, setBillingCatalogError] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [existingDatabases, setExistingDatabases] = useState<DatabaseInstance[]>([])
   const [isLoadingDatabases, setIsLoadingDatabases] = useState(false)
+
+  const loadBillingCatalog = useCallback(async () => {
+    try {
+      const { data } = await billingAPI.catalog()
+      setBillingSpecs(data.specs)
+      const projectSpec = data.specs.find((spec) => spec.type === 'project')
+      const databaseSpec = data.specs.find((spec) => spec.type === 'database')
+      setFormData((current) => ({
+        ...current,
+        billable_spec_id: current.billable_spec_id || projectSpec?.id || 0,
+        database_billable_spec_id: current.database_billable_spec_id || databaseSpec?.id || 0,
+      }))
+      setBillingCatalogError(false)
+    } catch {
+      setBillingCatalogError(true)
+      toast.error(t('billing.catalogLoadFailed'))
+    }
+  }, [t])
+
+  useEffect(() => {
+    void loadBillingCatalog()
+  }, [loadBillingCatalog])
 
   const generatePassword = useCallback(() => {
     const lowerChars = 'abcdefghijklmnopqrstuvwxyz'
@@ -543,6 +573,9 @@ function UserNewProject() {
       errors.existing_database_uid = t('newProject.dbConfig.existing.placeholder')
     }
 
+    if (!formData.billable_spec_id) errors.billable_spec_id = t('billing.selectProjectPlan')
+    if (formData.database_option === 'new' && !formData.database_billable_spec_id) errors.database_billable_spec_id = t('billing.selectDatabasePlan')
+
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -568,7 +601,7 @@ function UserNewProject() {
       const axiosError = error as AxiosError<{ error: string }>
       let errorMsg = axiosError.response?.data?.error || t('common.actionFailed')
 
-      if (errorMsg === 'Project limit reached' || axiosError.response?.status === 403) {
+      if (errorMsg === 'Project limit reached' || axiosError.response?.data?.reason === 'PROJECT_LIMIT_REACHED') {
         errorMsg = t('newProject.restrictedDesc')
       }
 
@@ -1376,6 +1409,13 @@ function UserNewProject() {
             </div>
           </Card>
 
+          <Card className="space-y-4 p-5">
+            <div><Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{t('billing.plans')}</Label><p className="mt-1 text-xs text-muted-foreground">{t('billing.plansDescription')}</p></div>
+            {billingCatalogError && <Button type="button" variant="outline" size="sm" onClick={() => void loadBillingCatalog()}>{t('billing.catalogRetry')}</Button>}
+            <PlanSelector label={t('billing.projectPlan')} specs={billingSpecs.filter((spec) => spec.type === 'project')} value={formData.billable_spec_id} onChange={(id) => setFormData((current) => ({ ...current, billable_spec_id: id }))} error={validationErrors.billable_spec_id} />
+            {formData.database_option === 'new' && <PlanSelector label={t('billing.databasePlan')} specs={billingSpecs.filter((spec) => spec.type === 'database')} value={formData.database_billable_spec_id} onChange={(id) => setFormData((current) => ({ ...current, database_billable_spec_id: id }))} error={validationErrors.database_billable_spec_id} />}
+          </Card>
+
           {/* Submit Button (Only shown/enabled once source is selected/populated) */}
           {(connectionMode === 'manual' || selectedRepoFullName) && (
             <Button
@@ -1404,3 +1444,78 @@ function UserNewProject() {
 }
 
 export default UserNewProject
+
+function PlanSelector({
+  label,
+  specs,
+  value,
+  onChange,
+  error,
+}: {
+  label: string
+  specs: BillingCatalogSpec[]
+  value: number
+  onChange: (id: number) => void
+  error?: string
+}) {
+  const { t } = useTranslation()
+  const groupRef = useRef<HTMLDivElement>(null)
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, specId: number, index: number) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+      return
+    }
+    event.preventDefault()
+    const buttons = groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    if (!buttons || buttons.length === 0) return
+    const nextIndex =
+      event.key === 'ArrowDown' || event.key === 'ArrowRight'
+        ? (index + 1) % buttons.length
+        : (index - 1 + buttons.length) % buttons.length
+    buttons[nextIndex]?.focus()
+    buttons[nextIndex]?.click()
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-semibold">{label}</Label>
+      <div
+        ref={groupRef}
+        role="radiogroup"
+        aria-label={label}
+        aria-invalid={!!error}
+        aria-describedby={error ? `${label}-error` : undefined}
+        className="grid gap-2 sm:grid-cols-2"
+      >
+        {specs.map((spec, index) => (
+          <button
+            key={spec.id}
+            type="button"
+            role="radio"
+            tabIndex={value === spec.id ? 0 : -1}
+            aria-checked={value === spec.id}
+            onClick={() => onChange(spec.id)}
+            onKeyDown={(event) => handleKeyDown(event, spec.id, index)}
+            className={cn(
+              'rounded-lg border p-3 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              value === spec.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
+            )}
+          >
+            <span className="block font-semibold">{spec.name}</span>
+            <span className="mt-1 block text-muted-foreground">
+              {t('billing.creditsPerMonth', { credits: spec.monthly_credits })} · {spec.cpu_millicores}m CPU ·{' '}
+              {spec.memory_mb} MB RAM
+              {spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+      {error && (
+        <p id={`${label}-error`} className="text-xs text-destructive font-medium">
+          {error}
+        </p>
+      )}
+      {specs.length === 0 && !error && <p className="text-xs text-destructive">{t('billing.noPlans')}</p>}
+    </div>
+  )
+}

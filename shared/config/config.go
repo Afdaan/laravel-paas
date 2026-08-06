@@ -68,12 +68,14 @@ type Config struct {
 	CSRFPreviousErr     error
 
 	// Billing rollout
-	BillingEnabled      bool
-	BillingTopupEnabled bool
-	MidtransServerKey   string
-	MidtransClientKey   string
-	MidtransMerchantID  string
-	MidtransProduction  bool
+	BillingEnabled         bool
+	BillingTopupEnabled    bool
+	BillingGraceDays       int
+	BillingDeployBlockDays int
+	MidtransServerKey      string
+	MidtransClientKey      string
+	MidtransMerchantID     string
+	MidtransProduction     bool
 
 	// UID Obfuscation
 	UIDSalt string
@@ -213,12 +215,14 @@ func Load() *Config {
 		CSRFPreviousErr:     csrfPreviousErr,
 
 		// Billing rollout
-		BillingEnabled:      getEnvBool("BILLING_ENABLED", false),
-		BillingTopupEnabled: getEnvBool("BILLING_TOPUP_ENABLED", false),
-		MidtransServerKey:   getEnv("MIDTRANS_SERVER_KEY", ""),
-		MidtransClientKey:   getEnv("MIDTRANS_CLIENT_KEY", ""),
-		MidtransMerchantID:  getEnv("MIDTRANS_MERCHANT_ID", ""),
-		MidtransProduction:  getEnvBool("MIDTRANS_IS_PRODUCTION", false),
+		BillingEnabled:         getEnvBool("BILLING_ENABLED", false),
+		BillingTopupEnabled:    getEnvBool("BILLING_TOPUP_ENABLED", false),
+		BillingGraceDays:       getEnvInt("BILLING_GRACE_DAYS", 7),
+		BillingDeployBlockDays: getEnvInt("BILLING_DEPLOY_BLOCK_DAYS", 3),
+		MidtransServerKey:      getEnv("MIDTRANS_SERVER_KEY", ""),
+		MidtransClientKey:      getEnv("MIDTRANS_CLIENT_KEY", ""),
+		MidtransMerchantID:     getEnv("MIDTRANS_MERCHANT_ID", ""),
+		MidtransProduction:     getEnvBool("MIDTRANS_IS_PRODUCTION", false),
 
 		// UID Obfuscation
 		UIDSalt: getEnv("UID_SALT", "change-this-salt"),
@@ -376,6 +380,9 @@ func (c *Config) validateProductionSecurity(includeAuth bool) error {
 	c.ProjectDomain = projectDomain
 	if c.BillingTopupEnabled && !c.BillingEnabled {
 		return fmt.Errorf("BILLING_TOPUP_ENABLED requires BILLING_ENABLED=true")
+	}
+	if c.BillingEnabled && (c.BillingDeployBlockDays <= 0 || c.BillingGraceDays <= 0 || c.BillingDeployBlockDays >= c.BillingGraceDays) {
+		return fmt.Errorf("BILLING_DEPLOY_BLOCK_DAYS must be positive and less than BILLING_GRACE_DAYS")
 	}
 	if includeAuth && c.BillingEnabled && (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") {
 		return fmt.Errorf("Midtrans credentials are required when BILLING_ENABLED=true")

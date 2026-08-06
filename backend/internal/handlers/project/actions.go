@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,15 +10,17 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/services/billing"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"github.com/laravel-paas/shared/services/billinggate"
 	"gorm.io/gorm/clause"
 )
 
 // Create handles project creation
-func (h *ProjectHandler) Create(c *fiber.Ctx) error {
+func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 	var req CreateProjectRequest
 	if err := c.BodyParser(&req); err != nil {
 		return apperr.ErrBadRequest
@@ -108,11 +111,19 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 			"error": "Invalid database_option. Must be one of: none, sqlite, new, existing, external",
 		})
 	}
+	if h.cfg.BillingEnabled && req.BillableSpecID == 0 {
+		return apperr.NewBadRequest("A project billing specification is required")
+	}
+	if h.cfg.BillingEnabled && dbOption == "new" && req.DatabaseBillableSpecID == 0 {
+		return apperr.NewBadRequest("A database billing specification is required")
+	}
 
 	tx := h.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			slog.Error("Project creation panicked", "error", r)
+			handlerErr = apperr.New(500, "PROJECT_PROVISIONING_FAILED", "Failed to create project")
 		}
 	}()
 
@@ -193,6 +204,41 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		}
 	}
 
+	if h.cfg.BillingEnabled && dbOption == "new" {
+		if project.DatabaseInstance == nil || project.DatabaseInstance.ID == 0 {
+			tx.Rollback()
+			return apperr.New(500, "BILLING_RESOURCE_MISSING", "Failed to prepare database billing")
+		}
+		quota, err := billing.LoadActiveDatabaseQuotaTx(tx, req.DatabaseBillableSpecID)
+		if err != nil {
+			tx.Rollback()
+			return mapProjectBillingError(err)
+		}
+		if err := tx.Model(&models.DatabaseInstance{}).Where("id = ?", project.DatabaseInstance.ID).Updates(map[string]any{
+			"connection_limit": quota.ConnectionLimit,
+		}).Error; err != nil {
+			tx.Rollback()
+			return apperr.New(500, "DATABASE_QUOTA_UPDATE_FAILED", "Failed to apply database quota")
+		}
+		project.DatabaseInstance.ConnectionLimit = quota.ConnectionLimit
+	}
+	if h.cfg.BillingEnabled {
+		quota, err := billing.LoadActiveProjectQuotaTx(tx, req.BillableSpecID)
+		if err != nil {
+			tx.Rollback()
+			return mapProjectBillingError(err)
+		}
+		if err := tx.Model(project).Updates(map[string]any{
+			"cpu_limit":    quota.CPULimit,
+			"memory_limit": quota.MemoryLimit,
+		}).Error; err != nil {
+			tx.Rollback()
+			return apperr.New(500, "PROJECT_QUOTA_UPDATE_FAILED", "Failed to apply project quota")
+		}
+		project.CPULimit = &quota.CPULimit
+		project.MemoryLimit = &quota.MemoryLimit
+	}
+
 	// Handle environment injection for SQLite inside transaction
 	if dbOption == "sqlite" {
 		store, errStore := h.secretStoreService.CreateSecretStoreTx(tx, userID, fmt.Sprintf("Environment Secrets (%s)", project.Name), "Managed variables for project "+project.Name, c.IP(), c.Get("User-Agent"))
@@ -234,6 +280,25 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		}
 	}
 
+	if h.cfg.BillingEnabled {
+		invoiceService := billing.NewInvoiceService(h.db, billing.NewWalletService(h.db))
+		now := time.Now().UTC()
+		if err := invoiceService.ChargeInitialResourceTx(tx, userID, models.BillableTypeProject, project.ID, req.BillableSpecID, now); err != nil {
+			tx.Rollback()
+			return mapProjectBillingError(err)
+		}
+		if dbOption == "new" {
+			if project.DatabaseInstance == nil || project.DatabaseInstance.ID == 0 {
+				tx.Rollback()
+				return apperr.New(500, "BILLING_RESOURCE_MISSING", "Failed to prepare database billing")
+			}
+			if err := invoiceService.ChargeInitialResourceTx(tx, userID, models.BillableTypeDatabase, project.DatabaseInstance.ID, req.DatabaseBillableSpecID, now); err != nil {
+				tx.Rollback()
+				return mapProjectBillingError(err)
+			}
+		}
+	}
+
 	if err := tx.Commit().Error; err != nil {
 		slog.Error("Transaction commit failed during project creation", "user_id", userID, "error", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -266,11 +331,27 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	})
 }
 
+func mapProjectBillingError(err error) error {
+	switch {
+	case errors.Is(err, billing.ErrInsufficientCredits):
+		return apperr.New(402, "INSUFFICIENT_CREDITS", "Insufficient Runa's Tokens to provision this resource")
+	case errors.Is(err, billing.ErrInvalidInvoiceInput):
+		return apperr.NewBadRequest("Invalid billing specification")
+	case errors.Is(err, billing.ErrResourceAlreadyBilled):
+		return apperr.New(409, "BILLABLE_RESOURCE_CONFLICT", "Resource billing is already initialized")
+	default:
+		return err
+	}
+}
+
 // Redeploy rebuilds and restarts a project
 func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+	if err := h.requireBillingRuntimeAction(c, project); err != nil {
+		return err
 	}
 
 	// Check if already in queue to avoid duplicates
@@ -357,7 +438,7 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "Project deleted successfully",
+		"message": "Project deletion queued successfully",
 	})
 }
 
@@ -447,6 +528,9 @@ func (h *ProjectHandler) Start(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	if err := h.requireBillingRuntimeAction(c, project); err != nil {
+		return err
+	}
 
 	if err := h.projectService.StartProject(project); err != nil {
 		slog.Error("Failed to start project", "project_id", project.ID, "error", err.Error())
@@ -462,6 +546,9 @@ func (h *ProjectHandler) Restart(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
 	}
+	if err := h.requireBillingRuntimeAction(c, project); err != nil {
+		return err
+	}
 
 	if err := h.projectService.RestartProject(project); err != nil {
 		slog.Error("Failed to restart project", "project_id", project.ID, "error", err.Error())
@@ -476,6 +563,9 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
+	}
+	if err := h.requireBillingRuntimeAction(c, project); err != nil {
+		return err
 	}
 
 	var req struct {
@@ -532,5 +622,20 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 			"message": "Rebuild rollback initiated successfully",
 			"type":    "rebuild",
 		})
+	}
+}
+
+func (h *ProjectHandler) requireBillingRuntimeAction(c *fiber.Ctx, project *models.Project) error {
+	if h == nil || h.cfg == nil || !h.cfg.BillingEnabled || project == nil {
+		return nil
+	}
+	err := billinggate.NewProjectRuntimeGate(h.db, true, h.cfg.BillingDeployBlockDays).Check(c.UserContext(), project.ID, time.Now().UTC())
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, billinggate.ErrProjectActionBlocked), errors.Is(err, billinggate.ErrPaymentDueEvidenceUnavailable):
+		return apperr.New(402, "BILLING_PAYMENT_DUE", "Project actions are blocked until the overdue invoice is paid")
+	default:
+		return apperr.New(503, "BILLING_GATE_UNAVAILABLE", "Billing status is temporarily unavailable")
 	}
 }

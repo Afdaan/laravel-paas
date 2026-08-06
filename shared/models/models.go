@@ -99,31 +99,32 @@ const (
 
 // Project represents a deployed Laravel application
 type Project struct {
-	ID                    uint             `gorm:"primaryKey" json:"id"`
-	UserID                uint             `gorm:"not null;index" json:"user_id"`
-	User                  User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	UserSlug              string           `gorm:"size:255;not null;default:'user-unknown'" json:"user_slug"`
-	Name                  string           `gorm:"size:255;not null" json:"name"`
-	GithubURL             string           `gorm:"size:500;not null" json:"github_url"`
-	Branch                string           `gorm:"size:200;not null;default:main" json:"branch"`
-	Subdomain             string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
-	DatabaseName          *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
-	DatabasePassword      string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
-	DatabaseOption        string           `gorm:"size:20;not null;default:'none'" json:"database_option"`
-	Status                ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
-	DeploymentStatus      DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
-	DeploymentJobID       *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
-	RolloutContainerID    *string          `gorm:"size:100" json:"rollout_container_id,omitempty"`
-	DeploymentStartedAt   *time.Time       `json:"deployment_started_at,omitempty"`
-	DeploymentFinishedAt  *time.Time       `json:"deployment_finished_at,omitempty"`
-	DeploymentHeartbeatAt *time.Time       `json:"deployment_heartbeat_at,omitempty"`
-	DeploymentMessage     *string          `gorm:"type:text" json:"deployment_message,omitempty"`
-	DeploymentProgress    int              `gorm:"default:0" json:"deployment_progress"`
-	ContainerID           *string          `gorm:"size:100" json:"container_id,omitempty"`
-	Port                  *int             `json:"port,omitempty"`
-	BaseDirectory         string           `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
-	ErrorLog              *string          `gorm:"type:text" json:"error_log,omitempty"`
-	LastCommitHash        string           `gorm:"size:100" json:"last_commit_hash,omitempty"`
+	ID                       uint             `gorm:"primaryKey" json:"id"`
+	UserID                   uint             `gorm:"not null;index" json:"user_id"`
+	User                     User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	UserSlug                 string           `gorm:"size:255;not null;default:'user-unknown'" json:"user_slug"`
+	Name                     string           `gorm:"size:255;not null" json:"name"`
+	GithubURL                string           `gorm:"size:500;not null" json:"github_url"`
+	Branch                   string           `gorm:"size:200;not null;default:main" json:"branch"`
+	Subdomain                string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
+	DatabaseName             *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
+	DatabasePassword         string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
+	DatabaseOption           string           `gorm:"size:20;not null;default:'none'" json:"database_option"`
+	Status                   ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
+	DeploymentStatus         DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
+	DeploymentJobID          *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
+	RolloutContainerID       *string          `gorm:"size:100" json:"rollout_container_id,omitempty"`
+	RolloutWorkerContainerID *string          `gorm:"size:100" json:"rollout_worker_container_id,omitempty"`
+	DeploymentStartedAt      *time.Time       `json:"deployment_started_at,omitempty"`
+	DeploymentFinishedAt     *time.Time       `json:"deployment_finished_at,omitempty"`
+	DeploymentHeartbeatAt    *time.Time       `json:"deployment_heartbeat_at,omitempty"`
+	DeploymentMessage        *string          `gorm:"type:text" json:"deployment_message,omitempty"`
+	DeploymentProgress       int              `gorm:"default:0" json:"deployment_progress"`
+	ContainerID              *string          `gorm:"size:100" json:"container_id,omitempty"`
+	Port                     *int             `json:"port,omitempty"`
+	BaseDirectory            string           `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
+	ErrorLog                 *string          `gorm:"type:text" json:"error_log,omitempty"`
+	LastCommitHash           string           `gorm:"size:100" json:"last_commit_hash,omitempty"`
 
 	// Detected Laravel/PHP versions
 	LaravelVersion    string  `gorm:"size:20" json:"laravel_version,omitempty"`
@@ -714,11 +715,148 @@ type DatabaseInstance struct {
 	Password           string                 `gorm:"size:255;not null" json:"-"` // Never expose in JSON
 	Host               string                 `gorm:"size:255;not null" json:"host"`
 	Port               int                    `gorm:"not null" json:"port"`
-	StorageAllocation  int64                  `gorm:"default:1073741824" json:"storage_allocation"` // Default 1GB in bytes
+	StorageAllocation  int64                  `gorm:"default:1073741824" json:"-"` // Internal legacy metadata; managed engines do not enforce per-database storage limits.
 	StorageConsumption int64                  `gorm:"default:0" json:"storage_consumption"`
 	ConnectionCount    int                    `gorm:"default:0" json:"connection_count"`
+	ConnectionLimit    int                    `gorm:"not null;default:15" json:"connection_limit"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
+}
+
+type DatabaseCleanupReason string
+
+const (
+	DatabaseCleanupReasonProvisioning      DatabaseCleanupReason = "provisioning_compensation"
+	DatabaseCleanupReasonRequestedDeletion DatabaseCleanupReason = "requested_deletion"
+)
+
+// DatabaseCleanupTask retains physical resources authorized for deferred cleanup.
+type DatabaseCleanupTask struct {
+	ID                  uint                  `gorm:"primaryKey" json:"id"`
+	Engine              string                `gorm:"uniqueIndex:uni_database_cleanup_tasks_identity;size:20;not null" json:"engine"`
+	Name                string                `gorm:"uniqueIndex:uni_database_cleanup_tasks_identity;size:100;not null" json:"name"`
+	Username            string                `gorm:"uniqueIndex:uni_database_cleanup_tasks_identity;size:100;not null" json:"username"`
+	Reason              DatabaseCleanupReason `gorm:"size:40;not null;default:provisioning_compensation" json:"-"`
+	DatabaseInstanceID  *uint                 `gorm:"index" json:"-"`
+	DatabaseInstanceUID string                `gorm:"size:100;not null;default:''" json:"-"`
+	DatabaseOwned       bool                  `gorm:"not null;default:false" json:"-"`
+	UserOwned           bool                  `gorm:"not null;default:false" json:"-"`
+	LeaseToken          string                `gorm:"size:36;not null;default:''" json:"-"`
+	LeaseExpiresAt      *time.Time            `gorm:"index:idx_database_cleanup_tasks_lease_expires_at" json:"-"`
+	LastError           string                `gorm:"type:text;not null" json:"-"`
+	RetryCount          int                   `gorm:"not null;default:0" json:"retry_count"`
+	CreatedAt           time.Time             `json:"created_at"`
+	UpdatedAt           time.Time             `json:"updated_at"`
+}
+
+// DatabaseReinstallCheckpoint tracks durable progress for a destructive database reinstall.
+type DatabaseReinstallCheckpoint string
+
+const (
+	DatabaseReinstallCheckpointSuspended         DatabaseReinstallCheckpoint = "suspended"
+	DatabaseReinstallCheckpointPhysicalRecreated DatabaseReinstallCheckpoint = "physical_recreated"
+	DatabaseReinstallCheckpointEnvSyncPending    DatabaseReinstallCheckpoint = "env_sync_pending"
+)
+
+// DatabaseReinstallRecoveryTask makes database reinstall retryable after any physical or
+// control-plane failure. Password is intentionally omitted from JSON responses.
+type DatabaseReinstallRecoveryTask struct {
+	ID                    uint                        `gorm:"primaryKey" json:"id"`
+	DatabaseInstanceID    uint                        `gorm:"uniqueIndex:uni_database_reinstall_recovery_instance;not null" json:"-"`
+	DatabaseInstanceUID   string                      `gorm:"size:100;not null" json:"-"`
+	Engine                string                      `gorm:"size:20;not null" json:"-"`
+	Name                  string                      `gorm:"size:100;not null" json:"-"`
+	Username              string                      `gorm:"size:100;not null" json:"-"`
+	Password              string                      `gorm:"size:255;not null" json:"-"`
+	PreviousBillingStatus *BillableResourceStatus     `gorm:"size:20" json:"-"`
+	Checkpoint            DatabaseReinstallCheckpoint `gorm:"size:30;not null;default:suspended" json:"-"`
+	EnvSyncGeneration     uint                        `gorm:"not null;default:0" json:"-"`
+	LastError             string                      `gorm:"type:text;not null;default:''" json:"-"`
+	RetryCount            int                         `gorm:"not null;default:0" json:"retry_count"`
+	CreatedAt             time.Time                   `json:"created_at"`
+	UpdatedAt             time.Time                   `json:"updated_at"`
+}
+
+// DatabaseCredentialRotationTask persists a password rotation before the engine changes.
+type DatabaseCredentialRotationTask struct {
+	ID                  uint      `gorm:"primaryKey" json:"id"`
+	DatabaseInstanceID  uint      `gorm:"uniqueIndex:uni_database_credential_rotation_instance;not null" json:"-"`
+	DatabaseInstanceUID string    `gorm:"size:100;not null" json:"-"`
+	ProjectID           uint      `gorm:"not null;index" json:"-"`
+	Engine              string    `gorm:"size:20;not null" json:"-"`
+	Name                string    `gorm:"size:100;not null" json:"-"`
+	Username            string    `gorm:"size:100;not null" json:"-"`
+	PreviousPassword    string    `gorm:"size:255;not null" json:"-"`
+	NewPassword         string    `gorm:"size:255;not null" json:"-"`
+	PhysicalApplied     bool      `gorm:"not null;default:false" json:"-"`
+	EnvSyncGeneration   uint      `gorm:"not null;default:0" json:"-"`
+	LastError           string    `gorm:"type:text;not null;default:''" json:"-"`
+	RetryCount          int       `gorm:"not null;default:0" json:"retry_count"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// ProjectEnvSyncTask records the exact environment generation that a worker must apply.
+// Redis transports jobs only; this record remains authoritative until the worker acknowledges it.
+type ProjectEnvSyncTask struct {
+	ID                     uint      `gorm:"primaryKey" json:"id"`
+	ProjectID              uint      `gorm:"uniqueIndex:uni_project_env_sync_tasks_project_id;not null" json:"-"`
+	DesiredGeneration      uint      `gorm:"not null;default:0" json:"-"`
+	AcknowledgedGeneration uint      `gorm:"not null;default:0" json:"-"`
+	LastError              string    `gorm:"type:text;not null;default:''" json:"-"`
+	RetryCount             int       `gorm:"not null;default:0" json:"retry_count"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+}
+
+// ProjectDeletionTask durably records a requested asynchronous project deletion before Redis dispatch.
+type ProjectDeletionTask struct {
+	ID          uint       `gorm:"primaryKey" json:"id"`
+	ProjectID   uint       `gorm:"uniqueIndex:uni_project_deletion_tasks_project_id;not null" json:"-"`
+	UserID      uint       `gorm:"not null" json:"-"`
+	CompletedAt *time.Time `gorm:"index" json:"-"`
+	LastError   string     `gorm:"type:text;not null;default:''" json:"-"`
+	RetryCount  int        `gorm:"not null;default:0" json:"retry_count"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+// ProjectSuspensionTask durably records a billing suspension before a project stop is queued.
+// Redis transports the stop request; this task remains until the runtime reports stopped.
+type ProjectSuspensionTask struct {
+	ID                 uint       `gorm:"primaryKey" json:"id"`
+	ProjectID          uint       `gorm:"uniqueIndex:uni_project_suspension_tasks_project_id;not null" json:"-"`
+	BillableResourceID uint       `gorm:"not null;index" json:"-"`
+	UserID             uint       `gorm:"not null;index" json:"-"`
+	MainContainerID    string     `gorm:"size:255;not null;default:''" json:"-"`
+	WorkerContainerID  string     `gorm:"size:255;not null;default:''" json:"-"`
+	MainWasRunning     bool       `gorm:"not null;default:false" json:"-"`
+	WorkerWasRunning   bool       `gorm:"not null;default:false" json:"-"`
+	StopAttemptedAt    *time.Time `json:"-"`
+	StopCompletedAt    *time.Time `gorm:"index" json:"-"`
+	ResumeRequestedAt  *time.Time `gorm:"index" json:"-"`
+	ResumeCompletedAt  *time.Time `json:"-"`
+	LastError          string     `gorm:"type:text;not null;default:''" json:"-"`
+	RetryCount         int        `gorm:"not null;default:0" json:"retry_count"`
+	CompletedAt        *time.Time `gorm:"index" json:"-"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// DatabaseStatusOperationTask makes physical suspend/resume convergent with control-plane state.
+type DatabaseStatusOperationTask struct {
+	ID                  uint                   `gorm:"primaryKey" json:"id"`
+	DatabaseInstanceID  uint                   `gorm:"uniqueIndex:uni_database_status_operation_instance;not null" json:"-"`
+	DatabaseInstanceUID string                 `gorm:"size:100;not null" json:"-"`
+	Engine              string                 `gorm:"size:20;not null" json:"-"`
+	Name                string                 `gorm:"size:100;not null" json:"-"`
+	Username            string                 `gorm:"size:100;not null" json:"-"`
+	DesiredStatus       DatabaseInstanceStatus `gorm:"size:20;not null" json:"-"`
+	PhysicalApplied     bool                   `gorm:"not null;default:false" json:"-"`
+	LastError           string                 `gorm:"type:text;not null;default:''" json:"-"`
+	RetryCount          int                    `gorm:"not null;default:0" json:"retry_count"`
+	CreatedAt           time.Time              `json:"created_at"`
+	UpdatedAt           time.Time              `json:"updated_at"`
 }
 
 // BeforeCreate hooks into GORM's creation cycle to auto-populate UID.
@@ -748,7 +886,7 @@ type DatabaseBackup struct {
 	ID                 uint                 `gorm:"primaryKey" json:"id"`
 	DatabaseInstanceID uint                 `gorm:"not null;index" json:"database_instance_id"`
 	DatabaseInstance   DatabaseInstance     `gorm:"foreignKey:DatabaseInstanceID" json:"database_instance,omitempty"`
-	ProjectID          uint                 `gorm:"not null;index" json:"project_id"`
+	ProjectID          *uint                `gorm:"index" json:"project_id,omitempty"`
 	Name               string               `gorm:"size:255;not null" json:"name"`
 	Path               string               `gorm:"size:500;not null" json:"path"`
 	Size               string               `gorm:"size:50" json:"size"`
@@ -1016,18 +1154,20 @@ type BillableSpec struct {
 
 // BillableResource links a platform project/database to its owner and price version.
 type BillableResource struct {
-	ID                 uint                   `gorm:"primaryKey" json:"id"`
-	UserID             uint                   `gorm:"not null;index:idx_billable_resources_user_id" json:"user_id"`
-	User               User                   `gorm:"foreignKey:UserID" json:"-"`
-	Type               BillableType           `gorm:"uniqueIndex:uni_billable_resources_type_resource;size:20;not null" json:"type"`
-	ResourceID         uint                   `gorm:"uniqueIndex:uni_billable_resources_type_resource;not null" json:"resource_id"`
-	SpecID             uint                   `gorm:"not null;index:idx_billable_resources_spec_id" json:"spec_id"`
-	Spec               BillableSpec           `gorm:"foreignKey:SpecID" json:"-"`
-	BillingStatus      BillableResourceStatus `gorm:"size:20;not null;default:active" json:"billing_status"`
-	CurrentPeriodStart time.Time              `gorm:"not null" json:"current_period_start"`
-	NextInvoiceAt      time.Time              `gorm:"not null" json:"next_invoice_at"`
-	CreatedAt          time.Time              `json:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at"`
+	ID                    uint                   `gorm:"primaryKey" json:"id"`
+	UserID                uint                   `gorm:"not null;index:idx_billable_resources_user_id" json:"user_id"`
+	User                  User                   `gorm:"foreignKey:UserID" json:"-"`
+	Type                  BillableType           `gorm:"uniqueIndex:uni_billable_resources_type_resource;size:20;not null" json:"type"`
+	ResourceID            uint                   `gorm:"uniqueIndex:uni_billable_resources_type_resource;not null" json:"resource_id"`
+	SpecID                uint                   `gorm:"not null;index:idx_billable_resources_spec_id" json:"spec_id"`
+	Spec                  BillableSpec           `gorm:"foreignKey:SpecID" json:"-"`
+	BillingStatus         BillableResourceStatus `gorm:"size:20;not null;default:active;index:idx_billable_resources_due,priority:1" json:"billing_status"`
+	CurrentPeriodStart    time.Time              `gorm:"not null" json:"current_period_start"`
+	NextInvoiceAt         time.Time              `gorm:"not null;index:idx_billable_resources_due,priority:2" json:"next_invoice_at"`
+	BillingAnchorDay      int                    `gorm:"not null;default:0" json:"billing_anchor_day"`
+	BillingAnchorMonthEnd bool                   `gorm:"not null;default:false" json:"billing_anchor_month_end"`
+	CreatedAt             time.Time              `json:"created_at"`
+	UpdatedAt             time.Time              `json:"updated_at"`
 }
 
 // Invoice aggregates one user's charges for an exact billing period.
@@ -1050,9 +1190,9 @@ type Invoice struct {
 
 type InvoiceItem struct {
 	ID                 uint             `gorm:"primaryKey" json:"id"`
-	InvoiceID          uint             `gorm:"not null;index:idx_invoice_items_invoice_id" json:"invoice_id"`
+	InvoiceID          uint             `gorm:"uniqueIndex:uni_invoice_items_invoice_resource;not null;index:idx_invoice_items_invoice_id" json:"invoice_id"`
 	Invoice            Invoice          `gorm:"foreignKey:InvoiceID" json:"-"`
-	BillableResourceID uint             `gorm:"not null;index:idx_invoice_items_billable_resource_id" json:"billable_resource_id"`
+	BillableResourceID uint             `gorm:"uniqueIndex:uni_invoice_items_invoice_resource;not null;index:idx_invoice_items_billable_resource_id" json:"billable_resource_id"`
 	BillableResource   BillableResource `gorm:"foreignKey:BillableResourceID" json:"-"`
 	SpecID             uint             `gorm:"not null;index:idx_invoice_items_spec_id" json:"spec_id"`
 	Spec               BillableSpec     `gorm:"foreignKey:SpecID" json:"-"`

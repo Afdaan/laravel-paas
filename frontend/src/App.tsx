@@ -45,7 +45,9 @@ const UserDomains = lazy(() => import('./pages/user/Domains'))
 const AdminDomains = lazy(() => import('./pages/admin/Domains'))
 const UserSettings = lazy(() => import('./pages/user/Settings').then(module => ({ default: module.UserSettings })))
 const UserSecretStore = lazy(() => import('./pages/user/SecretStoreDashboard'))
+const UserBilling = lazy(() => import('./pages/user/Billing'))
 const AdminSecretStore = lazy(() => import('./pages/admin/AdminSecretStoreExplorer'))
+const AdminBilling = lazy(() => import('./pages/admin/Billing'))
 
 
 // Protected Route Component
@@ -237,6 +239,7 @@ function App() {
           <Route path="/projects/new" element={<UserNewProject />} />
           <Route path="/projects/:uid" element={<UserProjectDetail />} />
           <Route path="/databases" element={<UserDatabases />} />
+          <Route path="/billing" element={<UserBilling />} />
           <Route path="/domains" element={<UserDomains />} />
           <Route path="/projects/:uid/database" element={<DatabaseManager />} />
           <Route path="/feedback" element={<UserFeedback />} />
@@ -264,6 +267,7 @@ function App() {
           <Route path="domains" element={<AdminDomains />} />
           <Route path="queue" element={<AdminDeploymentQueue />} />
           <Route path="secretstores" element={<AdminSecretStore />} />
+          <Route path="billing" element={<AdminBilling />} />
         </Route>
 
         {/* Fallback */}

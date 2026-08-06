@@ -33,9 +33,12 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/billinggate"
 	"github.com/laravel-paas/shared/services/setting"
 	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DeploymentWorker processes deployment jobs from the queue
@@ -233,6 +236,7 @@ func (w *DeploymentWorker) processJobs() {
 
 	updateSemaphore()
 
+	lastProcessingRecovery := time.Time{}
 	for w.running {
 		// Update semaphore config dynamically just in case it changes
 		updateSemaphore()
@@ -249,14 +253,21 @@ func (w *DeploymentWorker) processJobs() {
 			continue
 		}
 
+		if time.Since(lastProcessingRecovery) >= time.Minute {
+			if err := w.redisService.RequeueExpiredDeploymentJobs(10 * time.Minute); err != nil {
+				slog.Error("Failed to reclaim expired deployment jobs", "error", err)
+			}
+			lastProcessingRecovery = time.Now()
+		}
+
 		// Wait for next job with 5 second timeout
 		job, err := w.redisService.DequeueDeployment(5 * time.Second)
 
 		// If we're stopping, don't start new jobs
 		if !w.running {
-			// If we got a job but we're stopping, put it back in the queue
+			// If we got a job but we're stopping, return its durable claim to the queue.
 			if job != nil {
-				if _, err := w.redisService.EnqueueDeployment(job.ProjectID, job.UserID, job.Type); err != nil {
+				if err := w.redisService.RequeueDeploymentJob(job); err != nil {
 					slog.Error("Failed to re-enqueue job during shutdown", "projectId", job.ProjectID, "error", err)
 				}
 			}
@@ -280,21 +291,39 @@ func (w *DeploymentWorker) processJobs() {
 		// Process the job
 		isLightweight := job.Type == "restart" || job.Type == "update_env" || job.Type == "stop" || job.Type == "start"
 
-		w.wg.Add(1)
 		if isLightweight {
+			w.wg.Add(1)
 			go func(j *infrastructure.DeploymentJob) {
 				defer w.wg.Done()
+				defer w.acknowledgeDeploymentJob(j)
 				w.processDeployment(j)
 			}(job)
 		} else {
 			localSem := sem
-			localSem <- struct{}{}
+			heartbeat := time.NewTicker(30 * time.Second)
+			for {
+				select {
+				case localSem <- struct{}{}:
+					heartbeat.Stop()
+					goto heavyJobReady
+				case <-heartbeat.C:
+					if err := w.redisService.RenewDeploymentProcessingHeartbeat(job); err != nil {
+						heartbeat.Stop()
+						slog.Error("Lost queued deployment processing claim", "jobId", job.JobID, "error", err)
+						goto nextJob
+					}
+				}
+			}
+		heavyJobReady:
+			w.wg.Add(1)
 			go func(j *infrastructure.DeploymentJob, sema chan struct{}) {
 				defer w.wg.Done()
 				defer func() { <-sema }()
+				defer w.acknowledgeDeploymentJob(j)
 				w.processDeployment(j)
 			}(job, localSem)
 		}
+	nextJob:
 	}
 }
 
@@ -378,7 +407,11 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		DeploymentType: job.Type,
 	}
 	if err := w.redisService.AcquireDeploymentLease(job.JobID, leaseMeta, 2*time.Minute); err != nil {
-		slog.Warn("Failed to acquire deployment job lease", "jobId", job.JobID, "workerId", workerID, "error", err)
+		slog.Error("Failed to acquire deployment job lease", "jobId", job.JobID, "workerId", workerID, "error", err)
+		if requeueErr := w.redisService.RequeueDeploymentJob(job); requeueErr != nil {
+			slog.Error("Failed to return uncertain deployment lease claim", "jobId", job.JobID, "error", requeueErr)
+		}
+		return
 	} else {
 		w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_acquired", fmt.Sprintf("Acquired lease for %s on %s", jobName, workerName))
 	}
@@ -417,7 +450,12 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		delay := calculateBackoff(job.RetryCount)
 		job.RetryCount++
 		slog.Warn("Project is already being deployed, enqueuing delayed job with exponential backoff", "id", job.ProjectID, "retry", job.RetryCount, "delay", delay.Round(time.Millisecond))
-		_ = w.redisService.EnqueueDelayedDeploymentJob(job, delay)
+		if err := w.redisService.EnqueueDelayedDeploymentJob(job, delay); err != nil {
+			slog.Error("Failed to enqueue delayed deployment retry; returning claim to queue", "projectId", job.ProjectID, "error", err)
+			if requeueErr := w.redisService.RequeueDeploymentJob(job); requeueErr != nil {
+				slog.Error("Failed to return deployment claim after delayed enqueue failure", "projectId", job.ProjectID, "error", requeueErr)
+			}
+		}
 		return
 	}
 
@@ -447,18 +485,29 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	}
 
 	stopHeartbeat := make(chan struct{})
+	heartbeatDone := make(chan struct{})
 	go func() {
+		defer close(heartbeatDone)
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				if err := w.redisService.RenewDeploymentLock(job.ProjectID, lockToken, 2*time.Minute); err != nil {
-					slog.Warn("Failed to renew deployment lock", "projectId", job.ProjectID, "error", err)
+					slog.Error("Lost deployment lock; fencing deployment", "projectId", job.ProjectID, "error", err)
+					cancel()
+					return
 				}
 				if err := w.redisService.RenewDeploymentLease(job.JobID, workerID, 2*time.Minute); err != nil {
-					slog.Warn("Failed to renew deployment job lease", "jobId", job.JobID, "workerId", workerID, "error", err)
+					slog.Error("Lost deployment lease; fencing deployment", "jobId", job.JobID, "workerId", workerID, "error", err)
+					cancel()
+					return
 				} else {
+					if err := w.redisService.RenewDeploymentProcessingHeartbeat(job); err != nil {
+						slog.Error("Lost deployment processing claim; fencing deployment", "jobId", job.JobID, "error", err)
+						cancel()
+						return
+					}
 					w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_renewed", fmt.Sprintf("Renewed lease for %s", jobName))
 				}
 				if err := w.projectRepo.UpdateDeploymentHeartbeat(job.ProjectID); err != nil {
@@ -475,6 +524,7 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	// Ensure lock is released and heartbeat stopped after deployment
 	defer func() {
 		close(stopHeartbeat)
+		<-heartbeatDone
 		if err := w.redisService.ReleaseDeploymentLock(job.ProjectID, lockToken); err != nil {
 			slog.Warn("Failed to release lock for project", "id", job.ProjectID, "error", err)
 		}
@@ -501,6 +551,33 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		w.redisService.IncrementDeploymentCounter("failed")
 		return
 	}
+	if job.Type == "stop" && job.BillingSuspension {
+		if !w.billingSuspensionStillRequired(project.ID, job.BillingSuspensionTaskID) {
+			return
+		}
+	}
+	if billingRuntimeAction(job.Type) {
+		billingEnabled, blockDays := false, 0
+		if w.cfg != nil {
+			billingEnabled = w.cfg.BillingEnabled
+			blockDays = w.cfg.BillingDeployBlockDays
+		}
+		gateErr := billinggate.NewProjectRuntimeGate(w.projectRepo.DB(), billingEnabled, blockDays).Check(context.Background(), project.ID, time.Now().UTC())
+		if gateErr != nil {
+			slog.Warn("Blocked project runtime action due to billing", "projectId", project.ID, "jobId", job.JobID, "type", job.Type, "error", gateErr)
+			if job.BillingResume {
+				if err := w.stopStaleBillingResume(project.ID, job.BillingSuspensionTaskID); err != nil {
+					slog.Error("Failed to compensate stale billing resume", "projectId", project.ID, "taskId", job.BillingSuspensionTaskID, "error", err)
+					w.updateProjectError(project, job.JobID, "Deployment blocked and billing-resume containers could not be stopped: "+err.Error())
+					w.redisService.IncrementDeploymentCounter("failed")
+					return
+				}
+			}
+			w.updateProjectError(project, job.JobID, "Deployment blocked: resolve the overdue billing invoice before starting or deploying this project")
+			w.redisService.IncrementDeploymentCounter("failed")
+			return
+		}
+	}
 
 	// Execute deployment
 	startTime := time.Now()
@@ -516,6 +593,518 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 	w.redisService.IncrementDeploymentCounter("processed")
 }
 
+func (w *DeploymentWorker) billingSuspensionStillRequired(projectID, taskID uint) bool {
+	if w == nil || w.projectRepo == nil || projectID == 0 || taskID == 0 {
+		return false
+	}
+	allowed := false
+	err := w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			return err
+		}
+		if resource.BillingStatus != models.BillableResourceStatusSuspended {
+			return nil
+		}
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			return err
+		}
+		allowed = true
+		return nil
+	})
+	if err != nil {
+		slog.Info("Discarding stale billing suspension stop", "project_id", projectID, "task_id", taskID, "error", err)
+		return false
+	}
+	return allowed
+}
+
+func (w *DeploymentWorker) finalizeBillingSuspensionStop(projectID, taskID uint) (bool, error) {
+	if w == nil || w.projectRepo == nil || projectID == 0 || taskID == 0 {
+		return false, nil
+	}
+	finalized := false
+	err := w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if resource.BillingStatus != models.BillableResourceStatusSuspended {
+			return nil
+		}
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var project models.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&project).Update("status", models.StatusStopped).Error; err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if err := tx.Model(&task).Update("stop_completed_at", &now).Error; err != nil {
+			return err
+		}
+		finalized = true
+		return nil
+	})
+	return finalized, err
+}
+
+type billingStopSnapshot struct {
+	mainContainerID   string
+	workerContainerID string
+	mainWasRunning    bool
+	workerWasRunning  bool
+	mainStopped       bool
+	workerStopped     bool
+}
+
+func (s billingStopSnapshot) anyWasRunning() bool {
+	return s.mainWasRunning || s.workerWasRunning
+}
+
+func (s billingStopSnapshot) anyStopped() bool {
+	return s.mainStopped || s.workerStopped
+}
+
+var errBillingSuspensionNoLongerRequired = errors.New("billing suspension no longer required")
+
+func (w *DeploymentWorker) stopProjectContainers(project *models.Project, taskID uint, billingSuspension bool, appendLog func(string)) (billingStopSnapshot, error) {
+	if billingSuspension {
+		snapshot, found, err := w.loadBillingSuspensionStopSnapshot(project.ID, taskID)
+		if err != nil {
+			return snapshot, err
+		}
+		if !found {
+			snapshot, err = inspectBillingStopSnapshot(project, w.dockerService.IsContainerRunning)
+			if err != nil {
+				return snapshot, err
+			}
+			if err := w.checkpointBillingSuspensionStop(project.ID, taskID, snapshot); err != nil {
+				return snapshot, err
+			}
+			snapshot, found, err = w.loadBillingSuspensionStopSnapshot(project.ID, taskID)
+			if err != nil {
+				return snapshot, err
+			}
+			if !found {
+				return snapshot, errors.New("billing suspension stop snapshot missing after checkpoint")
+			}
+		}
+		return stopSnapshotContainers(snapshot, true, w.dockerService.StopContainer, appendLog)
+	}
+	return stopProjectContainers(
+		project,
+		false,
+		w.dockerService.IsContainerRunning,
+		w.dockerService.StopContainer,
+		appendLog,
+		nil,
+	)
+}
+
+func stopProjectContainers(project *models.Project, billingSuspension bool, isRunning func(string) (bool, error), stop func(string) error, appendLog func(string), checkpoint func(billingStopSnapshot) error) (billingStopSnapshot, error) {
+	if project == nil {
+		return billingStopSnapshot{}, errors.New("project is required")
+	}
+
+	var snapshot billingStopSnapshot
+	if project.ContainerID != nil {
+		snapshot.mainContainerID = *project.ContainerID
+	}
+	if project.WorkerContainerID != nil {
+		snapshot.workerContainerID = *project.WorkerContainerID
+	}
+	if billingSuspension {
+		observedSnapshot, err := inspectBillingStopSnapshot(project, isRunning)
+		if err != nil {
+			return observedSnapshot, err
+		}
+		snapshot = observedSnapshot
+		if checkpoint != nil {
+			if err := checkpoint(snapshot); err != nil {
+				return snapshot, err
+			}
+		}
+	}
+	return stopSnapshotContainers(snapshot, billingSuspension, stop, appendLog)
+}
+
+func inspectBillingStopSnapshot(project *models.Project, isRunning func(string) (bool, error)) (billingStopSnapshot, error) {
+	if project == nil {
+		return billingStopSnapshot{}, errors.New("project is required")
+	}
+	var snapshot billingStopSnapshot
+	if project.ContainerID != nil {
+		snapshot.mainContainerID = *project.ContainerID
+	}
+	if project.WorkerContainerID != nil {
+		snapshot.workerContainerID = *project.WorkerContainerID
+	}
+	inspectContainer := func(kind, containerID string, setRunning func()) error {
+		if containerID == "" {
+			return nil
+		}
+		running, err := isRunning(containerID)
+		if err != nil {
+			return fmt.Errorf("inspect %s container: %w", kind, err)
+		}
+		if running {
+			setRunning()
+		}
+		return nil
+	}
+	if err := inspectContainer("main", snapshot.mainContainerID, func() { snapshot.mainWasRunning = true }); err != nil {
+		return snapshot, err
+	}
+	if err := inspectContainer("worker", snapshot.workerContainerID, func() { snapshot.workerWasRunning = true }); err != nil {
+		return snapshot, err
+	}
+	return snapshot, nil
+}
+
+func stopSnapshotContainers(snapshot billingStopSnapshot, billingSuspension bool, stop func(string) error, appendLog func(string)) (billingStopSnapshot, error) {
+	stopContainer := func(kind, containerID string, wasRunning bool, setStopped func()) error {
+		if containerID == "" {
+			return nil
+		}
+		if billingSuspension && !wasRunning {
+			return nil
+		}
+		appendLog(fmt.Sprintf("Stopping %s container: %s", kind, containerID))
+		if err := stop(containerID); err != nil {
+			return fmt.Errorf("stop %s container: %w", kind, err)
+		}
+		setStopped()
+		return nil
+	}
+
+	if err := stopContainer("main", snapshot.mainContainerID, snapshot.mainWasRunning, func() { snapshot.mainStopped = true }); err != nil {
+		return snapshot, err
+	}
+	if err := stopContainer("worker", snapshot.workerContainerID, snapshot.workerWasRunning, func() { snapshot.workerStopped = true }); err != nil {
+		return snapshot, err
+	}
+	return snapshot, nil
+}
+
+func (w *DeploymentWorker) restoreBillingStoppedContainers(snapshot billingStopSnapshot) error {
+	return restoreBillingStoppedContainers(snapshot, w.dockerService.StartContainer)
+}
+
+func restoreBillingStoppedContainers(snapshot billingStopSnapshot, start func(string) error) error {
+	var restartErr error
+	if snapshot.mainStopped {
+		if err := start(snapshot.mainContainerID); err != nil {
+			restartErr = errors.Join(restartErr, fmt.Errorf("restart main container after stale billing stop: %w", err))
+		}
+	}
+	if snapshot.workerStopped {
+		if err := start(snapshot.workerContainerID); err != nil {
+			restartErr = errors.Join(restartErr, fmt.Errorf("restart worker container after stale billing stop: %w", err))
+		}
+	}
+	return restartErr
+}
+
+func (w *DeploymentWorker) checkpointBillingSuspensionStop(projectID, taskID uint, snapshot billingStopSnapshot) error {
+	if w == nil || w.projectRepo == nil || projectID == 0 || taskID == 0 {
+		return errBillingSuspensionNoLongerRequired
+	}
+	now := time.Now().UTC()
+	return w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errBillingSuspensionNoLongerRequired
+			}
+			return err
+		}
+		if resource.BillingStatus != models.BillableResourceStatusSuspended {
+			return errBillingSuspensionNoLongerRequired
+		}
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errBillingSuspensionNoLongerRequired
+			}
+			return err
+		}
+		if task.StopAttemptedAt != nil {
+			return nil
+		}
+		return tx.Model(&task).Updates(map[string]any{
+			"main_container_id":   snapshot.mainContainerID,
+			"worker_container_id": snapshot.workerContainerID,
+			"main_was_running":    snapshot.mainWasRunning,
+			"worker_was_running":  snapshot.workerWasRunning,
+			"stop_attempted_at":   &now,
+			"last_error":          "",
+		}).Error
+	})
+}
+
+func (w *DeploymentWorker) loadBillingSuspensionStopSnapshot(projectID, taskID uint) (billingStopSnapshot, bool, error) {
+	if w == nil || w.projectRepo == nil || projectID == 0 || taskID == 0 {
+		return billingStopSnapshot{}, false, errBillingSuspensionNoLongerRequired
+	}
+	var snapshot billingStopSnapshot
+	found := false
+	err := w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errBillingSuspensionNoLongerRequired
+			}
+			return err
+		}
+		if resource.BillingStatus != models.BillableResourceStatusSuspended {
+			return errBillingSuspensionNoLongerRequired
+		}
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errBillingSuspensionNoLongerRequired
+			}
+			return err
+		}
+		if task.StopAttemptedAt == nil {
+			return nil
+		}
+		snapshot = billingStopSnapshot{
+			mainContainerID:   task.MainContainerID,
+			workerContainerID: task.WorkerContainerID,
+			mainWasRunning:    task.MainWasRunning,
+			workerWasRunning:  task.WorkerWasRunning,
+		}
+		found = true
+		return nil
+	})
+	return snapshot, found, err
+}
+
+type billingResumePlan struct {
+	mainContainerID   string
+	workerContainerID string
+	mainWasRunning    bool
+	workerWasRunning  bool
+}
+
+func (w *DeploymentWorker) resumeBillingSuspension(projectID, taskID uint) (bool, error) {
+	if w == nil || w.projectRepo == nil || w.dockerService == nil || projectID == 0 || taskID == 0 {
+		return false, nil
+	}
+	var plan billingResumePlan
+	required := false
+	err := w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if resource.BillingStatus != models.BillableResourceStatusActive {
+			return nil
+		}
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND completed_at IS NOT NULL AND resume_requested_at IS NOT NULL AND resume_completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var project models.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
+			return err
+		}
+		mainContainerID, workerContainerID := "", ""
+		if project.ContainerID != nil {
+			mainContainerID = *project.ContainerID
+		}
+		if project.WorkerContainerID != nil {
+			workerContainerID = *project.WorkerContainerID
+		}
+		if (task.MainWasRunning && mainContainerID != task.MainContainerID) || (task.WorkerWasRunning && workerContainerID != task.WorkerContainerID) {
+			now := time.Now().UTC()
+			return tx.Model(&task).Update("resume_completed_at", &now).Error
+		}
+		plan = billingResumePlan{
+			mainContainerID:   task.MainContainerID,
+			workerContainerID: task.WorkerContainerID,
+			mainWasRunning:    task.MainWasRunning,
+			workerWasRunning:  task.WorkerWasRunning,
+		}
+		required = plan.mainWasRunning || plan.workerWasRunning
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if !required {
+		if err := w.stopStaleBillingResume(projectID, taskID); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
+	startIfStopped := func(kind, containerID string, shouldResume bool) (bool, error) {
+		if !shouldResume {
+			return false, nil
+		}
+		running, err := w.dockerService.IsContainerRunning(containerID)
+		if err != nil {
+			return false, fmt.Errorf("inspect billing resume %s container: %w", kind, err)
+		}
+		if running {
+			return false, nil
+		}
+		if err := w.dockerService.StartContainer(containerID); err != nil {
+			return false, fmt.Errorf("start billing resume %s container: %w", kind, err)
+		}
+		return true, nil
+	}
+	started := billingStopSnapshot{mainContainerID: plan.mainContainerID, workerContainerID: plan.workerContainerID}
+	mainStarted, err := startIfStopped("main", plan.mainContainerID, plan.mainWasRunning)
+	if err != nil {
+		return true, err
+	}
+	started.mainStopped = mainStarted
+	workerStarted, err := startIfStopped("worker", plan.workerContainerID, plan.workerWasRunning)
+	if err != nil {
+		return true, errors.Join(err, stopStartedBillingResumeContainers(started, w.dockerService.StopContainer))
+	}
+	started.workerStopped = workerStarted
+
+	completed := false
+	err = w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if resource.BillingStatus != models.BillableResourceStatusActive {
+			return nil
+		}
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND resume_completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		now := time.Now().UTC()
+		if err := tx.Model(&task).Update("resume_completed_at", &now).Error; err != nil {
+			return err
+		}
+		if plan.mainWasRunning {
+			if err := tx.Model(&models.Project{}).Where("id = ?", projectID).Update("status", models.StatusRunning).Error; err != nil {
+				return err
+			}
+		}
+		completed = true
+		return nil
+	})
+	if err != nil {
+		return false, errors.Join(err, stopStartedBillingResumeContainers(started, w.dockerService.StopContainer))
+	}
+	if !completed {
+		if err := stopResumeOwnedBillingContainers(plan, w.dockerService.StopContainer); err != nil {
+			return false, err
+		}
+	}
+	return completed, nil
+}
+
+func stopStartedBillingResumeContainers(snapshot billingStopSnapshot, stop func(string) error) error {
+	var stopErr error
+	if snapshot.workerStopped {
+		if err := stop(snapshot.workerContainerID); err != nil {
+			stopErr = errors.Join(stopErr, fmt.Errorf("stop worker container after stale billing resume: %w", err))
+		}
+	}
+	if snapshot.mainStopped {
+		if err := stop(snapshot.mainContainerID); err != nil {
+			stopErr = errors.Join(stopErr, fmt.Errorf("stop main container after stale billing resume: %w", err))
+		}
+	}
+	return stopErr
+}
+
+func stopResumeOwnedBillingContainers(plan billingResumePlan, stop func(string) error) error {
+	return stopStartedBillingResumeContainers(billingStopSnapshot{
+		mainContainerID:   plan.mainContainerID,
+		workerContainerID: plan.workerContainerID,
+		mainStopped:       plan.mainWasRunning,
+		workerStopped:     plan.workerWasRunning,
+	}, stop)
+}
+
+// stopStaleBillingResume fences containers started by an interrupted billing resume
+// after the resource becomes non-active again.
+func (w *DeploymentWorker) stopStaleBillingResume(projectID, taskID uint) error {
+	if w == nil || w.projectRepo == nil || w.dockerService == nil || projectID == 0 || taskID == 0 {
+		return nil
+	}
+
+	var plan billingResumePlan
+	shouldStop := false
+	err := w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, projectID).First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if resource.BillingStatus == models.BillableResourceStatusActive {
+			return nil
+		}
+
+		var task models.ProjectSuspensionTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ? AND billable_resource_id = ? AND user_id = ? AND resume_requested_at IS NOT NULL AND resume_completed_at IS NULL", taskID, projectID, resource.ID, resource.UserID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		plan = billingResumePlan{
+			mainContainerID:   task.MainContainerID,
+			workerContainerID: task.WorkerContainerID,
+			mainWasRunning:    task.MainWasRunning,
+			workerWasRunning:  task.WorkerWasRunning,
+		}
+		shouldStop = plan.mainWasRunning || plan.workerWasRunning
+		return nil
+	})
+	if err != nil || !shouldStop {
+		return err
+	}
+	return stopResumeOwnedBillingContainers(plan, w.dockerService.StopContainer)
+}
+
+func billingRuntimeAction(jobType string) bool {
+	switch jobType {
+	case "deploy", "redeploy", "redeploy_clean", "rollback", "start", "restart", "update_env":
+		return true
+	default:
+		return false
+	}
+}
+
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
 	if job.Type == "delete" {
@@ -526,6 +1115,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			slog.Error("Failed to purge project during background delete job", "projectId", project.ID, "error", err)
 			return
 		}
+		w.acknowledgeProjectDeletion(project.ID)
 		return
 	}
 
@@ -612,6 +1202,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
 			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusStopped)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment updated on disk")
+			w.acknowledgeProjectEnvironmentSync(project.ID, job.EnvSyncGeneration)
 			return
 		}
 
@@ -630,6 +1221,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_completed", "Environment variables updated successfully")
 			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusRunning)
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
+			w.acknowledgeProjectEnvironmentSync(project.ID, job.EnvSyncGeneration)
 		}
 		return
 	}
@@ -655,22 +1247,52 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "stop_started", "Stopping application container(s)")
 		appendLog(">> Stopping application container(s)...")
 
-		if project.ContainerID != nil && *project.ContainerID != "" {
-			appendLog(fmt.Sprintf("Stopping main container: %s", *project.ContainerID))
-			if err := w.dockerService.StopContainer(*project.ContainerID); err != nil {
-				appendLog(fmt.Sprintf("Warning: Failed to stop main container: %v", err))
-			}
+		stopSnapshot, stopErr := w.stopProjectContainers(project, job.BillingSuspensionTaskID, job.BillingSuspension, appendLog)
+		if errors.Is(stopErr, errBillingSuspensionNoLongerRequired) {
+			appendLog(">> Billing suspension stop became stale before containers changed.")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "billing_stop_stale", "Payment completed before billing suspension stop began")
+			return
 		}
-		if project.WorkerContainerID != nil && *project.WorkerContainerID != "" {
-			appendLog(fmt.Sprintf("Stopping worker container: %s", *project.WorkerContainerID))
-			if err := w.dockerService.StopContainer(*project.WorkerContainerID); err != nil {
-				appendLog(fmt.Sprintf("Warning: Failed to stop worker container: %v", err))
+		if stopErr != nil {
+			if job.BillingSuspension && stopSnapshot.anyStopped() {
+				if compensationErr := w.restoreBillingStoppedContainers(stopSnapshot); compensationErr != nil {
+					stopErr = errors.Join(stopErr, fmt.Errorf("restore containers after partial billing stop: %w", compensationErr))
+				}
 			}
+			appendLog("✗ Failed to stop one or more application containers: " + stopErr.Error())
+			w.updateProjectError(project, job.JobID, "Failed to stop project containers: "+stopErr.Error())
+			return
 		}
-
-		project.Status = models.StatusStopped
-		if err := w.projectRepo.UpdateStatus(project.ID, models.StatusStopped); err != nil {
-			slog.Error("Failed to update project status to stopped", "id", project.ID, "error", err)
+		if job.BillingSuspension {
+			finalized, err := w.finalizeBillingSuspensionStop(project.ID, job.BillingSuspensionTaskID)
+			if err != nil {
+				appendLog("✗ Failed to finalize billing suspension: " + err.Error())
+				w.updateProjectError(project, job.JobID, "Failed to finalize billing suspension: "+err.Error())
+				return
+			}
+			if !finalized {
+				appendLog(">> Billing payment completed during suspension. Restoring application container(s)...")
+				restartErr := w.restoreBillingStoppedContainers(stopSnapshot)
+				if restartErr != nil {
+					appendLog("✗ Failed to restore container(s) after stale billing stop: " + restartErr.Error())
+					w.updateProjectError(project, job.JobID, "Failed to restore containers after stale billing stop: "+restartErr.Error())
+					return
+				}
+				if stopSnapshot.anyWasRunning() {
+					if err := w.projectRepo.UpdateStatus(project.ID, models.StatusRunning); err != nil {
+						slog.Error("Failed to restore project status after stale billing stop", "id", project.ID, "error", err)
+					}
+				}
+				appendLog("✓ Billing suspension stop discarded after payment.")
+				w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "billing_stop_reverted", "Payment completed before billing suspension stop finalized")
+				return
+			}
+			project.Status = models.StatusStopped
+		} else {
+			project.Status = models.StatusStopped
+			if err := w.projectRepo.UpdateStatus(project.ID, models.StatusStopped); err != nil {
+				slog.Error("Failed to update project status to stopped", "id", project.ID, "error", err)
+			}
 		}
 
 		if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
@@ -683,6 +1305,25 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "start" {
+		if job.BillingResume {
+			resumed, err := w.resumeBillingSuspension(project.ID, job.BillingSuspensionTaskID)
+			if err != nil {
+				appendLog("✗ Failed to resume billing-suspended container(s): " + err.Error())
+				w.updateProjectError(project, job.JobID, "Failed to resume billing-suspended containers: "+err.Error())
+				return
+			}
+			if !resumed {
+				appendLog(">> Billing resume became stale before containers changed.")
+				w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "billing_resume_stale", "Billing resume was no longer required")
+				return
+			}
+			if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
+				slog.Warn("Failed to invalidate cache after billing resume", "subdomain", project.Subdomain, "error", err)
+			}
+			appendLog("✓ Billing-suspended container(s) resumed successfully.")
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "billing_resume_completed", "Billing-suspended container(s) resumed successfully")
+			return
+		}
 		slog.Info("Performing container start action", "subdomain", project.Subdomain)
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "start_started", "Starting application container(s)")
 		appendLog(">> Starting application container(s)...")
@@ -860,6 +1501,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		dbName := project.GetDatabaseName()
 		dbUsername := dbName
 		dbPassword := project.DatabasePassword
+		connectionLimit := infrastructure.DefaultManagedDatabaseConnectionLimit
 		var dbInstance *models.DatabaseInstance
 		if project.DatabaseInstance != nil {
 			engine = project.DatabaseInstance.Engine
@@ -869,6 +1511,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			dbPassword = dbInstance.Password
 			if dbPassword == "" {
 				dbPassword = project.DatabasePassword
+			}
+			if dbInstance.ConnectionLimit > 0 {
+				connectionLimit = dbInstance.ConnectionLimit
 			}
 		}
 
@@ -892,9 +1537,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		provisionDatabase := func() error {
 			switch engine {
 			case "mysql":
-				return w.mysqlService.CreateDatabaseCustom(dbName, dbUsername, dbPassword)
+				return w.mysqlService.CreateDatabaseCustomWithConnectionLimit(dbName, dbUsername, dbPassword, connectionLimit)
 			case "postgresql":
-				return infrastructure.NewPostgreSQLService().CreateDatabaseCustom(dbName, dbUsername, dbPassword)
+				return infrastructure.NewPostgreSQLService().CreateDatabaseCustomWithConnectionLimit(dbName, dbUsername, dbPassword, connectionLimit)
 			default:
 				return fmt.Errorf("unsupported managed database engine %q", engine)
 			}
@@ -929,8 +1574,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}); err != nil {
 		slog.Warn("Failed to update commit hash", "id", project.ID, "error", err)
 	}
-
-	_ = w.redisService.SetIdempotency(project.ID, cloneHash, project.Subdomain, job.Type)
 
 	shortHash := cloneHash
 	if len(shortHash) > 7 {
@@ -1041,15 +1684,24 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		oldHelpWorker := *project.WorkerContainerID
 		oldWorkerContainerID = &oldHelpWorker
 	}
+	// BuildAndRun only assigns this field when a new worker starts. Clearing the
+	// stale value makes every pre-promotion cleanup target the rollout worker only.
+	project.WorkerContainerID = nil
 
 	projectDomain := w.cfg.ProjectDomain
 
 	cpuPercentStr := w.getSetting(models.SettingCPULimit, models.DefaultCPULimit)
 	cpuPercent, _ := strconv.ParseFloat(cpuPercentStr, 64)
 	cpuLimit := cpuPercent / 100.0
+	if project.CPULimit != nil && *project.CPULimit > 0 {
+		cpuLimit = *project.CPULimit
+	}
 
 	memoryMB := w.getSetting(models.SettingMemoryLimit, models.DefaultMemoryLimit)
 	memoryLimit := memoryMB + "m"
+	if project.MemoryLimit != nil && *project.MemoryLimit != "" {
+		memoryLimit = *project.MemoryLimit
+	}
 
 	buildTimeoutSec, err := strconv.Atoi(w.getSetting(models.SettingBuildTimeout, models.DefaultBuildTimeout))
 	if err != nil || buildTimeoutSec <= 0 {
@@ -1060,6 +1712,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	newContainerID, err := w.dockerService.BuildAndRun(buildCtx, project, finalPHPVersion, projectDomain, cpuLimit, memoryLimit, job.Type == "deploy", job.Type == "redeploy_clean", appendLog)
 	if err != nil {
+		if newContainerID != "" {
+			project.RolloutContainerID = &newContainerID
+			project.RolloutWorkerContainerID = project.WorkerContainerID
+			if checkpointErr := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id":        newContainerID,
+				"rollout_worker_container_id": project.WorkerContainerID,
+			}); checkpointErr != nil {
+				slog.Error("Failed to persist orphaned rollout recovery state", "projectId", project.ID, "containerId", newContainerID, "error", checkpointErr)
+			}
+		}
 		sharedDocker.GetCircuitBreaker().RecordFailure()
 		if previousCommitHash != "" {
 			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
@@ -1099,10 +1761,23 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Launching new container instance")
 
 	project.RolloutContainerID = &newContainerID
-	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"rollout_container_id": newContainerID,
-		"port":                 project.Port,
-	})
+	project.RolloutWorkerContainerID = project.WorkerContainerID
+	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"rollout_container_id":        newContainerID,
+		"rollout_worker_container_id": project.WorkerContainerID,
+		"port":                        project.Port,
+	}); err != nil {
+		if !w.cleanupRollout(project, newContainerID, project.WorkerContainerID) {
+			if checkpointErr := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+				"rollout_container_id":        newContainerID,
+				"rollout_worker_container_id": project.WorkerContainerID,
+			}); checkpointErr != nil {
+				slog.Error("Failed to persist rollout after cleanup failure", "projectId", project.ID, "containerId", newContainerID, "error", checkpointErr)
+			}
+		}
+		w.updateProjectError(project, job.JobID, "[ROLLOUT_CHECKPOINT_FAILED] Failed to persist rollout recovery state: "+err.Error())
+		return
+	}
 
 	// For SQLite Laravel projects, run migrations BEFORE healthcheck.
 	// The app cannot pass healthcheck without database tables (SQLSTATE no such table).
@@ -1124,17 +1799,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
-			_ = w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID)
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"rollout_container_id": nil,
-			})
+			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 55, "running_migrations", "Executing artisan migrate --force (pre-healthcheck for SQLite)")
 		slog.Info("Running database migrations before healthcheck (SQLite)", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations (SQLite: before healthcheck)...")
-		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
+		if output, err := w.dockerService.RunMigrations(ctx, newContainerID); err != nil {
 			migrationErrorCode := utils.MigrationErrorCode(output)
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "errorCode", migrationErrorCode, "error", err)
 			appendLog(fmt.Sprintf("ERROR [%s]: Migrations failed:\n%s", migrationErrorCode, utils.SanitizeLogOutput(output)))
@@ -1153,12 +1825,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
-			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
-				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
-			}
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"rollout_container_id": nil,
-			})
+			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
@@ -1191,12 +1858,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Healthcheck failed, keeping old version active")
 
-		if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to cleanup unhealthy deployment", "id", newContainerID, "error", err)
-		}
-		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"rollout_container_id": nil,
-		})
+		w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
 
 		w.updateProjectError(project, job.JobID, "[RUNTIME_FAILED] Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
@@ -1223,17 +1885,14 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
-			_ = w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID)
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"rollout_container_id": nil,
-			})
+			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force")
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations...")
-		if output, err := w.dockerService.RunMigrations(newContainerID); err != nil {
+		if output, err := w.dockerService.RunMigrations(ctx, newContainerID); err != nil {
 			migrationErrorCode := utils.MigrationErrorCode(output)
 			slog.Error("Migrations failed", "subdomain", project.Subdomain, "errorCode", migrationErrorCode, "error", err)
 			appendLog(fmt.Sprintf("ERROR [%s]: Migrations failed:\n%s", migrationErrorCode, utils.SanitizeLogOutput(output)))
@@ -1252,12 +1911,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
-			if err := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); err != nil {
-				slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", err)
-			}
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"rollout_container_id": nil,
-			})
+			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
@@ -1285,8 +1939,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
 		}
 		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"last_commit_hash":     previousCommitHash,
-			"rollout_container_id": nil,
+			"last_commit_hash": previousCommitHash,
 		})
 		if cloneHash != "" {
 			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
@@ -1294,22 +1947,25 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Routing sync failed")
 
-		if errRm := w.dockerService.RemoveContainer(newContainerID, project.WorkerContainerID); errRm != nil {
-			slog.Warn("Failed to cleanup failed container", "id", newContainerID, "error", errRm)
-		}
+		w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
 
 		w.updateProjectError(project, job.JobID, "[ROUTING_FAILED] Failed to update public routing: "+err.Error())
 		return
 	}
 
-	if err := w.projectService.PromoteRolloutContainer(project.ID, newContainerID); err != nil {
+	if err := w.projectService.PromoteRolloutContainerWithWorker(project.ID, newContainerID, project.WorkerContainerID); err != nil {
 		slog.Error("Failed to promote rollout container", "id", project.ID, "error", err)
 		appendLog("ERROR: Failed to promote deployment: " + err.Error())
-	} else {
-		if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
-			slog.Warn("Failed to promote detected runtime metadata", "id", project.ID, "error", err)
-		}
-		appendLog("✓ Release promoted successfully.")
+		w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+		w.updateProjectError(project, job.JobID, "[ROLLOUT_PROMOTION_FAILED] Failed to promote release: "+err.Error())
+		return
+	}
+	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
+		slog.Warn("Failed to promote detected runtime metadata", "id", project.ID, "error", err)
+	}
+	appendLog("✓ Release promoted successfully.")
+	if cloneHash != "" {
+		_ = w.redisService.SetIdempotency(project.ID, cloneHash, project.Subdomain, job.Type)
 	}
 	project.Status = models.StatusRunning
 	project.ContainerID = &newContainerID
@@ -1359,6 +2015,39 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
 		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}()
+}
+
+func (w *DeploymentWorker) acknowledgeProjectEnvironmentSync(projectID, generation uint) {
+	if generation == 0 {
+		return
+	}
+	if err := w.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var task models.ProjectEnvSyncTask
+		if err := tx.Where("project_id = ?", projectID).First(&task).Error; err != nil {
+			return err
+		}
+		if task.AcknowledgedGeneration >= generation {
+			return nil
+		}
+		return tx.Model(&task).Updates(map[string]any{"acknowledged_generation": generation, "last_error": ""}).Error
+	}); err != nil {
+		slog.Error("Failed to acknowledge durable project environment sync", "projectId", projectID, "generation", generation, "error", err)
+	}
+}
+
+func (w *DeploymentWorker) acknowledgeProjectDeletion(projectID uint) {
+	now := time.Now().UTC()
+	if err := w.projectRepo.DB().Model(&models.ProjectDeletionTask{}).
+		Where("project_id = ? AND completed_at IS NULL", projectID).
+		Update("completed_at", now).Error; err != nil {
+		slog.Error("Failed to acknowledge durable project deletion", "projectId", projectID, "error", err)
+	}
+}
+
+func (w *DeploymentWorker) acknowledgeDeploymentJob(job *infrastructure.DeploymentJob) {
+	if err := w.redisService.AcknowledgeDeployment(job); err != nil {
+		slog.Error("Failed to acknowledge deployment job", "jobId", job.JobID, "projectId", job.ProjectID, "error", err)
+	}
 }
 
 func detectJSFrameworkFromPackage(packagePath string) string {
@@ -1832,6 +2521,26 @@ func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, event
 }
 
 // updateProjectError sets project deployment status to failed
+// cleanupRollout clears durable recovery state only after Docker confirms that
+// every rollout container is gone. A failed cleanup remains checkpointed for
+// watchdog reconciliation.
+func (w *DeploymentWorker) cleanupRollout(project *models.Project, containerID string, workerContainerID *string) bool {
+	if err := w.dockerService.RemoveContainer(containerID, workerContainerID); err != nil {
+		slog.Error("Failed to cleanup rollout container", "projectId", project.ID, "containerId", containerID, "error", err)
+		return false
+	}
+	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"rollout_container_id":        nil,
+		"rollout_worker_container_id": nil,
+	}); err != nil {
+		slog.Error("Failed to clear rollout checkpoint after cleanup", "projectId", project.ID, "containerId", containerID, "error", err)
+		return false
+	}
+	project.RolloutContainerID = nil
+	project.RolloutWorkerContainerID = nil
+	return true
+}
+
 func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID string, errorMsg string) {
 	// Log the raw error for administrator diagnostics
 	slog.Error("Deployment failure with raw diagnostic details", "projectId", project.ID, "jobId", jobID, "error", errorMsg)
@@ -1899,10 +2608,7 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 		slog.Error("Failed to update project error log on error", "id", project.ID, "error", err)
 	}
 	if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
-		_ = w.dockerService.RemoveContainer(*project.RolloutContainerID, nil)
-		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"rollout_container_id": nil,
-		})
+		w.cleanupRollout(project, *project.RolloutContainerID, project.RolloutWorkerContainerID)
 	}
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache on error", "subdomain", project.Subdomain, "error", err)

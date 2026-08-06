@@ -4,6 +4,9 @@ package billing
 
 import (
 	"context"
+	"crypto/sha512"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -29,7 +32,7 @@ func TestTopupServicePostgresConcurrentWebhookCreditsOnce(t *testing.T) {
 	if err := db.First(&topup, view.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	notification := signedNotification(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("transaction-%d", credits))
+	notification := signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("transaction-%d", credits), credits)
 	for _, err := range runConcurrentCalls(t, []func() error{
 		func() error { return service.ProcessNotification(context.Background(), notification) },
 		func() error { return service.ProcessNotification(context.Background(), notification) },
@@ -41,6 +44,39 @@ func TestTopupServicePostgresConcurrentWebhookCreditsOnce(t *testing.T) {
 		}
 	}
 	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, credits, 1)
+}
+
+func TestTopupServicePostgresRejectsProviderTransactionIDMutationAfterCredit(t *testing.T) {
+	db := walletPostgresTestDB(t)
+	user := createPostgresWalletTestUser(t, db)
+	credits := int64(810000000 + time.Now().UTC().UnixNano()%99999999)
+	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), &fakeMidtransGateway{})
+	view, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-transaction-identity-%d", credits), TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	firstTransactionID := fmt.Sprintf("transaction-first-%d", credits)
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", firstTransactionID, credits)); err != nil {
+		t.Fatalf("process first valid callback: %v", err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("transaction-mutated-%d", credits), credits)); !errors.Is(err, ErrInvalidPaymentNotification) {
+		t.Fatalf("mutated transaction ID error=%v", err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, credits, 1)
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if topup.ProviderTransactionID == nil || *topup.ProviderTransactionID != firstTransactionID {
+		t.Fatalf("provider transaction ID=%v, want %q", topup.ProviderTransactionID, firstTransactionID)
+	}
 }
 
 func TestTopupServicePostgresConcurrentReplayAndWebhook(t *testing.T) {
@@ -61,7 +97,7 @@ func TestTopupServicePostgresConcurrentReplayAndWebhook(t *testing.T) {
 	if err := db.First(&topup, view.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	notification := signedNotification(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("transaction-%d", credits))
+	notification := signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("transaction-%d", credits), credits)
 	for _, err := range runConcurrentCalls(t, []func() error{
 		func() error {
 			_, err := service.Create(context.Background(), user.ID, key, TopupInput{PackageID: pkg.ID})
@@ -180,10 +216,10 @@ func TestTopupServicePostgresCompetingPaidAndRefundTransitions(t *testing.T) {
 	transactionID := fmt.Sprintf("transition-%d", credits)
 	for _, err := range runConcurrentCalls(t, []func() error{
 		func() error {
-			return service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "settlement", "accept", transactionID))
+			return service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", transactionID, credits))
 		},
 		func() error {
-			return service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "refund", "", transactionID))
+			return service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "refund", "", transactionID, credits))
 		},
 	}) {
 		if err != nil {
@@ -237,7 +273,7 @@ func TestTopupServicePostgresRollsBackLedgerWhenStatusUpdateFails(t *testing.T) 
 	if err := db.First(&topup, view.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("rollback-%d", credits))); err == nil {
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("rollback-%d", credits), credits)); err == nil {
 		t.Fatal("webhook succeeded despite topup status trigger")
 	}
 	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPending, 0, 0)
@@ -277,7 +313,7 @@ func TestTopupServicePostgresReconcileTerminalAfterTokenStorageFailure(t *testin
 	if err := db.Where("client_idempotency_key = ?", key).First(&topup).Error; err != nil {
 		t.Fatal(err)
 	}
-	paid := signedNotification(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("terminal-%d", credits))
+	paid := signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("terminal-%d", credits), credits)
 	if err := service.ProcessNotification(context.Background(), paid); err != nil {
 		t.Fatal(err)
 	}
@@ -293,4 +329,97 @@ func TestTopupServicePostgresReconcileTerminalAfterTokenStorageFailure(t *testin
 	if err := db.First(&topup, topup.ID).Error; err != nil || topup.ProviderRequestState != providerRequestTerminal {
 		t.Fatalf("topup=%#v err=%v", topup, err)
 	}
+}
+
+func TestTopupServicePostgresReversalCreatesAndSettlesPaymentDueEvidence(t *testing.T) {
+	db := walletPostgresTestDB(t)
+	user := createPostgresWalletTestUser(t, db)
+	credits := int64(300000000 + time.Now().UTC().UnixNano()%99999999)
+	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Reversal evidence", GithubURL: "https://github.com/example/reversal-evidence", Subdomain: fmt.Sprintf("reversal-evidence-%d", credits), Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Reversal evidence", Slug: fmt.Sprintf("reversal-evidence-%d", credits), CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), &fakeMidtransGateway{})
+	view, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-reversal-%d", credits), TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("reversal-paid-%d", credits), credits)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.wallets.Debit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryInvoiceDebit, AmountCredits: credits, IdempotencyKey: fmt.Sprintf("postgres-reversal-debit-%d", credits), ReferenceType: "invoice", ReferenceID: "reversal"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "refund", "", fmt.Sprintf("reversal-paid-%d", credits), credits)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue {
+		t.Fatalf("resource billing status=%s", resource.BillingStatus)
+	}
+	var invoice models.Invoice
+	if err := db.Where("idempotency_key = ?", fmt.Sprintf("topup:%d:payment-due", topup.ID)).First(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if invoice.Status != models.InvoiceStatusPaymentDue || invoice.DueAt == nil || invoice.TotalCredits != 0 {
+		t.Fatalf("payment-due invoice=%#v", invoice)
+	}
+	recovery, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-reversal-recovery-%d", credits), TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recoveryTopup models.Topup
+	if err := db.First(&recoveryTopup, recovery.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(recoveryTopup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("reversal-recovery-%d", credits), credits)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("recovered resource billing status=%s", resource.BillingStatus)
+	}
+	if err := db.First(&invoice, invoice.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if invoice.Status != models.InvoiceStatusPaid || invoice.PaidAt == nil {
+		t.Fatalf("recovered payment-due invoice=%#v", invoice)
+	}
+}
+
+func signedNotificationForAmount(orderID, status, fraud, transactionID string, amount int64) MidtransNotification {
+	notification := MidtransNotification{
+		OrderID:           orderID,
+		StatusCode:        "200",
+		GrossAmount:       fmt.Sprintf("%d.00", amount),
+		TransactionStatus: status,
+		FraudStatus:       fraud,
+		TransactionID:     transactionID,
+		Currency:          models.BillingCurrencyIDR,
+		MerchantID:        "merchant-id",
+	}
+	signature := sha512.Sum512([]byte(notification.OrderID + notification.StatusCode + notification.GrossAmount + "server-key"))
+	notification.SignatureKey = hex.EncodeToString(signature[:])
+	return notification
 }

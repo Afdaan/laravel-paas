@@ -178,7 +178,7 @@ func RequireSuperAdmin() fiber.Handler {
 func RequireNoBillingImpersonation() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
-			return apperr.New(403, "IMPERSONATION_FORBIDDEN", "Impersonated sessions cannot create or reconcile payments")
+			return apperr.New(403, "IMPERSONATION_FORBIDDEN", "Impersonated sessions cannot perform billing-affecting actions")
 		}
 		return c.Next()
 	}

@@ -79,13 +79,23 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		"name", project.Name,
 		"subdomain", project.Subdomain)
 
-	project.Status = models.StatusDeleting
-	if err := s.projectRepo.UpdateStatus(project.ID, project.Status); err != nil {
-		return err
-	}
-
-	_, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "delete")
-	return err
+	return s.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var locked models.Project
+		if err := tx.Where("id = ?", project.ID).First(&locked).Error; err != nil {
+			return err
+		}
+		if locked.Status != models.StatusDeleting {
+			if err := tx.Model(&locked).Update("status", models.StatusDeleting).Error; err != nil {
+				return fmt.Errorf("mark project deleting: %w", err)
+			}
+		}
+		task := models.ProjectDeletionTask{ProjectID: locked.ID, UserID: locked.UserID}
+		if err := tx.Where("project_id = ?", locked.ID).FirstOrCreate(&task).Error; err != nil {
+			return fmt.Errorf("create project deletion dispatch task: %w", err)
+		}
+		project.Status = models.StatusDeleting
+		return nil
+	})
 }
 
 // SyncProjectNginx triggers a sync to the remote Nginx proxy and stores the resulting config hash.
@@ -351,15 +361,14 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 		}
 
 		instance := &models.DatabaseInstance{
-			UserID:            userID,
-			Engine:            databaseEngine,
-			Status:            models.DBStatusActive,
-			Name:              *dbName,
-			Username:          dbUsername,
-			Password:          dbPassword,
-			Host:              host,
-			Port:              port,
-			StorageAllocation: 1073741824, // 1GB
+			UserID:   userID,
+			Engine:   databaseEngine,
+			Status:   models.DBStatusActive,
+			Name:     *dbName,
+			Username: dbUsername,
+			Password: dbPassword,
+			Host:     host,
+			Port:     port,
 		}
 		project.DatabaseInstance = instance
 	}

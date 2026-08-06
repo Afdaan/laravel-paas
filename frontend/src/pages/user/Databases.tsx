@@ -19,14 +19,15 @@ import {
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { databaseAPI, projectsAPI } from '../../services/api'
-import { Project, DatabaseInstance } from '../../types'
+import { databaseAPI, projectsAPI, billingAPI } from '../../services/api'
+import { Project, DatabaseInstance, BillingCatalogSpec } from '../../types'
 import useTranslation from '../../lib/useTranslation'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -175,6 +176,9 @@ export default function Databases() {
   const [createName, setCreateName] = useState('')
   const [createUsername, setCreateUsername] = useState('')
   const [createPassword, setCreatePassword] = useState('')
+  const [databaseSpecs, setDatabaseSpecs] = useState<BillingCatalogSpec[]>([])
+  const [createBillableSpecID, setCreateBillableSpecID] = useState(0)
+  const [databaseSpecsError, setDatabaseSpecsError] = useState(false)
   const [createdInstance, setCreatedInstance] = useState<{
     name: string
     username: string
@@ -183,6 +187,23 @@ export default function Databases() {
     port: number
     engine: string
   } | null>(null)
+
+  const loadDatabaseSpecs = useCallback(async () => {
+    try {
+      const { data } = await billingAPI.catalog()
+      const specs = data.specs.filter((spec) => spec.type === 'database')
+      setDatabaseSpecs(specs)
+      setCreateBillableSpecID((current) => current || specs[0]?.id || 0)
+      setDatabaseSpecsError(false)
+    } catch {
+      setDatabaseSpecsError(true)
+      toast.error(t('billing.catalogLoadFailed'))
+    }
+  }, [t])
+
+  useEffect(() => {
+    void loadDatabaseSpecs()
+  }, [loadDatabaseSpecs])
 
   const fetchData = useCallback(async () => {
     try {
@@ -425,7 +446,8 @@ export default function Databases() {
         engine: createEngine,
         name: createName,
         username: createUsername,
-        password: createPassword
+        password: createPassword,
+        billable_spec_id: createBillableSpecID,
       })
 
       const dbInst = res.data.database
@@ -530,6 +552,17 @@ export default function Databases() {
             </div>
 
             {/* Database Name */}
+
+            <div className="space-y-2">
+              <Label htmlFor="database-billable-spec" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('billing.databasePlan')}</Label>
+              <Select value={String(createBillableSpecID)} onValueChange={(value) => setCreateBillableSpecID(Number(value))}>
+                <SelectTrigger id="database-billable-spec" className="w-full text-xs">{databaseSpecs.find((spec) => spec.id === createBillableSpecID)?.name || t('billing.selectPlan')}</SelectTrigger>
+                <SelectContent>{databaseSpecs.map((spec) => <SelectItem key={spec.id} value={String(spec.id)} className="text-xs">{spec.name} · {t('billing.creditsPerMonth', { credits: spec.monthly_credits })}{spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}</SelectItem>)}</SelectContent>
+              </Select>
+              {databaseSpecsError && <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => void loadDatabaseSpecs()}>{t('billing.catalogRetry')}</Button>}
+            </div>
+
+            {/* Database Name */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
                 {t("databaseManager.databaseNameLabel")} <span className="text-destructive">*</span>
@@ -595,7 +628,7 @@ export default function Databases() {
             <Button type="button" variant="ghost" onClick={() => setShowCreateModal(false)} className="text-xs font-medium">
               {t("common.cancel")}
             </Button>
-            <Button type="submit" disabled={isActionLoading} className="text-xs font-medium">
+            <Button type="submit" disabled={isActionLoading || !createBillableSpecID} className="text-xs font-medium">
               {t("databaseManager.createDatabaseBtn")}
             </Button>
           </DialogFooter>
@@ -966,11 +999,9 @@ export default function Databases() {
                       <HardDrive className="w-4 h-4 shrink-0 text-primary" />
                     </div>
                   </div>
-                  <p className="text-lg font-bold tracking-tight text-foreground">
-                    1.0 GB
-                  </p>
+                  <p className="text-sm font-bold tracking-tight text-foreground">Not enforced</p>
                   <p className="text-[10px] text-muted-foreground font-medium">
-                    {t("databaseManager.allocatedLimit")}
+                    Storage quota is not currently enforced.
                   </p>
                 </CardContent>
               </Card>

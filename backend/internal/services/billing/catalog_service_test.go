@@ -3,11 +3,90 @@ package billing
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 )
+
+func TestCatalogServiceListsBoundedAdminBillingCollections(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Invoice{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallet := models.Wallet{UserID: user.ID, BalanceCredits: 250}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: now.AddDate(0, -1, 0), PeriodEnd: now, TotalCredits: 75, Status: models.InvoiceStatusPaid, IdempotencyKey: "invoice-collection"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.Topup{WalletID: wallet.ID, ClientIdempotencyKey: "topup-client-collection", Provider: models.BillingProviderMidtrans, ProviderOrderID: "topup-order-collection", AmountMinor: 50000, Currency: models.BillingCurrencyIDR, Credits: 500, Status: models.TopupStatusPaid}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewCatalogService(db)
+	wallets, err := service.ListAdminWallets(context.Background(), 1, 25)
+	if err != nil || wallets.Total != 1 || len(wallets.Data) != 1 || wallets.Data[0].UserID != user.ID || wallets.Data[0].BalanceCredits != 250 {
+		t.Fatalf("wallet collection = %#v, err=%v", wallets, err)
+	}
+	invoices, err := service.ListAdminInvoices(context.Background(), 1, 25)
+	if err != nil || invoices.Total != 1 || len(invoices.Data) != 1 || invoices.Data[0].UserID != user.ID || invoices.Data[0].TotalCredits != 75 {
+		t.Fatalf("invoice collection = %#v, err=%v", invoices, err)
+	}
+	topups, err := service.ListAdminTopups(context.Background(), 1, 25)
+	if err != nil || topups.Total != 1 || len(topups.Data) != 1 || topups.Data[0].UserID != user.ID || topups.Data[0].Credits != 500 {
+		t.Fatalf("topup collection = %#v, err=%v", topups, err)
+	}
+	if _, err := service.ListAdminWallets(context.Background(), 0, 25); err != ErrInvalidCatalogInput {
+		t.Fatalf("invalid page error = %v", err)
+	}
+	if _, err := service.ListAdminTopups(context.Background(), 1, 101); err != ErrInvalidCatalogInput {
+		t.Fatalf("invalid limit error = %v", err)
+	}
+}
+
+func TestCatalogServiceReportsUpcomingActiveResourceCharge(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.Wallet{UserID: user.ID, BalanceCredits: 20}).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Starter", Slug: "starter", CPUMillicores: 500, MemoryMB: 512, StorageGB: 1, MonthlyCredits: 75, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: 1, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	overview, err := NewCatalogService(db).GetOwnBillingOverview(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.UpcomingRequiredCredits != spec.MonthlyCredits {
+		t.Fatalf("upcoming required credits = %d, want %d", overview.UpcomingRequiredCredits, spec.MonthlyCredits)
+	}
+}
 
 func TestCatalogServiceRepricingVersionsRowsAndAudits(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -112,6 +191,16 @@ func TestCatalogServiceRejectsUnsafeInput(t *testing.T) {
 	}
 	if _, err := service.CreateTopupPackage(context.Background(), catalogAudit("package", "Unsafe request"), TopupPackageInput{Credits: maxTopupPackageCredits + 1, AmountMinor: 1, Reason: "Unsafe request"}); err != ErrInvalidCatalogInput {
 		t.Fatalf("oversized package error = %v", err)
+	}
+}
+
+func TestCatalogHidesUnenforcedDatabaseStorageTier(t *testing.T) {
+	databaseSpec := models.BillableSpec{ID: 1, Type: models.BillableTypeDatabase, Name: "Database", Slug: "database", CPUMillicores: 500, MemoryMB: 512, StorageGB: 100, MonthlyCredits: 100, Version: 1, IsActive: true}
+	projectSpec := models.BillableSpec{ID: 2, Type: models.BillableTypeProject, Name: "Project", Slug: "project", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+
+	catalog := catalogFromModels([]models.BillableSpec{databaseSpec, projectSpec}, nil)
+	if catalog.Specs[0].StorageGB != 0 || catalog.Specs[1].StorageGB != projectSpec.StorageGB {
+		t.Fatalf("catalog specs=%#v", catalog.Specs)
 	}
 }
 

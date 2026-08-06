@@ -78,6 +78,23 @@ func TestProductionRequiresExplicitTrustedProxyCIDRs(t *testing.T) {
 	}
 }
 
+func TestProductionValidatesBillingSuspensionWindow(t *testing.T) {
+	cfg := productionSecurityConfig()
+	cfg.BillingEnabled = true
+	cfg.BillingDeployBlockDays = 3
+	cfg.BillingGraceDays = 7
+	cfg.MidtransServerKey = "server"
+	cfg.MidtransClientKey = "client"
+	cfg.MidtransMerchantID = "merchant"
+	if err := cfg.ValidateProductionSecurity(); err != nil {
+		t.Fatalf("valid billing window rejected: %v", err)
+	}
+	cfg.BillingDeployBlockDays = cfg.BillingGraceDays
+	if err := cfg.ValidateProductionSecurity(); err == nil {
+		t.Fatal("accepted invalid billing suspension window")
+	}
+}
+
 func productionSecurityConfig() *Config {
 	return &Config{
 		AppEnv:                      "production",

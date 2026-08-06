@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -41,6 +42,7 @@ const (
 	midtransRequestTimeout     = 10 * time.Second
 	topupRequestTimeout        = midtransRequestTimeout + 2*time.Second
 	paymentRequestWaitInterval = 25 * time.Millisecond
+	invoiceRetryTimeout        = time.Second
 
 	providerRequestPending  = "pending"
 	providerRequestCreating = "creating"
@@ -261,7 +263,8 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 	}
 	eventKey := paymentEventKey(payloadJSON)
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var creditedUserID uint
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var topup models.Topup
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND provider_order_id = ?", models.BillingProviderMidtrans, validated.OrderID).First(&topup).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -311,8 +314,13 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 				}, true); err != nil {
 					return err
 				}
-				now := time.Now().UTC()
-				updates["paid_at"] = &now
+				if topup.Status != models.TopupStatusPaid {
+					creditedUserID = userID
+				}
+				if topup.Status != models.TopupStatusPaid {
+					now := time.Now().UTC()
+					updates["paid_at"] = &now
+				}
 			} else {
 				updates["status"] = topup.Status
 			}
@@ -322,15 +330,35 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 				if err != nil {
 					return err
 				}
-				if _, err := s.wallets.applyInTransaction(tx, LedgerMutation{
+				var activeResources []models.BillableResource
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("user_id = ? AND billing_status = ?", userID, models.BillableResourceStatusActive).
+					Find(&activeResources).Error; err != nil {
+					return fmt.Errorf("lock active resources before top-up reversal: %w", err)
+				}
+				reversal, err := s.wallets.applyInTransaction(tx, LedgerMutation{
 					UserID:         userID,
 					EntryType:      models.WalletLedgerEntryTopupReversal,
 					AmountCredits:  topup.Credits,
 					IdempotencyKey: fmt.Sprintf("topup:%d:reversal", topup.ID),
 					ReferenceType:  "topup",
 					ReferenceID:    strconv.FormatUint(uint64(topup.ID), 10),
-				}, false); err != nil {
+				}, false)
+				if err != nil {
 					return err
+				}
+				if reversal.BalanceAfter < 0 && len(activeResources) > 0 {
+					now := time.Now().UTC()
+					if err := recordTopupReversalPaymentDueTx(tx, &topup, activeResources, now); err != nil {
+						return err
+					}
+					resourceIDs := make([]uint, 0, len(activeResources))
+					for _, resource := range activeResources {
+						resourceIDs = append(resourceIDs, resource.ID)
+					}
+					if err := tx.Model(&models.BillableResource{}).Where("id IN ?", resourceIDs).Update("billing_status", models.BillableResourceStatusPaymentDue).Error; err != nil {
+						return fmt.Errorf("move overdue resources to payment due after top-up reversal: %w", err)
+					}
 				}
 			}
 		case models.TopupStatusPending:
@@ -353,6 +381,64 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if creditedUserID != 0 {
+		s.retryDueInvoices(ctx, creditedUserID)
+	}
+	return nil
+}
+
+func recordTopupReversalPaymentDueTx(tx *gorm.DB, topup *models.Topup, resources []models.BillableResource, dueAt time.Time) error {
+	if tx == nil || topup == nil || topup.ID == 0 || len(resources) == 0 {
+		return ErrInvalidPaymentNotification
+	}
+	idempotencyKey := fmt.Sprintf("topup:%d:payment-due", topup.ID)
+	var invoice models.Invoice
+	err := tx.Where("idempotency_key = ?", idempotencyKey).First(&invoice).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		periodStart := topup.CreatedAt.UTC()
+		invoice = models.Invoice{
+			UserID:         resources[0].UserID,
+			WalletID:       topup.WalletID,
+			PeriodStart:    periodStart,
+			PeriodEnd:      periodStart.Add(time.Second),
+			TotalCredits:   0,
+			Status:         models.InvoiceStatusPaymentDue,
+			IdempotencyKey: idempotencyKey,
+			DueAt:          &dueAt,
+		}
+		if err := tx.Create(&invoice).Error; err != nil {
+			return fmt.Errorf("create top-up reversal payment-due invoice: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("load top-up reversal payment-due invoice: %w", err)
+	}
+
+	for _, resource := range resources {
+		item := models.InvoiceItem{
+			InvoiceID:          invoice.ID,
+			BillableResourceID: resource.ID,
+			SpecID:             resource.SpecID,
+			Description:        "Top-up reversal payment due",
+			Credits:            0,
+		}
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
+		if result.Error != nil {
+			return fmt.Errorf("create top-up reversal payment-due item: %w", result.Error)
+		}
+	}
+	return nil
+}
+
+func (s *TopupService) retryDueInvoices(ctx context.Context, userID uint) {
+	// ponytail: bound webhook-side retry latency; the scheduler retries any remaining payment-due resources.
+	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), invoiceRetryTimeout)
+	defer cancel()
+	if err := NewInvoiceService(s.db, s.wallets).RetryDueForUser(retryCtx, userID, time.Now().UTC()); err != nil {
+		slog.Error("Billing invoice retry after top-up failed", "user_id", userID, "error", err)
+	}
 }
 
 func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.Topup) error {

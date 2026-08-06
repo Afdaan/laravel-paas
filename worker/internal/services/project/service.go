@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -78,43 +79,58 @@ func (s *ProjectService) PromoteRolloutContainer(id uint, newContainerID string)
 	return s.projectRepo.PromoteRolloutContainer(id, newContainerID)
 }
 
+func (s *ProjectService) PromoteRolloutContainerWithWorker(id uint, newContainerID string, workerContainerID *string) error {
+	return s.projectRepo.PromoteRolloutContainerWithWorker(id, newContainerID, workerContainerID)
+}
+
 func (s *ProjectService) DeleteProject(project *models.Project) error {
 	slog.Info("Executing thorough project deletion",
 		"id", project.ID,
 		"name", project.Name,
 		"subdomain", project.Subdomain)
 
+	var cleanupErr error
 	projectDomain := s.cfg.ProjectDomain
 	if err := s.nginxService.DeleteProject(project, projectDomain); err != nil {
-		slog.Warn("Failed to delete project from Nginx proxy", "subdomain", project.Subdomain, "error", err)
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete nginx project: %w", err))
 	}
 
 	// Clean up Traefik dynamic routing file
 	if err := traefik.DeleteProjectDynamicFile(s.cfg, project.UserID, project.ID, project.Subdomain); err != nil {
-		slog.Warn("Failed to delete project Traefik config", "id", project.ID, "error", err)
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete traefik project config: %w", err))
 	}
 
 	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
-		slog.Warn("Failed to invalidate subdomain cache", "subdomain", project.Subdomain, "error", err)
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("invalidate project cache: %w", err))
 	}
 
 	if project.ContainerID != nil {
 		slog.Debug("Removing containers", "mainID", *project.ContainerID, "workerID", project.WorkerContainerID)
 		if err := s.dockerService.RemoveContainer(*project.ContainerID, project.WorkerContainerID); err != nil {
-			slog.Warn("Failed to remove container", "id", *project.ContainerID, "error", err)
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove project container: %w", err))
+		}
+	}
+	if project.RolloutContainerID != nil && *project.RolloutContainerID != "" && (project.ContainerID == nil || *project.RolloutContainerID != *project.ContainerID) {
+		if err := s.dockerService.RemoveContainer(*project.RolloutContainerID, project.RolloutWorkerContainerID); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove rollout container: %w", err))
 		}
 	}
 	if err := s.dockerService.RemoveImage(project.Subdomain); err != nil {
-		slog.Warn("Failed to remove docker image", "subdomain", project.Subdomain, "error", err)
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove project image: %w", err))
 	}
 
 	// Managed databases are detached by the repository rather than deleted/dropped.
 
 	// CleanupFilesystem (Source Code & Persistent Data)
 	if err := s.dockerService.CleanupProject(project.UserID, project.Subdomain); err != nil {
-		slog.Warn("Failed to cleanup project filesystem", "subdomain", project.Subdomain, "error", err)
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("cleanup project filesystem: %w", err))
 	}
-	s.storageService.CleanupPersistentData(project)
+	if err := s.storageService.CleanupPersistentData(project); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("cleanup persistent project data: %w", err))
+	}
+	if cleanupErr != nil {
+		return cleanupErr
+	}
 
 	// Hard Delete from Database
 	if err := s.projectRepo.Delete(project.ID); err != nil {
@@ -223,7 +239,14 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 		"projectId", project.ID)
 
 	oldWebID := *project.ContainerID
-	oldWorkerID := project.WorkerContainerID
+	var oldWorkerID *string
+	if project.WorkerContainerID != nil {
+		workerID := *project.WorkerContainerID
+		oldWorkerID = &workerID
+	}
+	// StartExistingImage only assigns this field after creating a new worker.
+	// Clearing it keeps failed-rollout cleanup from targeting the active worker.
+	project.WorkerContainerID = nil
 
 	logFunc(">> Starting new application instance...")
 	newID, err := s.dockerService.StartExistingImage(project, projectDomain)
@@ -234,9 +257,15 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 	}
 	logFunc("✓ New application instance started.")
 
-	_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"rollout_container_id": newID,
-	})
+	project.RolloutContainerID = &newID
+	project.RolloutWorkerContainerID = project.WorkerContainerID
+	if err := s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		"rollout_container_id":        newID,
+		"rollout_worker_container_id": project.WorkerContainerID,
+	}); err != nil {
+		_ = s.dockerService.RemoveContainer(newID, project.WorkerContainerID)
+		return fmt.Errorf("checkpoint recreation rollout: %w", err)
+	}
 
 	logFunc("")
 	logFunc(">> Running application health checks...")
@@ -252,10 +281,12 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 		logFunc(">> Rolling back release...")
 		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
+		} else if err := s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"rollout_container_id":        nil,
+			"rollout_worker_container_id": nil,
+		}); err != nil {
+			slog.Warn("Failed to clear rollout checkpoint after healthcheck cleanup", "id", project.ID, "error", err)
 		}
-		_ = s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"rollout_container_id": nil,
-		})
 
 		return fmt.Errorf("recreation failed: %w", err)
 	}
@@ -263,12 +294,20 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 
 	logFunc("")
 	logFunc(">> Swapping application routing...")
-	if err := s.PromoteRolloutContainer(project.ID, newID); err != nil {
+	if err := s.PromoteRolloutContainerWithWorker(project.ID, newID, project.WorkerContainerID); err != nil {
 		logFunc("✗ Failed to route traffic to the new instance: " + err.Error())
 		slog.Error("Failed to promote rollout container during recreation", "id", project.ID, "error", err)
-	} else {
-		logFunc("✓ Application routing updated successfully.")
+		if cleanupErr := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); cleanupErr != nil {
+			slog.Warn("Failed to cleanup unpromoted container", "id", newID, "error", cleanupErr)
+		} else if cleanupErr := s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			"rollout_container_id":        nil,
+			"rollout_worker_container_id": nil,
+		}); cleanupErr != nil {
+			slog.Warn("Failed to clear rollout checkpoint after promotion failure", "id", project.ID, "error", cleanupErr)
+		}
+		return fmt.Errorf("promote rollout container: %w", err)
 	}
+	logFunc("✓ Application routing updated successfully.")
 	project.ContainerID = &newID
 	project.RolloutContainerID = nil
 
