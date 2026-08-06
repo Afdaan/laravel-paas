@@ -104,7 +104,7 @@ func (s *InvoiceService) RetryDueForUser(ctx context.Context, userID uint, now t
 	return s.runMonthlyWithRecovery(ctx, s.db, now, &userID)
 }
 
-func (s *InvoiceService) restoreCurrentPeriodResources(ctx context.Context, userID uint, now time.Time) error {
+func (s *InvoiceService) RestoreCurrentPeriodResources(ctx context.Context, userID uint, now time.Time) error {
 	return s.restoreCurrentPeriodResourcesWithDB(ctx, s.db, userID, now)
 }
 
@@ -200,7 +200,7 @@ func (s *InvoiceService) restoreCurrentPeriodResourcesWithDB(ctx context.Context
 	})
 }
 
-func (s *InvoiceService) restoreCurrentPeriodResourcesForAllUsers(ctx context.Context, now time.Time) error {
+func (s *InvoiceService) RestoreCurrentPeriodResourcesForAllUsers(ctx context.Context, now time.Time) error {
 	return s.restoreCurrentPeriodResourcesForAllUsersWithDB(ctx, s.db, now)
 }
 

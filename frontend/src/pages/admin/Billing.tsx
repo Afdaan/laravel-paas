@@ -17,13 +17,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 type Catalog = {
   specs: Array<{ id: number; name: string; slug: string; type: 'project' | 'database'; version: number; monthly_credits: number; cpu_millicores: number; memory_mb: number; storage_gb: number; connection_limit?: number; backup_retention_days?: number; is_active: boolean }>
-  packages: Array<{ id: number; credits: number; amount_minor: number; currency: string; version: number; is_active: boolean }>
+  packages: Array<{ id: number; credits: number; amount_minor: number; currency: string; sort_order: number; version: number; is_active: boolean }>
 }
 type Suspension = { user_id: number; resource_id: number; resource_type: string; status: string; oldest_due_at?: string; payment_due_days: number }
 type Page<T> = { data: T[]; page: number; limit: number; total: number }
 type Wallet = { user_id: number; balance_credits: number; updated_at: string }
 type Invoice = { id: number; user_id: number; total_credits: number; status: string; period_start: string; period_end: string; due_at?: string; paid_at?: string }
 type Topup = { id: number; user_id: number; credits: number; amount_minor: number; currency: string; status: string; created_at: string; paid_at?: string }
+type TopupPackage = { id: number; credits: number; amount_minor: number; currency: string; sort_order: number }
 type SpecForm = {
   type: 'project' | 'database'
   name: string
@@ -204,7 +205,10 @@ export default function AdminBilling() {
         error={errors.plans}
         onRetry={() => void load()}
         empty={t('billing.admin.noRecords')}
-        onEdit={isSuperAdmin ? startEditPackage : undefined}
+        onEdit={isSuperAdmin ? (id) => {
+          const pkg = catalog?.packages.find((p) => p.id === id)
+          if (pkg) startEditPackage(pkg)
+        } : undefined}
       />
     </div>
 
@@ -289,9 +293,9 @@ export default function AdminBilling() {
   </div>
 }
 
-function CatalogCard({ title, rows, loading, error, onRetry, empty, onEdit }: { title: string; rows?: Array<{ id: number; title: string; detail: string; active: boolean }>; loading: boolean; error?: string; onRetry?: () => void; empty: string; onEdit?: (row: { id: number; title: string; detail: string; active: boolean }) => void }) {
+function CatalogCard({ title, rows, loading, error, onRetry, empty, onEdit }: { title: string; rows?: Array<{ id: number; title: string; detail: string; active: boolean }>; loading: boolean; error?: string; onRetry?: () => void; empty: string; onEdit?: (id: number) => void }) {
   const { t } = useTranslation()
-  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !rows && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && rows?.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="text-sm font-medium">{row.title}</p><p className="text-xs text-muted-foreground">{row.detail}</p></div><div className="flex items-center gap-2">{onEdit && row.active && <Button size="icon-xs" variant="ghost" onClick={() => onEdit(row)} aria-label={t('billing.admin.editPackage')}><Pencil className="size-3.5" /></Button>}<Badge variant={row.active ? 'secondary' : 'outline'}>{row.active ? t('billing.admin.active') : t('billing.admin.inactive')}</Badge></div></div>)}{!loading && rows?.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}</CardContent></Card>
+  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !rows && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && rows?.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="text-sm font-medium">{row.title}</p><p className="text-xs text-muted-foreground">{row.detail}</p></div><div className="flex items-center gap-2">{onEdit && row.active && <Button size="icon-xs" variant="ghost" onClick={() => onEdit(row.id)} aria-label={t('billing.admin.editPackage')}><Pencil className="size-3.5" /></Button>}<Badge variant={row.active ? 'secondary' : 'outline'}>{row.active ? t('billing.admin.active') : t('billing.admin.inactive')}</Badge></div></div>)}{!loading && rows?.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}</CardContent></Card>
 }
 
 function CollectionCard<T extends { id?: number; user_id: number }>({ title, icon, page, loading, error, onRetry, empty, meta, value, status, formatStatus = (status) => status.replace('_', ' '), onPageChange, onAdjust }: { title: string; icon: React.ReactNode; page: Page<T> | null; loading: boolean; error?: string; onRetry?: () => void; empty: string; meta: (row: T) => string; value: (row: T) => string; status?: (row: T) => string; formatStatus?: (status: string) => string; onPageChange: (page: number) => void; onAdjust?: (row: T) => void }) {

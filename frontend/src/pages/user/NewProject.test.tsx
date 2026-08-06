@@ -3,18 +3,20 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { act } from 'react'
 import NewProject from './NewProject'
-import { projectsAPI, githubAPI, databaseAPI, billingAPI } from '../../services/api'
+import { githubAPI, databaseAPI, billingAPI } from '../../services/api'
 
 vi.mock('../../services/api', () => ({
   projectsAPI: {
-    listTemplates: vi.fn(),
     create: vi.fn(),
   },
   githubAPI: {
-    repositories: vi.fn(),
+    listInstallations: vi.fn(),
+    listRepositories: vi.fn(),
+    listBranches: vi.fn(),
+    linkInstallation: vi.fn(),
   },
   databaseAPI: {
-    list: vi.fn(),
+    listOwn: vi.fn(),
   },
   billingAPI: {
     catalog: vi.fn(),
@@ -62,9 +64,8 @@ describe('NewProject PlanSelector keyboard navigation', () => {
 
   it('navigates project plan options with arrow keys and clicks', async () => {
     ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { specs: mockSpecs } })
-    ;(projectsAPI.listTemplates as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
-    ;(githubAPI.repositories as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
-    ;(databaseAPI.list as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(githubAPI.listRepositories as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(databaseAPI.listOwn as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
 
     render(<NewProject />, { wrapper: MemoryRouter })
 
