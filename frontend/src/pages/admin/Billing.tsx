@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, CreditCard, Pencil, Plus, ReceiptText, RefreshCw, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
-import { billingAPI } from '@/services/api'
+import { billingAPI, usersAPI } from '@/services/api'
+import { User } from '@/types'
 import { createAdjustmentIdempotencyKey } from '@/lib/billing-ui'
 import useAuthStore from '@/stores/authStore'
 import useTranslation from '@/lib/useTranslation'
@@ -54,6 +55,7 @@ export default function AdminBilling() {
   const [invoices, setInvoices] = useState<Page<Invoice> | null>(null)
   const [topups, setTopups] = useState<Page<Topup> | null>(null)
   const [suspensions, setSuspensions] = useState<Suspension[] | null>(null)
+  const [usersList, setUsersList] = useState<User[]>([])
   const [walletPage, setWalletPage] = useState(1)
   const [invoicePage, setInvoicePage] = useState(1)
   const [topupPage, setTopupPage] = useState(1)
@@ -87,6 +89,12 @@ export default function AdminBilling() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      if (isSuperAdmin) {
+        usersAPI.list({ limit: 100 }).then((res) => {
+          const list = res.data?.data || res.data || []
+          setUsersList(Array.isArray(list) ? list : [])
+        }).catch(() => {})
+      }
       const results = await Promise.allSettled([
         billingAPI.adminCatalog(),
         billingAPI.adminWallets({ page: walletPage, limit: PAGE_LIMIT }),
@@ -262,7 +270,28 @@ export default function AdminBilling() {
         <Field label={t('billing.admin.reason')} htmlFor="package-reason"><Textarea id="package-reason" value={packageForm.reason} onChange={(event) => setPackageForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
       </PricingForm>
       <PricingForm title={t('billing.admin.addCreditsForUser')} description={t('billing.admin.addCreditsForUserDescription')} onSubmit={saveDirectCreditAdjustment} submitting={savingDirectCreditAdjustment} submitLabel={t('billing.admin.saveCredits')}>
-        <NumberField id="direct-credits-user-id" label={t('billing.admin.userId')} value={directCreditAdjustmentForm.user_id} onChange={(user_id) => setDirectCreditAdjustmentForm((current) => ({ ...current, user_id }))} min={1} />
+        <Field label={t('billing.admin.selectUser')} htmlFor="direct-credits-user-id">
+          <Select
+            value={directCreditAdjustmentForm.user_id ? String(directCreditAdjustmentForm.user_id) : ''}
+            onValueChange={(val) => setDirectCreditAdjustmentForm((current) => ({ ...current, user_id: Number(val) }))}
+          >
+            <SelectTrigger id="direct-credits-user-id" className="w-full">
+              {usersList.find((u) => u.id === directCreditAdjustmentForm.user_id)
+                ? `${usersList.find((u) => u.id === directCreditAdjustmentForm.user_id)?.name} (${usersList.find((u) => u.id === directCreditAdjustmentForm.user_id)?.email})`
+                : directCreditAdjustmentForm.user_id
+                ? `${t('billing.admin.user')} #${directCreditAdjustmentForm.user_id}`
+                : t('billing.admin.chooseUser')}
+            </SelectTrigger>
+            <SelectContent>
+              {usersList.map((user) => (
+                <SelectItem key={user.id} value={String(user.id)}>
+                  {user.name} ({user.email}) · <span className="capitalize">{user.role}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <NumberField id="direct-credits-manual-user-id" label={t('billing.admin.userId')} value={directCreditAdjustmentForm.user_id} onChange={(user_id) => setDirectCreditAdjustmentForm((current) => ({ ...current, user_id }))} min={1} />
         <NumberField id="direct-credits-amount" label={t('billing.admin.creditsAmount')} value={directCreditAdjustmentForm.credits} onChange={(credits) => setDirectCreditAdjustmentForm((current) => ({ ...current, credits }))} min={1} />
         <Field label={t('billing.admin.reason')} htmlFor="direct-credits-reason"><Textarea id="direct-credits-reason" value={directCreditAdjustmentForm.reason} onChange={(event) => setDirectCreditAdjustmentForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
       </PricingForm>
