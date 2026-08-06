@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AlertTriangle, CreditCard, ReceiptText, RefreshCw, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { billingAPI } from '@/services/api'
-import { hasLowCreditBalance, retainOnRequestFailure, topupIdempotencyKey } from '@/lib/billing-ui'
+import axios from 'axios'
+import {
+  createTopupIdempotencyKey,
+  hasLowCreditBalance,
+  nextBillingRequestState,
+  type BillingRequestState,
+} from '@/lib/billing-ui'
 import { usePolling } from '@/lib/usePolling'
 import useTranslation from '@/lib/useTranslation'
 import type { BillingOverview, BillingStatus, TopupPackage } from '@/types'
@@ -11,20 +17,24 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
-type RequestState<T> =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'success'; data: T }
-  | { status: 'error'; error: string }
-
 export default function Billing() {
   const { t, language } = useTranslation()
-  const [overview, setOverview] = useState<RequestState<BillingOverview>>('idle')
-  const [packages, setPackages] = useState<RequestState<TopupPackage[]>>('idle')
-  const [statuses, setStatuses] = useState<RequestState<BillingStatus[]>>('idle')
+  const [overview, setOverview] = useState<BillingRequestState<BillingOverview>>({ status: 'idle' })
+  const [packages, setPackages] = useState<BillingRequestState<TopupPackage[]>>({ status: 'idle' })
+  const [statuses, setStatuses] = useState<BillingRequestState<BillingStatus[]>>({ status: 'idle' })
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
+  const [staleWarning, setStaleWarning] = useState(false)
   const topupKeys = useRef(new Map<number, string>())
   const loadInFlight = useRef(false)
+  const overviewRef = useRef(overview)
+  const packagesRef = useRef(packages)
+  const statusesRef = useRef(statuses)
+
+  useEffect(() => {
+    overviewRef.current = overview
+    packagesRef.current = packages
+    statusesRef.current = statuses
+  })
 
   const formatNumber = useCallback(
     (value: number) => new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(value),
@@ -52,7 +62,10 @@ export default function Billing() {
   const formatStatus = useCallback(
     (status: string) => {
       const translated = t(`billing.statuses.${status}`)
-      return translated === `billing.statuses.${status}` ? status.replaceAll('_', ' ') : translated
+      if (translated !== `billing.statuses.${status}`) return translated
+      const topup = t(`billing.topupStatuses.${status}`)
+      if (topup !== `billing.topupStatuses.${status}`) return topup
+      return status.replace(/_/g, ' ')
     },
     [t],
   )
@@ -69,16 +82,26 @@ export default function Billing() {
     (type: string) => {
       const key = `billing.ledgerTypes.${type}`
       const translated = t(key)
-      return translated === key ? type.replaceAll('_', ' ') : translated
+      return translated === key ? type.replace(/_/g, ' ') : translated
     },
     [t],
   )
+  const translateResourceType = useCallback(
+    (type: string) => {
+      const key = `billing.resourceTypes.${type}`
+      const translated = t(key)
+      return translated === key ? type : translated
+    },
+    [t],
+  )
+
+  const didLoadInitial = useRef(false)
 
   const load = useCallback(async () => {
     if (loadInFlight.current) return
     loadInFlight.current = true
 
-    const markLoading = <T,>(setter: React.Dispatch<React.SetStateAction<RequestState<T>>>) => {
+    const markLoading = <T,>(setter: React.Dispatch<React.SetStateAction<BillingRequestState<T>>>) => {
       setter((current) => (current.status === 'success' ? current : { status: 'loading' }))
     }
 
@@ -86,33 +109,34 @@ export default function Billing() {
     markLoading(setPackages)
     markLoading(setStatuses)
 
+    const currentOverview = overview
+    const currentPackages = packages
+    const currentStatuses = statuses
+
     const [overviewResult, catalogResult, statusResult] = await Promise.allSettled([
       billingAPI.overview(),
       billingAPI.catalog(),
       billingAPI.status(),
     ])
 
-    setOverview(
-      retainOnRequestFailure<BillingOverview>(overviewResult, overview.status === 'success' ? overview.data : null),
-    )
-    setPackages(
-      retainOnRequestFailure<TopupPackage[]>(
-        catalogResult,
-        packages.status === 'success' ? packages.data : null,
-        (value) => value.packages,
-      ),
-    )
-    setStatuses(
-      retainOnRequestFailure<BillingStatus[]>(statusResult, statuses.status === 'success' ? statuses.data : null),
-    )
+    const nextOverview = nextBillingRequestState(overviewResult, currentOverview, (response) => response.data)
+    const nextPackages = nextBillingRequestState(catalogResult, currentPackages, (response) => response.data.packages)
+    const nextStatuses = nextBillingRequestState(statusResult, currentStatuses, (response) => response.data)
+    setOverview(nextOverview)
+    setPackages(nextPackages)
+    setStatuses(nextStatuses)
+    const hasStaleData =
+      (overviewResult.status === 'rejected' && nextOverview.status === 'success') ||
+      (catalogResult.status === 'rejected' && nextPackages.status === 'success') ||
+      (statusResult.status === 'rejected' && nextStatuses.status === 'success')
+    setStaleWarning(hasStaleData)
 
     loadInFlight.current = false
   }, [overview, packages, statuses])
 
   useEffect(() => {
-    setOverview({ status: 'loading' })
-    setPackages({ status: 'loading' })
-    setStatuses({ status: 'loading' })
+    if (didLoadInitial.current) return
+    didLoadInitial.current = true
     void load()
   }, [load])
 
@@ -126,11 +150,19 @@ export default function Billing() {
   const startTopup = async (packageID: number) => {
     setTopupPackageID(packageID)
     try {
-      const idempotencyKey = topupIdempotencyKey(topupKeys.current, packageID, () => crypto.randomUUID())
+      const idempotencyKey = topupKeys.current.get(packageID) ?? createTopupIdempotencyKey()
+      topupKeys.current.set(packageID, idempotencyKey)
       const response = await billingAPI.createTopup(packageID, idempotencyKey)
-      if (!response.data.payment_url) throw new Error(t('billing.paymentSessionUnavailable'))
+      if (!response.data.payment_url) {
+        topupKeys.current.delete(packageID)
+        throw new Error(t('billing.paymentSessionUnavailable'))
+      }
+      topupKeys.current.delete(packageID)
       window.location.assign(response.data.payment_url)
-    } catch {
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        topupKeys.current.delete(packageID)
+      }
       toast.error(t('billing.topupStartFailed'))
     } finally {
       setTopupPackageID(null)
@@ -168,6 +200,17 @@ export default function Billing() {
         </Button>
       </div>
 
+      {staleWarning && (
+        <Card className="border-amber-500/40 bg-amber-500/5" role="status" aria-live="polite">
+          <CardContent className="flex gap-3 pt-6 text-sm">
+            <RefreshCw className="mt-0.5 size-5 shrink-0 text-amber-600" />
+            <div>
+              <strong>{t('billing.staleData')}</strong>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {attentionResources.length > 0 && (
         <Card className="border-destructive/40 bg-destructive/5" role="alert" aria-live="assertive">
           <CardContent className="flex gap-3 pt-6 text-sm">
@@ -177,8 +220,8 @@ export default function Billing() {
               {attentionResources
                 .map((resource) =>
                   resource.oldest_due_at
-                    ? `${resource.resource_type} #${resource.resource_id}, ${t('billing.dueOn', { date: formatDate(resource.oldest_due_at) })} (${formatStatus(resource.status)})`
-                    : `${resource.resource_type} #${resource.resource_id} (${formatStatus(resource.status)})`,
+                    ? `${translateResourceType(resource.resource_type)} #${resource.resource_id}, ${t('billing.dueOn', { date: formatDate(resource.oldest_due_at) })} (${formatStatus(resource.status)})`
+                    : `${translateResourceType(resource.resource_type)} #${resource.resource_id} (${formatStatus(resource.status)})`,
                 )
                 .join('; ')}{' '}
               {t('billing.paymentRequiredDescription')}

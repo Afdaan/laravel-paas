@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { hasLowCreditBalance, retainOnRequestFailure, topupIdempotencyKey } from './billing-ui'
+import { createTopupIdempotencyKey, hasLowCreditBalance, nextBillingRequestState } from './billing-ui'
 
 describe('billing UI guards', () => {
-  it('retains prior financial data when a request fails', () => {
-    const current = { balance_credits: 250 }
-    const result = retainOnRequestFailure<{ balance_credits: number }>({ status: 'rejected', reason: new Error('offline') }, current)
+  it('retains prior financial data when polling fails', () => {
+    const current = { status: 'success' as const, data: { balance_credits: 250 } }
+    const result = nextBillingRequestState<{ balance_credits: number }, { balance_credits: number }>(
+      { status: 'rejected', reason: new Error('offline') },
+      current,
+      (value) => value,
+    )
 
-    expect(result).toEqual({ value: current, failed: true })
+    expect(result).toEqual(current)
   })
 
-  it('uses one checkout idempotency key per top-up package', () => {
-    const keys = new Map<number, string>()
-    let created = 0
-    const createKey = () => `key-${++created}`
+  it('generates a fresh per-attempt idempotency key', () => {
+    const first = createTopupIdempotencyKey()
+    const second = createTopupIdempotencyKey()
 
-    expect(topupIdempotencyKey(keys, 10, createKey)).toBe('key-1')
-    expect(topupIdempotencyKey(keys, 10, createKey)).toBe('key-1')
-    expect(topupIdempotencyKey(keys, 11, createKey)).toBe('key-2')
-    expect(created).toBe(2)
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^[0-9a-f]{32}$/)
+    expect(second).toMatch(/^[0-9a-f]{32}$/)
   })
 
   it('warns when positive credits cannot cover the next active-resource charge', () => {
@@ -26,13 +28,12 @@ describe('billing UI guards', () => {
     expect(hasLowCreditBalance(20, 0)).toBe(false)
   })
 
-  it('extracts nested value through transform when request succeeds', () => {
-    const result = retainOnRequestFailure<{ packages: number[] }>(
+  it('stores selected response data with an explicit success state', () => {
+    const result = nextBillingRequestState<{ packages: number[] }, number[]>(
       { status: 'fulfilled', value: { packages: [1, 2] } },
-      null,
+      { status: 'loading' },
       (value) => value.packages,
     )
-    expect(result.failed).toBe(false)
-    expect(result.value).toEqual([1, 2])
+    expect(result).toEqual({ status: 'success', data: [1, 2] })
   })
 })

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { projectsAPI, githubAPI, databaseAPI, billingAPI } from '../../services/api'
@@ -598,7 +598,7 @@ function UserNewProject() {
       toast.success(t('common.success'))
       navigate(`/projects/${response.data.project.uid}`)
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<{ error: string }>
+      const axiosError = error as AxiosError<{ error: string; reason?: string }>
       let errorMsg = axiosError.response?.data?.error || t('common.actionFailed')
 
       if (errorMsg === 'Project limit reached' || axiosError.response?.data?.reason === 'PROJECT_LIMIT_REACHED') {
@@ -1461,7 +1461,7 @@ function PlanSelector({
   const { t } = useTranslation()
   const groupRef = useRef<HTMLDivElement>(null)
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, specId: number, index: number) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
       return
     }
@@ -1477,8 +1477,8 @@ function PlanSelector({
   }
 
   return (
-    <div className="space-y-2">
-      <Label className="text-xs font-semibold">{label}</Label>
+    <fieldset className="space-y-2">
+      <legend className="text-xs font-semibold">{label}</legend>
       <div
         ref={groupRef}
         role="radiogroup"
@@ -1495,7 +1495,7 @@ function PlanSelector({
             tabIndex={value === spec.id ? 0 : -1}
             aria-checked={value === spec.id}
             onClick={() => onChange(spec.id)}
-            onKeyDown={(event) => handleKeyDown(event, spec.id, index)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
             className={cn(
               'rounded-lg border p-3 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               value === spec.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
@@ -1503,9 +1503,12 @@ function PlanSelector({
           >
             <span className="block font-semibold">{spec.name}</span>
             <span className="mt-1 block text-muted-foreground">
-              {t('billing.creditsPerMonth', { credits: spec.monthly_credits })} · {spec.cpu_millicores}m CPU ·{' '}
-              {spec.memory_mb} MB RAM
-              {spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}
+              {t('billing.creditsPerMonth', { credits: spec.monthly_credits })}
+              {spec.type === 'project'
+                ? ` · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB RAM`
+                : spec.connection_limit
+                  ? ` · ${t('billing.connections', { count: spec.connection_limit })}`
+                  : ''}
             </span>
           </button>
         ))}
@@ -1516,6 +1519,6 @@ function PlanSelector({
         </p>
       )}
       {specs.length === 0 && !error && <p className="text-xs text-destructive">{t('billing.noPlans')}</p>}
-    </div>
+    </fieldset>
   )
 }

@@ -167,11 +167,26 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia('(max-width: 767px)').matches)
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
   const resizeFrameRef = useRef<number | null>(null)
+  const sidebarContainerRef = useRef<HTMLDivElement | null>(null)
   const sidebarNavRef = useRef<HTMLElement | null>(null)
   const mainContentRef = useRef<HTMLElement | null>(null)
   const isVisualExpanded = isMobileViewport || !isSidebarCollapsed || isHovered
 
   useRestoreFocusOnClose(isMobileDrawerOpen)
+
+  useEffect(() => {
+    const sidebar = sidebarContainerRef.current
+    const main = mainContentRef.current
+    if (!sidebar || !main) return
+    if (isMobileViewport && !isMobileDrawerOpen) sidebar.setAttribute('inert', '')
+    else sidebar.removeAttribute('inert')
+    if (isMobileViewport && isMobileDrawerOpen) main.setAttribute('inert', '')
+    else main.removeAttribute('inert')
+    return () => {
+      sidebar.removeAttribute('inert')
+      main.removeAttribute('inert')
+    }
+  }, [isMobileDrawerOpen, isMobileViewport])
 
   useEffect(() => {
     if (!isMobileDrawerOpen) return
@@ -450,13 +465,16 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
       <div
+        ref={sidebarContainerRef}
         style={{ width: isMobileViewport ? sidebarWidth : isSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
         className={`fixed inset-y-0 left-0 z-50 shrink-0 transition-transform duration-200 md:relative md:translate-x-0 ${isMobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'} ${isDragging ? '' : 'md:transition-[width] md:duration-300 md:ease-in-out'}`}
+        aria-hidden={isMobileViewport && !isMobileDrawerOpen ? true : undefined}
       >
         <aside
           id="mobile-navigation"
           role={isMobileViewport ? 'dialog' : undefined}
           aria-modal={isMobileViewport ? isMobileDrawerOpen : undefined}
+          aria-label={isMobileViewport ? t('common.navigation') : undefined}
           onMouseEnter={() => {
             if (!isMobileViewport && isSidebarCollapsed) {
               setIsHovered(true)
@@ -725,7 +743,15 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         {/* Orbital Header */}
         <header className="h-16 flex items-center justify-between gap-4 px-4 sm:px-8 border-b">
            <div className="flex min-w-0 items-center gap-2">
-             <Button variant="outline" size="icon" className="md:hidden" onClick={() => setIsMobileDrawerOpen(true)} aria-label={t('common.openNavigation')}>
+             <Button
+               variant="outline"
+               size="icon"
+               className="md:hidden"
+               onClick={() => setIsMobileDrawerOpen(true)}
+               aria-expanded={isMobileDrawerOpen}
+               aria-controls="mobile-navigation"
+               aria-label={t('common.openNavigation')}
+             >
                <Menu className="size-4" />
              </Button>
              {showProjectSwitcher && (
