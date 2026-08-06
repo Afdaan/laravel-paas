@@ -14,7 +14,7 @@ jobs:
     runs-on: self-hosted
     env:
       PROD_SSH: 'paas-prod'
-      PROD_DIR: '/opt/laravel-paas'
+      PROD_DIR: '/mainData/laravel-paas'
 
     steps:
       - name: Checkout Code
