@@ -208,7 +208,8 @@ export default function AdminBilling() {
     if (!isSuperAdmin) return
     setSavingDirectCreditAdjustment(true)
     try {
-      await billingAPI.adjustWalletCredits(directCreditAdjustmentForm.user_id, directCreditAdjustmentForm, createAdjustmentIdempotencyKey())
+      const { user_id, ...payload } = directCreditAdjustmentForm
+      await billingAPI.adjustWalletCredits(user_id, payload, createAdjustmentIdempotencyKey())
       setDirectCreditAdjustmentForm(emptyDirectCreditAdjustment)
       toast.success(t('billing.admin.adjustmentSuccess'))
       await load()

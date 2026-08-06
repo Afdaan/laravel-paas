@@ -66,6 +66,7 @@ type TopupPackageUpdateInput struct {
 }
 
 type WalletCreditAdjustmentInput struct {
+	UserID  uint   `json:"user_id,omitempty"`
 	Credits int64  `json:"credits"`
 	Reason  string `json:"reason"`
 }
