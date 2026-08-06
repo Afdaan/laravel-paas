@@ -157,8 +157,21 @@ func validOrigin(c *fiber.Ctx, expected string) bool {
 		return false
 	}
 	a, errA := url.Parse(origin)
+	if errA != nil || a.Path != "" || a.RawQuery != "" || a.Fragment != "" {
+		return false
+	}
 	b, errB := url.Parse(expected)
-	return errA == nil && errB == nil && a.Scheme == b.Scheme && a.Host == b.Host && a.Path == "" && a.RawQuery == "" && a.Fragment == ""
+	if errB == nil && a.Scheme == b.Scheme && a.Host == b.Host {
+		return true
+	}
+	host := c.Get("X-Forwarded-Host")
+	if host == "" {
+		host = c.Hostname()
+	}
+	if host != "" && strings.EqualFold(a.Host, host) {
+		return true
+	}
+	return false
 }
 
 func clearLegacyCookies(c *fiber.Ctx, _ *config.Config) {

@@ -118,6 +118,10 @@ export default function AdminBilling() {
     void load()
   }, [load])
 
+  const getErrorMessage = (err: unknown, fallback: string) => {
+    return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
+  }
+
   const createSpec = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!isSuperAdmin) return
@@ -132,8 +136,8 @@ export default function AdminBilling() {
       setSpecForm(emptySpec)
       toast.success(t('billing.admin.createSucceeded'))
       await load()
-    } catch {
-      toast.error(t('billing.admin.createFailed'))
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('billing.admin.createFailed')))
     } finally {
       setCreatingSpec(false)
     }
@@ -148,8 +152,8 @@ export default function AdminBilling() {
       setPackageForm(emptyPackage)
       toast.success(t('billing.admin.createSucceeded'))
       await load()
-    } catch {
-      toast.error(t('billing.admin.createFailed'))
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('billing.admin.createFailed')))
     } finally {
       setCreatingPackage(false)
     }
@@ -170,8 +174,8 @@ export default function AdminBilling() {
       setPackageEditForm(emptyPackageEdit)
       toast.success(t('billing.admin.updatePackageSuccess'))
       await load()
-    } catch {
-      toast.error(t('billing.admin.updatePackageFailed'))
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('billing.admin.updatePackageFailed')))
     } finally {
       setSavingPackageEdit(false)
     }
@@ -192,8 +196,8 @@ export default function AdminBilling() {
       setCreditAdjustmentForm(emptyCreditAdjustment)
       toast.success(t('billing.admin.adjustmentSuccess'))
       await load()
-    } catch {
-      toast.error(t('billing.admin.adjustmentFailed'))
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('billing.admin.adjustmentFailed')))
     } finally {
       setSavingCreditAdjustment(false)
     }
@@ -208,8 +212,8 @@ export default function AdminBilling() {
       setDirectCreditAdjustmentForm(emptyDirectCreditAdjustment)
       toast.success(t('billing.admin.adjustmentSuccess'))
       await load()
-    } catch {
-      toast.error(t('billing.admin.adjustmentFailed'))
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('billing.admin.adjustmentFailed')))
     } finally {
       setSavingDirectCreditAdjustment(false)
     }
