@@ -43,6 +43,7 @@ const emptySpec: SpecForm = { type: 'project', name: '', slug: '', cpu_millicore
 const emptyPackage = { credits: 0, amount_minor: 0, sort_order: 0, reason: '' }
 const emptyPackageEdit = { amount_minor: 0, sort_order: 0, reason: '' }
 const emptyCreditAdjustment = { credits: 0, reason: '' }
+const emptyDirectCreditAdjustment = { user_id: 0, credits: 0, reason: '' }
 const statusVariant = (status: string) => status === 'paid' || status === 'active' ? 'secondary' : status === 'suspended' || status === 'payment_due' ? 'destructive' : 'outline'
 
 export default function AdminBilling() {
@@ -68,6 +69,8 @@ export default function AdminBilling() {
   const [creatingPackage, setCreatingPackage] = useState(false)
   const [savingPackageEdit, setSavingPackageEdit] = useState(false)
   const [savingCreditAdjustment, setSavingCreditAdjustment] = useState(false)
+  const [savingDirectCreditAdjustment, setSavingDirectCreditAdjustment] = useState(false)
+  const [directCreditAdjustmentForm, setDirectCreditAdjustmentForm] = useState(emptyDirectCreditAdjustment)
 
   const locale = language === 'id' ? 'id-ID' : 'en-US'
   const formatCredits = useCallback((value: number) => new Intl.NumberFormat(locale).format(value), [locale])
@@ -188,6 +191,22 @@ export default function AdminBilling() {
     }
   }
 
+  const saveDirectCreditAdjustment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isSuperAdmin) return
+    setSavingDirectCreditAdjustment(true)
+    try {
+      await billingAPI.adjustWalletCredits(directCreditAdjustmentForm.user_id, directCreditAdjustmentForm, createAdjustmentIdempotencyKey())
+      setDirectCreditAdjustmentForm(emptyDirectCreditAdjustment)
+      toast.success(t('billing.admin.adjustmentSuccess'))
+      await load()
+    } catch {
+      toast.error(t('billing.admin.adjustmentFailed'))
+    } finally {
+      setSavingDirectCreditAdjustment(false)
+    }
+  }
+
   return <div className="mx-auto max-w-7xl space-y-6 pb-10">
     <div className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-sm font-medium text-primary">{t('common.adminPanel')}</p><h1 className="text-2xl font-semibold tracking-tight">{t('billing.admin.title')}</h1><p className="mt-1 text-sm text-muted-foreground">{t('billing.admin.description')}</p></div>
@@ -212,7 +231,7 @@ export default function AdminBilling() {
       />
     </div>
 
-    {isSuperAdmin ? <section className="grid gap-6 xl:grid-cols-2">
+    {isSuperAdmin ? <section className="grid gap-6 xl:grid-cols-3">
       <PricingForm title={t('billing.admin.createPlan')} description={t('billing.admin.versionedPricing')} onSubmit={createSpec} submitting={creatingSpec} submitLabel={t('billing.admin.create')}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t('billing.admin.resourceType')} htmlFor="spec-type"><Select name="type" value={specForm.type} onValueChange={(type) => setSpecForm((current) => ({ ...current, type: type as 'project' | 'database', connection_limit: '', backup_retention_days: '' }))}><SelectTrigger id="spec-type" className="w-full">{specForm.type === 'project' ? t('billing.admin.project') : t('billing.admin.database')}</SelectTrigger><SelectContent><SelectItem value="project">{t('billing.admin.project')}</SelectItem><SelectItem value="database">{t('billing.admin.database')}</SelectItem></SelectContent></Select></Field>
@@ -241,6 +260,11 @@ export default function AdminBilling() {
       <PricingForm title={t('billing.admin.createPackage')} description={t('billing.admin.versionedPricing')} onSubmit={createPackage} submitting={creatingPackage} submitLabel={t('billing.admin.create')}>
         <div className="grid gap-3 sm:grid-cols-2"><NumberField id="package-credits" label={t('billing.admin.credits')} value={packageForm.credits} onChange={(credits) => setPackageForm((current) => ({ ...current, credits }))} min={1} /><NumberField id="package-amount" label={t('billing.admin.amountMinor')} value={packageForm.amount_minor} onChange={(amount_minor) => setPackageForm((current) => ({ ...current, amount_minor }))} min={1} /><NumberField id="package-sort-order" label={t('billing.admin.sortOrder')} value={packageForm.sort_order} onChange={(sort_order) => setPackageForm((current) => ({ ...current, sort_order }))} min={0} /></div>
         <Field label={t('billing.admin.reason')} htmlFor="package-reason"><Textarea id="package-reason" value={packageForm.reason} onChange={(event) => setPackageForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
+      </PricingForm>
+      <PricingForm title={t('billing.admin.addCreditsForUser')} description={t('billing.admin.addCreditsForUserDescription')} onSubmit={saveDirectCreditAdjustment} submitting={savingDirectCreditAdjustment} submitLabel={t('billing.admin.saveCredits')}>
+        <NumberField id="direct-credits-user-id" label={t('billing.admin.userId')} value={directCreditAdjustmentForm.user_id} onChange={(user_id) => setDirectCreditAdjustmentForm((current) => ({ ...current, user_id }))} min={1} />
+        <NumberField id="direct-credits-amount" label={t('billing.admin.creditsAmount')} value={directCreditAdjustmentForm.credits} onChange={(credits) => setDirectCreditAdjustmentForm((current) => ({ ...current, credits }))} min={1} />
+        <Field label={t('billing.admin.reason')} htmlFor="direct-credits-reason"><Textarea id="direct-credits-reason" value={directCreditAdjustmentForm.reason} onChange={(event) => setDirectCreditAdjustmentForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
       </PricingForm>
     </section> : <Card><CardContent className="pt-6 text-sm text-muted-foreground">{t('billing.admin.superadminOnly')}</CardContent></Card>}
 
@@ -311,4 +335,4 @@ function PricingForm({ title, description, children, onSubmit, submitting, submi
 
 function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) { return <div className="space-y-1.5"><Label htmlFor={htmlFor}>{label}</Label>{children}</div> }
 function TextField({ label, id, value, onChange, required, pattern }: { label: string; id?: string; value: string; onChange: (value: string) => void; required?: boolean; pattern?: string }) { return <Field label={label} htmlFor={id}><Input id={id} value={value} onChange={(event) => onChange(event.target.value)} required={required} pattern={pattern} /></Field> }
-function NumberField({ label, id, value, onChange, min }: { label: string; id?: string; value: number; onChange: (value: number) => void; min: number }) { return <Field label={label} htmlFor={id}><Input id={id} type="number" min={min} value={value} onChange={(event) => onChange(Number(event.target.value))} required /></Field> }
+function NumberField({ label, id, value, onChange, min }: { label: string; id?: string; value: number; onChange: (value: number) => void; min: number }) { return <Field label={label} htmlFor={id}><Input id={id} type="number" min={min} value={value} onChange={(event) => onChange(event.target.value === '' ? 0 : Number(event.target.value))} required /></Field> }

@@ -491,10 +491,20 @@ func (s *CatalogService) AdjustWalletCredits(ctx context.Context, audit AuditCon
 
 	var wallet models.Wallet
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&wallet).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return WalletView{}, apperr.ErrNotFound
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return WalletView{}, fmt.Errorf("load wallet: %w", err)
 		}
-		return WalletView{}, fmt.Errorf("load wallet: %w", err)
+		var user models.User
+		if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return WalletView{}, apperr.ErrNotFound
+			}
+			return WalletView{}, fmt.Errorf("load user: %w", err)
+		}
+		wallet, err = s.wallets.GetOrCreateWallet(ctx, userID)
+		if err != nil {
+			return WalletView{}, fmt.Errorf("get or create wallet: %w", err)
+		}
 	}
 
 	actorUserID := audit.ActorUserID
@@ -545,10 +555,24 @@ func (s *CatalogService) GetWalletView(ctx context.Context, userID uint) (Wallet
 	}
 	var wallet models.Wallet
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&wallet).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return WalletView{}, fmt.Errorf("load wallet: %w", err)
+		}
+		if s.wallets != nil {
+			var user models.User
+			if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return WalletView{}, ErrWalletNotFound
+				}
+				return WalletView{}, fmt.Errorf("load user: %w", err)
+			}
+			wallet, err = s.wallets.GetOrCreateWallet(ctx, userID)
+			if err != nil {
+				return WalletView{}, fmt.Errorf("get or create wallet: %w", err)
+			}
+		} else {
 			return WalletView{}, ErrWalletNotFound
 		}
-		return WalletView{}, fmt.Errorf("load wallet: %w", err)
 	}
 	var entries []models.WalletLedgerEntry
 	if err := s.db.WithContext(ctx).Where("wallet_id = ?", wallet.ID).Order("id DESC").Limit(100).Find(&entries).Error; err != nil {

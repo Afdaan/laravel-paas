@@ -209,3 +209,65 @@ func catalogAudit(requestID, reason string) AuditContext {
 }
 
 func intPointer(value int) *int { return &value }
+
+func TestCatalogServiceSuperadminAdjustsUserAndAdminCredits(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.BillingAuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	superadmin := models.User{Email: "superadmin@example.test", Password: "test", Name: "Super Admin", Role: models.RoleSuperAdmin}
+	admin := models.User{Email: "admin@example.test", Password: "test", Name: "Admin User", Role: models.RoleAdmin}
+	regularUser := models.User{Email: "user@example.test", Password: "test", Name: "Regular User", Role: models.RoleUser}
+
+	for _, u := range []*models.User{&superadmin, &admin, &regularUser} {
+		if err := db.Create(u).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wallets := NewWalletService(db)
+	service := NewCatalogServiceWithWallets(db, wallets)
+	ctx := context.Background()
+	audit := catalogAudit("req-adjust-1", "Manual top-up by superadmin")
+
+	// 1. Adjust credits for regular user (lazy wallet creation)
+	view1, err := service.AdjustWalletCredits(ctx, audit, regularUser.ID, "idempotency-key-user-1", WalletCreditAdjustmentInput{
+		Credits: 500,
+		Reason:  "Initial bonus credits for user",
+	})
+	if err != nil {
+		t.Fatalf("failed to adjust regular user credits: %v", err)
+	}
+	if view1.BalanceCredits != 500 {
+		t.Fatalf("user balance = %d, want 500", view1.BalanceCredits)
+	}
+
+	// 2. Adjust credits for admin user (lazy wallet creation)
+	view2, err := service.AdjustWalletCredits(ctx, audit, admin.ID, "idempotency-key-admin-1", WalletCreditAdjustmentInput{
+		Credits: 1000,
+		Reason:  "Testing allocation for admin",
+	})
+	if err != nil {
+		t.Fatalf("failed to adjust admin credits: %v", err)
+	}
+	if view2.BalanceCredits != 1000 {
+		t.Fatalf("admin balance = %d, want 1000", view2.BalanceCredits)
+	}
+
+	// 3. Replaying same idempotency key returns replayed result without double-crediting
+	view2Replayed, err := service.AdjustWalletCredits(ctx, audit, admin.ID, "idempotency-key-admin-1", WalletCreditAdjustmentInput{
+		Credits: 1000,
+		Reason:  "Testing allocation for admin",
+	})
+	if err != nil {
+		t.Fatalf("replaying adjustment failed: %v", err)
+	}
+	if view2Replayed.BalanceCredits != 1000 {
+		t.Fatalf("replayed admin balance = %d, want 1000", view2Replayed.BalanceCredits)
+	}
+}
+
