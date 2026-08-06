@@ -482,6 +482,8 @@ func (s *CatalogService) AdjustWalletCredits(ctx context.Context, audit AuditCon
 	if userID == 0 || idempotencyKey == "" {
 		return WalletView{}, ErrInvalidCatalogInput
 	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	audit.Reason = strings.TrimSpace(audit.Reason)
 	if err := validateWalletCreditAdjustmentInput(input); err != nil {
 		return WalletView{}, err
 	}
@@ -741,14 +743,16 @@ func validateTopupPackageUpdateInput(audit AuditContext, input TopupPackageUpdat
 }
 
 func validateWalletCreditAdjustmentInput(input WalletCreditAdjustmentInput) error {
-	if input.Credits == 0 || input.Credits > maxTopupPackageCredits || input.Credits < -maxTopupPackageCredits || input.Reason == "" || len(input.Reason) > maxBillingAuditReason || strings.TrimSpace(input.Reason) != input.Reason {
+	reason := strings.TrimSpace(input.Reason)
+	if input.Credits == 0 || input.Credits > maxTopupPackageCredits || input.Credits < -maxTopupPackageCredits || reason == "" || len(reason) > maxBillingAuditReason {
 		return ErrInvalidCatalogInput
 	}
 	return nil
 }
 
 func validAuditContext(audit AuditContext) bool {
-	return audit.ActorUserID > 0 && audit.EffectiveUserID > 0 && audit.ActorRole == string(models.RoleSuperAdmin) && net.ParseIP(audit.SourceIP) != nil && audit.Reason != "" && len(audit.Reason) <= maxBillingAuditReason && strings.TrimSpace(audit.Reason) == audit.Reason && audit.RequestID != "" && len(audit.RequestID) <= 64
+	reason := strings.TrimSpace(audit.Reason)
+	return audit.ActorUserID > 0 && audit.EffectiveUserID > 0 && audit.ActorRole == string(models.RoleSuperAdmin) && net.ParseIP(audit.SourceIP) != nil && reason != "" && len(reason) <= maxBillingAuditReason && audit.RequestID != "" && len(audit.RequestID) <= 64
 }
 
 func validCatalogSlug(value string) bool {
