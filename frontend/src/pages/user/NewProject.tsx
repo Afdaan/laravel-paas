@@ -17,7 +17,8 @@ import {
   Terminal,
   Play,
   GitBranch,
-  ExternalLink
+  ExternalLink,
+  Check
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -1477,41 +1478,58 @@ function PlanSelector({
   }
 
   return (
-    <fieldset className="space-y-2">
-      <legend className="text-xs font-semibold">{label}</legend>
+    <fieldset className="space-y-3">
+      <legend className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</legend>
       <div
         ref={groupRef}
         role="radiogroup"
         aria-label={label}
         aria-invalid={!!error}
         aria-describedby={error ? `${label}-error` : undefined}
-        className="grid gap-2 sm:grid-cols-2"
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
       >
-        {specs.map((spec, index) => (
-          <button
-            key={spec.id}
-            type="button"
-            role="radio"
-            tabIndex={value === spec.id ? 0 : -1}
-            aria-checked={value === spec.id}
-            onClick={() => onChange(spec.id)}
-            onKeyDown={(event) => handleKeyDown(event, index)}
-            className={cn(
-              'rounded-lg border p-3 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              value === spec.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
-            )}
-          >
-            <span className="block font-semibold">{spec.name}</span>
-            <span className="mt-1 block text-muted-foreground">
-              {t('billing.creditsPerMonth', { credits: spec.monthly_credits })}
-              {spec.type === 'project'
-                ? ` · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB RAM`
-                : spec.connection_limit
-                  ? ` · ${t('billing.connections', { count: spec.connection_limit })}`
-                  : ''}
-            </span>
-          </button>
-        ))}
+        {specs.map((spec, index) => {
+          const selected = value === spec.id
+          const attrs =
+            spec.type === 'project'
+              ? [`${spec.cpu_millicores}m CPU`, `${spec.memory_mb} MB RAM`]
+              : spec.connection_limit
+                ? [t('billing.connections', { count: spec.connection_limit })]
+                : []
+          return (
+            <button
+              key={spec.id}
+              type="button"
+              role="radio"
+              tabIndex={selected ? 0 : -1}
+              aria-checked={selected}
+              onClick={() => onChange(spec.id)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
+              className={cn(
+                'relative flex flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected ? 'border-primary ring-1 ring-primary' : 'hover:border-foreground/20 hover:bg-muted/40',
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-sm font-semibold">{spec.name}</span>
+                {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-semibold tabular-nums tracking-tight">
+                  {spec.monthly_credits.toLocaleString()}
+                </span>
+                <span className="text-[11px] text-muted-foreground">{t('billing.credits')} / {t('billing.perMonth')}</span>
+              </div>
+              {attrs.length > 0 && (
+                <ul className="space-y-1 border-t pt-3 text-[11px] text-muted-foreground">
+                  {attrs.map((attr) => (
+                    <li key={attr} className="font-mono tabular-nums">{attr}</li>
+                  ))}
+                </ul>
+              )}
+            </button>
+          )
+        })}
       </div>
       {error && (
         <p id={`${label}-error`} className="text-xs text-destructive font-medium">
