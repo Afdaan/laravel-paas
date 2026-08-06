@@ -221,6 +221,56 @@ func (h *BillingHandler) CreateTopupPackage(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
 
+func (h *BillingHandler) UpdateTopupPackage(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return apperr.NewBadRequest("Invalid top-up package ID")
+	}
+	var input billing.TopupPackageUpdateInput
+	if err := decodeBillingJSON(c, &input); err != nil {
+		return apperr.NewBadRequest("Invalid top-up package update")
+	}
+	actorUserID, _ := c.Locals("user_id").(uint)
+	updated, err := h.catalog.UpdateTopupPackage(c.UserContext(), billingAuditContext(c, actorUserID, input.Reason), uint(id), input)
+	if errors.Is(err, billing.ErrInvalidCatalogInput) {
+		return apperr.NewBadRequest("Invalid top-up package update")
+	}
+	if errors.Is(err, apperr.ErrNotFound) {
+		return apperr.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(updated)
+}
+
+func (h *BillingHandler) AdjustWalletCredits(c *fiber.Ctx) error {
+	userID, err := strconv.ParseUint(c.Params("userID"), 10, 64)
+	if err != nil || userID == 0 {
+		return apperr.NewBadRequest("Invalid user ID")
+	}
+	var input billing.WalletCreditAdjustmentInput
+	if err := decodeBillingJSON(c, &input); err != nil {
+		return apperr.NewBadRequest("Invalid credit adjustment")
+	}
+	idempotencyKey := c.Get("Idempotency-Key")
+	if idempotencyKey == "" {
+		return apperr.NewBadRequest("Idempotency-Key header is required")
+	}
+	actorUserID, _ := c.Locals("user_id").(uint)
+	view, err := h.catalog.AdjustWalletCredits(c.UserContext(), billingAuditContext(c, actorUserID, input.Reason), uint(userID), idempotencyKey, input)
+	if errors.Is(err, billing.ErrInvalidCatalogInput) {
+		return apperr.NewBadRequest("Invalid credit adjustment")
+	}
+	if errors.Is(err, apperr.ErrNotFound) {
+		return apperr.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(view)
+}
+
 func decodeBillingJSON(c *fiber.Ctx, target any) error {
 	return decodeBillingJSONFields(c, target, true)
 }

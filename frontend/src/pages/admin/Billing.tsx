@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CreditCard, ReceiptText, RefreshCw, WalletCards } from 'lucide-react'
+import { AlertTriangle, CreditCard, Pencil, Plus, ReceiptText, RefreshCw, WalletCards } from 'lucide-react'
 import { toast } from 'sonner'
 import { billingAPI } from '@/services/api'
+import { createAdjustmentIdempotencyKey } from '@/lib/billing-ui'
 import useAuthStore from '@/stores/authStore'
 import useTranslation from '@/lib/useTranslation'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 type Catalog = {
   specs: Array<{ id: number; name: string; slug: string; type: 'project' | 'database'; version: number; monthly_credits: number; cpu_millicores: number; memory_mb: number; storage_gb: number; connection_limit?: number; backup_retention_days?: number; is_active: boolean }>
@@ -38,6 +40,8 @@ type SpecForm = {
 const PAGE_LIMIT = 20
 const emptySpec: SpecForm = { type: 'project', name: '', slug: '', cpu_millicores: 500, memory_mb: 512, storage_gb: 1, monthly_credits: 0, connection_limit: '', backup_retention_days: '', reason: '' }
 const emptyPackage = { credits: 0, amount_minor: 0, sort_order: 0, reason: '' }
+const emptyPackageEdit = { amount_minor: 0, sort_order: 0, reason: '' }
+const emptyCreditAdjustment = { credits: 0, reason: '' }
 const statusVariant = (status: string) => status === 'paid' || status === 'active' ? 'secondary' : status === 'suspended' || status === 'payment_due' ? 'destructive' : 'outline'
 
 export default function AdminBilling() {
@@ -55,8 +59,14 @@ export default function AdminBilling() {
   const [loading, setLoading] = useState(true)
   const [specForm, setSpecForm] = useState(emptySpec)
   const [packageForm, setPackageForm] = useState(emptyPackage)
+  const [editingPackage, setEditingPackage] = useState<TopupPackage | null>(null)
+  const [packageEditForm, setPackageEditForm] = useState(emptyPackageEdit)
+  const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null)
+  const [creditAdjustmentForm, setCreditAdjustmentForm] = useState(emptyCreditAdjustment)
   const [creatingSpec, setCreatingSpec] = useState(false)
   const [creatingPackage, setCreatingPackage] = useState(false)
+  const [savingPackageEdit, setSavingPackageEdit] = useState(false)
+  const [savingCreditAdjustment, setSavingCreditAdjustment] = useState(false)
 
   const locale = language === 'id' ? 'id-ID' : 'en-US'
   const formatCredits = useCallback((value: number) => new Intl.NumberFormat(locale).format(value), [locale])
@@ -133,6 +143,50 @@ export default function AdminBilling() {
     }
   }
 
+  const startEditPackage = (pkg: TopupPackage) => {
+    setEditingPackage(pkg)
+    setPackageEditForm({ amount_minor: pkg.amount_minor, sort_order: pkg.sort_order, reason: '' })
+  }
+
+  const savePackageEdit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isSuperAdmin || !editingPackage) return
+    setSavingPackageEdit(true)
+    try {
+      await billingAPI.updateTopupPackage(editingPackage.id, { ...packageEditForm, credits: editingPackage.credits })
+      setEditingPackage(null)
+      setPackageEditForm(emptyPackageEdit)
+      toast.success(t('billing.admin.updatePackageSuccess'))
+      await load()
+    } catch {
+      toast.error(t('billing.admin.updatePackageFailed'))
+    } finally {
+      setSavingPackageEdit(false)
+    }
+  }
+
+  const startAdjustWallet = (wallet: Wallet) => {
+    setAdjustingWallet(wallet)
+    setCreditAdjustmentForm(emptyCreditAdjustment)
+  }
+
+  const saveCreditAdjustment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isSuperAdmin || !adjustingWallet) return
+    setSavingCreditAdjustment(true)
+    try {
+      await billingAPI.adjustWalletCredits(adjustingWallet.user_id, creditAdjustmentForm, createAdjustmentIdempotencyKey())
+      setAdjustingWallet(null)
+      setCreditAdjustmentForm(emptyCreditAdjustment)
+      toast.success(t('billing.admin.adjustmentSuccess'))
+      await load()
+    } catch {
+      toast.error(t('billing.admin.adjustmentFailed'))
+    } finally {
+      setSavingCreditAdjustment(false)
+    }
+  }
+
   return <div className="mx-auto max-w-7xl space-y-6 pb-10">
     <div className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-sm font-medium text-primary">{t('common.adminPanel')}</p><h1 className="text-2xl font-semibold tracking-tight">{t('billing.admin.title')}</h1><p className="mt-1 text-sm text-muted-foreground">{t('billing.admin.description')}</p></div>
@@ -143,7 +197,15 @@ export default function AdminBilling() {
 
     <div className="grid gap-6 xl:grid-cols-2">
       <CatalogCard title={t('billing.admin.resourcePlans')} rows={catalog?.specs.map((spec) => ({ id: spec.id, title: `${spec.name} · ${formatCredits(spec.monthly_credits)} ${t('billing.credits')}`, detail: `${t(`billing.resourceTypes.${spec.type}`)} · v${spec.version} · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB${spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}`, active: spec.is_active }))} loading={loading} error={errors.plans} onRetry={() => void load()} empty={t('billing.admin.noRecords')} />
-      <CatalogCard title={t('billing.admin.topupPackages')} rows={catalog?.packages.map((pkg) => ({ id: pkg.id, title: `${formatCredits(pkg.credits)} ${t('billing.credits')} · ${formatMoney(pkg.amount_minor, pkg.currency)}`, detail: `v${pkg.version}`, active: pkg.is_active }))} loading={loading} error={errors.plans} onRetry={() => void load()} empty={t('billing.admin.noRecords')} />
+      <CatalogCard
+        title={t('billing.admin.topupPackages')}
+        rows={catalog?.packages.map((pkg) => ({ id: pkg.id, title: `${formatCredits(pkg.credits)} ${t('billing.credits')} · ${formatMoney(pkg.amount_minor, pkg.currency)}`, detail: `v${pkg.version}`, active: pkg.is_active }))}
+        loading={loading}
+        error={errors.plans}
+        onRetry={() => void load()}
+        empty={t('billing.admin.noRecords')}
+        onEdit={isSuperAdmin ? startEditPackage : undefined}
+      />
     </div>
 
     {isSuperAdmin ? <section className="grid gap-6 xl:grid-cols-2">
@@ -179,25 +241,64 @@ export default function AdminBilling() {
     </section> : <Card><CardContent className="pt-6 text-sm text-muted-foreground">{t('billing.admin.superadminOnly')}</CardContent></Card>}
 
     <section className="grid gap-6 xl:grid-cols-3">
-      <CollectionCard title={t('billing.admin.wallets')} icon={<WalletCards className="size-4" />} page={wallets} loading={loading} error={errors.wallets} onRetry={() => void load()} empty={t('billing.admin.noRecords')} meta={(wallet) => `${t('billing.admin.user')} #${wallet.user_id} · ${formatDate(wallet.updated_at)}`} value={(wallet) => `${formatCredits(wallet.balance_credits)} ${t('billing.credits')}`} onPageChange={setWalletPage} />
+      <CollectionCard title={t('billing.admin.wallets')} icon={<WalletCards className="size-4" />} page={wallets} loading={loading} error={errors.wallets} onRetry={() => void load()} empty={t('billing.admin.noRecords')} meta={(wallet) => `${t('billing.admin.user')} #${wallet.user_id} · ${formatDate(wallet.updated_at)}`} value={(wallet) => `${formatCredits(wallet.balance_credits)} ${t('billing.credits')}`} onPageChange={setWalletPage} onAdjust={isSuperAdmin ? startAdjustWallet : undefined} />
       <CollectionCard title={t('billing.invoices')} icon={<ReceiptText className="size-4" />} page={invoices} loading={loading} error={errors.invoices} onRetry={() => void load()} empty={t('billing.admin.noRecords')} meta={(invoice) => `${t('billing.admin.user')} #${invoice.user_id} · ${formatDate(invoice.period_start)} – ${formatDate(invoice.period_end)}`} value={(invoice) => `${formatCredits(invoice.total_credits)} ${t('billing.credits')}`} status={(invoice) => invoice.status} formatStatus={formatStatus} onPageChange={setInvoicePage} />
       <CollectionCard title={t('billing.topups')} icon={<CreditCard className="size-4" />} page={topups} loading={loading} error={errors.topups} onRetry={() => void load()} empty={t('billing.admin.noRecords')} meta={(topup) => `${t('billing.admin.user')} #${topup.user_id} · ${formatDate(topup.paid_at ?? topup.created_at)}`} value={(topup) => `${formatCredits(topup.credits)} ${t('billing.credits')} · ${formatMoney(topup.amount_minor, topup.currency)}`} status={(topup) => topup.status} formatStatus={formatStatus} onPageChange={setTopupPage} />
     </section>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle className="size-4 text-destructive" />{t('billing.admin.suspensions')}</CardTitle></CardHeader><CardContent className="space-y-3">{suspensions?.map((item) => <div key={`${item.user_id}-${item.resource_type}-${item.resource_id}`} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="text-sm font-medium">{t('billing.admin.user')} #{item.user_id} · {t(`billing.resourceTypes.${item.resource_type}`) !== `billing.resourceTypes.${item.resource_type}` ? t(`billing.resourceTypes.${item.resource_type}`) : item.resource_type} #{item.resource_id}</p><p className="text-xs text-muted-foreground">{item.oldest_due_at ? `${formatDate(item.oldest_due_at)} · ` : ''}{t('billing.days', { count: item.payment_due_days })}</p></div><Badge variant={statusVariant(item.status)}>{formatStatus(item.status)}</Badge></div>)}{suspensions !== null && suspensions.length === 0 && <p className="text-sm text-muted-foreground">{t('billing.admin.noRecords')}</p>}</CardContent></Card>
+
+    <Dialog open={editingPackage !== null} onOpenChange={(open) => !open && setEditingPackage(null)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('billing.admin.editPackage')}</DialogTitle>
+          <DialogDescription>{t('billing.admin.editPackageDescription')}</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={savePackageEdit}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label={t('billing.admin.credits')} htmlFor="edit-package-credits"><Input id="edit-package-credits" type="number" value={editingPackage?.credits ?? 0} disabled /></Field>
+            <NumberField id="edit-package-amount" label={t('billing.admin.amountMinor')} value={packageEditForm.amount_minor} onChange={(amount_minor) => setPackageEditForm((current) => ({ ...current, amount_minor }))} min={1} />
+            <NumberField id="edit-package-sort-order" label={t('billing.admin.sortOrder')} value={packageEditForm.sort_order} onChange={(sort_order) => setPackageEditForm((current) => ({ ...current, sort_order }))} min={0} />
+          </div>
+          <Field label={t('billing.admin.reason')} htmlFor="edit-package-reason"><Textarea id="edit-package-reason" value={packageEditForm.reason} onChange={(event) => setPackageEditForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingPackage(null)}>{t('common.cancel')}</Button>
+            <Button type="submit" disabled={savingPackageEdit}>{savingPackageEdit ? '…' : t('billing.admin.savePackage')}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={adjustingWallet !== null} onOpenChange={(open) => !open && setAdjustingWallet(null)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('billing.admin.addCredits')}</DialogTitle>
+          <DialogDescription>{t('billing.admin.addCreditsDescription')}</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={saveCreditAdjustment}>
+          <Field label={t('billing.admin.userId')} htmlFor="adjust-user-id"><Input id="adjust-user-id" type="number" value={adjustingWallet?.user_id ?? 0} disabled /></Field>
+          <NumberField id="adjust-credits" label={t('billing.admin.creditsAmount')} value={creditAdjustmentForm.credits} onChange={(credits) => setCreditAdjustmentForm((current) => ({ ...current, credits }))} min={1} />
+          <Field label={t('billing.admin.reason')} htmlFor="adjust-reason"><Textarea id="adjust-reason" value={creditAdjustmentForm.reason} onChange={(event) => setCreditAdjustmentForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAdjustingWallet(null)}>{t('common.cancel')}</Button>
+            <Button type="submit" disabled={savingCreditAdjustment}>{savingCreditAdjustment ? '…' : t('billing.admin.saveCredits')}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>
 }
 
-function CatalogCard({ title, rows, loading, error, onRetry, empty }: { title: string; rows?: Array<{ id: number; title: string; detail: string; active: boolean }>; loading: boolean; error?: string; onRetry?: () => void; empty: string }) {
+function CatalogCard({ title, rows, loading, error, onRetry, empty, onEdit }: { title: string; rows?: Array<{ id: number; title: string; detail: string; active: boolean }>; loading: boolean; error?: string; onRetry?: () => void; empty: string; onEdit?: (row: { id: number; title: string; detail: string; active: boolean }) => void }) {
   const { t } = useTranslation()
-  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !rows && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && rows?.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="text-sm font-medium">{row.title}</p><p className="text-xs text-muted-foreground">{row.detail}</p></div><Badge variant={row.active ? 'secondary' : 'outline'}>{row.active ? t('billing.admin.active') : t('billing.admin.inactive')}</Badge></div>)}{!loading && rows?.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}</CardContent></Card>
+  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !rows && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && rows?.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="text-sm font-medium">{row.title}</p><p className="text-xs text-muted-foreground">{row.detail}</p></div><div className="flex items-center gap-2">{onEdit && row.active && <Button size="icon-xs" variant="ghost" onClick={() => onEdit(row)} aria-label={t('billing.admin.editPackage')}><Pencil className="size-3.5" /></Button>}<Badge variant={row.active ? 'secondary' : 'outline'}>{row.active ? t('billing.admin.active') : t('billing.admin.inactive')}</Badge></div></div>)}{!loading && rows?.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}</CardContent></Card>
 }
 
-function CollectionCard<T extends { id?: number; user_id: number }>({ title, icon, page, loading, error, onRetry, empty, meta, value, status, formatStatus = (status) => status.replace('_', ' '), onPageChange }: { title: string; icon: React.ReactNode; page: Page<T> | null; loading: boolean; error?: string; onRetry?: () => void; empty: string; meta: (row: T) => string; value: (row: T) => string; status?: (row: T) => string; formatStatus?: (status: string) => string; onPageChange: (page: number) => void }) {
+function CollectionCard<T extends { id?: number; user_id: number }>({ title, icon, page, loading, error, onRetry, empty, meta, value, status, formatStatus = (status) => status.replace('_', ' '), onPageChange, onAdjust }: { title: string; icon: React.ReactNode; page: Page<T> | null; loading: boolean; error?: string; onRetry?: () => void; empty: string; meta: (row: T) => string; value: (row: T) => string; status?: (row: T) => string; formatStatus?: (status: string) => string; onPageChange: (page: number) => void; onAdjust?: (row: T) => void }) {
   const { t } = useTranslation()
   const hasPrevious = (page?.page ?? 1) > 1
   const hasNext = page ? page.page * page.limit < page.total : false
-  return <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base">{icon}{title}</CardTitle><CardDescription>{page ? t('billing.admin.total', { count: page.data.length, total: page.total }) : ''}</CardDescription></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !page && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && page?.data.map((row, index) => <div key={row.id ?? `${row.user_id}-${index}`} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div className="min-w-0"><p className="text-sm font-medium">{value(row)}</p><p className="truncate text-xs text-muted-foreground">{meta(row)}</p></div>{status && <Badge variant={statusVariant(status(row))}>{formatStatus(status(row))}</Badge>}</div>)}{!loading && page?.data.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}{page && <div className="flex justify-end gap-2 pt-1"><Button size="sm" variant="outline" disabled={!hasPrevious || loading} onClick={() => onPageChange(page.page - 1)}>{t('common.previous')}</Button><Button size="sm" variant="outline" disabled={!hasNext || loading} onClick={() => onPageChange(page.page + 1)}>{t('common.next')}</Button></div>}</CardContent></Card>
+  return <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base">{icon}{title}</CardTitle><CardDescription>{page ? t('billing.admin.total', { count: page.data.length, total: page.total }) : ''}</CardDescription></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !page && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && page?.data.map((row, index) => <div key={row.id ?? `${row.user_id}-${index}`} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div className="min-w-0"><p className="text-sm font-medium">{value(row)}</p><p className="truncate text-xs text-muted-foreground">{meta(row)}</p></div><div className="flex items-center gap-2">{onAdjust && <Button size="icon-xs" variant="ghost" onClick={() => onAdjust(row)} aria-label={t('billing.admin.addCredits')}><Plus className="size-3.5" /></Button>}{status && <Badge variant={statusVariant(status(row))}>{formatStatus(status(row))}</Badge>}</div></div>)}{!loading && page?.data.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}{page && <div className="flex justify-end gap-2 pt-1"><Button size="sm" variant="outline" disabled={!hasPrevious || loading} onClick={() => onPageChange(page.page - 1)}>{t('common.previous')}</Button><Button size="sm" variant="outline" disabled={!hasNext || loading} onClick={() => onPageChange(page.page + 1)}>{t('common.next')}</Button></div>}</CardContent></Card>
 }
 
 function PricingForm({ title, description, children, onSubmit, submitting, submitLabel }: { title: string; description: string; children: React.ReactNode; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; submitting: boolean; submitLabel: string }) {

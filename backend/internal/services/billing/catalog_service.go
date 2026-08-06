@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -53,6 +54,20 @@ type TopupPackageInput struct {
 	AmountMinor int64  `json:"amount_minor"`
 	SortOrder   int    `json:"sort_order"`
 	Reason      string `json:"reason"`
+}
+
+// TopupPackageUpdateInput reuses the same numeric fields plus reason.
+// The backend creates a new version and deactivates the old package.
+type TopupPackageUpdateInput struct {
+	Credits     int64  `json:"credits"`
+	AmountMinor int64  `json:"amount_minor"`
+	SortOrder   int    `json:"sort_order"`
+	Reason      string `json:"reason"`
+}
+
+type WalletCreditAdjustmentInput struct {
+	Credits int64  `json:"credits"`
+	Reason  string `json:"reason"`
 }
 
 type AuditContext struct {
@@ -185,11 +200,16 @@ type AdminTopupView struct {
 }
 
 type CatalogService struct {
-	db *gorm.DB
+	db      *gorm.DB
+	wallets *WalletService
 }
 
 func NewCatalogService(db *gorm.DB) *CatalogService {
 	return &CatalogService{db: db}
+}
+
+func NewCatalogServiceWithWallets(db *gorm.DB, wallets *WalletService) *CatalogService {
+	return &CatalogService{db: db, wallets: wallets}
 }
 
 func (s *CatalogService) ListActive(ctx context.Context) (Catalog, error) {
@@ -347,54 +367,173 @@ func (s *CatalogService) CreateTopupPackage(ctx context.Context, audit AuditCont
 	}
 
 	var created models.TopupPackage
+	var previous *models.TopupPackage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockCatalogIdentity(tx, fmt.Sprintf("package:%s:%s:%d", models.BillingProviderMidtrans, models.BillingCurrencyIDR, input.Credits)); err != nil {
-			return err
-		}
-
-		var previous models.TopupPackage
-		previousFound := true
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND currency = ? AND credits = ? AND is_active = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, input.Credits, true).First(&previous).Error; err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("lock active topup package: %w", err)
-			}
-			previousFound = false
-		}
-
-		var latestVersion int
-		if err := tx.Model(&models.TopupPackage{}).Where("provider = ? AND currency = ? AND credits = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, input.Credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
-			return fmt.Errorf("find topup package version: %w", err)
-		}
-		if previousFound {
-			if err := tx.Model(&previous).Update("is_active", false).Error; err != nil {
-				return fmt.Errorf("deactivate topup package: %w", err)
-			}
-		}
-
-		created = models.TopupPackage{
-			Provider:    models.BillingProviderMidtrans,
-			Currency:    models.BillingCurrencyIDR,
-			Credits:     input.Credits,
-			AmountMinor: input.AmountMinor,
-			Version:     latestVersion + 1,
-			IsActive:    true,
-			SortOrder:   input.SortOrder,
-		}
-		if err := tx.Create(&created).Error; err != nil {
-			return fmt.Errorf("create topup package: %w", err)
-		}
-		event := "topup_package.created"
-		var before any
-		if previousFound {
-			event = "topup_package.repriced"
-			before = previous
-		}
-		return createAuditEvent(tx, audit, event, "topup_package", created.ID, before, created)
+		var err error
+		created, previous, err = s.createTopupPackageVersion(tx, input.Credits, input.AmountMinor, input.SortOrder)
+		return err
 	})
 	if err != nil {
 		return CatalogPackage{}, err
 	}
+
+	event := "topup_package.created"
+	if previous != nil {
+		event = "topup_package.repriced"
+	}
+	if err := s.createBillingAuditEvent(ctx, audit, event, "topup_package", created.ID, previous, created); err != nil {
+		return CatalogPackage{}, err
+	}
 	return catalogPackageFromModel(created), nil
+}
+
+// UpdateTopupPackage edits an active package by creating a new version and
+// deactivating the old one. The credits identity must stay the same.
+func (s *CatalogService) UpdateTopupPackage(ctx context.Context, audit AuditContext, id uint, input TopupPackageUpdateInput) (CatalogPackage, error) {
+	if err := s.validateContext(ctx); err != nil {
+		return CatalogPackage{}, err
+	}
+	if err := validateTopupPackageUpdateInput(audit, input); err != nil {
+		return CatalogPackage{}, err
+	}
+
+	var current models.TopupPackage
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&current).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return CatalogPackage{}, apperr.ErrNotFound
+		}
+		return CatalogPackage{}, fmt.Errorf("load topup package: %w", err)
+	}
+	if !current.IsActive {
+		return CatalogPackage{}, ErrInvalidCatalogInput
+	}
+
+	var created models.TopupPackage
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		created, _, err = s.createTopupPackageVersion(tx, current.Credits, input.AmountMinor, input.SortOrder)
+		return err
+	})
+	if err != nil {
+		return CatalogPackage{}, err
+	}
+
+	if err := s.createBillingAuditEvent(ctx, audit, "topup_package.repriced", "topup_package", created.ID, &current, created); err != nil {
+		return CatalogPackage{}, err
+	}
+	return catalogPackageFromModel(created), nil
+}
+
+func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, credits, amountMinor int64, sortOrder int) (models.TopupPackage, *models.TopupPackage, error) {
+	if err := lockCatalogIdentity(tx, fmt.Sprintf("package:%s:%s:%d", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits)); err != nil {
+		return models.TopupPackage{}, nil, err
+	}
+
+	var previous models.TopupPackage
+	previousFound := true
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND currency = ? AND credits = ? AND is_active = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits, true).First(&previous).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.TopupPackage{}, nil, fmt.Errorf("lock active topup package: %w", err)
+		}
+		previousFound = false
+	}
+
+	var latestVersion int
+	if err := tx.Model(&models.TopupPackage{}).Where("provider = ? AND currency = ? AND credits = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
+		return models.TopupPackage{}, nil, fmt.Errorf("find topup package version: %w", err)
+	}
+	if previousFound {
+		if err := tx.Model(&previous).Update("is_active", false).Error; err != nil {
+			return models.TopupPackage{}, nil, fmt.Errorf("deactivate topup package: %w", err)
+		}
+	}
+
+	created := models.TopupPackage{
+		Provider:    models.BillingProviderMidtrans,
+		Currency:    models.BillingCurrencyIDR,
+		Credits:     credits,
+		AmountMinor: amountMinor,
+		Version:     latestVersion + 1,
+		IsActive:    true,
+		SortOrder:   sortOrder,
+	}
+	if err := tx.Create(&created).Error; err != nil {
+		return models.TopupPackage{}, nil, fmt.Errorf("create topup package: %w", err)
+	}
+	var previousPtr *models.TopupPackage
+	if previousFound {
+		previousPtr = &previous
+	}
+	return created, previousPtr, nil
+}
+
+func (s *CatalogService) createBillingAuditEvent(ctx context.Context, audit AuditContext, event, entityType string, entityID uint, before, after any) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return createAuditEvent(tx, audit, event, entityType, entityID, before, after)
+	})
+}
+
+// AdjustWalletCredits applies a manual credit adjustment to a user wallet.
+// Positive credits adds balance; negative debits balance (cannot overdraw).
+func (s *CatalogService) AdjustWalletCredits(ctx context.Context, audit AuditContext, userID uint, idempotencyKey string, input WalletCreditAdjustmentInput) (WalletView, error) {
+	if err := s.validateContext(ctx); err != nil {
+		return WalletView{}, err
+	}
+	if userID == 0 || idempotencyKey == "" {
+		return WalletView{}, ErrInvalidCatalogInput
+	}
+	if err := validateWalletCreditAdjustmentInput(input); err != nil {
+		return WalletView{}, err
+	}
+	if s.wallets == nil {
+		return WalletView{}, ErrCatalogServiceUnavailable
+	}
+
+	var wallet models.Wallet
+	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&wallet).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return WalletView{}, apperr.ErrNotFound
+		}
+		return WalletView{}, fmt.Errorf("load wallet: %w", err)
+	}
+
+	actorUserID := audit.ActorUserID
+	mutation := LedgerMutation{
+		UserID:         userID,
+		EntryType:      models.WalletLedgerEntryAdjustment,
+		AmountCredits:  input.Credits,
+		IdempotencyKey: fmt.Sprintf("admin:adjustment:%s", idempotencyKey),
+		ReferenceType:  "admin_adjustment",
+		ReferenceID:    fmt.Sprintf("user:%d", userID),
+		CreatedBy:      &actorUserID,
+	}
+
+	var mutResult MutationResult
+	var mutErr error
+	if input.Credits > 0 {
+		mutResult, mutErr = s.wallets.Credit(ctx, mutation)
+	} else {
+		// WalletService.Debit expects a positive amount; negation happens inside.
+		mutation.AmountCredits = -input.Credits
+		mutResult, mutErr = s.wallets.Debit(ctx, mutation)
+	}
+	if mutErr != nil {
+		if errors.Is(mutErr, ErrInsufficientBalance) {
+			return WalletView{}, apperr.NewBadRequest("Insufficient wallet balance for debit")
+		}
+		if errors.Is(mutErr, ErrInvalidMutation) {
+			return WalletView{}, apperr.NewBadRequest("Invalid credit adjustment")
+		}
+		return WalletView{}, mutErr
+	}
+
+	if !mutResult.Replayed {
+		if err := s.createBillingAuditEvent(ctx, audit, "wallet.credit_adjusted", "wallet", wallet.ID, nil, mutResult); err != nil {
+			return WalletView{}, err
+		}
+	}
+
+	return s.GetWalletView(ctx, userID)
 }
 
 func (s *CatalogService) GetWalletView(ctx context.Context, userID uint) (WalletView, error) {
@@ -565,6 +704,20 @@ func validateBillableSpecInput(audit AuditContext, input BillableSpecInput) erro
 
 func validateTopupPackageInput(audit AuditContext, input TopupPackageInput) error {
 	if !validAuditContext(audit) || input.Reason != audit.Reason || input.Credits <= 0 || input.Credits > maxTopupPackageCredits || input.AmountMinor <= 0 || input.AmountMinor > maxTopupPackageAmount || input.SortOrder < 0 || input.SortOrder > maxTopupPackageSortOrder {
+		return ErrInvalidCatalogInput
+	}
+	return nil
+}
+
+func validateTopupPackageUpdateInput(audit AuditContext, input TopupPackageUpdateInput) error {
+	if !validAuditContext(audit) || input.Reason != audit.Reason || input.AmountMinor <= 0 || input.AmountMinor > maxTopupPackageAmount || input.SortOrder < 0 || input.SortOrder > maxTopupPackageSortOrder {
+		return ErrInvalidCatalogInput
+	}
+	return nil
+}
+
+func validateWalletCreditAdjustmentInput(input WalletCreditAdjustmentInput) error {
+	if input.Credits == 0 || input.Credits > maxTopupPackageCredits || input.Credits < -maxTopupPackageCredits || input.Reason == "" || len(input.Reason) > maxBillingAuditReason || strings.TrimSpace(input.Reason) != input.Reason {
 		return ErrInvalidCatalogInput
 	}
 	return nil

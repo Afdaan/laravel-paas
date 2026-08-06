@@ -19,6 +19,10 @@ export function nextBillingRequestState<TResponse, T>(
   return current
 }
 
+export function createAdjustmentIdempotencyKey(): string {
+  return `adj-${createTopupIdempotencyKey()}`
+}
+
 export function createTopupIdempotencyKey(): string {
   const random = new Uint8Array(16)
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {

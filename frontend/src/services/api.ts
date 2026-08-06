@@ -423,6 +423,9 @@ export const billingAPI = {
   adminTopups: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/topups', { params }),
   createSpec: (data: unknown) => api.post('/admin/billing/specs', data),
   createTopupPackage: (data: unknown) => api.post('/admin/billing/topup-packages', data),
+  updateTopupPackage: (id: number, data: unknown) => api.put(`/admin/billing/topup-packages/${id}`, data),
+  adjustWalletCredits: (userID: number, data: unknown, idempotencyKey: string) =>
+    api.post(`/admin/billing/wallets/${userID}/credits`, data, { headers: { 'Idempotency-Key': idempotencyKey } }),
 }
 
 export const secretStoreAPI = {

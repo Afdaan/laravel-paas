@@ -107,9 +107,10 @@ func Setup(
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 	secretStoreHandler := handlers.NewSecretStoreHandler(db, cfg, secretStoreService)
+	walletService := billing.NewWalletService(db)
 	billingHandler := handlers.NewBillingHandlerWithTopups(
-		billing.NewCatalogService(db),
-		billing.NewTopupService(db, billing.NewWalletService(db), cfg, billing.NewMidtransClient(cfg)),
+		billing.NewCatalogServiceWithWallets(db, walletService),
+		billing.NewTopupService(db, walletService, cfg, billing.NewMidtransClient(cfg)),
 		billing.NewSuspensionService(db, cfg),
 	)
 
@@ -199,6 +200,8 @@ func Setup(
 	superadminBilling := adminBilling.Group("", middleware.RequireSuperAdmin(), middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg))
 	superadminBilling.Post("/specs", middleware.MaxBody(8*1024), billingHandler.CreateBillableSpec)
 	superadminBilling.Post("/topup-packages", middleware.MaxBody(8*1024), billingHandler.CreateTopupPackage)
+	superadminBilling.Put("/topup-packages/:id", middleware.MaxBody(8*1024), billingHandler.UpdateTopupPackage)
+	superadminBilling.Post("/wallets/:userID/credits", middleware.MaxBody(8*1024), billingHandler.AdjustWalletCredits)
 
 	// User management
 	admin.Get("/users", userHandler.List)
