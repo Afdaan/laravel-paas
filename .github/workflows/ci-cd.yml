@@ -13,8 +13,8 @@ jobs:
   deploy:
     runs-on: self-hosted
     env:
-      PROD_SSH: ${{ secrets.PROD_SSH || 'paas-prod' }}
-      PROD_DIR: ${{ secrets.PROD_DIR || '/opt/laravel-paas' }}
+      PROD_SSH: 'paas-prod'
+      PROD_DIR: '/opt/laravel-paas'
 
     steps:
       - name: Checkout Code
