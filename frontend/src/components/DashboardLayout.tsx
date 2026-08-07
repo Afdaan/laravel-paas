@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Wheel
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
-import { projectsAPI } from '../services/api'
+import { projectsAPI, billingAPI } from '../services/api'
 import { Project } from '../types'
 import { FrameworkIcon } from './FrameworkIcon'
 import { getDisplayedFramework } from '@/lib/runtimes'
@@ -31,8 +31,9 @@ import {
   Menu,
   X,
   ChevronDown,
-  FolderLock
-  , WalletCards
+  FolderLock,
+  WalletCards,
+  Coins,
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
@@ -820,27 +821,28 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              )}
            </div>
 
-           <div className="flex items-center gap-4">
-             <LanguageSwitcher />
+           <div className="flex items-center gap-2.5 sm:gap-4">
+              <HeaderCreditBadge />
+              <LanguageSwitcher />
 
-             <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setTheme(isDark ? 'light' : 'dark')}
-                title={t('common.theme')}
-             >
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-             </Button>
+              <Button
+                 variant="outline"
+                 size="icon"
+                 onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                 title={t('common.theme')}
+              >
+                 {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </Button>
 
-             <Button
-                variant={location.pathname.includes('feedback') ? "default" : "outline"}
-                size="icon"
-                render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title={t('common.feedback')} />}
-                className="relative"
-             >
-                <MessageSquare className="w-4 h-4" />
-             </Button>
-           </div>
+              <Button
+                 variant={location.pathname.includes('feedback') ? "default" : "outline"}
+                 size="icon"
+                 render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title={t('common.feedback')} />}
+                 className="relative"
+              >
+                 <MessageSquare className="w-4 h-4" />
+              </Button>
+            </div>
         </header>
 
         {/* Global Main Stream */}
@@ -851,6 +853,46 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         </main>
       </div>
     </div>
+  )
+}
+
+function HeaderCreditBadge() {
+  const navigate = useNavigate()
+  const { language } = useTranslation()
+  const [balance, setBalance] = useState<number | null>(null)
+
+  const fetchBalance = useCallback(async () => {
+    try {
+      const res = await billingAPI.overview()
+      if (res?.data?.wallet) {
+        setBalance(res.data.wallet.balance_credits)
+      }
+    } catch {
+      // Fallback silently if billing is unavailable or unmocked
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchBalance()
+  }, [fetchBalance])
+
+  usePolling(() => void fetchBalance(), 30_000)
+
+  if (balance === null) return null
+
+  const formatted = new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(balance)
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/billing')}
+      title="Billing & Wallet"
+      className="group flex items-center gap-1.5 rounded-full border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-3 py-1 text-xs font-bold text-primary shadow-xs transition-all hover:border-primary/60 hover:bg-primary/15 hover:shadow-xs active:scale-95 cursor-pointer"
+    >
+      <Coins className="size-3.5 text-primary transition-transform group-hover:rotate-12 group-hover:scale-110" />
+      <span>{formatted}</span>
+      <span className="hidden sm:inline font-semibold text-muted-foreground text-[10px] uppercase">cr</span>
+    </button>
   )
 }
 

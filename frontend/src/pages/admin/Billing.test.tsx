@@ -15,6 +15,9 @@ vi.mock('@/services/api', () => ({
     createSpec: vi.fn(),
     createTopupPackage: vi.fn(),
   },
+  usersAPI: {
+    list: vi.fn().mockResolvedValue({ data: [] }),
+  },
 }))
 
 const t = (key: string, data?: Record<string, unknown>) => {
