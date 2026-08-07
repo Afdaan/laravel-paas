@@ -153,12 +153,12 @@ func repairBillingCatalog(db *gorm.DB) error {
 
 func seedBillingCatalog(db *gorm.DB) error {
 	specs := []models.BillableSpec{
-		{Type: models.BillableTypeProject, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100000, Version: 1, IsActive: true},
-		{Type: models.BillableTypeProject, Name: "Medium", Slug: "medium", CPUMillicores: 1000, MemoryMB: 2048, StorageGB: 10, MonthlyCredits: 200000, Version: 1, IsActive: true},
-		{Type: models.BillableTypeProject, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 20, MonthlyCredits: 400000, Version: 1, IsActive: true},
-		{Type: models.BillableTypeDatabase, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 10, ConnectionLimit: intPtr(50), BackupRetentionDays: intPtr(7), MonthlyCredits: 150000, Version: 1, IsActive: true},
-		{Type: models.BillableTypeDatabase, Name: "Medium", Slug: "medium", CPUMillicores: 1000, MemoryMB: 2048, StorageGB: 25, ConnectionLimit: intPtr(100), BackupRetentionDays: intPtr(14), MonthlyCredits: 300000, Version: 1, IsActive: true},
-		{Type: models.BillableTypeDatabase, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 50, ConnectionLimit: intPtr(200), BackupRetentionDays: intPtr(30), MonthlyCredits: 600000, Version: 1, IsActive: true},
+		{Type: models.BillableTypeProject, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100, Version: 1, IsActive: true},
+		{Type: models.BillableTypeProject, Name: "Medium", Slug: "medium", CPUMillicores: 1000, MemoryMB: 2048, StorageGB: 10, MonthlyCredits: 200, Version: 1, IsActive: true},
+		{Type: models.BillableTypeProject, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 20, MonthlyCredits: 400, Version: 1, IsActive: true},
+		{Type: models.BillableTypeDatabase, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 10, ConnectionLimit: intPtr(50), BackupRetentionDays: intPtr(7), MonthlyCredits: 150, Version: 1, IsActive: true},
+		{Type: models.BillableTypeDatabase, Name: "Medium", Slug: "medium", CPUMillicores: 1000, MemoryMB: 2048, StorageGB: 25, ConnectionLimit: intPtr(100), BackupRetentionDays: intPtr(14), MonthlyCredits: 300, Version: 1, IsActive: true},
+		{Type: models.BillableTypeDatabase, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 50, ConnectionLimit: intPtr(200), BackupRetentionDays: intPtr(30), MonthlyCredits: 600, Version: 1, IsActive: true},
 	}
 	for _, spec := range specs {
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&spec).Error; err != nil {
@@ -166,7 +166,7 @@ func seedBillingCatalog(db *gorm.DB) error {
 		}
 	}
 
-	for index, credits := range []int64{100000, 250000, 500000, 1000000} {
+	for index, credits := range []int64{100, 250, 500, 1000} {
 		pkg := models.TopupPackage{Credits: credits, Currency: models.BillingCurrencyIDR, AmountMinor: credits, Provider: models.BillingProviderMidtrans, Version: 1, IsActive: true, SortOrder: index + 1}
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&pkg).Error; err != nil {
 			return fmt.Errorf("seed topup package %d: %w", credits, err)

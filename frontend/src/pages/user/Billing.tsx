@@ -52,22 +52,7 @@ export default function Billing() {
     (value: number) => new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(value),
     [language],
   )
-  const formatCredits = useCallback(
-    (credits: number, compact = true) => {
-      if (!compact) return formatNumber(credits)
-      const abs = Math.abs(credits)
-      if (abs >= 1000000) {
-        const formatted = (credits / 1000000).toFixed(2).replace(/\.00$/, "")
-        return `${formatted}M`
-      }
-      if (abs >= 10000) {
-        const formatted = (credits / 1000).toFixed(credits % 1000 === 0 ? 0 : 1)
-        return `${formatted}K`
-      }
-      return formatNumber(credits)
-    },
-    [formatNumber],
-  )
+  const formatCredits = useCallback((credits: number) => formatNumber(credits), [formatNumber])
   const formatDate = useCallback(
     (value?: string) =>
       value
@@ -326,11 +311,7 @@ export default function Billing() {
                       {formatCredits(overview.data.wallet.balance_credits)}
                       <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                     </p>
-                    {overview.data.wallet.balance_credits > 0 && (
-                      <span className="text-xs text-muted-foreground font-mono">
-                        ({formatNumber(overview.data.wallet.balance_credits)})
-                      </span>
-                    )}
+
                   </div>
                 </div>
 
@@ -350,11 +331,7 @@ export default function Billing() {
                       {formatCredits(overview.data.upcoming_required_credits)}
                       <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                     </p>
-                    {overview.data.upcoming_required_credits > 0 && (
-                      <span className="text-xs text-muted-foreground font-mono">
-                        ({formatNumber(overview.data.upcoming_required_credits)})
-                      </span>
-                    )}
+
                   </div>
                 </div>
               </>
