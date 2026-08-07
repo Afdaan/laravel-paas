@@ -52,7 +52,22 @@ export default function Billing() {
     (value: number) => new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(value),
     [language],
   )
-  const formatCredits = useCallback((credits: number) => formatNumber(credits), [formatNumber])
+  const formatCredits = useCallback(
+    (credits: number, compact = true) => {
+      if (!compact) return formatNumber(credits)
+      const abs = Math.abs(credits)
+      if (abs >= 1000000) {
+        const formatted = (credits / 1000000).toFixed(2).replace(/\.00$/, "")
+        return `${formatted}M`
+      }
+      if (abs >= 10000) {
+        const formatted = (credits / 1000).toFixed(credits % 1000 === 0 ? 0 : 1)
+        return `${formatted}K`
+      }
+      return formatNumber(credits)
+    },
+    [formatNumber],
+  )
   const formatDate = useCallback(
     (value?: string) =>
       value
@@ -285,9 +300,9 @@ export default function Billing() {
         </CardHeader>
         <CardContent className="space-y-8 pt-6">
           {/* Stat Cards */}
-          <div className="grid gap-5 sm:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2">
             {overview.status === 'loading' &&
-              Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />)}
+              Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />)}
             {overview.status === 'error' && (
               <div className="col-span-full rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-center text-sm text-destructive">
                 {t('billing.unavailable')}
@@ -303,10 +318,20 @@ export default function Billing() {
                       <WalletCards className="size-4" />
                     </div>
                   </div>
-                  <p className="mt-3 font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums">
-                    {formatCredits(overview.data.wallet.balance_credits)}
-                    <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
-                  </p>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <p 
+                      className="font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums"
+                      title={`${formatNumber(overview.data.wallet.balance_credits)} Credits`}
+                    >
+                      {formatCredits(overview.data.wallet.balance_credits)}
+                      <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
+                    </p>
+                    {overview.data.wallet.balance_credits > 0 && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ({formatNumber(overview.data.wallet.balance_credits)})
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Upcoming Charges Card */}
@@ -317,24 +342,20 @@ export default function Billing() {
                       <TrendingUp className="size-4" />
                     </div>
                   </div>
-                  <p className="mt-3 font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums">
-                    {formatCredits(overview.data.upcoming_required_credits)}
-                    <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
-                  </p>
-                </div>
-
-                {/* Net Position Card */}
-                <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card p-5 shadow-sm transition-all hover:border-border">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.netPosition')}</p>
-                    <div className="rounded-full bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
-                      <Coins className="size-4" />
-                    </div>
+                  <div className="mt-3 flex items-baseline gap-2">
+                    <p 
+                      className="font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums"
+                      title={`${formatNumber(overview.data.upcoming_required_credits)} Credits`}
+                    >
+                      {formatCredits(overview.data.upcoming_required_credits)}
+                      <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
+                    </p>
+                    {overview.data.upcoming_required_credits > 0 && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ({formatNumber(overview.data.upcoming_required_credits)})
+                      </span>
+                    )}
                   </div>
-                  <p className={`mt-3 font-mono text-3xl font-bold tracking-tight tabular-nums ${overview.data.wallet.balance_credits - overview.data.upcoming_required_credits >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
-                    {formatCredits(overview.data.wallet.balance_credits - overview.data.upcoming_required_credits)}
-                    <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
-                  </p>
                 </div>
               </>
             )}
