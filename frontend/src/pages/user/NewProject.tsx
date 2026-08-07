@@ -472,7 +472,8 @@ function UserNewProject() {
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
 
-      const dbUser = `dbuser_${dbName.slice(0, 25)}`
+      const randSuffix = Math.random().toString(36).substring(2, 6)
+      const dbUser = `dbuser_${dbName.slice(0, 18)}_${randSuffix}`
 
       setFormData(prev => ({
         ...prev,
@@ -511,7 +512,8 @@ function UserNewProject() {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
-      const dbUser = `dbuser_${dbName.slice(0, 25)}`
+      const randSuffix = Math.random().toString(36).substring(2, 6)
+      const dbUser = `dbuser_${dbName.slice(0, 18)}_${randSuffix}`
       setFormData(prev => ({
         ...prev,
         database_name: isDbNameManuallyEdited ? prev.database_name : dbName,

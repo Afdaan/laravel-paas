@@ -310,6 +310,17 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 			return nil, err
 		}
 		if duplicateCount > 0 {
+			uniqueName := fmt.Sprintf("%s_%s", *dbName, utils.GenerateRandom(4))
+			if len(uniqueName) > 63 {
+				uniqueName = uniqueName[:63]
+			}
+			dbName = &uniqueName
+			duplicateCount = 0
+			if err := dbConn.Model(&models.DatabaseInstance{}).Where("name = ? AND status != ?", *dbName, models.DBStatusDeleted).Count(&duplicateCount).Error; err != nil {
+				return nil, err
+			}
+		}
+		if duplicateCount > 0 {
 			return nil, apperr.New(409, "DATABASE_NAME_CONFLICT", fmt.Sprintf("A database with name '%s' already exists in the system", *dbName))
 		}
 
@@ -317,8 +328,13 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 		if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
 			return nil, err
 		}
-		if duplicateUserCount > 0 && strings.TrimSpace(databaseUsername) == "" {
-			dbUsername = fmt.Sprintf("dbuser_%s_%s", utils.GenerateRandom(10), suffix)
+		if duplicateUserCount > 0 {
+			baseUser := dbUsername
+			if len(baseUser) > 20 {
+				baseUser = baseUser[:20]
+			}
+			baseUser = strings.TrimSuffix(baseUser, "_")
+			dbUsername = fmt.Sprintf("%s_%s", baseUser, utils.GenerateRandom(4))
 			duplicateUserCount = 0
 			if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
 				return nil, err
