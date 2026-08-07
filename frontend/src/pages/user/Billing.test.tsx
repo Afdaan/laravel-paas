@@ -92,7 +92,7 @@ describe('Billing page', () => {
     render(<Billing />)
 
     await waitFor(() => expect(billingAPI.overview).toHaveBeenCalledTimes(1))
-    expect(screen.getByText(/500 credits/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/500 credits/i)[0]).toBeInTheDocument()
 
     const refreshButton = screen.getByRole('button', { name: /Refresh/i })
     await act(async () => fireEvent.click(refreshButton))

@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, CreditCard, ReceiptText, RefreshCw, WalletCards } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Coins,
+  CreditCard,
+  ReceiptText,
+  RefreshCw,
+  Sparkles,
+  TrendingUp,
+  WalletCards,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { billingAPI } from '@/services/api'
 import axios from 'axios'
@@ -188,22 +199,36 @@ export default function Billing() {
     attentionResources.length === 0
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-10">
-      <div className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-8 pb-12 animate-in fade-in duration-500">
+      {/* Header section with gradient accent */}
+      <div className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-primary">{t('billing.nav')}</p>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('billing.title')}</h1>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              <Coins className="size-3.5" />
+              {t('billing.nav')}
+            </span>
+          </div>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">{t('billing.title')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t('billing.description')}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loadInFlight.current}>
-          <RefreshCw className={loadInFlight.current ? 'animate-spin' : ''} /> {t('billing.refresh')}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void load()}
+          disabled={loadInFlight.current}
+          className="self-start shadow-sm transition-all hover:bg-muted sm:self-auto"
+        >
+          <RefreshCw className={`mr-2 size-3.5 ${loadInFlight.current ? 'animate-spin' : ''}`} />
+          {t('billing.refresh')}
         </Button>
       </div>
 
+      {/* Warnings & Alerts */}
       {staleWarning && (
-        <Card className="border-amber-500/40 bg-amber-500/5" role="status" aria-live="polite">
-          <CardContent className="flex gap-3 pt-6 text-sm">
-            <RefreshCw className="mt-0.5 size-5 shrink-0 text-amber-600" />
+        <Card className="border-amber-500/40 bg-amber-500/10 shadow-sm" role="status" aria-live="polite">
+          <CardContent className="flex items-start gap-3 p-4 text-sm text-amber-800 dark:text-amber-300">
+            <RefreshCw className="mt-0.5 size-5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
             <div>
               <strong>{t('billing.staleData')}</strong>
             </div>
@@ -212,11 +237,11 @@ export default function Billing() {
       )}
 
       {attentionResources.length > 0 && (
-        <Card className="border-destructive/40 bg-destructive/5" role="alert" aria-live="assertive">
-          <CardContent className="flex gap-3 pt-6 text-sm">
+        <Card className="border-destructive/40 bg-destructive/10 shadow-sm" role="alert" aria-live="assertive">
+          <CardContent className="flex items-start gap-3 p-4 text-sm text-destructive dark:text-red-400">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
             <div>
-              <strong>{t('billing.paymentRequired')}</strong>{' '}
+              <strong className="font-bold">{t('billing.paymentRequired')}</strong>{' '}
               {attentionResources
                 .map((resource) =>
                   resource.oldest_due_at
@@ -231,45 +256,79 @@ export default function Billing() {
       )}
 
       {showLowBalance && (
-        <Card className="border-amber-500/40 bg-amber-500/5" role="status">
-          <CardContent className="flex gap-3 pt-6 text-sm">
-            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+        <Card className="border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent shadow-sm" role="status">
+          <CardContent className="flex items-start gap-3 p-4 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
             <div>
-              <strong>{t('billing.lowBalance')}</strong> {t('billing.lowBalanceDescription')}
+              <strong className="font-bold">{t('billing.lowBalance')}</strong> {t('billing.lowBalanceDescription')}
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('billing.creditsOverview')}</CardTitle>
-          <CardDescription>{t('billing.balanceDescription')}</CardDescription>
+      {/* Main Billing Overview Card */}
+      <Card className="overflow-hidden border-border/60 shadow-md transition-all hover:shadow-lg">
+        <CardHeader className="bg-muted/30 border-b border-border/40 pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <WalletCards className="size-5 text-primary" />
+                {t('billing.creditsOverview')}
+              </CardTitle>
+              <CardDescription className="mt-1">{t('billing.balanceDescription')}</CardDescription>
+            </div>
+            <Badge variant="outline" className="hidden sm:inline-flex bg-background/50 border-primary/20 text-primary">
+              <Sparkles className="mr-1 size-3" /> Auto-Renewable
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-3">
+        <CardContent className="space-y-8 pt-6">
+          {/* Stat Cards */}
+          <div className="grid gap-5 sm:grid-cols-3">
             {overview.status === 'loading' &&
-              Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-lg" />)}
+              Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />)}
             {overview.status === 'error' && (
-              <div className="col-span-full text-sm text-destructive">{t('billing.unavailable')}</div>
+              <div className="col-span-full rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-center text-sm text-destructive">
+                {t('billing.unavailable')}
+              </div>
             )}
             {overview.status === 'success' && (
               <>
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs font-medium text-muted-foreground">{t('billing.balance')}</p>
-                  <p className="mt-1 text-2xl font-semibold">
+                {/* Balance Card */}
+                <div className="relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-5 shadow-sm transition-all hover:border-primary/50">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.balance')}</p>
+                    <div className="rounded-full bg-primary/10 p-2 text-primary">
+                      <WalletCards className="size-4" />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-3xl font-black tracking-tight text-foreground">
                     {formatCredits(overview.data.wallet.balance_credits)} {t('billing.credits')}
                   </p>
                 </div>
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs font-medium text-muted-foreground">{t('billing.upcomingCharges')}</p>
-                  <p className="mt-1 text-2xl font-semibold">
+
+                {/* Upcoming Charges Card */}
+                <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card p-5 shadow-sm transition-all hover:border-border">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.upcomingCharges')}</p>
+                    <div className="rounded-full bg-amber-500/10 p-2 text-amber-600 dark:text-amber-400">
+                      <TrendingUp className="size-4" />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-3xl font-black tracking-tight text-foreground">
                     {formatCredits(overview.data.upcoming_required_credits)} {t('billing.credits')}
                   </p>
                 </div>
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs font-medium text-muted-foreground">{t('billing.netPosition')}</p>
-                  <p className="mt-1 text-2xl font-semibold">
+
+                {/* Net Position Card */}
+                <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card p-5 shadow-sm transition-all hover:border-border">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.netPosition')}</p>
+                    <div className="rounded-full bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
+                      <Coins className="size-4" />
+                    </div>
+                  </div>
+                  <p className={`mt-3 text-3xl font-black tracking-tight ${overview.data.wallet.balance_credits - overview.data.upcoming_required_credits >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
                     {formatCredits(overview.data.wallet.balance_credits - overview.data.upcoming_required_credits)} {t('billing.credits')}
                   </p>
                 </div>
@@ -277,47 +336,80 @@ export default function Billing() {
             )}
           </div>
 
-          <div>
-            <p className="mb-3 text-sm font-medium">{t('billing.addCredits')}</p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Add Credits Packages Section */}
+          <div className="pt-2">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                  <Zap className="size-4 text-amber-500 fill-amber-500/20" />
+                  {t('billing.addCredits')}
+                </h3>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {packages.status === 'loading' &&
-                Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-lg" />)}
+                Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-xl" />)}
               {packages.status === 'error' && (
                 <p className="col-span-full text-sm text-destructive">{t('billing.catalogLoadFailed')}</p>
               )}
               {packages.status === 'success' &&
-                packages.data.map((pkg) => (
-                  <button
-                    key={pkg.id}
-                    type="button"
-                    className="rounded-lg border p-4 text-left transition-colors hover:border-primary/50 hover:bg-muted/50 disabled:opacity-60"
-                    disabled={topupPackageID !== null}
-                    onClick={() => void startTopup(pkg.id)}
-                  >
-                    <div className="font-semibold">
-                      {formatCredits(pkg.credits)} {t('billing.credits')}
-                    </div>
-                    <div className="mt-1 text-sm text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</div>
-                    <div className="mt-3 flex items-center gap-1 text-xs font-medium text-primary">
-                      <CreditCard className="size-3.5" />
-                      {topupPackageID === pkg.id ? t('billing.openingCheckout') : t('billing.choosePackage')}
-                    </div>
-                  </button>
-                ))}
+                packages.data.map((pkg, idx) => {
+                  const isPopular = idx === 1 || packages.data.length === 1
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      className={`group relative flex flex-col justify-between rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 ${
+                        isPopular
+                          ? 'border-primary/60 bg-gradient-to-b from-primary/5 via-card to-card shadow-sm hover:border-primary'
+                          : 'border-border/60 bg-card hover:border-primary/50 hover:bg-muted/30'
+                      }`}
+                      disabled={topupPackageID !== null}
+                      onClick={() => void startTopup(pkg.id)}
+                    >
+                      {isPopular && (
+                        <span className="absolute -top-2.5 right-3 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-foreground shadow-sm">
+                          Popular
+                        </span>
+                      )}
+                      <div>
+                        <div className="text-lg font-extrabold text-foreground group-hover:text-primary transition-colors">
+                          {formatCredits(pkg.credits)} {t('billing.credits')}
+                        </div>
+                        <div className="mt-1 text-sm font-semibold text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</div>
+                      </div>
+
+                      <div className="mt-5 flex items-center justify-between border-t border-border/40 pt-3 text-xs font-semibold text-primary">
+                        <span className="flex items-center gap-1.5">
+                          <CreditCard className="size-3.5" />
+                          {topupPackageID === pkg.id ? t('billing.openingCheckout') : t('billing.choosePackage')}
+                        </span>
+                        <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      </div>
+                    </button>
+                  )
+                })}
               {packages.status === 'success' && packages.data.length === 0 && (
-                <p className="col-span-full text-sm text-muted-foreground">{t('billing.noPackages')}</p>
+                <p className="col-span-full rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  {t('billing.noPackages')}
+                </p>
               )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">{t('billing.history')}</h2>
+      {/* Billing & Wallet History Section */}
+      <section className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">{t('billing.history')}</h2>
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-3">
           <HistoryCard
             title={t('billing.invoices')}
-            icon={<ReceiptText className="size-4" />}
+            icon={<ReceiptText className="size-4 text-primary" />}
             empty={overview.status === 'success' ? t('billing.noInvoices') : t('billing.invoicesUnavailable')}
             state={overview.status === 'loading' ? 'loading' : overview.status === 'error' ? 'error' : 'success'}
             rows={
@@ -340,7 +432,7 @@ export default function Billing() {
           />
           <HistoryCard
             title={t('billing.topups')}
-            icon={<CreditCard className="size-4" />}
+            icon={<CreditCard className="size-4 text-primary" />}
             empty={overview.status === 'success' ? t('billing.noTopups') : t('billing.topupsUnavailable')}
             state={overview.status === 'loading' ? 'loading' : overview.status === 'error' ? 'error' : 'success'}
             onReconcile={reconcileTopup}
@@ -361,7 +453,7 @@ export default function Billing() {
           />
           <HistoryCard
             title={t('billing.walletActivity')}
-            icon={<WalletCards className="size-4" />}
+            icon={<WalletCards className="size-4 text-primary" />}
             empty={overview.status === 'success' ? t('billing.noWalletActivity') : t('billing.walletActivityUnavailable')}
             state={overview.status === 'loading' ? 'loading' : overview.status === 'error' ? 'error' : 'success'}
             rows={
@@ -413,40 +505,42 @@ function HistoryCard({
   formatAmount?: (value: number) => string
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+    <Card className="border-border/60 shadow-sm transition-all hover:shadow-md">
+      <CardHeader className="bg-muted/20 border-b border-border/40 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base font-bold text-foreground">
           {icon} {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {state === 'loading' && Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full" />)}
+      <CardContent className="space-y-3 pt-4">
+        {state === 'loading' && Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-lg" />)}
         {state === 'error' && <p className="text-sm text-destructive">{empty}</p>}
         {state === 'success' &&
           rows.map((row) => (
-            <div key={row.id} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0">
+            <div key={row.id} className="flex items-start justify-between gap-3 border-b border-border/30 pb-3 last:border-0 hover:bg-muted/40 transition-colors rounded-lg p-1.5 -mx-1.5">
               <div className="min-w-0">
-                <p className="text-sm font-medium">{row.title}</p>
+                <p className="text-sm font-semibold text-foreground">{row.title}</p>
                 <p className="text-xs text-muted-foreground">{row.detail}</p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 {amountColumn && typeof row.amount === 'number' && formatAmount ? (
-                  <span className={row.amount >= 0 ? 'text-sm font-semibold text-emerald-600' : 'text-sm font-semibold text-destructive'}>
+                  <span className={row.amount >= 0 ? 'text-sm font-bold text-emerald-600 dark:text-emerald-400' : 'text-sm font-bold text-destructive'}>
                     {row.amount >= 0 ? '+' : ''}{formatAmount(row.amount)}
                   </span>
                 ) : (
-                  <Badge variant={statusVariant(row.status)}>{formatStatus(row.status)}</Badge>
+                  <Badge variant={statusVariant(row.status)} className="capitalize font-medium text-[11px] px-2 py-0.5">
+                    {formatStatus(row.status)}
+                  </Badge>
                 )}
-                <span className="text-xs text-muted-foreground">{row.date}</span>
+                <span className="text-[11px] text-muted-foreground">{row.date}</span>
                 {onReconcile && row.status === 'pending' && reconcileLabel && (
-                  <Button variant="ghost" size="sm" className="h-auto py-0 text-xs" onClick={() => void onReconcile(row.id)}>
+                  <Button variant="ghost" size="sm" className="h-auto py-0.5 px-2 text-xs font-semibold text-primary hover:bg-primary/10" onClick={() => void onReconcile(row.id)}>
                     {reconcileLabel}
                   </Button>
                 )}
               </div>
             </div>
           ))}
-        {state === 'success' && rows.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}
+        {state === 'success' && rows.length === 0 && <p className="text-sm text-muted-foreground py-2 text-center">{empty}</p>}
       </CardContent>
     </Card>
   )
