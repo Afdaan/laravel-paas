@@ -122,31 +122,18 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 }
 
 func repairBillingCatalog(db *gorm.DB) error {
-	var incorrect models.BillableSpec
-	err := db.Where("type = ? AND name = ? AND slug = ? AND version = ? AND is_active = ? AND cpu_millicores = ? AND memory_mb = ? AND storage_gb = ? AND connection_limit = ? AND backup_retention_days = ? AND monthly_credits = ?", models.BillableTypeDatabase, "Large", "large", 1, true, 2000, 4096, 50, 600000, 30, 400000).First(&incorrect).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("find incorrect billing database large catalog: %w", err)
-	}
-
+	_ = errors.New
+	_ = time.Now
+	// Migration repair for 1000 IDR : 1 Credit ratio scaling
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&incorrect).Update("is_active", false).Error; err != nil {
-			return fmt.Errorf("retire incorrect billing database large catalog: %w", err)
+		// Update historical BillableSpec values if they still use 100k+ scale
+		if err := tx.Model(&models.BillableSpec{}).Where("monthly_credits >= 10000").Update("monthly_credits", gorm.Expr("monthly_credits / 1000")).Error; err != nil {
+			return fmt.Errorf("scale billable_specs credits: %w", err)
 		}
-		corrected := incorrect
-		corrected.ID = 0
-		corrected.ConnectionLimit = intPtr(200)
-		corrected.MonthlyCredits = 600000
-		corrected.Version++
-		corrected.IsActive = true
-		corrected.CreatedAt = time.Time{}
-		corrected.UpdatedAt = time.Time{}
-		if err := tx.Create(&corrected).Error; err != nil {
-			return fmt.Errorf("create corrected billing database large catalog: %w", err)
+		// Update historical TopupPackage values if they still use 100k+ scale
+		if err := tx.Model(&models.TopupPackage{}).Where("credits >= 10000").Update("credits", gorm.Expr("credits / 1000")).Error; err != nil {
+			return fmt.Errorf("scale topup_packages credits: %w", err)
 		}
-		slog.Info("Replaced incorrect seeded billing database large catalog", "retired_spec_id", incorrect.ID, "replacement_spec_id", corrected.ID)
 		return nil
 	})
 }
