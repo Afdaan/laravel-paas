@@ -29,7 +29,6 @@ interface PlatformSettings {
   base_domain?: string;
   project_domain?: string;
   max_projects_per_user?: number;
-  project_expiry_days?: number;
   cpu_limit_percent?: number;
   memory_limit_mb?: number;
   admin_idle_timeout?: number;
@@ -190,21 +189,6 @@ const AdminSettings = () => {
                     value={settings.max_projects_per_user || 3}
                     onChange={(val) => handleChange('max_projects_per_user', val)}
                     unit={t('admin.settings.projects')}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Clock size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.expiryCycle')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={0}
-                    value={settings.project_expiry_days || 30}
-                    onChange={(val) => handleChange('project_expiry_days', val)}
-                    unit={t('admin.settings.days')}
                   />
                 </div>
               </div>

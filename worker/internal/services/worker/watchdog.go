@@ -76,7 +76,7 @@ func (w *CentralWatchdog) Start() {
 	w.recoverOrphanedBuilds()
 
 	w.StartPruneScheduler()
-	w.StartExpiryJanitor()
+	// w.StartExpiryJanitor() -- disabled: credit billing manages lifecycle
 	w.StartStaleBuildWatchdog()
 	w.StartDelayedJobScheduler()
 	w.StartAutoHealingWatchdog()
