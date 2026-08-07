@@ -92,7 +92,7 @@ describe('Billing page', () => {
     render(<Billing />)
 
     await waitFor(() => expect(billingAPI.overview).toHaveBeenCalledTimes(1))
-    expect(screen.getAllByText(/500 credits/i)[0]).toBeInTheDocument()
+    expect(screen.getAllByText(/500/, { exact: false })[0]).toBeInTheDocument()
 
     const refreshButton = screen.getByRole('button', { name: /Refresh/i })
     await act(async () => fireEvent.click(refreshButton))
@@ -123,9 +123,9 @@ describe('Billing page', () => {
 
     render(<Billing />)
 
-    await waitFor(() => screen.getByText(/100 credits/i))
+    await waitFor(() => screen.getByText(/^100$/))
 
-    const packageButton = screen.getByText(/100 credits/i).closest('button') as HTMLButtonElement
+    const packageButton = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
     await act(async () => fireEvent.click(packageButton))
 
     await waitFor(() => expect(billingAPI.createTopup).toHaveBeenCalledTimes(1))

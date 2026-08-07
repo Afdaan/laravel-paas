@@ -469,3 +469,34 @@ func assertInvoiceWallet(t *testing.T, db *gorm.DB, userID uint, wantBalance, wa
 		t.Fatalf("entries=%d err=%v", entries, err)
 	}
 }
+
+func TestInvoiceRecoveryDoesNotReactivateDeletedProject(t *testing.T) {
+	db, user, service, wallets, spec := invoiceServiceFixture(t)
+	now := time.Now().UTC()
+	wallet, err := wallets.GetOrCreateWallet(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: 999999, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: now.Add(-time.Hour), NextInvoiceAt: now.Add(time.Hour), BillingAnchorDay: now.Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	dueAt := now.Add(-time.Minute)
+	invoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: now.Add(-time.Hour), PeriodEnd: now, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "deleted-project-recovery", DueAt: &dueAt}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "Top-up reversal payment due", Credits: 0}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RestoreCurrentPeriodResources(context.Background(), user.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusSuspended {
+		t.Fatalf("billing status=%s", resource.BillingStatus)
+	}
+}

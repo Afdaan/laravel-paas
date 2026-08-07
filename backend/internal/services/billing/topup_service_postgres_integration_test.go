@@ -423,3 +423,46 @@ func signedNotificationForAmount(orderID, status, fraud, transactionID string, a
 	notification.SignatureKey = hex.EncodeToString(signature[:])
 	return notification
 }
+
+func TestTopupServicePostgresPartialRefundReversesCreditsProportionallyOnce(t *testing.T) {
+	db := walletPostgresTestDB(t)
+	user := createPostgresWalletTestUser(t, db)
+	amount := int64(900000000 + time.Now().UTC().UnixNano()%99999999)
+	credits := amount
+	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: amount, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), &fakeMidtransGateway{})
+	view, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-partial-refund-%d", amount), TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	transactionID := fmt.Sprintf("partial-refund-%d", amount)
+	if err := service.ProcessReconciledNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", transactionID, amount)); err != nil {
+		t.Fatal(err)
+	}
+
+	partial := signedNotificationForAmount(topup.ProviderOrderID, "partial_refund", "", transactionID, amount)
+	partial.RefundAmount = fmt.Sprintf("%d.00", amount/2)
+	for _, err := range runConcurrentCalls(t, []func() error{
+		func() error { return service.ProcessReconciledNotification(context.Background(), partial) },
+		func() error { return service.ProcessReconciledNotification(context.Background(), partial) },
+		func() error { return service.ProcessReconciledNotification(context.Background(), partial) },
+	}) {
+		if err != nil {
+			t.Fatalf("partial refund: %v", err)
+		}
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPartialRefund, credits/2, 2)
+
+	refunded := signedNotificationForAmount(topup.ProviderOrderID, "refund", "", transactionID, amount)
+	if err := service.ProcessReconciledNotification(context.Background(), refunded); err != nil {
+		t.Fatal(err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusRefunded, 0, 3)
+}

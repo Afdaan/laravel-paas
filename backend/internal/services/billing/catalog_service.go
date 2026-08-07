@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -485,29 +486,14 @@ func (s *CatalogService) AdjustWalletCredits(ctx context.Context, audit AuditCon
 	}
 	input.Reason = strings.TrimSpace(input.Reason)
 	audit.Reason = strings.TrimSpace(audit.Reason)
+	if !validAuditContext(audit) {
+		return WalletView{}, ErrInvalidCatalogInput
+	}
 	if err := validateWalletCreditAdjustmentInput(input); err != nil {
 		return WalletView{}, err
 	}
 	if s.wallets == nil {
 		return WalletView{}, ErrCatalogServiceUnavailable
-	}
-
-	var wallet models.Wallet
-	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&wallet).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return WalletView{}, fmt.Errorf("load wallet: %w", err)
-		}
-		var user models.User
-		if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return WalletView{}, apperr.ErrNotFound
-			}
-			return WalletView{}, fmt.Errorf("load user: %w", err)
-		}
-		wallet, err = s.wallets.GetOrCreateWallet(ctx, userID)
-		if err != nil {
-			return WalletView{}, fmt.Errorf("get or create wallet: %w", err)
-		}
 	}
 
 	actorUserID := audit.ActorUserID
@@ -521,32 +507,61 @@ func (s *CatalogService) AdjustWalletCredits(ctx context.Context, audit AuditCon
 		CreatedBy:      &actorUserID,
 	}
 
-	var mutResult MutationResult
-	var mutErr error
-	if input.Credits > 0 {
-		mutResult, mutErr = s.wallets.Credit(ctx, mutation)
-	} else {
+	credit := input.Credits > 0
+	if !credit {
 		// WalletService.Debit expects a positive amount; negation happens inside.
 		mutation.AmountCredits = -input.Credits
-		mutResult, mutErr = s.wallets.Debit(ctx, mutation)
-	}
-	if mutErr != nil {
-		if errors.Is(mutErr, ErrInsufficientBalance) {
-			return WalletView{}, apperr.NewBadRequest("Insufficient wallet balance for debit")
-		}
-		if errors.Is(mutErr, ErrInvalidMutation) {
-			return WalletView{}, apperr.NewBadRequest("Invalid credit adjustment")
-		}
-		return WalletView{}, mutErr
 	}
 
-	if !mutResult.Replayed {
-		if err := s.createBillingAuditEvent(ctx, audit, "wallet.credit_adjusted", "wallet", wallet.ID, nil, mutResult); err != nil {
-			return WalletView{}, err
+	var wallet models.Wallet
+	var mutResult MutationResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Select("id").Where("id = ?", userID).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperr.ErrNotFound
+			}
+			return fmt.Errorf("load user: %w", err)
 		}
+
+		var err error
+		wallet, err = getOrCreateLockedWallet(tx, userID)
+		if err != nil {
+			return err
+		}
+		mutResult, err = s.wallets.applyInTransaction(tx, mutation, credit)
+		if err != nil {
+			return err
+		}
+		if mutResult.Replayed {
+			return nil
+		}
+		return createAuditEvent(tx, audit, "wallet.credit_adjusted", "wallet", wallet.ID, nil, mutResult)
+	})
+	if err != nil {
+		if errors.Is(err, ErrInsufficientBalance) {
+			return WalletView{}, apperr.NewBadRequest("Insufficient wallet balance for debit")
+		}
+		if errors.Is(err, ErrInvalidMutation) {
+			return WalletView{}, apperr.NewBadRequest("Invalid credit adjustment")
+		}
+		return WalletView{}, err
+	}
+	if credit {
+		s.retryDueInvoicesAfterCredit(ctx, userID)
 	}
 
 	return s.GetWalletView(ctx, userID)
+}
+
+func (s *CatalogService) retryDueInvoicesAfterCredit(ctx context.Context, userID uint) {
+	// ponytail: keep an admin adjustment responsive; the minute scheduler is
+	// the durable fallback if this best-effort post-commit retry fails.
+	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), invoiceRetryTimeout)
+	defer cancel()
+	if err := NewInvoiceService(s.db, s.wallets).RetryDueForUser(retryCtx, userID, time.Now().UTC()); err != nil {
+		slog.Error("Billing invoice retry after wallet adjustment failed", "user_id", userID, "error", err)
+	}
 }
 
 func (s *CatalogService) GetWalletView(ctx context.Context, userID uint) (WalletView, error) {

@@ -11,6 +11,7 @@ import {
   WalletCards,
   Zap,
 } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { billingAPI } from '@/services/api'
 import axios from 'axios'
@@ -302,8 +303,9 @@ export default function Billing() {
                       <WalletCards className="size-4" />
                     </div>
                   </div>
-                  <p className="mt-3 text-3xl font-black tracking-tight text-foreground">
-                    {formatCredits(overview.data.wallet.balance_credits)} {t('billing.credits')}
+                  <p className="mt-3 font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums">
+                    {formatCredits(overview.data.wallet.balance_credits)}
+                    <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                   </p>
                 </div>
 
@@ -315,8 +317,9 @@ export default function Billing() {
                       <TrendingUp className="size-4" />
                     </div>
                   </div>
-                  <p className="mt-3 text-3xl font-black tracking-tight text-foreground">
-                    {formatCredits(overview.data.upcoming_required_credits)} {t('billing.credits')}
+                  <p className="mt-3 font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums">
+                    {formatCredits(overview.data.upcoming_required_credits)}
+                    <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                   </p>
                 </div>
 
@@ -328,8 +331,9 @@ export default function Billing() {
                       <Coins className="size-4" />
                     </div>
                   </div>
-                  <p className={`mt-3 text-3xl font-black tracking-tight ${overview.data.wallet.balance_credits - overview.data.upcoming_required_credits >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
-                    {formatCredits(overview.data.wallet.balance_credits - overview.data.upcoming_required_credits)} {t('billing.credits')}
+                  <p className={`mt-3 font-mono text-3xl font-bold tracking-tight tabular-nums ${overview.data.wallet.balance_credits - overview.data.upcoming_required_credits >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
+                    {formatCredits(overview.data.wallet.balance_credits - overview.data.upcoming_required_credits)}
+                    <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                   </p>
                 </div>
               </>
@@ -344,6 +348,7 @@ export default function Billing() {
                   <Zap className="size-4 text-amber-500 fill-amber-500/20" />
                   {t('billing.addCredits')}
                 </h3>
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">{t('billing.addCreditsDescription')}</p>
               </div>
             </div>
 
@@ -357,10 +362,13 @@ export default function Billing() {
                 packages.data.map((pkg, idx) => {
                   const isPopular = idx === 1 || packages.data.length === 1
                   return (
-                    <button
+                    <motion.button
                       key={pkg.id}
                       type="button"
-                      className={`group relative flex flex-col justify-between rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 ${
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ type: 'spring', stiffness: 120, damping: 20, delay: idx * 0.06 }}
+                      className={`group relative flex flex-col justify-between rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] disabled:opacity-60 ${
                         isPopular
                           ? 'border-primary/60 bg-gradient-to-b from-primary/5 via-card to-card shadow-sm hover:border-primary'
                           : 'border-border/60 bg-card hover:border-primary/50 hover:bg-muted/30'
@@ -369,13 +377,14 @@ export default function Billing() {
                       onClick={() => void startTopup(pkg.id)}
                     >
                       {isPopular && (
-                        <span className="absolute -top-2.5 right-3 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-foreground shadow-sm">
-                          Popular
+                        <span className="absolute -top-2.5 right-3 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 ring-1 ring-amber-500/30 dark:text-amber-400">
+                          {t('billing.bestValue')}
                         </span>
                       )}
                       <div>
-                        <div className="text-lg font-extrabold text-foreground group-hover:text-primary transition-colors">
-                          {formatCredits(pkg.credits)} {t('billing.credits')}
+                        <div className="font-mono text-lg font-bold tracking-tight text-foreground tabular-nums transition-colors group-hover:text-primary">
+                          {formatCredits(pkg.credits)}
+                          <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                         </div>
                         <div className="mt-1 text-sm font-semibold text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</div>
                       </div>
@@ -385,9 +394,11 @@ export default function Billing() {
                           <CreditCard className="size-3.5" />
                           {topupPackageID === pkg.id ? t('billing.openingCheckout') : t('billing.choosePackage')}
                         </span>
-                        <ArrowUpRight className="size-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                        <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:bg-primary/15">
+                          <ArrowUpRight className="size-3.5 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                        </span>
                       </div>
-                    </button>
+                    </motion.button>
                   )
                 })}
               {packages.status === 'success' && packages.data.length === 0 && (
@@ -515,15 +526,21 @@ function HistoryCard({
         {state === 'loading' && Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-lg" />)}
         {state === 'error' && <p className="text-sm text-destructive">{empty}</p>}
         {state === 'success' &&
-          rows.map((row) => (
-            <div key={row.id} className="flex items-start justify-between gap-3 border-b border-border/30 pb-3 last:border-0 hover:bg-muted/40 transition-colors rounded-lg p-1.5 -mx-1.5">
+          rows.map((row, rowIndex) => (
+            <motion.div
+              key={row.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 140, damping: 22, delay: Math.min(rowIndex, 8) * 0.04 }}
+              className="-mx-1.5 flex items-start justify-between gap-3 rounded-lg border-b border-border/30 p-1.5 pb-3 transition-colors last:border-0 hover:bg-muted/40"
+            >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">{row.title}</p>
                 <p className="text-xs text-muted-foreground">{row.detail}</p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 {amountColumn && typeof row.amount === 'number' && formatAmount ? (
-                  <span className={row.amount >= 0 ? 'text-sm font-bold text-emerald-600 dark:text-emerald-400' : 'text-sm font-bold text-destructive'}>
+                  <span className={`font-mono text-sm font-bold tabular-nums ${row.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
                     {row.amount >= 0 ? '+' : ''}{formatAmount(row.amount)}
                   </span>
                 ) : (
@@ -538,7 +555,7 @@ function HistoryCard({
                   </Button>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
         {state === 'success' && rows.length === 0 && <p className="text-sm text-muted-foreground py-2 text-center">{empty}</p>}
       </CardContent>

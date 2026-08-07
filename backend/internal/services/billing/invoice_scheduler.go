@@ -16,10 +16,15 @@ const invoiceSchedulerLockIdentity = "runara:billing-invoice-scheduler"
 // InvoiceScheduler periodically retries due resource invoices.
 type InvoiceScheduler struct {
 	invoices *InvoiceService
+	topups   *TopupService
 }
 
-func NewInvoiceScheduler(invoices *InvoiceService) *InvoiceScheduler {
-	return &InvoiceScheduler{invoices: invoices}
+func NewInvoiceScheduler(invoices *InvoiceService, topups ...*TopupService) *InvoiceScheduler {
+	scheduler := &InvoiceScheduler{invoices: invoices}
+	if len(topups) > 0 {
+		scheduler.topups = topups[0]
+	}
+	return scheduler
 }
 
 func (s *InvoiceScheduler) Run(ctx context.Context) {
@@ -47,6 +52,7 @@ func (s *InvoiceScheduler) runOnce(ctx context.Context) {
 		if err := s.invoices.RunMonthly(ctx, time.Now().UTC()); err != nil {
 			slog.Error("Billing invoice scheduler failed", "error", err)
 		}
+		s.sweepStaleTopups(ctx)
 		return
 	}
 	if err := s.invoices.db.Connection(func(connection *gorm.DB) (runErr error) {
@@ -65,5 +71,18 @@ func (s *InvoiceScheduler) runOnce(ctx context.Context) {
 		return s.invoices.runMonthlyWithRecovery(ctx, connection, time.Now().UTC(), nil)
 	}); err != nil {
 		slog.Error("Billing invoice scheduler failed", "error", err)
+	}
+	s.sweepStaleTopups(ctx)
+}
+
+// sweepStaleTopups recovers checkouts whose creating process died mid-request.
+// Failures are logged and retried on the next tick; stale top-ups are never
+// lost because the reconcile endpoint remains as a user-triggered fallback.
+func (s *InvoiceScheduler) sweepStaleTopups(ctx context.Context) {
+	if s.topups == nil {
+		return
+	}
+	if err := s.topups.RecoverStaleTopups(ctx, time.Now().UTC()); err != nil {
+		slog.Error("Stale top-up recovery failed", "error", err)
 	}
 }

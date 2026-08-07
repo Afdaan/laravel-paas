@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -84,6 +85,7 @@ type MidtransNotification struct {
 	TransactionStatus string `json:"transaction_status"`
 	FraudStatus       string `json:"fraud_status"`
 	TransactionID     string `json:"transaction_id"`
+	RefundAmount      string `json:"refund_amount"`
 	Currency          string `json:"currency"`
 	MerchantID        string `json:"merchant_id"`
 }
@@ -229,7 +231,7 @@ func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (Top
 	if err != nil {
 		return TopupView{}, err
 	}
-	if err := s.ProcessNotification(ctx, notification); err != nil {
+	if err := s.ProcessReconciledNotification(ctx, notification); err != nil {
 		return TopupView{}, err
 	}
 	if err := s.db.WithContext(ctx).First(&topup, topup.ID).Error; err != nil {
@@ -249,7 +251,23 @@ func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (Top
 	return topupView(topup), nil
 }
 
+type topupReconcileCtxKey struct{}
+
+// ProcessNotification applies a validated Midtrans payment notification. It is
+// safe for duplicate deliveries: payment events are deduplicated by payload
+// hash and wallet mutations are idempotent.
 func (s *TopupService) ProcessNotification(ctx context.Context, notification MidtransNotification) error {
+	return s.processNotification(ctx, notification)
+}
+
+// ProcessReconciledNotification is ProcessNotification for notifications that
+// were just fetched from the Midtrans transaction status API by Reconcile. The
+// status API carries the authoritative cumulative refund amount.
+func (s *TopupService) ProcessReconciledNotification(ctx context.Context, notification MidtransNotification) error {
+	return s.processNotification(context.WithValue(ctx, topupReconcileCtxKey{}, true), notification)
+}
+
+func (s *TopupService) processNotification(ctx context.Context, notification MidtransNotification) error {
 	if err := s.validatePaymentProcessing(ctx); err != nil {
 		return err
 	}
@@ -263,6 +281,33 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 	}
 	eventKey := paymentEventKey(payloadJSON)
 
+	// The provider status endpoint carries the authoritative cumulative refund
+	// amount. Cross-check every reversal webhook before touching the wallet.
+	if isReversalTopupStatus(validated.Status) && ctx.Value(topupReconcileCtxKey{}) == nil {
+		crosscheckCtx, cancel := context.WithTimeout(ctx, midtransRequestTimeout)
+		latest, fetchErr := s.gateway.GetTransactionStatus(crosscheckCtx, validated.OrderID)
+		cancel()
+		if fetchErr != nil {
+			return fmt.Errorf("cross-check reversal notification: %w", fetchErr)
+		}
+		if _, statusErr := topupStatusFromNotification(latest.StatusCode, latest.TransactionStatus, latest.FraudStatus); statusErr != nil {
+			return fmt.Errorf("cross-check reversal notification: %w", statusErr)
+		}
+		revalidated, validationErr := s.validateNotification(latest)
+		if validationErr != nil {
+			return fmt.Errorf("cross-check reversal notification: %w", validationErr)
+		}
+		if revalidated.OrderID != validated.OrderID || revalidated.TransactionID != validated.TransactionID || !isReversalTopupStatus(revalidated.Status) {
+			return ErrInvalidPaymentNotification
+		}
+		validated = revalidated
+		payloadJSON, err = json.Marshal(validated)
+		if err != nil {
+			return fmt.Errorf("marshal cross-checked payment event: %w", err)
+		}
+		eventKey = paymentEventKey(payloadJSON)
+	}
+
 	var creditedUserID uint
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var topup models.Topup
@@ -272,10 +317,13 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 			}
 			return fmt.Errorf("lock topup for payment notification: %w", err)
 		}
-		if topup.AmountMinor != validated.AmountMinor || topup.Currency != validated.Currency {
+		if topup.Currency != validated.Currency {
 			return ErrInvalidPaymentNotification
 		}
 		if topup.ProviderTransactionID != nil && *topup.ProviderTransactionID != validated.TransactionID {
+			return ErrInvalidPaymentNotification
+		}
+		if topup.AmountMinor != validated.AmountMinor {
 			return ErrInvalidPaymentNotification
 		}
 
@@ -299,7 +347,7 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 		}
 		switch validated.Status {
 		case models.TopupStatusPaid:
-			if topup.Status != models.TopupStatusRefunded && topup.Status != models.TopupStatusChargeback {
+			if topup.Status != models.TopupStatusPartialRefund && topup.Status != models.TopupStatusRefunded && topup.Status != models.TopupStatusChargeback {
 				userID, err := loadWalletUserID(tx, topup.WalletID)
 				if err != nil {
 					return err
@@ -324,49 +372,19 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 			} else {
 				updates["status"] = topup.Status
 			}
-		case models.TopupStatusRefunded, models.TopupStatusChargeback:
-			if topup.Status == models.TopupStatusPaid {
-				userID, err := loadWalletUserID(tx, topup.WalletID)
-				if err != nil {
-					return err
-				}
-				var activeResources []models.BillableResource
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("user_id = ? AND billing_status = ?", userID, models.BillableResourceStatusActive).
-					Find(&activeResources).Error; err != nil {
-					return fmt.Errorf("lock active resources before top-up reversal: %w", err)
-				}
-				reversal, err := s.wallets.applyInTransaction(tx, LedgerMutation{
-					UserID:         userID,
-					EntryType:      models.WalletLedgerEntryTopupReversal,
-					AmountCredits:  topup.Credits,
-					IdempotencyKey: fmt.Sprintf("topup:%d:reversal", topup.ID),
-					ReferenceType:  "topup",
-					ReferenceID:    strconv.FormatUint(uint64(topup.ID), 10),
-				}, false)
-				if err != nil {
-					return err
-				}
-				if reversal.BalanceAfter < 0 && len(activeResources) > 0 {
-					now := time.Now().UTC()
-					if err := recordTopupReversalPaymentDueTx(tx, &topup, activeResources, now); err != nil {
-						return err
-					}
-					resourceIDs := make([]uint, 0, len(activeResources))
-					for _, resource := range activeResources {
-						resourceIDs = append(resourceIDs, resource.ID)
-					}
-					if err := tx.Model(&models.BillableResource{}).Where("id IN ?", resourceIDs).Update("billing_status", models.BillableResourceStatusPaymentDue).Error; err != nil {
-						return fmt.Errorf("move overdue resources to payment due after top-up reversal: %w", err)
-					}
-				}
+		case models.TopupStatusPartialRefund, models.TopupStatusRefunded, models.TopupStatusPartialChargeback, models.TopupStatusChargeback:
+			if err := s.applyTopupReversalTx(tx, &topup, validated); err != nil {
+				return err
+			}
+			if (topup.Status == models.TopupStatusRefunded || topup.Status == models.TopupStatusChargeback) && (validated.Status == models.TopupStatusPartialRefund || validated.Status == models.TopupStatusPartialChargeback) {
+				updates["status"] = topup.Status
 			}
 		case models.TopupStatusPending:
 			if topup.Status != models.TopupStatusPending {
 				updates["status"] = topup.Status
 			}
 		default:
-			if topup.Status == models.TopupStatusPaid || topup.Status == models.TopupStatusRefunded || topup.Status == models.TopupStatusChargeback {
+			if topup.Status == models.TopupStatusPaid || topup.Status == models.TopupStatusPartialRefund || topup.Status == models.TopupStatusRefunded || topup.Status == models.TopupStatusChargeback {
 				updates["status"] = topup.Status
 			}
 		}
@@ -388,6 +406,89 @@ func (s *TopupService) ProcessNotification(ctx context.Context, notification Mid
 		s.retryDueInvoices(ctx, creditedUserID)
 	}
 	return nil
+}
+
+func (s *TopupService) applyTopupReversalTx(tx *gorm.DB, topup *models.Topup, notification validatedPaymentNotification) error {
+	if topup.Status != models.TopupStatusPaid && topup.Status != models.TopupStatusPartialRefund && topup.Status != models.TopupStatusRefunded && topup.Status != models.TopupStatusPartialChargeback && topup.Status != models.TopupStatusChargeback {
+		return ErrInvalidPaymentNotification
+	}
+	desiredReversal, err := desiredTopupReversalCredits(topup, notification.Status, notification.RefundAmountMinor)
+	if err != nil {
+		return err
+	}
+	var existingReversal int64
+	if err := tx.Model(&models.WalletLedgerEntry{}).
+		Select("COALESCE(SUM(-amount_credits), 0)").
+		Where("type = ? AND reference_type = ? AND reference_id = ?", models.WalletLedgerEntryTopupReversal, "topup", strconv.FormatUint(uint64(topup.ID), 10)).
+		Scan(&existingReversal).Error; err != nil {
+		return fmt.Errorf("sum applied top-up reversals: %w", err)
+	}
+	if existingReversal > desiredReversal {
+		// A provider event older than the reversal already applied must not
+		// move money backwards. The immutable ledger remains authoritative.
+		return nil
+	}
+	delta := desiredReversal - existingReversal
+	if delta == 0 {
+		return nil
+	}
+
+	userID, err := loadWalletUserID(tx, topup.WalletID)
+	if err != nil {
+		return err
+	}
+	var activeResources []models.BillableResource
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND billing_status = ?", userID, models.BillableResourceStatusActive).
+		Find(&activeResources).Error; err != nil {
+		return fmt.Errorf("lock active resources before top-up reversal: %w", err)
+	}
+	reversal, err := s.wallets.applyInTransaction(tx, LedgerMutation{
+		UserID:         userID,
+		EntryType:      models.WalletLedgerEntryTopupReversal,
+		AmountCredits:  delta,
+		IdempotencyKey: fmt.Sprintf("topup:%d:reversal:%d", topup.ID, desiredReversal),
+		ReferenceType:  "topup",
+		ReferenceID:    strconv.FormatUint(uint64(topup.ID), 10),
+	}, false)
+	if err != nil {
+		return err
+	}
+	if reversal.BalanceAfter >= 0 || len(activeResources) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	if err := recordTopupReversalPaymentDueTx(tx, topup, activeResources, now); err != nil {
+		return err
+	}
+	resourceIDs := make([]uint, 0, len(activeResources))
+	for _, resource := range activeResources {
+		resourceIDs = append(resourceIDs, resource.ID)
+	}
+	if err := tx.Model(&models.BillableResource{}).Where("id IN ?", resourceIDs).Update("billing_status", models.BillableResourceStatusPaymentDue).Error; err != nil {
+		return fmt.Errorf("move overdue resources to payment due after top-up reversal: %w", err)
+	}
+	return nil
+}
+
+func desiredTopupReversalCredits(topup *models.Topup, status models.TopupStatus, refundAmountMinor int64) (int64, error) {
+	if topup == nil || topup.Credits <= 0 || topup.AmountMinor <= 0 {
+		return 0, ErrInvalidPaymentNotification
+	}
+	switch status {
+	case models.TopupStatusPartialRefund, models.TopupStatusPartialChargeback:
+		if refundAmountMinor <= 0 || refundAmountMinor >= topup.AmountMinor {
+			return 0, ErrInvalidPaymentNotification
+		}
+	case models.TopupStatusRefunded, models.TopupStatusChargeback:
+		refundAmountMinor = topup.AmountMinor
+	default:
+		return 0, ErrInvalidPaymentNotification
+	}
+	if topup.Credits > math.MaxInt64/refundAmountMinor {
+		return 0, ErrInvalidPaymentNotification
+	}
+	return topup.Credits * refundAmountMinor / topup.AmountMinor, nil
 }
 
 func recordTopupReversalPaymentDueTx(tx *gorm.DB, topup *models.Topup, resources []models.BillableResource, dueAt time.Time) error {
@@ -430,6 +531,72 @@ func recordTopupReversalPaymentDueTx(tx *gorm.DB, topup *models.Topup, resources
 		}
 	}
 	return nil
+}
+
+// staleTopupRecoveryThreshold is how long a checkout may stay in the
+// "creating" request state before the sweeper considers the creating process
+// dead and recovers it. It is deliberately much longer than the request
+// timeout so an in-flight Create is never interrupted.
+const staleTopupRecoveryThreshold = 15 * time.Minute
+
+// RecoverStaleTopups is the background recovery path for checkouts whose
+// creating process died after claiming the provider request but before storing
+// the Snap token (provider_request_state = "creating", no token). Without it,
+// such top-ups wait forever for the user to press reconcile.
+//
+// For each stale top-up it re-runs the normal recovery (which safely resets a
+// dead claim) and then reconciles against the provider: if Midtrans already
+// recorded a transaction for the order ID its status is applied, so a payment
+// the user completed during the outage is still credited.
+func (s *TopupService) RecoverStaleTopups(ctx context.Context, now time.Time) error {
+	if err := s.validatePaymentProcessing(ctx); err != nil {
+		return err
+	}
+	var topupIDs []uint
+	if err := s.db.WithContext(ctx).Model(&models.Topup{}).
+		Where("status = ? AND provider_request_state = ? AND provider_payment_token = ? AND updated_at <= ?",
+			models.TopupStatusPending, providerRequestCreating, "", now.UTC().Add(-staleTopupRecoveryThreshold)).
+		Order("id ASC").Limit(50).
+		Pluck("id", &topupIDs).Error; err != nil {
+		return fmt.Errorf("list stale topups: %w", err)
+	}
+	var runErr error
+	for _, topupID := range topupIDs {
+		if err := s.recoverStaleTopup(ctx, topupID); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("recover stale topup %d: %w", topupID, err))
+		}
+	}
+	return runErr
+}
+
+func (s *TopupService) recoverStaleTopup(ctx context.Context, topupID uint) error {
+	var topup models.Topup
+	if err := s.db.WithContext(ctx).First(&topup, topupID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("load stale topup: %w", err)
+	}
+	if err := s.recoverPaymentRequest(ctx, &topup); err != nil {
+		return err
+	}
+	if err := s.db.WithContext(ctx).First(&topup, topupID).Error; err != nil {
+		return fmt.Errorf("reload recovered topup: %w", err)
+	}
+	if topup.Status != models.TopupStatusPending {
+		return nil
+	}
+	notification, err := s.gateway.GetTransactionStatus(ctx, topup.ProviderOrderID)
+	if err != nil {
+		return err
+	}
+	if notification.OrderID == "" {
+		// Midtrans never recorded this order (the process died before or
+		// during the Snap request). The recovered checkout link above is the
+		// way forward; nothing to reconcile.
+		return nil
+	}
+	return s.ProcessReconciledNotification(ctx, notification)
 }
 
 func (s *TopupService) retryDueInvoices(ctx context.Context, userID uint) {
@@ -600,7 +767,7 @@ func (s *TopupService) recoverPaymentRequest(ctx context.Context, topup *models.
 
 func isTerminalTopupStatus(status models.TopupStatus) bool {
 	switch status {
-	case models.TopupStatusPaid, models.TopupStatusFailed, models.TopupStatusExpired, models.TopupStatusRefunded, models.TopupStatusChargeback:
+	case models.TopupStatusPaid, models.TopupStatusFailed, models.TopupStatusExpired, models.TopupStatusPartialRefund, models.TopupStatusRefunded, models.TopupStatusPartialChargeback, models.TopupStatusChargeback:
 		return true
 	default:
 		return false
@@ -630,6 +797,10 @@ func (s *TopupService) validatePaymentProcessing(ctx context.Context) error {
 	return nil
 }
 
+func isReversalTopupStatus(status models.TopupStatus) bool {
+	return status == models.TopupStatusPartialRefund || status == models.TopupStatusRefunded || status == models.TopupStatusPartialChargeback || status == models.TopupStatusChargeback
+}
+
 func (s *TopupService) validateNotification(notification MidtransNotification) (validatedPaymentNotification, error) {
 	if notification.OrderID == "" || len(notification.OrderID) > 255 || notification.StatusCode == "" || len(notification.StatusCode) > 3 || notification.TransactionID == "" || len(notification.TransactionID) > 255 || notification.Currency != models.BillingCurrencyIDR || notification.MerchantID != s.cfg.MidtransMerchantID {
 		return validatedPaymentNotification{}, ErrInvalidPaymentNotification
@@ -648,6 +819,10 @@ func (s *TopupService) validateNotification(notification MidtransNotification) (
 	if status == models.TopupStatusPaid && notification.StatusCode != "200" {
 		return validatedPaymentNotification{}, ErrInvalidPaymentNotification
 	}
+	refundAmount, err := parseOptionalIDRMinor(notification.RefundAmount)
+	if err != nil {
+		return validatedPaymentNotification{}, ErrInvalidPaymentNotification
+	}
 	return validatedPaymentNotification{
 		OrderID:           notification.OrderID,
 		StatusCode:        notification.StatusCode,
@@ -657,6 +832,7 @@ func (s *TopupService) validateNotification(notification MidtransNotification) (
 		TransactionStatus: notification.TransactionStatus,
 		Status:            status,
 		FraudStatus:       notification.FraudStatus,
+		RefundAmountMinor: refundAmount,
 	}, nil
 }
 
@@ -669,6 +845,7 @@ type validatedPaymentNotification struct {
 	TransactionStatus string             `json:"transaction_status"`
 	Status            models.TopupStatus `json:"status"`
 	FraudStatus       string             `json:"fraud_status,omitempty"`
+	RefundAmountMinor int64              `json:"refund_amount_minor,omitempty"`
 }
 
 func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaymentRequest) (MidtransPaymentResponse, error) {
@@ -783,6 +960,14 @@ func topupStatusFromNotification(statusCode, transactionStatus, fraudStatus stri
 		if statusCode == "200" {
 			return models.TopupStatusRefunded, nil
 		}
+	case "partial_refund":
+		if statusCode == "200" {
+			return models.TopupStatusPartialRefund, nil
+		}
+	case "partial_chargeback":
+		if statusCode == "200" {
+			return models.TopupStatusPartialChargeback, nil
+		}
 	case "chargeback":
 		if statusCode == "200" {
 			return models.TopupStatusChargeback, nil
@@ -806,6 +991,13 @@ func parseIDRMinor(value string) (int64, error) {
 		return 0, ErrInvalidPaymentNotification
 	}
 	return amount, nil
+}
+
+func parseOptionalIDRMinor(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	return parseIDRMinor(value)
 }
 
 func validatePaymentResponse(payment MidtransPaymentResponse) error {

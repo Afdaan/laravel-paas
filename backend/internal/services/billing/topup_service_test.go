@@ -40,7 +40,7 @@ func TestTopupCreateReplaysOneProviderRequest(t *testing.T) {
 }
 
 func TestTopupWebhookCreditsOnceAndReversesRefund(t *testing.T) {
-	db, user, service, _ := topupServiceFixture(t)
+	db, user, service, gateway := topupServiceFixture(t)
 	view, err := service.Create(context.Background(), user.ID, "topup-webhook", TopupInput{PackageID: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,9 @@ func TestTopupWebhookCreditsOnceAndReversesRefund(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 100000, 1)
-	if err := service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "refund", "", "transaction-1")); err != nil {
+	refund := signedNotification(topup.ProviderOrderID, "refund", "", "transaction-1")
+	gatewaySees(gateway, refund)
+	if err := service.ProcessNotification(context.Background(), refund); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.ProcessNotification(context.Background(), paid); err != nil {
@@ -72,7 +74,7 @@ func TestTopupWebhookCreditsOnceAndReversesRefund(t *testing.T) {
 }
 
 func TestTopupRefundMovesActiveResourcesToPaymentDueWhenWalletBecomesNegative(t *testing.T) {
-	db, user, service, _ := topupServiceFixture(t)
+	db, user, service, gateway := topupServiceFixture(t)
 	now := time.Now().UTC()
 	project := models.Project{UserID: user.ID, Name: "Refund debt", GithubURL: "https://github.com/example/refund-debt", Subdomain: "refund-debt", Status: models.StatusRunning}
 	if err := db.Create(&project).Error; err != nil {
@@ -102,7 +104,9 @@ func TestTopupRefundMovesActiveResourcesToPaymentDueWhenWalletBecomesNegative(t 
 	if _, err := service.wallets.Debit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryInvoiceDebit, AmountCredits: topup.Credits, IdempotencyKey: "invoice:refund-debt:debit", ReferenceType: "invoice", ReferenceID: "refund-debt"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ProcessNotification(context.Background(), signedNotification(topup.ProviderOrderID, "refund", "", "refund-debt-paid")); err != nil {
+	refund := signedNotification(topup.ProviderOrderID, "refund", "", "refund-debt-paid")
+	gatewaySees(gateway, refund)
+	if err := service.ProcessNotification(context.Background(), refund); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&resource, resource.ID).Error; err != nil {
@@ -148,6 +152,130 @@ func TestTopupRefundMovesActiveResourcesToPaymentDueWhenWalletBecomesNegative(t 
 	if paymentDueInvoice.Status != models.InvoiceStatusPaid || paymentDueInvoice.PaidAt == nil {
 		t.Fatalf("recovered payment-due invoice=%#v", paymentDueInvoice)
 	}
+}
+
+func TestTopupPartialRefundWebhookResolvesViaStatusCrosscheck(t *testing.T) {
+	db, user, service, gateway := topupServiceFixture(t)
+	view, err := service.Create(context.Background(), user.ID, "topup-partial-refund", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	paid := signedNotification(topup.ProviderOrderID, "settlement", "accept", "transaction-partial")
+	if err := service.ProcessNotification(context.Background(), paid); err != nil {
+		t.Fatal(err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 100000, 1)
+
+	// Midtrans keeps gross_amount as the original transaction amount and
+	// supplies the cumulative monetary refund in refund_amount.
+	partial := withRefundAmount(signedNotification(topup.ProviderOrderID, "partial_refund", "", "transaction-partial"), "10000.00")
+	gateway.status = partial
+	gateway.status.SignatureKey = ""
+	if err := service.ProcessNotification(context.Background(), partial); err != nil {
+		t.Fatal(err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPartialRefund, 60000, 2)
+
+	secondPartial := withRefundAmount(signedNotification(topup.ProviderOrderID, "partial_refund", "", "transaction-partial"), "15000.00")
+	gateway.status = secondPartial
+	gateway.status.SignatureKey = ""
+	if err := service.ProcessNotification(context.Background(), secondPartial); err != nil {
+		t.Fatal(err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPartialRefund, 40000, 3)
+
+	refunded := signedNotification(topup.ProviderOrderID, "refund", "", "transaction-partial")
+	gateway.status = refunded
+	gateway.status.SignatureKey = ""
+	if err := service.ProcessNotification(context.Background(), refunded); err != nil {
+		t.Fatal(err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusRefunded, 0, 4)
+}
+
+func TestTopupPartialRefundWebhookFailsClosedWithoutCrosscheck(t *testing.T) {
+	db, user, service, _ := topupServiceFixture(t)
+	view, err := service.Create(context.Background(), user.ID, "topup-partial-unverified", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	paid := signedNotification(topup.ProviderOrderID, "settlement", "accept", "transaction-unverified")
+	if err := service.ProcessNotification(context.Background(), paid); err != nil {
+		t.Fatal(err)
+	}
+
+	// The status API still reports the transaction as settled, so the partial
+	// refund webhook cannot be confirmed and must not touch the wallet.
+	gateway := service.gateway.(*fakeMidtransGateway)
+	gateway.status = signedNotification(topup.ProviderOrderID, "settlement", "accept", "transaction-unverified")
+	gateway.status.SignatureKey = ""
+	partial := withRefundAmount(signedNotification(topup.ProviderOrderID, "partial_refund", "", "transaction-unverified"), "10000.00")
+	if err := service.ProcessNotification(context.Background(), partial); !errors.Is(err, ErrInvalidPaymentNotification) {
+		t.Fatalf("expected rejection, got %v", err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 100000, 1)
+}
+
+func TestTopupRecoverStaleTopupsRecoversAbandonedCheckout(t *testing.T) {
+	db, user, service, gateway := topupServiceFixture(t)
+	view, err := service.Create(context.Background(), user.ID, "topup-stale", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a process that died after claiming the provider request:
+	// state is "creating", no token, and the row is older than the threshold.
+	staleAt := time.Now().UTC().Add(-staleTopupRecoveryThreshold - time.Minute)
+	if err := db.Model(&models.Topup{}).Where("id = ?", view.ID).
+		Updates(map[string]any{"provider_request_state": providerRequestCreating, "provider_payment_token": "", "provider_payment_url": "", "updated_at": staleAt}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	gateway.status = signedNotification("", "", "", "") // no transaction recorded yet
+	if err := service.RecoverStaleTopups(context.Background(), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if topup.ProviderPaymentToken == "" || topup.ProviderRequestState != providerRequestReady {
+		t.Fatalf("stale topup not recovered: %#v", topup)
+	}
+}
+
+func TestTopupRecoverStaleTopupsAppliesCompletedProviderPayment(t *testing.T) {
+	db, user, service, gateway := topupServiceFixture(t)
+	view, err := service.Create(context.Background(), user.ID, "topup-stale-paid", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created models.Topup
+	if err := db.First(&created, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	staleAt := time.Now().UTC().Add(-staleTopupRecoveryThreshold - time.Minute)
+	if err := db.Model(&models.Topup{}).Where("id = ?", view.ID).
+		Updates(map[string]any{"provider_request_state": providerRequestCreating, "provider_payment_token": "", "provider_payment_url": "", "updated_at": staleAt}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// The user paid while our process was down; the provider knows.
+	gateway.status = signedNotification(created.ProviderOrderID, "settlement", "accept", "transaction-stale")
+	gateway.status.SignatureKey = ""
+	if err := service.RecoverStaleTopups(context.Background(), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 100000, 1)
 }
 
 func TestTopupReconcileUsesVerifiedProviderStatus(t *testing.T) {
@@ -258,7 +386,14 @@ func (g *fakeMidtransGateway) GetTransactionStatus(context.Context, string) (Mid
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.statusCalls++
-	return g.status, nil
+	status := g.status
+	if status.OrderID != "" && status.SignatureKey == "" {
+		// The transaction status API response is authenticated by the service;
+		// sign it so validateNotification accepts the cross-check result.
+		sum := sha512.Sum512([]byte(status.OrderID + status.StatusCode + status.GrossAmount + "server-key"))
+		status.SignatureKey = hex.EncodeToString(sum[:])
+	}
+	return status, nil
 }
 
 func topupServiceFixture(t *testing.T) (*gorm.DB, models.User, *TopupService, *fakeMidtransGateway) {
@@ -281,6 +416,22 @@ func topupServiceFixture(t *testing.T) (*gorm.DB, models.User, *TopupService, *f
 	gateway := &fakeMidtransGateway{}
 	service := NewTopupService(db, NewWalletService(db), &config.Config{BillingEnabled: true, BillingTopupEnabled: true, MidtransServerKey: "server-key", MidtransMerchantID: "merchant-id"}, gateway)
 	return db, user, service, gateway
+}
+
+// gatewaySees points the fake gateway's status response at the given webhook
+// notification so reversal cross-checks observe the same transaction state the
+// provider would report.
+func gatewaySees(gateway *fakeMidtransGateway, notification MidtransNotification) {
+	gateway.mu.Lock()
+	defer gateway.mu.Unlock()
+	status := notification
+	status.SignatureKey = ""
+	gateway.status = status
+}
+
+func withRefundAmount(notification MidtransNotification, amount string) MidtransNotification {
+	notification.RefundAmount = amount
+	return notification
 }
 
 func signedNotification(orderID, status, fraud, transactionID string) MidtransNotification {
@@ -587,14 +738,16 @@ func TestTopupReconcileRecoversPendingCheckoutToken(t *testing.T) {
 
 func TestTopupStatusTransitionCodes(t *testing.T) {
 	for name, test := range map[string]struct{ code, status, fraud string }{
-		"capture accept":    {"200", "capture", "accept"},
-		"capture challenge": {"201", "capture", "challenge"},
-		"capture deny":      {"202", "capture", "deny"},
-		"pending":           {"201", "pending", ""},
-		"failed":            {"202", "cancel", ""},
-		"expired":           {"202", "expire", ""},
-		"refund":            {"200", "refund", ""},
-		"chargeback":        {"200", "chargeback", ""},
+		"capture accept":     {"200", "capture", "accept"},
+		"capture challenge":  {"201", "capture", "challenge"},
+		"capture deny":       {"202", "capture", "deny"},
+		"pending":            {"201", "pending", ""},
+		"failed":             {"202", "cancel", ""},
+		"expired":            {"202", "expire", ""},
+		"refund":             {"200", "refund", ""},
+		"partial refund":     {"200", "partial_refund", ""},
+		"chargeback":         {"200", "chargeback", ""},
+		"partial chargeback": {"200", "partial_chargeback", ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := topupStatusFromNotification(test.code, test.status, test.fraud); err != nil {

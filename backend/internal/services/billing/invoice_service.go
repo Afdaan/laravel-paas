@@ -147,6 +147,17 @@ func (s *InvoiceService) restoreCurrentPeriodResourcesWithDB(ctx context.Context
 			if resource.BillingStatus != models.BillableResourceStatusPaymentDue && resource.BillingStatus != models.BillableResourceStatusSuspended {
 				continue
 			}
+			// A resource whose underlying project or database is already gone
+			// must never be reactivated by wallet recovery. This races with
+			// deletion: a project delete can land between the candidate query
+			// and this lock.
+			exists, existsErr := billableResourceExistsTx(tx, &resource)
+			if existsErr != nil {
+				return existsErr
+			}
+			if !exists {
+				continue
+			}
 			wasSuspended := resource.BillingStatus == models.BillableResourceStatusSuspended
 			if wasSuspended {
 				var evidence models.Invoice

@@ -103,8 +103,10 @@ func main() {
 	go services.NewDatabaseStatusOperationService(db).Run(billingCtx)
 	go projectServicePkg.NewDeletionDispatcher(db, redisService).Run(billingCtx)
 	if cfg.BillingEnabled {
-		invoiceService := billing.NewInvoiceService(db, billing.NewWalletService(db))
-		go billing.NewInvoiceScheduler(invoiceService).Run(billingCtx)
+		walletService := billing.NewWalletService(db)
+		invoiceService := billing.NewInvoiceService(db, walletService)
+		topupService := billing.NewTopupService(db, walletService, cfg, nil)
+		go billing.NewInvoiceScheduler(invoiceService, topupService).Run(billingCtx)
 		go billing.NewSuspensionService(db, cfg).Run(billingCtx)
 		go billing.NewProjectSuspensionDispatcher(db, redisService).Run(billingCtx)
 	}

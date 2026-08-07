@@ -271,3 +271,38 @@ func TestCatalogServiceSuperadminAdjustsUserAndAdminCredits(t *testing.T) {
 	}
 }
 
+func TestCatalogServiceAdjustmentRollsBackWhenAuditWriteFails(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.BillingAuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "audit-rollback@example.test", Password: "test", Name: "Audit rollback"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TRIGGER reject_wallet_adjustment_audit BEFORE INSERT ON billing_audit_events
+		WHEN NEW.event = 'wallet.credit_adjusted'
+		BEGIN SELECT RAISE(ABORT, 'audit insert rejected'); END;`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewCatalogServiceWithWallets(db, NewWalletService(db))
+	_, err = service.AdjustWalletCredits(context.Background(), catalogAudit("req-audit-rollback", "Manual adjustment"), user.ID, "audit-rollback", WalletCreditAdjustmentInput{Credits: 500, Reason: "Manual adjustment"})
+	if err == nil {
+		t.Fatal("expected audit failure")
+	}
+
+	var walletCount, ledgerCount int64
+	if err := db.Model(&models.Wallet{}).Where("user_id = ?", user.ID).Count(&walletCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.WalletLedgerEntry{}).Count(&ledgerCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if walletCount != 0 || ledgerCount != 0 {
+		t.Fatalf("wallets=%d ledger_entries=%d", walletCount, ledgerCount)
+	}
+}

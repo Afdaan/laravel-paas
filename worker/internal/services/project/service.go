@@ -132,7 +132,8 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		return cleanupErr
 	}
 
-	// Hard Delete from Database
+	// Hard Delete from Database. The billing row stays immutable enough for
+	// invoice history; DeleteProject marks it suspended before dispatch.
 	if err := s.projectRepo.Delete(project.ID); err != nil {
 		slog.Error("CRITICAL: Failed to delete project record", "id", project.ID, "error", err)
 		return err

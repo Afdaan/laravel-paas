@@ -991,12 +991,14 @@ const (
 type TopupStatus string
 
 const (
-	TopupStatusPending    TopupStatus = "pending"
-	TopupStatusPaid       TopupStatus = "paid"
-	TopupStatusFailed     TopupStatus = "failed"
-	TopupStatusExpired    TopupStatus = "expired"
-	TopupStatusRefunded   TopupStatus = "refunded"
-	TopupStatusChargeback TopupStatus = "chargeback"
+	TopupStatusPending           TopupStatus = "pending"
+	TopupStatusPaid              TopupStatus = "paid"
+	TopupStatusFailed            TopupStatus = "failed"
+	TopupStatusExpired           TopupStatus = "expired"
+	TopupStatusPartialRefund     TopupStatus = "partial_refund"
+	TopupStatusRefunded          TopupStatus = "refunded"
+	TopupStatusPartialChargeback TopupStatus = "partial_chargeback"
+	TopupStatusChargeback        TopupStatus = "chargeback"
 )
 
 type BillableType string

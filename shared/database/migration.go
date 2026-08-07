@@ -651,6 +651,9 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		if err := db.Exec("ALTER TABLE wallets DROP CONSTRAINT IF EXISTS chk_wallets_balance_nonnegative").Error; err != nil {
 			return fmt.Errorf("remove wallet nonnegative constraint: %w", err)
 		}
+		if err := upgradeTopupStatusConstraint(db); err != nil {
+			return err
+		}
 	}
 
 	constraints := []struct {
@@ -715,7 +718,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider = 'midtrans' AND currency = 'IDR'"},
 		{&models.Topup{}, "chk_topups_positive", "credits > 0 AND amount_minor > 0"},
 		{&models.Topup{}, "chk_topups_provider_currency", "provider = 'midtrans' AND currency = 'IDR'"},
-		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'refunded', 'chargeback')"},
+		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'partial_refund', 'refunded', 'partial_chargeback', 'chargeback')"},
 		{&models.BillableSpec{}, "chk_billable_specs_type", "type IN ('project', 'database')"},
 		{&models.BillableSpec{}, "chk_billable_specs_positive", "cpu_millicores > 0 AND memory_mb > 0 AND storage_gb > 0 AND monthly_credits > 0 AND version > 0"},
 		{&models.BillableResource{}, "chk_billable_resources_type", "type IN ('project', 'database')"},
@@ -884,6 +887,29 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		FOR EACH ROW EXECUTE FUNCTION reject_billing_audit_event_mutation();
 	`).Error; err != nil {
 		return fmt.Errorf("create billing immutability triggers: %w", err)
+	}
+	return nil
+}
+
+func upgradeTopupStatusConstraint(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return nil
+	}
+	var definition string
+	err := db.Raw(`
+		SELECT pg_get_constraintdef(c.oid)
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		WHERE t.relname = 'topups' AND c.conname = 'chk_topups_status'
+	`).Scan(&definition).Error
+	if err != nil {
+		return fmt.Errorf("read topup status constraint: %w", err)
+	}
+	if definition == "" || (strings.Contains(definition, "partial_refund") && strings.Contains(definition, "partial_chargeback")) {
+		return nil
+	}
+	if err := db.Exec("ALTER TABLE topups DROP CONSTRAINT chk_topups_status").Error; err != nil {
+		return fmt.Errorf("upgrade topup status constraint: %w", err)
 	}
 	return nil
 }
