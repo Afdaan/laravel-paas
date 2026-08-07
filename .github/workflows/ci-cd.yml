@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
     env:
       PROD_SSH: 'paas-prod'
       PROD_DIR: '/mainData/laravel-paas'

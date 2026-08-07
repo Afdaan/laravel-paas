@@ -223,6 +223,73 @@ func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(
 	}
 }
 
+func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
+	app, db, mock := setupTestAppWithBilling(t, "billing_deducts_credits_success", true)
+	var user models.User
+	if err := db.First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	projectSpec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Project", Slug: "project-billing-success", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+	databaseSpec := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Database", Slug: "database-billing-success", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 50, ConnectionLimit: intPointer(50), BackupRetentionDays: intPointer(7), Version: 1, IsActive: true}
+	if err := db.Create(&projectSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&databaseSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallets := billing.NewWalletService(db)
+	if _, err := wallets.Credit(context.Background(), billing.LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 500, IdempotencyKey: "project-billing-success-funds"}); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+	mock.ExpectLLen("deployment:queue").SetVal(1)
+
+	reqPayload := CreateProjectRequest{
+		Name:                   "Billed Project Success",
+		GithubURL:              "https://github.com/test/billed-project-success",
+		Branch:                 "main",
+		DatabaseOption:         "new",
+		DatabaseEngine:         "mysql",
+		BillableSpecID:         projectSpec.ID,
+		DatabaseBillableSpecID: databaseSpec.ID,
+	}
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		t.Fatalf("wallet fetch error: %v", err)
+	}
+	// Expected balance: 500 initial - 100 (project) - 50 (database) = 350 credits
+	if wallet.BalanceCredits != 350 {
+		t.Fatalf("expected balance=350, got balance=%d", wallet.BalanceCredits)
+	}
+
+	var ledgerEntries []models.WalletLedgerEntry
+	if err := db.Where("wallet_id = ?", wallet.ID).Find(&ledgerEntries).Error; err != nil || len(ledgerEntries) != 3 {
+		t.Fatalf("expected 3 ledger entries (1 topup + 2 debits), got count=%d, err=%v", len(ledgerEntries), err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+
 func intPointer(value int) *int {
 	return &value
 }

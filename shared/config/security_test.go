@@ -86,14 +86,28 @@ func TestProductionValidatesBillingSuspensionWindow(t *testing.T) {
 	cfg.MidtransServerKey = "server"
 	cfg.MidtransClientKey = "client"
 	cfg.MidtransMerchantID = "merchant"
-	if err := cfg.ValidateProductionSecurity(); err != nil {
-		t.Fatalf("valid billing window rejected: %v", err)
-	}
 	cfg.BillingDeployBlockDays = cfg.BillingGraceDays
 	if err := cfg.ValidateProductionSecurity(); err == nil {
 		t.Fatal("accepted invalid billing suspension window")
 	}
 }
+
+func TestProductionBillingWithoutMidtransWhenTopupDisabled(t *testing.T) {
+	cfg := productionSecurityConfig()
+	cfg.BillingEnabled = true
+	cfg.BillingDeployBlockDays = 3
+	cfg.BillingGraceDays = 7
+	cfg.BillingTopupEnabled = false
+	if err := cfg.ValidateProductionSecurity(); err != nil {
+		t.Fatalf("billing enabled without midtrans should be valid when topup is disabled, got: %v", err)
+	}
+
+	cfg.BillingTopupEnabled = true
+	if err := cfg.ValidateProductionSecurity(); err == nil {
+		t.Fatal("expected error when BILLING_TOPUP_ENABLED=true without midtrans credentials")
+	}
+}
+
 
 func productionSecurityConfig() *Config {
 	return &Config{

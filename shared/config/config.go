@@ -384,8 +384,8 @@ func (c *Config) validateProductionSecurity(includeAuth bool) error {
 	if c.BillingEnabled && (c.BillingDeployBlockDays <= 0 || c.BillingGraceDays <= 0 || c.BillingDeployBlockDays >= c.BillingGraceDays) {
 		return fmt.Errorf("BILLING_DEPLOY_BLOCK_DAYS must be positive and less than BILLING_GRACE_DAYS")
 	}
-	if includeAuth && c.BillingEnabled && (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") {
-		return fmt.Errorf("Midtrans credentials are required when BILLING_ENABLED=true")
+	if includeAuth && c.BillingTopupEnabled && (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") {
+		return fmt.Errorf("Midtrans credentials are required when BILLING_TOPUP_ENABLED=true")
 	}
 	return nil
 }
