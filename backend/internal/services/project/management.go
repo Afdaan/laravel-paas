@@ -317,6 +317,13 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 		if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
 			return nil, err
 		}
+		if duplicateUserCount > 0 && strings.TrimSpace(databaseUsername) == "" {
+			dbUsername = fmt.Sprintf("dbuser_%s_%s", utils.GenerateRandom(10), suffix)
+			duplicateUserCount = 0
+			if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
+				return nil, err
+			}
+		}
 		if duplicateUserCount > 0 {
 			return nil, apperr.New(409, "DATABASE_USER_CONFLICT", fmt.Sprintf("A database user with username '%s' already exists in the system", dbUsername))
 		}
