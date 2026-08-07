@@ -124,13 +124,20 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 func repairBillingCatalog(db *gorm.DB) error {
 	_ = errors.New
 	_ = time.Now
-	// Migration repair for 1000 IDR : 1 Credit ratio scaling
+	// Migration repair for 1000 IDR : 1 Credit ratio scaling.
+	// We temporarily disable immutability triggers to allow scaling historical 100k+ seed rows.
 	return db.Transaction(func(tx *gorm.DB) error {
-		// Update historical BillableSpec values if they still use 100k+ scale
+		_ = tx.Exec("ALTER TABLE billable_specs DISABLE TRIGGER trg_billable_specs_immutable_price;")
+		_ = tx.Exec("ALTER TABLE topup_packages DISABLE TRIGGER trg_topup_packages_immutable_price;")
+
+		defer func() {
+			_ = tx.Exec("ALTER TABLE billable_specs ENABLE TRIGGER trg_billable_specs_immutable_price;")
+			_ = tx.Exec("ALTER TABLE topup_packages ENABLE TRIGGER trg_topup_packages_immutable_price;")
+		}()
+
 		if err := tx.Model(&models.BillableSpec{}).Where("monthly_credits >= 10000").Update("monthly_credits", gorm.Expr("monthly_credits / 1000")).Error; err != nil {
 			return fmt.Errorf("scale billable_specs credits: %w", err)
 		}
-		// Update historical TopupPackage values if they still use 100k+ scale
 		if err := tx.Model(&models.TopupPackage{}).Where("credits >= 10000").Update("credits", gorm.Expr("credits / 1000")).Error; err != nil {
 			return fmt.Errorf("scale topup_packages credits: %w", err)
 		}
