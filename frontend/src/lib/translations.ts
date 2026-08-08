@@ -75,6 +75,12 @@ export const translations = {
       confirm: "Confirm",
       pollingPaused: "Polling paused due to connection issues. Please refresh the page.",
       sessionExpired: "Session expired. Please log in again.",
+      reauthTitle: "Confirm password",
+      reauthDesc: "Session check. Re-enter password to continue.",
+      reauthPasswordLabel: "Password",
+      reauthSubmit: "Confirm",
+      reauthCancel: "Cancel",
+      reauthFailed: "Incorrect password.",
       connectionError: "Connection lost. Please check your internet.",
       reload: "Reload",
       retry: "Retry",
@@ -1786,7 +1792,7 @@ export const translations = {
       walletActivityUnavailable: "Wallet activity unavailable.",
       resourceId: "Resource #{{id}}",
       admin: {
-
+        title: "Billing Control Center",
         description: "Catalog versions, payment activity, and suspended resources.",
         resourcePlans: "Resource plans",
         topupPackages: "Top-up packages",
@@ -1932,6 +1938,12 @@ export const translations = {
       confirm: "Konfirmasi",
       pollingPaused: "Auto-sync terhenti. Periksa koneksi atau reload halaman.",
       sessionExpired: "Sesi berakhir. Silakan login kembali.",
+      reauthTitle: "Konfirmasi password",
+      reauthDesc: "Verifikasi sesi. Masukkan ulang password untuk melanjutkan.",
+      reauthPasswordLabel: "Password",
+      reauthSubmit: "Konfirmasi",
+      reauthCancel: "Batal",
+      reauthFailed: "Password salah.",
       connectionError: "Koneksi terputus. Periksa jaringan internet.",
       reload: "Reload",
       retry: "Retry",
@@ -3631,7 +3643,7 @@ export const translations = {
       walletActivityUnavailable: "Aktivitas wallet tidak tersedia.",
       resourceId: "Resource #{{id}}",
       admin: {
-
+        title: "Pusat Kontrol Billing",
         description: "Versi katalog, aktivitas pembayaran, dan resource tersuspensi.",
         resourcePlans: "Paket resource",
         topupPackages: "Paket top-up",

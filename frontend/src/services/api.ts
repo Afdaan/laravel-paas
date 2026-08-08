@@ -49,6 +49,41 @@ api.interceptors.response.use(
       window.dispatchEvent(new Event('auth:expired'))
     }
 
+    // Global 403 RECENT_AUTH_REQUIRED handling
+    const status = error.response?.status
+    const errorData = error.response?.data as { code?: string; message?: string; error?: string } | undefined
+    const isRecentAuthRequired = status === 403 && (
+      errorData?.code === 'RECENT_AUTH_REQUIRED' ||
+      errorData?.error === 'RECENT_AUTH_REQUIRED' ||
+      (typeof errorData?.error === 'string' && errorData.error.toLowerCase().includes('recent password authentication')) ||
+      (typeof errorData === 'object' && JSON.stringify(errorData).includes('RECENT_AUTH_REQUIRED'))
+    )
+    if (isRecentAuthRequired) {
+      return new Promise((resolve, reject) => {
+        const handleReauthSuccess = async () => {
+          window.removeEventListener('auth:reauthenticated', handleReauthSuccess)
+          window.removeEventListener('auth:reauth_cancelled', handleReauthCancelled)
+          try {
+            const retryRes = await api(config)
+            resolve(retryRes)
+          } catch (retryErr) {
+            reject(retryErr)
+          }
+        }
+
+        const handleReauthCancelled = () => {
+          window.removeEventListener('auth:reauthenticated', handleReauthSuccess)
+          window.removeEventListener('auth:reauth_cancelled', handleReauthCancelled)
+          reject(error)
+        }
+
+        window.addEventListener('auth:reauthenticated', handleReauthSuccess)
+        window.addEventListener('auth:reauth_cancelled', handleReauthCancelled)
+
+        window.dispatchEvent(new Event('auth:recent_auth_required'))
+      })
+    }
+
     // Global Server Updating/Swap handling (502 Bad Gateway / 503 Service Unavailable)
     if (response?.status === 502 || response?.status === 503) {
       window.dispatchEvent(new Event('system:updating'))
@@ -94,6 +129,9 @@ export const authAPI = {
 
   updateProfile: (data: { name: string; email: string; password?: string }) =>
     api.put('/auth/profile', data),
+
+  reauthenticate: (password: string) =>
+    api.post('/auth/re-auth', { password }),
 }
 
 // ===========================================

@@ -17,6 +17,7 @@ import useTranslation from './lib/useTranslation'
 
 // Layouts & Global Components
 import DashboardLayout from './components/DashboardLayout'
+import ReauthModal from './components/ReauthModal' 
 import LoadingScreen from './components/LoadingScreen'
 import Setup from './pages/Setup'
 
@@ -212,7 +213,9 @@ function App() {
   }
 
   return (
-    <Suspense fallback={<LoadingScreen />}>
+    <>
+      <ReauthModal />
+      <Suspense fallback={<LoadingScreen />}>
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<Landing />} />
@@ -274,6 +277,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+    </>
   )
 }
 

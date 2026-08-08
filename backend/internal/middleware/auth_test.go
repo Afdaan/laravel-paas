@@ -20,7 +20,7 @@ func TestCookieNamesAndOrigin(t *testing.T) {
 	}
 	app := fiber.New()
 	app.Post("/", func(c *fiber.Ctx) error {
-		if !validOrigin(c, "https://console.example.com") {
+		if !validOriginURL(c, "https://console.example.com", "production") {
 			return c.SendStatus(http.StatusForbidden)
 		}
 		return c.SendStatus(http.StatusNoContent)

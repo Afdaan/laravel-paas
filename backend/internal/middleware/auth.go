@@ -97,7 +97,7 @@ func jwtAuth(cfg *config.Config, auth *services.AuthService, userProvider Curren
 		if fromCookie && isUnsafeMethod(c.Method()) && !validCSRF(c, cfg, claims.ID, csrfCookie) {
 			return apperr.New(403, "CSRF_FAILED", "Invalid request integrity token")
 		}
-		if fromCookie && isUnsafeMethod(c.Method()) && !validOrigin(c, cfg.FrontendURL) {
+		if fromCookie && isUnsafeMethod(c.Method()) && !validOrigin(c, cfg) {
 			return apperr.New(403, "ORIGIN_FAILED", "Invalid request origin")
 		}
 		if c.Get("Sec-Fetch-Site") == "cross-site" {
@@ -151,7 +151,14 @@ func validCSRF(c *fiber.Ctx, cfg *config.Config, jti, csrfCookie string) bool {
 	return services.ValidateCSRFToken(cfg.CSRFSecret, cfg.CSRFPreviousSecrets, jti, headerToken)
 }
 
-func validOrigin(c *fiber.Ctx, expected string) bool {
+func validOrigin(c *fiber.Ctx, cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return validOriginURL(c, cfg.FrontendURL, cfg.AppEnv)
+}
+
+func validOriginURL(c *fiber.Ctx, expectedURL, appEnv string) bool {
 	origin := c.Get("Origin")
 	if origin == "" {
 		return false
@@ -160,7 +167,7 @@ func validOrigin(c *fiber.Ctx, expected string) bool {
 	if errA != nil || a.Path != "" || a.RawQuery != "" || a.Fragment != "" {
 		return false
 	}
-	b, errB := url.Parse(expected)
+	b, errB := url.Parse(expectedURL)
 	if errB == nil && a.Scheme == b.Scheme && a.Host == b.Host {
 		return true
 	}
@@ -171,8 +178,16 @@ func validOrigin(c *fiber.Ctx, expected string) bool {
 	if host != "" && strings.EqualFold(a.Host, host) {
 		return true
 	}
+	// Allow local development origins ONLY when APP_ENV is not production
+	if !strings.EqualFold(appEnv, "production") {
+		aHost := a.Hostname()
+		if aHost == "localhost" || aHost == "127.0.0.1" {
+			return true
+		}
+	}
 	return false
 }
+
 
 func clearLegacyCookies(c *fiber.Ctx, _ *config.Config) {
 	for _, name := range []string{legacySessionCookieName, legacyAdminCookieName, legacyCSRFCookieName} {
