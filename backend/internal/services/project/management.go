@@ -89,14 +89,13 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 				return fmt.Errorf("mark project deleting: %w", err)
 			}
 		}
-		// Keep the billable resource as immutable invoice history, but stop its
-		// lifecycle before the asynchronous worker starts physical cleanup.
-		// This is in the same transaction as StatusDeleting, so a concurrent
-		// top-up recovery cannot reactivate or charge a deleting project.
+		// Keep the billable resource as immutable invoice history, but terminate
+		// its lifecycle before asynchronous cleanup. This prevents a deleted
+		// project from remaining in payment-due or suspension responses.
 		if err := tx.Model(&models.BillableResource{}).
 			Where("type = ? AND resource_id = ?", models.BillableTypeProject, locked.ID).
-			Update("billing_status", models.BillableResourceStatusSuspended).Error; err != nil {
-			return fmt.Errorf("suspend project billing: %w", err)
+			Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+			return fmt.Errorf("terminate project billing: %w", err)
 		}
 		task := models.ProjectDeletionTask{ProjectID: locked.ID, UserID: locked.UserID}
 		if err := tx.Where("project_id = ?", locked.ID).FirstOrCreate(&task).Error; err != nil {

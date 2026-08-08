@@ -90,6 +90,31 @@ func TestEnsureBillableResourceCoverageBlocksUnmappedResources(t *testing.T) {
 	}
 }
 
+func TestRetireDeletedBillableResourcesPreservesInvoiceReferences(t *testing.T) {
+	db := billingTestDB(t, t.Name())
+	now := time.Date(2026, time.August, 8, 12, 0, 0, 0, time.UTC)
+	resources := []models.BillableResource{
+		{UserID: 1, Type: models.BillableTypeProject, ResourceID: 999, SpecID: 1, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()},
+		{UserID: 1, Type: models.BillableTypeDatabase, ResourceID: 998, SpecID: 1, BillingStatus: models.BillableResourceStatusPaymentDue, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()},
+	}
+	if err := db.Create(&resources).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := retireDeletedBillableResources(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range resources {
+		var persisted models.BillableResource
+		if err := db.First(&persisted, resource.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persisted.BillingStatus != models.BillableResourceStatusDeleted {
+			t.Fatalf("resource %d billing status=%s", resource.ID, persisted.BillingStatus)
+		}
+	}
+}
+
 func TestSeedBillingCatalogIsIdempotent(t *testing.T) {
 	db := billingTestDB(t, t.Name())
 	for range 2 {

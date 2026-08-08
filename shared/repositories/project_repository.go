@@ -208,6 +208,14 @@ func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOl
 
 func (r *projectRepository) Delete(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		// Invoice items retain the billable resource by foreign key. Mark it
+		// terminal instead of deleting history when physical project cleanup ends.
+		if err := tx.Model(&models.BillableResource{}).
+			Where("type = ? AND resource_id = ?", models.BillableTypeProject, id).
+			Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+			return err
+		}
+
 		// 1. Fetch associated custom domains to clean up domain-specific children first
 		var domainIDs []uint
 		if err := tx.Model(&models.CustomDomain{}).Where("project_id = ?", id).Pluck("id", &domainIDs).Error; err != nil {

@@ -170,10 +170,12 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	if err := backfillBillableResourceAnchors(db); err != nil {
 		return err
 	}
-
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
+	}
+	if err := retireDeletedBillableResources(db); err != nil {
+		return err
 	}
 
 	// 5.1. Populate empty UIDs for database_instances to support secure communications.
@@ -253,6 +255,22 @@ func ensureBillableResourceCoverage(db *gorm.DB) error {
 		return nil
 	}
 	return fmt.Errorf("billing activation blocked: %d project(s) and %d database(s) require explicit billable-spec mapping", unmappedProjects, unmappedDatabases)
+}
+
+func retireDeletedBillableResources(db *gorm.DB) error {
+	if err := db.Model(&models.BillableResource{}).
+		Where("type = ? AND billing_status <> ?", models.BillableTypeProject, models.BillableResourceStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?)", models.StatusDeleting).
+		Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+		return fmt.Errorf("retire deleted project billable resources: %w", err)
+	}
+	if err := db.Model(&models.BillableResource{}).
+		Where("type = ? AND billing_status <> ?", models.BillableTypeDatabase, models.BillableResourceStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?)", models.DBStatusDeleted).
+		Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+		return fmt.Errorf("retire deleted database billable resources: %w", err)
+	}
+	return nil
 }
 
 func backfillBillableResourceAnchors(db *gorm.DB) error {
@@ -654,6 +672,9 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		if err := upgradeTopupStatusConstraint(db); err != nil {
 			return err
 		}
+		if err := dropCheckMissingMarker(db, "billable_resources", "chk_billable_resources_status", "deleted"); err != nil {
+			return err
+		}
 		// Currency checks predating multi-currency pin the column to IDR. Drop the stale
 		// definition so the checks loop below recreates it with the widened rule.
 		for _, target := range []struct{ table, name string }{
@@ -732,7 +753,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.BillableSpec{}, "chk_billable_specs_type", "type IN ('project', 'database')"},
 		{&models.BillableSpec{}, "chk_billable_specs_positive", "cpu_millicores > 0 AND memory_mb > 0 AND storage_gb > 0 AND monthly_credits > 0 AND version > 0"},
 		{&models.BillableResource{}, "chk_billable_resources_type", "type IN ('project', 'database')"},
-		{&models.BillableResource{}, "chk_billable_resources_status", "billing_status IN ('active', 'payment_due', 'suspended')"},
+		{&models.BillableResource{}, "chk_billable_resources_status", "billing_status IN ('active', 'payment_due', 'suspended', 'deleted')"},
 		{&models.BillableResource{}, "chk_billable_resources_period", "next_invoice_at > current_period_start"},
 		{&models.BillableResource{}, "chk_billable_resources_anchor_day", "billing_anchor_day BETWEEN 1 AND 31"},
 		{&models.Invoice{}, "chk_invoices_total_nonnegative", "total_credits >= 0"},

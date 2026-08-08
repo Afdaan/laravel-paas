@@ -223,6 +223,10 @@ func (s *SuspensionService) suspensionViews(ctx context.Context, userID *uint, n
 	}
 	query := s.db.WithContext(ctx).
 		Where("billing_status IN ?", []models.BillableResourceStatus{models.BillableResourceStatusPaymentDue, models.BillableResourceStatusSuspended}).
+		Where(`
+			(type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
+			OR (type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
+		`, models.BillableTypeProject, models.StatusDeleting, models.BillableTypeDatabase, models.DBStatusDeleted).
 		Order("id ASC")
 	if userID != nil {
 		query = query.Where("user_id = ?", *userID)

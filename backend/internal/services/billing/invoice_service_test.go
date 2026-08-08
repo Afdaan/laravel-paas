@@ -452,7 +452,7 @@ func TestInvoiceServiceStopsBillingDeletedResource(t *testing.T) {
 	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
 		t.Fatal(err)
 	}
-	if resource.BillingStatus != models.BillableResourceStatusSuspended {
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
 		t.Fatalf("resource=%#v", resource)
 	}
 	assertInvoiceWallet(t, db, user.ID, 0, 2)
@@ -496,7 +496,7 @@ func TestInvoiceRecoveryDoesNotReactivateDeletedProject(t *testing.T) {
 	if err := db.First(&resource, resource.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if resource.BillingStatus != models.BillableResourceStatusSuspended {
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
 		t.Fatalf("billing status=%s", resource.BillingStatus)
 	}
 }

@@ -41,6 +41,11 @@ func FinalizeDatabaseDeletion(ctx context.Context, db *gorm.DB, databaseInstance
 		if err := tx.Model(&instance).Updates(map[string]any{"status": models.DBStatusDeleted, "project_id": nil}).Error; err != nil {
 			return fmt.Errorf("finalize database deletion status: %w", err)
 		}
+		if err := tx.Model(&models.BillableResource{}).
+			Where("type = ? AND resource_id = ?", models.BillableTypeDatabase, instance.ID).
+			Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+			return fmt.Errorf("terminate database billing: %w", err)
+		}
 		return nil
 	})
 }

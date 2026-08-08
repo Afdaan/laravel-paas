@@ -1014,6 +1014,7 @@ const (
 	BillableResourceStatusActive     BillableResourceStatus = "active"
 	BillableResourceStatusPaymentDue BillableResourceStatus = "payment_due"
 	BillableResourceStatusSuspended  BillableResourceStatus = "suspended"
+	BillableResourceStatusDeleted    BillableResourceStatus = "deleted"
 )
 
 type InvoiceStatus string

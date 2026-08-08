@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -22,11 +23,23 @@ func TestFinalizeDatabaseDeletionRemovesBackupsAndMarksDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.DatabaseInstance{}, &models.DatabaseBackup{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.DatabaseInstance{}, &models.DatabaseBackup{}, &models.BillableSpec{}, &models.BillableResource{}); err != nil {
 		t.Fatal(err)
 	}
-	instance := models.DatabaseInstance{UserID: 1, Engine: "mysql", Name: "finalize_db", Username: "finalize_user", Password: "password", Host: "mysql", Port: 3306, Status: models.DBStatusSuspended}
+	user := models.User{Email: "finalize@example.test", Password: "test", Name: "Finalize"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	instance := models.DatabaseInstance{UserID: user.ID, Engine: "mysql", Name: "finalize_db", Username: "finalize_user", Password: "password", Host: "mysql", Port: 3306, Status: models.DBStatusSuspended}
 	if err := db.Create(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Finalize", Slug: "finalize", CPUMillicores: 500, MemoryMB: 512, StorageGB: 1, MonthlyCredits: 10, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeDatabase, ResourceID: instance.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: time.Now().UTC(), NextInvoiceAt: time.Now().UTC().AddDate(0, 1, 0), BillingAnchorDay: time.Now().UTC().Day()}
+	if err := db.Create(&resource).Error; err != nil {
 		t.Fatal(err)
 	}
 	projectsPath := t.TempDir()
@@ -56,6 +69,12 @@ func TestFinalizeDatabaseDeletionRemovesBackupsAndMarksDeleted(t *testing.T) {
 	}
 	if instance.Status != models.DBStatusDeleted {
 		t.Fatalf("status=%s", instance.Status)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("billing status=%s", resource.BillingStatus)
 	}
 }
 

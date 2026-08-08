@@ -156,6 +156,9 @@ func (s *InvoiceService) restoreCurrentPeriodResourcesWithDB(ctx context.Context
 				return existsErr
 			}
 			if !exists {
+				if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+					return fmt.Errorf("terminate missing billable resource %d: %w", resource.ID, err)
+				}
 				continue
 			}
 			wasSuspended := resource.BillingStatus == models.BillableResourceStatusSuspended
@@ -278,8 +281,8 @@ func (s *InvoiceService) chargeDueResource(ctx context.Context, db *gorm.DB, res
 			return err
 		}
 		if !exists {
-			if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusSuspended).Error; err != nil {
-				return fmt.Errorf("suspend deleted billable resource: %w", err)
+			if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+				return fmt.Errorf("terminate deleted billable resource: %w", err)
 			}
 			return nil
 		}

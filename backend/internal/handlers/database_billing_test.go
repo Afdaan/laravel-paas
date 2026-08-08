@@ -196,7 +196,7 @@ func TestDatabaseInstancePersistedUsesStableIdentity(t *testing.T) {
 	}
 }
 
-func TestSuspendStandaloneDatabaseForDeletionStopsBilling(t *testing.T) {
+func TestSuspendStandaloneDatabaseForDeletionTerminatesBilling(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +223,7 @@ func TestSuspendStandaloneDatabaseForDeletionStopsBilling(t *testing.T) {
 	if err := db.First(&resource, resource.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if resource.BillingStatus != models.BillableResourceStatusSuspended {
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
 		t.Fatalf("billing status=%s", resource.BillingStatus)
 	}
 	var task models.DatabaseCleanupTask

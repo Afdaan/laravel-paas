@@ -65,6 +65,25 @@ func TestSuspensionServiceCreatesDatabaseStatusIntentAfterGrace(t *testing.T) {
 	}
 }
 
+func TestSuspensionViewsExcludeDeletingProject(t *testing.T) {
+	fixture := suspensionFixture(t, models.BillableTypeProject)
+	if err := fixture.db.Model(&models.Project{}).Where("id = ?", fixture.projectID).Update("status", models.StatusDeleting).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Model(&fixture.resource).Update("billing_status", models.BillableResourceStatusSuspended).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewSuspensionService(fixture.db, &config.Config{BillingEnabled: true, BillingGraceDays: 7})
+	views, err := service.SuspensionViewsForUser(context.Background(), fixture.resource.UserID, fixture.dueAt.AddDate(0, 0, 7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 0 {
+		t.Fatalf("deleting project was exposed as suspended: %#v", views)
+	}
+}
+
 type suspensionFixtureData struct {
 	db          *gorm.DB
 	resource    models.BillableResource

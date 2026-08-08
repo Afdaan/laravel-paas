@@ -1977,9 +1977,9 @@ func (h *DatabaseHandler) suspendStandaloneDatabaseForDeletion(dbUID string, use
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("lock database billable resource: %w", err)
 		}
-		if err == nil && resource.BillingStatus != models.BillableResourceStatusSuspended {
-			if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusSuspended).Error; err != nil {
-				return fmt.Errorf("suspend database billing: %w", err)
+		if err == nil && resource.BillingStatus != models.BillableResourceStatusDeleted {
+			if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+				return fmt.Errorf("terminate database billing: %w", err)
 			}
 		}
 		if dbInst.Status != models.DBStatusSuspended {
