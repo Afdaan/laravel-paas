@@ -269,6 +269,10 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 	if err := s.db.WithContext(ctx).Model(&models.BillableResource{}).
 		Joins("JOIN billable_specs ON billable_specs.id = billable_resources.spec_id").
 		Where("billable_resources.user_id = ? AND billable_resources.billing_status = ?", userID, models.BillableResourceStatusActive).
+		Where(`
+			(billable_resources.type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
+			OR (billable_resources.type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
+		`, models.BillableTypeProject, models.StatusDeleting, models.BillableTypeDatabase, models.DBStatusDeleted).
 		Select("COALESCE(SUM(billable_specs.monthly_credits), 0)").
 		Scan(&overview.UpcomingRequiredCredits).Error; err != nil {
 		return OwnBillingOverview{}, fmt.Errorf("sum upcoming billing requirement: %w", err)

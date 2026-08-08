@@ -373,9 +373,9 @@ export default function Billing() {
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {packages.status === 'loading' &&
-                Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-xl" />)}
+                Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-xl" />)}
               {packages.status === 'error' && (
                 <p className="col-span-full text-sm text-destructive">{t('billing.catalogLoadFailed')}</p>
               )}
@@ -386,37 +386,35 @@ export default function Billing() {
                     <motion.button
                       key={pkg.id}
                       type="button"
-                      initial={{ opacity: 0, y: 12 }}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ type: 'spring', stiffness: 120, damping: 20, delay: idx * 0.06 }}
-                      className={`group relative flex flex-col justify-between rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] disabled:opacity-60 ${
+                      transition={{ type: 'spring', stiffness: 120, damping: 20, delay: idx * 0.05 }}
+                      className={`group relative flex flex-col rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] disabled:opacity-60 ${
                         isPopular
-                          ? 'border-primary/60 bg-gradient-to-b from-primary/5 via-card to-card shadow-sm hover:border-primary'
-                          : 'border-border/60 bg-card hover:border-primary/50 hover:bg-muted/30'
+                          ? 'border-primary/40 bg-primary/[0.03] shadow-sm hover:border-primary/60'
+                          : 'border-border/60 bg-card hover:border-border'
                       }`}
                       disabled={topupPackageID !== null}
                       onClick={() => void startTopup(pkg.id)}
                     >
                       {isPopular && (
-                        <span className="absolute -top-2.5 right-3 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 ring-1 ring-amber-500/30 dark:text-amber-400">
+                        <span className="absolute -top-2.5 right-3 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary ring-1 ring-primary/20">
                           {t('billing.bestValue')}
                         </span>
                       )}
+
                       <div>
-                        <div className="font-mono text-lg font-bold tracking-tight text-foreground tabular-nums transition-colors group-hover:text-primary">
+                        <div className="font-mono text-2xl font-bold tracking-tight text-foreground tabular-nums">
                           {formatCredits(pkg.credits)}
-                          <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
                         </div>
-                        <div className="mt-1 text-sm font-semibold text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</div>
+                        <div className="mt-0.5 text-xs font-medium text-muted-foreground">{t('billing.credits')}</div>
                       </div>
 
-                      <div className="mt-5 flex items-center justify-between border-t border-border/40 pt-3 text-xs font-semibold text-primary">
-                        <span className="flex items-center gap-1.5">
-                          <CreditCard className="size-3.5" />
+                      <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-3 mt-4">
+                        <span className="text-sm font-semibold text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</span>
+                        <span className="flex items-center gap-1 text-xs font-medium text-primary">
                           {topupPackageID === pkg.id ? t('billing.openingCheckout') : t('billing.choosePackage')}
-                        </span>
-                        <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:bg-primary/15">
-                          <ArrowUpRight className="size-3.5 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                          <ArrowUpRight className="size-3 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                         </span>
                       </div>
                     </motion.button>
@@ -430,34 +428,38 @@ export default function Billing() {
             </div>
 
             {/* Custom Amount */}
-            <div className="mt-4 rounded-xl border border-border/60 p-4">
-              <h4 className="mb-3 text-sm font-semibold text-foreground">{t('billing.customTopup')}</h4>
-              <div className="flex items-center gap-3">
+            <div className="mt-6 rounded-xl border border-border/60 bg-card p-5">
+              <label htmlFor="custom-amount" className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Coins className="size-4 text-muted-foreground" />
+                {t('billing.customTopupLabel')}
+              </label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="relative flex-1">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">IDR</span>
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Rp</span>
                   <Input
+                    id="custom-amount"
                     type="number"
                     min={10000}
                     max={10000000}
                     step={1000}
                     placeholder="50000"
-                    className="pl-11 font-mono tabular-nums"
+                    className="pl-9 font-mono tabular-nums"
                     value={customAmount}
                     onChange={(e) => setCustomAmount(e.target.value)}
                     disabled={topupPackageID !== null}
                   />
                 </div>
-                {customAmountNum > 0 && (
-                  <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-                    {customCredits.toLocaleString(language)} <span className="text-xs font-medium text-muted-foreground">{t('billing.credits')}</span>
+                {customAmountNum > 0 && customValid && (
+                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-foreground">
+                    = {customCredits.toLocaleString(language)} {t('billing.credits')}
                   </span>
                 )}
                 <Button
                   size="sm"
                   disabled={!customValid || topupPackageID !== null}
                   onClick={() => void startCustomTopup()}
+                  className="shrink-0"
                 >
-                  <CreditCard className="mr-1.5 size-3.5" />
                   {topupPackageID === -1 ? t('billing.openingCheckout') : t('billing.customTopupButton')}
                 </Button>
               </div>
