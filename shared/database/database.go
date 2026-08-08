@@ -122,25 +122,65 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 }
 
 func repairBillingCatalog(db *gorm.DB) error {
-	_ = errors.New
-	_ = time.Now
-	// Migration repair for 1000 IDR : 1 Credit ratio scaling.
-	// We temporarily disable immutability triggers to allow scaling historical 100k+ seed rows.
+	var incorrect models.BillableSpec
+	err := db.Where("type = ? AND name = ? AND slug = ? AND version = ? AND is_active = ? AND cpu_millicores = ? AND memory_mb = ? AND storage_gb = ? AND connection_limit = ? AND backup_retention_days = ? AND monthly_credits = ?", models.BillableTypeDatabase, "Large", "large", 1, true, 2000, 4096, 50, 600000, 30, 400).First(&incorrect).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Run scaling repair for legacy unscaled database catalog rows if present
+		return scaleLegacyCatalog(db)
+	}
+	if err != nil {
+		return fmt.Errorf("find incorrect billing database large catalog: %w", err)
+	}
+
 	return db.Transaction(func(tx *gorm.DB) error {
-		_ = tx.Exec("ALTER TABLE billable_specs DISABLE TRIGGER trg_billable_specs_immutable_price;")
-		_ = tx.Exec("ALTER TABLE topup_packages DISABLE TRIGGER trg_topup_packages_immutable_price;")
-
-		defer func() {
-			_ = tx.Exec("ALTER TABLE billable_specs ENABLE TRIGGER trg_billable_specs_immutable_price;")
-			_ = tx.Exec("ALTER TABLE topup_packages ENABLE TRIGGER trg_topup_packages_immutable_price;")
-		}()
-
-		if err := tx.Model(&models.BillableSpec{}).Where("monthly_credits >= 10000").Update("monthly_credits", gorm.Expr("monthly_credits / 1000")).Error; err != nil {
-			return fmt.Errorf("scale billable_specs credits: %w", err)
+		if isPostgres(tx) {
+			_ = tx.Exec("ALTER TABLE billable_specs DISABLE TRIGGER trg_billable_specs_immutable_price;")
+			defer func() {
+				_ = tx.Exec("ALTER TABLE billable_specs ENABLE TRIGGER trg_billable_specs_immutable_price;")
+			}()
 		}
-		if err := tx.Model(&models.TopupPackage{}).Where("credits >= 10000").Update("credits", gorm.Expr("credits / 1000")).Error; err != nil {
-			return fmt.Errorf("scale topup_packages credits: %w", err)
+		if err := tx.Model(&incorrect).Update("is_active", false).Error; err != nil {
+			return fmt.Errorf("retire incorrect billing database large catalog: %w", err)
 		}
+		corrected := incorrect
+		corrected.ID = 0
+		corrected.ConnectionLimit = intPtr(200)
+		corrected.MonthlyCredits = 600
+		corrected.Version++
+		corrected.IsActive = true
+		corrected.CreatedAt = time.Time{}
+		corrected.UpdatedAt = time.Time{}
+		if err := tx.Create(&corrected).Error; err != nil {
+			return fmt.Errorf("create corrected billing database large catalog: %w", err)
+		}
+		slog.Info("Replaced incorrect seeded billing database large catalog", "retired_spec_id", incorrect.ID, "replacement_spec_id", corrected.ID)
+		return scaleLegacyCatalog(tx)
+	})
+}
+
+func scaleLegacyCatalog(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if isPostgres(tx) {
+			_ = tx.Exec("ALTER TABLE billable_specs DISABLE TRIGGER trg_billable_specs_immutable_price;")
+			defer func() {
+				_ = tx.Exec("ALTER TABLE billable_specs ENABLE TRIGGER trg_billable_specs_immutable_price;")
+			}()
+		}
+
+		var unscaledSpecs []models.BillableSpec
+		if err := tx.Where("monthly_credits >= 10000").Find(&unscaledSpecs).Error; err == nil {
+			for _, spec := range unscaledSpecs {
+				scaledCredits := spec.MonthlyCredits / 1000
+				var count int64
+				_ = tx.Model(&models.BillableSpec{}).Where("type = ? AND slug = ? AND monthly_credits = ?", spec.Type, spec.Slug, scaledCredits).Count(&count).Error
+				if count > 0 {
+					_ = tx.Model(&spec).Where("id = ?", spec.ID).Update("is_active", false).Error
+				} else {
+					_ = tx.Model(&spec).Where("id = ?", spec.ID).Update("monthly_credits", scaledCredits).Error
+				}
+			}
+		}
+
 		return nil
 	})
 }
@@ -160,13 +200,73 @@ func seedBillingCatalog(db *gorm.DB) error {
 		}
 	}
 
-	for index, credits := range []int64{100, 250, 500, 1000} {
-		pkg := models.TopupPackage{Credits: credits, Currency: models.BillingCurrencyIDR, AmountMinor: credits, Provider: models.BillingProviderMidtrans, Version: 1, IsActive: true, SortOrder: index + 1}
-		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&pkg).Error; err != nil {
-			return fmt.Errorf("seed topup package %d: %w", credits, err)
-		}
+	return seedTopupPackages(db)
+}
+
+// topupPackagePrices is the seeded IDR catalog at 1 credit = 1000 IDR. IDR is a
+// zero-decimal currency, so amount_minor is plain rupiah.
+var topupPackagePrices = []struct{ Credits, AmountMinor int64 }{
+	{100, 100_000},
+	{250, 250_000},
+	{500, 500_000},
+	{1000, 1_000_000},
+}
+
+// seedTopupPackages makes the active IDR catalog match topupPackagePrices. Package rows
+// are immutable (see reject_topup_package_price_mutation), so a price correction means
+// deactivating the stale row and inserting the next version — which also cleans up
+// legacy rows seeded before the credit ratio changed.
+func seedTopupPackages(db *gorm.DB) error {
+	seededCredits := make([]int64, 0, len(topupPackagePrices))
+	for _, price := range topupPackagePrices {
+		seededCredits = append(seededCredits, price.Credits)
 	}
-	return nil
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.TopupPackage{}).
+			Where("provider = ? AND currency = ? AND is_active = ? AND credits NOT IN ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, true, seededCredits).
+			Update("is_active", false).Error; err != nil {
+			return fmt.Errorf("retire off-catalog topup packages: %w", err)
+		}
+
+		for index, price := range topupPackagePrices {
+			const identity = "provider = ? AND currency = ? AND credits = ?"
+			provider, currency := models.BillingProviderMidtrans, models.BillingCurrencyIDR
+
+			var current models.TopupPackage
+			err := tx.Where(identity+" AND is_active = ?", provider, currency, price.Credits, true).First(&current).Error
+			switch {
+			case err == nil && current.AmountMinor == price.AmountMinor:
+				continue
+			case err == nil:
+				if err := tx.Model(&models.TopupPackage{}).Where("id = ?", current.ID).Update("is_active", false).Error; err != nil {
+					return fmt.Errorf("retire mispriced topup package %d: %w", price.Credits, err)
+				}
+			case !errors.Is(err, gorm.ErrRecordNotFound):
+				return fmt.Errorf("load active topup package %d: %w", price.Credits, err)
+			}
+
+			var latestVersion int
+			if err := tx.Model(&models.TopupPackage{}).Where(identity, provider, currency, price.Credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
+				return fmt.Errorf("find topup package version %d: %w", price.Credits, err)
+			}
+
+			pkg := models.TopupPackage{
+				Credits:     price.Credits,
+				Currency:    currency,
+				AmountMinor: price.AmountMinor,
+				Provider:    provider,
+				Version:     latestVersion + 1,
+				IsActive:    true,
+				SortOrder:   index + 1,
+			}
+			if err := tx.Create(&pkg).Error; err != nil {
+				return fmt.Errorf("seed topup package %d: %w", price.Credits, err)
+			}
+			slog.Info("Seeded topup package", "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
+		}
+		return nil
+	})
 }
 
 func intPtr(value int) *int { return &value }

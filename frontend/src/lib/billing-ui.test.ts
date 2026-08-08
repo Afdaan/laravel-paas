@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTopupIdempotencyKey, hasLowCreditBalance, nextBillingRequestState } from './billing-ui'
+import { createTopupIdempotencyKey, hasLowCreditBalance, nextBillingRequestState, toMajorUnits } from './billing-ui'
 
 describe('billing UI guards', () => {
   it('retains prior financial data when polling fails', () => {
@@ -35,5 +35,17 @@ describe('billing UI guards', () => {
       (value) => value.packages,
     )
     expect(result).toEqual({ status: 'success', data: [1, 2] })
+  })
+})
+
+describe('toMajorUnits', () => {
+  test('IDR is zero-decimal: minor == major', () => {
+    expect(toMajorUnits(100_000, 'IDR')).toBe(100_000)
+  })
+  test('USD has cents: 1000 minor = 10 major', () => {
+    expect(toMajorUnits(1000, 'USD')).toBe(10)
+  })
+  test('unknown currency defaults to 2 decimals', () => {
+    expect(toMajorUnits(1000, 'EUR')).toBe(10)
   })
 })

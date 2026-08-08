@@ -1027,8 +1027,25 @@ const (
 
 const (
 	BillingCurrencyIDR      = "IDR"
+	BillingCurrencyUSD      = "USD"
 	BillingProviderMidtrans = "midtrans"
 )
+
+// SupportedBillingCurrencies lists every currency the catalog and payment schema accept.
+var SupportedBillingCurrencies = []string{BillingCurrencyIDR, BillingCurrencyUSD}
+
+// CurrencyMinorUnits returns how many decimal digits the currency's minor unit carries.
+// IDR is zero-decimal so its minor unit equals its major unit; USD has cents.
+// The second return is false for unsupported currencies.
+func CurrencyMinorUnits(currency string) (int, bool) {
+	switch currency {
+	case BillingCurrencyIDR:
+		return 0, true
+	case BillingCurrencyUSD:
+		return 2, true
+	}
+	return 0, false
+}
 
 // Wallet keeps the cached credit balance for one user. Phase 2 prevents ordinary debits
 // from overdrawing under a row lock; compensating reversals may create debt.

@@ -44,7 +44,7 @@ func TestBillingPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pkg models.TopupPackage
-	if err := db.Where("credits = ? AND version = ?", 100000, 1).First(&pkg).Error; err != nil {
+	if err := db.Where("credits = ? AND version = ?", 100, 1).First(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.TopupPackage{Provider: pkg.Provider, Currency: pkg.Currency, Credits: pkg.Credits, AmountMinor: pkg.AmountMinor + 1, Version: 2, IsActive: true}).Error; err == nil {
@@ -73,7 +73,7 @@ func TestBillingPostgres(t *testing.T) {
 	if err := db.Create(&duplicatePackageV2).Error; err != nil {
 		t.Fatal(err)
 	}
-	duplicateSpecV1 := models.BillableSpec{Type: models.BillableTypeProject, Name: "Reconcile", Slug: "reconcile", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100000, Version: 1, IsActive: true}
+	duplicateSpecV1 := models.BillableSpec{Type: models.BillableTypeProject, Name: "Reconcile", Slug: "reconcile", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100, Version: 1, IsActive: true}
 	duplicateSpecV2 := duplicateSpecV1
 	duplicateSpecV2.Version = 2
 	duplicateSpecV2.MonthlyCredits++

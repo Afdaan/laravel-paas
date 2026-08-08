@@ -22,7 +22,7 @@ func TestCatalogServicePostgresSerializesIdentityWrites(t *testing.T) {
 	for _, err := range runConcurrentCalls(t, []func() error{
 		func() error {
 			_, err := service.CreateBillableSpec(ctx, catalogAudit(fmt.Sprintf("spec-%d-a", unique), "Concurrent specification pricing"), BillableSpecInput{
-				Type: models.BillableTypeProject, Name: "Concurrent", Slug: slug, CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100000, Reason: "Concurrent specification pricing",
+				Type: models.BillableTypeProject, Name: "Concurrent", Slug: slug, CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100, Reason: "Concurrent specification pricing",
 			})
 			return err
 		},

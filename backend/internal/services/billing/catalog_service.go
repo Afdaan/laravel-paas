@@ -51,7 +51,9 @@ type BillableSpecInput struct {
 }
 
 type TopupPackageInput struct {
-	Credits     int64  `json:"credits"`
+	Credits int64 `json:"credits"`
+	// Currency defaults to IDR when empty so existing admin clients keep working.
+	Currency    string `json:"currency,omitempty"`
 	AmountMinor int64  `json:"amount_minor"`
 	SortOrder   int    `json:"sort_order"`
 	Reason      string `json:"reason"`
@@ -364,6 +366,9 @@ func (s *CatalogService) CreateTopupPackage(ctx context.Context, audit AuditCont
 	if err := s.validateContext(ctx); err != nil {
 		return CatalogPackage{}, err
 	}
+	if input.Currency == "" {
+		input.Currency = models.BillingCurrencyIDR
+	}
 	if err := validateTopupPackageInput(audit, input); err != nil {
 		return CatalogPackage{}, err
 	}
@@ -372,7 +377,7 @@ func (s *CatalogService) CreateTopupPackage(ctx context.Context, audit AuditCont
 	var previous *models.TopupPackage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		created, previous, err = s.createTopupPackageVersion(tx, input.Credits, input.AmountMinor, input.SortOrder)
+		created, previous, err = s.createTopupPackageVersion(tx, input.Currency, input.Credits, input.AmountMinor, input.SortOrder)
 		return err
 	})
 	if err != nil {
@@ -413,7 +418,7 @@ func (s *CatalogService) UpdateTopupPackage(ctx context.Context, audit AuditCont
 	var created models.TopupPackage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		created, _, err = s.createTopupPackageVersion(tx, current.Credits, input.AmountMinor, input.SortOrder)
+		created, _, err = s.createTopupPackageVersion(tx, current.Currency, current.Credits, input.AmountMinor, input.SortOrder)
 		return err
 	})
 	if err != nil {
@@ -426,14 +431,14 @@ func (s *CatalogService) UpdateTopupPackage(ctx context.Context, audit AuditCont
 	return catalogPackageFromModel(created), nil
 }
 
-func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, credits, amountMinor int64, sortOrder int) (models.TopupPackage, *models.TopupPackage, error) {
-	if err := lockCatalogIdentity(tx, fmt.Sprintf("package:%s:%s:%d", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits)); err != nil {
+func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, currency string, credits, amountMinor int64, sortOrder int) (models.TopupPackage, *models.TopupPackage, error) {
+	if err := lockCatalogIdentity(tx, fmt.Sprintf("package:%s:%s:%d", models.BillingProviderMidtrans, currency, credits)); err != nil {
 		return models.TopupPackage{}, nil, err
 	}
 
 	var previous models.TopupPackage
 	previousFound := true
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND currency = ? AND credits = ? AND is_active = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits, true).First(&previous).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND currency = ? AND credits = ? AND is_active = ?", models.BillingProviderMidtrans, currency, credits, true).First(&previous).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.TopupPackage{}, nil, fmt.Errorf("lock active topup package: %w", err)
 		}
@@ -441,7 +446,7 @@ func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, credits, amountM
 	}
 
 	var latestVersion int
-	if err := tx.Model(&models.TopupPackage{}).Where("provider = ? AND currency = ? AND credits = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
+	if err := tx.Model(&models.TopupPackage{}).Where("provider = ? AND currency = ? AND credits = ?", models.BillingProviderMidtrans, currency, credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
 		return models.TopupPackage{}, nil, fmt.Errorf("find topup package version: %w", err)
 	}
 	if previousFound {
@@ -452,7 +457,7 @@ func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, credits, amountM
 
 	created := models.TopupPackage{
 		Provider:    models.BillingProviderMidtrans,
-		Currency:    models.BillingCurrencyIDR,
+		Currency:    currency,
 		Credits:     credits,
 		AmountMinor: amountMinor,
 		Version:     latestVersion + 1,
@@ -745,6 +750,9 @@ func validateBillableSpecInput(audit AuditContext, input BillableSpecInput) erro
 }
 
 func validateTopupPackageInput(audit AuditContext, input TopupPackageInput) error {
+	if _, supported := models.CurrencyMinorUnits(input.Currency); !supported {
+		return ErrInvalidCatalogInput
+	}
 	if !validAuditContext(audit) || input.Reason != audit.Reason || input.Credits <= 0 || input.Credits > maxTopupPackageCredits || input.AmountMinor <= 0 || input.AmountMinor > maxTopupPackageAmount || input.SortOrder < 0 || input.SortOrder > maxTopupPackageSortOrder {
 		return ErrInvalidCatalogInput
 	}

@@ -410,8 +410,8 @@ export const billingAPI = {
   status: () =>
     api.get<BillingStatus[]>('/billing/status'),
 
-  createTopup: (topupPackageID: number, idempotencyKey: string) =>
-    api.post<{ payment_url?: string }>('/billing/topups', { topup_package_id: topupPackageID }, { headers: { 'Idempotency-Key': idempotencyKey } }),
+  createTopup: (topupPackageID: number, idempotencyKey: string, amount?: number) =>
+    api.post<{ payment_url?: string }>('/billing/topups', { topup_package_id: topupPackageID, ...(amount ? { amount } : {}) }, { headers: { 'Idempotency-Key': idempotencyKey } }),
 
   reconcileTopup: (topupID: number) => api.post(`/billing/topups/${topupID}/reconcile`),
 

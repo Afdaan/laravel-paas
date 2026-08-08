@@ -105,12 +105,12 @@ func TestSeedBillingCatalogIsIdempotent(t *testing.T) {
 		credits                                      int64
 	}
 	for _, want := range []specWant{
-		{models.BillableTypeProject, "small", 500, 1024, 5, 0, 0, 100000},
-		{models.BillableTypeProject, "medium", 1000, 2048, 10, 0, 0, 200000},
-		{models.BillableTypeProject, "large", 2000, 4096, 20, 0, 0, 400000},
-		{models.BillableTypeDatabase, "small", 500, 1024, 10, 50, 7, 150000},
-		{models.BillableTypeDatabase, "medium", 1000, 2048, 25, 100, 14, 300000},
-		{models.BillableTypeDatabase, "large", 2000, 4096, 50, 200, 30, 600000},
+		{models.BillableTypeProject, "small", 500, 1024, 5, 0, 0, 100},
+		{models.BillableTypeProject, "medium", 1000, 2048, 10, 0, 0, 200},
+		{models.BillableTypeProject, "large", 2000, 4096, 20, 0, 0, 400},
+		{models.BillableTypeDatabase, "small", 500, 1024, 10, 50, 7, 150},
+		{models.BillableTypeDatabase, "medium", 1000, 2048, 25, 100, 14, 300},
+		{models.BillableTypeDatabase, "large", 2000, 4096, 50, 200, 30, 600},
 	} {
 		var got models.BillableSpec
 		if err := db.Where("type = ? AND slug = ? AND version = ?", want.typ, want.slug, 1).First(&got).Error; err != nil {
@@ -121,20 +121,69 @@ func TestSeedBillingCatalogIsIdempotent(t *testing.T) {
 		}
 	}
 
-	for order, credits := range []int64{100000, 250000, 500000, 1000000} {
+	for order, price := range topupPackagePrices {
 		var got models.TopupPackage
-		if err := db.Where("provider = ? AND currency = ? AND credits = ? AND version = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, credits, 1).First(&got).Error; err != nil {
-			t.Fatalf("find package %d: %v", credits, err)
+		if err := db.Where("provider = ? AND currency = ? AND credits = ? AND version = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, price.Credits, 1).First(&got).Error; err != nil {
+			t.Fatalf("find package %d: %v", price.Credits, err)
 		}
-		if got.AmountMinor != credits || !got.IsActive || got.SortOrder != order+1 {
-			t.Fatalf("package %d = %#v", credits, got)
+		if got.AmountMinor != price.AmountMinor || !got.IsActive || got.SortOrder != order+1 {
+			t.Fatalf("package %d = %#v", price.Credits, got)
 		}
+	}
+}
+
+// Legacy packages were seeded at 1 credit = 1 IDR. Reseeding must retire them and
+// publish a corrected version rather than mutating the immutable price row.
+func TestSeedBillingCatalogRepricesLegacyPackages(t *testing.T) {
+	db := billingTestDB(t, t.Name())
+	legacy := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 100, Version: 1, IsActive: true, SortOrder: 1}
+	offCatalog := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 100000, Version: 1, IsActive: true, SortOrder: 9}
+	for _, pkg := range []*models.TopupPackage{&legacy, &offCatalog} {
+		if err := db.Create(pkg).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := seedTopupPackages(db); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.First(&legacy, legacy.ID).Error; err != nil || legacy.IsActive || legacy.AmountMinor != 100 {
+		t.Fatalf("legacy row should be retired unchanged: %#v, %v", legacy, err)
+	}
+	if err := db.First(&offCatalog, offCatalog.ID).Error; err != nil || offCatalog.IsActive {
+		t.Fatalf("off-catalog row should be retired: %#v, %v", offCatalog, err)
+	}
+
+	var active []models.TopupPackage
+	if err := db.Where("is_active = ?", true).Order("sort_order").Find(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != len(topupPackagePrices) {
+		t.Fatalf("active packages = %d, want %d", len(active), len(topupPackagePrices))
+	}
+	for i, price := range topupPackagePrices {
+		if active[i].Credits != price.Credits || active[i].AmountMinor != price.AmountMinor {
+			t.Fatalf("active[%d] = %#v, want %d credits at %d", i, active[i], price.Credits, price.AmountMinor)
+		}
+	}
+	if active[0].Version != 2 {
+		t.Fatalf("repriced package should bump version, got %d", active[0].Version)
+	}
+
+	// A second pass must not create another version.
+	if err := seedTopupPackages(db); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&models.TopupPackage{}).Where("is_active = ?", true).Count(&count).Error; err != nil || count != int64(len(topupPackagePrices)) {
+		t.Fatalf("reseed not idempotent: count=%d err=%v", count, err)
 	}
 }
 
 func TestRepairBillingCatalogOnlyFixesKnownBadRow(t *testing.T) {
 	db := billingTestDB(t, t.Name())
-	bad := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 50, ConnectionLimit: intPtr(600000), BackupRetentionDays: intPtr(30), MonthlyCredits: 400000, Version: 1, IsActive: true}
+	bad := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Large", Slug: "large", CPUMillicores: 2000, MemoryMB: 4096, StorageGB: 50, ConnectionLimit: intPtr(600000), BackupRetentionDays: intPtr(30), MonthlyCredits: 400, Version: 1, IsActive: true}
 	if err := db.Create(&bad).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -145,26 +194,26 @@ func TestRepairBillingCatalogOnlyFixesKnownBadRow(t *testing.T) {
 		t.Fatalf("known bad row not retired: %#v, %v", bad, err)
 	}
 	var corrected models.BillableSpec
-	if err := db.Where("type = ? AND slug = ? AND version = ?", models.BillableTypeDatabase, "large", 2).First(&corrected).Error; err != nil || !corrected.IsActive || pointerValue(corrected.ConnectionLimit) != 200 || corrected.MonthlyCredits != 600000 {
+	if err := db.Where("type = ? AND slug = ? AND version = ?", models.BillableTypeDatabase, "large", 2).First(&corrected).Error; err != nil || !corrected.IsActive || pointerValue(corrected.ConnectionLimit) != 200 || corrected.MonthlyCredits != 600 {
 		t.Fatalf("corrected replacement missing: %#v, %v", corrected, err)
 	}
 
-	custom := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Custom", Slug: "custom", CPUMillicores: 1, MemoryMB: 1, StorageGB: 1, ConnectionLimit: intPtr(600000), MonthlyCredits: 400000, Version: 1, IsActive: true}
+	custom := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Custom", Slug: "custom", CPUMillicores: 1, MemoryMB: 1, StorageGB: 1, ConnectionLimit: intPtr(600000), MonthlyCredits: 400, Version: 1, IsActive: true}
 	if err := db.Create(&custom).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := repairBillingCatalog(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.First(&custom, custom.ID).Error; err != nil || pointerValue(custom.ConnectionLimit) != 600000 || custom.MonthlyCredits != 400000 {
+	if err := db.First(&custom, custom.ID).Error; err != nil || pointerValue(custom.ConnectionLimit) != 600000 || custom.MonthlyCredits != 400 {
 		t.Fatalf("custom row changed: %#v, %v", custom, err)
 	}
 }
 
 func TestTopupPackageRepricingUsesNewVersion(t *testing.T) {
 	db := billingTestDB(t, t.Name())
-	old := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 100000, Version: 1, IsActive: false}
-	new := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 125000, Version: 2, IsActive: true}
+	old := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 100000, Version: 1, IsActive: false}
+	new := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 125000, Version: 2, IsActive: true}
 	if err := db.Create(&old).Error; err != nil {
 		t.Fatal(err)
 	}

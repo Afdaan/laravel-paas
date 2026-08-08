@@ -654,6 +654,16 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		if err := upgradeTopupStatusConstraint(db); err != nil {
 			return err
 		}
+		// Currency checks predating multi-currency pin the column to IDR. Drop the stale
+		// definition so the checks loop below recreates it with the widened rule.
+		for _, target := range []struct{ table, name string }{
+			{"topup_packages", "chk_topup_packages_provider_currency"},
+			{"topups", "chk_topups_provider_currency"},
+		} {
+			if err := dropCheckMissingMarker(db, target.table, target.name, "USD"); err != nil {
+				return err
+			}
+		}
 	}
 
 	constraints := []struct {
@@ -715,9 +725,9 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_type", "type IN ('topup', 'topup_reversal', 'invoice_debit', 'invoice_refund', 'adjustment')"},
 		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_direction", "(type IN ('topup', 'invoice_refund') AND amount_credits > 0) OR (type IN ('topup_reversal', 'invoice_debit') AND amount_credits < 0) OR type = 'adjustment'"},
 		{&models.TopupPackage{}, "chk_topup_packages_positive", "credits > 0 AND amount_minor > 0 AND version > 0"},
-		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider = 'midtrans' AND currency = 'IDR'"},
+		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider = 'midtrans' AND currency IN ('IDR', 'USD')"},
 		{&models.Topup{}, "chk_topups_positive", "credits > 0 AND amount_minor > 0"},
-		{&models.Topup{}, "chk_topups_provider_currency", "provider = 'midtrans' AND currency = 'IDR'"},
+		{&models.Topup{}, "chk_topups_provider_currency", "provider = 'midtrans' AND currency IN ('IDR', 'USD')"},
 		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'partial_refund', 'refunded', 'partial_chargeback', 'chargeback')"},
 		{&models.BillableSpec{}, "chk_billable_specs_type", "type IN ('project', 'database')"},
 		{&models.BillableSpec{}, "chk_billable_specs_positive", "cpu_millicores > 0 AND memory_mb > 0 AND storage_gb > 0 AND monthly_credits > 0 AND version > 0"},
@@ -887,6 +897,29 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		FOR EACH ROW EXECUTE FUNCTION reject_billing_audit_event_mutation();
 	`).Error; err != nil {
 		return fmt.Errorf("create billing immutability triggers: %w", err)
+	}
+	return nil
+}
+
+// dropCheckMissingMarker drops a CHECK constraint whose definition lacks marker, so the
+// EnsureConstraint pass can recreate it. EnsureConstraint is a no-op when the name exists,
+// which makes dropping the only way to widen an existing rule.
+func dropCheckMissingMarker(db *gorm.DB, table, constraint, marker string) error {
+	var definition string
+	err := db.Raw(`
+		SELECT pg_get_constraintdef(c.oid)
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		WHERE t.relname = ? AND c.conname = ?
+	`, table, constraint).Scan(&definition).Error
+	if err != nil {
+		return fmt.Errorf("read %s constraint: %w", constraint, err)
+	}
+	if definition == "" || strings.Contains(definition, marker) {
+		return nil
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", table, constraint)).Error; err != nil {
+		return fmt.Errorf("upgrade %s constraint: %w", constraint, err)
 	}
 	return nil
 }

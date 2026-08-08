@@ -3,7 +3,7 @@ import { AlertTriangle, CreditCard, Pencil, Plus, ReceiptText, RefreshCw, Wallet
 import { toast } from 'sonner'
 import { billingAPI, usersAPI } from '@/services/api'
 import { User } from '@/types'
-import { createAdjustmentIdempotencyKey } from '@/lib/billing-ui'
+import { createAdjustmentIdempotencyKey, SUPPORTED_CURRENCIES, toMajorUnits } from '@/lib/billing-ui'
 import useAuthStore from '@/stores/authStore'
 import useTranslation from '@/lib/useTranslation'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,7 @@ type SpecForm = {
 
 const PAGE_LIMIT = 20
 const emptySpec: SpecForm = { type: 'project', name: '', slug: '', cpu_millicores: 500, memory_mb: 512, storage_gb: 1, monthly_credits: 0, connection_limit: '', backup_retention_days: '', reason: '' }
-const emptyPackage = { credits: 0, amount_minor: 0, sort_order: 0, reason: '' }
+const emptyPackage = { credits: 0, currency: 'IDR', amount_minor: 0, sort_order: 0, reason: '' }
 const emptyPackageEdit = { amount_minor: 0, sort_order: 0, reason: '' }
 const emptyCreditAdjustment = { credits: 0, reason: '' }
 const emptyDirectCreditAdjustment = { user_id: 0, credits: 0, reason: '' }
@@ -77,7 +77,7 @@ export default function AdminBilling() {
   const locale = language === 'id' ? 'id-ID' : 'en-US'
   const formatCredits = useCallback((value: number) => new Intl.NumberFormat(locale).format(value), [locale])
   const formatDate = useCallback((value?: string) => value ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(value)) : '—', [locale])
-  const formatMoney = useCallback((amountMinor: number, currency: string) => new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amountMinor), [locale])
+  const formatMoney = useCallback((amountMinor: number, currency: string) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(toMajorUnits(amountMinor, currency)), [locale])
   const formatStatus = useCallback((status: string) => {
     const translated = t(`billing.statuses.${status}`)
     if (translated !== `billing.statuses.${status}`) return translated
@@ -271,7 +271,7 @@ export default function AdminBilling() {
         <Field label={t('billing.admin.reason')} htmlFor="spec-reason"><Textarea id="spec-reason" value={specForm.reason} onChange={(event) => setSpecForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
       </PricingForm>
       <PricingForm title={t('billing.admin.createPackage')} description={t('billing.admin.versionedPricing')} onSubmit={createPackage} submitting={creatingPackage} submitLabel={t('billing.admin.create')}>
-        <div className="grid gap-3 sm:grid-cols-2"><NumberField id="package-credits" label={t('billing.admin.credits')} value={packageForm.credits} onChange={(credits) => setPackageForm((current) => ({ ...current, credits }))} min={1} /><NumberField id="package-amount" label={t('billing.admin.amountMinor')} value={packageForm.amount_minor} onChange={(amount_minor) => setPackageForm((current) => ({ ...current, amount_minor }))} min={1} /><NumberField id="package-sort-order" label={t('billing.admin.sortOrder')} value={packageForm.sort_order} onChange={(sort_order) => setPackageForm((current) => ({ ...current, sort_order }))} min={0} /></div>
+        <div className="grid gap-3 sm:grid-cols-2"><NumberField id="package-credits" label={t('billing.admin.credits')} value={packageForm.credits} onChange={(credits) => setPackageForm((current) => ({ ...current, credits }))} min={1} /><Field label={t('billing.admin.currency')} htmlFor="package-currency"><Select name="currency" value={packageForm.currency} onValueChange={(currency) => setPackageForm((current) => ({ ...current, currency }))}><SelectTrigger id="package-currency" className="w-full">{packageForm.currency}</SelectTrigger><SelectContent>{SUPPORTED_CURRENCIES.map((code) => <SelectItem key={code} value={code}>{code}</SelectItem>)}</SelectContent></Select></Field><NumberField id="package-amount" label={t('billing.admin.packagePrice')} value={packageForm.amount_minor} onChange={(amount_minor) => setPackageForm((current) => ({ ...current, amount_minor }))} min={1} /><NumberField id="package-sort-order" label={t('billing.admin.sortOrder')} value={packageForm.sort_order} onChange={(sort_order) => setPackageForm((current) => ({ ...current, sort_order }))} min={0} /></div>
         <Field label={t('billing.admin.reason')} htmlFor="package-reason"><Textarea id="package-reason" value={packageForm.reason} onChange={(event) => setPackageForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
       </PricingForm>
       <PricingForm title={t('billing.admin.addCreditsForUser')} description={t('billing.admin.addCreditsForUserDescription')} onSubmit={saveDirectCreditAdjustment} submitting={savingDirectCreditAdjustment} submitLabel={t('billing.admin.saveCredits')}>
@@ -319,7 +319,7 @@ export default function AdminBilling() {
         <form className="space-y-4" onSubmit={savePackageEdit}>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={t('billing.admin.credits')} htmlFor="edit-package-credits"><Input id="edit-package-credits" type="number" value={editingPackage?.credits ?? 0} disabled /></Field>
-            <NumberField id="edit-package-amount" label={t('billing.admin.amountMinor')} value={packageEditForm.amount_minor} onChange={(amount_minor) => setPackageEditForm((current) => ({ ...current, amount_minor }))} min={1} />
+            <NumberField id="edit-package-amount" label={t('billing.admin.packagePrice')} value={packageEditForm.amount_minor} onChange={(amount_minor) => setPackageEditForm((current) => ({ ...current, amount_minor }))} min={1} />
             <NumberField id="edit-package-sort-order" label={t('billing.admin.sortOrder')} value={packageEditForm.sort_order} onChange={(sort_order) => setPackageEditForm((current) => ({ ...current, sort_order }))} min={0} />
           </div>
           <Field label={t('billing.admin.reason')} htmlFor="edit-package-reason"><Textarea id="edit-package-reason" value={packageEditForm.reason} onChange={(event) => setPackageEditForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>

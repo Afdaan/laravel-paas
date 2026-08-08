@@ -19,6 +19,7 @@ import {
   createTopupIdempotencyKey,
   hasLowCreditBalance,
   nextBillingRequestState,
+  toMajorUnits,
   type BillingRequestState,
 } from '@/lib/billing-ui'
 import { usePolling } from '@/lib/usePolling'
@@ -28,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
 
 export default function Billing() {
   const { t, language } = useTranslation()
@@ -35,6 +37,7 @@ export default function Billing() {
   const [packages, setPackages] = useState<BillingRequestState<TopupPackage[]>>({ status: 'idle' })
   const [statuses, setStatuses] = useState<BillingRequestState<BillingStatus[]>>({ status: 'idle' })
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
+  const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
   const topupKeys = useRef(new Map<number, string>())
   const loadInFlight = useRef(false)
@@ -67,8 +70,7 @@ export default function Billing() {
       new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US', {
         style: 'currency',
         currency,
-        maximumFractionDigits: 0,
-      }).format(amountMinor),
+      }).format(toMajorUnits(amountMinor, currency)),
     [language],
   )
   const formatStatus = useCallback(
@@ -175,6 +177,27 @@ export default function Billing() {
       if (axios.isAxiosError(error) && error.response) {
         topupKeys.current.delete(packageID)
       }
+      toast.error(t('billing.topupStartFailed'))
+    } finally {
+      setTopupPackageID(null)
+    }
+  }
+
+  const customAmountNum = parseInt(customAmount) || 0
+  const customCredits = Math.floor(customAmountNum / 1000)
+  const customValid = customAmountNum >= 10_000 && customAmountNum <= 10_000_000 && customAmountNum % 1000 === 0
+
+  const startCustomTopup = async () => {
+    setTopupPackageID(-1)
+    try {
+      const idempotencyKey = createTopupIdempotencyKey()
+      const response = await billingAPI.createTopup(0, idempotencyKey, customAmountNum)
+      if (!response.data.payment_url) {
+        throw new Error(t('billing.paymentSessionUnavailable'))
+      }
+      setCustomAmount('')
+      window.location.assign(response.data.payment_url)
+    } catch {
       toast.error(t('billing.topupStartFailed'))
     } finally {
       setTopupPackageID(null)
@@ -403,6 +426,43 @@ export default function Billing() {
                 <p className="col-span-full rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
                   {t('billing.noPackages')}
                 </p>
+              )}
+            </div>
+
+            {/* Custom Amount */}
+            <div className="mt-4 rounded-xl border border-border/60 p-4">
+              <h4 className="mb-3 text-sm font-semibold text-foreground">{t('billing.customTopup')}</h4>
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">IDR</span>
+                  <Input
+                    type="number"
+                    min={10000}
+                    max={10000000}
+                    step={1000}
+                    placeholder="50000"
+                    className="pl-11 font-mono tabular-nums"
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    disabled={topupPackageID !== null}
+                  />
+                </div>
+                {customAmountNum > 0 && (
+                  <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                    {customCredits.toLocaleString(language)} <span className="text-xs font-medium text-muted-foreground">{t('billing.credits')}</span>
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  disabled={!customValid || topupPackageID !== null}
+                  onClick={() => void startCustomTopup()}
+                >
+                  <CreditCard className="mr-1.5 size-3.5" />
+                  {topupPackageID === -1 ? t('billing.openingCheckout') : t('billing.customTopupButton')}
+                </Button>
+              </div>
+              {customAmount && !customValid && (
+                <p className="mt-2 text-xs text-muted-foreground">{t('billing.customTopupHint')}</p>
               )}
             </div>
           </div>

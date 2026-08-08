@@ -100,7 +100,7 @@ func TestCatalogServiceRepricingVersionsRowsAndAudits(t *testing.T) {
 	ctx := context.Background()
 
 	firstSpec, err := service.CreateBillableSpec(ctx, catalogAudit("request-spec-1", "Initial project pricing"), BillableSpecInput{
-		Type: models.BillableTypeProject, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100000, Reason: "Initial project pricing",
+		Type: models.BillableTypeProject, Name: "Small", Slug: "small", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100, Reason: "Initial project pricing",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,11 +119,11 @@ func TestCatalogServiceRepricingVersionsRowsAndAudits(t *testing.T) {
 		t.Fatalf("unexpected spec versions: first=%#v second=%#v", storedFirstSpec, secondSpec)
 	}
 
-	firstPackage, err := service.CreateTopupPackage(ctx, catalogAudit("request-package-1", "Initial package pricing"), TopupPackageInput{Credits: 100000, AmountMinor: 100000, SortOrder: 1, Reason: "Initial package pricing"})
+	firstPackage, err := service.CreateTopupPackage(ctx, catalogAudit("request-package-1", "Initial package pricing"), TopupPackageInput{Credits: 100, AmountMinor: 100000, SortOrder: 1, Reason: "Initial package pricing"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondPackage, err := service.CreateTopupPackage(ctx, catalogAudit("request-package-2", "Package price correction"), TopupPackageInput{Credits: 100000, AmountMinor: 125000, SortOrder: 1, Reason: "Package price correction"})
+	secondPackage, err := service.CreateTopupPackage(ctx, catalogAudit("request-package-2", "Package price correction"), TopupPackageInput{Credits: 100, AmountMinor: 125000, SortOrder: 1, Reason: "Package price correction"})
 	if err != nil {
 		t.Fatal(err)
 	}

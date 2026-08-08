@@ -789,3 +789,81 @@ func TestTopupWebhookRollsBackLedgerWhenStatusUpdateFails(t *testing.T) {
 		t.Fatalf("events=%d err=%v", eventCount, err)
 	}
 }
+
+// Providers are paid in major units while the DB stores minor units. IDR makes the two
+// identical, which is exactly why a decimal currency would slip through untested.
+func TestMajorUnitsConvertsPerCurrency(t *testing.T) {
+	for _, tc := range []struct {
+		currency    string
+		amountMinor int64
+		want        int64
+		wantErr     bool
+	}{
+		{models.BillingCurrencyIDR, 100_000, 100_000, false},
+		{models.BillingCurrencyUSD, 1000, 10, false},
+		{models.BillingCurrencyUSD, 1050, 0, true}, // 10.50 is not whole dollars
+		{"EUR", 100, 0, true},
+	} {
+		got, err := majorUnits(tc.amountMinor, tc.currency)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("majorUnits(%d, %s) = %d, want error", tc.amountMinor, tc.currency, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Fatalf("majorUnits(%d, %s) = %d, %v; want %d", tc.amountMinor, tc.currency, got, err, tc.want)
+		}
+	}
+}
+
+func TestCustomTopupValidation(t *testing.T) {
+	_, _, svc, _ := topupServiceFixture(t)
+	for _, tc := range []struct {
+		name    string
+		input   TopupInput
+		wantErr bool
+	}{
+		{"package topup still works", TopupInput{PackageID: 1}, false},
+		{"custom 50k valid", TopupInput{AmountMinor: 50_000}, false},
+		{"custom min boundary", TopupInput{AmountMinor: 10_000}, false},
+		{"custom max boundary", TopupInput{AmountMinor: 10_000_000}, false},
+		{"both zero rejected", TopupInput{}, true},
+		{"below minimum rejected", TopupInput{AmountMinor: 5_000}, true},
+		{"above maximum rejected", TopupInput{AmountMinor: 11_000_000}, true},
+		{"not divisible by 1000 rejected", TopupInput{AmountMinor: 10_500}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.validateCreate(context.Background(), 1, "key", tc.input)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTopupIdempotencyMatch(t *testing.T) {
+	pkgID := uint(42)
+	for _, tc := range []struct {
+		name  string
+		topup models.Topup
+		input TopupInput
+		want  bool
+	}{
+		{"package match", models.Topup{TopupPackageID: &pkgID, AmountMinor: 100_000}, TopupInput{PackageID: 42}, true},
+		{"package mismatch", models.Topup{TopupPackageID: &pkgID, AmountMinor: 100_000}, TopupInput{PackageID: 99}, false},
+		{"package vs custom conflict", models.Topup{TopupPackageID: &pkgID, AmountMinor: 100_000}, TopupInput{AmountMinor: 100_000}, false},
+		{"custom match", models.Topup{AmountMinor: 50_000}, TopupInput{AmountMinor: 50_000}, true},
+		{"custom amount mismatch", models.Topup{AmountMinor: 50_000}, TopupInput{AmountMinor: 60_000}, false},
+		{"custom vs package conflict", models.Topup{AmountMinor: 50_000}, TopupInput{PackageID: 1}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := topupIdempotencyMatch(tc.topup, tc.input); got != tc.want {
+				t.Fatalf("topupIdempotencyMatch = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

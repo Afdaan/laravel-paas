@@ -52,7 +52,8 @@ const (
 )
 
 type TopupInput struct {
-	PackageID uint `json:"topup_package_id"`
+	PackageID   uint  `json:"topup_package_id"`
+	AmountMinor int64 `json:"amount,omitempty"` // custom topup; ignored when PackageID > 0
 }
 
 type TopupView struct {
@@ -153,7 +154,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 	var topup models.Topup
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("wallet_id = ? AND client_idempotency_key = ?", wallet.ID, clientKey).First(&topup).Error; err == nil {
-			if topup.TopupPackageID == nil || *topup.TopupPackageID != input.PackageID {
+			if !topupIdempotencyMatch(topup, input) {
 				return ErrTopupIdempotencyConflict
 			}
 			return nil
@@ -161,26 +162,42 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			return fmt.Errorf("lock existing topup: %w", err)
 		}
 
-		var topupPackage models.TopupPackage
-		if err := tx.Where("id = ? AND provider = ? AND currency = ? AND is_active = ?", input.PackageID, models.BillingProviderMidtrans, models.BillingCurrencyIDR, true).First(&topupPackage).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrInvalidTopupInput
+		if input.PackageID > 0 {
+			var topupPackage models.TopupPackage
+			if err := tx.Where("id = ? AND provider = ? AND is_active = ?", input.PackageID, models.BillingProviderMidtrans, true).First(&topupPackage).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrInvalidTopupInput
+				}
+				return fmt.Errorf("load active topup package: %w", err)
 			}
-			return fmt.Errorf("load active topup package: %w", err)
+
+			topup = models.Topup{
+				WalletID:             wallet.ID,
+				TopupPackageID:       &topupPackage.ID,
+				ClientIdempotencyKey: clientKey,
+				Provider:             models.BillingProviderMidtrans,
+				ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
+				ProviderRequestState: providerRequestPending,
+				AmountMinor:          topupPackage.AmountMinor,
+				Currency:             topupPackage.Currency,
+				Credits:              topupPackage.Credits,
+				Status:               models.TopupStatusPending,
+			}
+		} else {
+			// ponytail: IDR-only custom topup; add currency param when supporting USD
+			topup = models.Topup{
+				WalletID:             wallet.ID,
+				ClientIdempotencyKey: clientKey,
+				Provider:             models.BillingProviderMidtrans,
+				ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
+				ProviderRequestState: providerRequestPending,
+				AmountMinor:          input.AmountMinor,
+				Currency:             models.BillingCurrencyIDR,
+				Credits:              input.AmountMinor / 1000,
+				Status:               models.TopupStatusPending,
+			}
 		}
 
-		topup = models.Topup{
-			WalletID:             wallet.ID,
-			TopupPackageID:       &topupPackage.ID,
-			ClientIdempotencyKey: clientKey,
-			Provider:             models.BillingProviderMidtrans,
-			ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
-			ProviderRequestState: providerRequestPending,
-			AmountMinor:          topupPackage.AmountMinor,
-			Currency:             topupPackage.Currency,
-			Credits:              topupPackage.Credits,
-			Status:               models.TopupStatusPending,
-		}
 		result := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "wallet_id"}, {Name: "client_idempotency_key"}},
 			DoNothing: true,
@@ -192,7 +209,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("wallet_id = ? AND client_idempotency_key = ?", wallet.ID, clientKey).First(&topup).Error; err != nil {
 				return fmt.Errorf("lock concurrent topup replay: %w", err)
 			}
-			if topup.TopupPackageID == nil || *topup.TopupPackageID != input.PackageID {
+			if !topupIdempotencyMatch(topup, input) {
 				return ErrTopupIdempotencyConflict
 			}
 		}
@@ -781,8 +798,17 @@ func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKe
 	if !s.cfg.BillingTopupEnabled {
 		return ErrTopupDisabled
 	}
-	if userID == 0 || input.PackageID == 0 || clientKey == "" || len(clientKey) > 255 || strings.TrimSpace(clientKey) != clientKey {
+	if userID == 0 || clientKey == "" || len(clientKey) > 255 || strings.TrimSpace(clientKey) != clientKey {
 		return ErrInvalidTopupInput
+	}
+	if input.PackageID == 0 && input.AmountMinor == 0 {
+		return ErrInvalidTopupInput
+	}
+	// ponytail: IDR-only custom topup; extend when adding USD
+	if input.PackageID == 0 {
+		if input.AmountMinor < 10_000 || input.AmountMinor > 10_000_000 || input.AmountMinor%1000 != 0 {
+			return ErrInvalidTopupInput
+		}
 	}
 	return nil
 }
@@ -852,6 +878,12 @@ func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaym
 	if c == nil || c.httpClient == nil || c.serverKey == "" || payment.OrderID == "" || payment.AmountMinor <= 0 || payment.Currency != models.BillingCurrencyIDR {
 		return MidtransPaymentResponse{}, ErrPaymentProvider
 	}
+	// Snap expects gross_amount in major units. IDR is zero-decimal so this is identity
+	// today, but the conversion is explicit so adding a decimal currency cannot 100x a charge.
+	grossAmount, err := majorUnits(payment.AmountMinor, payment.Currency)
+	if err != nil {
+		return MidtransPaymentResponse{}, ErrPaymentProvider
+	}
 	body, err := json.Marshal(struct {
 		TransactionDetails struct {
 			OrderID     string `json:"order_id"`
@@ -860,7 +892,7 @@ func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaym
 	}{TransactionDetails: struct {
 		OrderID     string `json:"order_id"`
 		GrossAmount int64  `json:"gross_amount"`
-	}{OrderID: payment.OrderID, GrossAmount: payment.AmountMinor}})
+	}{OrderID: payment.OrderID, GrossAmount: grossAmount}})
 	if err != nil {
 		return MidtransPaymentResponse{}, fmt.Errorf("marshal Midtrans payment request: %w", err)
 	}
@@ -1025,6 +1057,31 @@ func decodeProviderJSON(reader io.Reader, target any) error {
 func paymentEventKey(payload []byte) string {
 	sum := sha256.Sum256(payload)
 	return models.BillingProviderMidtrans + ":" + hex.EncodeToString(sum[:])
+}
+
+// majorUnits converts a minor-unit amount to whole major units, refusing any amount that
+// is not a whole number of major units — providers that take major units cannot express
+// the remainder, and silently truncating would undercharge.
+func majorUnits(amountMinor int64, currency string) (int64, error) {
+	exponent, supported := models.CurrencyMinorUnits(currency)
+	if !supported {
+		return 0, ErrPaymentProvider
+	}
+	divisor := int64(1)
+	for range exponent {
+		divisor *= 10
+	}
+	if amountMinor%divisor != 0 {
+		return 0, ErrPaymentProvider
+	}
+	return amountMinor / divisor, nil
+}
+
+func topupIdempotencyMatch(topup models.Topup, input TopupInput) bool {
+	if input.PackageID > 0 {
+		return topup.TopupPackageID != nil && *topup.TopupPackageID == input.PackageID
+	}
+	return topup.TopupPackageID == nil && topup.AmountMinor == input.AmountMinor
 }
 
 func topupProviderOrderID(walletID uint, clientKey string) string {
