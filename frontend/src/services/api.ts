@@ -49,15 +49,21 @@ api.interceptors.response.use(
       window.dispatchEvent(new Event('auth:expired'))
     }
 
-    // Global 403 RECENT_AUTH_REQUIRED handling
+    // Global 403 handling (RECENT_AUTH_REQUIRED vs WAF / Cloudflare HTML)
     const status = error.response?.status
+    const contentType = (error.response?.headers?.['content-type'] || '') as string
     const errorData = error.response?.data as { code?: string; message?: string; error?: string } | undefined
+
+    const isJson = contentType.includes('application/json')
+    const errorString = typeof errorData === 'string' ? errorData : JSON.stringify(errorData || {})
+
     const isRecentAuthRequired = status === 403 && (
       errorData?.code === 'RECENT_AUTH_REQUIRED' ||
       errorData?.error === 'RECENT_AUTH_REQUIRED' ||
-      (typeof errorData?.error === 'string' && errorData.error.toLowerCase().includes('recent password authentication')) ||
-      (typeof errorData === 'object' && JSON.stringify(errorData).includes('RECENT_AUTH_REQUIRED'))
+      errorString.includes('RECENT_AUTH_REQUIRED') ||
+      errorString.toLowerCase().includes('recent password authentication')
     )
+
     if (isRecentAuthRequired) {
       return new Promise((resolve, reject) => {
         const handleReauthSuccess = async () => {
