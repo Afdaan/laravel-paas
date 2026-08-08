@@ -215,6 +215,7 @@ export interface BillingCatalogSpec {
   monthly_credits: number;
   connection_limit?: number;
   backup_retention_days?: number;
+  badge_text?: string;
 }
 
 export interface TopupPackage {

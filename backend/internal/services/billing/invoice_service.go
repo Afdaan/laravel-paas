@@ -65,6 +65,65 @@ func (s *InvoiceService) ChargeInitialResourceTx(tx *gorm.DB, userID uint, resou
 	return err
 }
 
+// RefundInitialResourceTx refunds credits debited for a resource's initial billing period
+// when provisioning fails or is cancelled. It idempotently credits the user's wallet and
+// marks the billable resource status as deleted.
+func (s *InvoiceService) RefundInitialResourceTx(tx *gorm.DB, userID uint, resourceType models.BillableType, resourceID uint, reason string) error {
+	if s == nil || s.wallets == nil {
+		return ErrInvoiceServiceUnavailable
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction is required for resource refund")
+	}
+
+	var resource models.BillableResource
+	if err := tx.Where("user_id = ? AND type = ? AND resource_id = ?", userID, resourceType, resourceID).First(&resource).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("load billable resource for refund: %w", err)
+	}
+
+	var item models.InvoiceItem
+	if err := tx.Where("billable_resource_id = ?", resource.ID).First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("load invoice item for refund: %w", err)
+	}
+
+	if item.Credits <= 0 {
+		return nil
+	}
+
+	refundKey := fmt.Sprintf("invoice-refund:%d:%d", item.InvoiceID, item.ID)
+	var existingCount int64
+	if err := tx.Model(&models.WalletLedgerEntry{}).Where("idempotency_key = ?", refundKey).Count(&existingCount).Error; err != nil {
+		return fmt.Errorf("check refund ledger entry: %w", err)
+	}
+	if existingCount > 0 {
+		return nil
+	}
+
+	_, err := s.wallets.applyInTransaction(tx, LedgerMutation{
+		UserID:         userID,
+		EntryType:      models.WalletLedgerEntryInvoiceRefund,
+		AmountCredits:  item.Credits,
+		IdempotencyKey: refundKey,
+		ReferenceType:  "invoice_item",
+		ReferenceID:    fmt.Sprintf("%d", item.ID),
+	}, true)
+	if err != nil {
+		return fmt.Errorf("credit wallet refund: %w", err)
+	}
+
+	if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+		return fmt.Errorf("update resource billing status on refund: %w", err)
+	}
+
+	return nil
+}
+
 // RunMonthly charges each due resource once. Insufficient balance marks the resource and
 // invoice payment-due; a later scheduler run retries the same invoice item idempotently.
 func (s *InvoiceService) RunMonthly(ctx context.Context, now time.Time) error {

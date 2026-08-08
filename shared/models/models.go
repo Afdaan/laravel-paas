@@ -1166,6 +1166,7 @@ type BillableSpec struct {
 	MonthlyCredits      int64        `gorm:"not null" json:"monthly_credits"`
 	ConnectionLimit     *int         `json:"connection_limit,omitempty"`
 	BackupRetentionDays *int         `json:"backup_retention_days,omitempty"`
+	BadgeText           string       `gorm:"size:50" json:"badge_text,omitempty"`
 	Version             int          `gorm:"uniqueIndex:uni_billable_specs_slug_version;not null;default:1" json:"version"`
 	IsActive            bool         `gorm:"not null;default:true" json:"is_active"`
 	CreatedAt           time.Time    `json:"created_at"`

@@ -44,6 +44,17 @@ echo ""
 echo -e "${BLUE}Running billable resources backfill...${NC}"
 
 docker exec -i "$PG_CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" << 'EOF'
+-- Ensure default billable_specs exist if catalog is unseeded
+INSERT INTO billable_specs (type, name, slug, cpu_millicores, memory_mb, storage_gb, monthly_credits, connection_limit, backup_retention_days, version, is_active, created_at, updated_at)
+VALUES
+('project', 'Small', 'small', 500, 1024, 5, 100, NULL, NULL, 1, true, NOW(), NOW()),
+('project', 'Medium', 'medium', 1000, 2048, 10, 200, NULL, NULL, 1, true, NOW(), NOW()),
+('project', 'Large', 'large', 2000, 4096, 20, 400, NULL, NULL, 1, true, NOW(), NOW()),
+('database', 'Small', 'small', 500, 1024, 10, 150, 50, 7, 1, true, NOW(), NOW()),
+('database', 'Medium', 'medium', 1000, 2048, 25, 300, 100, 14, 1, true, NOW(), NOW()),
+('database', 'Large', 'large', 2000, 4096, 50, 600, 200, 30, 1, true, NOW(), NOW())
+ON CONFLICT DO NOTHING;
+
 -- Backfill unmapped projects
 INSERT INTO billable_resources (user_id, type, resource_id, spec_id, billing_status, current_period_start, next_invoice_at, billing_anchor_day, billing_anchor_month_end, created_at, updated_at)
 SELECT 

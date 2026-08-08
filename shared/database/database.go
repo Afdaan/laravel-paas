@@ -133,12 +133,7 @@ func repairBillingCatalog(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		if isPostgres(tx) {
-			_ = tx.Exec("ALTER TABLE billable_specs DISABLE TRIGGER trg_billable_specs_immutable_price;")
-			defer func() {
-				_ = tx.Exec("ALTER TABLE billable_specs ENABLE TRIGGER trg_billable_specs_immutable_price;")
-			}()
-		}
+		defer disableTriggerIfExists(tx, "billable_specs", "trg_billable_specs_immutable_price")()
 		if err := tx.Model(&incorrect).Update("is_active", false).Error; err != nil {
 			return fmt.Errorf("retire incorrect billing database large catalog: %w", err)
 		}
@@ -160,12 +155,7 @@ func repairBillingCatalog(db *gorm.DB) error {
 
 func scaleLegacyCatalog(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		if isPostgres(tx) {
-			_ = tx.Exec("ALTER TABLE billable_specs DISABLE TRIGGER trg_billable_specs_immutable_price;")
-			defer func() {
-				_ = tx.Exec("ALTER TABLE billable_specs ENABLE TRIGGER trg_billable_specs_immutable_price;")
-			}()
-		}
+		defer disableTriggerIfExists(tx, "billable_specs", "trg_billable_specs_immutable_price")()
 
 		var unscaledSpecs []models.BillableSpec
 		if err := tx.Where("monthly_credits >= 10000").Find(&unscaledSpecs).Error; err == nil {
@@ -270,3 +260,24 @@ func seedTopupPackages(db *gorm.DB) error {
 }
 
 func intPtr(value int) *int { return &value }
+
+func disableTriggerIfExists(tx *gorm.DB, table, trigger string) func() {
+	if !isPostgres(tx) {
+		return func() {}
+	}
+	var count int64
+	err := tx.Raw(`
+		SELECT COUNT(*) FROM pg_trigger tg
+		JOIN pg_class cl ON cl.oid = tg.tgrelid
+		WHERE cl.relname = ? AND tg.tgname = ? AND NOT tg.tgisinternal
+	`, table, trigger).Scan(&count).Error
+	if err != nil || count == 0 {
+		return func() {}
+	}
+	if err := tx.Exec(fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER %s;", table, trigger)).Error; err != nil {
+		return func() {}
+	}
+	return func() {
+		_ = tx.Exec(fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER %s;", table, trigger))
+	}
+}

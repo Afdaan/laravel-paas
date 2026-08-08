@@ -18,7 +18,14 @@ import {
   Play,
   GitBranch,
   ExternalLink,
-  Check
+  Check,
+  CreditCard,
+  Cpu,
+  HardDrive,
+  Network,
+  ShieldCheck,
+  RefreshCw,
+  Server
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -168,8 +175,8 @@ function UserNewProject() {
     start_command: '',
     port: '',
     queue_enabled: false,
-    enable_database: true,
-    database_option: 'new',
+    enable_database: false,
+    database_option: 'none',
     database_engine: 'mysql',
     existing_database_uid: '',
     billable_spec_id: 0,
@@ -1196,21 +1203,15 @@ function UserNewProject() {
                                 setFormData(prev => ({ ...prev, database_password: generatePassword() }))
                                 setValidationErrors(prev => ({ ...prev, database_password: undefined }))
                               }}
-                              className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1 text-xs"
+                              className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1.5 text-xs flex items-center"
                             >
+                              <RefreshCw className="w-3.5 h-3.5 opacity-70" />
                               {t('newProject.dbConfig.configureNew.generate')}
                             </Button>
                           </div>
                           {validationErrors.database_password && (
                             <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_password}</p>
                           )}
-                        </div>
-
-                        <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 flex gap-2.5 items-start">
-                          <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                          <span className="text-[10px] text-muted-foreground leading-relaxed">
-                            {t('newProject.dbConfig.configureNew.info')}
-                          </span>
                         </div>
                       </div>
                     )}
@@ -1412,11 +1413,40 @@ function UserNewProject() {
             </div>
           </Card>
 
-          <Card className="space-y-4 p-5">
-            <div><Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{t('billing.plans')}</Label><p className="mt-1 text-xs text-muted-foreground">{t('billing.plansDescription')}</p></div>
-            {billingCatalogError && <Button type="button" variant="outline" size="sm" onClick={() => void loadBillingCatalog()}>{t('billing.catalogRetry')}</Button>}
-            <PlanSelector label={t('billing.projectPlan')} specs={billingSpecs.filter((spec) => spec.type === 'project')} value={formData.billable_spec_id} onChange={(id) => setFormData((current) => ({ ...current, billable_spec_id: id }))} error={validationErrors.billable_spec_id} />
-            {formData.database_option === 'new' && <PlanSelector label={t('billing.databasePlan')} specs={billingSpecs.filter((spec) => spec.type === 'database')} value={formData.database_billable_spec_id} onChange={(id) => setFormData((current) => ({ ...current, database_billable_spec_id: id }))} error={validationErrors.database_billable_spec_id} />}
+          <Card className="space-y-6 p-6">
+            <div>
+              <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-primary" />
+                {t('billing.plans')}
+              </Label>
+              <p className="mt-1 text-xs text-muted-foreground">{t('billing.plansDescription')}</p>
+            </div>
+
+            {billingCatalogError && (
+              <Button type="button" variant="outline" size="sm" onClick={() => void loadBillingCatalog()}>
+                {t('billing.catalogRetry')}
+              </Button>
+            )}
+
+            <PlanSelector
+              label={t('billing.projectPlan')}
+              specs={billingSpecs.filter((spec) => spec.type === 'project')}
+              value={formData.billable_spec_id}
+              onChange={(id) => setFormData((current) => ({ ...current, billable_spec_id: id }))}
+              error={validationErrors.billable_spec_id}
+            />
+
+            {formData.database_option === 'new' && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300 border-t pt-5 space-y-4">
+                <PlanSelector
+                  label={t('billing.databasePlan')}
+                  specs={billingSpecs.filter((spec) => spec.type === 'database')}
+                  value={formData.database_billable_spec_id}
+                  onChange={(id) => setFormData((current) => ({ ...current, database_billable_spec_id: id }))}
+                  error={validationErrors.database_billable_spec_id}
+                />
+              </div>
+            )}
           </Card>
 
           {/* Submit Button (Only shown/enabled once source is selected/populated) */}
@@ -1481,7 +1511,15 @@ function PlanSelector({
 
   return (
     <fieldset className="space-y-3">
-      <legend className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</legend>
+      <legend className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+        {specs[0]?.type === 'database' ? (
+          <Database className="w-3.5 h-3.5 text-muted-foreground" />
+        ) : (
+          <Server className="w-3.5 h-3.5 text-muted-foreground" />
+        )}
+        {label}
+      </legend>
+
       <div
         ref={groupRef}
         role="radiogroup"
@@ -1492,12 +1530,16 @@ function PlanSelector({
       >
         {specs.map((spec, index) => {
           const selected = value === spec.id
-          const attrs =
-            spec.type === 'project'
-              ? [`${spec.cpu_millicores}m CPU`, `${spec.memory_mb} MB RAM`]
-              : spec.connection_limit
-                ? [t('billing.connections', { count: spec.connection_limit })]
-                : []
+
+          // Dynamic badge text set by superadmin (rendered ONLY if configured)
+          const badgeText = spec.badge_text?.trim()
+
+          // Formatted specs resources
+          const vCpuText = spec.cpu_millicores ? `${(spec.cpu_millicores / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} vCPU (${spec.cpu_millicores}m)` : null
+          const ramText = spec.memory_mb ? (spec.memory_mb >= 1024 ? `${spec.memory_mb / 1024} GB RAM` : `${spec.memory_mb} MB RAM`) : null
+          const connText = spec.connection_limit ? t('billing.connections', { count: spec.connection_limit }) : null
+          const backupText = spec.backup_retention_days ? t('billing.backupRetention', { count: spec.backup_retention_days }) : null
+
           return (
             <button
               key={spec.id}
@@ -1508,27 +1550,76 @@ function PlanSelector({
               onClick={() => onChange(spec.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                'relative flex flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                selected ? 'border-primary ring-1 ring-primary' : 'hover:border-foreground/20 hover:bg-muted/40',
+                'relative flex flex-col justify-between gap-4 rounded-lg border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected
+                  ? 'border-2 border-primary bg-card shadow-xs'
+                  : 'border-border/70 hover:border-foreground/20 hover:bg-muted/30'
               )}
             >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-sm font-semibold">{spec.name}</span>
-                {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+              {/* Header section with optional Admin Badge & Selection Circle */}
+              <div className="space-y-2 w-full">
+                <div className="flex items-center justify-between gap-2">
+                  {badgeText ? (
+                    <span className="text-[10px] font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded border border-border/60 bg-muted/50 text-muted-foreground">
+                      {badgeText}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+
+                  {/* Radio Indicator */}
+                  <div className={cn(
+                    'w-4 h-4 rounded-full border flex items-center justify-center transition-colors',
+                    selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/30'
+                  )}>
+                    {selected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground">{spec.name}</h4>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
+                      {spec.monthly_credits.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{t('billing.credits')} / {t('billing.perMonth')}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-semibold tabular-nums tracking-tight">
-                  {spec.monthly_credits.toLocaleString()}
-                </span>
-                <span className="text-[11px] text-muted-foreground">{t('billing.credits')} / {t('billing.perMonth')}</span>
+
+              {/* Resource Specifications Details */}
+              <div className="w-full pt-3 border-t border-border/50 space-y-1.5 text-xs text-muted-foreground">
+                {vCpuText && (
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{vCpuText}</span>
+                  </div>
+                )}
+                {ramText && (
+                  <div className="flex items-center gap-2">
+                    <HardDrive className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{ramText}</span>
+                  </div>
+                )}
+                {connText && (
+                  <div className="flex items-center gap-2">
+                    <Network className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{connText}</span>
+                  </div>
+                )}
+                {backupText && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{backupText}</span>
+                  </div>
+                )}
+                {spec.type === 'project' && (
+                  <div className="flex items-center gap-2 pt-0.5 text-[11px]">
+                    <Check className="w-3 h-3 shrink-0 opacity-70" />
+                    <span>{t('billing.autoSslGit')}</span>
+                  </div>
+                )}
               </div>
-              {attrs.length > 0 && (
-                <ul className="space-y-1 border-t pt-3 text-[11px] text-muted-foreground">
-                  {attrs.map((attr) => (
-                    <li key={attr} className="font-mono tabular-nums">{attr}</li>
-                  ))}
-                </ul>
-              )}
             </button>
           )
         })}

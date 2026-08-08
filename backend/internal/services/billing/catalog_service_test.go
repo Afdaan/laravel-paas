@@ -233,7 +233,7 @@ func TestCatalogHidesUnenforcedDatabaseStorageTier(t *testing.T) {
 	projectSpec := models.BillableSpec{ID: 2, Type: models.BillableTypeProject, Name: "Project", Slug: "project", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
 
 	catalog := catalogFromModels([]models.BillableSpec{databaseSpec, projectSpec}, nil)
-	if catalog.Specs[0].StorageGB != 0 || catalog.Specs[1].StorageGB != projectSpec.StorageGB {
+	if catalog.Specs[0].StorageGB != databaseSpec.StorageGB || catalog.Specs[1].StorageGB != projectSpec.StorageGB {
 		t.Fatalf("catalog specs=%#v", catalog.Specs)
 	}
 }

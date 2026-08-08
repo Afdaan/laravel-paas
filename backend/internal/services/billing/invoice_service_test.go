@@ -500,3 +500,40 @@ func TestInvoiceRecoveryDoesNotReactivateDeletedProject(t *testing.T) {
 		t.Fatalf("billing status=%s", resource.BillingStatus)
 	}
 }
+
+func TestInvoiceServiceRefundsInitialResource(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 500, IdempotencyKey: "refund-test-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, 202, spec.ID, now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertInvoiceWallet(t, db, user.ID, 400, 2)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.RefundInitialResourceTx(tx, user.ID, models.BillableTypeProject, 202, "Provisioning failed")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertInvoiceWallet(t, db, user.ID, 500, 3)
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, 202).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("expected resource status deleted, got %s", resource.BillingStatus)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.RefundInitialResourceTx(tx, user.ID, models.BillableTypeProject, 202, "Provisioning failed again")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertInvoiceWallet(t, db, user.ID, 500, 3)
+}

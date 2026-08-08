@@ -47,6 +47,7 @@ type BillableSpecInput struct {
 	MonthlyCredits      int64               `json:"monthly_credits"`
 	ConnectionLimit     *int                `json:"connection_limit,omitempty"`
 	BackupRetentionDays *int                `json:"backup_retention_days,omitempty"`
+	BadgeText           string              `json:"badge_text,omitempty"`
 	Reason              string              `json:"reason"`
 }
 
@@ -94,6 +95,7 @@ type CatalogSpec struct {
 	MonthlyCredits      int64               `json:"monthly_credits"`
 	ConnectionLimit     *int                `json:"connection_limit,omitempty"`
 	BackupRetentionDays *int                `json:"backup_retention_days,omitempty"`
+	BadgeText           string              `json:"badge_text,omitempty"`
 }
 
 type CatalogPackage struct {
@@ -122,6 +124,7 @@ type AdminCatalogSpec struct {
 	MonthlyCredits      int64               `json:"monthly_credits"`
 	ConnectionLimit     *int                `json:"connection_limit,omitempty"`
 	BackupRetentionDays *int                `json:"backup_retention_days,omitempty"`
+	BadgeText           string              `json:"badge_text,omitempty"`
 }
 
 type AdminCatalogPackage struct {
@@ -346,6 +349,7 @@ func (s *CatalogService) CreateBillableSpec(ctx context.Context, audit AuditCont
 			MonthlyCredits:      input.MonthlyCredits,
 			ConnectionLimit:     input.ConnectionLimit,
 			BackupRetentionDays: input.BackupRetentionDays,
+			BadgeText:           strings.TrimSpace(input.BadgeText),
 			Version:             latestVersion + 1,
 			IsActive:            true,
 		}
@@ -846,28 +850,18 @@ func adminCatalogFromModels(specs []models.BillableSpec, packages []models.Topup
 }
 
 func catalogSpecFromModel(spec models.BillableSpec) CatalogSpec {
-	storageGB := spec.StorageGB
-	cpuMillicores := spec.CPUMillicores
-	memoryMB := spec.MemoryMB
-	backupRetentionDays := spec.BackupRetentionDays
-	if spec.Type == models.BillableTypeDatabase {
-		// Managed database tiers currently enforce only connection limits.
-		storageGB = 0
-		cpuMillicores = 0
-		memoryMB = 0
-		backupRetentionDays = nil
-	}
 	return CatalogSpec{
 		ID:                  spec.ID,
 		Type:                spec.Type,
 		Name:                spec.Name,
 		Slug:                spec.Slug,
-		CPUMillicores:       cpuMillicores,
-		MemoryMB:            memoryMB,
-		StorageGB:           storageGB,
+		CPUMillicores:       spec.CPUMillicores,
+		MemoryMB:            spec.MemoryMB,
+		StorageGB:           spec.StorageGB,
 		MonthlyCredits:      spec.MonthlyCredits,
 		ConnectionLimit:     spec.ConnectionLimit,
-		BackupRetentionDays: backupRetentionDays,
+		BackupRetentionDays: spec.BackupRetentionDays,
+		BadgeText:           spec.BadgeText,
 	}
 }
 
@@ -895,6 +889,7 @@ func adminCatalogSpecFromModel(spec models.BillableSpec) AdminCatalogSpec {
 		MonthlyCredits:      spec.MonthlyCredits,
 		ConnectionLimit:     spec.ConnectionLimit,
 		BackupRetentionDays: spec.BackupRetentionDays,
+		BadgeText:           spec.BadgeText,
 	}
 }
 

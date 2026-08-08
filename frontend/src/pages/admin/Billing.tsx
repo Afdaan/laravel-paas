@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 type Catalog = {
-  specs: Array<{ id: number; name: string; slug: string; type: 'project' | 'database'; version: number; monthly_credits: number; cpu_millicores: number; memory_mb: number; storage_gb: number; connection_limit?: number; backup_retention_days?: number; is_active: boolean }>
+  specs: Array<{ id: number; name: string; slug: string; type: 'project' | 'database'; version: number; monthly_credits: number; cpu_millicores: number; memory_mb: number; storage_gb: number; connection_limit?: number; backup_retention_days?: number; badge_text?: string; is_active: boolean }>
   packages: Array<{ id: number; credits: number; amount_minor: number; currency: string; sort_order: number; version: number; is_active: boolean }>
 }
 type Suspension = { user_id: number; resource_id: number; resource_type: string; status: string; oldest_due_at?: string; payment_due_days: number }
@@ -30,21 +30,49 @@ type SpecForm = {
   type: 'project' | 'database'
   name: string
   slug: string
-  cpu_millicores: number
-  memory_mb: number
-  storage_gb: number
-  monthly_credits: number
+  cpu_millicores: number | ''
+  memory_mb: number | ''
+  storage_gb: number | ''
+  monthly_credits: number | ''
   connection_limit: number | ''
   backup_retention_days: number | ''
+  badge_text: string
   reason: string
 }
 
 const PAGE_LIMIT = 20
-const emptySpec: SpecForm = { type: 'project', name: '', slug: '', cpu_millicores: 500, memory_mb: 512, storage_gb: 1, monthly_credits: 0, connection_limit: '', backup_retention_days: '', reason: '' }
-const emptyPackage = { credits: 0, currency: 'IDR', amount_minor: 0, sort_order: 0, reason: '' }
-const emptyPackageEdit = { amount_minor: 0, sort_order: 0, reason: '' }
-const emptyCreditAdjustment = { credits: 0, reason: '' }
-const emptyDirectCreditAdjustment = { user_id: 0, credits: 0, reason: '' }
+const emptySpec: SpecForm = { type: 'project', name: '', slug: '', cpu_millicores: '', memory_mb: '', storage_gb: '', monthly_credits: '', connection_limit: '', backup_retention_days: '', badge_text: '', reason: '' }
+const slugify = (text: string) => text.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '')
+
+interface PackageFormState {
+  credits: number | ''
+  currency: string
+  amount_minor: number | ''
+  sort_order: number | ''
+  reason: string
+}
+
+interface PackageEditFormState {
+  amount_minor: number | ''
+  sort_order: number | ''
+  reason: string
+}
+
+interface CreditAdjustmentFormState {
+  credits: number | ''
+  reason: string
+}
+
+interface DirectCreditAdjustmentFormState {
+  user_id: number | ''
+  credits: number | ''
+  reason: string
+}
+
+const emptyPackage: PackageFormState = { credits: '', currency: 'IDR', amount_minor: '', sort_order: '', reason: '' }
+const emptyPackageEdit: PackageEditFormState = { amount_minor: '', sort_order: '', reason: '' }
+const emptyCreditAdjustment: CreditAdjustmentFormState = { credits: '', reason: '' }
+const emptyDirectCreditAdjustment: DirectCreditAdjustmentFormState = { user_id: '', credits: '', reason: '' }
 const statusVariant = (status: string) => status === 'paid' || status === 'active' ? 'secondary' : status === 'suspended' || status === 'payment_due' ? 'destructive' : 'outline'
 
 export default function AdminBilling() {
@@ -62,6 +90,7 @@ export default function AdminBilling() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [specForm, setSpecForm] = useState(emptySpec)
+  const [editingSpec, setEditingSpec] = useState<Catalog['specs'][number] | null>(null)
   const [packageForm, setPackageForm] = useState(emptyPackage)
   const [editingPackage, setEditingPackage] = useState<TopupPackage | null>(null)
   const [packageEditForm, setPackageEditForm] = useState(emptyPackageEdit)
@@ -122,6 +151,28 @@ export default function AdminBilling() {
     return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
   }
 
+  // Backend versions specs by (type, slug): resubmitting retires the old row and
+  // inserts v+1, so "edit" is just a prefilled create.
+  const editSpec = (id: number) => {
+    const spec = catalog?.specs.find((item) => item.id === id)
+    if (!spec) return
+    setEditingSpec(spec)
+    setSpecForm({
+      type: spec.type,
+      name: spec.name,
+      slug: spec.slug,
+      cpu_millicores: spec.cpu_millicores,
+      memory_mb: spec.memory_mb,
+      storage_gb: spec.storage_gb,
+      monthly_credits: spec.monthly_credits,
+      connection_limit: spec.connection_limit ?? '',
+      backup_retention_days: spec.backup_retention_days ?? '',
+      badge_text: spec.badge_text ?? '',
+      reason: '',
+    })
+    document.getElementById('spec-monthly-credits')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   const createSpec = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!isSuperAdmin) return
@@ -130,10 +181,25 @@ export default function AdminBilling() {
       const { connection_limit, backup_retention_days, ...spec } = specForm
       await billingAPI.createSpec(
         specForm.type === 'database'
-          ? { ...spec, connection_limit: Number(connection_limit), backup_retention_days: Number(backup_retention_days) }
-          : spec,
+          ? {
+              ...spec,
+              monthly_credits: Number(spec.monthly_credits || 0),
+              cpu_millicores: Number(spec.cpu_millicores || 500),
+              memory_mb: Number(spec.memory_mb || 512),
+              storage_gb: Number(spec.storage_gb || 10),
+              connection_limit: connection_limit === '' ? undefined : Number(connection_limit),
+              backup_retention_days: backup_retention_days === '' ? undefined : Number(backup_retention_days),
+            }
+          : {
+              ...spec,
+              monthly_credits: Number(spec.monthly_credits || 0),
+              cpu_millicores: Number(spec.cpu_millicores || 500),
+              memory_mb: Number(spec.memory_mb || 512),
+              storage_gb: Number(spec.storage_gb || 10),
+            },
       )
       setSpecForm(emptySpec)
+      setEditingSpec(null)
       toast.success(t('billing.admin.createSucceeded'))
       await load()
     } catch (err) {
@@ -148,7 +214,12 @@ export default function AdminBilling() {
     if (!isSuperAdmin) return
     setCreatingPackage(true)
     try {
-      await billingAPI.createTopupPackage(packageForm)
+      await billingAPI.createTopupPackage({
+        ...packageForm,
+        credits: Number(packageForm.credits || 0),
+        amount_minor: Number(packageForm.amount_minor || 0),
+        sort_order: Number(packageForm.sort_order || 0),
+      })
       setPackageForm(emptyPackage)
       toast.success(t('billing.admin.createSucceeded'))
       await load()
@@ -169,7 +240,12 @@ export default function AdminBilling() {
     if (!isSuperAdmin || !editingPackage) return
     setSavingPackageEdit(true)
     try {
-      await billingAPI.updateTopupPackage(editingPackage.id, { ...packageEditForm, credits: editingPackage.credits })
+      await billingAPI.updateTopupPackage(editingPackage.id, {
+        ...packageEditForm,
+        amount_minor: Number(packageEditForm.amount_minor || 0),
+        sort_order: Number(packageEditForm.sort_order || 0),
+        credits: editingPackage.credits,
+      })
       setEditingPackage(null)
       setPackageEditForm(emptyPackageEdit)
       toast.success(t('billing.admin.updatePackageSuccess'))
@@ -191,7 +267,11 @@ export default function AdminBilling() {
     if (!isSuperAdmin || !adjustingWallet) return
     setSavingCreditAdjustment(true)
     try {
-      await billingAPI.adjustWalletCredits(adjustingWallet.user_id, creditAdjustmentForm, createAdjustmentIdempotencyKey())
+      await billingAPI.adjustWalletCredits(
+        adjustingWallet.user_id,
+        { ...creditAdjustmentForm, credits: Number(creditAdjustmentForm.credits || 0) },
+        createAdjustmentIdempotencyKey()
+      )
       setAdjustingWallet(null)
       setCreditAdjustmentForm(emptyCreditAdjustment)
       toast.success(t('billing.admin.adjustmentSuccess'))
@@ -208,8 +288,12 @@ export default function AdminBilling() {
     if (!isSuperAdmin) return
     setSavingDirectCreditAdjustment(true)
     try {
-      const { user_id, ...payload } = directCreditAdjustmentForm
-      await billingAPI.adjustWalletCredits(user_id, payload, createAdjustmentIdempotencyKey())
+      const { user_id, credits, reason } = directCreditAdjustmentForm
+      await billingAPI.adjustWalletCredits(
+        Number(user_id || 0),
+        { credits: Number(credits || 0), reason },
+        createAdjustmentIdempotencyKey()
+      )
       setDirectCreditAdjustmentForm(emptyDirectCreditAdjustment)
       toast.success(t('billing.admin.adjustmentSuccess'))
       await load()
@@ -229,7 +313,7 @@ export default function AdminBilling() {
     {Object.keys(errors).length > 0 && <Card className="border-amber-500/40 bg-amber-500/5" role="status"><CardContent className="pt-6 text-sm">{t('billing.loadPartial', { sections: Object.values(errors).join(', ') })}</CardContent></Card>}
 
     <div className="grid gap-6 xl:grid-cols-2">
-      <CatalogCard title={t('billing.admin.resourcePlans')} rows={catalog?.specs.map((spec) => ({ id: spec.id, title: `${spec.name} · ${formatCredits(spec.monthly_credits)} ${t('billing.credits')}`, detail: `${t(`billing.resourceTypes.${spec.type}`)} · v${spec.version} · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB${spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}`, active: spec.is_active }))} loading={loading} error={errors.plans} onRetry={() => void load()} empty={t('billing.admin.noRecords')} />
+      <CatalogCard title={t('billing.admin.resourcePlans')} rows={catalog?.specs.map((spec) => ({ id: spec.id, title: `${spec.name} · ${formatCredits(spec.monthly_credits)} ${t('billing.credits')}`, detail: `${t(`billing.resourceTypes.${spec.type}`)} · v${spec.version} · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB${spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}`, active: spec.is_active }))} loading={loading} error={errors.plans} onRetry={() => void load()} empty={t('billing.admin.noRecords')} onEdit={editSpec} />
       <CatalogCard
         title={t('billing.admin.topupPackages')}
         rows={catalog?.packages.map((pkg) => ({ id: pkg.id, title: `${formatCredits(pkg.credits)} ${t('billing.credits')} · ${formatMoney(pkg.amount_minor, pkg.currency)}`, detail: `v${pkg.version}`, active: pkg.is_active }))}
@@ -245,33 +329,72 @@ export default function AdminBilling() {
     </div>
 
     {isSuperAdmin ? <section className="grid gap-6 xl:grid-cols-3">
-      <PricingForm title={t('billing.admin.createPlan')} description={t('billing.admin.versionedPricing')} onSubmit={createSpec} submitting={creatingSpec} submitLabel={t('billing.admin.create')}>
+      <PricingForm
+        title={editingSpec ? t('billing.admin.editPlan') : t('billing.admin.createPlan')}
+        description={t('billing.admin.versionedPricing')}
+        onSubmit={createSpec}
+        submitting={creatingSpec}
+        submitLabel={editingSpec ? t('billing.admin.saveNewVersion') : t('billing.admin.create')}
+        secondaryAction={editingSpec && <Button type="button" variant="ghost" size="sm" onClick={() => { setEditingSpec(null); setSpecForm(emptySpec) }}>{t('common.cancel')}</Button>}
+      >
+        {editingSpec && (
+          <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {t('billing.admin.editingPlan', { name: editingSpec.name, version: editingSpec.version })}
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t('billing.admin.resourceType')} htmlFor="spec-type"><Select name="type" value={specForm.type} onValueChange={(type) => setSpecForm((current) => ({ ...current, type: type as 'project' | 'database', connection_limit: '', backup_retention_days: '' }))}><SelectTrigger id="spec-type" className="w-full">{specForm.type === 'project' ? t('billing.admin.project') : t('billing.admin.database')}</SelectTrigger><SelectContent><SelectItem value="project">{t('billing.admin.project')}</SelectItem><SelectItem value="database">{t('billing.admin.database')}</SelectItem></SelectContent></Select></Field>
-          <NumberField id="spec-monthly-credits" label={t('billing.admin.monthlyCredits')} value={specForm.monthly_credits} onChange={(monthly_credits) => setSpecForm((current) => ({ ...current, monthly_credits }))} min={1} />
-          <TextField id="spec-name" label={t('billing.admin.name')} value={specForm.name} onChange={(name) => setSpecForm((current) => ({ ...current, name }))} required />
-          <TextField id="spec-slug" label={t('billing.admin.slug')} value={specForm.slug} onChange={(slug) => setSpecForm((current) => ({ ...current, slug }))} pattern="[a-z0-9-]+" required />
-          {specForm.type === 'project' ? (
-            <>
-              <NumberField id="spec-cpu" label={t('billing.admin.cpu')} value={specForm.cpu_millicores} onChange={(cpu_millicores) => setSpecForm((current) => ({ ...current, cpu_millicores }))} min={1} />
-              <NumberField id="spec-memory" label={t('billing.admin.memory')} value={specForm.memory_mb} onChange={(memory_mb) => setSpecForm((current) => ({ ...current, memory_mb }))} min={1} />
-              <NumberField id="spec-storage" label={t('billing.admin.storage')} value={specForm.storage_gb} onChange={(storage_gb) => setSpecForm((current) => ({ ...current, storage_gb }))} min={1} />
-            </>
-          ) : (
+          <Field label={t('billing.admin.resourceType')} htmlFor="spec-type"><Select name="type" value={specForm.type} onValueChange={(type) => setSpecForm((current) => ({ ...current, type: type as 'project' | 'database', connection_limit: '', backup_retention_days: '' }))} disabled={Boolean(editingSpec)}><SelectTrigger id="spec-type" className="w-full">{specForm.type === 'project' ? t('billing.admin.project') : t('billing.admin.database')}</SelectTrigger><SelectContent><SelectItem value="project">{t('billing.admin.project')}</SelectItem><SelectItem value="database">{t('billing.admin.database')}</SelectItem></SelectContent></Select></Field>
+          <NumberField id="spec-monthly-credits" label={t('billing.admin.monthlyCredits')} value={specForm.monthly_credits} onChange={(monthly_credits) => setSpecForm((current) => ({ ...current, monthly_credits }))} min={1} placeholder="200" hint={typeof specForm.monthly_credits === 'number' && specForm.monthly_credits > 0 ? t('billing.admin.monthlyCreditsHint', { price: formatMoney(specForm.monthly_credits * 1000, 'IDR') }) : undefined} />
+          <TextField
+            id="spec-name"
+            label={t('billing.admin.name')}
+            value={specForm.name}
+            onChange={(name) => setSpecForm((current) => ({
+              ...current,
+              name,
+              // keep slug mirrored until the operator edits it by hand
+              slug: !current.slug || current.slug === slugify(current.name) ? slugify(name) : current.slug,
+            }))}
+            placeholder="Large"
+            required
+            disabled={Boolean(editingSpec)}
+          />
+          <TextField
+            id="spec-slug"
+            label={t('billing.admin.slug')}
+            value={specForm.slug}
+            onChange={(slug) => setSpecForm((current) => ({ ...current, slug }))}
+            placeholder="project-large"
+            pattern="[a-z0-9-]+"
+            required
+            disabled={Boolean(editingSpec)}
+            hint={t('billing.admin.slugHint')}
+          />
+          <TextField
+            id="spec-badge-text"
+            label={t('billing.admin.badgeText')}
+            value={specForm.badge_text}
+            onChange={(badge_text) => setSpecForm((current) => ({ ...current, badge_text }))}
+            placeholder="Popular"
+          />
+          <NumberField id="spec-cpu" label={t('billing.admin.cpu')} value={specForm.cpu_millicores} onChange={(cpu_millicores) => setSpecForm((current) => ({ ...current, cpu_millicores }))} min={1} placeholder="1000" hint={t('billing.admin.cpuHint')} />
+          <NumberField id="spec-memory" label={t('billing.admin.memory')} value={specForm.memory_mb} onChange={(memory_mb) => setSpecForm((current) => ({ ...current, memory_mb }))} min={1} placeholder="2048" />
+          <NumberField id="spec-storage" label={t('billing.admin.storage')} value={specForm.storage_gb} onChange={(storage_gb) => setSpecForm((current) => ({ ...current, storage_gb }))} min={1} placeholder="20" />
+          {specForm.type === 'database' && (
             <>
               <Field label={t('billing.admin.connectionLimit')} htmlFor="spec-connection-limit">
-                <Input id="spec-connection-limit" type="number" min={1} max={1000000} value={specForm.connection_limit} onChange={(event) => setSpecForm((current) => ({ ...current, connection_limit: event.target.value === '' ? '' : Number(event.target.value) }))} required />
+                <Input id="spec-connection-limit" type="number" min={1} max={1000000} value={specForm.connection_limit} onChange={(event) => setSpecForm((current) => ({ ...current, connection_limit: event.target.value === '' ? '' : Number(event.target.value) }))} placeholder="100" />
               </Field>
               <Field label={t('billing.admin.backupRetentionDays')} htmlFor="spec-backup-retention">
-                <Input id="spec-backup-retention" type="number" min={1} max={3650} value={specForm.backup_retention_days} onChange={(event) => setSpecForm((current) => ({ ...current, backup_retention_days: event.target.value === '' ? '' : Number(event.target.value) }))} required />
+                <Input id="spec-backup-retention" type="number" min={1} max={3650} value={specForm.backup_retention_days} onChange={(event) => setSpecForm((current) => ({ ...current, backup_retention_days: event.target.value === '' ? '' : Number(event.target.value) }))} placeholder="7" />
               </Field>
             </>
           )}
         </div>
-        <Field label={t('billing.admin.reason')} htmlFor="spec-reason"><Textarea id="spec-reason" value={specForm.reason} onChange={(event) => setSpecForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
+        <Field label={t('billing.admin.reason')} htmlFor="spec-reason" hint={t('billing.admin.reasonHint')}><Textarea id="spec-reason" value={specForm.reason} onChange={(event) => setSpecForm((current) => ({ ...current, reason: event.target.value }))} placeholder={t('billing.admin.reasonPlaceholder')} required /></Field>
       </PricingForm>
       <PricingForm title={t('billing.admin.createPackage')} description={t('billing.admin.versionedPricing')} onSubmit={createPackage} submitting={creatingPackage} submitLabel={t('billing.admin.create')}>
-        <div className="grid gap-3 sm:grid-cols-2"><NumberField id="package-credits" label={t('billing.admin.credits')} value={packageForm.credits} onChange={(credits) => setPackageForm((current) => ({ ...current, credits }))} min={1} /><Field label={t('billing.admin.currency')} htmlFor="package-currency"><Select name="currency" value={packageForm.currency} onValueChange={(currency) => setPackageForm((current) => ({ ...current, currency }))}><SelectTrigger id="package-currency" className="w-full">{packageForm.currency}</SelectTrigger><SelectContent>{SUPPORTED_CURRENCIES.map((code) => <SelectItem key={code} value={code}>{code}</SelectItem>)}</SelectContent></Select></Field><NumberField id="package-amount" label={t('billing.admin.packagePrice')} value={packageForm.amount_minor} onChange={(amount_minor) => setPackageForm((current) => ({ ...current, amount_minor }))} min={1} /><NumberField id="package-sort-order" label={t('billing.admin.sortOrder')} value={packageForm.sort_order} onChange={(sort_order) => setPackageForm((current) => ({ ...current, sort_order }))} min={0} /></div>
+        <div className="grid gap-3 sm:grid-cols-2"><NumberField id="package-credits" label={t('billing.admin.credits')} value={packageForm.credits} onChange={(credits) => setPackageForm((current) => ({ ...current, credits }))} min={1} /><Field label={t('billing.admin.currency')} htmlFor="package-currency"><Select name="currency" value={packageForm.currency} onValueChange={(currency) => setPackageForm((current) => ({ ...current, currency: currency || "IDR" }))}><SelectTrigger id="package-currency" className="w-full">{packageForm.currency}</SelectTrigger><SelectContent>{SUPPORTED_CURRENCIES.map((code) => <SelectItem key={code} value={code}>{code}</SelectItem>)}</SelectContent></Select></Field><NumberField id="package-amount" label={t('billing.admin.packagePrice')} value={packageForm.amount_minor} onChange={(amount_minor) => setPackageForm((current) => ({ ...current, amount_minor }))} min={1} /><NumberField id="package-sort-order" label={t('billing.admin.sortOrder')} value={packageForm.sort_order} onChange={(sort_order) => setPackageForm((current) => ({ ...current, sort_order }))} min={0} /></div>
         <Field label={t('billing.admin.reason')} htmlFor="package-reason"><Textarea id="package-reason" value={packageForm.reason} onChange={(event) => setPackageForm((current) => ({ ...current, reason: event.target.value }))} required /></Field>
       </PricingForm>
       <PricingForm title={t('billing.admin.addCreditsForUser')} description={t('billing.admin.addCreditsForUserDescription')} onSubmit={saveDirectCreditAdjustment} submitting={savingDirectCreditAdjustment} submitLabel={t('billing.admin.saveCredits')}>
@@ -363,10 +486,10 @@ function CollectionCard<T extends { id?: number; user_id: number }>({ title, ico
   return <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base">{icon}{title}</CardTitle><CardDescription>{page ? t('billing.admin.total', { count: page.data.length, total: page.total }) : ''}</CardDescription></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !page && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && page?.data.map((row, index) => <div key={row.id ?? `${row.user_id}-${index}`} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div className="min-w-0"><p className="text-sm font-medium">{value(row)}</p><p className="truncate text-xs text-muted-foreground">{meta(row)}</p></div><div className="flex items-center gap-2">{onAdjust && <Button size="icon-xs" variant="ghost" onClick={() => onAdjust(row)} aria-label={t('billing.admin.addCredits')}><Plus className="size-3.5" /></Button>}{status && <Badge variant={statusVariant(status(row))}>{formatStatus(status(row))}</Badge>}</div></div>)}{!loading && page?.data.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}{page && <div className="flex justify-end gap-2 pt-1"><Button size="sm" variant="outline" disabled={!hasPrevious || loading} onClick={() => onPageChange(page.page - 1)}>{t('common.previous')}</Button><Button size="sm" variant="outline" disabled={!hasNext || loading} onClick={() => onPageChange(page.page + 1)}>{t('common.next')}</Button></div>}</CardContent></Card>
 }
 
-function PricingForm({ title, description, children, onSubmit, submitting, submitLabel }: { title: string; description: string; children: React.ReactNode; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; submitting: boolean; submitLabel: string }) {
-  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent><form className="space-y-4" onSubmit={onSubmit}>{children}<Button type="submit" disabled={submitting}>{submitting ? '…' : submitLabel}</Button></form></CardContent></Card>
+function PricingForm({ title, description, children, onSubmit, submitting, submitLabel, secondaryAction }: { title: string; description: string; children: React.ReactNode; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; submitting: boolean; submitLabel: string; secondaryAction?: React.ReactNode }) {
+  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent><form className="space-y-4" onSubmit={onSubmit}>{children}<div className="flex items-center gap-2"><Button type="submit" disabled={submitting}>{submitting ? '…' : submitLabel}</Button>{secondaryAction}</div></form></CardContent></Card>
 }
 
-function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) { return <div className="space-y-1.5"><Label htmlFor={htmlFor}>{label}</Label>{children}</div> }
-function TextField({ label, id, value, onChange, required, pattern }: { label: string; id?: string; value: string; onChange: (value: string) => void; required?: boolean; pattern?: string }) { return <Field label={label} htmlFor={id}><Input id={id} value={value} onChange={(event) => onChange(event.target.value)} required={required} pattern={pattern} /></Field> }
-function NumberField({ label, id, value, onChange, min }: { label: string; id?: string; value: number; onChange: (value: number) => void; min: number }) { return <Field label={label} htmlFor={id}><Input id={id} type="number" min={min} value={value} onChange={(event) => onChange(event.target.value === '' ? 0 : Number(event.target.value))} required /></Field> }
+function Field({ label, htmlFor, hint, children }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode }) { return <div className="space-y-1.5"><Label htmlFor={htmlFor}>{label}</Label>{children}{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div> }
+function TextField({ label, id, value, onChange, required, pattern, placeholder, hint, disabled }: { label: string; id?: string; value: string; onChange: (value: string) => void; required?: boolean; pattern?: string; placeholder?: string; hint?: string; disabled?: boolean }) { return <Field label={label} htmlFor={id} hint={hint}><Input id={id} value={value} onChange={(event) => onChange(event.target.value)} required={required} pattern={pattern} placeholder={placeholder} disabled={disabled} /></Field> }
+function NumberField({ label, id, value, onChange, min, placeholder, required, hint }: { label: string; id?: string; value: number | ''; onChange: (value: number | '') => void; min?: number; placeholder?: string; required?: boolean; hint?: string }) { return <Field label={label} htmlFor={id} hint={hint}><Input id={id} type="number" min={min} value={value} onChange={(event) => onChange(event.target.value === '' ? '' : Number(event.target.value))} required={required} placeholder={placeholder} /></Field> }

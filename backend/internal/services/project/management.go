@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/services/billing"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/nginx"
@@ -96,6 +97,12 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 			Where("type = ? AND resource_id = ?", models.BillableTypeProject, locked.ID).
 			Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
 			return fmt.Errorf("terminate project billing: %w", err)
+		}
+		if locked.Status == models.StatusFailed {
+			invoiceService := billing.NewInvoiceService(tx, nil)
+			if err := invoiceService.RefundInitialResourceTx(tx, locked.UserID, models.BillableTypeProject, locked.ID, "Failed project deleted"); err != nil {
+				slog.Warn("Failed to refund credits for failed project deletion", "project_id", locked.ID, "user_id", locked.UserID, "error", err)
+			}
 		}
 		task := models.ProjectDeletionTask{ProjectID: locked.ID, UserID: locked.UserID}
 		if err := tx.Where("project_id = ?", locked.ID).FirstOrCreate(&task).Error; err != nil {

@@ -161,6 +161,12 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 			return fmt.Errorf("AutoMigrate failed for table %s: %w", tableName, err)
 		}
 	}
+	if err := repairBillingCatalog(db); err != nil {
+		return fmt.Errorf("repair billing catalog failed: %w", err)
+	}
+	if err := seedBillingCatalog(db); err != nil {
+		return fmt.Errorf("seed billing catalog failed: %w", err)
+	}
 	if err := reconcileDuplicateActiveBillingCatalog(db); err != nil {
 		return err
 	}
