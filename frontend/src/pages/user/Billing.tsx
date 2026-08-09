@@ -5,6 +5,8 @@ import {
   CalendarClock,
   Coins,
   CreditCard,
+  Database,
+  FolderGit2,
   PlusCircle,
   ReceiptText,
   RefreshCw,
@@ -509,6 +511,22 @@ export default function Billing() {
               >
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="bg-background/80 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                    >
+                      {resource.resource_type === 'project' ? (
+                        <>
+                          <FolderGit2 className="mr-1 size-3 text-cyan-500" />
+                          {t('billing.resourceTypes.project')}
+                        </>
+                      ) : (
+                        <>
+                          <Database className="mr-1 size-3 text-purple-500" />
+                          {t('billing.resourceTypes.database')}
+                        </>
+                      )}
+                    </Badge>
                     <p className="truncate font-semibold text-foreground">
                       {resource.resource_name || `${translateResourceType(resource.resource_type)} #${resource.resource_id}`}
                     </p>
@@ -516,8 +534,20 @@ export default function Billing() {
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {resource.spec_name} · {formatCredits(resource.monthly_credits)} {t('billing.credits')} / {t('billing.month')}
+                    {resource.resource_type === 'project' && resource.cpu_millicores && resource.memory_mb ? (
+                      <span className="ml-1 text-xs text-muted-foreground/80">
+                        ({resource.cpu_millicores}m CPU · {resource.memory_mb} MB RAM)
+                      </span>
+                    ) : null}
+                    {resource.resource_type === 'database' && (resource.engine || resource.storage_gb) ? (
+                      <span className="ml-1 text-xs text-muted-foreground/80">
+                        ({[resource.engine?.toUpperCase(), resource.storage_gb ? `${resource.storage_gb} GB` : null]
+                          .filter(Boolean)
+                          .join(' · ')})
+                      </span>
+                    ) : null}
                   </p>
-                <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {t('billing.currentPeriod', {
                       start: formatDate(resource.current_period_start),
                       end: formatDate(resource.next_invoice_at),

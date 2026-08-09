@@ -8,6 +8,7 @@ package middleware
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -92,7 +93,7 @@ var (
 	proxyLimiter     = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
 	consoleLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
 	importLimiter    = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
-	autoRenewLimiter = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
+	autoRenewLimiter = NewRateLimiter(3, 1*time.Minute)  // 3 req/min per user
 )
 
 // RateLimitLogin applies rate limiting to login endpoint
@@ -208,7 +209,7 @@ func RateLimitAutoRenew() fiber.Handler {
 		if uidVal == nil {
 			return apperr.ErrUnauthorized
 		}
-		key := "autorenew:" + c.IP()
+		key := fmt.Sprintf("autorenew:user:%v", uidVal)
 		if !autoRenewLimiter.Allow(key) {
 			return apperr.New(429, "RATE_LIMITED", "Too many auto-renew toggle requests. Please wait a moment")
 		}

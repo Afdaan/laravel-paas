@@ -180,6 +180,10 @@ type BillableResourceView struct {
 	ResourceType       models.BillableType           `json:"resource_type"`
 	ResourceName       string                        `json:"resource_name"`
 	SpecName           string                        `json:"spec_name"`
+	CPUMillicores      int                           `json:"cpu_millicores,omitempty"`
+	MemoryMB           int                           `json:"memory_mb,omitempty"`
+	StorageGB          int                           `json:"storage_gb,omitempty"`
+	Engine             string                        `json:"engine,omitempty"`
 	MonthlyCredits     int64                         `json:"monthly_credits"`
 	Status             models.BillableResourceStatus `json:"status"`
 	AutoRenew          bool                          `json:"auto_renew"`
@@ -348,13 +352,20 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 	}
 
 	databaseNames := make(map[uint]string, len(databaseIDs))
+	databaseEngines := make(map[uint]string, len(databaseIDs))
 	if len(databaseIDs) > 0 {
-		var databases []models.DatabaseInstance
-		if err := s.db.WithContext(ctx).Select("id, name").Where("id IN ?", databaseIDs).Find(&databases).Error; err != nil {
+		type dbInfo struct {
+			ID     uint
+			Name   string
+			Engine string
+		}
+		var databases []dbInfo
+		if err := s.db.WithContext(ctx).Model(&models.DatabaseInstance{}).Select("id, name, engine").Where("id IN ?", databaseIDs).Find(&databases).Error; err != nil {
 			return nil, fmt.Errorf("list own billable databases: %w", err)
 		}
 		for _, database := range databases {
 			databaseNames[database.ID] = database.Name
+			databaseEngines[database.ID] = database.Engine
 		}
 	}
 
@@ -374,6 +385,10 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 			ResourceType:       resource.Type,
 			ResourceName:       resourceName,
 			SpecName:           resource.Spec.Name,
+			CPUMillicores:      resource.Spec.CPUMillicores,
+			MemoryMB:           resource.Spec.MemoryMB,
+			StorageGB:          resource.Spec.StorageGB,
+			Engine:             databaseEngines[resource.ResourceID],
 			MonthlyCredits:     resource.Spec.MonthlyCredits,
 			Status:             resource.BillingStatus,
 			AutoRenew:          resource.AutoRenew,

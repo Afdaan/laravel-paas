@@ -260,6 +260,10 @@ export interface BillingOverview {
     resource_type: 'project' | 'database';
     resource_name: string;
     spec_name: string;
+    cpu_millicores?: number;
+    memory_mb?: number;
+    storage_gb?: number;
+    engine?: string;
     monthly_credits: number;
     status: 'active' | 'payment_due' | 'suspended';
     current_period_start: string;
