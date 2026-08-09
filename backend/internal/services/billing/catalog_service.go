@@ -303,6 +303,15 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 }
 
 func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID uint) ([]BillableResourceView, error) {
+	// Clean up any orphaned billable resources for this user whose target project or database no longer exists
+	_ = s.db.WithContext(ctx).Model(&models.BillableResource{}).
+		Where("user_id = ? AND billing_status <> ?", userID, models.BillableResourceStatusDeleted).
+		Where(`
+			(type = ? AND NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
+			OR (type = ? AND NOT EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
+		`, models.BillableTypeProject, models.StatusDeleting, models.BillableTypeDatabase, models.DBStatusDeleted).
+		Update("billing_status", models.BillableResourceStatusDeleted).Error
+
 	var resources []models.BillableResource
 	if err := s.db.WithContext(ctx).
 		Preload("Spec").
@@ -350,10 +359,15 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 	}
 
 	views := make([]BillableResourceView, 0, len(resources))
+	orphanedIDs := make([]uint, 0)
 	for _, resource := range resources {
 		resourceName := databaseNames[resource.ResourceID]
 		if resource.Type == models.BillableTypeProject {
 			resourceName = projectNames[resource.ResourceID]
+		}
+		if resourceName == "" {
+			orphanedIDs = append(orphanedIDs, resource.ID)
+			continue
 		}
 		views = append(views, BillableResourceView{
 			ResourceID:         resource.ResourceID,
@@ -366,6 +380,12 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 			CurrentPeriodStart: resource.CurrentPeriodStart,
 			NextInvoiceAt:      resource.NextInvoiceAt,
 		})
+	}
+
+	if len(orphanedIDs) > 0 {
+		_ = s.db.WithContext(ctx).Model(&models.BillableResource{}).
+			Where("id IN ?", orphanedIDs).
+			Update("billing_status", models.BillableResourceStatusDeleted).Error
 	}
 
 	return views, nil

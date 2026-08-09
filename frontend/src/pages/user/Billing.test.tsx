@@ -54,6 +54,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.autoRenewEnabled': 'Auto-renew enabled',
         'billing.autoRenewDisabled': 'Auto-renew disabled',
         'billing.autoRenewFailed': 'Could not update auto-renew',
+        'billing.confirmChange': 'Confirm',
       }
       const base = map[key] ?? key
       if (!data) return base
@@ -229,12 +230,14 @@ describe('Billing page', () => {
 
     render(<Billing />)
 
-    const toggle = await screen.findByRole('switch')
-    expect(toggle).not.toBeChecked()
+   const toggle = await screen.findByRole('switch')
+   expect(toggle).not.toBeChecked()
 
-    await act(async () => fireEvent.click(toggle))
+   await act(async () => fireEvent.click(toggle))
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm' })
+    await act(async () => fireEvent.click(confirmButton))
 
-    await waitFor(() => expect(billingAPI.updateAutoRenew).toHaveBeenCalledWith(7, 'project', true))
-    await waitFor(() => expect(toggle).toBeChecked())
-  })
+   await waitFor(() => expect(billingAPI.updateAutoRenew).toHaveBeenCalledWith(7, 'project', true))
+   await waitFor(() => expect(toggle).toBeChecked())
+ })
 })

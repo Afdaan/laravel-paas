@@ -135,6 +135,46 @@ func TestGetOwnBillingOverviewExcludesDeletedResourcesFromUpcomingCredits(t *tes
 		t.Fatalf("resources = %d, want 0", len(overview.Resources))
 	}
 }
+
+func TestGetOwnBillingOverviewFiltersAndCleansOrphanedBillableResources(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Project{}, &models.DatabaseInstance{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Starter", Slug: "starter", CPUMillicores: 500, MemoryMB: 512, StorageGB: 1, MonthlyCredits: 75, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	// Orphaned resource: project ID 888888 does not exist in projects table
+	orphaned := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: 888888, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}
+	if err := db.Create(&orphaned).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	overview, err := NewCatalogService(db).GetOwnBillingOverview(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Resources) != 0 {
+		t.Fatalf("expected 0 active resources in overview, got %d", len(overview.Resources))
+	}
+
+	var check models.BillableResource
+	if err := db.First(&check, orphaned.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if check.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("expected orphaned resource billing_status to be deleted, got %s", check.BillingStatus)
+	}
+}
 func TestCatalogServiceRepricingVersionsRowsAndAudits(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

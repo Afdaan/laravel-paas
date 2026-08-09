@@ -87,11 +87,12 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 // Global rate limiters for different endpoint categories
 var (
-	loginLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per IP
-	queryLimiter   = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
-	proxyLimiter   = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
-	consoleLimiter = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
-	importLimiter  = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
+	loginLimiter     = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per IP
+	queryLimiter     = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
+	proxyLimiter     = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
+	consoleLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
+	importLimiter    = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
+	autoRenewLimiter = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
 )
 
 // RateLimitLogin applies rate limiting to login endpoint
@@ -195,6 +196,21 @@ func RateLimitImport() fiber.Handler {
 		key := c.IP()
 		if !importLimiter.Allow(key) {
 			return apperr.New(429, "RATE_LIMITED", "Too many import attempts. Please try again later")
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitAutoRenew applies rate limiting to auto-renew toggle endpoint
+func RateLimitAutoRenew() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		uidVal := c.Locals("user_id")
+		if uidVal == nil {
+			return apperr.ErrUnauthorized
+		}
+		key := "autorenew:" + c.IP()
+		if !autoRenewLimiter.Allow(key) {
+			return apperr.New(429, "RATE_LIMITED", "Too many auto-renew toggle requests. Please wait a moment")
 		}
 		return c.Next()
 	}

@@ -51,10 +51,8 @@ api.interceptors.response.use(
 
     // Global 403 handling (RECENT_AUTH_REQUIRED vs WAF / Cloudflare HTML)
     const status = error.response?.status
-    const contentType = (error.response?.headers?.['content-type'] || '') as string
     const errorData = error.response?.data as { code?: string; message?: string; error?: string } | undefined
 
-    const isJson = contentType.includes('application/json')
     const errorString = typeof errorData === 'string' ? errorData : JSON.stringify(errorData || {})
 
     const isRecentAuthRequired = status === 403 && (

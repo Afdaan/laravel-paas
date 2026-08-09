@@ -1860,10 +1860,6 @@ func checkpointStandaloneProvisioningOwnership(db *gorm.DB, engine, name, userna
 	return nil
 }
 
-func provisionStandaloneDatabase(engine, name, username, password string, connectionLimit int) (infrastructure.ProvisioningOwnership, error) {
-	return provisionStandaloneDatabaseWithCheckpoint(engine, name, username, password, connectionLimit, nil)
-}
-
 func provisionStandaloneDatabaseWithCheckpoint(engine, name, username, password string, connectionLimit int, checkpoint func(infrastructure.ProvisioningOwnership) error) (infrastructure.ProvisioningOwnership, error) {
 	if connectionLimit <= 0 {
 		connectionLimit = infrastructure.DefaultManagedDatabaseConnectionLimit

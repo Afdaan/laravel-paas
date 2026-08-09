@@ -31,6 +31,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 export default function Billing() {
   const { t, language } = useTranslation()
@@ -38,6 +46,12 @@ export default function Billing() {
   const [packages, setPackages] = useState<BillingRequestState<TopupPackage[]>>({ status: 'idle' })
   const [statuses, setStatuses] = useState<BillingRequestState<BillingStatus[]>>({ status: 'idle' })
   const [renewLoading, setRenewLoading] = useState<Record<string, boolean>>({})
+  const [pendingRenewChange, setPendingRenewChange] = useState<{
+    resource_id: number
+    resource_type: 'project' | 'database'
+    resource_name: string
+    target_auto_renew: boolean
+  } | null>(null)
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
@@ -522,22 +536,15 @@ export default function Billing() {
                       id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
                       checked={resource.auto_renew}
                       disabled={renewLoading[`${resource.resource_type}-${resource.resource_id}`]}
-                      onCheckedChange={async (checked) => {
-                        const key = `${resource.resource_type}-${resource.resource_id}`
-                        setRenewLoading((prev) => ({ ...prev, [key]: true }))
-                        try {
-                          await billingAPI.updateAutoRenew(resource.resource_id, resource.resource_type, checked)
-                          await load()
-                          toast.success(checked ? t('billing.autoRenewEnabled') : t('billing.autoRenewDisabled'))
-                        } catch (error) {
-                          if (axios.isAxiosError(error) && error.response?.data?.message) {
-                            toast.error(error.response.data.message)
-                          } else {
-                            toast.error(t('billing.autoRenewFailed'))
-                          }
-                        } finally {
-                          setRenewLoading((prev) => ({ ...prev, [key]: false }))
-                        }
+                      onCheckedChange={(checked) => {
+                        setPendingRenewChange({
+                          resource_id: resource.resource_id,
+                          resource_type: resource.resource_type,
+                          resource_name:
+                            resource.resource_name ||
+                            `${translateResourceType(resource.resource_type)} #${resource.resource_id}`,
+                          target_auto_renew: checked,
+                        })
                       }}
                     />
                   </div>
@@ -548,6 +555,55 @@ export default function Billing() {
       </Card>
 
       {/* Billing & Wallet History Section */}
+
+      {/* Auto-Renew Confirmation Modal */}
+      <Dialog open={pendingRenewChange !== null} onOpenChange={(open) => !open && setPendingRenewChange(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingRenewChange?.target_auto_renew
+                ? t('billing.enableAutoRenewTitle')
+                : t('billing.disableAutoRenewTitle')}
+            </DialogTitle>
+            <DialogDescription className="pt-2 leading-relaxed">
+              {pendingRenewChange?.target_auto_renew
+                ? t('billing.enableAutoRenewDescription', { name: pendingRenewChange?.resource_name ?? '' })
+                : t('billing.disableAutoRenewDescription', { name: pendingRenewChange?.resource_name ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPendingRenewChange(null)}>
+              {t('billing.cancel')}
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!pendingRenewChange) return
+                const { resource_id, resource_type, target_auto_renew } = pendingRenewChange
+                const key = `${resource_type}-${resource_id}`
+                setPendingRenewChange(null)
+                setRenewLoading((prev) => ({ ...prev, [key]: true }))
+                try {
+                  await billingAPI.updateAutoRenew(resource_id, resource_type, target_auto_renew)
+                  await load()
+                  toast.success(
+                    target_auto_renew ? t('billing.autoRenewEnabled') : t('billing.autoRenewDisabled'),
+                  )
+                } catch (error) {
+                  if (axios.isAxiosError(error) && error.response?.data?.message) {
+                    toast.error(error.response.data.message)
+                  } else {
+                    toast.error(t('billing.autoRenewFailed'))
+                  }
+                } finally {
+                  setRenewLoading((prev) => ({ ...prev, [key]: false }))
+                }
+              }}
+            >
+              {t('billing.confirmChange')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <section className="space-y-5">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold tracking-tight text-foreground">{t('billing.history')}</h2>
