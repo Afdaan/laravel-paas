@@ -459,6 +459,9 @@ export const billingAPI = {
 
   reconcileTopup: (topupID: number) => api.post(`/billing/topups/${topupID}/reconcile`),
 
+  updateAutoRenew: (resourceId: number, resourceType: 'project' | 'database', autoRenew: boolean) =>
+    api.put('/billing/resources/auto-renew', { resource_id: resourceId, resource_type: resourceType, auto_renew: autoRenew }),
+
   adminCatalog: () => api.get('/admin/billing/catalog'),
   adminSuspensions: () => api.get('/admin/billing/suspensions'),
   adminWallet: (userID: number) => api.get(`/admin/billing/wallets/${userID}`),

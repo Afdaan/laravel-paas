@@ -90,6 +90,16 @@ func TestCatalogServiceReportsUpcomingActiveResourceCharge(t *testing.T) {
 	if overview.UpcomingRequiredCredits != spec.MonthlyCredits {
 		t.Fatalf("upcoming required credits = %d, want %d", overview.UpcomingRequiredCredits, spec.MonthlyCredits)
 	}
+	if len(overview.Resources) != 1 {
+		t.Fatalf("resources = %d, want 1", len(overview.Resources))
+	}
+	resource := overview.Resources[0]
+	if resource.ResourceID != project.ID || resource.ResourceType != models.BillableTypeProject || resource.ResourceName != project.Name {
+		t.Fatalf("resource identity = %#v", resource)
+	}
+	if resource.SpecName != spec.Name || resource.MonthlyCredits != spec.MonthlyCredits || !resource.CurrentPeriodStart.Equal(now) || !resource.NextInvoiceAt.Equal(now.AddDate(0, 1, 0)) {
+		t.Fatalf("resource billing period = %#v", resource)
+	}
 }
 
 func TestGetOwnBillingOverviewExcludesDeletedResourcesFromUpcomingCredits(t *testing.T) {
@@ -120,6 +130,9 @@ func TestGetOwnBillingOverviewExcludesDeletedResourcesFromUpcomingCredits(t *tes
 	}
 	if overview.UpcomingRequiredCredits != 0 {
 		t.Fatalf("upcoming required credits = %d, want 0", overview.UpcomingRequiredCredits)
+	}
+	if len(overview.Resources) != 0 {
+		t.Fatalf("resources = %d, want 0", len(overview.Resources))
 	}
 }
 func TestCatalogServiceRepricingVersionsRowsAndAudits(t *testing.T) {

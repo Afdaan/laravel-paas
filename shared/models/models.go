@@ -1008,6 +1008,17 @@ const (
 	BillableTypeDatabase BillableType = "database"
 )
 
+func ParseBillableType(value string) (BillableType, error) {
+	switch value {
+	case string(BillableTypeProject):
+		return BillableTypeProject, nil
+	case string(BillableTypeDatabase):
+		return BillableTypeDatabase, nil
+	default:
+		return "", fmt.Errorf("invalid billable type: %q", value)
+	}
+}
+
 type BillableResourceStatus string
 
 const (
@@ -1187,6 +1198,7 @@ type BillableResource struct {
 	NextInvoiceAt         time.Time              `gorm:"not null;index:idx_billable_resources_due,priority:2" json:"next_invoice_at"`
 	BillingAnchorDay      int                    `gorm:"not null;default:0" json:"billing_anchor_day"`
 	BillingAnchorMonthEnd bool                   `gorm:"not null;default:false" json:"billing_anchor_month_end"`
+	AutoRenew             bool                   `gorm:"not null;default:true" json:"auto_renew"`
 	CreatedAt             time.Time              `json:"created_at"`
 	UpdatedAt             time.Time              `json:"updated_at"`
 }

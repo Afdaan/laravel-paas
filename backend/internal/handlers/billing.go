@@ -178,6 +178,21 @@ func (h *BillingHandler) ReconcileTopup(c *fiber.Ctx) error {
 	return c.JSON(view)
 }
 
+func (h *BillingHandler) UpdateAutoRenew(c *fiber.Ctx) error {
+	if h.catalog == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing catalog service is unavailable")
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	var input billing.UpdateAutoRenewInput
+	if err := decodeBillingJSON(c, &input); err != nil {
+		return apperr.NewBadRequest(err.Error())
+	}
+	if err := h.catalog.UpdateAutoRenew(c.UserContext(), userID, input); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *BillingHandler) MidtransWebhook(c *fiber.Ctx) error {
 	var notification billing.MidtransNotification
 	if err := decodeBillingWebhookJSON(c, &notification); err != nil {

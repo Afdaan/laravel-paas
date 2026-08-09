@@ -175,11 +175,24 @@ type TopupHistoryView struct {
 	CreatedAt   time.Time          `json:"created_at"`
 }
 
+type BillableResourceView struct {
+	ResourceID         uint                          `json:"resource_id"`
+	ResourceType       models.BillableType           `json:"resource_type"`
+	ResourceName       string                        `json:"resource_name"`
+	SpecName           string                        `json:"spec_name"`
+	MonthlyCredits     int64                         `json:"monthly_credits"`
+	Status             models.BillableResourceStatus `json:"status"`
+	AutoRenew          bool                          `json:"auto_renew"`
+	CurrentPeriodStart time.Time                     `json:"current_period_start"`
+	NextInvoiceAt      time.Time                     `json:"next_invoice_at"`
+}
+
 type OwnBillingOverview struct {
-	Wallet                  WalletView         `json:"wallet"`
-	Invoices                []InvoiceView      `json:"invoices"`
-	Topups                  []TopupHistoryView `json:"topups"`
-	UpcomingRequiredCredits int64              `json:"upcoming_required_credits"`
+	Wallet                  WalletView             `json:"wallet"`
+	Invoices                []InvoiceView          `json:"invoices"`
+	Topups                  []TopupHistoryView     `json:"topups"`
+	Resources               []BillableResourceView `json:"resources"`
+	UpcomingRequiredCredits int64                  `json:"upcoming_required_credits"`
 }
 
 // AdminCollection is a bounded, sanitized billing history page.
@@ -244,9 +257,10 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 	}
 
 	overview := OwnBillingOverview{
-		Wallet:   WalletView{LedgerEntries: []WalletLedgerEntryView{}},
-		Invoices: []InvoiceView{},
-		Topups:   []TopupHistoryView{},
+		Wallet:    WalletView{LedgerEntries: []WalletLedgerEntryView{}},
+		Invoices:  []InvoiceView{},
+		Topups:    []TopupHistoryView{},
+		Resources: []BillableResourceView{},
 	}
 	if wallet, err := s.GetWalletView(ctx, userID); err == nil {
 		overview.Wallet = wallet
@@ -269,6 +283,11 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 	for _, topup := range topups {
 		overview.Topups = append(overview.Topups, TopupHistoryView{ID: topup.ID, Credits: topup.Credits, AmountMinor: topup.AmountMinor, Currency: topup.Currency, Status: topup.Status, PaidAt: topup.PaidAt, CreatedAt: topup.CreatedAt})
 	}
+	resources, err := s.listOwnBillableResources(ctx, userID)
+	if err != nil {
+		return OwnBillingOverview{}, err
+	}
+	overview.Resources = resources
 	if err := s.db.WithContext(ctx).Model(&models.BillableResource{}).
 		Joins("JOIN billable_specs ON billable_specs.id = billable_resources.spec_id").
 		Where("billable_resources.user_id = ? AND billable_resources.billing_status = ?", userID, models.BillableResourceStatusActive).
@@ -281,6 +300,75 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 		return OwnBillingOverview{}, fmt.Errorf("sum upcoming billing requirement: %w", err)
 	}
 	return overview, nil
+}
+
+func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID uint) ([]BillableResourceView, error) {
+	var resources []models.BillableResource
+	if err := s.db.WithContext(ctx).
+		Preload("Spec").
+		Where("billable_resources.user_id = ? AND billable_resources.billing_status <> ?", userID, models.BillableResourceStatusDeleted).
+		Where(`
+			(billable_resources.type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
+			OR (billable_resources.type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
+		`, models.BillableTypeProject, models.StatusDeleting, models.BillableTypeDatabase, models.DBStatusDeleted).
+		Order("billable_resources.next_invoice_at ASC, billable_resources.id ASC").
+		Find(&resources).Error; err != nil {
+		return nil, fmt.Errorf("list own billable resources: %w", err)
+	}
+
+	projectIDs := make([]uint, 0, len(resources))
+	databaseIDs := make([]uint, 0, len(resources))
+	for _, resource := range resources {
+		switch resource.Type {
+		case models.BillableTypeProject:
+			projectIDs = append(projectIDs, resource.ResourceID)
+		case models.BillableTypeDatabase:
+			databaseIDs = append(databaseIDs, resource.ResourceID)
+		}
+	}
+
+	projectNames := make(map[uint]string, len(projectIDs))
+	if len(projectIDs) > 0 {
+		var projects []models.Project
+		if err := s.db.WithContext(ctx).Select("id, name").Where("id IN ?", projectIDs).Find(&projects).Error; err != nil {
+			return nil, fmt.Errorf("list own billable projects: %w", err)
+		}
+		for _, project := range projects {
+			projectNames[project.ID] = project.Name
+		}
+	}
+
+	databaseNames := make(map[uint]string, len(databaseIDs))
+	if len(databaseIDs) > 0 {
+		var databases []models.DatabaseInstance
+		if err := s.db.WithContext(ctx).Select("id, name").Where("id IN ?", databaseIDs).Find(&databases).Error; err != nil {
+			return nil, fmt.Errorf("list own billable databases: %w", err)
+		}
+		for _, database := range databases {
+			databaseNames[database.ID] = database.Name
+		}
+	}
+
+	views := make([]BillableResourceView, 0, len(resources))
+	for _, resource := range resources {
+		resourceName := databaseNames[resource.ResourceID]
+		if resource.Type == models.BillableTypeProject {
+			resourceName = projectNames[resource.ResourceID]
+		}
+		views = append(views, BillableResourceView{
+			ResourceID:         resource.ResourceID,
+			ResourceType:       resource.Type,
+			ResourceName:       resourceName,
+			SpecName:           resource.Spec.Name,
+			MonthlyCredits:     resource.Spec.MonthlyCredits,
+			Status:             resource.BillingStatus,
+			AutoRenew:          resource.AutoRenew,
+			CurrentPeriodStart: resource.CurrentPeriodStart,
+			NextInvoiceAt:      resource.NextInvoiceAt,
+		})
+	}
+
+	return views, nil
 }
 
 func (s *CatalogService) listModels(ctx context.Context, activeOnly bool) ([]models.BillableSpec, []models.TopupPackage, error) {
@@ -780,6 +868,59 @@ func validateWalletCreditAdjustmentInput(input WalletCreditAdjustmentInput) erro
 		return ErrInvalidCatalogInput
 	}
 	return nil
+}
+
+type UpdateAutoRenewInput struct {
+	ResourceID   uint   `json:"resource_id"`
+	ResourceType string `json:"resource_type"`
+	AutoRenew    bool   `json:"auto_renew"`
+}
+
+func (s *CatalogService) UpdateAutoRenew(ctx context.Context, userID uint, input UpdateAutoRenewInput) error {
+	if err := s.validateContext(ctx); err != nil {
+
+		return err
+	}
+	if userID == 0 {
+		return ErrInvalidCatalogInput
+	}
+
+	resourceType, err := models.ParseBillableType(input.ResourceType)
+	if err != nil {
+		return apperr.NewBadRequest(fmt.Sprintf("Invalid resource type: %s", err.Error()))
+	}
+	if input.ResourceID == 0 {
+		return apperr.NewBadRequest("Resource ID is required")
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("type = ? AND resource_id = ? AND user_id = ?", resourceType, input.ResourceID, userID).
+			First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperr.NewNotFound("RESOURCE_NOT_FOUND", "Billable resource not found")
+			}
+			return fmt.Errorf("lock billable resource: %w", err)
+		}
+		if resource.BillingStatus == models.BillableResourceStatusDeleted {
+			return apperr.NewBadRequest("Resource billing is closed")
+		}
+
+		exists, existsErr := billableResourceExistsTx(tx, &resource)
+		if existsErr != nil {
+			return existsErr
+		}
+		if !exists {
+			return apperr.NewNotFound("RESOURCE", "Underlying resource no longer exists")
+		}
+
+		if err := tx.Model(&resource).Update("auto_renew", input.AutoRenew).Error; err != nil {
+			return fmt.Errorf("update auto_renew: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func validAuditContext(audit AuditContext) bool {

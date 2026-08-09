@@ -13,6 +13,7 @@ vi.mock('@/services/api', () => ({
     status: vi.fn(),
     createTopup: vi.fn(),
     reconcileTopup: vi.fn(),
+    updateAutoRenew: vi.fn(),
   },
 }))
 
@@ -42,6 +43,17 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.staleData': 'Showing previously loaded data. Refresh to update.',
         'billing.resourceTypes.project': 'project',
         'billing.resourceTypes.database': 'database',
+        'billing.resourceBilling': 'Resource billing',
+        'billing.resourceBillingDescription': 'Resource billing description',
+        'billing.noBillableResources': 'No active billable resources.',
+        'billing.renewsOn': 'Renews on {{date}}',
+        'billing.renewalPaymentDue': 'Renewal payment due since {{date}}',
+       'billing.month': 'month',
+       'billing.currentPeriod': 'Current period: {{start}} to {{end}}',
+        'billing.autoRenew': 'Auto-renew',
+        'billing.autoRenewEnabled': 'Auto-renew enabled',
+        'billing.autoRenewDisabled': 'Auto-renew disabled',
+        'billing.autoRenewFailed': 'Could not update auto-renew',
       }
       const base = map[key] ?? key
       if (!data) return base
@@ -63,6 +75,7 @@ const mockOverview = {
   wallet: { balance_credits: 500, ledger_entries: [] },
   invoices: [],
   topups: [],
+  resources: [],
   upcoming_required_credits: 1000,
 }
 
@@ -115,7 +128,38 @@ describe('Billing page', () => {
     expect(billingAPI.overview).toHaveBeenCalledTimes(1)
   })
 
-  it('reuses the idempotency key when an ambiguous checkout attempt fails', async () => {
+  it('shows each resource renewal date', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        resources: [
+          {
+            resource_id: 7,
+            resource_type: 'project',
+            resource_name: 'Storefront',
+            spec_name: 'Starter',
+            monthly_credits: 75,
+            status: 'active',
+           current_period_start: '2026-08-01T00:00:00Z',
+           next_invoice_at: '2026-09-01T00:00:00Z',
+            auto_renew: false,
+          },
+        ],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+   expect(await screen.findByText('Storefront')).toBeInTheDocument()
+   expect(screen.getByText('Current period: Aug 1, 2026 to Sep 1, 2026')).toBeInTheDocument()
+   expect(screen.getByText('Renews on Sep 1, 2026')).toBeInTheDocument()
+    expect(screen.getByRole('switch')).toBeInTheDocument()
+    expect(screen.getByRole('switch')).not.toBeChecked()
+  })
+
+ it('reuses the idempotency key when an ambiguous checkout attempt fails', async () => {
     ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
     ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
     ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
@@ -137,7 +181,60 @@ describe('Billing page', () => {
 
     await waitFor(() => expect(billingAPI.createTopup).toHaveBeenCalledTimes(2))
 
-    const secondKey = (billingAPI.createTopup as ReturnType<typeof vi.fn>).mock.calls[1][1]
-    expect(secondKey).toBe(firstKey)
+   const secondKey = (billingAPI.createTopup as ReturnType<typeof vi.fn>).mock.calls[1][1]
+   expect(secondKey).toBe(firstKey)
+ })
+
+  it('toggles auto-renew and refreshes the overview', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        data: {
+          ...mockOverview,
+          resources: [
+            {
+              resource_id: 7,
+              resource_type: 'project',
+              resource_name: 'Storefront',
+              spec_name: 'Starter',
+              monthly_credits: 75,
+              status: 'active',
+              current_period_start: '2026-08-01T00:00:00Z',
+              next_invoice_at: '2026-09-01T00:00:00Z',
+              auto_renew: false,
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          ...mockOverview,
+          resources: [
+            {
+              resource_id: 7,
+              resource_type: 'project',
+              resource_name: 'Storefront',
+              spec_name: 'Starter',
+              monthly_credits: 75,
+              status: 'active',
+              current_period_start: '2026-08-01T00:00:00Z',
+              next_invoice_at: '2026-09-01T00:00:00Z',
+              auto_renew: true,
+            },
+          ],
+        },
+      })
+    ;(billingAPI.updateAutoRenew as ReturnType<typeof vi.fn>).mockResolvedValue({})
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    const toggle = await screen.findByRole('switch')
+    expect(toggle).not.toBeChecked()
+
+    await act(async () => fireEvent.click(toggle))
+
+    await waitFor(() => expect(billingAPI.updateAutoRenew).toHaveBeenCalledWith(7, 'project', true))
+    await waitFor(() => expect(toggle).toBeChecked())
   })
 })

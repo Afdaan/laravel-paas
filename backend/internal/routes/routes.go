@@ -172,6 +172,7 @@ func Setup(
 	billingMutations := billingRoutes.Group("", middleware.RequireNoBillingImpersonation())
 	billingMutations.Post("/topups", middleware.MaxBody(8*1024), billingHandler.CreateTopup)
 	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), billingHandler.ReconcileTopup)
+	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), billingHandler.UpdateAutoRenew)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)

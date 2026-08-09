@@ -176,6 +176,9 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	if err := backfillBillableResourceAnchors(db); err != nil {
 		return err
 	}
+	if err := backfillBillableResourceAutoRenew(db); err != nil {
+		return err
+	}
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
@@ -239,6 +242,20 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	}
 
 	slog.Info("Defensive migration bootstrap completed successfully.")
+	return nil
+}
+
+func backfillBillableResourceAutoRenew(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return nil
+	}
+	result := db.Exec("UPDATE billable_resources SET auto_renew = TRUE WHERE auto_renew = FALSE")
+	if result.Error != nil {
+		return fmt.Errorf("backfill billable resource auto_renew: %w", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		slog.Info("Backfilled billable resource auto_renew defaults", "rows", result.RowsAffected)
+	}
 	return nil
 }
 

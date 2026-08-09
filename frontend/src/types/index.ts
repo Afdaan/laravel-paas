@@ -255,6 +255,17 @@ export interface BillingOverview {
     paid_at?: string;
     created_at: string;
   }>;
+  resources: Array<{
+    resource_id: number;
+    resource_type: 'project' | 'database';
+    resource_name: string;
+    spec_name: string;
+    monthly_credits: number;
+    status: 'active' | 'payment_due' | 'suspended';
+    current_period_start: string;
+    next_invoice_at: string;
+    auto_renew: boolean;
+  }>;
   upcoming_required_credits: number;
 }
 

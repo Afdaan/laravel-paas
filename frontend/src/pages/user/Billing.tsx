@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   AlertTriangle,
   ArrowUpRight,
+  CalendarClock,
   Coins,
   CreditCard,
+  PlusCircle,
   ReceiptText,
   RefreshCw,
   Sparkles,
-  TrendingUp,
   WalletCards,
-  Zap,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -30,12 +30,14 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 
 export default function Billing() {
   const { t, language } = useTranslation()
   const [overview, setOverview] = useState<BillingRequestState<BillingOverview>>({ status: 'idle' })
   const [packages, setPackages] = useState<BillingRequestState<TopupPackage[]>>({ status: 'idle' })
   const [statuses, setStatuses] = useState<BillingRequestState<BillingStatus[]>>({ status: 'idle' })
+  const [renewLoading, setRenewLoading] = useState<Record<string, boolean>>({})
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
@@ -342,8 +344,8 @@ export default function Billing() {
                 <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card p-5 shadow-sm transition-all hover:border-border">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.upcomingCharges')}</p>
-                    <div className="rounded-full bg-amber-500/10 p-2 text-amber-600 dark:text-amber-400">
-                      <TrendingUp className="size-4" />
+                    <div className="rounded-full bg-primary/10 p-2 text-primary">
+                      <CalendarClock className="size-4" />
                     </div>
                   </div>
                   <div className="mt-3 flex items-baseline gap-2">
@@ -366,7 +368,7 @@ export default function Billing() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                  <Zap className="size-4 text-amber-500 fill-amber-500/20" />
+                  <PlusCircle className="size-4 text-primary" />
                   {t('billing.addCredits')}
                 </h3>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">{t('billing.addCreditsDescription')}</p>
@@ -468,6 +470,80 @@ export default function Billing() {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/60 shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-xl font-bold">
+            <CalendarClock className="size-5 text-primary" />
+            {t('billing.resourceBilling')}
+          </CardTitle>
+          <CardDescription>{t('billing.resourceBillingDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {overview.status === 'loading' && <Skeleton className="h-24 rounded-xl" />}
+          {overview.status === 'error' && <p className="text-sm text-muted-foreground">{t('billing.unavailable')}</p>}
+          {overview.status === 'success' && overview.data.resources.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t('billing.noBillableResources')}</p>
+          )}
+          {overview.status === 'success' &&
+            overview.data.resources.map((resource) => (
+              <div
+                key={`${resource.resource_type}-${resource.resource_id}`}
+                className="flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate font-semibold text-foreground">
+                      {resource.resource_name || `${translateResourceType(resource.resource_type)} #${resource.resource_id}`}
+                    </p>
+                    <Badge variant={statusVariant(resource.status)}>{formatStatus(resource.status)}</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {resource.spec_name} · {formatCredits(resource.monthly_credits)} {t('billing.credits')} / {t('billing.month')}
+                  </p>
+                <p className="text-xs text-muted-foreground">
+                    {t('billing.currentPeriod', {
+                      start: formatDate(resource.current_period_start),
+                      end: formatDate(resource.next_invoice_at),
+                    })}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:items-end">
+                  <p className="text-sm font-medium text-foreground">
+                    {resource.status === 'active'
+                      ? t('billing.renewsOn', { date: formatDate(resource.next_invoice_at) })
+                      : t('billing.renewalPaymentDue', { date: formatDate(resource.next_invoice_at) })}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{t('billing.autoRenew')}</span>
+                    <Switch
+                      id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
+                      checked={resource.auto_renew}
+                      disabled={renewLoading[`${resource.resource_type}-${resource.resource_id}`]}
+                      onCheckedChange={async (checked) => {
+                        const key = `${resource.resource_type}-${resource.resource_id}`
+                        setRenewLoading((prev) => ({ ...prev, [key]: true }))
+                        try {
+                          await billingAPI.updateAutoRenew(resource.resource_id, resource.resource_type, checked)
+                          await load()
+                          toast.success(checked ? t('billing.autoRenewEnabled') : t('billing.autoRenewDisabled'))
+                        } catch (error) {
+                          if (axios.isAxiosError(error) && error.response?.data?.message) {
+                            toast.error(error.response.data.message)
+                          } else {
+                            toast.error(t('billing.autoRenewFailed'))
+                          }
+                        } finally {
+                          setRenewLoading((prev) => ({ ...prev, [key]: false }))
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
         </CardContent>
       </Card>
 
