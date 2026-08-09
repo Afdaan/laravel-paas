@@ -294,7 +294,7 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 	overview.Resources = resources
 	if err := s.db.WithContext(ctx).Model(&models.BillableResource{}).
 		Joins("JOIN billable_specs ON billable_specs.id = billable_resources.spec_id").
-		Where("billable_resources.user_id = ? AND billable_resources.billing_status = ?", userID, models.BillableResourceStatusActive).
+		Where("billable_resources.user_id = ? AND billable_resources.billing_status = ? AND billable_resources.auto_renew = ?", userID, models.BillableResourceStatusActive, true).
 		Where(`
 			(billable_resources.type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
 			OR (billable_resources.type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))

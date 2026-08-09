@@ -79,7 +79,7 @@ func TestCatalogServiceReportsUpcomingActiveResourceCharge(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	if err := db.Create(&models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}).Error; err != nil {
+	if err := db.Create(&models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, AutoRenew: true, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,7 +119,7 @@ func TestGetOwnBillingOverviewExcludesDeletedResourcesFromUpcomingCredits(t *tes
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: 99999, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: 99999, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, AutoRenew: true, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}
 	if err := db.Create(&resource).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +133,44 @@ func TestGetOwnBillingOverviewExcludesDeletedResourcesFromUpcomingCredits(t *tes
 	}
 	if len(overview.Resources) != 0 {
 		t.Fatalf("resources = %d, want 0", len(overview.Resources))
+	}
+}
+
+func TestGetOwnBillingOverviewExcludesNonAutoRenewResourcesFromUpcomingCredits(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Project{}, &models.DatabaseInstance{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Disabled Auto Renew", Subdomain: "disabled-auto-renew", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Starter", Slug: "starter", CPUMillicores: 500, MemoryMB: 512, StorageGB: 1, MonthlyCredits: 75, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now, NextInvoiceAt: now.AddDate(0, 1, 0), BillingAnchorDay: now.Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&resource).Update("auto_renew", false).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	overview, err := NewCatalogService(db).GetOwnBillingOverview(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.UpcomingRequiredCredits != 0 {
+		t.Fatalf("upcoming required credits = %d, want 0", overview.UpcomingRequiredCredits)
 	}
 }
 
