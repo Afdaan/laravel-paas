@@ -71,6 +71,7 @@ type MidtransPaymentRequest struct {
 	AmountMinor    int64
 	Currency       string
 	IdempotencyKey string
+	FinishURL      string
 }
 
 type MidtransPaymentResponse struct {
@@ -645,7 +646,21 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 		break
 	}
 
-	payment, err := s.gateway.CreatePayment(ctx, MidtransPaymentRequest{OrderID: topup.ProviderOrderID, AmountMinor: topup.AmountMinor, Currency: topup.Currency, IdempotencyKey: topup.ProviderOrderID})
+	finishURL := ""
+	if s.cfg != nil {
+		if s.cfg.FrontendURL != "" {
+			finishURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
+		} else if s.cfg.BaseDomain != "" {
+			finishURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
+		}
+	}
+	payment, err := s.gateway.CreatePayment(ctx, MidtransPaymentRequest{
+		OrderID:        topup.ProviderOrderID,
+		AmountMinor:    topup.AmountMinor,
+		Currency:       topup.Currency,
+		IdempotencyKey: topup.ProviderOrderID,
+		FinishURL:      finishURL,
+	})
 	if err != nil {
 		if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
 			return errors.Join(err, fmt.Errorf("%w: reset checkout request: %v", ErrTopupRecoveryRequired, cleanupErr))
@@ -884,15 +899,24 @@ func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaym
 	if err != nil {
 		return MidtransPaymentResponse{}, ErrPaymentProvider
 	}
+	type snapCallbacks struct {
+		Finish string `json:"finish,omitempty"`
+	}
 	body, err := json.Marshal(struct {
 		TransactionDetails struct {
 			OrderID     string `json:"order_id"`
 			GrossAmount int64  `json:"gross_amount"`
 		} `json:"transaction_details"`
+		Callbacks *snapCallbacks `json:"callbacks,omitempty"`
 	}{TransactionDetails: struct {
 		OrderID     string `json:"order_id"`
 		GrossAmount int64  `json:"gross_amount"`
-	}{OrderID: payment.OrderID, GrossAmount: grossAmount}})
+	}{OrderID: payment.OrderID, GrossAmount: grossAmount}, Callbacks: func() *snapCallbacks {
+		if payment.FinishURL != "" {
+			return &snapCallbacks{Finish: payment.FinishURL}
+		}
+		return nil
+	}()})
 	if err != nil {
 		return MidtransPaymentResponse{}, fmt.Errorf("marshal Midtrans payment request: %w", err)
 	}
