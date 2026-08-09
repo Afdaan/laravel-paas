@@ -54,6 +54,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.autoRenewEnabled': 'Auto-renew enabled',
         'billing.autoRenewDisabled': 'Auto-renew disabled',
         'billing.autoRenewFailed': 'Could not update auto-renew',
+        'billing.autoRenewRateLimited': 'Too many auto-renew toggle requests. Please wait a moment before trying again.',
         'billing.confirmChange': 'Confirm',
       }
       const base = map[key] ?? key

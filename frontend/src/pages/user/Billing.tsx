@@ -619,8 +619,16 @@ export default function Billing() {
                     target_auto_renew ? t('billing.autoRenewEnabled') : t('billing.autoRenewDisabled'),
                   )
                 } catch (error) {
-                  if (axios.isAxiosError(error) && error.response?.data?.message) {
-                    toast.error(error.response.data.message)
+                  if (axios.isAxiosError(error)) {
+                    const status = error.response?.status
+                    const serverMessage = error.response?.data?.error || error.response?.data?.message
+                    if (status === 429) {
+                      toast.error(t('billing.autoRenewRateLimited'))
+                    } else if (serverMessage) {
+                      toast.error(serverMessage)
+                    } else {
+                      toast.error(t('billing.autoRenewFailed'))
+                    }
                   } else {
                     toast.error(t('billing.autoRenewFailed'))
                   }
