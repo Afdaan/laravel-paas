@@ -932,11 +932,11 @@ func (s *TopupService) validatePaymentProcessing(ctx context.Context) error {
 	}
 	provider := s.activeProvider()
 	if provider == models.BillingProviderPakasir {
-		if s.pakasirGateway == nil || !s.cfg.PakasirEnabled || s.cfg.PakasirProjectSlug == "" || s.cfg.PakasirAPIKey == "" {
+		if s.pakasirGateway == nil {
 			return ErrTopupDisabled
 		}
 	} else {
-		if s.gateway == nil || s.cfg.MidtransServerKey == "" || s.cfg.MidtransMerchantID == "" {
+		if s.gateway == nil {
 			return ErrTopupDisabled
 		}
 	}
