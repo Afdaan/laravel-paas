@@ -18,9 +18,10 @@ import (
 )
 
 type BillingHandler struct {
-	catalog     *billing.CatalogService
-	topups      *billing.TopupService
-	suspensions *billing.SuspensionService
+	catalog        *billing.CatalogService
+	topups         *billing.TopupService
+	suspensions    *billing.SuspensionService
+	billingProfile *billing.BillingProfileService
 }
 
 func NewBillingHandler(catalog *billing.CatalogService) *BillingHandler {
@@ -32,7 +33,7 @@ func NewBillingHandlerWithTopups(catalog *billing.CatalogService, topups *billin
 	if len(suspensions) > 0 {
 		suspensionService = suspensions[0]
 	}
-	return &BillingHandler{catalog: catalog, topups: topups, suspensions: suspensionService}
+	return &BillingHandler{catalog: catalog, topups: topups, suspensions: suspensionService, billingProfile: billing.NewBillingProfileService(nil)}
 }
 
 func (h *BillingHandler) ListActiveCatalog(c *fiber.Ctx) error {
@@ -437,4 +438,82 @@ func billingAuditContext(c *fiber.Ctx, actorUserID uint, reason string) billing.
 		Reason:          reason,
 		RequestID:       middleware.RequestID(c),
 	}
+}
+
+
+func (h *BillingHandler) SetBillingProfileService(service *billing.BillingProfileService) {
+	h.billingProfile = service
+}
+
+func (h *BillingHandler) GetBillingProfile(c *fiber.Ctx) error {
+	userID, _ := c.Locals("user_id").(uint)
+	if h.billingProfile == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing profile service unavailable")
+	}
+	profile, err := h.billingProfile.GetProfile(c.UserContext(), userID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(profile)
+}
+
+func (h *BillingHandler) UpdateBillingProfile(c *fiber.Ctx) error {
+	userID, _ := c.Locals("user_id").(uint)
+	var input billing.UpdateBillingProfileInput
+	if err := decodeBillingJSON(c, &input); err != nil {
+		return apperr.NewBadRequest("Invalid billing profile data")
+	}
+	if h.billingProfile == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing profile service unavailable")
+	}
+	profile, err := h.billingProfile.UpsertProfile(c.UserContext(), userID, input)
+	if errors.Is(err, billing.ErrInvalidBillingEmail) {
+		return apperr.NewBadRequest("Invalid email format")
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(profile)
+}
+
+func (h *BillingHandler) GetUserBillingProfileAdmin(c *fiber.Ctx) error {
+	userID, err := strconv.ParseUint(c.Params("userID"), 10, 64)
+	if err != nil || userID == 0 {
+		return apperr.NewBadRequest("Invalid user ID")
+	}
+	if h.billingProfile == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing profile service unavailable")
+	}
+	profile, err := h.billingProfile.GetProfile(c.UserContext(), uint(userID))
+	if err != nil {
+		return err
+	}
+	return c.JSON(profile)
+}
+
+type PakasirWebhookPayload struct {
+	Amount        int64  `json:"amount"`
+	OrderID       string `json:"order_id"`
+	Project       string `json:"project"`
+	Status        string `json:"status"`
+	PaymentMethod string `json:"payment_method"`
+	CompletedAt   string `json:"completed_at"`
+}
+
+func (h *BillingHandler) PakasirWebhook(c *fiber.Ctx) error {
+	var payload PakasirWebhookPayload
+	if err := decodeBillingWebhookJSON(c, &payload); err != nil {
+		return apperr.NewBadRequest("Invalid webhook payload")
+	}
+
+	if payload.OrderID == "" || payload.Amount <= 0 {
+		return apperr.NewBadRequest("Missing required webhook parameters")
+	}
+
+	err := h.topupService().ProcessPakasirWebhook(c.UserContext(), payload.OrderID, payload.Amount, payload.Status)
+	if err != nil {
+		return mapTopupError(err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
 }

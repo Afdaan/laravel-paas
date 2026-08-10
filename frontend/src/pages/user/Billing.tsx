@@ -26,23 +26,26 @@ import {
 } from '@/lib/billing-ui'
 import { usePolling } from '@/lib/usePolling'
 import useTranslation from '@/lib/useTranslation'
-import type { BillingOverview, BillingStatus, TopupPackage } from '@/types'
+import type { BillingOverview, BillingStatus, TopupPackage, BillingProfile, TopupResponse } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 
 export default function Billing() {
+  const [profile, setProfile] = useState<BillingProfile>({
+    company_name: '', tax_id: '', email: '', phone: '',
+    address_line1: '', address_line2: '', city: '', state_province: '',
+    postal_code: '', country: 'ID'
+  })
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [activePaymentModal, setActivePaymentModal] = useState<TopupResponse | null>(null)
+  const [checkingPaymentStatus, setCheckingPaymentStatus] = useState(false)
+
   const { t, language } = useTranslation()
   const [overview, setOverview] = useState<BillingRequestState<BillingOverview>>({ status: 'idle' })
   const [packages, setPackages] = useState<BillingRequestState<TopupPackage[]>>({ status: 'idle' })
@@ -163,6 +166,12 @@ export default function Billing() {
       (statusResult.status === 'rejected' && nextStatuses.status === 'success')
     setStaleWarning(hasStaleData)
 
+        try {
+      const resProf = await billingAPI.getProfile()
+      if (resProf.data) setProfile(resProf.data)
+    } catch (e) {
+      // ignore
+    }
     loadInFlight.current = false
   }, [overview, packages, statuses])
 
@@ -185,6 +194,11 @@ export default function Billing() {
       const idempotencyKey = topupKeys.current.get(packageID) ?? createTopupIdempotencyKey()
       topupKeys.current.set(packageID, idempotencyKey)
       const response = await billingAPI.createTopup(packageID, idempotencyKey)
+            if (response.data.payment_token && response.data.payment_token.startsWith('000201')) {
+        topupKeys.current.delete(packageID)
+        setActivePaymentModal(response.data)
+        return
+      }
       if (!response.data.payment_url) {
         topupKeys.current.delete(packageID)
         throw new Error(t('billing.paymentSessionUnavailable'))
@@ -210,6 +224,10 @@ export default function Billing() {
     try {
       const idempotencyKey = createTopupIdempotencyKey()
       const response = await billingAPI.createTopup(0, idempotencyKey, customAmountNum)
+      if (response.data.payment_token && response.data.payment_token.startsWith('000201')) {
+        setActivePaymentModal(response.data)
+        return
+      }
       if (!response.data.payment_url) {
         throw new Error(t('billing.paymentSessionUnavailable'))
       }
@@ -239,6 +257,42 @@ export default function Billing() {
     upcomingCredits !== null &&
     hasLowCreditBalance(balanceData, upcomingCredits) &&
     attentionResources.length === 0
+
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingProfile(true)
+    try {
+      const res = await billingAPI.updateProfile(profile)
+      setProfile(res.data)
+      toast.success('Billing profile updated successfully')
+    } catch (err: any) {
+      toast.error('Failed to update billing profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  const handleCheckStatusModal = async () => {
+    if (!activePaymentModal) return
+    setCheckingPaymentStatus(true)
+    try {
+      await billingAPI.reconcileTopup(activePaymentModal.id)
+      await load()
+      const overviewRes = await billingAPI.overview()
+      const currentTopup = overviewRes.data.topups.find((t: any) => t.id === activePaymentModal.id)
+      if (currentTopup && currentTopup.status === 'paid') {
+        toast.success('Pembayaran Berhasil! Wallet Anda telah terisi.')
+        setActivePaymentModal(null)
+      } else {
+        toast.info('Pembayaran belum diterima. Silakan selesaikan pembayaran.')
+      }
+    } catch (e) {
+      toast.error('Gagal mengecek status pembayaran')
+    } finally {
+      setCheckingPaymentStatus(false)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-12 animate-in fade-in duration-500">
@@ -716,6 +770,110 @@ export default function Billing() {
           />
         </div>
       </section>
+
+      {/* Billing Profile & Invoicing Details */}
+      <Card className="border-border/60 bg-card shadow-sm">
+        <CardHeader className="border-b border-border/40 pb-4">
+          <CardTitle className="text-base font-semibold tracking-tight">Billing Profile & Tax Details</CardTitle>
+          <CardDescription className="text-xs text-muted-foreground">
+            Invoicing information for payment receipts and official tax compliance (NPWP/VAT).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={handleSaveProfile} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="company_name" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Full Name / Company Name</Label>
+                <Input id="company_name" value={profile.company_name} onChange={e => setProfile({...profile, company_name: e.target.value})} placeholder="PT Acme Corp / Nama Lengkap" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tax_id" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Tax ID / NPWP / NIK</Label>
+                <Input id="tax_id" value={profile.tax_id} onChange={e => setProfile({...profile, tax_id: e.target.value})} placeholder="00.000.000.0-000.000" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="billing_email" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Billing Email</Label>
+                <Input id="billing_email" type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} placeholder="billing@company.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="billing_phone" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Phone Number</Label>
+                <Input id="billing_phone" value={profile.phone} onChange={e => setProfile({...profile, phone: e.target.value})} placeholder="+628123456789" />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="address_line1" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Address</Label>
+                <Input id="address_line1" value={profile.address_line1} onChange={e => setProfile({...profile, address_line1: e.target.value})} placeholder="Jalan Utama No. 123" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="city" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">City</Label>
+                <Input id="city" value={profile.city} onChange={e => setProfile({...profile, city: e.target.value})} placeholder="Jakarta" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="postal_code" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Postal Code</Label>
+                <Input id="postal_code" value={profile.postal_code} onChange={e => setProfile({...profile, postal_code: e.target.value})} placeholder="12340" />
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <Button type="submit" size="sm" disabled={savingProfile} className="font-mono text-xs uppercase tracking-wider">
+                {savingProfile ? 'Saving...' : 'Save Profile'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Modal Payment / QRIS Dialog */}
+      <Dialog open={!!activePaymentModal} onOpenChange={(open) => !open && setActivePaymentModal(null)}>
+        <DialogContent className="sm:max-w-md border-border">
+          <DialogHeader>
+            <DialogTitle className="text-center text-lg font-bold">Pembayaran Top-up</DialogTitle>
+            <DialogDescription className="text-center text-xs text-muted-foreground">
+              Silakan selesaikan pembayaran untuk mengisi kredit wallet.
+            </DialogDescription>
+          </DialogHeader>
+
+          {activePaymentModal && (
+            <div className="flex flex-col items-center justify-center space-y-4 py-4">
+              {activePaymentModal.payment_token && activePaymentModal.payment_token.startsWith('000201') ? (
+                <div className="bg-white p-4 border border-border rounded-lg flex flex-col items-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(activePaymentModal.payment_token)}`}
+                    alt="QRIS Code"
+                    className="size-48 object-contain"
+                  />
+                  <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">Scan QRIS via Mobile Banking / E-Wallet</p>
+                </div>
+              ) : activePaymentModal.payment_token ? (
+                <div className="p-4 bg-muted rounded-md text-center">
+                  <p className="text-xs text-muted-foreground uppercase font-mono mb-1">Kode / Nomor Pembayaran</p>
+                  <p className="text-lg font-mono font-bold tracking-widest">{activePaymentModal.payment_token}</p>
+                </div>
+              ) : null}
+
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground font-mono uppercase">Total Tagihan</p>
+                <p className="text-xl font-bold text-foreground">
+                  Rp {activePaymentModal.amount_minor.toLocaleString('id-ID')}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            {activePaymentModal?.payment_url && (
+              <Button variant="outline" size="sm" onClick={() => window.open(activePaymentModal.payment_url, '_blank')}>
+                Buka Link Pembayaran
+              </Button>
+            )}
+            <Button
+              onClick={handleCheckStatusModal}
+              disabled={checkingPaymentStatus}
+              size="sm"
+            >
+              {checkingPaymentStatus ? 'Mengecek...' : 'Cek Status Pembayaran'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

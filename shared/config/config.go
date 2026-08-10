@@ -77,6 +77,11 @@ type Config struct {
 	MidtransMerchantID     string
 	MidtransProduction     bool
 
+	PakasirEnabled         bool
+	PakasirProjectSlug     string
+	PakasirAPIKey          string
+	PakasirProduction      bool
+
 	// UID Obfuscation
 	UIDSalt string
 
@@ -223,6 +228,11 @@ func Load() *Config {
 		MidtransClientKey:      getEnv("MIDTRANS_CLIENT_KEY", ""),
 		MidtransMerchantID:     getEnv("MIDTRANS_MERCHANT_ID", ""),
 		MidtransProduction:     getEnvBool("MIDTRANS_IS_PRODUCTION", false),
+
+		PakasirEnabled:         getEnvBool("PAKASIR_ENABLED", false),
+		PakasirProjectSlug:     getEnv("PAKASIR_PROJECT_SLUG", ""),
+		PakasirAPIKey:          getEnv("PAKASIR_API_KEY", ""),
+		PakasirProduction:      getEnvBool("PAKASIR_IS_PRODUCTION", false),
 
 		// UID Obfuscation
 		UIDSalt: getEnv("UID_SALT", "change-this-salt"),
@@ -384,8 +394,13 @@ func (c *Config) validateProductionSecurity(includeAuth bool) error {
 	if c.BillingEnabled && (c.BillingDeployBlockDays <= 0 || c.BillingGraceDays <= 0 || c.BillingDeployBlockDays >= c.BillingGraceDays) {
 		return fmt.Errorf("BILLING_DEPLOY_BLOCK_DAYS must be positive and less than BILLING_GRACE_DAYS")
 	}
-	if includeAuth && c.BillingTopupEnabled && (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") {
-		return fmt.Errorf("Midtrans credentials are required when BILLING_TOPUP_ENABLED=true")
+	if includeAuth && c.BillingTopupEnabled {
+		if (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") && (!c.PakasirEnabled || c.PakasirProjectSlug == "" || c.PakasirAPIKey == "") {
+			return fmt.Errorf("at least one active payment gateway (Midtrans or Pakasir) with valid credentials is required when BILLING_TOPUP_ENABLED=true")
+		}
+		if c.PakasirEnabled && (c.PakasirProjectSlug == "" || c.PakasirAPIKey == "") {
+			return fmt.Errorf("Pakasir credentials (PAKASIR_PROJECT_SLUG and PAKASIR_API_KEY) are required when PAKASIR_ENABLED=true")
+		}
 	}
 	return nil
 }

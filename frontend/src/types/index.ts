@@ -219,6 +219,7 @@ export interface BillingCatalogSpec {
 }
 
 export interface TopupPackage {
+  provider?: string;
   id: number;
   credits: number;
   currency: string;
@@ -279,4 +280,30 @@ export interface BillingStatus {
   status: 'active' | 'payment_due' | 'suspended';
   oldest_due_at?: string;
   payment_due_days: number;
+}
+
+
+export interface BillingProfile {
+  id?: number;
+  user_id?: number;
+  company_name: string;
+  tax_id: string;
+  email: string;
+  phone: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state_province: string;
+  postal_code: string;
+  country: string;
+}
+
+export interface TopupResponse {
+  id: number;
+  credits: number;
+  amount_minor: number;
+  currency: string;
+  status: string;
+  payment_token?: string;
+  payment_url?: string;
 }

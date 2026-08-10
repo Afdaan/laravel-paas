@@ -12,7 +12,6 @@ import {
   AlertCircle,
   Server,
   Network,
-  Clock,
   Layout,
   Zap,
   Loader2,
@@ -26,6 +25,7 @@ import { Slider } from '@/components/ui/slider'
 import { NumberStepper } from '@/components/ui/number-stepper'
 
 interface PlatformSettings {
+  default_payment_provider?: string;
   base_domain?: string;
   project_domain?: string;
   max_projects_per_user?: number;
@@ -263,6 +263,36 @@ const AdminSettings = () => {
                 <span className="text-xs font-bold uppercase tracking-widest">{t('admin.settings.enforcementPolicy')}</span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: t('admin.settings.enforcementDesc') }} />
+            </div>
+          </CardContent>
+        </Card>
+
+        
+        {/* Payment Gateway Provider Selector */}
+        <Card className="lg:col-span-2 overflow-hidden relative group border-emerald-500/20 bg-gradient-to-br from-background to-emerald-500/5">
+          <CardHeader className="flex flex-row items-center gap-4 pb-2">
+            <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500">
+              <Zap className="w-6 h-6" />
+            </div>
+            <div>
+              <CardTitle className="text-xl">Default Payment Gateway Provider</CardTitle>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">Active Gateway Routing</p>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="space-y-4 max-w-md">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Active Provider</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={settings.default_payment_provider || 'midtrans'}
+                onChange={(e) => handleChange('default_payment_provider', e.target.value)}
+              >
+                <option value="midtrans">Midtrans (Snap Gateway)</option>
+                <option value="pakasir">Pakasir (Direct QRIS/VA)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                All top-ups without an explicit package provider override will use this payment gateway.
+              </p>
             </div>
           </CardContent>
         </Card>

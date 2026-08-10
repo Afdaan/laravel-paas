@@ -1041,6 +1041,7 @@ const (
 	BillingCurrencyIDR      = "IDR"
 	BillingCurrencyUSD      = "USD"
 	BillingProviderMidtrans = "midtrans"
+	BillingProviderPakasir  = "pakasir"
 )
 
 // SupportedBillingCurrencies lists every currency the catalog and payment schema accept.
@@ -1243,4 +1244,24 @@ type PaymentEvent struct {
 	PayloadJSON     string     `gorm:"type:jsonb;not null" json:"-"`
 	ProcessedAt     *time.Time `json:"processed_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+}
+
+
+// BillingProfile represents user's billing and tax details
+type BillingProfile struct {
+	ID             uint           `gorm:"primaryKey" json:"id"`
+	UserID         uint           `gorm:"uniqueIndex:idx_billing_profiles_user_id;not null" json:"user_id"`
+	User           *User          `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user,omitempty"`
+	CompanyName    string         `gorm:"size:255" json:"company_name"`
+	TaxID          string         `gorm:"size:100" json:"tax_id"`
+	Email          string         `gorm:"size:255" json:"email"`
+	Phone          string         `gorm:"size:50" json:"phone"`
+	AddressLine1   string         `gorm:"size:255" json:"address_line1"`
+	AddressLine2   string         `gorm:"size:255" json:"address_line2"`
+	City           string         `gorm:"size:100" json:"city"`
+	StateProvince  string         `gorm:"size:100" json:"state_province"`
+	PostalCode     string         `gorm:"size:20" json:"postal_code"`
+	Country        string         `gorm:"size:2;default:'ID'" json:"country"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }

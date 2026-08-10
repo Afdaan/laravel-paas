@@ -563,13 +563,13 @@ func (s *CatalogService) UpdateTopupPackage(ctx context.Context, audit AuditCont
 }
 
 func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, currency string, credits, amountMinor int64, sortOrder int) (models.TopupPackage, *models.TopupPackage, error) {
-	if err := lockCatalogIdentity(tx, fmt.Sprintf("package:%s:%s:%d", models.BillingProviderMidtrans, currency, credits)); err != nil {
+	if err := lockCatalogIdentity(tx, fmt.Sprintf("package:%s:%d", currency, credits)); err != nil {
 		return models.TopupPackage{}, nil, err
 	}
 
 	var previous models.TopupPackage
 	previousFound := true
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND currency = ? AND credits = ? AND is_active = ?", models.BillingProviderMidtrans, currency, credits, true).First(&previous).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("currency = ? AND credits = ? AND is_active = ?", currency, credits, true).First(&previous).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.TopupPackage{}, nil, fmt.Errorf("lock active topup package: %w", err)
 		}
@@ -577,7 +577,7 @@ func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, currency string,
 	}
 
 	var latestVersion int
-	if err := tx.Model(&models.TopupPackage{}).Where("provider = ? AND currency = ? AND credits = ?", models.BillingProviderMidtrans, currency, credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
+	if err := tx.Model(&models.TopupPackage{}).Where("currency = ? AND credits = ?", currency, credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
 		return models.TopupPackage{}, nil, fmt.Errorf("find topup package version: %w", err)
 	}
 	if previousFound {
@@ -586,8 +586,13 @@ func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, currency string,
 		}
 	}
 
+	provider := models.BillingProviderMidtrans
+	if previousFound && previous.Provider != "" {
+		provider = previous.Provider
+	}
 	created := models.TopupPackage{
-		Provider:    models.BillingProviderMidtrans,
+		Provider:    provider,
+		
 		Currency:    currency,
 		Credits:     credits,
 		AmountMinor: amountMinor,

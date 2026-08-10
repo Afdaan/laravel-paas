@@ -443,6 +443,9 @@ export const domainsAPI = {
 }
 
 export const billingAPI = {
+  getProfile: () => api.get('/billing/profile'),
+  updateProfile: (data: any) => api.put('/billing/profile', data),
+  getUserProfileAdmin: (userID: number) => api.get(`/admin/users/${userID}/billing-profile`),
   catalog: () =>
     api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/billing/catalog'),
 
@@ -453,7 +456,7 @@ export const billingAPI = {
     api.get<BillingStatus[]>('/billing/status'),
 
   createTopup: (topupPackageID: number, idempotencyKey: string, amount?: number) =>
-    api.post<{ payment_url?: string }>('/billing/topups', { topup_package_id: topupPackageID, ...(amount ? { amount } : {}) }, { headers: { 'Idempotency-Key': idempotencyKey } }),
+    api.post<import('@/types').TopupResponse>('/billing/topups', { topup_package_id: topupPackageID, ...(amount ? { amount } : {}) }, { headers: { 'Idempotency-Key': idempotencyKey } }),
 
   reconcileTopup: (topupID: number) => api.post(`/billing/topups/${topupID}/reconcile`),
 

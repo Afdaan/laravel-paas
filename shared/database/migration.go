@@ -144,6 +144,7 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.SecretStoreActivityLog{},
 		&models.Wallet{},
 		&models.WalletLedgerEntry{},
+		&models.BillingProfile{},
 		&models.BillingAuditEvent{},
 		&models.TopupPackage{},
 		&models.Topup{},
@@ -716,6 +717,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		check string
 	}{
 		{&models.Wallet{}, "uni_wallets_user_id", "UNIQUE (user_id)"},
+		{&models.BillingProfile{}, "uni_billing_profiles_user_id", "UNIQUE (user_id)"},
 		{&models.Wallet{}, "uni_wallets_id_user_id", "UNIQUE (id, user_id)"},
 		{&models.WalletLedgerEntry{}, "uni_wallet_ledger_entries_idempotency_key", "UNIQUE (idempotency_key)"},
 		{&models.TopupPackage{}, "uni_topup_packages_identity_version", "UNIQUE (provider, currency, credits, version)"},
@@ -744,6 +746,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		reference string
 	}{
 		{&models.Wallet{}, "fk_wallets_user", "user_id", "users"},
+		{&models.BillingProfile{}, "fk_billing_profiles_user", "user_id", "users"},
 		{&models.WalletLedgerEntry{}, "fk_wallet_ledger_entries_wallet", "wallet_id", "wallets"},
 		{&models.WalletLedgerEntry{}, "fk_wallet_ledger_entries_created_by", "created_by", "users"},
 		{&models.Topup{}, "fk_topups_wallet", "wallet_id", "wallets"},
@@ -769,9 +772,9 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_type", "type IN ('topup', 'topup_reversal', 'invoice_debit', 'invoice_refund', 'adjustment')"},
 		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_direction", "(type IN ('topup', 'invoice_refund') AND amount_credits > 0) OR (type IN ('topup_reversal', 'invoice_debit') AND amount_credits < 0) OR type = 'adjustment'"},
 		{&models.TopupPackage{}, "chk_topup_packages_positive", "credits > 0 AND amount_minor > 0 AND version > 0"},
-		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider = 'midtrans' AND currency IN ('IDR', 'USD')"},
+		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider IN ('midtrans', 'pakasir') AND currency IN ('IDR', 'USD')"},
 		{&models.Topup{}, "chk_topups_positive", "credits > 0 AND amount_minor > 0"},
-		{&models.Topup{}, "chk_topups_provider_currency", "provider = 'midtrans' AND currency IN ('IDR', 'USD')"},
+		{&models.Topup{}, "chk_topups_provider_currency", "provider IN ('midtrans', 'pakasir') AND currency IN ('IDR', 'USD')"},
 		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'partial_refund', 'refunded', 'partial_chargeback', 'chargeback')"},
 		{&models.BillableSpec{}, "chk_billable_specs_type", "type IN ('project', 'database')"},
 		{&models.BillableSpec{}, "chk_billable_specs_positive", "cpu_millicores > 0 AND memory_mb > 0 AND storage_gb > 0 AND monthly_credits > 0 AND version > 0"},
@@ -783,7 +786,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.Invoice{}, "chk_invoices_status", "status IN ('pending', 'paid', 'payment_due', 'void')"},
 		{&models.Invoice{}, "chk_invoices_period", "period_end > period_start"},
 		{&models.InvoiceItem{}, "chk_invoice_items_credits_nonnegative", "credits >= 0"},
-		{&models.PaymentEvent{}, "chk_payment_events_provider", "provider = 'midtrans'"},
+		{&models.PaymentEvent{}, "chk_payment_events_provider", "provider IN ('midtrans', 'pakasir')"},
 	}
 	for _, check := range checks {
 		if err := EnsureConstraint(db, check.model, check.name, "CHECK ("+check.rule+")"); err != nil {

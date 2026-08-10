@@ -108,11 +108,14 @@ func Setup(
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 	secretStoreHandler := handlers.NewSecretStoreHandler(db, cfg, secretStoreService)
 	walletService := billing.NewWalletService(db)
+	billingProfileService := billing.NewBillingProfileService(db)
+	topupService := billing.NewTopupService(db, walletService, cfg, billing.NewMidtransClient(cfg), billing.NewPakasirClient(cfg))
 	billingHandler := handlers.NewBillingHandlerWithTopups(
 		billing.NewCatalogServiceWithWallets(db, walletService),
-		billing.NewTopupService(db, walletService, cfg, billing.NewMidtransClient(cfg)),
+		topupService,
 		billing.NewSuspensionService(db, cfg),
 	)
+	billingHandler.SetBillingProfileService(billingProfileService)
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
@@ -129,6 +132,7 @@ func Setup(
 	auth.Post("/login", middleware.RateLimitLogin(redisService), authHandler.Login)
 	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
 	api.Post("/webhooks/midtrans", middleware.NoStore(), middleware.MaxBody(8*1024), billingHandler.MidtransWebhook)
+	api.Post("/webhooks/pakasir", middleware.NoStore(), middleware.MaxBody(8*1024), billingHandler.PakasirWebhook)
 
 	// -----------------------------
 	// System Init (public, rate limited)
@@ -195,6 +199,7 @@ func Setup(
 	adminBilling.Get("/catalog", billingHandler.ListCatalog)
 	adminBilling.Get("/wallets", billingHandler.ListWallets)
 	adminBilling.Get("/wallets/:userID", billingHandler.GetWallet)
+	adminBilling.Get("/users/:userID/billing-profile", billingHandler.GetUserBillingProfileAdmin)
 	adminBilling.Get("/invoices", billingHandler.ListInvoices)
 	adminBilling.Get("/topups", billingHandler.ListTopups)
 	adminBilling.Get("/suspensions", billingHandler.ListSuspensions)

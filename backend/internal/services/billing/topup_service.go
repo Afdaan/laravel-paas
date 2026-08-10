@@ -105,10 +105,12 @@ type MidtransClient struct {
 }
 
 type TopupService struct {
-	db      *gorm.DB
-	wallets *WalletService
-	cfg     *config.Config
-	gateway MidtransGateway
+	db             *gorm.DB
+	wallets        *WalletService
+	cfg            *config.Config
+	gateway        MidtransGateway
+	pakasirGateway PakasirGateway
+	billingProfile *BillingProfileService
 }
 
 func NewMidtransClient(cfg *config.Config) *MidtransClient {
@@ -130,14 +132,20 @@ func NewMidtransClient(cfg *config.Config) *MidtransClient {
 	}
 }
 
-func NewTopupService(db *gorm.DB, wallets *WalletService, cfg *config.Config, gateway MidtransGateway) *TopupService {
+func NewTopupService(db *gorm.DB, wallets *WalletService, cfg *config.Config, gateway MidtransGateway, pakasirGateway ...PakasirGateway) *TopupService {
 	if wallets == nil {
 		wallets = NewWalletService(db)
 	}
 	if gateway == nil {
 		gateway = NewMidtransClient(cfg)
 	}
-	return &TopupService{db: db, wallets: wallets, cfg: cfg, gateway: gateway}
+	var pGateway PakasirGateway
+	if len(pakasirGateway) > 0 && pakasirGateway[0] != nil {
+		pGateway = pakasirGateway[0]
+	} else {
+		pGateway = NewPakasirClient(cfg)
+	}
+	return &TopupService{db: db, wallets: wallets, cfg: cfg, gateway: gateway, pakasirGateway: pGateway, billingProfile: NewBillingProfileService(db)}
 }
 
 func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string, input TopupInput) (TopupView, error) {
@@ -165,7 +173,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 
 		if input.PackageID > 0 {
 			var topupPackage models.TopupPackage
-			if err := tx.Where("id = ? AND provider = ? AND is_active = ?", input.PackageID, models.BillingProviderMidtrans, true).First(&topupPackage).Error; err != nil {
+			if err := tx.Where("id = ? AND is_active = ?", input.PackageID, true).First(&topupPackage).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return ErrInvalidTopupInput
 				}
@@ -1134,4 +1142,81 @@ func loadWalletUserID(tx *gorm.DB, walletID uint) (uint, error) {
 		return 0, fmt.Errorf("load topup wallet: %w", err)
 	}
 	return wallet.UserID, nil
+}
+
+
+
+
+func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string, amountMinor int64, webhookStatus string) error {
+	if s.cfg != nil && !s.cfg.BillingTopupEnabled {
+		return ErrTopupDisabled
+	}
+	if orderID == "" || amountMinor <= 0 {
+		return ErrInvalidPaymentNotification
+	}
+
+	detail, err := s.pakasirGateway.GetTransactionDetail(ctx, orderID, amountMinor)
+	if err != nil {
+		return fmt.Errorf("verify transaction detail with pakasir: %w", err)
+	}
+
+	if detail.OrderID != orderID || detail.Amount != amountMinor {
+		return ErrInvalidPaymentNotification
+	}
+
+	status, err := pakAsirStatusToTopupStatus(detail.Status)
+	if err != nil {
+		return ErrInvalidPaymentNotification
+	}
+
+	var topup models.Topup
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topup).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopupNotFound
+			}
+			return fmt.Errorf("lock topup for pakasir notification: %w", err)
+		}
+		if topup.AmountMinor != amountMinor {
+			return ErrInvalidPaymentNotification
+		}
+
+		if topup.Status == models.TopupStatusPaid {
+			return nil
+		}
+
+		switch status {
+		case models.TopupStatusPaid:
+			topup.Status = models.TopupStatusPaid
+			now := time.Now().UTC()
+			topup.PaidAt = &now
+			if err := tx.Save(&topup).Error; err != nil {
+				return fmt.Errorf("save paid topup: %w", err)
+			}
+			walletUserID, err := loadWalletUserID(tx, topup.WalletID)
+			if err != nil {
+				return err
+			}
+			idempotencyKey := fmt.Sprintf("topup:%s:%d", models.BillingProviderPakasir, topup.ID)
+			topupIDStr := strconv.FormatUint(uint64(topup.ID), 10)
+			if _, err := s.wallets.applyInTransaction(tx, LedgerMutation{
+				UserID:         walletUserID,
+				EntryType:      models.WalletLedgerEntryTopup,
+				AmountCredits:  topup.Credits,
+				IdempotencyKey: idempotencyKey,
+				ReferenceType:  "topup",
+				ReferenceID:    topupIDStr,
+			}, true); err != nil {
+				return fmt.Errorf("credit wallet balance: %w", err)
+			}
+		case models.TopupStatusFailed, models.TopupStatusExpired:
+			topup.Status = status
+			if err := tx.Save(&topup).Error; err != nil {
+				return fmt.Errorf("save failed topup: %w", err)
+			}
+		}
+		return nil
+	})
+
+	return err
 }
