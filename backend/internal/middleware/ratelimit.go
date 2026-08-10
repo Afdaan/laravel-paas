@@ -97,6 +97,7 @@ func formatRateLimitMsg(baseMsg string, sec int) string {
 	if sec <= 1 {
 		return fmt.Sprintf("%s. Please try again in 1 second.", baseMsg)
 	}
+
 	return fmt.Sprintf("%s. Please try again in %d seconds.", baseMsg, sec)
 }
 

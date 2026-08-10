@@ -194,6 +194,14 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			}
 		} else {
 			// ponytail: IDR-only custom topup; add currency param when supporting USD
+			ratePerCredit := int64(1000)
+			var basePackage models.TopupPackage
+			if err := tx.Where("currency = ? AND is_active = ? AND credits > 0 AND amount_minor > 0", models.BillingCurrencyIDR, true).Order("credits ASC").First(&basePackage).Error; err == nil && basePackage.Credits > 0 {
+				rate := basePackage.AmountMinor / basePackage.Credits
+				if rate > 0 {
+					ratePerCredit = rate
+				}
+			}
 			topup = models.Topup{
 				WalletID:             wallet.ID,
 				ClientIdempotencyKey: clientKey,
@@ -202,7 +210,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 				ProviderRequestState: providerRequestPending,
 				AmountMinor:          input.AmountMinor,
 				Currency:             models.BillingCurrencyIDR,
-				Credits:              input.AmountMinor / 1000,
+				Credits:              input.AmountMinor / ratePerCredit,
 				Status:               models.TopupStatusPending,
 			}
 		}

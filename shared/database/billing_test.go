@@ -247,6 +247,48 @@ func TestTopupPackageRepricingUsesNewVersion(t *testing.T) {
 	}
 }
 
+func TestSeedBillingCatalogPreservesAdminEditedPackages(t *testing.T) {
+	db := billingTestDB(t, t.Name())
+	if err := seedBillingCatalog(db); err != nil {
+		t.Fatalf("initial seed failed: %v", err)
+	}
+
+	// Simulate admin editing package for 100 credits from IDR 100.000 to IDR 10.000 (new version)
+	var active100 models.TopupPackage
+	if err := db.Where("credits = ? AND is_active = ?", 100, true).First(&active100).Error; err != nil {
+		t.Fatalf("find active 100 credit package: %v", err)
+	}
+	if err := db.Model(&active100).Update("is_active", false).Error; err != nil {
+		t.Fatalf("deactivate old package: %v", err)
+	}
+	adminEditedPackage := models.TopupPackage{
+		Provider:    active100.Provider,
+		Currency:    active100.Currency,
+		Credits:     100,
+		AmountMinor: 10000,
+		Version:     active100.Version + 1,
+		IsActive:    true,
+		SortOrder:   active100.SortOrder,
+	}
+	if err := db.Create(&adminEditedPackage).Error; err != nil {
+		t.Fatalf("create admin edited package: %v", err)
+	}
+
+	// Reseed database (simulating server restart)
+	if err := seedBillingCatalog(db); err != nil {
+		t.Fatalf("reseed failed: %v", err)
+	}
+
+	// Admin edited package MUST remain active and NOT be reverted back to 100.000 IDR
+	var checkActive models.TopupPackage
+	if err := db.Where("credits = ? AND is_active = ?", 100, true).First(&checkActive).Error; err != nil {
+		t.Fatalf("find active 100 credit package after reseed: %v", err)
+	}
+	if checkActive.ID != adminEditedPackage.ID || checkActive.AmountMinor != 10000 {
+		t.Fatalf("admin edited package was reverted: got amount_minor=%d version=%d (expected amount_minor=10000, version=%d)", checkActive.AmountMinor, checkActive.Version, adminEditedPackage.Version)
+	}
+}
+
 func pointerValue(value *int) int {
 	if value == nil {
 		return 0

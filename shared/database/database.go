@@ -226,9 +226,11 @@ func seedTopupPackages(db *gorm.DB) error {
 			var current models.TopupPackage
 			err := tx.Where(identity+" AND is_active = ?", provider, currency, price.Credits, true).First(&current).Error
 			switch {
-			case err == nil && current.AmountMinor == price.AmountMinor:
+			case err == nil && (current.AmountMinor == price.AmountMinor || current.AmountMinor != current.Credits):
+				// Keep active package intact if it matches seed price or was updated by an admin (non-legacy 1:1 price)
 				continue
 			case err == nil:
+				// Retire legacy packages seeded at 1 credit = 1 IDR ratio
 				if err := tx.Model(&models.TopupPackage{}).Where("id = ?", current.ID).Update("is_active", false).Error; err != nil {
 					return fmt.Errorf("retire mispriced topup package %d: %w", price.Credits, err)
 				}
