@@ -546,11 +546,24 @@ func (s *CatalogService) UpdateTopupPackage(ctx context.Context, audit AuditCont
 		return CatalogPackage{}, ErrInvalidCatalogInput
 	}
 
+	credits := current.Credits
+	if input.Credits > 0 {
+		credits = input.Credits
+	}
+
 	var created models.TopupPackage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		created, _, err = s.createTopupPackageVersion(tx, current.Currency, current.Credits, input.AmountMinor, input.SortOrder)
-		return err
+		created, _, err = s.createTopupPackageVersion(tx, current.Currency, credits, input.AmountMinor, input.SortOrder)
+		if err != nil {
+			return err
+		}
+		if current.Credits != credits && current.IsActive {
+			if err := tx.Model(&current).Update("is_active", false).Error; err != nil {
+				return fmt.Errorf("deactivate topup package: %w", err)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return CatalogPackage{}, err
@@ -896,7 +909,7 @@ func validateTopupPackageInput(audit AuditContext, input TopupPackageInput) erro
 }
 
 func validateTopupPackageUpdateInput(audit AuditContext, input TopupPackageUpdateInput) error {
-	if !validAuditContext(audit) || input.Reason != audit.Reason || input.AmountMinor <= 0 || input.AmountMinor > maxTopupPackageAmount || input.SortOrder < 0 || input.SortOrder > maxTopupPackageSortOrder {
+	if !validAuditContext(audit) || input.Reason != audit.Reason || (input.Credits != 0 && (input.Credits <= 0 || input.Credits > maxTopupPackageCredits)) || input.AmountMinor <= 0 || input.AmountMinor > maxTopupPackageAmount || input.SortOrder < 0 || input.SortOrder > maxTopupPackageSortOrder {
 		return ErrInvalidCatalogInput
 	}
 	return nil

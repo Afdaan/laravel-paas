@@ -53,6 +53,7 @@ interface PackageFormState {
 }
 
 interface PackageEditFormState {
+  credits: number | ''
   amount_minor: number | ''
   sort_order: number | ''
   reason: string
@@ -70,7 +71,7 @@ interface DirectCreditAdjustmentFormState {
 }
 
 const emptyPackage: PackageFormState = { credits: '', currency: 'IDR', amount_minor: '', sort_order: '', reason: '' }
-const emptyPackageEdit: PackageEditFormState = { amount_minor: '', sort_order: '', reason: '' }
+const emptyPackageEdit: PackageEditFormState = { credits: '', amount_minor: '', sort_order: '', reason: '' }
 const emptyCreditAdjustment: CreditAdjustmentFormState = { credits: '', reason: '' }
 const emptyDirectCreditAdjustment: DirectCreditAdjustmentFormState = { user_id: '', credits: '', reason: '' }
 const statusVariant = (status: string) => status === 'paid' || status === 'active' ? 'secondary' : status === 'suspended' || status === 'payment_due' ? 'destructive' : 'outline'
@@ -232,7 +233,7 @@ export default function AdminBilling() {
 
   const startEditPackage = (pkg: TopupPackage) => {
     setEditingPackage(pkg)
-    setPackageEditForm({ amount_minor: pkg.amount_minor, sort_order: pkg.sort_order, reason: '' })
+    setPackageEditForm({ credits: pkg.credits, amount_minor: pkg.amount_minor, sort_order: pkg.sort_order, reason: '' })
   }
 
   const savePackageEdit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -242,9 +243,9 @@ export default function AdminBilling() {
     try {
       await billingAPI.updateTopupPackage(editingPackage.id, {
         ...packageEditForm,
+        credits: Number(packageEditForm.credits || 0),
         amount_minor: Number(packageEditForm.amount_minor || 0),
         sort_order: Number(packageEditForm.sort_order || 0),
-        credits: editingPackage.credits,
       })
       setEditingPackage(null)
       setPackageEditForm(emptyPackageEdit)
@@ -441,7 +442,7 @@ export default function AdminBilling() {
         </DialogHeader>
         <form className="space-y-4" onSubmit={savePackageEdit}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('billing.admin.credits')} htmlFor="edit-package-credits"><Input id="edit-package-credits" type="number" value={editingPackage?.credits ?? 0} disabled /></Field>
+            <NumberField id="edit-package-credits" label={t('billing.admin.credits')} value={packageEditForm.credits} onChange={(credits) => setPackageEditForm((current) => ({ ...current, credits }))} min={1} />
             <NumberField id="edit-package-amount" label={t('billing.admin.packagePrice')} value={packageEditForm.amount_minor} onChange={(amount_minor) => setPackageEditForm((current) => ({ ...current, amount_minor }))} min={1} />
             <NumberField id="edit-package-sort-order" label={t('billing.admin.sortOrder')} value={packageEditForm.sort_order} onChange={(sort_order) => setPackageEditForm((current) => ({ ...current, sort_order }))} min={0} />
           </div>
