@@ -106,6 +106,7 @@ func main() {
 		walletService := billing.NewWalletService(db)
 		invoiceService := billing.NewInvoiceService(db, walletService)
 		topupService := billing.NewTopupService(db, walletService, cfg, nil)
+		topupService.SetSettingService(settingService)
 		go billing.NewInvoiceScheduler(invoiceService, topupService).Run(billingCtx)
 		go billing.NewSuspensionService(db, cfg).Run(billingCtx)
 		go billing.NewProjectSuspensionDispatcher(db, redisService).Run(billingCtx)

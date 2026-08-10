@@ -213,15 +213,16 @@ func seedTopupPackages(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
+		provider, currency := models.BillingProviderMidtrans, models.BillingCurrencyIDR
+
 		if err := tx.Model(&models.TopupPackage{}).
-			Where("provider = ? AND currency = ? AND is_active = ? AND credits NOT IN ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, true, seededCredits).
+			Where("provider = ? AND currency = ? AND is_active = ? AND credits NOT IN ?", provider, currency, true, seededCredits).
 			Update("is_active", false).Error; err != nil {
 			return fmt.Errorf("retire off-catalog topup packages: %w", err)
 		}
 
 		for index, price := range topupPackagePrices {
 			const identity = "provider = ? AND currency = ? AND credits = ?"
-			provider, currency := models.BillingProviderMidtrans, models.BillingCurrencyIDR
 
 			var current models.TopupPackage
 			err := tx.Where(identity+" AND is_active = ?", provider, currency, price.Credits, true).First(&current).Error
@@ -255,7 +256,7 @@ func seedTopupPackages(db *gorm.DB) error {
 			if err := tx.Create(&pkg).Error; err != nil {
 				return fmt.Errorf("seed topup package %d: %w", price.Credits, err)
 			}
-			slog.Info("Seeded topup package", "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
+			slog.Info("Seeded topup package", "provider", provider, "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
 		}
 		return nil
 	})

@@ -70,6 +70,7 @@ type Config struct {
 	// Billing rollout
 	BillingEnabled         bool
 	BillingTopupEnabled    bool
+	BillingTopupProvider   string
 	BillingGraceDays       int
 	BillingDeployBlockDays int
 	MidtransServerKey      string
@@ -222,6 +223,7 @@ func Load() *Config {
 		// Billing rollout
 		BillingEnabled:         getEnvBool("BILLING_ENABLED", false),
 		BillingTopupEnabled:    getEnvBool("BILLING_TOPUP_ENABLED", false),
+		BillingTopupProvider:   getEnv("BILLING_TOPUP_PROVIDER", getEnv("PAYMENT_GATEWAY_PROVIDER", "")),
 		BillingGraceDays:       getEnvInt("BILLING_GRACE_DAYS", 7),
 		BillingDeployBlockDays: getEnvInt("BILLING_DEPLOY_BLOCK_DAYS", 3),
 		MidtransServerKey:      getEnv("MIDTRANS_SERVER_KEY", ""),

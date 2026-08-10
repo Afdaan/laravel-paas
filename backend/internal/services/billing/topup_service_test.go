@@ -867,3 +867,71 @@ func TestTopupIdempotencyMatch(t *testing.T) {
 		})
 	}
 }
+
+type fakePakasirGateway struct {
+	createdOrderID string
+	createdAmount  int64
+	method         string
+}
+
+func (f *fakePakasirGateway) CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (PakasirCreateResponse, error) {
+	f.createdOrderID = orderID
+	f.createdAmount = amountMinor
+	f.method = method
+	return PakasirCreateResponse{
+		PaymentNumber: "https://app.pakasir.com/pay/test-project/" + orderID,
+		TotalPayment:  amountMinor,
+		Fee:           700,
+		ExpiredAt:     "2026-08-11 12:00:00",
+	}, nil
+}
+
+func (f *fakePakasirGateway) GetTransactionDetail(ctx context.Context, orderID string, amountMinor int64) (PakasirTransactionDetail, error) {
+	return PakasirTransactionDetail{
+		OrderID:       orderID,
+		Amount:        amountMinor,
+		Project:       "test-project",
+		Status:        "completed",
+		PaymentMethod: "qris",
+	}, nil
+}
+
+func TestTopupServiceWithPakasirProvider(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "pakasir@example.test", Password: "test", Name: "Pakasir User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Provider: models.BillingProviderPakasir, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	cfg := &config.Config{
+		BillingEnabled:       true,
+		BillingTopupEnabled:  true,
+		BillingTopupProvider: "pakasir",
+		PakasirEnabled:       true,
+		PakasirProjectSlug:   "test-project",
+		PakasirAPIKey:        "test-key",
+	}
+	service := NewTopupService(db, NewWalletService(db), cfg, nil, pakasirGw)
+
+	view, err := service.Create(context.Background(), user.ID, "client-pakasir-key", TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatalf("unexpected error creating topup: %v", err)
+	}
+	if view.PaymentURL == "" || view.Credits != 100 {
+		t.Fatalf("unexpected topup view: %+v", view)
+	}
+	if pakasirGw.createdAmount != 10000 {
+		t.Fatalf("pakasir gateway did not receive transaction: %+v", pakasirGw)
+	}
+}

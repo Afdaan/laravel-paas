@@ -110,6 +110,7 @@ func Setup(
 	walletService := billing.NewWalletService(db)
 	billingProfileService := billing.NewBillingProfileService(db)
 	topupService := billing.NewTopupService(db, walletService, cfg, billing.NewMidtransClient(cfg), billing.NewPakasirClient(cfg))
+	topupService.SetSettingService(settingService)
 	billingHandler := handlers.NewBillingHandlerWithTopups(
 		billing.NewCatalogServiceWithWallets(db, walletService),
 		topupService,

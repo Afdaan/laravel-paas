@@ -21,6 +21,7 @@ import (
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/services/setting"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -110,6 +111,7 @@ type TopupService struct {
 	cfg            *config.Config
 	gateway        MidtransGateway
 	pakasirGateway PakasirGateway
+	settingService *setting.SettingService
 	billingProfile *BillingProfileService
 }
 
@@ -148,6 +150,34 @@ func NewTopupService(db *gorm.DB, wallets *WalletService, cfg *config.Config, ga
 	return &TopupService{db: db, wallets: wallets, cfg: cfg, gateway: gateway, pakasirGateway: pGateway, billingProfile: NewBillingProfileService(db)}
 }
 
+func (s *TopupService) SetSettingService(settingService *setting.SettingService) {
+	s.settingService = settingService
+}
+
+func (s *TopupService) activeProvider() string {
+	if s.settingService != nil {
+		if val := s.settingService.Get(models.SettingDefaultPaymentProvider, ""); val != "" {
+			val = strings.ToLower(strings.TrimSpace(val))
+			if val == models.BillingProviderPakasir || val == models.BillingProviderMidtrans {
+				return val
+			}
+		}
+	}
+	if s.cfg != nil {
+		prov := strings.ToLower(strings.TrimSpace(s.cfg.BillingTopupProvider))
+		if prov == models.BillingProviderPakasir {
+			return models.BillingProviderPakasir
+		}
+		if prov == models.BillingProviderMidtrans {
+			return models.BillingProviderMidtrans
+		}
+		if s.cfg.PakasirEnabled && (s.cfg.MidtransServerKey == "" || s.cfg.PakasirProjectSlug != "") {
+			return models.BillingProviderPakasir
+		}
+	}
+	return models.BillingProviderMidtrans
+}
+
 func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string, input TopupInput) (TopupView, error) {
 	if err := s.validateCreate(ctx, userID, clientKey, input); err != nil {
 		return TopupView{}, err
@@ -171,6 +201,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			return fmt.Errorf("lock existing topup: %w", err)
 		}
 
+		provider := s.activeProvider()
 		if input.PackageID > 0 {
 			var topupPackage models.TopupPackage
 			if err := tx.Where("id = ? AND is_active = ?", input.PackageID, true).First(&topupPackage).Error; err != nil {
@@ -184,7 +215,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 				WalletID:             wallet.ID,
 				TopupPackageID:       &topupPackage.ID,
 				ClientIdempotencyKey: clientKey,
-				Provider:             models.BillingProviderMidtrans,
+				Provider:             provider,
 				ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
 				ProviderRequestState: providerRequestPending,
 				AmountMinor:          topupPackage.AmountMinor,
@@ -205,7 +236,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			topup = models.Topup{
 				WalletID:             wallet.ID,
 				ClientIdempotencyKey: clientKey,
-				Provider:             models.BillingProviderMidtrans,
+				Provider:             provider,
 				ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
 				ProviderRequestState: providerRequestPending,
 				AmountMinor:          input.AmountMinor,
@@ -261,12 +292,18 @@ func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (Top
 		return TopupView{}, fmt.Errorf("load topup for reconciliation: %w", err)
 	}
 
-	notification, err := s.gateway.GetTransactionStatus(ctx, topup.ProviderOrderID)
-	if err != nil {
-		return TopupView{}, err
-	}
-	if err := s.ProcessReconciledNotification(ctx, notification); err != nil {
-		return TopupView{}, err
+	if topup.Provider == models.BillingProviderPakasir {
+		if s.pakasirGateway != nil {
+			detail, err := s.pakasirGateway.GetTransactionDetail(ctx, topup.ProviderOrderID, topup.AmountMinor)
+			if err == nil && detail.OrderID != "" {
+				_ = s.ProcessPakasirWebhook(ctx, detail.OrderID, detail.Amount, detail.Status)
+			}
+		}
+	} else if s.gateway != nil {
+		notification, err := s.gateway.GetTransactionStatus(ctx, topup.ProviderOrderID)
+		if err == nil {
+			_ = s.ProcessReconciledNotification(ctx, notification)
+		}
 	}
 	if err := s.db.WithContext(ctx).First(&topup, topup.ID).Error; err != nil {
 		return TopupView{}, fmt.Errorf("reload reconciled topup: %w", err)
@@ -617,20 +654,25 @@ func (s *TopupService) recoverStaleTopup(ctx context.Context, topupID uint) erro
 	if err := s.db.WithContext(ctx).First(&topup, topupID).Error; err != nil {
 		return fmt.Errorf("reload recovered topup: %w", err)
 	}
-	if topup.Status != models.TopupStatusPending {
+	if topup.Provider == models.BillingProviderPakasir {
+		if s.pakasirGateway != nil {
+			detail, err := s.pakasirGateway.GetTransactionDetail(ctx, topup.ProviderOrderID, topup.AmountMinor)
+			if err == nil && detail.OrderID != "" {
+				_ = s.ProcessPakasirWebhook(ctx, detail.OrderID, detail.Amount, detail.Status)
+			}
+		}
 		return nil
+	} else if s.gateway != nil {
+		notification, err := s.gateway.GetTransactionStatus(ctx, topup.ProviderOrderID)
+		if err != nil {
+			return err
+		}
+		if notification.OrderID == "" {
+			return nil
+		}
+		return s.ProcessReconciledNotification(ctx, notification)
 	}
-	notification, err := s.gateway.GetTransactionStatus(ctx, topup.ProviderOrderID)
-	if err != nil {
-		return err
-	}
-	if notification.OrderID == "" {
-		// Midtrans never recorded this order (the process died before or
-		// during the Snap request). The recovered checkout link above is the
-		// way forward; nothing to reconcile.
-		return nil
-	}
-	return s.ProcessReconciledNotification(ctx, notification)
+	return nil
 }
 
 func (s *TopupService) retryDueInvoices(ctx context.Context, userID uint) {
@@ -662,33 +704,64 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 		break
 	}
 
-	finishURL := ""
-	if s.cfg != nil {
-		if s.cfg.FrontendURL != "" {
-			finishURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
-		} else if s.cfg.BaseDomain != "" {
-			finishURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
+	var paymentToken, paymentURL string
+	if topup.Provider == models.BillingProviderPakasir {
+		if s.pakasirGateway == nil {
+			if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
+				return errors.Join(ErrPaymentProvider, cleanupErr)
+			}
+			return ErrPaymentProvider
 		}
-	}
-	payment, err := s.gateway.CreatePayment(ctx, MidtransPaymentRequest{
-		OrderID:        topup.ProviderOrderID,
-		AmountMinor:    topup.AmountMinor,
-		Currency:       topup.Currency,
-		IdempotencyKey: topup.ProviderOrderID,
-		FinishURL:      finishURL,
-	})
-	if err != nil {
-		if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
-			return errors.Join(err, fmt.Errorf("%w: reset checkout request: %v", ErrTopupRecoveryRequired, cleanupErr))
+		res, err := s.pakasirGateway.CreateTransaction(ctx, topup.ProviderOrderID, topup.AmountMinor, "qris")
+		if err != nil {
+			if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
+				return errors.Join(err, fmt.Errorf("%w: reset checkout request: %v", ErrTopupRecoveryRequired, cleanupErr))
+			}
+			return err
 		}
-		return err
-	}
-	if err := validatePaymentResponse(payment); err != nil {
-		if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
-			return errors.Join(err, fmt.Errorf("%w: reset checkout request: %v", ErrTopupRecoveryRequired, cleanupErr))
+		paymentToken = res.PaymentNumber
+		paymentURL = res.PaymentNumber
+		if !strings.HasPrefix(paymentURL, "http://") && !strings.HasPrefix(paymentURL, "https://") {
+			slug := ""
+			if s.cfg != nil {
+				slug = s.cfg.PakasirProjectSlug
+			}
+			if slug != "" {
+				paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s", slug, topup.AmountMinor, topup.ProviderOrderID)
+			}
 		}
-		return err
+	} else {
+		finishURL := ""
+		if s.cfg != nil {
+			if s.cfg.FrontendURL != "" {
+				finishURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
+			} else if s.cfg.BaseDomain != "" {
+				finishURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
+			}
+		}
+		payment, err := s.gateway.CreatePayment(ctx, MidtransPaymentRequest{
+			OrderID:        topup.ProviderOrderID,
+			AmountMinor:    topup.AmountMinor,
+			Currency:       topup.Currency,
+			IdempotencyKey: topup.ProviderOrderID,
+			FinishURL:      finishURL,
+		})
+		if err != nil {
+			if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
+				return errors.Join(err, fmt.Errorf("%w: reset checkout request: %v", ErrTopupRecoveryRequired, cleanupErr))
+			}
+			return err
+		}
+		if err := validatePaymentResponse(payment); err != nil {
+			if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
+				return errors.Join(err, fmt.Errorf("%w: reset checkout request: %v", ErrTopupRecoveryRequired, cleanupErr))
+			}
+			return err
+		}
+		paymentToken = payment.Token
+		paymentURL = payment.RedirectURL
 	}
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(topup, topup.ID).Error; err != nil {
 			return fmt.Errorf("lock created payment request: %w", err)
@@ -699,11 +772,11 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 		if topup.ProviderRequestState != providerRequestCreating {
 			return ErrTopupRecoveryRequired
 		}
-		if err := tx.Model(topup).Updates(map[string]any{"provider_payment_token": payment.Token, "provider_payment_url": payment.RedirectURL, "provider_request_state": providerRequestReady}).Error; err != nil {
+		if err := tx.Model(topup).Updates(map[string]any{"provider_payment_token": paymentToken, "provider_payment_url": paymentURL, "provider_request_state": providerRequestReady}).Error; err != nil {
 			return fmt.Errorf("store payment request: %w", err)
 		}
-		topup.ProviderPaymentToken = payment.Token
-		topup.ProviderPaymentURL = payment.RedirectURL
+		topup.ProviderPaymentToken = paymentToken
+		topup.ProviderPaymentURL = paymentURL
 		topup.ProviderRequestState = providerRequestReady
 		return nil
 	})
@@ -845,11 +918,21 @@ func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKe
 }
 
 func (s *TopupService) validatePaymentProcessing(ctx context.Context) error {
-	if s == nil || s.db == nil || s.wallets == nil || s.cfg == nil || s.gateway == nil {
+	if s == nil || s.db == nil || s.wallets == nil || s.cfg == nil {
 		return ErrTopupDisabled
 	}
-	if ctx == nil || !s.cfg.BillingEnabled || s.cfg.MidtransServerKey == "" || s.cfg.MidtransMerchantID == "" {
+	if ctx == nil || !s.cfg.BillingEnabled {
 		return ErrTopupDisabled
+	}
+	provider := s.activeProvider()
+	if provider == models.BillingProviderPakasir {
+		if s.pakasirGateway == nil || !s.cfg.PakasirEnabled || s.cfg.PakasirProjectSlug == "" || s.cfg.PakasirAPIKey == "" {
+			return ErrTopupDisabled
+		}
+	} else {
+		if s.gateway == nil || s.cfg.MidtransServerKey == "" || s.cfg.MidtransMerchantID == "" {
+			return ErrTopupDisabled
+		}
 	}
 	return nil
 }
