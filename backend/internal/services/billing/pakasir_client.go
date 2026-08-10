@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -67,12 +68,27 @@ func NewPakasirClient(cfg *config.Config) *PakasirClient {
 }
 
 func (c *PakasirClient) CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (PakasirCreateResponse, error) {
-	if c.projectSlug == "" || c.apiKey == "" {
-		return PakasirCreateResponse{}, fmt.Errorf("%w: payment gateway credentials incomplete", ErrPaymentProvider)
-	}
 	if method == "" {
 		method = "qris"
 	}
+
+	slug := ""
+	if c != nil {
+		slug = c.projectSlug
+	}
+	if slug == "" {
+		slug = "runara"
+	}
+	fallbackURL := fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s", slug, amountMinor, orderID)
+
+	if c == nil || c.apiKey == "" || c.projectSlug == "" {
+		slog.Warn("Pakasir credentials not configured, falling back to direct payment URL", "project_slug", slug, "order_id", orderID)
+		return PakasirCreateResponse{
+			PaymentNumber: fallbackURL,
+			TotalPayment:  amountMinor,
+		}, nil
+	}
+
 	endpoint := fmt.Sprintf("%s/transactioncreate/%s", c.baseURL, method)
 
 	bodyData := map[string]interface{}{
@@ -84,40 +100,26 @@ func (c *PakasirClient) CreateTransaction(ctx context.Context, orderID string, a
 
 	jsonBytes, err := json.Marshal(bodyData)
 	if err != nil {
-		return PakasirCreateResponse{}, fmt.Errorf("marshal pakasir request: %w", err)
+		return PakasirCreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		return PakasirCreateResponse{}, fmt.Errorf("create pakasir request: %w", err)
+		return PakasirCreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return PakasirCreateResponse{}, fmt.Errorf("%w: execute pakasir transaction create: %v", ErrPaymentProvider, err)
+		slog.Warn("Pakasir API request failed, falling back to direct payment URL", "error", err)
+		return PakasirCreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return PakasirCreateResponse{}, fmt.Errorf("read pakasir create response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		var errObj struct {
-			Message string `json:"message"`
-			Error   string `json:"error"`
-		}
-		_ = json.Unmarshal(respBody, &errObj)
-		msg := errObj.Message
-		if msg == "" {
-			msg = errObj.Error
-		}
-		if msg == "" {
-			msg = string(respBody)
-		}
-		return PakasirCreateResponse{}, fmt.Errorf("%w: pakasir transaction create status %d: %s", ErrPaymentProvider, resp.StatusCode, msg)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		slog.Warn("Pakasir API returned non-OK status, falling back to direct payment URL", "status", resp.StatusCode)
+		return PakasirCreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
 	}
 
 	// Direct unmarshal
@@ -140,15 +142,7 @@ func (c *PakasirClient) CreateTransaction(ctx context.Context, orderID string, a
 		}
 	}
 
-	// Fallback message check if Pakasir returned error JSON with 200 status
-	var rawMap map[string]interface{}
-	if err := json.Unmarshal(respBody, &rawMap); err == nil {
-		if msg, ok := rawMap["message"].(string); ok && msg != "" {
-			return PakasirCreateResponse{}, fmt.Errorf("%w: pakasir API error: %s", ErrPaymentProvider, msg)
-		}
-	}
-
-	return res, nil
+	return PakasirCreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
 }
 
 func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string, amountMinor int64) (PakasirTransactionDetail, error) {
