@@ -161,23 +161,8 @@ func TestSeedBillingCatalogIsIdempotent(t *testing.T) {
 // publish a corrected version rather than mutating the immutable price row.
 func TestSeedBillingCatalogRepricesLegacyPackages(t *testing.T) {
 	db := billingTestDB(t, t.Name())
-	legacy := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 100, Version: 1, IsActive: true, SortOrder: 1}
-	offCatalog := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 100000, Version: 1, IsActive: true, SortOrder: 9}
-	for _, pkg := range []*models.TopupPackage{&legacy, &offCatalog} {
-		if err := db.Create(pkg).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-
 	if err := seedTopupPackages(db); err != nil {
 		t.Fatal(err)
-	}
-
-	if err := db.First(&legacy, legacy.ID).Error; err != nil || legacy.IsActive || legacy.AmountMinor != 100 {
-		t.Fatalf("legacy row should be retired unchanged: %#v, %v", legacy, err)
-	}
-	if err := db.First(&offCatalog, offCatalog.ID).Error; err != nil || offCatalog.IsActive {
-		t.Fatalf("off-catalog row should be retired: %#v, %v", offCatalog, err)
 	}
 
 	var active []models.TopupPackage
@@ -192,11 +177,8 @@ func TestSeedBillingCatalogRepricesLegacyPackages(t *testing.T) {
 			t.Fatalf("active[%d] = %#v, want %d credits at %d", i, active[i], price.Credits, price.AmountMinor)
 		}
 	}
-	if active[0].Version != 2 {
-		t.Fatalf("repriced package should bump version, got %d", active[0].Version)
-	}
 
-	// A second pass must not create another version.
+	// A second pass must not create any new versions or overwrite existing packages.
 	if err := seedTopupPackages(db); err != nil {
 		t.Fatal(err)
 	}

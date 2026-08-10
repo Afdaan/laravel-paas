@@ -207,56 +207,31 @@ var topupPackagePrices = []struct{ Credits, AmountMinor int64 }{
 // deactivating the stale row and inserting the next version — which also cleans up
 // legacy rows seeded before the credit ratio changed.
 func seedTopupPackages(db *gorm.DB) error {
-	seededCredits := make([]int64, 0, len(topupPackagePrices))
-	for _, price := range topupPackagePrices {
-		seededCredits = append(seededCredits, price.Credits)
+	var count int64
+	if err := db.Model(&models.TopupPackage{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("check topup packages count: %w", err)
+	}
+	if count > 0 {
+		// Database already seeded; preserve admin edits and existing package catalog across server restarts.
+		return nil
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		provider, currency := models.BillingProviderMidtrans, models.BillingCurrencyIDR
-
-		if err := tx.Model(&models.TopupPackage{}).
-			Where("provider = ? AND currency = ? AND is_active = ? AND credits NOT IN ?", provider, currency, true, seededCredits).
-			Update("is_active", false).Error; err != nil {
-			return fmt.Errorf("retire off-catalog topup packages: %w", err)
-		}
-
 		for index, price := range topupPackagePrices {
-			const identity = "provider = ? AND currency = ? AND credits = ?"
-
-			var current models.TopupPackage
-			err := tx.Where(identity+" AND is_active = ?", provider, currency, price.Credits, true).First(&current).Error
-			switch {
-			case err == nil && (current.AmountMinor == price.AmountMinor || current.AmountMinor != current.Credits):
-				// Keep active package intact if it matches seed price or was updated by an admin (non-legacy 1:1 price)
-				continue
-			case err == nil:
-				// Retire legacy packages seeded at 1 credit = 1 IDR ratio
-				if err := tx.Model(&models.TopupPackage{}).Where("id = ?", current.ID).Update("is_active", false).Error; err != nil {
-					return fmt.Errorf("retire mispriced topup package %d: %w", price.Credits, err)
-				}
-			case !errors.Is(err, gorm.ErrRecordNotFound):
-				return fmt.Errorf("load active topup package %d: %w", price.Credits, err)
-			}
-
-			var latestVersion int
-			if err := tx.Model(&models.TopupPackage{}).Where(identity, provider, currency, price.Credits).Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
-				return fmt.Errorf("find topup package version %d: %w", price.Credits, err)
-			}
-
 			pkg := models.TopupPackage{
 				Credits:     price.Credits,
 				Currency:    currency,
 				AmountMinor: price.AmountMinor,
 				Provider:    provider,
-				Version:     latestVersion + 1,
+				Version:     1,
 				IsActive:    true,
 				SortOrder:   index + 1,
 			}
 			if err := tx.Create(&pkg).Error; err != nil {
-				return fmt.Errorf("seed topup package %d: %w", price.Credits, err)
+				return fmt.Errorf("seed initial topup package %d: %w", price.Credits, err)
 			}
-			slog.Info("Seeded topup package", "provider", provider, "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
+			slog.Info("Seeded initial topup package", "provider", provider, "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
 		}
 		return nil
 	})
