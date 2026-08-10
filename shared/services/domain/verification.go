@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -90,12 +91,16 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, project
 	s.StartLockHeartbeat(lockCtx, cancelLock, &domain, token, 30*time.Second)
 
 	rateKey := fmt.Sprintf("ratelimit:domain_verify_v2:%d", domainID)
-	allowed, err := s.redisService.RateLimit(rateKey, 20, 1*time.Hour)
+	allowed, ttl, err := s.redisService.RateLimit(rateKey, 20, 1*time.Hour)
 	if err != nil {
 		return nil, err
 	}
 	if !allowed {
-		return nil, apperr.New(429, "RATE_LIMIT_EXCEEDED", "Verification rate limit exceeded. Please try again later.")
+		sec := int(math.Ceil(ttl.Seconds()))
+		if sec < 1 {
+			sec = 1
+		}
+		return nil, apperr.NewRateLimited(fmt.Sprintf("Verification rate limit exceeded. Please try again in %d seconds.", sec), sec)
 	}
 
 	isAlreadyActive := domain.Status == models.DomainStatusActive

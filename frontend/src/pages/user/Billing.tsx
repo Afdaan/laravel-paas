@@ -677,7 +677,7 @@ export default function Billing() {
                     const status = error.response?.status
                     const serverMessage = error.response?.data?.error || error.response?.data?.message
                     if (status === 429) {
-                      toast.error(t('billing.autoRenewRateLimited'))
+                      toast.error(serverMessage || t('billing.autoRenewRateLimited'))
                     } else if (serverMessage) {
                       toast.error(serverMessage)
                     } else {
@@ -776,43 +776,43 @@ export default function Billing() {
         <CardHeader className="border-b border-border/40 pb-4">
           <CardTitle className="text-base font-semibold tracking-tight">Billing Profile & Tax Details</CardTitle>
           <CardDescription className="text-xs text-muted-foreground">
-            Invoicing information for payment receipts and official tax compliance (NPWP/VAT).
+            Invoicing information for payment receipts and official tax compliance.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
           <form onSubmit={handleSaveProfile} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="company_name" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Full Name / Company Name</Label>
-                <Input id="company_name" value={profile.company_name} onChange={e => setProfile({...profile, company_name: e.target.value})} placeholder="PT Acme Corp / Nama Lengkap" />
+                <Label htmlFor="company_name" className="text-sm font-medium">Full Name / Company Name</Label>
+                <Input id="company_name" value={profile.company_name} onChange={e => setProfile({...profile, company_name: e.target.value})} placeholder="Nama Lengkap / PT Acme Corp" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="tax_id" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Tax ID / NPWP / NIK</Label>
-                <Input id="tax_id" value={profile.tax_id} onChange={e => setProfile({...profile, tax_id: e.target.value})} placeholder="00.000.000.0-000.000" />
+                <Label htmlFor="tax_id" className="text-sm font-medium">Tax ID / NPWP / NIK <span className="text-xs font-normal text-muted-foreground">(Optional)</span></Label>
+                <Input id="tax_id" value={profile.tax_id} onChange={e => setProfile({...profile, tax_id: e.target.value})} placeholder="00.000.000.0-000.000 (Optional)" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="billing_email" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Billing Email</Label>
-                <Input id="billing_email" type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} placeholder="billing@company.com" />
+                <Label htmlFor="billing_email" className="text-sm font-medium">Billing Email</Label>
+                <Input id="billing_email" type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} placeholder="user@example.com" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="billing_phone" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Phone Number</Label>
+                <Label htmlFor="billing_phone" className="text-sm font-medium">Phone Number</Label>
                 <Input id="billing_phone" value={profile.phone} onChange={e => setProfile({...profile, phone: e.target.value})} placeholder="+628123456789" />
               </div>
               <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="address_line1" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Address</Label>
+                <Label htmlFor="address_line1" className="text-sm font-medium">Address</Label>
                 <Input id="address_line1" value={profile.address_line1} onChange={e => setProfile({...profile, address_line1: e.target.value})} placeholder="Jalan Utama No. 123" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="city" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">City</Label>
+                <Label htmlFor="city" className="text-sm font-medium">City</Label>
                 <Input id="city" value={profile.city} onChange={e => setProfile({...profile, city: e.target.value})} placeholder="Jakarta" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="postal_code" className="text-xs uppercase tracking-wider font-mono text-muted-foreground">Postal Code</Label>
+                <Label htmlFor="postal_code" className="text-sm font-medium">Postal Code</Label>
                 <Input id="postal_code" value={profile.postal_code} onChange={e => setProfile({...profile, postal_code: e.target.value})} placeholder="12340" />
               </div>
             </div>
             <div className="flex justify-end pt-2">
-              <Button type="submit" size="sm" disabled={savingProfile} className="font-mono text-xs uppercase tracking-wider">
+              <Button type="submit" size="sm" disabled={savingProfile}>
                 {savingProfile ? 'Saving...' : 'Save Profile'}
               </Button>
             </div>

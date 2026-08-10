@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +21,7 @@ import (
 )
 
 type distributedRateLimiter interface {
-	RateLimit(key string, limit int, duration time.Duration) (bool, error)
+	RateLimit(key string, limit int, duration time.Duration) (bool, time.Duration, error)
 }
 
 // RateLimiter implements a sliding window rate limiter
@@ -63,7 +65,7 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-func (rl *RateLimiter) Allow(ip string) bool {
+func (rl *RateLimiter) Allow(ip string) (bool, int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -75,15 +77,27 @@ func (rl *RateLimiter) Allow(ip string) bool {
 			count:       1,
 			windowStart: now,
 		}
-		return true
+		return true, 0
 	}
 
 	if record.count >= rl.max {
-		return false
+		remaining := rl.window - now.Sub(record.windowStart)
+		sec := int(math.Ceil(remaining.Seconds()))
+		if sec < 1 {
+			sec = 1
+		}
+		return false, sec
 	}
 
 	record.count++
-	return true
+	return true, 0
+}
+
+func formatRateLimitMsg(baseMsg string, sec int) string {
+	if sec <= 1 {
+		return fmt.Sprintf("%s. Please try again in 1 second.", baseMsg)
+	}
+	return fmt.Sprintf("%s. Please try again in %d seconds.", baseMsg, sec)
 }
 
 // Global rate limiters for different endpoint categories
@@ -116,20 +130,27 @@ func RateLimitLogin(redis distributedRateLimiter) fiber.Handler {
 
 		if redis != nil {
 			for _, key := range keys {
-				allowed, err := redis.RateLimit(key, 5, time.Minute)
+				allowed, ttl, err := redis.RateLimit(key, 5, time.Minute)
 				if err != nil {
 					slog.Warn("Redis login rate limit failed; falling back to local limiter", "error", err)
 					break
 				}
 				if !allowed {
-					return apperr.New(429, "RATE_LIMITED", "Too many login attempts. Please try again later")
+					sec := int(math.Ceil(ttl.Seconds()))
+					if sec < 1 {
+						sec = 1
+					}
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many login attempts", sec), sec)
 				}
 			}
 			return c.Next()
 		}
 
-		if !loginLimiter.Allow(ip + ":" + emailHash) {
-			return apperr.New(429, "RATE_LIMITED", "Too many login attempts. Please try again later")
+		allowed, sec := loginLimiter.Allow(ip + ":" + emailHash)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many login attempts", sec), sec)
 		}
 		return c.Next()
 	}
@@ -157,8 +178,10 @@ func RateLimitQuery() fiber.Handler {
 			return apperr.ErrUnauthorized
 		}
 		key := c.IP()
-		if !queryLimiter.Allow(key) {
-			return apperr.New(429, "RATE_LIMITED", "Too many database queries. Please slow down")
+		allowed, sec := queryLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many database queries", sec), sec)
 		}
 		return c.Next()
 	}
@@ -168,8 +191,10 @@ func RateLimitQuery() fiber.Handler {
 func RateLimitProxy() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ip := c.IP()
-		if !proxyLimiter.Allow(ip) {
-			return apperr.New(429, "RATE_LIMITED", "Rate limit exceeded for this project")
+		allowed, sec := proxyLimiter.Allow(ip)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Rate limit exceeded for this project", sec), sec)
 		}
 		return c.Next()
 	}
@@ -180,8 +205,10 @@ func RateLimitConsole() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		projectID := c.Params("id")
 		key := "console:" + c.IP() + ":" + projectID
-		if !consoleLimiter.Allow(key) {
-			return apperr.New(429, "RATE_LIMITED", "Too many command executions. Please wait")
+		allowed, sec := consoleLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many command executions", sec), sec)
 		}
 		return c.Next()
 	}
@@ -195,8 +222,10 @@ func RateLimitImport() fiber.Handler {
 			return apperr.ErrUnauthorized
 		}
 		key := c.IP()
-		if !importLimiter.Allow(key) {
-			return apperr.New(429, "RATE_LIMITED", "Too many import attempts. Please try again later")
+		allowed, sec := importLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many import attempts", sec), sec)
 		}
 		return c.Next()
 	}
@@ -210,8 +239,10 @@ func RateLimitAutoRenew() fiber.Handler {
 			return apperr.ErrUnauthorized
 		}
 		key := fmt.Sprintf("autorenew:user:%v", uidVal)
-		if !autoRenewLimiter.Allow(key) {
-			return apperr.New(429, "RATE_LIMITED", "Too many auto-renew toggle requests. Please wait a moment")
+		allowed, sec := autoRenewLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many auto-renew toggle requests", sec), sec)
 		}
 		return c.Next()
 	}

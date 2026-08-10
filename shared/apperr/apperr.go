@@ -60,6 +60,16 @@ func NewValidationErr(details interface{}) *AppError {
 	return err
 }
 
+func NewRateLimited(message string, retryAfterSec int) *AppError {
+	err := New(429, "RATE_LIMITED", message)
+	if retryAfterSec > 0 {
+		err.Details = map[string]interface{}{
+			"retry_after": retryAfterSec,
+		}
+	}
+	return err
+}
+
 func NewSecretDecryptionFailed(message string, cause error) *AppError {
 	err := New(409, "SECRET_DECRYPTION_FAILED", message)
 	err.Cause = cause

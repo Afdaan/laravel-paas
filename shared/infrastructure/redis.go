@@ -759,10 +759,10 @@ func (r *RedisService) IsJTIRevoked(jti string) (bool, error) {
 }
 
 // RateLimit checks and increments a rate limit counter
-func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) (bool, error) {
+func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) (bool, time.Duration, error) {
 	count, err := r.client.Incr(r.ctx, key).Result()
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 
 	if count == 1 {
@@ -770,10 +770,14 @@ func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) 
 	}
 
 	if count > int64(limit) {
-		return false, nil // Limit exceeded
+		ttl, _ := r.client.TTL(r.ctx, key).Result()
+		if ttl < time.Second {
+			ttl = time.Second
+		}
+		return false, ttl, nil // Limit exceeded
 	}
 
-	return true, nil
+	return true, 0, nil
 }
 
 // IncrDriftFailure increments the consecutive drift check failure count for a domain and returns the current count.
