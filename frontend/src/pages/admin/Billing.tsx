@@ -314,10 +314,44 @@ export default function AdminBilling() {
     {Object.keys(errors).length > 0 && <Card className="border-amber-500/40 bg-amber-500/5" role="status"><CardContent className="pt-6 text-sm">{t('billing.loadPartial', { sections: Object.values(errors).join(', ') })}</CardContent></Card>}
 
     <div className="grid gap-6 xl:grid-cols-2">
-      <CatalogCard title={t('billing.admin.resourcePlans')} rows={catalog?.specs.map((spec) => ({ id: spec.id, title: `${spec.name} · ${formatCredits(spec.monthly_credits)} ${t('billing.credits')}`, detail: `${t(`billing.resourceTypes.${spec.type}`)} · v${spec.version} · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB${spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}`, active: spec.is_active }))} loading={loading} error={errors.plans} onRetry={() => void load()} empty={t('billing.admin.noRecords')} onEdit={editSpec} />
+      <CatalogCard
+        title={t('billing.admin.resourcePlans')}
+        rows={catalog?.specs
+          ? [...catalog.specs]
+              .sort((a, b) => {
+                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+                return b.version - a.version
+              })
+              .map((spec) => ({
+                id: spec.id,
+                title: `${spec.name} · ${formatCredits(spec.monthly_credits)} ${t('billing.credits')}`,
+                detail: `${t(`billing.resourceTypes.${spec.type}`)} · v${spec.version} · ${spec.cpu_millicores}m CPU · ${spec.memory_mb} MB${spec.connection_limit ? ` · ${t('billing.connections', { count: spec.connection_limit })}` : ''}`,
+                active: spec.is_active,
+              }))
+          : undefined}
+        loading={loading}
+        error={errors.plans}
+        onRetry={() => void load()}
+        empty={t('billing.admin.noRecords')}
+        onEdit={editSpec}
+      />
       <CatalogCard
         title={t('billing.admin.topupPackages')}
-        rows={catalog?.packages.map((pkg) => ({ id: pkg.id, title: `${formatCredits(pkg.credits)} ${t('billing.credits')} · ${formatMoney(pkg.amount_minor, pkg.currency)}`, detail: `v${pkg.version}`, active: pkg.is_active }))}
+        rows={catalog?.packages
+          ? [...catalog.packages]
+              .sort((a, b) => {
+                if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+                if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+                if (a.credits !== b.credits) return a.credits - b.credits
+                return b.version - a.version
+              })
+              .map((pkg) => ({
+                id: pkg.id,
+                title: `${formatCredits(pkg.credits)} ${t('billing.credits')} · ${formatMoney(pkg.amount_minor, pkg.currency)}`,
+                detail: `v${pkg.version}`,
+                active: pkg.is_active,
+              }))
+          : undefined}
         loading={loading}
         error={errors.plans}
         onRetry={() => void load()}
@@ -477,7 +511,72 @@ export default function AdminBilling() {
 
 function CatalogCard({ title, rows, loading, error, onRetry, empty, onEdit }: { title: string; rows?: Array<{ id: number; title: string; detail: string; active: boolean }>; loading: boolean; error?: string; onRetry?: () => void; empty: string; onEdit?: (id: number) => void }) {
   const { t } = useTranslation()
-  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader><CardContent className="space-y-3">{loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}{!loading && error && !rows && <div className="space-y-2"><p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>{onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('billing.retry')}</Button>}</div>}{!loading && rows?.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="text-sm font-medium">{row.title}</p><p className="text-xs text-muted-foreground">{row.detail}</p></div><div className="flex items-center gap-2">{onEdit && row.active && <Button size="icon-xs" variant="ghost" onClick={() => onEdit(row.id)} aria-label={t('billing.admin.editPackage')}><Pencil className="size-3.5" /></Button>}<Badge variant={row.active ? 'secondary' : 'outline'}>{row.active ? t('billing.admin.active') : t('billing.admin.inactive')}</Badge></div></div>)}{!loading && rows?.length === 0 && <p className="text-sm text-muted-foreground">{empty}</p>}</CardContent></Card>
+  const [showInactive, setShowInactive] = useState(false)
+
+  const inactiveCount = rows ? rows.filter((r) => !r.active).length : 0
+  const displayedRows = rows
+    ? showInactive
+      ? rows
+      : rows.filter((r) => r.active)
+    : []
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="text-base font-semibold">{title}</CardTitle>
+        {inactiveCount > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowInactive(!showInactive)}
+            className="h-7 text-xs px-2.5 font-medium text-muted-foreground hover:text-foreground"
+          >
+            {showInactive ? 'Hide History' : `Show History (${inactiveCount})`}
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+        {!loading && error && !rows && (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">{t('billing.loadError', { section: title })}</p>
+            {onRetry && (
+              <Button size="sm" variant="outline" onClick={onRetry}>
+                {t('billing.retry')}
+              </Button>
+            )}
+          </div>
+        )}
+        {!loading &&
+          displayedRows.map((row) => (
+            <div key={row.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0">
+              <div>
+                <p className="text-sm font-medium">{row.title}</p>
+                <p className="text-xs text-muted-foreground">{row.detail}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {onEdit && row.active && (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    onClick={() => onEdit(row.id)}
+                    aria-label={t('billing.admin.editPackage')}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                )}
+                <Badge variant={row.active ? 'secondary' : 'outline'}>
+                  {row.active ? t('billing.admin.active') : t('billing.admin.inactive')}
+                </Badge>
+              </div>
+            </div>
+          ))}
+        {!loading && displayedRows.length === 0 && (
+          <p className="text-sm text-muted-foreground">{empty}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 function CollectionCard<T extends { id?: number; user_id: number }>({ title, icon, page, loading, error, onRetry, empty, meta, value, status, formatStatus = (status) => status.replace('_', ' '), onPageChange, onAdjust }: { title: string; icon: React.ReactNode; page: Page<T> | null; loading: boolean; error?: string; onRetry?: () => void; empty: string; meta: (row: T) => string; value: (row: T) => string; status?: (row: T) => string; formatStatus?: (status: string) => string; onPageChange: (page: number) => void; onAdjust?: (row: T) => void }) {
