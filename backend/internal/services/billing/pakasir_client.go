@@ -67,6 +67,9 @@ func NewPakasirClient(cfg *config.Config) *PakasirClient {
 }
 
 func (c *PakasirClient) CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (PakasirCreateResponse, error) {
+	if c.projectSlug == "" || c.apiKey == "" {
+		return PakasirCreateResponse{}, fmt.Errorf("%w: payment gateway credentials incomplete", ErrPaymentProvider)
+	}
 	if method == "" {
 		method = "qris"
 	}
@@ -92,7 +95,7 @@ func (c *PakasirClient) CreateTransaction(ctx context.Context, orderID string, a
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return PakasirCreateResponse{}, fmt.Errorf("execute pakasir transaction create: %w", err)
+		return PakasirCreateResponse{}, fmt.Errorf("%w: execute pakasir transaction create: %v", ErrPaymentProvider, err)
 	}
 	defer resp.Body.Close()
 
@@ -102,18 +105,56 @@ func (c *PakasirClient) CreateTransaction(ctx context.Context, orderID string, a
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return PakasirCreateResponse{}, fmt.Errorf("pakasir transaction create status %d: %s", resp.StatusCode, string(respBody))
+		var errObj struct {
+			Message string `json:"message"`
+			Error   string `json:"error"`
+		}
+		_ = json.Unmarshal(respBody, &errObj)
+		msg := errObj.Message
+		if msg == "" {
+			msg = errObj.Error
+		}
+		if msg == "" {
+			msg = string(respBody)
+		}
+		return PakasirCreateResponse{}, fmt.Errorf("%w: pakasir transaction create status %d: %s", ErrPaymentProvider, resp.StatusCode, msg)
 	}
 
+	// Direct unmarshal
 	var res PakasirCreateResponse
-	if err := json.Unmarshal(respBody, &res); err != nil {
-		return PakasirCreateResponse{}, fmt.Errorf("unmarshal pakasir create response: %w", err)
+	if err := json.Unmarshal(respBody, &res); err == nil && res.PaymentNumber != "" {
+		return res, nil
+	}
+
+	// Nested wrapper check ({ "payment": { ... } } or { "data": { ... } })
+	var nestedWrapper struct {
+		Payment PakasirCreateResponse `json:"payment"`
+		Data    PakasirCreateResponse `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &nestedWrapper); err == nil {
+		if nestedWrapper.Payment.PaymentNumber != "" {
+			return nestedWrapper.Payment, nil
+		}
+		if nestedWrapper.Data.PaymentNumber != "" {
+			return nestedWrapper.Data, nil
+		}
+	}
+
+	// Fallback message check if Pakasir returned error JSON with 200 status
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal(respBody, &rawMap); err == nil {
+		if msg, ok := rawMap["message"].(string); ok && msg != "" {
+			return PakasirCreateResponse{}, fmt.Errorf("%w: pakasir API error: %s", ErrPaymentProvider, msg)
+		}
 	}
 
 	return res, nil
 }
 
 func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string, amountMinor int64) (PakasirTransactionDetail, error) {
+	if c.projectSlug == "" || c.apiKey == "" {
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: payment gateway credentials incomplete", ErrPaymentProvider)
+	}
 	u, err := url.Parse(fmt.Sprintf("%s/transactiondetail", c.baseURL))
 	if err != nil {
 		return PakasirTransactionDetail{}, fmt.Errorf("parse pakasir detail url: %w", err)
@@ -133,7 +174,7 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return PakasirTransactionDetail{}, fmt.Errorf("execute pakasir transaction detail: %w", err)
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: execute pakasir transaction detail: %v", ErrPaymentProvider, err)
 	}
 	defer resp.Body.Close()
 
@@ -143,7 +184,7 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return PakasirTransactionDetail{}, fmt.Errorf("pakasir transaction detail status %d: %s", resp.StatusCode, string(respBody))
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: pakasir transaction detail status %d", ErrPaymentProvider, resp.StatusCode)
 	}
 
 	var res PakasirDetailResponse

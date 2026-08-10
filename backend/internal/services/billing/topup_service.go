@@ -730,6 +730,12 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 				paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s", slug, topup.AmountMinor, topup.ProviderOrderID)
 			}
 		}
+		if paymentURL == "" {
+			if cleanupErr := s.resetPaymentRequestAfterProviderFailure(ctx, topup); cleanupErr != nil {
+				return errors.Join(ErrPaymentProvider, cleanupErr)
+			}
+			return ErrPaymentProvider
+		}
 	} else {
 		finishURL := ""
 		if s.cfg != nil {

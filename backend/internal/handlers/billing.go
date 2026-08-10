@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"mime"
 	"strconv"
 	"time"
@@ -358,7 +359,8 @@ func mapTopupError(err error) error {
 	case errors.Is(err, billing.ErrInvalidPaymentNotification):
 		return apperr.New(401, "PAYMENT_NOTIFICATION_REJECTED", "Invalid payment notification")
 	case errors.Is(err, billing.ErrPaymentProvider):
-		return apperr.New(502, "PAYMENT_PROVIDER_UNAVAILABLE", "Payment provider is unavailable")
+		slog.Error("Payment provider failure", "error", err)
+		return apperr.New(502, "PAYMENT_PROVIDER_UNAVAILABLE", "Payment provider is currently unavailable. Please try again later or contact support.")
 	default:
 		return err
 	}
