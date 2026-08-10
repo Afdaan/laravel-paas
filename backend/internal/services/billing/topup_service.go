@@ -727,7 +727,18 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 				slug = s.cfg.PakasirProjectSlug
 			}
 			if slug != "" {
-				paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s", slug, topup.AmountMinor, topup.ProviderOrderID)
+				redirectURL := ""
+				if s.cfg != nil {
+					if s.cfg.FrontendURL != "" {
+						redirectURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
+					} else if s.cfg.BaseDomain != "" {
+						redirectURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
+					}
+				}
+				paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s&qris_only=1", slug, topup.AmountMinor, topup.ProviderOrderID)
+				if redirectURL != "" {
+					paymentURL += "&redirect=" + url.QueryEscape(redirectURL)
+				}
 			}
 		}
 		if paymentURL == "" {
@@ -924,10 +935,13 @@ func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKe
 }
 
 func (s *TopupService) validatePaymentProcessing(ctx context.Context) error {
-	if s == nil || s.db == nil || s.wallets == nil || s.cfg == nil {
+	if s == nil || s.db == nil || s.wallets == nil {
 		return ErrTopupDisabled
 	}
-	if ctx == nil || !s.cfg.BillingEnabled {
+	if ctx == nil {
+		return ErrTopupDisabled
+	}
+	if s.cfg != nil && !s.cfg.BillingEnabled && !s.cfg.BillingTopupEnabled {
 		return ErrTopupDisabled
 	}
 	provider := s.activeProvider()

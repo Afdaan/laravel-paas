@@ -44,6 +44,8 @@ type PakasirDetailResponse struct {
 type PakasirGateway interface {
 	CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (PakasirCreateResponse, error)
 	GetTransactionDetail(ctx context.Context, orderID string, amountMinor int64) (PakasirTransactionDetail, error)
+	SimulatePayment(ctx context.Context, orderID string, amountMinor int64) error
+	CancelTransaction(ctx context.Context, orderID string, amountMinor int64) error
 }
 
 type PakasirClient struct {
@@ -187,6 +189,80 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 	}
 
 	return res.Transaction, nil
+}
+
+func (c *PakasirClient) SimulatePayment(ctx context.Context, orderID string, amountMinor int64) error {
+	if c == nil || c.projectSlug == "" || c.apiKey == "" {
+		return fmt.Errorf("%w: pakasir credentials incomplete for simulation", ErrPaymentProvider)
+	}
+	endpoint := fmt.Sprintf("%s/paymentsimulation", c.baseURL)
+	bodyData := map[string]interface{}{
+		"project":  c.projectSlug,
+		"order_id": orderID,
+		"amount":   amountMinor,
+		"api_key":  c.apiKey,
+	}
+
+	jsonBytes, err := json.Marshal(bodyData)
+	if err != nil {
+		return fmt.Errorf("marshal pakasir simulation request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return fmt.Errorf("create pakasir simulation request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute pakasir simulation request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pakasir payment simulation status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+func (c *PakasirClient) CancelTransaction(ctx context.Context, orderID string, amountMinor int64) error {
+	if c == nil || c.projectSlug == "" || c.apiKey == "" {
+		return fmt.Errorf("%w: pakasir credentials incomplete for cancellation", ErrPaymentProvider)
+	}
+	endpoint := fmt.Sprintf("%s/transactioncancel", c.baseURL)
+	bodyData := map[string]interface{}{
+		"project":  c.projectSlug,
+		"order_id": orderID,
+		"amount":   amountMinor,
+		"api_key":  c.apiKey,
+	}
+
+	jsonBytes, err := json.Marshal(bodyData)
+	if err != nil {
+		return fmt.Errorf("marshal pakasir cancel request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return fmt.Errorf("create pakasir cancel request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute pakasir cancel request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pakasir transaction cancel status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }
 
 func pakAsirStatusToTopupStatus(status string) (models.TopupStatus, error) {

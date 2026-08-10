@@ -886,6 +886,14 @@ func (f *fakePakasirGateway) CreateTransaction(ctx context.Context, orderID stri
 	}, nil
 }
 
+func (f *fakePakasirGateway) SimulatePayment(ctx context.Context, orderID string, amountMinor int64) error {
+	return nil
+}
+
+func (f *fakePakasirGateway) CancelTransaction(ctx context.Context, orderID string, amountMinor int64) error {
+	return nil
+}
+
 func (f *fakePakasirGateway) GetTransactionDetail(ctx context.Context, orderID string, amountMinor int64) (PakasirTransactionDetail, error) {
 	return PakasirTransactionDetail{
 		OrderID:       orderID,

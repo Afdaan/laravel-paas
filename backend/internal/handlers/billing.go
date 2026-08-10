@@ -347,7 +347,7 @@ func mapCatalogError(err error) error {
 func mapTopupError(err error) error {
 	switch {
 	case errors.Is(err, billing.ErrTopupDisabled):
-		return apperr.ErrNotFound
+		return apperr.New(400, "BILLING_TOPUP_DISABLED", "Top-up payment processing is currently disabled in system configuration")
 	case errors.Is(err, billing.ErrInvalidTopupInput):
 		return apperr.NewBadRequest("Invalid top-up request")
 	case errors.Is(err, billing.ErrTopupIdempotencyConflict):
