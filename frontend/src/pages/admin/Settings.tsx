@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Server,
   Network,
+  Zap,
   Loader2,
   RefreshCw
 } from 'lucide-react'
