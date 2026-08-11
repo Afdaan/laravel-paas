@@ -25,7 +25,10 @@ import {
   Network,
   ShieldCheck,
   RefreshCw,
-  Server
+  Server,
+  Ban,
+  Layers,
+  Cloud
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -1031,90 +1034,100 @@ function UserNewProject() {
                       </div>
                     </div>
 
-                    {/* Database Options Cards */}
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {[
-                          { value: 'none', key: 'none' as const, badgeClass: "border-border bg-muted/20 text-muted-foreground" },
-                          { value: 'sqlite', key: 'sqlite' as const, badgeClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-500" },
-                          { value: 'new', key: 'new' as const, badgeClass: "border-primary/20 bg-primary/10 text-primary" },
-                        ].map((opt) => (
-                          <Card
+                    {/* Database Options Cards - Pristine 5-Column Bento without Text Truncation */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      {[
+                        {
+                          value: 'none' as const,
+                          key: 'none' as const,
+                          icon: Ban,
+                          iconColor: "text-muted-foreground",
+                          iconBg: "bg-muted/40 border-border/40",
+                          badgeClass: "border-border/60 bg-muted/30 text-muted-foreground font-mono",
+                        },
+                        {
+                          value: 'sqlite' as const,
+                          key: 'sqlite' as const,
+                          icon: HardDrive,
+                          iconColor: "text-emerald-500",
+                          iconBg: "bg-emerald-500/10 border-emerald-500/20",
+                          badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-mono",
+                        },
+                        {
+                          value: 'new' as const,
+                          key: 'new' as const,
+                          icon: Server,
+                          iconColor: "text-primary",
+                          iconBg: "bg-primary/10 border-primary/20",
+                          badgeClass: "border-primary/30 bg-primary/10 text-primary font-mono",
+                        },
+                        {
+                          value: 'existing' as const,
+                          key: 'existing' as const,
+                          icon: Layers,
+                          iconColor: "text-amber-500",
+                          iconBg: "bg-amber-500/10 border-amber-500/20",
+                          badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-400 font-mono",
+                        },
+                        {
+                          value: 'external' as const,
+                          key: 'external' as const,
+                          icon: Cloud,
+                          iconColor: "text-purple-400",
+                          iconBg: "bg-purple-500/10 border-purple-500/20",
+                          badgeClass: "border-purple-500/30 bg-purple-500/10 text-purple-400 font-mono",
+                        },
+                      ].map((opt) => {
+                        const isSelected = formData.database_option === opt.value
+                        const Icon = opt.icon
+                        return (
+                          <div
                             key={opt.value}
+                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value }))}
                             className={cn(
-                              "p-4 cursor-pointer border transition-all duration-200 flex flex-col justify-between hover:shadow-md",
-                              formData.database_option === opt.value
-                                ? "border-primary bg-primary/5 ring-1 ring-primary/25"
-                                : "border-border/80 bg-background/50"
+                              "group relative cursor-pointer p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between select-none bg-card/40 hover:bg-card/80 h-full min-h-[195px]",
+                              isSelected
+                                ? "border-primary/60 bg-primary/5 ring-1 ring-primary/25 shadow-xs"
+                                : "border-border/60"
                             )}
-                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as typeof prev.database_option }))}
                           >
                             <div className="space-y-2">
+                              {/* Header: Icon + Radio Indicator */}
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground">{t(`newProject.dbConfig.options.${opt.key}.label`)}</span>
+                                <div className={cn("p-1.5 rounded-lg border shrink-0", opt.iconBg)}>
+                                  <Icon className={cn("w-4 h-4", opt.iconColor)} />
+                                </div>
                                 <div className={cn(
-                                  "w-4 h-4 rounded-full border flex items-center justify-center",
-                                  formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
+                                  "w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all p-0.5 shrink-0",
+                                  isSelected ? "border-primary bg-primary/10" : "border-muted-foreground/30 group-hover:border-muted-foreground/60"
                                 )}>
-                                  {formData.database_option === opt.value && (
-                                    <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                                  )}
+                                  {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
                                 </div>
                               </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{t(`newProject.dbConfig.options.${opt.key}.desc`)}</p>
-                            </div>
-                            <div className="mt-4">
-                              <span className={cn(
-                                "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
-                                opt.badgeClass
-                              )}>
-                                {t(`newProject.dbConfig.options.${opt.key}.badge`)}
-                              </span>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[
-                          { value: 'existing', key: 'existing' as const, badgeClass: "border-amber-500/20 bg-amber-500/10 text-amber-500" },
-                          { value: 'external', key: 'external' as const, badgeClass: "border-purple-500/20 bg-purple-500/10 text-purple-500" },
-                        ].map((opt) => (
-                          <Card
-                            key={opt.value}
-                            className={cn(
-                              "p-4 cursor-pointer border transition-all duration-200 flex flex-col justify-between hover:shadow-md",
-                              formData.database_option === opt.value
-                                ? "border-primary bg-primary/5 ring-1 ring-primary/25"
-                                : "border-border/80 bg-background/50"
-                            )}
-                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as typeof prev.database_option }))}
-                          >
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground">{t(`newProject.dbConfig.options.${opt.key}.label`)}</span>
-                                <div className={cn(
-                                  "w-4 h-4 rounded-full border flex items-center justify-center",
-                                  formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
-                                )}>
-                                  {formData.database_option === opt.value && (
-                                    <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                                  )}
-                                </div>
-                              </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{t(`newProject.dbConfig.options.${opt.key}.desc`)}</p>
+                              {/* Title (Full Card Width) */}
+                              <h4 className="font-bold text-[12px] text-foreground tracking-tight group-hover:text-primary transition-colors leading-tight pt-1">
+                                {t(`newProject.dbConfig.options.${opt.key}.label`)}
+                              </h4>
+
+                              {/* Description (Full Card Width) */}
+                              <p className="text-[10.5px] text-muted-foreground leading-relaxed">
+                                {t(`newProject.dbConfig.options.${opt.key}.desc`)}
+                              </p>
                             </div>
-                            <div className="mt-4">
+
+                            {/* Footer Badge */}
+                            <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-between">
                               <span className={cn(
-                                "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
+                                "text-[8px] font-bold px-1.5 py-0.5 rounded-full border uppercase tracking-tight whitespace-nowrap overflow-hidden text-ellipsis",
                                 opt.badgeClass
                               )}>
                                 {t(`newProject.dbConfig.options.${opt.key}.badge`)}
                               </span>
                             </div>
-                          </Card>
-                        ))}
-                      </div>
+                          </div>
+                        )
+                      })}
                     </div>
 
                     {/* New Managed DB Section */}
