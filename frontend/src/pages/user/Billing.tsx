@@ -74,14 +74,62 @@ export default function Billing() {
   const topupKeys = useRef(new Map<number, string>())
   const loadInFlight = useRef(false)
 
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({})
+  const markTouched = (field: string) => setTouchedFields((prev) => ({ ...prev, [field]: true }))
+
+  const profileValidation = useMemo(() => {
+    const companyNameClean = profile.company_name.trim()
+    const emailClean = profile.email.trim()
+    const phoneClean = profile.phone.replace(/\D/g, '')
+    const addressClean = profile.address_line1.trim()
+    const cityClean = profile.city.trim()
+    const postalCodeClean = profile.postal_code.trim()
+    const taxIdClean = profile.tax_id.replace(/\D/g, '')
+
+    const isCompanyNameValid = companyNameClean.length >= 2
+    const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)
+    const isPhoneValid = /^\+?[0-9\s\-]{8,18}$/.test(profile.phone.trim()) && phoneClean.length >= 8
+    const isAddressValid = addressClean.length >= 5
+    const isCityValid = cityClean.length >= 2
+    const isPostalCodeValid = /^[0-9]{5}$/.test(postalCodeClean)
+    const isTaxIdValid = !profile.tax_id.trim() || taxIdClean.length >= 15
+
+    const isValid =
+      isCompanyNameValid &&
+      isEmailValid &&
+      isPhoneValid &&
+      isAddressValid &&
+      isCityValid &&
+      isPostalCodeValid &&
+      isTaxIdValid
+
+    return {
+      isValid,
+      isCompanyNameValid,
+      isEmailValid,
+      isPhoneValid,
+      isAddressValid,
+      isCityValid,
+      isPostalCodeValid,
+      isTaxIdValid,
+    }
+  }, [profile])
+
   const isProfileComplete = useCallback((prof: BillingProfile) => {
+    const companyNameClean = prof.company_name.trim()
+    const emailClean = prof.email.trim()
+    const phoneClean = prof.phone.replace(/\D/g, '')
+    const addressClean = prof.address_line1.trim()
+    const cityClean = prof.city.trim()
+    const postalCodeClean = prof.postal_code.trim()
+
     return (
-      !!prof.company_name?.trim() &&
-      !!prof.email?.trim() &&
-      !!prof.phone?.trim() &&
-      !!prof.address_line1?.trim() &&
-      !!prof.city?.trim() &&
-      !!prof.postal_code?.trim()
+      companyNameClean.length >= 2 &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean) &&
+      phoneClean.length >= 8 &&
+      addressClean.length >= 5 &&
+      cityClean.length >= 2 &&
+      /^[0-9]{5}$/.test(postalCodeClean)
     )
   }, [])
 
@@ -1023,12 +1071,21 @@ export default function Billing() {
                     <Input
                       id="company_name"
                       value={profile.company_name}
+                      onBlur={() => markTouched('company_name')}
                       onChange={(e) => setProfile({ ...profile, company_name: e.target.value })}
                       placeholder={t('billing.profile.companyNamePlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.company_name && !profileValidation.isCompanyNameValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.companyNameHint')}</p>
+                  {touchedFields.company_name && !profileValidation.isCompanyNameValid ? (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.companyNameError')}</p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t('billing.profile.companyNameHint')}</p>
+                  )}
                 </div>
 
                 {/* Tax ID / NPWP / NIK */}
@@ -1042,12 +1099,21 @@ export default function Billing() {
                     <Input
                       id="tax_id"
                       value={profile.tax_id}
+                      onBlur={() => markTouched('tax_id')}
                       onChange={(e) => setProfile({ ...profile, tax_id: e.target.value })}
                       placeholder={t('billing.profile.taxIdPlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.tax_id && !profileValidation.isTaxIdValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.taxIdHint')}</p>
+                  {touchedFields.tax_id && !profileValidation.isTaxIdValid ? (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.taxIdError')}</p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t('billing.profile.taxIdHint')}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1073,12 +1139,21 @@ export default function Billing() {
                       id="billing_email"
                       type="email"
                       value={profile.email}
+                      onBlur={() => markTouched('email')}
                       onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                       placeholder={t('billing.profile.emailPlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.email && !profileValidation.isEmailValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.emailHint')}</p>
+                  {touchedFields.email && !profileValidation.isEmailValid ? (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.emailError')}</p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t('billing.profile.emailHint')}</p>
+                  )}
                 </div>
 
                 {/* Phone Number */}
@@ -1091,12 +1166,21 @@ export default function Billing() {
                     <Input
                       id="billing_phone"
                       value={profile.phone}
+                      onBlur={() => markTouched('phone')}
                       onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                       placeholder={t('billing.profile.phonePlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.phone && !profileValidation.isPhoneValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.phoneHint')}</p>
+                  {touchedFields.phone && !profileValidation.isPhoneValid ? (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.phoneError')}</p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">{t('billing.profile.phoneHint')}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1121,11 +1205,19 @@ export default function Billing() {
                     <Input
                       id="address_line1"
                       value={profile.address_line1}
+                      onBlur={() => markTouched('address_line1')}
                       onChange={(e) => setProfile({ ...profile, address_line1: e.target.value })}
                       placeholder={t('billing.profile.streetAddressPlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.address_line1 && !profileValidation.isAddressValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
+                  {touchedFields.address_line1 && !profileValidation.isAddressValid && (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.streetAddressError')}</p>
+                  )}
                 </div>
 
                 {/* City */}
@@ -1138,11 +1230,19 @@ export default function Billing() {
                     <Input
                       id="city"
                       value={profile.city}
+                      onBlur={() => markTouched('city')}
                       onChange={(e) => setProfile({ ...profile, city: e.target.value })}
                       placeholder={t('billing.profile.cityPlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.city && !profileValidation.isCityValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
+                  {touchedFields.city && !profileValidation.isCityValid && (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.cityError')}</p>
+                  )}
                 </div>
 
                 {/* Postal Code */}
@@ -1155,11 +1255,19 @@ export default function Billing() {
                     <Input
                       id="postal_code"
                       value={profile.postal_code}
+                      onBlur={() => markTouched('postal_code')}
                       onChange={(e) => setProfile({ ...profile, postal_code: e.target.value })}
                       placeholder={t('billing.profile.postalCodePlaceholder')}
-                      className="pl-9 text-xs h-9"
+                      className={`pl-9 text-xs h-9 ${
+                        touchedFields.postal_code && !profileValidation.isPostalCodeValid
+                          ? 'border-destructive focus-visible:ring-destructive/20'
+                          : ''
+                      }`}
                     />
                   </div>
+                  {touchedFields.postal_code && !profileValidation.isPostalCodeValid && (
+                    <p className="text-[11px] text-destructive font-medium">{t('billing.profile.postalCodeError')}</p>
+                  )}
                 </div>
 
                 {/* Country Read-only Badge */}
@@ -1174,12 +1282,20 @@ export default function Billing() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-border/40">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-border/40">
+              {!profileValidation.isValid ? (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                  <AlertTriangle className="size-3.5 shrink-0" />
+                  {t('billing.profile.fillAllFieldsHint')}
+                </p>
+              ) : (
+                <span />
+              )}
               <Button
                 type="submit"
                 size="sm"
-                disabled={savingProfile}
-                className="font-semibold gap-1.5 hover:-translate-y-0.5 active:scale-[0.98] transition-all"
+                disabled={!profileValidation.isValid || savingProfile}
+                className="font-semibold gap-1.5 hover:-translate-y-0.5 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
               >
                 {savingProfile ? (
                   <>
