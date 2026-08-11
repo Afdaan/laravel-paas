@@ -3,10 +3,12 @@ import { toast } from 'sonner'
 import { settingsAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
 import {
+  Globe,
   Shield,
   Activity,
   Save,
   AlertCircle,
+  Server,
   Network,
   Loader2,
   RefreshCw
