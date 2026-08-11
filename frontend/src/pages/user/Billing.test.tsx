@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { act } from 'react'
-import Billing from './Billing'
+import Billing, { isValidPhoneNumber } from './Billing'
 import { billingAPI } from '@/services/api'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
@@ -270,5 +270,13 @@ describe('Billing page', () => {
     await act(async () => fireEvent.click(packageButton))
 
     expect(billingAPI.createTopup).not.toHaveBeenCalled()
+  })
+
+  it('validates phone numbers correctly for Indonesian and international formats', () => {
+    expect(isValidPhoneNumber('081234567890', 'ID')).toBe(true)
+    expect(isValidPhoneNumber('+6281234567890', 'ID')).toBe(true)
+    expect(isValidPhoneNumber('6281234567890', 'ID')).toBe(true)
+    expect(isValidPhoneNumber('81234567890', 'ID')).toBe(true)
+    expect(isValidPhoneNumber('123', 'ID')).toBe(false)
   })
 })

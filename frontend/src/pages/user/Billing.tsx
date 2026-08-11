@@ -46,6 +46,28 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+export function isValidPhoneNumber(phone: string, country: string = 'ID'): boolean {
+  const trimmed = phone.trim()
+  if (!trimmed) return false
+
+  const digitsOnly = trimmed.replace(/\D/g, '')
+
+  if (country === 'ID' || country === 'IDN') {
+    if (digitsOnly.startsWith('08')) {
+      return digitsOnly.length >= 10 && digitsOnly.length <= 13
+    }
+    if (digitsOnly.startsWith('628')) {
+      return digitsOnly.length >= 11 && digitsOnly.length <= 14
+    }
+    if (digitsOnly.startsWith('8')) {
+      return digitsOnly.length >= 9 && digitsOnly.length <= 12
+    }
+    return false
+  }
+
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15
+}
+
 export default function Billing() {
   const [profile, setProfile] = useState<BillingProfile>({
     company_name: '', tax_id: '', email: '', phone: '',
@@ -53,6 +75,7 @@ export default function Billing() {
     postal_code: '', country: 'ID'
   })
   const [savingProfile, setSavingProfile] = useState(false)
+  const [isProfileSaved, setIsProfileSaved] = useState(false)
   const [activePaymentModal, setActivePaymentModal] = useState<TopupResponse | null>(null)
   const [checkingPaymentStatus, setCheckingPaymentStatus] = useState(false)
 
@@ -73,6 +96,7 @@ export default function Billing() {
   const [showProfilePrompt, setShowProfilePrompt] = useState(false)
   const topupKeys = useRef(new Map<number, string>())
   const loadInFlight = useRef(false)
+  const hasLoadedProfileRef = useRef(false)
 
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({})
   const markTouched = (field: string) => setTouchedFields((prev) => ({ ...prev, [field]: true }))
@@ -80,7 +104,6 @@ export default function Billing() {
   const profileValidation = useMemo(() => {
     const companyNameClean = profile.company_name.trim()
     const emailClean = profile.email.trim()
-    const phoneClean = profile.phone.replace(/\D/g, '')
     const addressClean = profile.address_line1.trim()
     const cityClean = profile.city.trim()
     const postalCodeClean = profile.postal_code.trim()
@@ -88,7 +111,7 @@ export default function Billing() {
 
     const isCompanyNameValid = companyNameClean.length >= 2
     const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)
-    const isPhoneValid = /^\+?[0-9\s\-]{8,18}$/.test(profile.phone.trim()) && phoneClean.length >= 8
+    const isPhoneValid = isValidPhoneNumber(profile.phone, profile.country)
     const isAddressValid = addressClean.length >= 5
     const isCityValid = cityClean.length >= 2
     const isPostalCodeValid = /^[0-9]{5}$/.test(postalCodeClean)
@@ -118,7 +141,6 @@ export default function Billing() {
   const isProfileComplete = useCallback((prof: BillingProfile) => {
     const companyNameClean = prof.company_name.trim()
     const emailClean = prof.email.trim()
-    const phoneClean = prof.phone.replace(/\D/g, '')
     const addressClean = prof.address_line1.trim()
     const cityClean = prof.city.trim()
     const postalCodeClean = prof.postal_code.trim()
@@ -126,7 +148,7 @@ export default function Billing() {
     return (
       companyNameClean.length >= 2 &&
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean) &&
-      phoneClean.length >= 8 &&
+      isValidPhoneNumber(prof.phone, prof.country) &&
       addressClean.length >= 5 &&
       cityClean.length >= 2 &&
       /^[0-9]{5}$/.test(postalCodeClean)
@@ -141,7 +163,7 @@ export default function Billing() {
   }
 
   const checkProfileAndPrompt = (): boolean => {
-    if (!isProfileComplete(profile)) {
+    if (!isProfileSaved && !isProfileComplete(profile)) {
       toast.error(t('billing.profile.profileRequired'))
       setShowProfilePrompt(true)
       scrollToBillingProfile()
@@ -253,24 +275,31 @@ export default function Billing() {
       (statusResult.status === 'rejected' && nextStatuses.status === 'success')
     setStaleWarning(hasStaleData)
 
-    try {
-      const resProf = await billingAPI.getProfile()
-      if (resProf.data) {
-        setProfile({
-          company_name: resProf.data.company_name ?? '',
-          tax_id: resProf.data.tax_id ?? '',
-          email: resProf.data.email ?? '',
-          phone: resProf.data.phone ?? '',
-          address_line1: resProf.data.address_line1 ?? '',
-          address_line2: resProf.data.address_line2 ?? '',
-          city: resProf.data.city ?? '',
-          state_province: resProf.data.state_province ?? '',
-          postal_code: resProf.data.postal_code ?? '',
-          country: resProf.data.country || 'ID',
-        })
+    if (!hasLoadedProfileRef.current) {
+      try {
+        const resProf = await billingAPI.getProfile()
+        if (resProf.data) {
+          hasLoadedProfileRef.current = true
+          const loadedProf = {
+            company_name: resProf.data.company_name ?? '',
+            tax_id: resProf.data.tax_id ?? '',
+            email: resProf.data.email ?? '',
+            phone: resProf.data.phone ?? '',
+            address_line1: resProf.data.address_line1 ?? '',
+            address_line2: resProf.data.address_line2 ?? '',
+            city: resProf.data.city ?? '',
+            state_province: resProf.data.state_province ?? '',
+            postal_code: resProf.data.postal_code ?? '',
+            country: resProf.data.country || 'ID',
+          }
+          setProfile(loadedProf)
+          if (isProfileComplete(loadedProf)) {
+            setIsProfileSaved(true)
+          }
+        }
+      } catch (e) {
+        // ignore
       }
-    } catch (e) {
-      // ignore
     }
     loadInFlight.current = false
   }, [overview, packages, statuses])
@@ -381,18 +410,22 @@ export default function Billing() {
     try {
       const res = await billingAPI.updateProfile(profile)
       if (res.data) {
+        hasLoadedProfileRef.current = true
+        setIsProfileSaved(true)
         setProfile({
-          company_name: res.data.company_name ?? '',
-          tax_id: res.data.tax_id ?? '',
-          email: res.data.email ?? '',
-          phone: res.data.phone ?? '',
-          address_line1: res.data.address_line1 ?? '',
-          address_line2: res.data.address_line2 ?? '',
-          city: res.data.city ?? '',
-          state_province: res.data.state_province ?? '',
-          postal_code: res.data.postal_code ?? '',
-          country: res.data.country || 'ID',
+          company_name: res.data.company_name ?? profile.company_name,
+          tax_id: res.data.tax_id ?? profile.tax_id,
+          email: res.data.email ?? profile.email,
+          phone: res.data.phone ?? profile.phone,
+          address_line1: res.data.address_line1 ?? profile.address_line1,
+          address_line2: res.data.address_line2 ?? profile.address_line2,
+          city: res.data.city ?? profile.city,
+          state_province: res.data.state_province ?? profile.state_province,
+          postal_code: res.data.postal_code ?? profile.postal_code,
+          country: res.data.country || profile.country || 'ID',
         })
+      } else {
+        setIsProfileSaved(true)
       }
       toast.success(t('billing.profile.saved'))
     } catch {
@@ -1040,7 +1073,7 @@ export default function Billing() {
           </div>
         </CardHeader>
         <CardContent className="pt-6 space-y-6">
-          {!isProfileComplete(profile) && (
+          {!isProfileSaved && !isProfileComplete(profile) && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-start gap-2.5">
               <AlertTriangle className="size-4 shrink-0 text-amber-500 mt-0.5" />
               <div>
