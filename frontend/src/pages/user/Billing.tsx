@@ -276,10 +276,10 @@ export default function Billing() {
     setStaleWarning(hasStaleData)
 
     if (!hasLoadedProfileRef.current) {
+      hasLoadedProfileRef.current = true
       try {
         const resProf = await billingAPI.getProfile()
         if (resProf.data) {
-          hasLoadedProfileRef.current = true
           const loadedProf = {
             company_name: resProf.data.company_name ?? '',
             tax_id: resProf.data.tax_id ?? '',
@@ -298,7 +298,7 @@ export default function Billing() {
           }
         }
       } catch (e) {
-        // ignore
+        // ignore error (e.g. initial profile not created or backend unavailable)
       }
     }
     loadInFlight.current = false
