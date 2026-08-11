@@ -14,6 +14,8 @@ vi.mock('@/services/api', () => ({
     createTopup: vi.fn(),
     reconcileTopup: vi.fn(),
     updateAutoRenew: vi.fn(),
+    getProfile: vi.fn(),
+    updateProfile: vi.fn(),
   },
 }))
 
@@ -81,9 +83,21 @@ const mockOverview = {
   upcoming_required_credits: 1000,
 }
 
+const mockProfile = {
+  company_name: 'PT Acme Corp',
+  tax_id: '01.234.567.8-901.000',
+  email: 'billing@acme.com',
+  phone: '+628123456789',
+  address_line1: 'Jalan Sudirman 1',
+  city: 'Jakarta',
+  postal_code: '12190',
+  country: 'ID',
+}
+
 describe('Billing page', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
+    ;(billingAPI.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockProfile })
   })
 
   afterEach(() => {
@@ -241,4 +255,20 @@ describe('Billing page', () => {
    await waitFor(() => expect(billingAPI.updateAutoRenew).toHaveBeenCalledWith(7, 'project', true))
    await waitFor(() => expect(toggle).toBeChecked())
  })
+
+  it('blocks topup when billing profile is incomplete', async () => {
+    ;(billingAPI.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { company_name: '', email: '' } })
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    await waitFor(() => screen.getByText(/^100$/))
+
+    const packageButton = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(packageButton))
+
+    expect(billingAPI.createTopup).not.toHaveBeenCalled()
+  })
 })

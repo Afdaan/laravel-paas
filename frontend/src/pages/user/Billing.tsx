@@ -1,16 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDownRight,
   ArrowUpRight,
+  Building,
+  Building2,
   CalendarClock,
+  CheckCircle2,
   Coins,
   CreditCard,
   Database,
+  FileText,
   FolderGit2,
+  Hash,
+  Mail,
+  MapPin,
+  Phone,
   PlusCircle,
   ReceiptText,
   RefreshCw,
-  Sparkles,
   WalletCards,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -35,6 +43,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export default function Billing() {
   const [profile, setProfile] = useState<BillingProfile>({
@@ -60,8 +70,37 @@ export default function Billing() {
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
+  const [showProfilePrompt, setShowProfilePrompt] = useState(false)
   const topupKeys = useRef(new Map<number, string>())
   const loadInFlight = useRef(false)
+
+  const isProfileComplete = useCallback((prof: BillingProfile) => {
+    return (
+      !!prof.company_name?.trim() &&
+      !!prof.email?.trim() &&
+      !!prof.phone?.trim() &&
+      !!prof.address_line1?.trim() &&
+      !!prof.city?.trim() &&
+      !!prof.postal_code?.trim()
+    )
+  }, [])
+
+  const scrollToBillingProfile = () => {
+    const el = document.getElementById('billing-profile-card')
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
+  const checkProfileAndPrompt = (): boolean => {
+    if (!isProfileComplete(profile)) {
+      toast.error(t('billing.profile.profileRequired'))
+      setShowProfilePrompt(true)
+      scrollToBillingProfile()
+      return false
+    }
+    return true
+  }
   const overviewRef = useRef(overview)
   const packagesRef = useRef(packages)
   const statusesRef = useRef(statuses)
@@ -166,9 +205,22 @@ export default function Billing() {
       (statusResult.status === 'rejected' && nextStatuses.status === 'success')
     setStaleWarning(hasStaleData)
 
-        try {
+    try {
       const resProf = await billingAPI.getProfile()
-      if (resProf.data) setProfile(resProf.data)
+      if (resProf.data) {
+        setProfile({
+          company_name: resProf.data.company_name ?? '',
+          tax_id: resProf.data.tax_id ?? '',
+          email: resProf.data.email ?? '',
+          phone: resProf.data.phone ?? '',
+          address_line1: resProf.data.address_line1 ?? '',
+          address_line2: resProf.data.address_line2 ?? '',
+          city: resProf.data.city ?? '',
+          state_province: resProf.data.state_province ?? '',
+          postal_code: resProf.data.postal_code ?? '',
+          country: resProf.data.country || 'ID',
+        })
+      }
     } catch (e) {
       // ignore
     }
@@ -189,6 +241,7 @@ export default function Billing() {
   }, [statuses])
 
   const startTopup = async (packageID: number) => {
+    if (!checkProfileAndPrompt()) return
     setTopupPackageID(packageID)
     try {
       const idempotencyKey = topupKeys.current.get(packageID) ?? createTopupIdempotencyKey()
@@ -215,11 +268,26 @@ export default function Billing() {
     }
   }
 
-  const customAmountNum = parseInt(customAmount) || 0
+  const customAmountNum = parseInt(customAmount.replace(/\D/g, ''), 10) || 0
   const customCredits = Math.floor(customAmountNum / 1000)
   const customValid = customAmountNum >= 10_000 && customAmountNum <= 10_000_000 && customAmountNum % 1000 === 0
 
+  const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, '')
+    if (!raw) {
+      setCustomAmount('')
+      return
+    }
+    const val = parseInt(raw, 10)
+    if (isNaN(val)) {
+      setCustomAmount('')
+      return
+    }
+    setCustomAmount(val.toLocaleString(language === 'id' ? 'id-ID' : 'en-US'))
+  }
+
   const startCustomTopup = async () => {
+    if (!checkProfileAndPrompt()) return
     setTopupPackageID(-1)
     try {
       const idempotencyKey = createTopupIdempotencyKey()
@@ -264,10 +332,23 @@ export default function Billing() {
     setSavingProfile(true)
     try {
       const res = await billingAPI.updateProfile(profile)
-      setProfile(res.data)
-      toast.success('Billing profile updated successfully')
-    } catch (err: any) {
-      toast.error('Failed to update billing profile')
+      if (res.data) {
+        setProfile({
+          company_name: res.data.company_name ?? '',
+          tax_id: res.data.tax_id ?? '',
+          email: res.data.email ?? '',
+          phone: res.data.phone ?? '',
+          address_line1: res.data.address_line1 ?? '',
+          address_line2: res.data.address_line2 ?? '',
+          city: res.data.city ?? '',
+          state_province: res.data.state_province ?? '',
+          postal_code: res.data.postal_code ?? '',
+          country: res.data.country || 'ID',
+        })
+      }
+      toast.success(t('billing.profile.saved'))
+    } catch {
+      toast.error(t('billing.profile.saveFailed'))
     } finally {
       setSavingProfile(false)
     }
@@ -296,33 +377,32 @@ export default function Billing() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-12 animate-in fade-in duration-500">
-      {/* Header section with gradient accent */}
-      <div className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-center sm:justify-between">
+      {/* Header section with breadcrumbs */}
+      <div className="flex flex-col gap-4 border-b border-border/60 pb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-              <Coins className="size-3.5" />
-              {t('billing.nav')}
-            </span>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-1">
+            <span>Dashboard</span>
+            <span className="text-muted-foreground/60">/</span>
+            <span className="text-foreground font-semibold">{t('billing.nav')}</span>
           </div>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">{t('billing.title')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t('billing.description')}</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{t('billing.title')}</h1>
+          <p className="mt-1 text-xs text-muted-foreground max-w-2xl">{t('billing.description')}</p>
         </div>
         <Button
           variant="outline"
           size="sm"
           onClick={() => void load()}
           disabled={loadInFlight.current}
-          className="self-start shadow-sm transition-all hover:bg-muted sm:self-auto"
+          className="self-start h-8 px-3 text-xs shadow-xs transition-all hover:bg-muted sm:self-auto"
         >
-          <RefreshCw className={`mr-2 size-3.5 ${loadInFlight.current ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`mr-1.5 size-3.5 ${loadInFlight.current ? 'animate-spin' : ''}`} />
           {t('billing.refresh')}
         </Button>
       </div>
 
       {/* Warnings & Alerts */}
       {staleWarning && (
-        <Card className="border-amber-500/40 bg-amber-500/10 shadow-sm" role="status" aria-live="polite">
+        <Card className="border-amber-500/40 bg-amber-500/10 shadow-xs" role="status" aria-live="polite">
           <CardContent className="flex items-start gap-3 p-4 text-sm text-amber-800 dark:text-amber-300">
             <RefreshCw className="mt-0.5 size-5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
             <div>
@@ -333,7 +413,7 @@ export default function Billing() {
       )}
 
       {attentionResources.length > 0 && (
-        <Card className="border-destructive/40 bg-destructive/10 shadow-sm" role="alert" aria-live="assertive">
+        <Card className="border-destructive/40 bg-destructive/10 shadow-xs" role="alert" aria-live="assertive">
           <CardContent className="flex items-start gap-3 p-4 text-sm text-destructive dark:text-red-400">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
             <div>
@@ -352,7 +432,7 @@ export default function Billing() {
       )}
 
       {showLowBalance && (
-        <Card className="border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent shadow-sm" role="status">
+        <Card className="border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent shadow-xs" role="status">
           <CardContent className="flex items-start gap-3 p-4 text-sm text-amber-800 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
             <div>
@@ -363,24 +443,19 @@ export default function Billing() {
       )}
 
       {/* Main Billing Overview Card */}
-      <Card className="overflow-hidden border-border/60 shadow-md transition-all hover:shadow-lg">
-        <CardHeader className="bg-muted/30 border-b border-border/40 pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <WalletCards className="size-5 text-primary" />
-                {t('billing.creditsOverview')}
-              </CardTitle>
-              <CardDescription className="mt-1">{t('billing.balanceDescription')}</CardDescription>
-            </div>
-            <Badge variant="outline" className="hidden sm:inline-flex bg-background/50 border-primary/20 text-primary">
-              <Sparkles className="mr-1 size-3" /> Auto-Renewable
-            </Badge>
+      <Card className="overflow-hidden border-border/60 shadow-xs transition-all hover:border-border/80">
+        <CardHeader className="bg-muted/20 border-b border-border/40 pb-4">
+          <div>
+            <CardTitle className="text-lg font-bold flex items-center gap-2 text-foreground">
+              <WalletCards className="size-4.5 text-primary" />
+              {t('billing.creditsOverview')}
+            </CardTitle>
+            <CardDescription className="mt-0.5 text-xs text-muted-foreground">{t('billing.balanceDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="space-y-8 pt-6">
-          {/* Stat Cards */}
-          <div className="grid gap-5 sm:grid-cols-2">
+        <CardContent className="space-y-6 pt-6">
+          {/* Stat Cards (Double-Bezel Hardware Architecture) */}
+          <div className="grid gap-4 sm:grid-cols-2">
             {overview.status === 'loading' &&
               Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />)}
             {overview.status === 'error' && (
@@ -390,43 +465,45 @@ export default function Billing() {
             )}
             {overview.status === 'success' && (
               <>
-                {/* Balance Card */}
-                <div className="relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-5 shadow-sm transition-all hover:border-primary/50">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.balance')}</p>
-                    <div className="rounded-full bg-primary/10 p-2 text-primary">
-                      <WalletCards className="size-4" />
+                {/* Balance Card - Double Bezel Shell */}
+                <div className="group relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-1.5 transition-all hover:border-primary/40">
+                  <div className="rounded-xl border border-primary/10 bg-background/80 p-5 backdrop-blur-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{t('billing.balance')}</p>
+                      <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <WalletCards className="size-3.5" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <p 
-                      className="font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums"
-                      title={`${formatNumber(overview.data.wallet.balance_credits)} Credits`}
-                    >
-                      {formatCredits(overview.data.wallet.balance_credits)}
-                      <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
-                    </p>
-
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <p 
+                        className="text-3xl font-bold tracking-tight text-foreground tabular-nums"
+                        title={`${formatNumber(overview.data.wallet.balance_credits)} Credits`}
+                      >
+                        {formatCredits(overview.data.wallet.balance_credits)}
+                        <span className="ml-2 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Upcoming Charges Card */}
-                <div className="relative overflow-hidden rounded-xl border border-border/60 bg-card p-5 shadow-sm transition-all hover:border-border">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.upcomingCharges')}</p>
-                    <div className="rounded-full bg-primary/10 p-2 text-primary">
-                      <CalendarClock className="size-4" />
+                {/* Upcoming Charges Card - Double Bezel Shell */}
+                <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-muted/20 p-1.5 transition-all hover:border-border">
+                  <div className="rounded-xl border border-border/40 bg-card/90 p-5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{t('billing.upcomingCharges')}</p>
+                      <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                        <CalendarClock className="size-3.5" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <p 
-                      className="font-mono text-3xl font-bold tracking-tight text-foreground tabular-nums"
-                      title={`${formatNumber(overview.data.upcoming_required_credits)} Credits`}
-                    >
-                      {formatCredits(overview.data.upcoming_required_credits)}
-                      <span className="ml-1.5 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
-                    </p>
-
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <p 
+                        className="text-3xl font-bold tracking-tight text-foreground tabular-nums"
+                        title={`${formatNumber(overview.data.upcoming_required_credits)} Credits`}
+                      >
+                        {formatCredits(overview.data.upcoming_required_credits)}
+                        <span className="ml-2 font-sans text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t('billing.credits')}</span>
+                      </p>
+                    </div>
                   </div>
                 </div>
               </>
@@ -437,11 +514,11 @@ export default function Billing() {
           <div className="pt-2">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                   <PlusCircle className="size-4 text-primary" />
                   {t('billing.addCredits')}
                 </h3>
-                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">{t('billing.addCreditsDescription')}</p>
+                <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted-foreground">{t('billing.addCreditsDescription')}</p>
               </div>
             </div>
 
@@ -461,29 +538,29 @@ export default function Billing() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ type: 'spring', stiffness: 120, damping: 20, delay: idx * 0.05 }}
-                      className={`group relative flex flex-col rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] disabled:opacity-60 ${
+                      className={`group relative flex flex-col rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.98] disabled:opacity-60 ${
                         isPopular
-                          ? 'border-primary/40 bg-primary/[0.03] shadow-sm hover:border-primary/60'
-                          : 'border-border/60 bg-card hover:border-border'
+                          ? 'border-primary/40 bg-primary/[0.04] shadow-xs hover:border-primary/60'
+                          : 'border-border/60 bg-card hover:border-border/80'
                       }`}
                       disabled={topupPackageID !== null}
                       onClick={() => void startTopup(pkg.id)}
                     >
                       {isPopular && (
-                        <span className="absolute -top-2.5 right-3 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary ring-1 ring-primary/20">
+                        <span className="absolute -top-2.5 right-3 rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary ring-1 ring-primary/30">
                           {t('billing.bestValue')}
                         </span>
                       )}
 
                       <div>
-                        <div className="font-mono text-2xl font-bold tracking-tight text-foreground tabular-nums">
+                        <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
                           {formatCredits(pkg.credits)}
                         </div>
                         <div className="mt-0.5 text-xs font-medium text-muted-foreground">{t('billing.credits')}</div>
                       </div>
 
                       <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-3 mt-4">
-                        <span className="text-sm font-semibold text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</span>
+                        <span className="text-xs font-bold text-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</span>
                         <span className="flex items-center gap-1 text-xs font-medium text-primary">
                           {topupPackageID === pkg.id ? t('billing.openingCheckout') : t('billing.choosePackage')}
                           <ArrowUpRight className="size-3 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -499,10 +576,10 @@ export default function Billing() {
               )}
             </div>
 
-            {/* Custom Amount */}
-            <div className="mt-6 rounded-xl border border-border/60 bg-card p-5">
-              <label htmlFor="custom-amount" className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Coins className="size-4 text-muted-foreground" />
+            {/* Custom Amount Box */}
+            <div className="mt-5 rounded-xl border border-border/60 bg-muted/20 p-4">
+              <label htmlFor="custom-amount" className="mb-2.5 flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Coins className="size-3.5 text-muted-foreground" />
                 {t('billing.customTopupLabel')}
               </label>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -510,19 +587,17 @@ export default function Billing() {
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Rp</span>
                   <Input
                     id="custom-amount"
-                    type="number"
-                    min={10000}
-                    max={10000000}
-                    step={1000}
-                    placeholder="50000"
-                    className="pl-9 font-mono tabular-nums"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="50.000"
+                    className="pl-9 text-xs tabular-nums h-9"
                     value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
+                    onChange={handleCustomAmountChange}
                     disabled={topupPackageID !== null}
                   />
                 </div>
                 {customAmountNum > 0 && customValid && (
-                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-foreground">
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
                     = {customCredits.toLocaleString(language)} {t('billing.credits')}
                   </span>
                 )}
@@ -530,7 +605,7 @@ export default function Billing() {
                   size="sm"
                   disabled={!customValid || topupPackageID !== null}
                   onClick={() => void startCustomTopup()}
-                  className="shrink-0"
+                  className="shrink-0 h-9 px-4 text-xs font-medium"
                 >
                   {topupPackageID === -1 ? t('billing.openingCheckout') : t('billing.customTopupButton')}
                 </Button>
@@ -696,129 +771,459 @@ export default function Billing() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <section className="space-y-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold tracking-tight text-foreground">{t('billing.history')}</h2>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <HistoryCard
-            title={t('billing.invoices')}
-            icon={<ReceiptText className="size-4 text-primary" />}
-            empty={overview.status === 'success' ? t('billing.noInvoices') : t('billing.invoicesUnavailable')}
-            state={overview.status === 'loading' ? 'loading' : overview.status === 'error' ? 'error' : 'success'}
-            rows={
-              overview.status === 'success'
-                ? overview.data.invoices.map((invoice) => ({
-                    id: invoice.id,
-                    title: `${formatDate(invoice.period_start)} – ${formatDate(invoice.period_end)}`,
-                    detail: `${formatCredits(invoice.total_credits)} ${t('billing.credits')}`,
-                    status: invoice.status,
-                    date: invoice.paid_at
-                      ? t('billing.paidOn', { date: formatDate(invoice.paid_at) })
-                      : invoice.due_at
-                        ? t('billing.dueOn', { date: formatDate(invoice.due_at) })
-                        : formatDate(invoice.created_at),
-                  }))
-                : []
-            }
-            formatStatus={formatStatus}
-            statusVariant={statusVariant}
-          />
-          <HistoryCard
-            title={t('billing.topups')}
-            icon={<CreditCard className="size-4 text-primary" />}
-            empty={overview.status === 'success' ? t('billing.noTopups') : t('billing.topupsUnavailable')}
-            state={overview.status === 'loading' ? 'loading' : overview.status === 'error' ? 'error' : 'success'}
-            onReconcile={reconcileTopup}
-            reconcileLabel={t('billing.checkStatus')}
-            rows={
-              overview.status === 'success'
-                ? overview.data.topups.map((topup) => ({
-                    id: topup.id,
-                    title: `${formatCredits(topup.credits)} ${t('billing.credits')}`,
-                    detail: formatMoney(topup.amount_minor, topup.currency),
-                    status: topup.status,
-                    date: topup.paid_at ? t('billing.paidOn', { date: formatDate(topup.paid_at) }) : formatDate(topup.created_at),
-                  }))
-                : []
-            }
-            formatStatus={formatStatus}
-            statusVariant={statusVariant}
-          />
-          <HistoryCard
-            title={t('billing.walletActivity')}
-            icon={<WalletCards className="size-4 text-primary" />}
-            empty={overview.status === 'success' ? t('billing.noWalletActivity') : t('billing.walletActivityUnavailable')}
-            state={overview.status === 'loading' ? 'loading' : overview.status === 'error' ? 'error' : 'success'}
-            rows={
-              overview.status === 'success'
-                ? overview.data.wallet.ledger_entries.map((entry, index) => ({
-                    id: index,
-                    title: translateLedgerType(entry.type),
-                    detail: `${formatDate(entry.created_at)} · ${t('billing.balanceAfter', { balance: formatCredits(entry.balance_after) })}`,
-                    status: entry.amount_credits >= 0 ? 'credit' : 'debit',
-                    date: '',
-                    amount: entry.amount_credits,
-                  }))
-                : []
-            }
-            formatStatus={formatStatus}
-            statusVariant={statusVariant}
-            amountColumn
-            formatAmount={formatCredits}
-          />
-        </div>
-      </section>
-
-      {/* Billing Profile & Invoicing Details */}
-      <Card className="border-border/60 bg-card shadow-sm">
+      {/* Billing & Wallet History Section - Full Width Tabbed Data Tables */}
+      <Card className="border-border/60 shadow-xs">
         <CardHeader className="border-b border-border/40 pb-4">
-          <CardTitle className="text-base font-semibold tracking-tight">Billing Profile & Tax Details</CardTitle>
+          <CardTitle className="text-lg font-bold flex items-center gap-2 text-foreground">
+            <ReceiptText className="size-4.5 text-primary" />
+            {t('billing.history')}
+          </CardTitle>
           <CardDescription className="text-xs text-muted-foreground">
-            Invoicing information for payment receipts and official tax compliance.
+            Complete transaction ledger for invoices, credit top-ups, and balance adjustments.
           </CardDescription>
         </CardHeader>
+
         <CardContent className="pt-6">
-          <form onSubmit={handleSaveProfile} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="company_name" className="text-sm font-medium">Full Name / Company Name</Label>
-                <Input id="company_name" value={profile.company_name} onChange={e => setProfile({...profile, company_name: e.target.value})} placeholder="Nama Lengkap / PT Acme Corp" />
+          <Tabs defaultValue="wallet_activity" className="space-y-4">
+            <TabsList className="grid w-full grid-cols-3 max-w-md h-9 text-xs">
+              <TabsTrigger value="wallet_activity" className="text-xs">
+                <WalletCards className="size-3.5 mr-1.5" />
+                {t('billing.walletActivity')}
+              </TabsTrigger>
+              <TabsTrigger value="invoices" className="text-xs">
+                <ReceiptText className="size-3.5 mr-1.5" />
+                {t('billing.invoices')}
+              </TabsTrigger>
+              <TabsTrigger value="topups" className="text-xs">
+                <CreditCard className="size-3.5 mr-1.5" />
+                {t('billing.topups')}
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Wallet Activity Tab */}
+            <TabsContent value="wallet_activity" className="space-y-4">
+              <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow className="border-b border-border/40 hover:bg-transparent">
+                      <TableHead className="w-[32%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">Transaction Type</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Amount</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Balance After</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {overview.status === 'loading' && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">Loading wallet history...</TableCell>
+                      </TableRow>
+                    )}
+                    {overview.status === 'success' && overview.data.wallet.ledger_entries.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noWalletActivity')}</TableCell>
+                      </TableRow>
+                    )}
+                    {overview.status === 'success' && overview.data.wallet.ledger_entries.map((entry, index) => {
+                      const isCredit = entry.amount_credits >= 0
+                      return (
+                        <TableRow key={index} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
+                          <TableCell className="font-semibold text-xs text-foreground pl-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`size-6 rounded-full flex items-center justify-center shrink-0 ${
+                                isCredit
+                                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
+                                  : 'bg-amber-500/10 border border-amber-500/20 text-amber-500'
+                              }`}>
+                                {isCredit ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
+                              </div>
+                              <span className="capitalize font-medium text-xs">{translateLedgerType(entry.type)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <span className={`inline-flex items-center font-bold text-[11px] tabular-nums px-2.5 py-0.5 rounded-full ${
+                              isCredit
+                                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                                : 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                            }`}>
+                              {isCredit ? `+${formatCredits(entry.amount_credits)}` : formatCredits(entry.amount_credits)} {t('billing.credits')}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs font-semibold tabular-nums text-foreground/80">
+                            {formatCredits(entry.balance_after)} {t('billing.credits')}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
+                            {formatDate(entry.created_at)}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="tax_id" className="text-sm font-medium">Tax ID / NPWP / NIK <span className="text-xs font-normal text-muted-foreground">(Optional)</span></Label>
-                <Input id="tax_id" value={profile.tax_id} onChange={e => setProfile({...profile, tax_id: e.target.value})} placeholder="00.000.000.0-000.000 (Optional)" />
+            </TabsContent>
+
+            {/* Invoices Tab */}
+            <TabsContent value="invoices" className="space-y-4">
+              <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow className="border-b border-border/40 hover:bg-transparent">
+                      <TableHead className="w-[34%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">Billing Period</TableHead>
+                      <TableHead className="w-[23%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Credits Charged</TableHead>
+                      <TableHead className="w-[23%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Status</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {overview.status === 'loading' && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">Loading invoices...</TableCell>
+                      </TableRow>
+                    )}
+                    {overview.status === 'success' && overview.data.invoices.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noInvoices')}</TableCell>
+                      </TableRow>
+                    )}
+                    {overview.status === 'success' && overview.data.invoices.map((invoice) => (
+                      <TableRow key={invoice.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
+                        <TableCell className="font-semibold text-xs text-foreground pl-4">
+                          <div className="flex items-center gap-2">
+                            <ReceiptText className="size-3.5 text-muted-foreground shrink-0" />
+                            <span>{formatDate(invoice.period_start)} – {formatDate(invoice.period_end)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold text-foreground tabular-nums">
+                          {formatCredits(invoice.total_credits)} {t('billing.credits')}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant={statusVariant(invoice.status)} className="capitalize font-medium text-[11px] px-2.5 py-0.5">{formatStatus(invoice.status)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
+                          {invoice.paid_at
+                            ? t('billing.paidOn', { date: formatDate(invoice.paid_at) })
+                            : invoice.due_at
+                              ? t('billing.dueOn', { date: formatDate(invoice.due_at) })
+                              : formatDate(invoice.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="billing_email" className="text-sm font-medium">Billing Email</Label>
-                <Input id="billing_email" type="email" value={profile.email} onChange={e => setProfile({...profile, email: e.target.value})} placeholder="user@example.com" />
+            </TabsContent>
+
+            {/* Top-ups Tab */}
+            <TabsContent value="topups" className="space-y-4">
+              <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow className="border-b border-border/40 hover:bg-transparent">
+                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">Order ID</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Credits Purchased</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Amount Paid</TableHead>
+                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Status</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {overview.status === 'loading' && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">Loading top-ups...</TableCell>
+                      </TableRow>
+                    )}
+                    {overview.status === 'success' && overview.data.topups.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noTopups')}</TableCell>
+                      </TableRow>
+                    )}
+                    {overview.status === 'success' && overview.data.topups.map((topup) => (
+                      <TableRow key={topup.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
+                        <TableCell className="font-mono text-xs font-semibold text-foreground/90 pl-4">
+                          #topup-{topup.id}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className="inline-flex items-center font-bold text-[11px] tabular-nums px-2.5 py-0.5 rounded-full text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+                            +{formatCredits(topup.credits)} {t('billing.credits')}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs font-bold text-foreground tabular-nums">
+                          {formatMoney(topup.amount_minor, topup.currency)}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant={statusVariant(topup.status)} className="capitalize font-medium text-[11px] px-2.5 py-0.5">{formatStatus(topup.status)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
+                          <div className="flex items-center justify-end gap-2.5">
+                            <span>{topup.paid_at ? t('billing.paidOn', { date: formatDate(topup.paid_at) }) : formatDate(topup.created_at)}</span>
+                            {topup.status === 'pending' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void reconcileTopup(topup.id)}
+                                className="h-7 px-2.5 text-[11px] font-semibold"
+                              >
+                                {t('billing.checkStatus')}
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="billing_phone" className="text-sm font-medium">Phone Number</Label>
-                <Input id="billing_phone" value={profile.phone} onChange={e => setProfile({...profile, phone: e.target.value})} placeholder="+628123456789" />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="address_line1" className="text-sm font-medium">Address</Label>
-                <Input id="address_line1" value={profile.address_line1} onChange={e => setProfile({...profile, address_line1: e.target.value})} placeholder="Jalan Utama No. 123" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="city" className="text-sm font-medium">City</Label>
-                <Input id="city" value={profile.city} onChange={e => setProfile({...profile, city: e.target.value})} placeholder="Jakarta" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="postal_code" className="text-sm font-medium">Postal Code</Label>
-                <Input id="postal_code" value={profile.postal_code} onChange={e => setProfile({...profile, postal_code: e.target.value})} placeholder="12340" />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Billing Profile & Tax Details - Corporate Style */}
+      <Card id="billing-profile-card" className="border-border/60 bg-card shadow-xs overflow-hidden scroll-mt-6">
+        <CardHeader className="border-b border-border/40 bg-muted/20 pb-5">
+          <div>
+            <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2 text-foreground">
+              <Building2 className="size-4.5 text-primary" />
+              {t('billing.profile.title')}
+            </CardTitle>
+            <CardDescription className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {t('billing.profile.description')}
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-6">
+          {!isProfileComplete(profile) && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-600 dark:text-amber-400 font-medium flex items-start gap-2.5">
+              <AlertTriangle className="size-4 shrink-0 text-amber-500 mt-0.5" />
+              <div>
+                <p className="font-semibold">{t('billing.profile.profileRequiredTitle')}</p>
+                <p className="mt-0.5 text-muted-foreground">{t('billing.profile.incompleteBanner')}</p>
               </div>
             </div>
-            <div className="flex justify-end pt-2">
-              <Button type="submit" size="sm" disabled={savingProfile}>
-                {savingProfile ? 'Saving...' : 'Save Profile'}
+          )}
+
+          <form onSubmit={handleSaveProfile} className="space-y-6">
+            {/* Identity & Tax Identification Group */}
+            <div className="space-y-4">
+              <div className="border-b border-border/30 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Building2 className="size-3.5 text-primary" />
+                  {t('billing.profile.identityTitle')}
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Full Name / Company Name */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="company_name" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    {t('billing.profile.companyName')}
+                  </Label>
+                  <div className="relative">
+                    <Building2 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="company_name"
+                      value={profile.company_name}
+                      onChange={(e) => setProfile({ ...profile, company_name: e.target.value })}
+                      placeholder={t('billing.profile.companyNamePlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.companyNameHint')}</p>
+                </div>
+
+                {/* Tax ID / NPWP / NIK */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="tax_id" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                    <span>{t('billing.profile.taxId')}</span>
+                    <span className="text-[10px] font-normal text-muted-foreground">{t('billing.profile.optional')}</span>
+                  </Label>
+                  <div className="relative">
+                    <FileText className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="tax_id"
+                      value={profile.tax_id}
+                      onChange={(e) => setProfile({ ...profile, tax_id: e.target.value })}
+                      placeholder={t('billing.profile.taxIdPlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.taxIdHint')}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Contact & Receipt Delivery Group */}
+            <div className="space-y-4">
+              <div className="border-b border-border/30 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Mail className="size-3.5 text-primary" />
+                  {t('billing.profile.contactTitle')}
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Billing Email */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="billing_email" className="text-xs font-semibold text-foreground">
+                    {t('billing.profile.email')}
+                  </Label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="billing_email"
+                      type="email"
+                      value={profile.email}
+                      onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                      placeholder={t('billing.profile.emailPlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.emailHint')}</p>
+                </div>
+
+                {/* Phone Number */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="billing_phone" className="text-xs font-semibold text-foreground">
+                    {t('billing.profile.phone')}
+                  </Label>
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="billing_phone"
+                      value={profile.phone}
+                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                      placeholder={t('billing.profile.phonePlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">{t('billing.profile.phoneHint')}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Address Information Group */}
+            <div className="space-y-4">
+              <div className="border-b border-border/30 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <MapPin className="size-3.5 text-primary" />
+                  {t('billing.profile.addressTitle')}
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Street Address */}
+                <div className="space-y-1.5 md:col-span-3">
+                  <Label htmlFor="address_line1" className="text-xs font-semibold text-foreground">
+                    {t('billing.profile.streetAddress')}
+                  </Label>
+                  <div className="relative">
+                    <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="address_line1"
+                      value={profile.address_line1}
+                      onChange={(e) => setProfile({ ...profile, address_line1: e.target.value })}
+                      placeholder={t('billing.profile.streetAddressPlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                </div>
+
+                {/* City */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="city" className="text-xs font-semibold text-foreground">
+                    {t('billing.profile.city')}
+                  </Label>
+                  <div className="relative">
+                    <Building className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="city"
+                      value={profile.city}
+                      onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                      placeholder={t('billing.profile.cityPlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                </div>
+
+                {/* Postal Code */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="postal_code" className="text-xs font-semibold text-foreground">
+                    {t('billing.profile.postalCode')}
+                  </Label>
+                  <div className="relative">
+                    <Hash className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      id="postal_code"
+                      value={profile.postal_code}
+                      onChange={(e) => setProfile({ ...profile, postal_code: e.target.value })}
+                      placeholder={t('billing.profile.postalCodePlaceholder')}
+                      className="pl-9 text-xs h-9"
+                    />
+                  </div>
+                </div>
+
+                {/* Country Read-only Badge */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-foreground">
+                    {t('billing.profile.country')}
+                  </Label>
+                  <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/30 text-xs font-medium text-foreground">
+                    🇮🇩 {t('billing.profile.countryValue')}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-border/40">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={savingProfile}
+                className="font-semibold gap-1.5 hover:-translate-y-0.5 active:scale-[0.98] transition-all"
+              >
+                {savingProfile ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    {t('billing.profile.saving')}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="size-3.5" />
+                    {t('billing.profile.save')}
+                  </>
+                )}
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      {/* Profile Required Modal Prompt */}
+      <Dialog open={showProfilePrompt} onOpenChange={setShowProfilePrompt}>
+        <DialogContent className="sm:max-w-md border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-amber-500">
+              <AlertTriangle className="size-4.5" />
+              {t('billing.profile.profileRequiredTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-1.5 leading-relaxed">
+              {t('billing.profile.profileRequiredDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setShowProfilePrompt(false)
+                scrollToBillingProfile()
+              }}
+              className="font-semibold text-xs"
+            >
+              {t('billing.profile.completeProfileBtn')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Payment / QRIS Dialog */}
       <Dialog open={!!activePaymentModal} onOpenChange={(open) => !open && setActivePaymentModal(null)}>
@@ -875,78 +1280,5 @@ export default function Billing() {
       </Dialog>
 
     </div>
-  )
-}
-
-function HistoryCard({
-  title,
-  icon,
-  empty,
-  state,
-  rows,
-  formatStatus,
-  statusVariant,
-  onReconcile,
-  reconcileLabel,
-  amountColumn,
-  formatAmount,
-}: {
-  title: string
-  icon: ReactNode
-  empty: string
-  state: 'loading' | 'error' | 'success'
-  rows: Array<{ id: number; title: string; detail: string; status: string; date: string; amount?: number }>
-  formatStatus: (status: string) => string
-  statusVariant: (status: string) => 'secondary' | 'destructive' | 'outline'
-  onReconcile?: (id: number) => Promise<void>
-  reconcileLabel?: string
-  amountColumn?: boolean
-  formatAmount?: (value: number) => string
-}) {
-  return (
-    <Card className="border-border/60 shadow-sm transition-all hover:shadow-md">
-      <CardHeader className="bg-muted/20 border-b border-border/40 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-bold text-foreground">
-          {icon} {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-4">
-        {state === 'loading' && Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-lg" />)}
-        {state === 'error' && <p className="text-sm text-destructive">{empty}</p>}
-        {state === 'success' &&
-          rows.map((row, rowIndex) => (
-            <motion.div
-              key={row.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ type: 'spring', stiffness: 140, damping: 22, delay: Math.min(rowIndex, 8) * 0.04 }}
-              className="-mx-1.5 flex items-start justify-between gap-3 rounded-lg border-b border-border/30 p-1.5 pb-3 transition-colors last:border-0 hover:bg-muted/40"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">{row.title}</p>
-                <p className="text-xs text-muted-foreground">{row.detail}</p>
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                {amountColumn && typeof row.amount === 'number' && formatAmount ? (
-                  <span className={`font-mono text-sm font-bold tabular-nums ${row.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
-                    {row.amount >= 0 ? '+' : ''}{formatAmount(row.amount)}
-                  </span>
-                ) : (
-                  <Badge variant={statusVariant(row.status)} className="capitalize font-medium text-[11px] px-2 py-0.5">
-                    {formatStatus(row.status)}
-                  </Badge>
-                )}
-                <span className="text-[11px] text-muted-foreground">{row.date}</span>
-                {onReconcile && row.status === 'pending' && reconcileLabel && (
-                  <Button variant="ghost" size="sm" className="h-auto py-0.5 px-2 text-xs font-semibold text-primary hover:bg-primary/10" onClick={() => void onReconcile(row.id)}>
-                    {reconcileLabel}
-                  </Button>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        {state === 'success' && rows.length === 0 && <p className="text-sm text-muted-foreground py-2 text-center">{empty}</p>}
-      </CardContent>
-    </Card>
   )
 }
