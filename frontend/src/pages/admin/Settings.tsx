@@ -3,17 +3,11 @@ import { toast } from 'sonner'
 import { settingsAPI } from '../../services/api'
 import useTranslation from '../../lib/useTranslation'
 import {
-  Globe,
   Shield,
   Activity,
-  Cpu,
-  Database,
   Save,
   AlertCircle,
-  Server,
   Network,
-  Layout,
-  Zap,
   Loader2,
   RefreshCw
 } from 'lucide-react'
@@ -21,7 +15,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Slider } from '@/components/ui/slider'
 import { NumberStepper } from '@/components/ui/number-stepper'
 
 interface PlatformSettings {
@@ -176,23 +169,7 @@ const AdminSettings = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Layout size={14} className="text-emerald-500 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.identityQuota')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={1}
-                    max={10}
-                    value={settings.max_projects_per_user || 3}
-                    onChange={(val) => handleChange('max_projects_per_user', val)}
-                    unit={t('admin.settings.projects')}
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
               <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Shield size={14} className="text-rose-500 shrink-0 mt-0.5" />
@@ -220,38 +197,6 @@ const AdminSettings = () => {
                     value={settings.max_concurrent_builds || 3}
                     onChange={(val) => handleChange('max_concurrent_builds', val)}
                     unit={t('admin.settings.workers')}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Globe size={14} className="text-teal-500 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.domainLimit')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={1}
-                    max={20}
-                    value={settings.max_domains_per_project || 3}
-                    onChange={(val) => handleChange('max_domains_per_project', val)}
-                    unit={t('common.domains')}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Server size={14} className="text-indigo-400 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.maxImageRetention')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={1}
-                    max={20}
-                    value={settings.max_image_retention || 3}
-                    onChange={(val) => handleChange('max_image_retention', val)}
-                    unit={t('admin.settings.images')}
                   />
                 </div>
               </div>
@@ -293,64 +238,6 @@ const AdminSettings = () => {
               <p className="text-xs text-muted-foreground">
                 All top-ups without an explicit package provider override will use this payment gateway.
               </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Compute Specs */}
-        <Card className="lg:col-span-2 overflow-hidden relative group border-rose-500/20 bg-gradient-to-br from-background to-rose-500/5">
-          <CardHeader className="flex flex-row items-center gap-4 pb-2">
-            <div className="w-12 h-12 bg-rose-500/10 rounded-xl flex items-center justify-center text-rose-500">
-              <Zap className="w-6 h-6" />
-            </div>
-            <div>
-              <CardTitle className="text-xl">{t('admin.settings.computeSpecs')}</CardTitle>
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">{t('admin.settings.provisioningProfile')}</p>
-            </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-10 pt-8">
-            <div className="space-y-6 bg-background/50 p-6 rounded-xl border">
-              <div className="flex items-center justify-between">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Cpu size={16} className="text-rose-500" />
-                  {t('admin.settings.cpuLimit')}
-                </Label>
-                <span className="text-lg font-bold text-foreground">{settings.cpu_limit_percent || 50}% <span className="text-sm text-muted-foreground">{t('admin.settings.cores')}</span></span>
-              </div>
-              <Slider
-                value={[settings.cpu_limit_percent || 50]}
-                min={10}
-                max={100}
-                step={5}
-                onValueChange={(val) => handleChange('cpu_limit_percent', Array.isArray(val) ? val[0] : val)}
-                className="py-4"
-              />
-              <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                <span>{t('admin.settings.lowPriority')}</span>
-                <span>{t('admin.settings.burst')}</span>
-              </div>
-            </div>
-
-            <div className="space-y-6 bg-background/50 p-6 rounded-xl border">
-              <div className="flex items-center justify-between">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Database size={16} className="text-indigo-500" />
-                  {t('admin.settings.memoryLimit')}
-                </Label>
-                <span className="text-lg font-bold text-foreground">{settings.memory_limit_mb || 512} <span className="text-sm text-muted-foreground">{t('admin.settings.mbRam')}</span></span>
-              </div>
-              <Slider
-                value={[settings.memory_limit_mb || 512]}
-                min={128}
-                max={2048}
-                step={128}
-                onValueChange={(val) => handleChange('memory_limit_mb', Array.isArray(val) ? val[0] : val)}
-                className="py-4"
-              />
-              <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                <span>128 MB</span>
-                <span>2048 MB</span>
-              </div>
             </div>
           </CardContent>
         </Card>
