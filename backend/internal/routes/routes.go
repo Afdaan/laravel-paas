@@ -6,7 +6,9 @@
 package routes
 
 import (
+	"strings"
 	"time"
+
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -343,5 +345,18 @@ func Setup(
 	projectDatabaseMutations.Post("/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
 	projectDatabaseMutations.Post("/reset", databaseHandler.ResetDatabase)
 
+	// ===========================================
+	// Subdomain & Custom Domain Project Ingress Proxy Fallback
+	// All non-API, non-system requests hit this handler to be proxied to project containers.
+	// ===========================================
+	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
+		path := c.Path()
+		if strings.HasPrefix(path, "/api") || path == "/health" || path == "/metrics" {
+			return c.Next()
+		}
+		return projectHandler.ProxyToProject(c)
+	})
+
 	return app
 }
+
