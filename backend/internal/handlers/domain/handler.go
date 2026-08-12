@@ -596,12 +596,14 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 
 	// 4. Build Traefik routing configuration response
 	type TraefikRouter struct {
-		Rule        string   `json:"rule"`
-		Service     string   `json:"service"`
-		EntryPoints []string `json:"entryPoints"`
-		Priority    int      `json:"priority"`
-		Middlewares []string `json:"middlewares,omitempty"`
+		Rule        string                 `json:"rule"`
+		Service     string                 `json:"service"`
+		EntryPoints []string               `json:"entryPoints"`
+		Priority    int                    `json:"priority"`
+		TLS         map[string]interface{} `json:"tls,omitempty"`
+		Middlewares []string               `json:"middlewares,omitempty"`
 	}
+
 
 	type TraefikServer struct {
 		URL string `json:"url"`
@@ -680,8 +682,10 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			Service:     serviceName,
 			EntryPoints: []string{"web", "websecure"},
 			Priority:    300,
+			TLS:         map[string]interface{}{},
 			Middlewares: []string{"security-headers@file"},
 		}
+
 
 
 		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), internalPort)
