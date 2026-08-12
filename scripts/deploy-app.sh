@@ -353,7 +353,10 @@ deploy_worker() {
         -e GITHUB_APP_ID="${GITHUB_APP_ID:-}" \
         -e GITHUB_APP_PRIVATE_KEY_PATH="${GITHUB_APP_PRIVATE_KEY_PATH:-}" \
         -e GITHUB_APP_WEBHOOK_SECRET="${GITHUB_APP_WEBHOOK_SECRET:-}"
+
+    docker tag "paas-worker:$WORKER_TAG" "paas-worker:latest" 2>/dev/null || true
 }
+
 
 if [[ "$TARGET" == "backend" || "$TARGET" == "all" ]]; then
     deploy_backend
