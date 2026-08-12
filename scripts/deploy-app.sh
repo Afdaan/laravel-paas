@@ -175,8 +175,9 @@ deploy_with_anti_downtime() {
     fi
     echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
 
-    docker rm -f "$temp_container_name" 2>/dev/null || true
+    docker rm -f "$temp_container_name" "$old_container_name" 2>/dev/null || true
     echo -e "${YELLOW}[RUN] Starting new container $temp_container_name...${NC}"
+
 
     if ! docker run -d --name "$temp_container_name" "$@" "$image_name"; then
         echo -e "${RED}[ERROR] Failed to start new container. Keeping current version.${NC}"
