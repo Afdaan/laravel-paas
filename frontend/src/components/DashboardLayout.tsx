@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -225,33 +225,41 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
    * - If sidebar nav has overflow but is at a scroll boundary in the wheel direction → forward remaining delta to main content.
    * - Only let sidebar nav consume the event when it can actually scroll in that direction.
    */
-  const handleSidebarWheel = useCallback((e: ReactWheelEvent<HTMLElement>) => {
+  const handleSidebarWheel = useCallback((event: WheelEvent) => {
     const nav = sidebarNavRef.current
     const main = mainContentRef.current
     if (!main) return
 
     // No nav or nav has no scrollable overflow → forward everything
     if (!nav || nav.scrollHeight <= nav.clientHeight) {
-      e.preventDefault()
-      main.scrollTop += e.deltaY
-      if (e.deltaX) main.scrollLeft += e.deltaX
+      if (event.cancelable) event.preventDefault()
+      main.scrollTop += event.deltaY
+      if (event.deltaX) main.scrollLeft += event.deltaX
       return
     }
 
     // Nav has overflow — check if it can scroll in the wheel direction
     const atTop = nav.scrollTop <= 0
     const atBottom = nav.scrollTop + nav.clientHeight >= nav.scrollHeight - 1
-    const scrollingDown = e.deltaY > 0
-    const scrollingUp = e.deltaY < 0
+    const scrollingDown = event.deltaY > 0
+    const scrollingUp = event.deltaY < 0
 
     if ((scrollingDown && atBottom) || (scrollingUp && atTop)) {
       // Nav cannot scroll further in this direction → forward to main
-      e.preventDefault()
-      main.scrollTop += e.deltaY
-      if (e.deltaX) main.scrollLeft += e.deltaX
+      if (event.cancelable) event.preventDefault()
+      main.scrollTop += event.deltaY
+      if (event.deltaX) main.scrollLeft += event.deltaX
     }
     // Otherwise let the nav scroll normally (no preventDefault)
   }, [])
+
+  useEffect(() => {
+    const sidebar = sidebarContainerRef.current?.querySelector('aside')
+    if (!sidebar) return
+
+    sidebar.addEventListener('wheel', handleSidebarWheel, { passive: false })
+    return () => sidebar.removeEventListener('wheel', handleSidebarWheel)
+  }, [handleSidebarWheel])
 
   useEffect(() => {
     if (!isSidebarCollapsed) {
@@ -484,7 +492,6 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           onMouseLeave={() => {
             if (!isMobileViewport) setIsHovered(false)
           }}
-          onWheel={handleSidebarWheel}
           className={`absolute left-0 top-0 bottom-0 border-r bg-card flex flex-col z-50 select-none shrink-0 ${
             isDragging ? '' : 'transition-[width] duration-300 ease-in-out'
           } ${isHovered ? 'shadow-2xl' : ''}`}

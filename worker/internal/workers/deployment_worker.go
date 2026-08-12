@@ -1105,6 +1105,72 @@ func billingRuntimeAction(jobType string) bool {
 	}
 }
 
+func billingQuotaReconciliationAction(jobType string) bool {
+	switch jobType {
+	case "deploy", "redeploy", "redeploy_clean", "rollback", "restart":
+		return true
+	default:
+		return false
+	}
+}
+
+// reconcileProjectBillingQuota restores the persisted runtime quota from the
+// plan linked to a project. Catalog repricing creates immutable spec versions,
+// so the resource's SpecID remains the authoritative assignment.
+func (w *DeploymentWorker) reconcileProjectBillingQuota(ctx context.Context, project *models.Project) (bool, error) {
+	if w == nil || w.cfg == nil || !w.cfg.BillingEnabled || w.projectRepo == nil || project == nil || project.ID == 0 {
+		return false, nil
+	}
+
+	changed := false
+	err := w.projectRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("type = ? AND resource_id = ? AND billing_status <> ?", models.BillableTypeProject, project.ID, models.BillableResourceStatusDeleted).
+			First(&resource).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("load project billing resource: %w", err)
+		}
+
+		var spec models.BillableSpec
+		if err := tx.Where("id = ? AND type = ?", resource.SpecID, models.BillableTypeProject).First(&spec).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("assigned project billing specification is missing")
+			}
+			return fmt.Errorf("load assigned project billing specification: %w", err)
+		}
+		if spec.CPUMillicores <= 0 || spec.MemoryMB <= 0 {
+			return fmt.Errorf("assigned project billing specification is invalid")
+		}
+
+		cpuLimit := float64(spec.CPUMillicores) / 1000
+		memoryLimit := fmt.Sprintf("%dm", spec.MemoryMB)
+		if project.CPULimit != nil && project.MemoryLimit != nil && *project.CPULimit == cpuLimit && *project.MemoryLimit == memoryLimit {
+			return nil
+		}
+		if err := tx.Model(&models.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
+			"cpu_limit":    cpuLimit,
+			"memory_limit": memoryLimit,
+		}).Error; err != nil {
+			return fmt.Errorf("persist project billing quota: %w", err)
+		}
+		project.CPULimit = &cpuLimit
+		project.MemoryLimit = &memoryLimit
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if !changed && project.CPULimit == nil && project.MemoryLimit == nil {
+		slog.Warn("Billing-enabled project has no billable plan; using legacy runtime defaults", "project_id", project.ID)
+	}
+	return changed, nil
+}
+
 // deployProject handles the full deployment process
 func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Project, job *infrastructure.DeploymentJob) {
 	if job.Type == "delete" {
@@ -1184,6 +1250,19 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 	appendLog = w.makeRedactingLogger(project, appendLog)
+
+	if billingQuotaReconciliationAction(job.Type) {
+		quotaUpdated, err := w.reconcileProjectBillingQuota(ctx, project)
+		if err != nil {
+			appendLog("ERROR: Failed to resolve runtime limits from assigned billing plan.")
+			slog.Error("Failed to reconcile project billing quota", "project_id", project.ID, "error", err)
+			w.updateProjectError(project, job.JobID, "[BILLING_QUOTA_FAILED] Failed to resolve runtime limits from assigned billing plan.")
+			return
+		}
+		if quotaUpdated {
+			appendLog(">> Applied runtime limits from assigned billing plan.")
+		}
+	}
 
 	if job.Type == "update_env" {
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Applying environment configuration")

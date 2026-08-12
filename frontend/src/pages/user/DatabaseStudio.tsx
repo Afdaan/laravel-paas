@@ -52,6 +52,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
 
   const [isLoading, setIsLoading] = useState(true)
   const [isActionLoading, setIsActionLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Data states
   const [dbOverview, setDbOverview] = useState<DatabaseInstance | null>(null)
@@ -96,9 +97,9 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       setIsActionLoading(true)
     }
     try {
+      setLoadError(null)
       const overviewRes = await databaseAPI.getOverview(id)
-      const credentialsRes = await databaseAPI.getCredentials(id)
-      setDbOverview({ ...overviewRes.data, password: credentialsRes.data.password })
+      setDbOverview(overviewRes.data)
 
       const schemaRes = await databaseAPI.getSchema(id)
       const tables = schemaRes.data.tables || []
@@ -110,7 +111,9 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       const metricsRes = await databaseAPI.getMetrics(id)
       setMetrics(metricsRes.data)
     } catch (error) {
-      toast.error(t('databaseStudio.errors.connectFailed'))
+      const message = t('databaseStudio.errors.connectFailed')
+      setLoadError(message)
+      toast.error(message)
     } finally {
       if (!silent) {
         setIsLoading(false)
@@ -119,6 +122,17 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
       }
     }
   }, [id, t])
+
+  const loadCredentials = useCallback(async () => {
+    if (!id) {
+      throw new Error('Project ID is required')
+    }
+
+    const response = await databaseAPI.getCredentials(id)
+    const password = response.data.password || ''
+    setDbOverview(current => current ? { ...current, password } : current)
+    return password
+  }, [id])
 
   useEffect(() => {
     loadStudioData(false)
@@ -155,6 +169,24 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     )
   }
 
+  if (!dbOverview && loadError) {
+    return (
+      <Card className="mx-auto flex min-h-[320px] max-w-xl flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="rounded-full bg-destructive/10 p-3 text-destructive">
+          <AlertTriangle className="size-6" />
+        </div>
+        <div className="space-y-1">
+          <h1 className="font-semibold">{loadError}</h1>
+          <p className="text-sm text-muted-foreground">{t('databaseStudio.dashboard.connecting')}</p>
+        </div>
+        <Button onClick={() => loadStudioData(false)} className="gap-2">
+          <RefreshCw className="size-4" />
+          {t('databaseStudio.dashboard.actions.syncState')}
+        </Button>
+      </Card>
+    )
+  }
+
   const instanceStatus = dbOverview?.status || 'active'
   const isSuspended = instanceStatus === 'suspended'
 
@@ -167,6 +199,7 @@ function DatabaseStudio({ projectId = null, embedded = false }: DatabaseStudioPr
     isActionLoading,
     setIsActionLoading,
     loadStudioData,
+    loadCredentials,
     triggerConfirmation,
     setActiveTab,
     t

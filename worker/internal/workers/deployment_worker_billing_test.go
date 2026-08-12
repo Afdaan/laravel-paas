@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/worker/internal/infrastructure/docker"
@@ -25,6 +27,117 @@ func TestBillingRuntimeAction(t *testing.T) {
 		if billingRuntimeAction(jobType) {
 			t.Fatalf("%q must not be blocked from stopping or deleting", jobType)
 		}
+	}
+}
+
+func TestBillingQuotaReconciliationAction(t *testing.T) {
+	for _, jobType := range []string{"deploy", "redeploy", "redeploy_clean", "rollback", "restart"} {
+		if !billingQuotaReconciliationAction(jobType) {
+			t.Fatalf("%q must recreate containers with current billing quota", jobType)
+		}
+	}
+	for _, jobType := range []string{"start", "stop", "update_env", "delete", ""} {
+		if billingQuotaReconciliationAction(jobType) {
+			t.Fatalf("%q must not claim to apply new Docker limits", jobType)
+		}
+	}
+}
+
+func TestReconcileProjectBillingQuotaUsesAssignedSpec(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Project{}, &models.BillableSpec{}, &models.BillableResource{}); err != nil {
+		t.Fatal(err)
+	}
+	legacyCPU := 0.5
+	legacyMemory := "512m"
+	project := models.Project{
+		UserID:      1,
+		Name:        "Quota sync",
+		GithubURL:   "https://github.com/example/quota-sync",
+		Subdomain:   "quota-sync",
+		CPULimit:    &legacyCPU,
+		MemoryLimit: &legacyMemory,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{
+		Type:           models.BillableTypeProject,
+		Name:           "Large",
+		Slug:           "large",
+		CPUMillicores:  2000,
+		MemoryMB:       4096,
+		StorageGB:      20,
+		MonthlyCredits: 400,
+		Version:        1,
+		IsActive:       false,
+	}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{
+		UserID:        project.UserID,
+		Type:          models.BillableTypeProject,
+		ResourceID:    project.ID,
+		SpecID:        spec.ID,
+		BillingStatus: models.BillableResourceStatusActive,
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	worker := &DeploymentWorker{
+		cfg:         &config.Config{BillingEnabled: true},
+		projectRepo: repositories.NewProjectRepository(db),
+	}
+	changed, err := worker.reconcileProjectBillingQuota(context.Background(), &project)
+	if err != nil || !changed {
+		t.Fatalf("changed=%t err=%v", changed, err)
+	}
+	if project.CPULimit == nil || *project.CPULimit != 2 || project.MemoryLimit == nil || *project.MemoryLimit != "4096m" {
+		t.Fatalf("project quota=%#v/%#v", project.CPULimit, project.MemoryLimit)
+	}
+
+	var persisted models.Project
+	if err := db.First(&persisted, project.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.CPULimit == nil || *persisted.CPULimit != 2 || persisted.MemoryLimit == nil || *persisted.MemoryLimit != "4096m" {
+		t.Fatalf("persisted quota=%#v/%#v", persisted.CPULimit, persisted.MemoryLimit)
+	}
+}
+
+func TestReconcileProjectBillingQuotaDoesNotAssignLegacyProject(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Project{}, &models.BillableSpec{}, &models.BillableResource{}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{
+		UserID:    1,
+		Name:      "Legacy project",
+		GithubURL: "https://github.com/example/legacy-project",
+		Subdomain: "legacy-project",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	worker := &DeploymentWorker{
+		cfg:         &config.Config{BillingEnabled: true},
+		projectRepo: repositories.NewProjectRepository(db),
+	}
+	changed, err := worker.reconcileProjectBillingQuota(context.Background(), &project)
+	if err != nil || changed {
+		t.Fatalf("changed=%t err=%v", changed, err)
+	}
+	if project.CPULimit != nil || project.MemoryLimit != nil {
+		t.Fatalf("legacy project gained unbilled quota=%#v/%#v", project.CPULimit, project.MemoryLimit)
 	}
 }
 
