@@ -167,6 +167,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"run", "-d",
 		"--name", containerName,
 		"--network", models.NetworkName,
+		"--network-alias", fmt.Sprintf("project-%s", project.Subdomain),
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,

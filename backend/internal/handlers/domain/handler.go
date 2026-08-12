@@ -683,7 +683,7 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			Middlewares: []string{"security-headers@file"},
 		}
 
-		targetURL := fmt.Sprintf("http://project-%s:%s", proj.Subdomain, internalPort)
+		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), internalPort)
 
 		resp.HTTP.Services[serviceName] = TraefikService{
 			LoadBalancer: TraefikLoadBalancer{

@@ -362,6 +362,14 @@ func (u *User) IsSuperAdmin() bool {
 	return u.Role == RoleSuperAdmin
 }
 
+// GetTargetHostname returns short 12-char ID or network alias for Docker DNS resolution
+func (p *Project) GetTargetHostname() string {
+	if p.ContainerID != nil && len(*p.ContainerID) >= 12 {
+		return (*p.ContainerID)[:12]
+	}
+	return fmt.Sprintf("project-%s", p.Subdomain)
+}
+
 // GetFullDomain returns complete project URL
 func (p *Project) GetFullDomain(baseDomain string) string {
 	return p.Subdomain + "." + baseDomain

@@ -645,7 +645,7 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
-		targetURL := fmt.Sprintf("http://%s:%s", *project.ContainerID, project.GetInternalPort())
+		targetURL := fmt.Sprintf("http://%s:%s", project.GetTargetHostname(), project.GetInternalPort())
 		path := c.Params("*")
 		target := targetURL + "/" + path
 
@@ -688,7 +688,7 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 4. Forward with internal Docker routing
-	targetURL := fmt.Sprintf("http://%s:%s", *project_db.ContainerID, project_db.GetInternalPort())
+	targetURL := fmt.Sprintf("http://%s:%s", project_db.GetTargetHostname(), project_db.GetInternalPort())
 	path := c.Params("*")
 	target := targetURL + "/" + path
 
