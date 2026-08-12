@@ -28,7 +28,7 @@ http:
   routers:
     # User projects (highest priority - subdomain matching)
     user-projects:
-      rule: "Host(`*.{{PROJECT_DOMAIN}}`)"
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.{{PROJECT_DOMAIN}}$`)"
       service: dynamic-projects
       entryPoints:
         - web
@@ -37,6 +37,7 @@ http:
       tls: {}
       middlewares:
         - security-headers
+
 
     # Backend API (high priority)
     api:
