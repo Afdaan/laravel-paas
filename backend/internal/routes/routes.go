@@ -125,6 +125,8 @@ func Setup(
 	proxyGroup.Use(middleware.RateLimitProxy())
 	proxyGroup.Use(middleware.ValidateProxyTarget())
 	proxyGroup.All("/*", projectHandler.ProxyToProject)
+	proxyGroup.All("", projectHandler.ProxyToProject)
+
 
 	// -----------------------------
 	// Auth Routes (public, rate limited)
