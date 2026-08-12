@@ -229,6 +229,8 @@ func (m *WorkerManager) manageWorkers() {
 				"-e", fmt.Sprintf("INTERNAL_IP=%s", m.cfg.InternalIP),
 				"-e", fmt.Sprintf("ACME_EMAIL=%s", m.cfg.ACMEEmail),
 				"-e", fmt.Sprintf("UID_SALT=%s", m.cfg.UIDSalt),
+				"-e", fmt.Sprintf("APP_ENV=%s", m.cfg.AppEnv),
+				"-e", fmt.Sprintf("TRUSTED_PROXY_CIDRS=%s", strings.Join(m.cfg.TrustedProxyCIDRs, ",")),
 				"-e", fmt.Sprintf("GITHUB_APP_ID=%s", m.cfg.GithubAppID),
 				"-e", fmt.Sprintf("GITHUB_APP_PRIVATE_KEY_PATH=%s", m.cfg.GithubAppPrivateKeyPath),
 				fmt.Sprintf("paas-worker:%s", targetVersion),

@@ -491,6 +491,8 @@ start_worker() {
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e APP_ENV="${APP_ENV:-production}" \
+        -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
