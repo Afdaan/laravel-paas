@@ -678,10 +678,11 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		resp.HTTP.Routers[routerName] = TraefikRouter{
 			Rule:        ruleStr,
 			Service:     serviceName,
-			EntryPoints: []string{"web"},
+			EntryPoints: []string{"web", "websecure"},
 			Priority:    300,
 			Middlewares: []string{"security-headers@file"},
 		}
+
 
 		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), internalPort)
 

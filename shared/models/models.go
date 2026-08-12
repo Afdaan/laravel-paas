@@ -362,13 +362,30 @@ func (u *User) IsSuperAdmin() bool {
 	return u.Role == RoleSuperAdmin
 }
 
-// GetTargetHostname returns short 12-char ID or network alias for Docker DNS resolution
+// GetTargetHostname returns short 12-char ID, full container name, or network alias for Docker DNS resolution
 func (p *Project) GetTargetHostname() string {
-	if p.ContainerID != nil && len(*p.ContainerID) >= 12 {
-		return (*p.ContainerID)[:12]
+	if p.ContainerID != nil && *p.ContainerID != "" {
+		id := strings.TrimSpace(*p.ContainerID)
+		// If ContainerID is a 64-character hex ID, use the 12-char short ID for Docker DNS
+		if len(id) == 64 && isHexString(id) {
+			return id[:12]
+		}
+		// If it's a container name (e.g. paas-project-subdomain-timestamp) or custom ID, return as-is
+		return id
 	}
 	return fmt.Sprintf("project-%s", p.Subdomain)
 }
+
+func isHexString(s string) bool {
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if !((b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 
 // GetFullDomain returns complete project URL
 func (p *Project) GetFullDomain(baseDomain string) string {

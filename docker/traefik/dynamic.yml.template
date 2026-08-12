@@ -32,6 +32,7 @@ http:
       service: dynamic-projects
       entryPoints:
         - web
+        - websecure
       priority: 200
       middlewares:
         - security-headers
@@ -42,6 +43,7 @@ http:
       service: backend
       entryPoints:
         - web
+        - websecure
       priority: 100
       middlewares:
         - security-headers
@@ -53,9 +55,11 @@ http:
       service: frontend
       entryPoints:
         - web
+        - websecure
       priority: 1
       middlewares:
         - security-headers
+
 
   # Services
   services:
