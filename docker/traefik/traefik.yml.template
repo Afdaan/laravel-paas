@@ -39,4 +39,5 @@ providers:
     pollTimeout: "5s"
 
 log:
-  level: INFO
+  level: DEBUG
+
