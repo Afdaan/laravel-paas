@@ -348,7 +348,10 @@ deploy_worker() {
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
         -e NGINX_WEBHOOK_KEY="$NGINX_WEBHOOK_KEY" \
-        -e INTERNAL_IP="${INTERNAL_IP:-127.0.0.1}"
+        -e INTERNAL_IP="${INTERNAL_IP:-127.0.0.1}" \
+        -e GITHUB_APP_ID="${GITHUB_APP_ID:-}" \
+        -e GITHUB_APP_PRIVATE_KEY_PATH="${GITHUB_APP_PRIVATE_KEY_PATH:-}" \
+        -e GITHUB_APP_WEBHOOK_SECRET="${GITHUB_APP_WEBHOOK_SECRET:-}"
 }
 
 if [[ "$TARGET" == "backend" || "$TARGET" == "all" ]]; then
