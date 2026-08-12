@@ -26,25 +26,43 @@ http:
 
   # Routers for Runara platform
   routers:
-    # User projects (highest priority - subdomain matching)
-    user-projects:
+    # User projects HTTP (port 80)
+    user-projects-http:
       rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.{{PROJECT_DOMAIN}}$`)"
       service: dynamic-projects
       entryPoints:
         - web
+      priority: 200
+      middlewares:
+        - security-headers
+
+    # User projects HTTPS (port 443)
+    user-projects-secure:
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.{{PROJECT_DOMAIN}}$`)"
+      service: dynamic-projects
+      entryPoints:
         - websecure
       priority: 200
       tls: {}
       middlewares:
         - security-headers
 
-
-    # Backend API (high priority)
-    api:
+    # Backend API HTTP
+    api-http:
       rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
       service: backend
       entryPoints:
         - web
+      priority: 100
+      middlewares:
+        - security-headers
+        - rate-limit
+
+    # Backend API HTTPS
+    api-secure:
+      rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
+      service: backend
+      entryPoints:
         - websecure
       priority: 100
       tls: {}
@@ -52,17 +70,27 @@ http:
         - security-headers
         - rate-limit
 
-    # Frontend dashboard (lowest priority)
-    frontend:
+    # Frontend dashboard HTTP
+    frontend-http:
       rule: "Host(`{{BASE_DOMAIN}}`)"
       service: frontend
       entryPoints:
         - web
+      priority: 1
+      middlewares:
+        - security-headers
+
+    # Frontend dashboard HTTPS
+    frontend-secure:
+      rule: "Host(`{{BASE_DOMAIN}}`)"
+      service: frontend
+      entryPoints:
         - websecure
       priority: 1
       tls: {}
       middlewares:
         - security-headers
+
 
 
 
