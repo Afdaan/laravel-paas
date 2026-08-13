@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/services/billing/telegram"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -167,6 +168,26 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 	if creditedUserID != 0 {
 		s.retryDueInvoices(ctx, creditedUserID)
 	}
+
+	if s.telegramNotifier != nil {
+		var topup models.Topup
+		if err := s.db.WithContext(ctx).Where("provider = ? AND provider_order_id = ?", models.BillingProviderMidtrans, validated.OrderID).First(&topup).Error; err == nil {
+			userID, _ := loadWalletUserID(s.db, topup.WalletID)
+			userEmail := loadUserEmail(s.db, userID)
+			s.telegramNotifier.SendTopupNotification(telegram.NotificationMessage{
+				OrderID:     validated.OrderID,
+				UserEmail:   userEmail,
+				UserID:      userID,
+				AmountMinor: validated.AmountMinor,
+				Currency:    validated.Currency,
+				Credits:     topup.Credits,
+				Provider:    models.BillingProviderMidtrans,
+				Status:      validated.Status,
+				PaidAt:      topup.PaidAt,
+			})
+		}
+	}
+
 	return nil
 }
 
@@ -241,7 +262,37 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 		return nil
 	})
 
+	if err == nil && s.telegramNotifier != nil {
+		var topup models.Topup
+		if fetchErr := s.db.WithContext(ctx).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topup).Error; fetchErr == nil {
+			walletUserID, _ := loadWalletUserID(s.db, topup.WalletID)
+			userEmail := loadUserEmail(s.db, walletUserID)
+			s.telegramNotifier.SendTopupNotification(telegram.NotificationMessage{
+				OrderID:     orderID,
+				UserEmail:   userEmail,
+				UserID:      walletUserID,
+				AmountMinor: topup.AmountMinor,
+				Currency:    topup.Currency,
+				Credits:     topup.Credits,
+				Provider:    models.BillingProviderPakasir,
+				Status:      topup.Status,
+				PaidAt:      topup.PaidAt,
+			})
+		}
+	}
+
 	return err
+}
+
+func loadUserEmail(db *gorm.DB, userID uint) string {
+	if db == nil || userID == 0 {
+		return ""
+	}
+	var user models.User
+	if err := db.Select("email").Where("id = ?", userID).First(&user).Error; err == nil {
+		return user.Email
+	}
+	return ""
 }
 
 func (s *TopupService) applyTopupReversalTx(tx *gorm.DB, topup *models.Topup, notification validatedPaymentNotification) error {

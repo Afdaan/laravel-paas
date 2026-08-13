@@ -83,6 +83,12 @@ type Config struct {
 	PakasirAPIKey          string
 	PakasirProduction      bool
 
+	// Telegram Bot Payment Notifications
+	TelegramBotPaymentEnabled bool
+	TelegramBotPaymentToken   string
+	TelegramBotPaymentChatID  string
+	TelegramBotPaymentTopicID int64
+
 	// UID Obfuscation
 	UIDSalt string
 
@@ -235,6 +241,12 @@ func Load() *Config {
 		PakasirProjectSlug:     getEnv("PAKASIR_PROJECT_SLUG", ""),
 		PakasirAPIKey:          getEnv("PAKASIR_API_KEY", ""),
 		PakasirProduction:      getEnvBool("PAKASIR_IS_PRODUCTION", false),
+
+		// Telegram Bot Payment Notifications
+		TelegramBotPaymentEnabled: getEnvBool("TELEGRAM_BOT_PAYMENT_ENABLED", false),
+		TelegramBotPaymentToken:   getEnv("TELEGRAM_BOT_PAYMENT_TOKEN", ""),
+		TelegramBotPaymentChatID:  getEnv("TELEGRAM_BOT_PAYMENT_CHAT_ID", getEnv("TELEGRAM_ADMIN_PAYMENT_CHAT_ID", "")),
+		TelegramBotPaymentTopicID: getEnvInt64("TELEGRAM_BOT_PAYMENT_TOPIC_ID", 0),
 
 		// UID Obfuscation
 		UIDSalt: getEnv("UID_SALT", "change-this-salt"),
@@ -519,6 +531,15 @@ func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if boolValue, err := strconv.ParseBool(value); err == nil {
 			return boolValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvInt64(key string, defaultValue int64) int64 {
+	if value := os.Getenv(key); value != "" {
+		if int64Value, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return int64Value
 		}
 	}
 	return defaultValue

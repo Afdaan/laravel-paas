@@ -12,6 +12,7 @@ import (
 
 	"github.com/laravel-paas/backend/internal/services/billing/midtrans"
 	"github.com/laravel-paas/backend/internal/services/billing/pakasir"
+	"github.com/laravel-paas/backend/internal/services/billing/telegram"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/services/setting"
@@ -92,13 +93,14 @@ type TopupView struct {
 }
 
 type TopupService struct {
-	db             *gorm.DB
-	wallets        *WalletService
-	cfg            *config.Config
-	gateway        MidtransGateway
-	pakasirGateway PakasirGateway
-	settingService *setting.SettingService
-	billingProfile *BillingProfileService
+	db               *gorm.DB
+	wallets          *WalletService
+	cfg              *config.Config
+	gateway          MidtransGateway
+	pakasirGateway   PakasirGateway
+	telegramNotifier *telegram.Client
+	settingService   *setting.SettingService
+	billingProfile   *BillingProfileService
 }
 
 func NewTopupService(db *gorm.DB, wallets *WalletService, cfg *config.Config, gateway MidtransGateway, pakasirGateway ...PakasirGateway) *TopupService {
@@ -114,7 +116,19 @@ func NewTopupService(db *gorm.DB, wallets *WalletService, cfg *config.Config, ga
 	} else {
 		pGateway = NewPakasirClient(cfg)
 	}
-	return &TopupService{db: db, wallets: wallets, cfg: cfg, gateway: gateway, pakasirGateway: pGateway, billingProfile: NewBillingProfileService(db)}
+	return &TopupService{
+		db:               db,
+		wallets:          wallets,
+		cfg:              cfg,
+		gateway:          gateway,
+		pakasirGateway:   pGateway,
+		telegramNotifier: telegram.NewClient(cfg),
+		billingProfile:   NewBillingProfileService(db),
+	}
+}
+
+func (s *TopupService) SetTelegramNotifier(notifier *telegram.Client) {
+	s.telegramNotifier = notifier
 }
 
 func (s *TopupService) SetSettingService(settingService *setting.SettingService) {
