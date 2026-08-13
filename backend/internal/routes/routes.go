@@ -62,6 +62,36 @@ func Setup(
 		TrustedProxies:          cfg.TrustedProxyCIDRs,
 	})
 
+	isControlPlaneHost := func(host string) bool {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		host = strings.ToLower(host)
+
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "paas-backend" {
+			return true
+		}
+
+		if cfg != nil {
+			if cfg.BaseDomain != "" {
+				base := strings.ToLower(cfg.BaseDomain)
+				if host == base || host == "app."+base || host == "paas."+base || host == "api."+base || host == "admin."+base {
+					return true
+				}
+			}
+			if cfg.FrontendURL != "" {
+				if u, err := url.Parse(cfg.FrontendURL); err == nil && u.Hostname() != "" {
+					if strings.EqualFold(u.Hostname(), host) {
+						return true
+					}
+				}
+			}
+		}
+
+		return false
+	}
+
+
 	// ===========================================
 	// Global Middlewares
 	// ===========================================
@@ -98,9 +128,6 @@ func Setup(
 	// Prometheus Metrics Endpoint
 	app.Get("/metrics", middleware.InternalOnly(cfg), metrics.PrometheusHandler())
 
-	// API Routes
-	api := app.Group("/api")
-
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, cfg, userService, db)
 	userHandler := handlers.NewUserHandler(userService)
@@ -122,6 +149,19 @@ func Setup(
 		billing.NewSuspensionService(db, cfg),
 	)
 	billingHandler.SetBillingProfileService(billingProfileService)
+
+	// API Routes
+	api := app.Group("/api")
+
+	// Ensure PaaS Control Plane API routes are only evaluated for Control Plane hosts.
+	// If a request hits /api/* on a project subdomain or custom domain, forward it to projectHandler.ProxyToProject!
+	api.Use(func(c *fiber.Ctx) error {
+		if !isControlPlaneHost(c.Hostname()) {
+			return projectHandler.ProxyToProject(c)
+		}
+		return c.Next()
+	})
+
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
@@ -352,35 +392,6 @@ func Setup(
 	// Subdomain & Custom Domain Project Ingress Proxy Fallback
 	// Proxy requests to project containers. Only bypass /api to system handlers if host is Control Plane host.
 	// ===========================================
-	isControlPlaneHost := func(host string) bool {
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-		host = strings.ToLower(host)
-
-		if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "paas-backend" {
-			return true
-		}
-
-		if cfg != nil {
-			if cfg.BaseDomain != "" {
-				base := strings.ToLower(cfg.BaseDomain)
-				if host == base || host == "app."+base || host == "paas."+base || host == "api."+base || host == "admin."+base {
-					return true
-				}
-			}
-			if cfg.FrontendURL != "" {
-				if u, err := url.Parse(cfg.FrontendURL); err == nil && u.Hostname() != "" {
-					if strings.EqualFold(u.Hostname(), host) {
-						return true
-					}
-				}
-			}
-		}
-
-		return false
-	}
-
 	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
 		host := c.Hostname()
 		path := c.Path()
@@ -395,6 +406,7 @@ func Setup(
 		// User project subdomains or custom domains proxy ALL requests (including /api/*) to project containers
 		return projectHandler.ProxyToProject(c)
 	})
+
 
 
 	return app
