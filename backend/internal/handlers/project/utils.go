@@ -642,12 +642,40 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	var project models.Project
 	cacheKey := fmt.Sprintf("proxy:subdomain:%s", subdomain)
 
+	// Helper to build target URL and preserve original request path + forwarded headers
+	buildProxyTargetAndHeaders := func(proj *models.Project) string {
+		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), proj.GetInternalPort())
+		reqURL := c.OriginalURL()
+		if reqURL == "" || reqURL == "/" {
+			reqURL = "/"
+		} else if !strings.HasPrefix(reqURL, "/") {
+			reqURL = "/" + reqURL
+		}
+
+		// Preserve original Host and X-Forwarded headers so PHP/Laravel/Nginx gets the real host
+		c.Request().Header.SetHost(host)
+		c.Request().Header.Set("Host", host)
+		c.Request().Header.Set("X-Forwarded-Host", host)
+
+		proto := c.Protocol()
+		if fwdProto := c.Get("X-Forwarded-Proto"); fwdProto != "" {
+			proto = fwdProto
+		}
+		c.Request().Header.Set("X-Forwarded-Proto", proto)
+		if proto == "https" {
+			c.Request().Header.Set("X-Forwarded-Port", "443")
+		} else {
+			c.Request().Header.Set("X-Forwarded-Port", "80")
+		}
+
+		return targetURL + reqURL
+	}
+
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
-		targetURL := fmt.Sprintf("http://%s:%s", project.GetTargetHostname(), project.GetInternalPort())
-		path := c.Params("*")
-		target := targetURL + "/" + path
+		target := buildProxyTargetAndHeaders(&project)
+
 
 		// Throttled update of LastAccessedAt to once per minute to preserve DB performance
 		now := time.Now()
@@ -688,12 +716,11 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 4. Forward with internal Docker routing
-	targetURL := fmt.Sprintf("http://%s:%s", project_db.GetTargetHostname(), project_db.GetInternalPort())
-	path := c.Params("*")
-	target := targetURL + "/" + path
+	target := buildProxyTargetAndHeaders(project_db)
 
 	return proxy.Forward(target)(c)
 }
+
 
 // GetQueueStats returns deployment queue statistics and job lists
 func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {
