@@ -1,9 +1,7 @@
 // ===========================================
-// Midtrans Payment Gateway Client
+// Midtrans Gateway Integration Package
 // ===========================================
-// Handles communication with Midtrans Snap & Status API
-// ===========================================
-package billing
+package midtrans
 
 import (
 	"bytes"
@@ -12,6 +10,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +22,11 @@ import (
 	"github.com/laravel-paas/shared/models"
 )
 
+var (
+	ErrPaymentProvider            = errors.New("payment provider unavailable")
+	ErrInvalidPaymentNotification = errors.New("invalid payment notification")
+)
+
 const (
 	midtransSandboxSnapURL    = "https://app.sandbox.midtrans.com/snap/v1/transactions"
 	midtransProductionSnapURL = "https://app.midtrans.com/snap/v1/transactions"
@@ -31,7 +35,7 @@ const (
 	midtransRequestTimeout    = 10 * time.Second
 )
 
-type MidtransPaymentRequest struct {
+type PaymentRequest struct {
 	OrderID        string
 	AmountMinor    int64
 	Currency       string
@@ -39,12 +43,12 @@ type MidtransPaymentRequest struct {
 	FinishURL      string
 }
 
-type MidtransPaymentResponse struct {
+type PaymentResponse struct {
 	Token       string
 	RedirectURL string
 }
 
-type MidtransNotification struct {
+type Notification struct {
 	OrderID           string `json:"order_id"`
 	StatusCode        string `json:"status_code"`
 	GrossAmount       string `json:"gross_amount"`
@@ -57,19 +61,19 @@ type MidtransNotification struct {
 	MerchantID        string `json:"merchant_id"`
 }
 
-type MidtransGateway interface {
-	CreatePayment(context.Context, MidtransPaymentRequest) (MidtransPaymentResponse, error)
-	GetTransactionStatus(context.Context, string) (MidtransNotification, error)
+type Gateway interface {
+	CreatePayment(context.Context, PaymentRequest) (PaymentResponse, error)
+	GetTransactionStatus(context.Context, string) (Notification, error)
 }
 
-type MidtransClient struct {
+type Client struct {
 	serverKey  string
 	httpClient *http.Client
 	snapURL    string
 	apiURL     string
 }
 
-func NewMidtransClient(cfg *config.Config) *MidtransClient {
+func NewClient(cfg *config.Config) *Client {
 	snapURL := midtransSandboxSnapURL
 	apiURL := midtransSandboxAPIURL
 	if cfg != nil && cfg.MidtransProduction {
@@ -80,7 +84,7 @@ func NewMidtransClient(cfg *config.Config) *MidtransClient {
 	if cfg != nil {
 		serverKey = cfg.MidtransServerKey
 	}
-	return &MidtransClient{
+	return &Client{
 		serverKey:  serverKey,
 		httpClient: &http.Client{Timeout: midtransRequestTimeout},
 		snapURL:    snapURL,
@@ -88,14 +92,11 @@ func NewMidtransClient(cfg *config.Config) *MidtransClient {
 	}
 }
 
-func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaymentRequest) (MidtransPaymentResponse, error) {
+func (c *Client) CreatePayment(ctx context.Context, payment PaymentRequest) (PaymentResponse, error) {
 	if c == nil || c.httpClient == nil || c.serverKey == "" || payment.OrderID == "" || payment.AmountMinor <= 0 || payment.Currency != models.BillingCurrencyIDR {
-		return MidtransPaymentResponse{}, ErrPaymentProvider
+		return PaymentResponse{}, ErrPaymentProvider
 	}
-	grossAmount, err := majorUnits(payment.AmountMinor, payment.Currency)
-	if err != nil {
-		return MidtransPaymentResponse{}, ErrPaymentProvider
-	}
+	grossAmount := payment.AmountMinor
 	type snapCallbacks struct {
 		Finish string `json:"finish,omitempty"`
 	}
@@ -115,11 +116,11 @@ func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaym
 		return nil
 	}()})
 	if err != nil {
-		return MidtransPaymentResponse{}, fmt.Errorf("marshal Midtrans payment request: %w", err)
+		return PaymentResponse{}, fmt.Errorf("marshal Midtrans payment request: %w", err)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.snapURL, bytes.NewReader(body))
 	if err != nil {
-		return MidtransPaymentResponse{}, fmt.Errorf("create Midtrans payment request: %w", err)
+		return PaymentResponse{}, fmt.Errorf("create Midtrans payment request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
@@ -128,55 +129,57 @@ func (c *MidtransClient) CreatePayment(ctx context.Context, payment MidtransPaym
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return MidtransPaymentResponse{}, fmt.Errorf("%w: create payment request", ErrPaymentProvider)
+		return PaymentResponse{}, fmt.Errorf("%w: create payment request", ErrPaymentProvider)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return MidtransPaymentResponse{}, fmt.Errorf("%w: create payment status %d", ErrPaymentProvider, response.StatusCode)
+		return PaymentResponse{}, fmt.Errorf("%w: create payment status %d", ErrPaymentProvider, response.StatusCode)
 	}
 	var parsed struct {
 		Token       string `json:"token"`
 		RedirectURL string `json:"redirect_url"`
 	}
-	if err := decodeProviderJSON(io.LimitReader(response.Body, 8*1024), &parsed); err != nil {
-		return MidtransPaymentResponse{}, fmt.Errorf("%w: decode payment response", ErrPaymentProvider)
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 8*1024))
+	if err := decoder.Decode(&parsed); err != nil {
+		return PaymentResponse{}, fmt.Errorf("%w: decode payment response", ErrPaymentProvider)
 	}
-	return MidtransPaymentResponse{Token: parsed.Token, RedirectURL: parsed.RedirectURL}, nil
+	return PaymentResponse{Token: parsed.Token, RedirectURL: parsed.RedirectURL}, nil
 }
 
-func (c *MidtransClient) GetTransactionStatus(ctx context.Context, orderID string) (MidtransNotification, error) {
+func (c *Client) GetTransactionStatus(ctx context.Context, orderID string) (Notification, error) {
 	if c == nil || c.httpClient == nil || c.serverKey == "" || orderID == "" {
-		return MidtransNotification{}, ErrPaymentProvider
+		return Notification{}, ErrPaymentProvider
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.apiURL, "/")+"/v2/"+url.PathEscape(orderID)+"/status", nil)
 	if err != nil {
-		return MidtransNotification{}, fmt.Errorf("create Midtrans status request: %w", err)
+		return Notification{}, fmt.Errorf("create Midtrans status request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	request.SetBasicAuth(c.serverKey, "")
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return MidtransNotification{}, fmt.Errorf("%w: get transaction status", ErrPaymentProvider)
+		return Notification{}, fmt.Errorf("%w: get transaction status", ErrPaymentProvider)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return MidtransNotification{}, fmt.Errorf("%w: transaction status %d", ErrPaymentProvider, response.StatusCode)
+		return Notification{}, fmt.Errorf("%w: transaction status %d", ErrPaymentProvider, response.StatusCode)
 	}
-	var notification MidtransNotification
-	if err := decodeProviderJSON(io.LimitReader(response.Body, 8*1024), &notification); err != nil {
-		return MidtransNotification{}, fmt.Errorf("%w: decode transaction status", ErrPaymentProvider)
+	var notification Notification
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 8*1024))
+	if err := decoder.Decode(&notification); err != nil {
+		return Notification{}, fmt.Errorf("%w: decode transaction status", ErrPaymentProvider)
 	}
 	return notification, nil
 }
 
-func validMidtransSignature(notification MidtransNotification, serverKey string) bool {
+func ValidSignature(notification Notification, serverKey string) bool {
 	sum := sha512.Sum512([]byte(notification.OrderID + notification.StatusCode + notification.GrossAmount + serverKey))
 	expected := hex.EncodeToString(sum[:])
 	return len(notification.SignatureKey) == len(expected) && subtle.ConstantTimeCompare([]byte(strings.ToLower(notification.SignatureKey)), []byte(expected)) == 1
 }
 
-func topupStatusFromNotification(statusCode, transactionStatus, fraudStatus string) (models.TopupStatus, error) {
+func StatusFromNotification(statusCode, transactionStatus, fraudStatus string) (models.TopupStatus, error) {
 	switch transactionStatus {
 	case "capture":
 		switch fraudStatus {
@@ -217,13 +220,13 @@ func topupStatusFromNotification(statusCode, transactionStatus, fraudStatus stri
 		if statusCode == "200" {
 			return models.TopupStatusPartialRefund, nil
 		}
-	case "chargeback":
-		if statusCode == "200" {
-			return models.TopupStatusChargeback, nil
-		}
 	case "partial_chargeback":
 		if statusCode == "200" {
 			return models.TopupStatusPartialChargeback, nil
+		}
+	case "chargeback":
+		if statusCode == "200" {
+			return models.TopupStatusChargeback, nil
 		}
 	}
 	return "", ErrInvalidPaymentNotification

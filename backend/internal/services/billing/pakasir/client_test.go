@@ -1,4 +1,4 @@
-package billing
+package pakasir
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestPakasirClientCreateTransaction(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(PakasirCreateResponse{
+		json.NewEncoder(w).Encode(CreateResponse{
 			PaymentNumber: "00020126360014ID.LINKAJA.WWW01189360091100030005020210510408544453033605802ID5911PAAS TOPUP6007JAKARTA61051211062070703A0163041234",
 			TotalPayment:  50000,
 			Fee:           700,
@@ -37,7 +37,7 @@ func TestPakasirClientCreateTransaction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewPakasirClient(&config.Config{
+	client := NewClient(&config.Config{
 		PakasirProjectSlug: "test-project",
 		PakasirAPIKey:      "test-key",
 	})
@@ -68,8 +68,8 @@ func TestPakasirClientGetTransactionDetail(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(PakasirDetailResponse{
-			Transaction: PakasirTransactionDetail{
+		json.NewEncoder(w).Encode(DetailResponse{
+			Transaction: TransactionDetail{
 				Amount:        50000,
 				OrderID:       "order-123",
 				Project:       "test-project",
@@ -81,7 +81,7 @@ func TestPakasirClientGetTransactionDetail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewPakasirClient(&config.Config{
+	client := NewClient(&config.Config{
 		PakasirProjectSlug: "test-project",
 		PakasirAPIKey:      "test-key",
 	})
@@ -96,7 +96,7 @@ func TestPakasirClientGetTransactionDetail(t *testing.T) {
 		t.Fatalf("unexpected detail: %+v", detail)
 	}
 
-	status, err := pakAsirStatusToTopupStatus(detail.Status)
+	status, err := StatusToTopupStatus(detail.Status)
 	if err != nil || status != models.TopupStatusPaid {
 		t.Fatalf("status mapping error or mismatch: %v, status: %s", err, status)
 	}
@@ -122,13 +122,13 @@ func TestPakasirStatusMappingVariations(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got, err := pakAsirStatusToTopupStatus(tt.input)
+		got, err := StatusToTopupStatus(tt.input)
 		if (err != nil) != tt.wantErr {
-			t.Errorf("pakAsirStatusToTopupStatus(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			t.Errorf("StatusToTopupStatus(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 			continue
 		}
 		if got != tt.expected {
-			t.Errorf("pakAsirStatusToTopupStatus(%q) = %v, want %v", tt.input, got, tt.expected)
+			t.Errorf("StatusToTopupStatus(%q) = %v, want %v", tt.input, got, tt.expected)
 		}
 	}
 }
@@ -139,7 +139,7 @@ func TestPakasirClientGetTransactionDetailError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewPakasirClient(&config.Config{
+	client := NewClient(&config.Config{
 		PakasirProjectSlug: "test-project",
 		PakasirAPIKey:      "test-key",
 	})
@@ -150,4 +150,3 @@ func TestPakasirClientGetTransactionDetailError(t *testing.T) {
 		t.Fatal("expected error for HTTP 500 from Pakasir, got nil")
 	}
 }
-

@@ -15,12 +15,49 @@ import (
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/services/billing/midtrans"
+	"github.com/laravel-paas/backend/internal/services/billing/pakasir"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/services/setting"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+type MidtransPaymentRequest = midtrans.PaymentRequest
+type MidtransPaymentResponse = midtrans.PaymentResponse
+type MidtransNotification = midtrans.Notification
+type MidtransGateway = midtrans.Gateway
+type MidtransClient = midtrans.Client
+
+type PakasirCreateResponse = pakasir.CreateResponse
+type PakasirTransactionDetail = pakasir.TransactionDetail
+type PakasirGateway = pakasir.Gateway
+type PakasirClient = pakasir.Client
+
+func NewMidtransClient(cfg *config.Config) *midtrans.Client {
+	return midtrans.NewClient(cfg)
+}
+
+func NewPakasirClient(cfg *config.Config) *pakasir.Client {
+	return pakasir.NewClient(cfg)
+}
+
+func pakAsirStatusToTopupStatus(status string) (models.TopupStatus, error) {
+	return pakasir.StatusToTopupStatus(status)
+}
+
+func topupStatusFromNotification(statusCode, transactionStatus, fraudStatus string) (models.TopupStatus, error) {
+	status, err := midtrans.StatusFromNotification(statusCode, transactionStatus, fraudStatus)
+	if err != nil {
+		return "", ErrInvalidPaymentNotification
+	}
+	return status, nil
+}
+
+func validMidtransSignature(notification midtrans.Notification, serverKey string) bool {
+	return midtrans.ValidSignature(notification, serverKey)
+}
 
 var (
 	ErrTopupDisabled              = errors.New("topups are disabled")
@@ -33,6 +70,7 @@ var (
 )
 
 const (
+	midtransRequestTimeout     = 10 * time.Second
 	topupRequestTimeout        = midtransRequestTimeout + 2*time.Second
 	paymentRequestWaitInterval = 25 * time.Millisecond
 	invoiceRetryTimeout        = time.Second
