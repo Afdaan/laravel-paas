@@ -706,15 +706,18 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		if err := dropCheckMissingMarker(db, "billable_resources", "chk_billable_resources_status", "deleted"); err != nil {
 			return err
 		}
-		// Currency checks predating multi-currency pin the column to IDR. Drop the stale
+		// Currency & provider checks predating Pakasir pin the provider to midtrans. Drop the stale
 		// definition so the checks loop below recreates it with the widened rule.
 		for _, target := range []struct{ table, name string }{
 			{"topup_packages", "chk_topup_packages_provider_currency"},
 			{"topups", "chk_topups_provider_currency"},
 		} {
-			if err := dropCheckMissingMarker(db, target.table, target.name, "USD"); err != nil {
+			if err := dropCheckMissingMarker(db, target.table, target.name, "pakasir"); err != nil {
 				return err
 			}
+		}
+		if err := dropCheckMissingMarker(db, "payment_events", "chk_payment_events_provider", "pakasir"); err != nil {
+			return err
 		}
 	}
 
