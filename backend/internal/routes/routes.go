@@ -6,8 +6,11 @@
 package routes
 
 import (
+	"net"
+	"net/url"
 	"strings"
 	"time"
+
 
 
 	"github.com/gofiber/fiber/v2"
@@ -347,15 +350,52 @@ func Setup(
 
 	// ===========================================
 	// Subdomain & Custom Domain Project Ingress Proxy Fallback
-	// All non-API, non-system requests hit this handler to be proxied to project containers.
+	// Proxy requests to project containers. Only bypass /api to system handlers if host is Control Plane host.
 	// ===========================================
-	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
-		path := c.Path()
-		if strings.HasPrefix(path, "/api") || path == "/health" || path == "/metrics" {
-			return c.Next()
+	isControlPlaneHost := func(host string) bool {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
 		}
+		host = strings.ToLower(host)
+
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "paas-backend" {
+			return true
+		}
+
+		if cfg != nil {
+			if cfg.BaseDomain != "" {
+				base := strings.ToLower(cfg.BaseDomain)
+				if host == base || host == "app."+base || host == "paas."+base || host == "api."+base || host == "admin."+base {
+					return true
+				}
+			}
+			if cfg.FrontendURL != "" {
+				if u, err := url.Parse(cfg.FrontendURL); err == nil && u.Hostname() != "" {
+					if strings.EqualFold(u.Hostname(), host) {
+						return true
+					}
+				}
+			}
+		}
+
+		return false
+	}
+
+	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
+		host := c.Hostname()
+		path := c.Path()
+
+		// Bypass to system API handlers only if the request is for the Control Plane host itself
+		if isControlPlaneHost(host) {
+			if strings.HasPrefix(path, "/api") || path == "/health" || path == "/metrics" {
+				return c.Next()
+			}
+		}
+
+		// User project subdomains or custom domains proxy ALL requests (including /api/*) to project containers
 		return projectHandler.ProxyToProject(c)
 	})
+
 
 	return app
 }
