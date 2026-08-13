@@ -174,16 +174,22 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 		if err := s.db.WithContext(ctx).Where("provider = ? AND provider_order_id = ?", models.BillingProviderMidtrans, validated.OrderID).First(&topup).Error; err == nil {
 			userID, _ := loadWalletUserID(s.db, topup.WalletID)
 			userEmail := loadUserEmail(s.db, userID)
+			currentBal, hasBal := loadWalletBalance(s.db, topup.WalletID)
+			balBefore, balAfter := calculateBalanceBeforeAfter(topup.Status, currentBal, topup.Credits)
+
 			s.telegramNotifier.SendTopupNotification(telegram.NotificationMessage{
-				OrderID:     validated.OrderID,
-				UserEmail:   userEmail,
-				UserID:      userID,
-				AmountMinor: validated.AmountMinor,
-				Currency:    validated.Currency,
-				Credits:     topup.Credits,
-				Provider:    models.BillingProviderMidtrans,
-				Status:      validated.Status,
-				PaidAt:      topup.PaidAt,
+				OrderID:        validated.OrderID,
+				UserEmail:      userEmail,
+				UserID:         userID,
+				AmountMinor:    validated.AmountMinor,
+				Currency:       validated.Currency,
+				Credits:        topup.Credits,
+				BalanceBefore:  balBefore,
+				BalanceAfter:   balAfter,
+				HasBalanceInfo: hasBal,
+				Provider:       models.BillingProviderMidtrans,
+				Status:         validated.Status,
+				PaidAt:         topup.PaidAt,
 			})
 		}
 	}
@@ -267,16 +273,22 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 		if fetchErr := s.db.WithContext(ctx).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topup).Error; fetchErr == nil {
 			walletUserID, _ := loadWalletUserID(s.db, topup.WalletID)
 			userEmail := loadUserEmail(s.db, walletUserID)
+			currentBal, hasBal := loadWalletBalance(s.db, topup.WalletID)
+			balBefore, balAfter := calculateBalanceBeforeAfter(topup.Status, currentBal, topup.Credits)
+
 			s.telegramNotifier.SendTopupNotification(telegram.NotificationMessage{
-				OrderID:     orderID,
-				UserEmail:   userEmail,
-				UserID:      walletUserID,
-				AmountMinor: topup.AmountMinor,
-				Currency:    topup.Currency,
-				Credits:     topup.Credits,
-				Provider:    models.BillingProviderPakasir,
-				Status:      topup.Status,
-				PaidAt:      topup.PaidAt,
+				OrderID:        orderID,
+				UserEmail:      userEmail,
+				UserID:         walletUserID,
+				AmountMinor:    topup.AmountMinor,
+				Currency:       topup.Currency,
+				Credits:        topup.Credits,
+				BalanceBefore:  balBefore,
+				BalanceAfter:   balAfter,
+				HasBalanceInfo: hasBal,
+				Provider:       models.BillingProviderPakasir,
+				Status:         topup.Status,
+				PaidAt:         topup.PaidAt,
 			})
 		}
 	}
@@ -293,6 +305,28 @@ func loadUserEmail(db *gorm.DB, userID uint) string {
 		return user.Email
 	}
 	return ""
+}
+
+func loadWalletBalance(db *gorm.DB, walletID uint) (int64, bool) {
+	if db == nil || walletID == 0 {
+		return 0, false
+	}
+	var wallet models.Wallet
+	if err := db.Select("balance_credits").Where("id = ?", walletID).First(&wallet).Error; err == nil {
+		return wallet.BalanceCredits, true
+	}
+	return 0, false
+}
+
+func calculateBalanceBeforeAfter(status models.TopupStatus, currentBalance, credits int64) (int64, int64) {
+	switch status {
+	case models.TopupStatusPaid:
+		return currentBalance - credits, currentBalance
+	case models.TopupStatusRefunded, models.TopupStatusPartialRefund, models.TopupStatusChargeback, models.TopupStatusPartialChargeback:
+		return currentBalance + credits, currentBalance
+	default:
+		return currentBalance, currentBalance
+	}
 }
 
 func (s *TopupService) applyTopupReversalTx(tx *gorm.DB, topup *models.Topup, notification validatedPaymentNotification) error {

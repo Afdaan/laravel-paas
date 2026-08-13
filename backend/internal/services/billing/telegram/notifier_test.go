@@ -15,15 +15,18 @@ import (
 func TestTelegramNotifierFormatMessage(t *testing.T) {
 	paidAt := time.Date(2026, 8, 13, 13, 44, 0, 0, time.UTC)
 	msg := NotificationMessage{
-		OrderID:     "order-topup-123",
-		UserEmail:   "test@example.com",
-		UserID:      42,
-		AmountMinor: 50000,
-		Currency:    "IDR",
-		Credits:     50000,
-		Provider:    "pakasir",
-		Status:      models.TopupStatusPaid,
-		PaidAt:      &paidAt,
+		OrderID:        "order-topup-123",
+		UserEmail:      "test@example.com",
+		UserID:         42,
+		AmountMinor:    50000,
+		Currency:       "IDR",
+		Credits:        50000,
+		BalanceBefore:  100000,
+		BalanceAfter:   150000,
+		HasBalanceInfo: true,
+		Provider:       "pakasir",
+		Status:         models.TopupStatusPaid,
+		PaidAt:         &paidAt,
 	}
 
 	text := formatTelegramMessage(msg)
@@ -31,7 +34,7 @@ func TestTelegramNotifierFormatMessage(t *testing.T) {
 		t.Fatal("expected formatted message, got empty string")
 	}
 
-	if !containsSubstring(text, "TOP-UP SUCCESSFUL") || !containsSubstring(text, "test@example.com") || !containsSubstring(text, "Rp 50.000") || !containsSubstring(text, "Pakasir") {
+	if !containsSubstring(text, "TOP-UP SUCCESSFUL") || !containsSubstring(text, "test@example.com") || !containsSubstring(text, "Rp 50.000") || !containsSubstring(text, "Pakasir") || !containsSubstring(text, "100000 ➔ <b>150000 Credits</b>") {
 		t.Fatalf("unexpected formatted text: %s", text)
 	}
 }

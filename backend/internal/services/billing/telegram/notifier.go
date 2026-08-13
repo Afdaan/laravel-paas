@@ -19,15 +19,18 @@ import (
 )
 
 type NotificationMessage struct {
-	OrderID     string
-	UserEmail   string
-	UserID      uint
-	AmountMinor int64
-	Currency    string
-	Credits     int64
-	Provider    string
-	Status      models.TopupStatus
-	PaidAt      *time.Time
+	OrderID        string
+	UserEmail      string
+	UserID         uint
+	AmountMinor    int64
+	Currency       string
+	Credits        int64
+	BalanceBefore  int64
+	BalanceAfter   int64
+	HasBalanceInfo bool
+	Provider       string
+	Status         models.TopupStatus
+	PaidAt         *time.Time
 }
 
 type Client struct {
@@ -140,6 +143,11 @@ func formatTelegramMessage(msg NotificationMessage) string {
 		userStr = fmt.Sprintf("%s (ID: %d)", escapeHTML(userStr), msg.UserID)
 	}
 
+	balanceLine := ""
+	if msg.HasBalanceInfo {
+		balanceLine = fmt.Sprintf("\n💳 <b>Total Wallet:</b> %d ➔ <b>%d Credits</b>", msg.BalanceBefore, msg.BalanceAfter)
+	}
+
 	switch msg.Status {
 	case models.TopupStatusPaid:
 		return fmt.Sprintf(
@@ -147,11 +155,11 @@ func formatTelegramMessage(msg NotificationMessage) string {
 				"👤 <b>User:</b> %s\n"+
 				"🆔 <b>Order ID:</b> <code>%s</code>\n"+
 				"💰 <b>Amount:</b> %s\n"+
-				"💎 <b>Wallet Credit:</b> +%d Credits\n"+
+				"💎 <b>Wallet Credit:</b> +%d Credits%s\n"+
 				"🏦 <b>Provider:</b> %s\n"+
 				"🕒 <b>Time:</b> %s",
 			userStr, escapeHTML(msg.OrderID),
-			amountFormatted, msg.Credits, providerName, timeStr,
+			amountFormatted, msg.Credits, balanceLine, providerName, timeStr,
 		)
 	case models.TopupStatusFailed, models.TopupStatusExpired:
 		return fmt.Sprintf(
@@ -170,11 +178,11 @@ func formatTelegramMessage(msg NotificationMessage) string {
 				"👤 <b>User:</b> %s\n"+
 				"🆔 <b>Order ID:</b> <code>%s</code>\n"+
 				"💰 <b>Amount:</b> %s\n"+
-				"💎 <b>Reversal:</b> -%d Credits\n"+
+				"💎 <b>Reversal:</b> -%d Credits%s\n"+
 				"🏦 <b>Provider:</b> %s\n"+
 				"🕒 <b>Time:</b> %s",
 			strings.ToUpper(string(msg.Status)), userStr,
-			escapeHTML(msg.OrderID), amountFormatted, msg.Credits, providerName, timeStr,
+			escapeHTML(msg.OrderID), amountFormatted, msg.Credits, balanceLine, providerName, timeStr,
 		)
 	default:
 		return ""
