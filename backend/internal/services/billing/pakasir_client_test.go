@@ -101,3 +101,53 @@ func TestPakasirClientGetTransactionDetail(t *testing.T) {
 		t.Fatalf("status mapping error or mismatch: %v, status: %s", err, status)
 	}
 }
+
+func TestPakasirStatusMappingVariations(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected models.TopupStatus
+		wantErr  bool
+	}{
+		{"completed", models.TopupStatusPaid, false},
+		{"paid", models.TopupStatusPaid, false},
+		{"settlement", models.TopupStatusPaid, false},
+		{"success", models.TopupStatusPaid, false},
+		{"COMPLETED", models.TopupStatusPaid, false},
+		{" pending ", models.TopupStatusPending, false},
+		{"failed", models.TopupStatusFailed, false},
+		{"cancelled", models.TopupStatusFailed, false},
+		{"canceled", models.TopupStatusFailed, false},
+		{"expired", models.TopupStatusFailed, false},
+		{"unknown_status", "", true},
+	}
+
+	for _, tt := range tests {
+		got, err := pakAsirStatusToTopupStatus(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("pakAsirStatusToTopupStatus(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if got != tt.expected {
+			t.Errorf("pakAsirStatusToTopupStatus(%q) = %v, want %v", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestPakasirClientGetTransactionDetailError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewPakasirClient(&config.Config{
+		PakasirProjectSlug: "test-project",
+		PakasirAPIKey:      "test-key",
+	})
+	client.baseURL = server.URL
+
+	_, err := client.GetTransactionDetail(context.Background(), "order-123", 50000)
+	if err == nil {
+		t.Fatal("expected error for HTTP 500 from Pakasir, got nil")
+	}
+}
+

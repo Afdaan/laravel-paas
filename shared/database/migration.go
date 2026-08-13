@@ -112,6 +112,13 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 		}
 	}
 
+	// Reconcile topups provider_payment_token column size to text for Pakasir QRIS strings.
+	if isPostgres(db) && db.Migrator().HasTable(&models.Topup{}) {
+		if err := db.Exec(`ALTER TABLE topups ALTER COLUMN provider_payment_token TYPE text`).Error; err != nil {
+			slog.Warn("Failed to alter topups provider_payment_token column type to text", "error", err)
+		}
+	}
+
 	// 5. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},

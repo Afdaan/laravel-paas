@@ -1180,7 +1180,7 @@ type Topup struct {
 	ProviderOrderID       string        `gorm:"uniqueIndex:uni_topups_provider_order;size:255;not null" json:"provider_order_id"`
 	ProviderTransactionID *string       `gorm:"index:idx_topups_provider_transaction_id;size:255" json:"provider_transaction_id,omitempty"`
 	ProviderRequestState  string        `gorm:"size:30;not null;default:'pending'" json:"-"`
-	ProviderPaymentToken  string        `gorm:"size:255;not null;default:''" json:"-"`
+	ProviderPaymentToken  string        `gorm:"size:2048;not null;default:''" json:"-"`
 	ProviderPaymentURL    string        `gorm:"size:2048;not null;default:''" json:"-"`
 	AmountMinor           int64         `gorm:"not null" json:"amount_minor"`
 	Currency              string        `gorm:"size:3;not null" json:"currency"`

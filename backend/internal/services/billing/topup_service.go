@@ -171,11 +171,14 @@ func (s *TopupService) activeProvider() string {
 		if prov == models.BillingProviderMidtrans {
 			return models.BillingProviderMidtrans
 		}
-		if s.cfg.PakasirEnabled && (s.cfg.MidtransServerKey == "" || s.cfg.PakasirProjectSlug != "") {
+		if (s.cfg.PakasirEnabled || s.cfg.PakasirProjectSlug != "") && s.cfg.MidtransServerKey == "" {
 			return models.BillingProviderPakasir
 		}
+		if s.cfg.MidtransServerKey != "" {
+			return models.BillingProviderMidtrans
+		}
 	}
-	return models.BillingProviderMidtrans
+	return models.BillingProviderPakasir
 }
 
 func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string, input TopupInput) (TopupView, error) {
@@ -726,19 +729,20 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 			if s.cfg != nil {
 				slug = s.cfg.PakasirProjectSlug
 			}
-			if slug != "" {
-				redirectURL := ""
-				if s.cfg != nil {
-					if s.cfg.FrontendURL != "" {
-						redirectURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
-					} else if s.cfg.BaseDomain != "" {
-						redirectURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
-					}
+			if slug == "" {
+				slug = "runara"
+			}
+			redirectURL := ""
+			if s.cfg != nil {
+				if s.cfg.FrontendURL != "" {
+					redirectURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
+				} else if s.cfg.BaseDomain != "" {
+					redirectURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
 				}
-				paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s&qris_only=1", slug, topup.AmountMinor, topup.ProviderOrderID)
-				if redirectURL != "" {
-					paymentURL += "&redirect=" + url.QueryEscape(redirectURL)
-				}
+			}
+			paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s&qris_only=1", slug, topup.AmountMinor, topup.ProviderOrderID)
+			if redirectURL != "" {
+				paymentURL += "&redirect=" + url.QueryEscape(redirectURL)
 			}
 		}
 		if paymentURL == "" {
@@ -1268,7 +1272,7 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 
 	detail, err := s.pakasirGateway.GetTransactionDetail(ctx, orderID, amountMinor)
 	if err != nil {
-		return fmt.Errorf("verify transaction detail with pakasir: %w", err)
+		return fmt.Errorf("%w: verify transaction detail with pakasir: %v", ErrPaymentProvider, err)
 	}
 
 	if detail.OrderID != orderID || detail.Amount != amountMinor {

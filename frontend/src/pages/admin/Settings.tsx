@@ -232,11 +232,11 @@ const AdminSettings = () => {
               <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Active Provider</Label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={settings.default_payment_provider || 'midtrans'}
+                value={settings.default_payment_provider || 'pakasir'}
                 onChange={(e) => handleChange('default_payment_provider', e.target.value)}
               >
-                <option value="midtrans">Midtrans (Snap Gateway)</option>
                 <option value="pakasir">Pakasir (Direct QRIS/VA)</option>
+                <option value="midtrans">Midtrans (Snap Gateway)</option>
               </select>
               <p className="text-xs text-muted-foreground">
                 All top-ups without an explicit package provider override will use this payment gateway.

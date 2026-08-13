@@ -29,5 +29,5 @@ const (
 	DefaultBuildTimeout         = "1800"
 	DefaultMaxDomainsPerProject = "3"
 	DefaultMaxImageRetention    = "3"
-	DefaultPaymentProvider    = "midtrans"
+	DefaultPaymentProvider    = "pakasir"
 )

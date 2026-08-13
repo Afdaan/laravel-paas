@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
@@ -153,7 +154,7 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 	}
 	u, err := url.Parse(fmt.Sprintf("%s/transactiondetail", c.baseURL))
 	if err != nil {
-		return PakasirTransactionDetail{}, fmt.Errorf("parse pakasir detail url: %w", err)
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: parse pakasir detail url: %v", ErrPaymentProvider, err)
 	}
 
 	q := u.Query()
@@ -165,7 +166,7 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return PakasirTransactionDetail{}, fmt.Errorf("create pakasir detail request: %w", err)
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: create pakasir detail request: %v", ErrPaymentProvider, err)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -176,7 +177,7 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return PakasirTransactionDetail{}, fmt.Errorf("read pakasir detail response: %w", err)
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: read pakasir detail response: %v", ErrPaymentProvider, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -185,7 +186,7 @@ func (c *PakasirClient) GetTransactionDetail(ctx context.Context, orderID string
 
 	var res PakasirDetailResponse
 	if err := json.Unmarshal(respBody, &res); err != nil {
-		return PakasirTransactionDetail{}, fmt.Errorf("unmarshal pakasir detail response: %w", err)
+		return PakasirTransactionDetail{}, fmt.Errorf("%w: unmarshal pakasir detail response: %v", ErrPaymentProvider, err)
 	}
 
 	return res.Transaction, nil
@@ -266,12 +267,12 @@ func (c *PakasirClient) CancelTransaction(ctx context.Context, orderID string, a
 }
 
 func pakAsirStatusToTopupStatus(status string) (models.TopupStatus, error) {
-	switch status {
-	case "completed", "paid":
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "paid", "settlement", "success":
 		return models.TopupStatusPaid, nil
 	case "pending":
 		return models.TopupStatusPending, nil
-	case "failed", "cancelled", "expired":
+	case "failed", "cancelled", "canceled", "expired":
 		return models.TopupStatusFailed, nil
 	default:
 		return "", fmt.Errorf("unknown pakasir status %q", status)

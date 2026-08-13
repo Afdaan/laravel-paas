@@ -943,3 +943,18 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 		t.Fatalf("pakasir gateway did not receive transaction: %+v", pakasirGw)
 	}
 }
+
+func TestTopupServiceActiveProviderSwitching(t *testing.T) {
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "test-project",
+	}
+
+	service := NewTopupService(nil, nil, cfg, nil, nil)
+	prov := service.activeProvider()
+	if prov != models.BillingProviderPakasir {
+		t.Fatalf("expected default provider pakasir, got %s", prov)
+	}
+}
