@@ -443,6 +443,7 @@ export default function Billing() {
 
   const balanceData = overview.status === 'success' ? overview.data.wallet.balance_credits : null
   const upcomingCredits = overview.status === 'success' ? overview.data.upcoming_required_credits : null
+  const activePaymentURL = activePaymentModal?.payment_url
   const showLowBalance =
     balanceData !== null &&
     upcomingCredits !== null &&
@@ -1459,8 +1460,8 @@ export default function Billing() {
           )}
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2">
-            {activePaymentModal?.payment_url && (
-              <Button variant="outline" size="sm" onClick={() => window.open(activePaymentModal.payment_url, '_blank', 'noopener,noreferrer')}>
+            {activePaymentURL && (
+              <Button variant="outline" size="sm" onClick={() => window.location.assign(activePaymentURL)}>
                 Buka Link Pembayaran
               </Button>
             )}

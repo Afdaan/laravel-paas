@@ -920,7 +920,7 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: "pakasir@example.test", Password: "test", Name: "Pakasir User"}
@@ -964,6 +964,23 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 	}
 	if pakasirGw.createdAmount != 10000 {
 		t.Fatalf("pakasir gateway did not receive transaction: %+v", pakasirGw)
+	}
+	if err := service.ProcessPakasirWebhook(context.Background(), pakasirGw.createdOrderID, pakasirGw.createdAmount, "completed"); err != nil {
+		t.Fatalf("process pakasir payment: %v", err)
+	}
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		t.Fatalf("load credited wallet: %v", err)
+	}
+	if wallet.BalanceCredits != pkg.Credits {
+		t.Fatalf("wallet credits = %d, want %d", wallet.BalanceCredits, pkg.Credits)
+	}
+	var event models.PaymentEvent
+	if err := db.Where("provider_order_id = ?", pakasirGw.createdOrderID).First(&event).Error; err != nil {
+		t.Fatalf("load pakasir payment event: %v", err)
+	}
+	if event.ProcessedAt == nil {
+		t.Fatal("pakasir payment event was not marked processed")
 	}
 }
 

@@ -263,16 +263,16 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 	var creditedUserID uint
 	var wasTransitioned bool
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var event models.PaymentEvent
-		result := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "event_key"}},
-			DoNothing: true,
-		}).Create(&models.PaymentEvent{
+		event := models.PaymentEvent{
 			Provider:        models.BillingProviderPakasir,
 			EventKey:        eventKey,
 			ProviderOrderID: orderID,
 			PayloadJSON:     string(payloadJSON),
-		})
+		}
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_key"}},
+			DoNothing: true,
+		}).Create(&event)
 		if result.Error != nil {
 			return fmt.Errorf("record payment event: %w", result.Error)
 		}
