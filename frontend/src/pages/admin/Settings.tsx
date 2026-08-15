@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { settingsAPI } from '../../services/api'
-import useTranslation from '../../lib/useTranslation'
+import { settingsAPI, billingAPI } from '@/services/api'
+import useAuthStore from '@/stores/authStore'
+import useTranslation from '@/lib/useTranslation'
 import {
   Globe,
   Shield,
@@ -19,6 +20,14 @@ import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { NumberStepper } from '@/components/ui/number-stepper'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 
 interface PlatformSettings {
   default_payment_provider?: string;
@@ -35,21 +44,36 @@ interface PlatformSettings {
 
 const AdminSettings = () => {
   const { t } = useTranslation()
+  const isSuperAdmin = useAuthStore(state => state.user?.role === 'superadmin')
   const [settings, setSettings] = useState<PlatformSettings>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Payment provider state
+  const [savedProvider, setSavedProvider] = useState('')
+  const [selectedProvider, setSelectedProvider] = useState('')
+  const [pendingProvider, setPendingProvider] = useState('')
+  const [providerReason, setProviderReason] = useState('')
+  const [isProviderModalOpen, setIsProviderModalOpen] = useState(false)
+  const [isChangingProvider, setIsChangingProvider] = useState(false)
 
   const fetchSettings = useCallback(async () => {
     setIsLoading(true)
     try {
       const response = await settingsAPI.list()
-      setSettings(response.data.map || {})
+      const map = response.data.map || {}
+      setSettings(map)
+      const rawProvider = (map.default_payment_provider || '').trim().toLowerCase()
+      const isValid = rawProvider === 'pakasir' || rawProvider === 'midtrans'
+      const provider = isValid ? rawProvider : ''
+      setSavedProvider(provider)
+      setSelectedProvider(provider)
     } catch (error) {
       toast.error(t('admin.settings.loading'))
     } finally {
       setIsLoading(false)
     }
-  }, [t])
+  }, [])
 
   useEffect(() => {
     fetchSettings()
@@ -59,13 +83,52 @@ const AdminSettings = () => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
+  const handleProviderSelect = (newProvider: string) => {
+    if (newProvider === savedProvider) {
+      setSelectedProvider(newProvider)
+      return
+    }
+    setPendingProvider(newProvider)
+    setSelectedProvider(newProvider)
+    setProviderReason('')
+    setIsProviderModalOpen(true)
+  }
+
+  const handleConfirmProviderSwitch = async () => {
+    if (!providerReason.trim()) return
+    setIsChangingProvider(true)
+    try {
+      await billingAPI.updatePaymentProvider({
+        provider: pendingProvider,
+        reason: providerReason.trim(),
+      })
+      setSavedProvider(pendingProvider)
+      setSelectedProvider(pendingProvider)
+      setSettings(prev => ({ ...prev, default_payment_provider: pendingProvider }))
+      setIsProviderModalOpen(false)
+      setProviderReason('')
+      toast.success('Payment provider updated successfully')
+    } catch (error: any) {
+      setSelectedProvider(savedProvider)
+      toast.error(error?.response?.data?.message || 'Failed to update payment provider')
+    } finally {
+      setIsChangingProvider(false)
+    }
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      // Convert all values to strings as backend expects map[string]string
+      // Exclude base_domain, project_domain, and default_payment_provider (which has a dedicated finance endpoint)
       const payload: Record<string, string> = {}
       Object.entries(settings).forEach(([key, value]) => {
-        if (key !== 'base_domain' && key !== 'project_domain' && value !== undefined && value !== null) {
+        if (
+          key !== 'base_domain' &&
+          key !== 'project_domain' &&
+          key !== 'default_payment_provider' &&
+          value !== undefined &&
+          value !== null
+        ) {
           payload[key] = String(value)
         }
       })
@@ -215,7 +278,6 @@ const AdminSettings = () => {
           </CardContent>
         </Card>
 
-        
         {/* Payment Gateway Provider Selector */}
         <Card className="lg:col-span-2 overflow-hidden relative group border-emerald-500/20 bg-gradient-to-br from-background to-emerald-500/5">
           <CardHeader className="flex flex-row items-center gap-4 pb-2">
@@ -229,22 +291,82 @@ const AdminSettings = () => {
           </CardHeader>
           <CardContent className="pt-4">
             <div className="space-y-4 max-w-md">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Active Provider</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Active Provider</Label>
+                {!isSuperAdmin && (
+                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 uppercase tracking-widest">
+                    Superadmin Required
+                  </span>
+                )}
+              </div>
               <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={settings.default_payment_provider || 'pakasir'}
-                onChange={(e) => handleChange('default_payment_provider', e.target.value)}
+                aria-label="Active Provider"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={selectedProvider}
+                disabled={!isSuperAdmin || isChangingProvider}
+                onChange={(e) => handleProviderSelect(e.target.value)}
               >
+                {!savedProvider && <option value="" disabled>Select a payment provider...</option>}
                 <option value="pakasir">Pakasir (Direct QRIS/VA)</option>
                 <option value="midtrans">Midtrans (Snap Gateway)</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                All top-ups without an explicit package provider override will use this payment gateway.
+                All top-ups without an explicit package provider override will use this payment gateway. Changing this setting takes effect immediately across all users and requires superadmin authorization with an audit reason.
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Payment Provider Change Confirmation Modal */}
+      <Dialog open={isProviderModalOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsProviderModalOpen(false)
+          setSelectedProvider(savedProvider)
+          setProviderReason('')
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Payment Gateway Switch</DialogTitle>
+            <DialogDescription>
+              Switching default payment gateway to <strong className="capitalize">{pendingProvider}</strong>. All subsequent top-up checkouts will route through this gateway. An audit log entry will be recorded.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="provider-switch-reason" className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+              Reason for Change <span className="text-rose-500">*</span>
+            </Label>
+            <Input
+              id="provider-switch-reason"
+              placeholder="e.g. Gateway maintenance failover"
+              value={providerReason}
+              onChange={(e) => setProviderReason(e.target.value)}
+              disabled={isChangingProvider}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              disabled={isChangingProvider}
+              onClick={() => {
+                setIsProviderModalOpen(false)
+                setSelectedProvider(savedProvider)
+                setProviderReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!providerReason.trim() || isChangingProvider}
+              onClick={handleConfirmProviderSwitch}
+            >
+              {isChangingProvider ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Confirm Switch
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

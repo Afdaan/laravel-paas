@@ -108,7 +108,9 @@ var (
 	proxyLimiter     = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
 	consoleLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
 	importLimiter    = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
-	autoRenewLimiter = NewRateLimiter(3, 1*time.Minute)  // 3 req/min per user
+	autoRenewLimiter       = NewRateLimiter(3, 1*time.Minute)   // 3 req/min per user
+	midtransWebhookLimiter = NewRateLimiter(300, 1*time.Minute) // 300 req/min per IP
+	pakasirWebhookLimiter  = NewRateLimiter(300, 1*time.Minute) // 300 req/min per IP
 )
 
 // RateLimitLogin applies rate limiting to login endpoint
@@ -244,6 +246,64 @@ func RateLimitAutoRenew() fiber.Handler {
 		if !allowed {
 			c.Set("Retry-After", strconv.Itoa(sec))
 			return apperr.NewRateLimited(formatRateLimitMsg("Too many auto-renew toggle requests", sec), sec)
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitMidtransWebhook applies provider-aware rate limiting for Midtrans webhooks
+func RateLimitMidtransWebhook(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		ip := c.IP()
+		key := "webhook:midtrans:ip:" + ip
+		if redis != nil {
+			allowed, ttl, err := redis.RateLimit(key, 300, time.Minute)
+			if err == nil {
+				if !allowed {
+					sec := int(math.Ceil(ttl.Seconds()))
+					if sec < 1 {
+						sec = 1
+					}
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many webhook requests", sec), sec)
+				}
+				return c.Next()
+			}
+		}
+
+		allowed, sec := midtransWebhookLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many webhook requests", sec), sec)
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitPakasirWebhook applies provider-aware rate limiting for Pakasir webhooks
+func RateLimitPakasirWebhook(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		ip := c.IP()
+		key := "webhook:pakasir:ip:" + ip
+		if redis != nil {
+			allowed, ttl, err := redis.RateLimit(key, 300, time.Minute)
+			if err == nil {
+				if !allowed {
+					sec := int(math.Ceil(ttl.Seconds()))
+					if sec < 1 {
+						sec = 1
+					}
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many webhook requests", sec), sec)
+				}
+				return c.Next()
+			}
+		}
+
+		allowed, sec := pakasirWebhookLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many webhook requests", sec), sec)
 		}
 		return c.Next()
 	}

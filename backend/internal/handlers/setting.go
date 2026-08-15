@@ -64,6 +64,10 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		return apperr.ErrBadRequest
 	}
 
+	if _, exists := req.Settings[models.SettingDefaultPaymentProvider]; exists {
+		return apperr.NewBadRequest("default_payment_provider must be updated via dedicated finance endpoint /admin/billing/payment-provider")
+	}
+
 	if err := h.service.UpdateBulk(req.Settings); err != nil {
 		return err
 	}

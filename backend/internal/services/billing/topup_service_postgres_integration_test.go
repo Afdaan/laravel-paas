@@ -19,7 +19,7 @@ func TestTopupServicePostgresConcurrentWebhookCreditsOnce(t *testing.T) {
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(800000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestTopupServicePostgresRejectsProviderTransactionIDMutationAfterCredit(t *
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(810000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestTopupServicePostgresConcurrentReplayAndWebhook(t *testing.T) {
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(700000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -113,14 +113,14 @@ func TestTopupServicePostgresConcurrentReplayAndWebhook(t *testing.T) {
 }
 
 func topupIntegrationConfig() *config.Config {
-	return &config.Config{BillingEnabled: true, BillingTopupEnabled: true, MidtransServerKey: "server-key", MidtransMerchantID: "merchant-id"}
+	return &config.Config{BillingEnabled: true, BillingTopupEnabled: true, BillingTopupProvider: models.BillingProviderMidtrans, MidtransServerKey: "server-key", MidtransMerchantID: "merchant-id"}
 }
 
 func TestTopupServicePostgresConcurrentIdenticalCreate(t *testing.T) {
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(600000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestTopupServicePostgresConcurrentCreateWaitsForSlowProvider(t *testing.T) 
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(500000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -200,11 +200,12 @@ func TestTopupServicePostgresCompetingPaidAndRefundTransitions(t *testing.T) {
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(400000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
-	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), &fakeMidtransGateway{})
+	gateway := &fakeMidtransGateway{}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), gateway)
 	view, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-transition-%d", credits), TopupInput{PackageID: pkg.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -214,6 +215,10 @@ func TestTopupServicePostgresCompetingPaidAndRefundTransitions(t *testing.T) {
 		t.Fatal(err)
 	}
 	transactionID := fmt.Sprintf("transition-%d", credits)
+	gateway.status = signedNotificationForAmount(topup.ProviderOrderID, "refund", "", transactionID, credits)
+	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", transactionID, credits)); err != nil {
+		t.Fatal(err)
+	}
 	for _, err := range runConcurrentCalls(t, []func() error{
 		func() error {
 			return service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", transactionID, credits))
@@ -248,7 +253,7 @@ func TestTopupServicePostgresRollsBackLedgerWhenStatusUpdateFails(t *testing.T) 
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(300000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +292,7 @@ func TestTopupServicePostgresReconcileTerminalAfterTokenStorageFailure(t *testin
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(200000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +340,7 @@ func TestTopupServicePostgresReversalCreatesAndSettlesPaymentDueEvidence(t *test
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
 	credits := int64(300000000 + time.Now().UTC().UnixNano()%99999999)
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +357,8 @@ func TestTopupServicePostgresReversalCreatesAndSettlesPaymentDueEvidence(t *test
 	if err := db.Create(&resource).Error; err != nil {
 		t.Fatal(err)
 	}
-	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), &fakeMidtransGateway{})
+	gateway := &fakeMidtransGateway{}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), gateway)
 	view, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-reversal-%d", credits), TopupInput{PackageID: pkg.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -361,6 +367,7 @@ func TestTopupServicePostgresReversalCreatesAndSettlesPaymentDueEvidence(t *test
 	if err := db.First(&topup, view.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	gateway.status = signedNotificationForAmount(topup.ProviderOrderID, "refund", "", fmt.Sprintf("reversal-paid-%d", credits), credits)
 	if err := service.ProcessNotification(context.Background(), signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("reversal-paid-%d", credits), credits)); err != nil {
 		t.Fatal(err)
 	}
@@ -427,9 +434,9 @@ func signedNotificationForAmount(orderID, status, fraud, transactionID string, a
 func TestTopupServicePostgresPartialRefundReversesCreditsProportionallyOnce(t *testing.T) {
 	db := walletPostgresTestDB(t)
 	user := createPostgresWalletTestUser(t, db)
-	amount := int64(900000000 + time.Now().UTC().UnixNano()%99999999)
+	amount := (int64(900000000+time.Now().UTC().UnixNano()%99999999) / 2) * 2
 	credits := amount
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: amount, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: amount, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}

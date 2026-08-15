@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
+import { QRCodeSVG } from 'qrcode.react'
 import { billingAPI } from '@/services/api'
 import axios from 'axios'
 import {
@@ -94,7 +95,9 @@ export default function Billing() {
   const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
   const [showProfilePrompt, setShowProfilePrompt] = useState(false)
-  const topupKeys = useRef(new Map<number, string>())
+  const autoRenewInFlight = useRef<string | null>(null)
+  const topupKeys = useRef<Map<number, string>>(new Map())
+  const customTopupKey = useRef<string | null>(null)
   const loadInFlight = useRef(false)
   const hasLoadedProfileRef = useRef(false)
 
@@ -350,6 +353,7 @@ export default function Billing() {
   const customValid = customAmountNum >= 10_000 && customAmountNum <= 10_000_000 && customAmountNum % 1000 === 0
 
   const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    customTopupKey.current = null
     const raw = e.target.value.replace(/\D/g, '')
     if (!raw) {
       setCustomAmount('')
@@ -367,18 +371,25 @@ export default function Billing() {
     if (!checkProfileAndPrompt()) return
     setTopupPackageID(-1)
     try {
-      const idempotencyKey = createTopupIdempotencyKey()
+      const idempotencyKey = customTopupKey.current ?? createTopupIdempotencyKey()
+      customTopupKey.current = idempotencyKey
       const response = await billingAPI.createTopup(0, idempotencyKey, customAmountNum)
       if (response.data.payment_token && response.data.payment_token.startsWith('000201')) {
+        customTopupKey.current = null
         setActivePaymentModal(response.data)
         return
       }
       if (!response.data.payment_url) {
+        customTopupKey.current = null
         throw new Error(t('billing.paymentSessionUnavailable'))
       }
+      customTopupKey.current = null
       setCustomAmount('')
       window.location.assign(response.data.payment_url)
-    } catch {
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        customTopupKey.current = null
+      }
       toast.error(t('billing.topupStartFailed'))
     } finally {
       setTopupPackageID(null)
@@ -1388,9 +1399,10 @@ export default function Billing() {
             <div className="flex flex-col items-center justify-center space-y-4 py-4">
               {activePaymentModal.payment_token && activePaymentModal.payment_token.startsWith('000201') ? (
                 <div className="bg-white p-4 border border-border rounded-lg flex flex-col items-center">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(activePaymentModal.payment_token)}`}
-                    alt="QRIS Code"
+                  <QRCodeSVG
+                    value={activePaymentModal.payment_token}
+                    size={200}
+                    level="M"
                     className="size-48 object-contain"
                   />
                   <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">Scan QRIS via Mobile Banking / E-Wallet</p>
@@ -1413,7 +1425,7 @@ export default function Billing() {
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2">
             {activePaymentModal?.payment_url && (
-              <Button variant="outline" size="sm" onClick={() => window.open(activePaymentModal.payment_url, '_blank')}>
+              <Button variant="outline" size="sm" onClick={() => window.open(activePaymentModal.payment_url, '_blank', 'noopener,noreferrer')}>
                 Buka Link Pembayaran
               </Button>
             )}

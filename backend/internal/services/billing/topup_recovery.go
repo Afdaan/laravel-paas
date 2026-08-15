@@ -7,10 +7,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/url"
 	"strconv"
@@ -292,6 +290,9 @@ func (s *TopupService) waitForPaymentRequest(ctx context.Context, topup *models.
 }
 
 func withTopupRequestDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.WithTimeout(context.Background(), topupRequestTimeout)
+	}
 	if _, hasDeadline := ctx.Deadline(); hasDeadline {
 		return ctx, func() {}
 	}
@@ -369,17 +370,6 @@ func validatePaymentResponse(payment MidtransPaymentResponse) error {
 	parsed, err := url.Parse(payment.RedirectURL)
 	if err != nil || parsed.Scheme != "https" || (parsed.Host != "app.sandbox.midtrans.com" && parsed.Host != "app.midtrans.com") {
 		return ErrPaymentProvider
-	}
-	return nil
-}
-
-func decodeProviderJSON(reader io.Reader, target any) error {
-	decoder := json.NewDecoder(reader)
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("multiple JSON values")
 	}
 	return nil
 }

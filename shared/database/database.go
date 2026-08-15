@@ -217,13 +217,12 @@ func seedTopupPackages(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
-		provider, currency := models.BillingProviderMidtrans, models.BillingCurrencyIDR
+		currency := models.BillingCurrencyIDR
 		for index, price := range topupPackagePrices {
 			pkg := models.TopupPackage{
 				Credits:     price.Credits,
 				Currency:    currency,
 				AmountMinor: price.AmountMinor,
-				Provider:    provider,
 				Version:     1,
 				IsActive:    true,
 				SortOrder:   index + 1,
@@ -231,7 +230,7 @@ func seedTopupPackages(db *gorm.DB) error {
 			if err := tx.Create(&pkg).Error; err != nil {
 				return fmt.Errorf("seed initial topup package %d: %w", price.Credits, err)
 			}
-			slog.Info("Seeded initial topup package", "provider", provider, "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
+			slog.Info("Seeded initial topup package", "credits", price.Credits, "amount_minor", price.AmountMinor, "version", pkg.Version)
 		}
 		return nil
 	})

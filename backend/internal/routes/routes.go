@@ -143,8 +143,9 @@ func Setup(
 	billingProfileService := billing.NewBillingProfileService(db)
 	topupService := billing.NewTopupService(db, walletService, cfg, billing.NewMidtransClient(cfg), billing.NewPakasirClient(cfg))
 	topupService.SetSettingService(settingService)
+	catalogService := billing.NewCatalogServiceWithWallets(db, walletService, cfg)
 	billingHandler := handlers.NewBillingHandlerWithTopups(
-		billing.NewCatalogServiceWithWallets(db, walletService),
+		catalogService,
 		topupService,
 		billing.NewSuspensionService(db, cfg),
 	)
@@ -179,8 +180,8 @@ func Setup(
 	auth := api.Group("/auth", middleware.NoStore(), middleware.MaxBody(8*1024))
 	auth.Post("/login", middleware.RateLimitLogin(redisService), authHandler.Login)
 	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
-	api.Post("/webhooks/midtrans", middleware.NoStore(), middleware.MaxBody(8*1024), billingHandler.MidtransWebhook)
-	api.Post("/webhooks/pakasir", middleware.NoStore(), middleware.MaxBody(8*1024), billingHandler.PakasirWebhook)
+	api.Post("/webhooks/midtrans", middleware.NoStore(), middleware.RateLimitMidtransWebhook(redisService), middleware.MaxBody(8*1024), billingHandler.MidtransWebhook)
+	api.Post("/webhooks/pakasir", middleware.NoStore(), middleware.RateLimitPakasirWebhook(redisService), middleware.MaxBody(8*1024), billingHandler.PakasirWebhook)
 
 	// -----------------------------
 	// System Init (public, rate limited)
@@ -258,6 +259,7 @@ func Setup(
 	superadminBilling.Post("/topup-packages", middleware.MaxBody(8*1024), billingHandler.CreateTopupPackage)
 	superadminBilling.Put("/topup-packages/:id", middleware.MaxBody(8*1024), billingHandler.UpdateTopupPackage)
 	superadminBilling.Post("/wallets/:userID/credits", middleware.MaxBody(8*1024), billingHandler.AdjustWalletCredits)
+	superadminBilling.Put("/payment-provider", middleware.MaxBody(8*1024), billingHandler.UpdatePaymentProvider)
 
 	// User management
 	admin.Get("/users", userHandler.List)

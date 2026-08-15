@@ -7,9 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/services/billing"
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"gorm.io/gorm"
 )
 
 func TestDecodeBillingJSONRejectsDuplicateAndUnknownFields(t *testing.T) {
@@ -79,5 +82,45 @@ func TestBillingResponsesExcludeInternalFields(t *testing.T) {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("wallet response leaked %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestUpdatePaymentProviderEndpoint(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Setting{}, &models.BillingAuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "slug-1",
+		PakasirAPIKey:       "key-1",
+	}
+	catalogService := billing.NewCatalogService(db, cfg)
+	handler := NewBillingHandler(catalogService)
+
+	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+	app.Put("/admin/billing/payment-provider", func(c *fiber.Ctx) error {
+		c.Locals("user_id", uint(1))
+		c.Locals("role", string(models.RoleSuperAdmin))
+		return handler.UpdatePaymentProvider(c)
+	})
+
+	body := `{"provider":"pakasir","reason":"Enabling Pakasir as primary gateway"}`
+	req := httptest.NewRequest(http.MethodPut, "/admin/billing/payment-provider", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "req-test-provider-switch-1")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 OK, got %d", resp.StatusCode)
 	}
 }

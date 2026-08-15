@@ -148,7 +148,7 @@ func TestSeedBillingCatalogIsIdempotent(t *testing.T) {
 
 	for order, price := range topupPackagePrices {
 		var got models.TopupPackage
-		if err := db.Where("provider = ? AND currency = ? AND credits = ? AND version = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, price.Credits, 1).First(&got).Error; err != nil {
+		if err := db.Where("currency = ? AND credits = ? AND version = ?", models.BillingCurrencyIDR, price.Credits, 1).First(&got).Error; err != nil {
 			t.Fatalf("find package %d: %v", price.Credits, err)
 		}
 		if got.AmountMinor != price.AmountMinor || !got.IsActive || got.SortOrder != order+1 {
@@ -219,8 +219,8 @@ func TestRepairBillingCatalogOnlyFixesKnownBadRow(t *testing.T) {
 
 func TestTopupPackageRepricingUsesNewVersion(t *testing.T) {
 	db := billingTestDB(t, t.Name())
-	old := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 100000, Version: 1, IsActive: false}
-	new := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 125000, Version: 2, IsActive: true}
+	old := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 100000, Version: 1, IsActive: false}
+	new := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 125000, Version: 2, IsActive: true}
 	if err := db.Create(&old).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,6 @@ func TestSeedBillingCatalogPreservesAdminEditedPackages(t *testing.T) {
 		t.Fatalf("deactivate old package: %v", err)
 	}
 	adminEditedPackage := models.TopupPackage{
-		Provider:    active100.Provider,
 		Currency:    active100.Currency,
 		Credits:     100,
 		AmountMinor: 10000,

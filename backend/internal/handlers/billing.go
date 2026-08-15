@@ -288,6 +288,22 @@ func (h *BillingHandler) AdjustWalletCredits(c *fiber.Ctx) error {
 	return c.JSON(view)
 }
 
+func (h *BillingHandler) UpdatePaymentProvider(c *fiber.Ctx) error {
+	var input billing.UpdatePaymentProviderInput
+	if err := decodeBillingJSON(c, &input); err != nil {
+		return apperr.NewBadRequest("Invalid payment provider payload")
+	}
+	input.Provider = models.NormalizePaymentProvider(input.Provider)
+	actorUserID, _ := c.Locals("user_id").(uint)
+	if err := h.catalog.UpdateDefaultPaymentProvider(c.UserContext(), billingAuditContext(c, actorUserID, input.Reason), input); err != nil {
+		if errors.Is(err, billing.ErrInvalidCatalogInput) {
+			return apperr.NewBadRequest(err.Error())
+		}
+		return err
+	}
+	return c.JSON(fiber.Map{"message": "Payment provider updated successfully", "provider": input.Provider})
+}
+
 func decodeBillingJSON(c *fiber.Ctx, target any) error {
 	return decodeBillingJSONFields(c, target, true)
 }
@@ -432,13 +448,17 @@ func scanJSONValue(decoder *json.Decoder, depth int) error {
 func billingAuditContext(c *fiber.Ctx, actorUserID uint, reason string) billing.AuditContext {
 	effectiveUserID, _ := c.Locals("user_id").(uint)
 	actorRole, _ := c.Locals("role").(string)
+	reqID := middleware.RequestID(c)
+	if reqID == "" {
+		reqID = c.Get("X-Request-ID")
+	}
 	return billing.AuditContext{
 		ActorUserID:     actorUserID,
 		EffectiveUserID: effectiveUserID,
 		ActorRole:       actorRole,
 		SourceIP:        c.IP(),
 		Reason:          reason,
-		RequestID:       middleware.RequestID(c),
+		RequestID:       reqID,
 	}
 }
 

@@ -350,6 +350,59 @@ func (s *InvoiceService) chargeDueResource(ctx context.Context, db *gorm.DB, res
 		}
 		periodStart := resource.NextInvoiceAt.UTC()
 		periodEnd := nextBillingCycleWithAnchor(periodStart, resource.BillingAnchorDay, resource.BillingAnchorMonthEnd)
+
+		if !resource.AutoRenew {
+			// Auto-renew is disabled: per contract, do not debit wallet automatically.
+			// Create/ensure the invoice item for this period and move the resource to payment_due.
+			var spec models.BillableSpec
+			if err := tx.Where("id = ? AND type = ?", resource.SpecID, resource.Type).First(&spec).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrInvalidInvoiceInput
+				}
+				return fmt.Errorf("load billable spec for non-renewing resource: %w", err)
+			}
+			if spec.MonthlyCredits <= 0 {
+				return ErrInvalidInvoiceInput
+			}
+
+			wallet, err := getOrCreateLockedWallet(tx, resource.UserID)
+			if err != nil {
+				return err
+			}
+			invoice, err := findOrCreateInvoice(tx, resource.UserID, wallet.ID, periodStart, periodEnd)
+			if err != nil {
+				return err
+			}
+			item, created, err := findOrCreateInvoiceItem(tx, invoice.ID, &resource, &spec)
+			if err != nil {
+				return err
+			}
+			if created {
+				if invoice.TotalCredits > math.MaxInt64-item.Credits {
+					return ErrInvalidInvoiceInput
+				}
+				invoice.TotalCredits += item.Credits
+				if err := tx.Model(&invoice).Update("total_credits", invoice.TotalCredits).Error; err != nil {
+					return fmt.Errorf("update invoice total: %w", err)
+				}
+			}
+
+			updates := map[string]any{"status": models.InvoiceStatusPaymentDue, "paid_at": nil}
+			if invoice.DueAt == nil {
+				dueAt := now
+				updates["due_at"] = &dueAt
+			}
+			if err := tx.Model(&invoice).Updates(updates).Error; err != nil {
+				return fmt.Errorf("mark invoice payment due: %w", err)
+			}
+			if resource.BillingStatus != models.BillableResourceStatusPaymentDue {
+				if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusPaymentDue).Error; err != nil {
+					return fmt.Errorf("mark resource payment due: %w", err)
+				}
+			}
+			return nil
+		}
+
 		invoice, _, err := s.chargeResourceTx(tx, &resource, periodStart, periodEnd, false, now)
 		if errors.Is(err, ErrInsufficientCredits) {
 			updates := map[string]any{"status": models.InvoiceStatusPaymentDue, "paid_at": nil}

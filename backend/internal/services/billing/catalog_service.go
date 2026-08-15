@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -224,16 +225,25 @@ type AdminTopupView struct {
 }
 
 type CatalogService struct {
-	db      *gorm.DB
+	db             *gorm.DB
 	wallets *WalletService
+	cfg     *config.Config
 }
 
-func NewCatalogService(db *gorm.DB) *CatalogService {
-	return &CatalogService{db: db}
+func NewCatalogService(db *gorm.DB, cfg ...*config.Config) *CatalogService {
+	var c *config.Config
+	if len(cfg) > 0 {
+		c = cfg[0]
+	}
+	return &CatalogService{db: db, cfg: c}
 }
 
-func NewCatalogServiceWithWallets(db *gorm.DB, wallets *WalletService) *CatalogService {
-	return &CatalogService{db: db, wallets: wallets}
+func NewCatalogServiceWithWallets(db *gorm.DB, wallets *WalletService, cfg ...*config.Config) *CatalogService {
+	var c *config.Config
+	if len(cfg) > 0 {
+		c = cfg[0]
+	}
+	return &CatalogService{db: db, wallets: wallets, cfg: c}
 }
 
 func (s *CatalogService) ListActive(ctx context.Context) (Catalog, error) {
@@ -509,19 +519,19 @@ func (s *CatalogService) CreateTopupPackage(ctx context.Context, audit AuditCont
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		created, previous, err = s.createTopupPackageVersion(tx, input.Currency, input.Credits, input.AmountMinor, input.SortOrder)
-		return err
+		if err != nil {
+			return err
+		}
+		event := "topup_package.created"
+		if previous != nil {
+			event = "topup_package.repriced"
+		}
+		return createAuditEvent(tx, audit, event, "topup_package", created.ID, previous, created)
 	})
 	if err != nil {
 		return CatalogPackage{}, err
 	}
 
-	event := "topup_package.created"
-	if previous != nil {
-		event = "topup_package.repriced"
-	}
-	if err := s.createBillingAuditEvent(ctx, audit, event, "topup_package", created.ID, previous, created); err != nil {
-		return CatalogPackage{}, err
-	}
 	return catalogPackageFromModel(created), nil
 }
 
@@ -563,15 +573,12 @@ func (s *CatalogService) UpdateTopupPackage(ctx context.Context, audit AuditCont
 				return fmt.Errorf("deactivate topup package: %w", err)
 			}
 		}
-		return nil
+		return createAuditEvent(tx, audit, "topup_package.repriced", "topup_package", created.ID, &current, created)
 	})
 	if err != nil {
 		return CatalogPackage{}, err
 	}
 
-	if err := s.createBillingAuditEvent(ctx, audit, "topup_package.repriced", "topup_package", created.ID, &current, created); err != nil {
-		return CatalogPackage{}, err
-	}
 	return catalogPackageFromModel(created), nil
 }
 
@@ -599,13 +606,7 @@ func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, currency string,
 		}
 	}
 
-	provider := models.BillingProviderMidtrans
-	if previousFound && previous.Provider != "" {
-		provider = previous.Provider
-	}
 	created := models.TopupPackage{
-		Provider:    provider,
-		
 		Currency:    currency,
 		Credits:     credits,
 		AmountMinor: amountMinor,
@@ -623,9 +624,67 @@ func (s *CatalogService) createTopupPackageVersion(tx *gorm.DB, currency string,
 	return created, previousPtr, nil
 }
 
-func (s *CatalogService) createBillingAuditEvent(ctx context.Context, audit AuditContext, event, entityType string, entityID uint, before, after any) error {
+type UpdatePaymentProviderInput struct {
+	Provider string `json:"provider"`
+	Reason   string `json:"reason"`
+}
+
+func (s *CatalogService) UpdateDefaultPaymentProvider(ctx context.Context, audit AuditContext, input UpdatePaymentProviderInput) error {
+	if err := s.validateContext(ctx); err != nil {
+		return err
+	}
+	input.Provider = strings.ToLower(strings.TrimSpace(input.Provider))
+	input.Reason = strings.TrimSpace(input.Reason)
+	audit.Reason = strings.TrimSpace(audit.Reason)
+	if !validAuditContext(audit) {
+		return ErrInvalidCatalogInput
+	}
+	switch input.Provider {
+	case models.BillingProviderPakasir:
+		if s.cfg != nil && !s.cfg.PakasirEnabled {
+			return fmt.Errorf("%w: cannot switch to Pakasir because PAKASIR_ENABLED=false", ErrInvalidCatalogInput)
+		}
+		if s.cfg != nil && (s.cfg.PakasirProjectSlug == "" || s.cfg.PakasirAPIKey == "") {
+			return fmt.Errorf("%w: Pakasir credentials incomplete", ErrInvalidCatalogInput)
+		}
+	case models.BillingProviderMidtrans:
+		if s.cfg != nil && (s.cfg.MidtransServerKey == "" || s.cfg.MidtransMerchantID == "") {
+			return fmt.Errorf("%w: Midtrans credentials incomplete", ErrInvalidCatalogInput)
+		}
+	default:
+		return fmt.Errorf("%w: invalid provider %q", ErrInvalidCatalogInput, input.Provider)
+	}
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return createAuditEvent(tx, audit, event, entityType, entityID, before, after)
+		// Ensure the setting row exists so FOR UPDATE serializes concurrent first writes
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "setting_key"}},
+			DoNothing: true,
+		}).Create(&models.Setting{
+			Key:   models.SettingDefaultPaymentProvider,
+			Value: "",
+		}).Error; err != nil {
+			return fmt.Errorf("ensure payment provider setting row: %w", err)
+		}
+
+		var setting models.Setting
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("setting_key = ?", models.SettingDefaultPaymentProvider).First(&setting).Error; err != nil {
+			return fmt.Errorf("lock payment provider setting: %w", err)
+		}
+
+		oldValue := setting.Value
+		if oldValue == input.Provider {
+			return nil
+		}
+
+		if err := tx.Model(&setting).Update("value", input.Provider).Error; err != nil {
+			return fmt.Errorf("update payment provider setting: %w", err)
+		}
+
+		if err := createAuditEvent(tx, audit, "update_payment_provider", "setting", 0, map[string]string{"provider": oldValue}, map[string]string{"provider": input.Provider}); err != nil {
+			return fmt.Errorf("audit payment provider update: %w", err)
+		}
+		return nil
 	})
 }
 

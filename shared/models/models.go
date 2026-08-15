@@ -1069,6 +1069,18 @@ const (
 	BillingProviderPakasir  = "pakasir"
 )
 
+// NormalizePaymentProvider returns normalized provider name or empty string if unsupported.
+func NormalizePaymentProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case BillingProviderPakasir:
+		return BillingProviderPakasir
+	case BillingProviderMidtrans:
+		return BillingProviderMidtrans
+	default:
+		return ""
+	}
+}
+
 // SupportedBillingCurrencies lists every currency the catalog and payment schema accept.
 var SupportedBillingCurrencies = []string{BillingCurrencyIDR, BillingCurrencyUSD}
 
@@ -1143,7 +1155,6 @@ type TopupPackage struct {
 	Credits     int64     `gorm:"uniqueIndex:uni_topup_packages_identity_version;not null" json:"credits"`
 	Currency    string    `gorm:"uniqueIndex:uni_topup_packages_identity_version;size:3;not null" json:"currency"`
 	AmountMinor int64     `gorm:"not null" json:"amount_minor"`
-	Provider    string    `gorm:"uniqueIndex:uni_topup_packages_identity_version;size:30;not null" json:"provider"`
 	Version     int       `gorm:"uniqueIndex:uni_topup_packages_identity_version;not null;default:1" json:"version"`
 	IsActive    bool      `gorm:"not null;default:true" json:"is_active"`
 	SortOrder   int       `gorm:"not null;default:0" json:"sort_order"`

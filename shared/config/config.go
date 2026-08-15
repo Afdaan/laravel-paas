@@ -409,8 +409,23 @@ func (c *Config) validateProductionSecurity(includeAuth bool) error {
 		return fmt.Errorf("BILLING_DEPLOY_BLOCK_DAYS must be positive and less than BILLING_GRACE_DAYS")
 	}
 	if includeAuth && c.BillingTopupEnabled {
-		if (c.MidtransServerKey == "" || c.MidtransClientKey == "" || c.MidtransMerchantID == "") && (!c.PakasirEnabled || c.PakasirProjectSlug == "" || c.PakasirAPIKey == "") {
-			return fmt.Errorf("at least one active payment gateway (Midtrans or Pakasir) with valid credentials is required when BILLING_TOPUP_ENABLED=true")
+		provider := strings.ToLower(strings.TrimSpace(c.BillingTopupProvider))
+		if provider == "" {
+			provider = "pakasir"
+		}
+		if provider == "midtrans" {
+			if c.MidtransServerKey == "" || c.MidtransMerchantID == "" {
+				return fmt.Errorf("Midtrans credentials (MIDTRANS_SERVER_KEY, MIDTRANS_MERCHANT_ID) are required when selected as default billing provider")
+			}
+		} else if provider == "pakasir" {
+			if !c.PakasirEnabled {
+				return fmt.Errorf("PAKASIR_ENABLED must be true when Pakasir is selected as default billing provider")
+			}
+			if c.PakasirProjectSlug == "" || c.PakasirAPIKey == "" {
+				return fmt.Errorf("Pakasir credentials (PAKASIR_PROJECT_SLUG and PAKASIR_API_KEY) are required when selected as default billing provider")
+			}
+		} else {
+			return fmt.Errorf("invalid billing provider %q: must be midtrans or pakasir", provider)
 		}
 		if c.PakasirEnabled && (c.PakasirProjectSlug == "" || c.PakasirAPIKey == "") {
 			return fmt.Errorf("Pakasir credentials (PAKASIR_PROJECT_SLUG and PAKASIR_API_KEY) are required when PAKASIR_ENABLED=true")

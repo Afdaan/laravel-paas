@@ -6,7 +6,12 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redismock/v9"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/setting"
 	"gorm.io/gorm"
 )
 
@@ -253,7 +258,7 @@ func TestCatalogServiceRepricingVersionsRowsAndAudits(t *testing.T) {
 		t.Fatal(err)
 	}
 	var storedFirstPackage models.TopupPackage
-	if err := db.Where("provider = ? AND currency = ? AND credits = ? AND version = ?", models.BillingProviderMidtrans, models.BillingCurrencyIDR, firstPackage.Credits, 1).First(&storedFirstPackage).Error; err != nil {
+	if err := db.Where("currency = ? AND credits = ? AND version = ?", models.BillingCurrencyIDR, firstPackage.Credits, 1).First(&storedFirstPackage).Error; err != nil {
 		t.Fatal(err)
 	}
 	if storedFirstPackage.Version != 1 || storedFirstPackage.IsActive || secondPackage.AmountMinor != 125000 {
@@ -429,5 +434,170 @@ func TestCatalogServiceAdjustmentRollsBackWhenAuditWriteFails(t *testing.T) {
 	}
 	if walletCount != 0 || ledgerCount != 0 {
 		t.Fatalf("wallets=%d ledger_entries=%d", walletCount, ledgerCount)
+	}
+}
+
+func TestCatalogServiceUpdatePaymentProvider(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Setting{}, &models.BillingAuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		BillingEnabled:       true,
+		BillingTopupEnabled:  true,
+		PakasirEnabled:       true,
+		PakasirProjectSlug:   "slug-1",
+		PakasirAPIKey:        "key-1",
+		MidtransServerKey:    "midtrans-server-key",
+		MidtransMerchantID:   "midtrans-merchant-id",
+	}
+	service := NewCatalogService(db, cfg)
+	audit := catalogAudit("req-provider-1", "Switching provider to pakasir")
+
+	// 1. Update to pakasir
+	if err := service.UpdateDefaultPaymentProvider(context.Background(), audit, UpdatePaymentProviderInput{
+		Provider: "pakasir",
+		Reason:   "Switching provider to pakasir",
+	}); err != nil {
+		t.Fatalf("failed to update payment provider: %v", err)
+	}
+
+	var setting models.Setting
+	if err := db.Where("setting_key = ?", models.SettingDefaultPaymentProvider).First(&setting).Error; err != nil {
+		t.Fatalf("failed to find updated setting: %v", err)
+	}
+	if setting.Value != "pakasir" {
+		t.Fatalf("setting value = %q, want pakasir", setting.Value)
+	}
+
+	var auditEvent models.BillingAuditEvent
+	if err := db.Where("event = ?", "update_payment_provider").First(&auditEvent).Error; err != nil {
+		t.Fatalf("audit event not written: %v", err)
+	}
+	if auditEvent.TargetType != "setting" {
+		t.Fatalf("audit target_type = %q, want setting", auditEvent.TargetType)
+	}
+
+	// 2. Disabled pakasir rejects update
+	cfg.PakasirEnabled = false
+	if err := service.UpdateDefaultPaymentProvider(context.Background(), audit, UpdatePaymentProviderInput{
+		Provider: "pakasir",
+		Reason:   "Try switch to disabled pakasir",
+	}); err == nil {
+		t.Fatal("expected error when PAKASIR_ENABLED=false, got nil")
+	}
+}
+
+func TestCatalogServiceUpdateDefaultPaymentProviderIndependentOfRedis(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Setting{}, &models.BillingAuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Redis mock is configured with 0 expected calls. Any unexpected Redis command will fail the test.
+	client, mock := redismock.NewClientMock()
+	redisSvc := infrastructure.NewRedisServiceWithClient(client)
+	settingRepo := repositories.NewSettingRepository(db)
+	settingSvc := setting.NewSettingService(settingRepo, redisSvc)
+
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "slug-1",
+		PakasirAPIKey:       "key-1",
+		MidtransServerKey:   "midtrans-server-key",
+		MidtransMerchantID:  "midtrans-merchant-id",
+	}
+
+	catalogSvc := NewCatalogService(db, cfg)
+	topupSvc := NewTopupService(db, NewWalletService(db), cfg, nil, nil)
+	topupSvc.SetSettingService(settingSvc)
+
+	// 1. Initial state: DB is empty, activeProvider() defaults to Pakasir
+	prov, err := topupSvc.activeProvider(context.Background())
+	if err != nil || prov != models.BillingProviderPakasir {
+		t.Fatalf("expected active provider pakasir, got %s (err: %v)", prov, err)
+	}
+
+	// 2. Switch provider to midtrans: should succeed without invoking Redis
+	audit := catalogAudit("req-provider-switch-1", "Switching to Midtrans")
+	if err := catalogSvc.UpdateDefaultPaymentProvider(context.Background(), audit, UpdatePaymentProviderInput{
+		Provider: "midtrans",
+		Reason:   "Switching to Midtrans",
+	}); err != nil {
+		t.Fatalf("failed to update payment provider: %v", err)
+	}
+
+	// 3. Verify topupSvc and SettingService now route to Midtrans immediately from DB
+	prov, err = topupSvc.activeProvider(context.Background())
+	if err != nil || prov != models.BillingProviderMidtrans {
+		t.Fatalf("expected active provider midtrans after switch, got %s (err: %v)", prov, err)
+	}
+	if val := settingSvc.Get(models.SettingDefaultPaymentProvider, ""); val != "midtrans" {
+		t.Fatalf("expected settingService.Get to return midtrans, got %s", val)
+	}
+
+	// Ensure no Redis commands were issued
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unexpected redis commands called: %v", err)
+	}
+}
+
+func TestCatalogServiceUpdateDefaultPaymentProviderRetryIsDeterministicAndSkipsDuplicateAudit(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Setting{}, &models.BillingAuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "slug-1",
+		PakasirAPIKey:       "key-1",
+		MidtransServerKey:   "midtrans-server-key",
+		MidtransMerchantID:  "midtrans-merchant-id",
+	}
+
+	catalogSvc := NewCatalogService(db, cfg)
+
+	// Attempt 1: DB commits 'midtrans' and writes 1 audit row
+	audit := catalogAudit("req-provider-retry-1", "Switching to Midtrans")
+	if err := catalogSvc.UpdateDefaultPaymentProvider(context.Background(), audit, UpdatePaymentProviderInput{
+		Provider: "midtrans",
+		Reason:   "Switching to Midtrans",
+	}); err != nil {
+		t.Fatalf("attempt 1 failed: %v", err)
+	}
+
+	// Verify exactly 1 audit event was written
+	var count1 int64
+	if err := db.Model(&models.BillingAuditEvent{}).Count(&count1).Error; err != nil || count1 != 1 {
+		t.Fatalf("expected count 1 after attempt 1, got %d (err: %v)", count1, err)
+	}
+
+	// Attempt 2 (Retry with same provider): Idempotent no-op
+	if err := catalogSvc.UpdateDefaultPaymentProvider(context.Background(), audit, UpdatePaymentProviderInput{
+		Provider: "midtrans",
+		Reason:   "Switching to Midtrans",
+	}); err != nil {
+		t.Fatalf("expected success on retry, got: %v", err)
+	}
+
+	// Verify no duplicate audit event was created on retry
+	var count2 int64
+	if err := db.Model(&models.BillingAuditEvent{}).Count(&count2).Error; err != nil || count2 != 1 {
+		t.Fatalf("expected count 1 after retry (no duplicates), got %d (err: %v)", count2, err)
 	}
 }

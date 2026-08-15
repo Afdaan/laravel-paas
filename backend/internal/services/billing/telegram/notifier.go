@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
@@ -40,6 +41,9 @@ type Client struct {
 	topicID    int64
 	httpClient *http.Client
 	baseURL    string
+	queue      chan NotificationMessage
+	stopOnce   sync.Once
+	stopCh     chan struct{}
 }
 
 func NewClient(cfg *config.Config) *Client {
@@ -50,13 +54,52 @@ func NewClient(cfg *config.Config) *Client {
 	chatID := strings.TrimSpace(cfg.TelegramBotPaymentChatID)
 	enabled := cfg.TelegramBotPaymentEnabled && token != "" && chatID != ""
 
-	return &Client{
+	c := &Client{
 		enabled:    enabled,
 		botToken:   token,
 		chatID:     chatID,
 		topicID:    cfg.TelegramBotPaymentTopicID,
 		httpClient: &http.Client{Timeout: 8 * time.Second},
 		baseURL:    "https://api.telegram.org",
+		queue:      make(chan NotificationMessage, 100),
+		stopCh:     make(chan struct{}),
+	}
+	if enabled {
+		go c.worker()
+	}
+	return c
+}
+
+func (c *Client) worker() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Recovered panic in Telegram payment notifier worker", "panic", r)
+		}
+	}()
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		case msg, ok := <-c.queue:
+			if !ok {
+				return
+			}
+			c.processMessage(msg)
+		}
+	}
+}
+
+func (c *Client) processMessage(msg NotificationMessage) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	text := formatTelegramMessage(msg)
+	if text == "" {
+		return
+	}
+
+	if err := c.sendMessage(ctx, text); err != nil {
+		slog.Warn("Failed to send Telegram payment notification", "order_id", msg.OrderID, "error", err)
 	}
 }
 
@@ -65,25 +108,22 @@ func (c *Client) SendTopupNotification(msg NotificationMessage) {
 		return
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("Recovered panic in Telegram payment notifier", "panic", r)
-			}
-		}()
+	select {
+	case c.queue <- msg:
+	default:
+		slog.Warn("Telegram notification queue full, dropping notification", "order_id", msg.OrderID)
+	}
+}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		text := formatTelegramMessage(msg)
-		if text == "" {
-			return
+func (c *Client) Close() {
+	if c == nil {
+		return
+	}
+	c.stopOnce.Do(func() {
+		if c.stopCh != nil {
+			close(c.stopCh)
 		}
-
-		if err := c.sendMessage(ctx, text); err != nil {
-			slog.Warn("Failed to send Telegram payment notification", "order_id", msg.OrderID, "error", err)
-		}
-	}()
+	})
 }
 
 func (c *Client) sendMessage(ctx context.Context, text string) error {

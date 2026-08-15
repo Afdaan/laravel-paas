@@ -135,39 +135,44 @@ func (s *TopupService) SetSettingService(settingService *setting.SettingService)
 	s.settingService = settingService
 }
 
-func (s *TopupService) activeProvider() string {
+func (s *TopupService) activeProvider(ctx context.Context) (string, error) {
 	if s.settingService != nil {
-		if val := s.settingService.Get(models.SettingDefaultPaymentProvider, ""); val != "" {
-			val = strings.ToLower(strings.TrimSpace(val))
-			if val == models.BillingProviderPakasir || val == models.BillingProviderMidtrans {
-				return val
+		val, found, err := s.settingService.GetUncached(ctx, models.SettingDefaultPaymentProvider)
+		if err != nil {
+			return "", fmt.Errorf("%w: failed to query payment provider setting: %w", ErrPaymentProvider, err)
+		}
+		if found {
+			normalized := models.NormalizePaymentProvider(val)
+			if normalized == "" {
+				return "", fmt.Errorf("%w: invalid default payment provider configured: %q", ErrPaymentProvider, val)
 			}
+			return normalized, nil
 		}
 	}
-	if s.cfg != nil {
-		prov := strings.ToLower(strings.TrimSpace(s.cfg.BillingTopupProvider))
-		if prov == models.BillingProviderPakasir {
-			return models.BillingProviderPakasir
+	if s.cfg != nil && s.cfg.BillingTopupProvider != "" {
+		normalized := models.NormalizePaymentProvider(s.cfg.BillingTopupProvider)
+		if normalized == "" {
+			return "", fmt.Errorf("%w: invalid billing topup provider configured in env: %q", ErrPaymentProvider, s.cfg.BillingTopupProvider)
 		}
-		if prov == models.BillingProviderMidtrans {
-			return models.BillingProviderMidtrans
-		}
-		if (s.cfg.PakasirEnabled || s.cfg.PakasirProjectSlug != "") && s.cfg.MidtransServerKey == "" {
-			return models.BillingProviderPakasir
-		}
-		if s.cfg.MidtransServerKey != "" {
-			return models.BillingProviderMidtrans
-		}
+		return normalized, nil
 	}
-	return models.BillingProviderPakasir
+	return models.BillingProviderPakasir, nil
 }
 
 func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string, input TopupInput) (TopupView, error) {
-	if err := s.validateCreate(ctx, userID, clientKey, input); err != nil {
-		return TopupView{}, err
+	if ctx == nil {
+		return TopupView{}, fmt.Errorf("%w: context is required", ErrInvalidTopupInput)
 	}
 	ctx, cancel := withTopupRequestDeadline(ctx)
 	defer cancel()
+
+	provider, err := s.activeProvider(ctx)
+	if err != nil {
+		return TopupView{}, err
+	}
+	if err := s.validateCreate(ctx, userID, clientKey, input, provider); err != nil {
+		return TopupView{}, err
+	}
 
 	wallet, err := s.wallets.GetOrCreateWallet(ctx, userID)
 	if err != nil {
@@ -185,7 +190,6 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			return fmt.Errorf("lock existing topup: %w", err)
 		}
 
-		provider := s.activeProvider()
 		if input.PackageID > 0 {
 			var topupPackage models.TopupPackage
 			if err := tx.Where("id = ? AND is_active = ?", input.PackageID, true).First(&topupPackage).Error; err != nil {
@@ -305,12 +309,27 @@ func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (Top
 	return topupView(topup), nil
 }
 
-func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKey string, input TopupInput) error {
+func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKey string, input TopupInput, provider string) error {
 	if err := s.validatePaymentProcessing(ctx); err != nil {
 		return err
 	}
 	if s.cfg != nil && !s.cfg.BillingTopupEnabled {
 		return ErrTopupDisabled
+	}
+	switch provider {
+	case models.BillingProviderPakasir:
+		if s.cfg != nil && !s.cfg.PakasirEnabled {
+			return fmt.Errorf("%w: Pakasir gateway is disabled (PAKASIR_ENABLED=false)", ErrPaymentProvider)
+		}
+		if s.pakasirGateway == nil || (s.cfg != nil && (s.cfg.PakasirProjectSlug == "" || s.cfg.PakasirAPIKey == "")) {
+			return fmt.Errorf("%w: Pakasir provider not configured", ErrPaymentProvider)
+		}
+	case models.BillingProviderMidtrans:
+		if s.gateway == nil || (s.cfg != nil && (s.cfg.MidtransServerKey == "" || s.cfg.MidtransMerchantID == "")) {
+			return fmt.Errorf("%w: Midtrans provider not configured", ErrPaymentProvider)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported payment provider %q", ErrPaymentProvider, provider)
 	}
 	if userID == 0 || clientKey == "" || len(clientKey) > 255 || strings.TrimSpace(clientKey) != clientKey {
 		return ErrInvalidTopupInput
@@ -327,6 +346,9 @@ func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKe
 }
 
 func (s *TopupService) validatePaymentProcessing(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("%w: context is required", ErrInvalidTopupInput)
+	}
 	if s.cfg != nil && (!s.cfg.BillingEnabled || !s.cfg.BillingTopupEnabled) {
 		return ErrTopupDisabled
 	}

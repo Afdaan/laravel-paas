@@ -445,7 +445,7 @@ export const domainsAPI = {
 export const billingAPI = {
   getProfile: () => api.get('/billing/profile'),
   updateProfile: (data: any) => api.put('/billing/profile', data),
-  getUserProfileAdmin: (userID: number) => api.get(`/admin/users/${userID}/billing-profile`),
+  getUserProfileAdmin: (userID: number) => api.get(`/admin/billing/users/${userID}/billing-profile`),
   catalog: () =>
     api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/billing/catalog'),
 
@@ -474,6 +474,8 @@ export const billingAPI = {
   updateTopupPackage: (id: number, data: unknown) => api.put(`/admin/billing/topup-packages/${id}`, data),
   adjustWalletCredits: (userID: number, data: unknown, idempotencyKey: string) =>
     api.post(`/admin/billing/wallets/${userID}/credits`, data, { headers: { 'Idempotency-Key': idempotencyKey } }),
+  updatePaymentProvider: (data: { provider: string; reason: string }) =>
+    api.put('/admin/billing/payment-provider', data),
 }
 
 export const secretStoreAPI = {

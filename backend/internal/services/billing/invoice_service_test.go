@@ -537,3 +537,52 @@ func TestInvoiceServiceRefundsInitialResource(t *testing.T) {
 	}
 	assertInvoiceWallet(t, db, user.ID, 500, 3)
 }
+
+func TestInvoiceServiceAutoRenewFalseDoesNotDebitAndMarksPaymentDue(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	// Give plenty of wallet credits (5000 credits)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 5000, IdempotencyKey: "autorenew-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "NoRenewApp", GithubURL: "https://github.com/example/norenew", Subdomain: "norenew", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Initial charge took spec.MonthlyCredits (100) -> 4900 credits left
+	assertInvoiceWallet(t, db, user.ID, 4900, 2)
+
+	// User disables auto_renew
+	if err := db.Model(&models.BillableResource{}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).Update("auto_renew", false).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Balance MUST remain 4900 (NOT debited because auto_renew is false!)
+	assertInvoiceWallet(t, db, user.ID, 4900, 2)
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue {
+		t.Fatalf("expected billing_status payment_due, got %s", resource.BillingStatus)
+	}
+
+	var dueInvoice models.Invoice
+	if err := db.Where("period_start = ?", dueAt).First(&dueInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dueInvoice.Status != models.InvoiceStatusPaymentDue {
+		t.Fatalf("expected invoice status payment_due, got %s", dueInvoice.Status)
+	}
+}

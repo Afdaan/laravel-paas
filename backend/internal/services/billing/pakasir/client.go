@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -78,26 +77,17 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
+func (c *Client) IsConfigured() bool {
+	return c != nil && c.apiKey != "" && c.projectSlug != ""
+}
+
 func (c *Client) CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (CreateResponse, error) {
 	if method == "" {
 		method = "qris"
 	}
 
-	slug := ""
-	if c != nil {
-		slug = c.projectSlug
-	}
-	if slug == "" {
-		slug = "runara"
-	}
-	fallbackURL := fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s", slug, amountMinor, orderID)
-
 	if c == nil || c.apiKey == "" || c.projectSlug == "" {
-		slog.Warn("Pakasir credentials not configured, falling back to direct payment URL", "project_slug", slug, "order_id", orderID)
-		return CreateResponse{
-			PaymentNumber: fallbackURL,
-			TotalPayment:  amountMinor,
-		}, nil
+		return CreateResponse{}, fmt.Errorf("%w: pakasir credentials not configured", ErrPaymentProvider)
 	}
 
 	endpoint := fmt.Sprintf("%s/transactioncreate/%s", c.baseURL, method)
@@ -111,26 +101,27 @@ func (c *Client) CreateTransaction(ctx context.Context, orderID string, amountMi
 
 	jsonBytes, err := json.Marshal(bodyData)
 	if err != nil {
-		return CreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
+		return CreateResponse{}, fmt.Errorf("marshal pakasir request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		return CreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
+		return CreateResponse{}, fmt.Errorf("create pakasir request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		slog.Warn("Pakasir API request failed, falling back to direct payment URL", "error", err)
-		return CreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
+		return CreateResponse{}, fmt.Errorf("%w: execute pakasir transaction create: %v", ErrPaymentProvider, err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		slog.Warn("Pakasir API returned non-OK status, falling back to direct payment URL", "status", resp.StatusCode)
-		return CreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return CreateResponse{}, fmt.Errorf("%w: read pakasir response: %v", ErrPaymentProvider, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return CreateResponse{}, fmt.Errorf("%w: pakasir transaction create status %d", ErrPaymentProvider, resp.StatusCode)
 	}
 
 	var res CreateResponse
@@ -151,7 +142,7 @@ func (c *Client) CreateTransaction(ctx context.Context, orderID string, amountMi
 		}
 	}
 
-	return CreateResponse{PaymentNumber: fallbackURL, TotalPayment: amountMinor}, nil
+	return CreateResponse{}, fmt.Errorf("%w: invalid or missing payment number from pakasir response", ErrPaymentProvider)
 }
 
 func (c *Client) GetTransactionDetail(ctx context.Context, orderID string, amountMinor int64) (TransactionDetail, error) {
@@ -181,7 +172,7 @@ func (c *Client) GetTransactionDetail(ctx context.Context, orderID string, amoun
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return TransactionDetail{}, fmt.Errorf("%w: read pakasir detail response: %v", ErrPaymentProvider, err)
 	}

@@ -184,9 +184,6 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	if err := backfillBillableResourceAnchors(db); err != nil {
 		return err
 	}
-	if err := backfillBillableResourceAutoRenew(db); err != nil {
-		return err
-	}
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
@@ -250,20 +247,6 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	}
 
 	slog.Info("Defensive migration bootstrap completed successfully.")
-	return nil
-}
-
-func backfillBillableResourceAutoRenew(db *gorm.DB) error {
-	if !isPostgres(db) {
-		return nil
-	}
-	result := db.Exec("UPDATE billable_resources SET auto_renew = TRUE WHERE auto_renew = FALSE")
-	if result.Error != nil {
-		return fmt.Errorf("backfill billable resource auto_renew: %w", result.Error)
-	}
-	if result.RowsAffected > 0 {
-		slog.Info("Backfilled billable resource auto_renew defaults", "rows", result.RowsAffected)
-	}
 	return nil
 }
 
@@ -400,7 +383,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"wallets", "uni_wallets_user_id", []string{"user_id"}},
 		{"wallets", "uni_wallets_id_user_id", []string{"id", "user_id"}},
 		{"wallet_ledger_entries", "uni_wallet_ledger_entries_idempotency_key", []string{"idempotency_key"}},
-		{"topup_packages", "uni_topup_packages_identity_version", []string{"provider", "currency", "credits", "version"}},
+		{"topup_packages", "uni_topup_packages_identity_version", []string{"currency", "credits", "version"}},
 		{"topups", "uni_topups_wallet_client_key", []string{"wallet_id", "client_idempotency_key"}},
 		{"topups", "uni_topups_provider_order", []string{"provider", "provider_order_id"}},
 		{"billable_specs", "uni_billable_specs_slug_version", []string{"type", "slug", "version"}},
@@ -583,15 +566,39 @@ func ReconcileSchemas(db *gorm.DB) error {
 }
 
 func reconcileTopupPackageIdentity(db *gorm.DB) error {
-	if err := db.Exec(`
-		ALTER TABLE topup_packages ADD COLUMN IF NOT EXISTS version integer;
-		UPDATE topup_packages SET version = 1 WHERE version IS NULL;
-		ALTER TABLE topup_packages ALTER COLUMN version SET DEFAULT 1;
-		ALTER TABLE topup_packages ALTER COLUMN version SET NOT NULL;
-		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_provider_currency_credits;
-		DROP INDEX IF EXISTS uni_topup_packages_provider_currency_credits;
-	`).Error; err != nil {
-		return fmt.Errorf("migrate topup package version: %w", err)
+	if !isPostgres(db) {
+		return nil
+	}
+
+	var hasLegacyProvider bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'topup_packages'
+			  AND column_name = 'provider'
+		)
+	`).Scan(&hasLegacyProvider).Error; err != nil {
+		return fmt.Errorf("check legacy provider column: %w", err)
+	}
+
+	if hasLegacyProvider {
+		if err := db.Exec(`
+			ALTER TABLE topup_packages ADD COLUMN IF NOT EXISTS version integer;
+			UPDATE topup_packages SET version = 1 WHERE version IS NULL;
+			ALTER TABLE topup_packages ALTER COLUMN version SET DEFAULT 1;
+			ALTER TABLE topup_packages ALTER COLUMN version SET NOT NULL;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS chk_topup_packages_provider_currency;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_provider_currency_credits;
+			DROP INDEX IF EXISTS uni_topup_packages_provider_currency_credits;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_one_active;
+			DROP INDEX IF EXISTS uni_topup_packages_one_active;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_identity_version;
+			DROP INDEX IF EXISTS uni_topup_packages_identity_version;
+			ALTER TABLE topup_packages DROP COLUMN IF EXISTS provider;
+		`).Error; err != nil {
+			return fmt.Errorf("migrate topup package version and drop legacy provider: %w", err)
+		}
 	}
 
 	correct, err := hasTopupPackageIdentityVersionConstraint(db)
@@ -605,7 +612,7 @@ func reconcileTopupPackageIdentity(db *gorm.DB) error {
 	if err := db.Exec(`
 		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_identity_version;
 		DROP INDEX IF EXISTS uni_topup_packages_identity_version;
-		ALTER TABLE topup_packages ADD CONSTRAINT uni_topup_packages_identity_version UNIQUE (provider, currency, credits, version);
+		ALTER TABLE topup_packages ADD CONSTRAINT uni_topup_packages_identity_version UNIQUE (currency, credits, version);
 	`).Error; err != nil {
 		return fmt.Errorf("reconcile topup package identity: %w", err)
 	}
@@ -621,7 +628,7 @@ func hasTopupPackageIdentityVersionConstraint(db *gorm.DB) (bool, error) {
 			WHERE conrelid = 'topup_packages'::regclass
 			  AND conname = 'uni_topup_packages_identity_version'
 			  AND contype = 'u'
-			  AND pg_get_constraintdef(oid) = 'UNIQUE (provider, currency, credits, version)'
+			  AND pg_get_constraintdef(oid) = 'UNIQUE (currency, credits, version)'
 		)
 	`).Scan(&exists).Error; err != nil {
 		return false, fmt.Errorf("check topup package identity constraint: %w", err)
@@ -637,7 +644,7 @@ func reconcileDuplicateActiveBillingCatalog(db *gorm.DB) error {
 		topupResult := tx.Exec(`
 			WITH ranked AS (
 				SELECT id, ROW_NUMBER() OVER (
-					PARTITION BY provider, currency, credits
+					PARTITION BY currency, credits
 					ORDER BY version DESC, id DESC
 				) AS rank
 				FROM topup_packages
@@ -680,7 +687,7 @@ func ensureActiveCatalogIndexes(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS uni_topup_packages_one_active
-		ON topup_packages (provider, currency, credits)
+		ON topup_packages (currency, credits)
 		WHERE is_active;
 	`).Error; err != nil {
 		return fmt.Errorf("create active topup package index: %w", err)
@@ -706,15 +713,11 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		if err := dropCheckMissingMarker(db, "billable_resources", "chk_billable_resources_status", "deleted"); err != nil {
 			return err
 		}
-		// Currency & provider checks predating Pakasir pin the provider to midtrans. Drop the stale
-		// definition so the checks loop below recreates it with the widened rule.
-		for _, target := range []struct{ table, name string }{
-			{"topup_packages", "chk_topup_packages_provider_currency"},
-			{"topups", "chk_topups_provider_currency"},
-		} {
-			if err := dropCheckMissingMarker(db, target.table, target.name, "pakasir"); err != nil {
-				return err
-			}
+		if err := db.Exec("ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS chk_topup_packages_provider_currency").Error; err != nil {
+			return fmt.Errorf("drop legacy topup package provider constraint: %w", err)
+		}
+		if err := dropCheckMissingMarker(db, "topups", "chk_topups_provider_currency", "pakasir"); err != nil {
+			return err
 		}
 		if err := dropCheckMissingMarker(db, "payment_events", "chk_payment_events_provider", "pakasir"); err != nil {
 			return err
@@ -730,7 +733,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.BillingProfile{}, "uni_billing_profiles_user_id", "UNIQUE (user_id)"},
 		{&models.Wallet{}, "uni_wallets_id_user_id", "UNIQUE (id, user_id)"},
 		{&models.WalletLedgerEntry{}, "uni_wallet_ledger_entries_idempotency_key", "UNIQUE (idempotency_key)"},
-		{&models.TopupPackage{}, "uni_topup_packages_identity_version", "UNIQUE (provider, currency, credits, version)"},
+		{&models.TopupPackage{}, "uni_topup_packages_identity_version", "UNIQUE (currency, credits, version)"},
 		{&models.Topup{}, "uni_topups_wallet_client_key", "UNIQUE (wallet_id, client_idempotency_key)"},
 		{&models.Topup{}, "uni_topups_provider_order", "UNIQUE (provider, provider_order_id)"},
 		{&models.BillableSpec{}, "uni_billable_specs_slug_version", "UNIQUE (type, slug, version)"},
@@ -782,7 +785,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_type", "type IN ('topup', 'topup_reversal', 'invoice_debit', 'invoice_refund', 'adjustment')"},
 		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_direction", "(type IN ('topup', 'invoice_refund') AND amount_credits > 0) OR (type IN ('topup_reversal', 'invoice_debit') AND amount_credits < 0) OR type = 'adjustment'"},
 		{&models.TopupPackage{}, "chk_topup_packages_positive", "credits > 0 AND amount_minor > 0 AND version > 0"},
-		{&models.TopupPackage{}, "chk_topup_packages_provider_currency", "provider IN ('midtrans', 'pakasir') AND currency IN ('IDR', 'USD')"},
+		{&models.TopupPackage{}, "chk_topup_packages_currency", "currency IN ('IDR', 'USD')"},
 		{&models.Topup{}, "chk_topups_positive", "credits > 0 AND amount_minor > 0"},
 		{&models.Topup{}, "chk_topups_provider_currency", "provider IN ('midtrans', 'pakasir') AND currency IN ('IDR', 'USD')"},
 		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'partial_refund', 'refunded', 'partial_chargeback', 'chargeback')"},
@@ -816,7 +819,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 				RAISE EXCEPTION 'topup packages cannot be deleted';
 			END IF;
 			IF NEW.credits <> OLD.credits OR NEW.currency <> OLD.currency
-				OR NEW.amount_minor <> OLD.amount_minor OR NEW.provider <> OLD.provider
+				OR NEW.amount_minor <> OLD.amount_minor
 				OR NEW.version <> OLD.version THEN
 				RAISE EXCEPTION 'topup package prices are immutable';
 			END IF;

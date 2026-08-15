@@ -14,6 +14,8 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/setting"
 	"gorm.io/gorm"
 )
 
@@ -409,12 +411,12 @@ func topupServiceFixture(t *testing.T) (*gorm.DB, models.User, *TopupService, *f
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
-	pkg := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 25000, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 25000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
 	gateway := &fakeMidtransGateway{}
-	service := NewTopupService(db, NewWalletService(db), &config.Config{BillingEnabled: true, BillingTopupEnabled: true, MidtransServerKey: "server-key", MidtransMerchantID: "merchant-id"}, gateway)
+	service := NewTopupService(db, NewWalletService(db), &config.Config{BillingEnabled: true, BillingTopupEnabled: true, BillingTopupProvider: models.BillingProviderMidtrans, MidtransServerKey: "server-key", MidtransMerchantID: "merchant-id"}, gateway)
 	return db, user, service, gateway
 }
 
@@ -516,8 +518,8 @@ func TestTopupCreateFailsClosedAfterProviderSuccessStorageFailure(t *testing.T) 
 	}
 	replayContext, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := service.Create(replayContext, user.ID, "topup-recovery", TopupInput{PackageID: 1}); err != context.DeadlineExceeded {
-		t.Fatalf("recovery error = %v", err)
+	if _, err := service.Create(replayContext, user.ID, "topup-recovery", TopupInput{PackageID: 1}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("recovery error = %v, want context.DeadlineExceeded", err)
 	}
 	if gateway.createCalls != 1 {
 		t.Fatalf("provider calls = %d, want 1", gateway.createCalls)
@@ -834,7 +836,7 @@ func TestCustomTopupValidation(t *testing.T) {
 		{"not divisible by 1000 rejected", TopupInput{AmountMinor: 10_500}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := svc.validateCreate(context.Background(), 1, "key", tc.input)
+			err := svc.validateCreate(context.Background(), 1, "key", tc.input, models.BillingProviderMidtrans)
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error")
 			}
@@ -869,12 +871,14 @@ func TestTopupIdempotencyMatch(t *testing.T) {
 }
 
 type fakePakasirGateway struct {
+	createCalls    int
 	createdOrderID string
 	createdAmount  int64
 	method         string
 }
 
 func (f *fakePakasirGateway) CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (PakasirCreateResponse, error) {
+	f.createCalls++
 	f.createdOrderID = orderID
 	f.createdAmount = amountMinor
 	f.method = method
@@ -916,7 +920,7 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
-	pkg := models.TopupPackage{Provider: models.BillingProviderPakasir, Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -953,8 +957,382 @@ func TestTopupServiceActiveProviderSwitching(t *testing.T) {
 	}
 
 	service := NewTopupService(nil, nil, cfg, nil, nil)
-	prov := service.activeProvider()
-	if prov != models.BillingProviderPakasir {
-		t.Fatalf("expected default provider pakasir, got %s", prov)
+	prov, err := service.activeProvider(context.Background())
+	if err != nil || prov != models.BillingProviderPakasir {
+		t.Fatalf("expected default provider pakasir, got %s (err: %v)", prov, err)
+	}
+}
+
+func TestTopupServicePakasirDisabledRejectsCreation(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "disabled-pakasir@example.test", Password: "test", Name: "Disabled Pakasir User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	midtransGw := &fakeMidtransGateway{}
+	// Pakasir is selected but disabled via flag, even though Midtrans credentials exist
+	cfg := &config.Config{
+		BillingEnabled:       true,
+		BillingTopupEnabled:  true,
+		BillingTopupProvider: "pakasir",
+		PakasirEnabled:       false,
+		PakasirProjectSlug:   "test-project",
+		PakasirAPIKey:        "test-key",
+		MidtransServerKey:    "midtrans-key",
+		MidtransMerchantID:   "midtrans-merchant",
+	}
+	service := NewTopupService(db, NewWalletService(db), cfg, midtransGw, pakasirGw)
+
+	_, err = service.Create(context.Background(), user.ID, "client-pakasir-disabled-key", TopupInput{PackageID: pkg.ID})
+	if err == nil {
+		t.Fatal("expected error when PAKASIR_ENABLED=false, got nil")
+	}
+	if !errors.Is(err, ErrPaymentProvider) {
+		t.Fatalf("expected ErrPaymentProvider, got: %v", err)
+	}
+	if midtransGw.createCalls != 0 {
+		t.Fatalf("expected 0 midtrans calls on fail-closed disabled pakasir, got %d", midtransGw.createCalls)
+	}
+	if pakasirGw.createCalls != 0 {
+		t.Fatalf("expected 0 pakasir calls, got %d", pakasirGw.createCalls)
+	}
+}
+
+func TestTopupServiceMidtransUnconfiguredFailsClosed(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "unconfigured-midtrans@example.test", Password: "test", Name: "Unconfigured Midtrans User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	midtransGw := &fakeMidtransGateway{}
+	// Midtrans is selected but has missing credentials, even though Pakasir is fully enabled
+	cfg := &config.Config{
+		BillingEnabled:       true,
+		BillingTopupEnabled:  true,
+		BillingTopupProvider: "midtrans",
+		PakasirEnabled:       true,
+		PakasirProjectSlug:   "test-project",
+		PakasirAPIKey:        "test-key",
+	}
+	service := NewTopupService(db, NewWalletService(db), cfg, midtransGw, pakasirGw)
+
+	_, err = service.Create(context.Background(), user.ID, "client-midtrans-unconfigured-key", TopupInput{PackageID: pkg.ID})
+	if err == nil {
+		t.Fatal("expected error when Midtrans unconfigured, got nil")
+	}
+	if !errors.Is(err, ErrPaymentProvider) {
+		t.Fatalf("expected ErrPaymentProvider, got: %v", err)
+	}
+	if pakasirGw.createCalls != 0 {
+		t.Fatalf("expected 0 pakasir calls on fail-closed unconfigured midtrans, got %d", pakasirGw.createCalls)
+	}
+	if midtransGw.createCalls != 0 {
+		t.Fatalf("expected 0 midtrans calls, got %d", midtransGw.createCalls)
+	}
+}
+
+type failingSettingRepo struct {
+	err error
+}
+
+func (f *failingSettingRepo) GetByKey(ctx context.Context, key string) (*models.Setting, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return nil, f.err
+}
+
+func (f *failingSettingRepo) GetValue(key string, defaultValue string) string {
+	return defaultValue
+}
+
+func (f *failingSettingRepo) Upsert(key string, value string) error {
+	return f.err
+}
+
+func (f *failingSettingRepo) ListAll() ([]models.Setting, error) {
+	return nil, f.err
+}
+
+func TestTopupServiceSettingDBReadFailureFailsClosed(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "db-fail@example.test", Password: "test", Name: "DB Fail User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	midtransGw := &fakeMidtransGateway{}
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "test-project",
+		PakasirAPIKey:       "test-key",
+	}
+
+	failingRepo := &failingSettingRepo{err: errors.New("database connection timeout")}
+	settingSvc := setting.NewSettingService(failingRepo, nil)
+
+	service := NewTopupService(db, NewWalletService(db), cfg, midtransGw, pakasirGw)
+	service.SetSettingService(settingSvc)
+
+	_, err = service.Create(context.Background(), user.ID, "client-db-err-key", TopupInput{PackageID: pkg.ID})
+	if err == nil {
+		t.Fatal("expected error on database failure, got nil")
+	}
+	if !errors.Is(err, ErrPaymentProvider) {
+		t.Fatalf("expected ErrPaymentProvider, got: %v", err)
+	}
+
+	// Verify no topup was persisted in the database
+	var count int64
+	if err := db.Model(&models.Topup{}).Where("client_idempotency_key = ?", "client-db-err-key").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("expected 0 topups created in DB, got %d (err: %v)", count, err)
+	}
+
+	// Verify neither gateway was called
+	if pakasirGw.createCalls != 0 {
+		t.Fatalf("expected 0 pakasir calls on DB read failure, got %d", pakasirGw.createCalls)
+	}
+	if midtransGw.createCalls != 0 {
+		t.Fatalf("expected 0 midtrans calls on DB read failure, got %d", midtransGw.createCalls)
+	}
+}
+
+func TestTopupServiceInvalidPersistedProviderFailsClosed(t *testing.T) {
+	for _, badValue := range []string{"", "   ", "stripe_unsupported", "INVALID_PROVIDER"} {
+		t.Run(fmt.Sprintf("value_%q", badValue), func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s_%x?mode=memory&cache=shared", t.Name(), badValue)), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.Setting{}); err != nil {
+				t.Fatal(err)
+			}
+			user := models.User{Email: "invalid-prov@example.test", Password: "test", Name: "Invalid Provider User"}
+			if err := db.Create(&user).Error; err != nil {
+				t.Fatal(err)
+			}
+			pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+			if err := db.Create(&pkg).Error; err != nil {
+				t.Fatal(err)
+			}
+
+			// Seed invalid/empty provider in settings table
+			if err := db.Create(&models.Setting{Key: models.SettingDefaultPaymentProvider, Value: badValue}).Error; err != nil {
+				t.Fatal(err)
+			}
+
+			pakasirGw := &fakePakasirGateway{}
+			midtransGw := &fakeMidtransGateway{}
+			cfg := &config.Config{
+				BillingEnabled:      true,
+				BillingTopupEnabled: true,
+				PakasirEnabled:      true,
+				PakasirProjectSlug:  "test-project",
+				PakasirAPIKey:       "test-key",
+			}
+
+			settingRepo := repositories.NewSettingRepository(db)
+			settingSvc := setting.NewSettingService(settingRepo, nil)
+
+			service := NewTopupService(db, NewWalletService(db), cfg, midtransGw, pakasirGw)
+			service.SetSettingService(settingSvc)
+
+			idempotencyKey := fmt.Sprintf("client-invalid-prov-key-%s", badValue)
+			_, err = service.Create(context.Background(), user.ID, idempotencyKey, TopupInput{PackageID: pkg.ID})
+			if err == nil {
+				t.Fatalf("expected error on invalid persisted provider %q, got nil", badValue)
+			}
+			if !errors.Is(err, ErrPaymentProvider) {
+				t.Fatalf("expected ErrPaymentProvider, got: %v", err)
+			}
+
+			// Verify no topup was persisted in the database
+			var count int64
+			if err := db.Model(&models.Topup{}).Where("client_idempotency_key = ?", idempotencyKey).Count(&count).Error; err != nil || count != 0 {
+				t.Fatalf("expected 0 topups created in DB, got %d (err: %v)", count, err)
+			}
+
+			// Verify neither gateway was called
+			if pakasirGw.createCalls != 0 {
+				t.Fatalf("expected 0 pakasir calls on invalid persisted provider, got %d", pakasirGw.createCalls)
+			}
+			if midtransGw.createCalls != 0 {
+				t.Fatalf("expected 0 midtrans calls on invalid persisted provider, got %d", midtransGw.createCalls)
+			}
+		})
+	}
+}
+
+func TestTopupServiceSettingContextCancellationAndTimeoutFailsClosed(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "ctx-cancel@example.test", Password: "test", Name: "Context User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	midtransGw := &fakeMidtransGateway{}
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "test-project",
+		PakasirAPIKey:       "test-key",
+	}
+
+	failingRepo := &failingSettingRepo{err: errors.New("timeout")}
+	settingSvc := setting.NewSettingService(failingRepo, nil)
+
+	service := NewTopupService(db, NewWalletService(db), cfg, midtransGw, pakasirGw)
+	service.SetSettingService(settingSvc)
+
+	// Pre-canceled context
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = service.Create(canceledCtx, user.ID, "client-canceled-key", TopupInput{PackageID: pkg.ID})
+	if err == nil {
+		t.Fatal("expected error on canceled context, got nil")
+	}
+
+	// Verify no topup created
+	var count int64
+	if err := db.Model(&models.Topup{}).Where("client_idempotency_key = ?", "client-canceled-key").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("expected 0 topups created in DB, got %d (err: %v)", count, err)
+	}
+	if pakasirGw.createCalls != 0 || midtransGw.createCalls != 0 {
+		t.Fatal("expected 0 gateway calls on canceled context")
+	}
+}
+
+func TestTopupServiceNilContextRejected(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "nil-ctx@example.test", Password: "test", Name: "Nil Ctx User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewTopupService(db, NewWalletService(db), &config.Config{}, nil, nil)
+	var nilCtx context.Context
+	_, err = service.Create(nilCtx, user.ID, "client-nil-ctx-key", TopupInput{PackageID: 1})
+	if err == nil {
+		t.Fatal("expected error on nil context, got nil")
+	}
+}
+
+func TestTopupServiceSingleProviderResolutionPerCreate(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.Setting{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "single-res@example.test", Password: "test", Name: "Single Resolution User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Set default payment provider to midtrans
+	if err := db.Create(&models.Setting{Key: models.SettingDefaultPaymentProvider, Value: "midtrans"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	midtransGw := &fakeMidtransGateway{}
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		MidtransServerKey:   "midtrans-server-key",
+		MidtransMerchantID:  "midtrans-merchant-id",
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "test-project",
+		PakasirAPIKey:       "test-key",
+	}
+
+	settingRepo := repositories.NewSettingRepository(db)
+	settingSvc := setting.NewSettingService(settingRepo, nil)
+
+	service := NewTopupService(db, NewWalletService(db), cfg, midtransGw, pakasirGw)
+	service.SetSettingService(settingSvc)
+
+	view, err := service.Create(context.Background(), user.ID, "client-single-res-key", TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatalf("unexpected create error: %v", err)
+	}
+	if view.ID == 0 {
+		t.Fatal("expected non-zero topup ID")
+	}
+
+	var savedTopup models.Topup
+	if err := db.First(&savedTopup, view.ID).Error; err != nil {
+		t.Fatalf("failed to load saved topup: %v", err)
+	}
+	if savedTopup.Provider != models.BillingProviderMidtrans {
+		t.Fatalf("expected persisted topup provider midtrans, got %s", savedTopup.Provider)
+	}
+
+	if midtransGw.createCalls != 1 {
+		t.Fatalf("expected 1 midtrans call, got %d", midtransGw.createCalls)
+	}
+	if pakasirGw.createCalls != 0 {
+		t.Fatalf("expected 0 pakasir calls, got %d", pakasirGw.createCalls)
 	}
 }

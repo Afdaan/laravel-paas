@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Boxes,
@@ -344,7 +344,11 @@ export default function AdminBilling() {
     }
   }
 
+  const walletAdjustmentKeyRef = useRef<string | null>(null)
+  const directAdjustmentKeyRef = useRef<string | null>(null)
+
   const startAdjustWallet = (wallet: Wallet) => {
+    walletAdjustmentKeyRef.current = null
     setAdjustingWallet(wallet)
     setCreditAdjustmentForm(emptyCreditAdjustment)
   }
@@ -353,12 +357,15 @@ export default function AdminBilling() {
     event.preventDefault()
     if (!isSuperAdmin || !adjustingWallet) return
     setSavingCreditAdjustment(true)
+    const idempotencyKey = walletAdjustmentKeyRef.current ?? createAdjustmentIdempotencyKey()
+    walletAdjustmentKeyRef.current = idempotencyKey
     try {
       await billingAPI.adjustWalletCredits(
         adjustingWallet.user_id,
         { ...creditAdjustmentForm, credits: Number(creditAdjustmentForm.credits || 0) },
-        createAdjustmentIdempotencyKey()
+        idempotencyKey
       )
+      walletAdjustmentKeyRef.current = null
       setAdjustingWallet(null)
       setCreditAdjustmentForm(emptyCreditAdjustment)
       toast.success(t('billing.admin.adjustmentSuccess'))
@@ -374,13 +381,16 @@ export default function AdminBilling() {
     event.preventDefault()
     if (!isSuperAdmin) return
     setSavingDirectCreditAdjustment(true)
+    const idempotencyKey = directAdjustmentKeyRef.current ?? createAdjustmentIdempotencyKey()
+    directAdjustmentKeyRef.current = idempotencyKey
     try {
       const { user_id, credits, reason } = directCreditAdjustmentForm
       await billingAPI.adjustWalletCredits(
         Number(user_id || 0),
         { credits: Number(credits || 0), reason },
-        createAdjustmentIdempotencyKey()
+        idempotencyKey
       )
+      directAdjustmentKeyRef.current = null
       setDirectCreditAdjustmentForm(emptyDirectCreditAdjustment)
       setIsDirectCreditModalOpen(false)
       toast.success(t('billing.admin.adjustmentSuccess'))

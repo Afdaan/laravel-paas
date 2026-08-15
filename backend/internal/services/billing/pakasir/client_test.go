@@ -150,3 +150,29 @@ func TestPakasirClientGetTransactionDetailError(t *testing.T) {
 		t.Fatal("expected error for HTTP 500 from Pakasir, got nil")
 	}
 }
+
+func TestPakasirClientCreateTransactionFailClosed(t *testing.T) {
+	// Unconfigured client must fail closed
+	client := NewClient(nil)
+	_, err := client.CreateTransaction(context.Background(), "order-123", 50000, "qris")
+	if err == nil {
+		t.Fatal("expected error for unconfigured client, got nil")
+	}
+
+	// Server error must fail closed
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	configuredClient := NewClient(&config.Config{
+		PakasirProjectSlug: "test-project",
+		PakasirAPIKey:      "test-key",
+	})
+	configuredClient.baseURL = server.URL
+
+	_, err = configuredClient.CreateTransaction(context.Background(), "order-123", 50000, "qris")
+	if err == nil {
+		t.Fatal("expected error for HTTP 502 from Pakasir, got nil")
+	}
+}

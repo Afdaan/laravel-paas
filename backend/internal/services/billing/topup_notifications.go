@@ -78,7 +78,10 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 	var creditedUserID uint
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var event models.PaymentEvent
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.PaymentEvent{
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_key"}},
+			DoNothing: true,
+		}).Create(&models.PaymentEvent{
 			Provider:        models.BillingProviderMidtrans,
 			EventKey:        eventKey,
 			ProviderOrderID: validated.OrderID,
@@ -95,11 +98,18 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 		}
 
 		var topup models.Topup
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider_order_id = ?", validated.OrderID).First(&topup).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND provider_order_id = ?", models.BillingProviderMidtrans, validated.OrderID).First(&topup).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrTopupNotFound
 			}
 			return fmt.Errorf("lock topup for payment notification: %w", err)
+		}
+
+		if topup.AmountMinor != validated.AmountMinor || (validated.Currency != "" && topup.Currency != validated.Currency) {
+			return ErrInvalidPaymentNotification
+		}
+		if topup.ProviderTransactionID != nil && *topup.ProviderTransactionID != "" && validated.TransactionID != "" && *topup.ProviderTransactionID != validated.TransactionID {
+			return ErrInvalidPaymentNotification
 		}
 
 		updates := map[string]any{
@@ -175,7 +185,13 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 			userID, _ := loadWalletUserID(s.db, topup.WalletID)
 			userEmail := loadUserEmail(s.db, userID)
 			currentBal, hasBal := loadWalletBalance(s.db, topup.WalletID)
-			balBefore, balAfter := calculateBalanceBeforeAfter(topup.Status, currentBal, topup.Credits)
+			notifCredits := topup.Credits
+			if isReversalTopupStatus(validated.Status) {
+				if rev, revErr := desiredTopupReversalCredits(&topup, validated.Status, validated.RefundAmountMinor); revErr == nil {
+					notifCredits = rev
+				}
+			}
+			balBefore, balAfter := calculateBalanceBeforeAfter(validated.Status, currentBal, notifCredits)
 
 			s.telegramNotifier.SendTopupNotification(telegram.NotificationMessage{
 				OrderID:        validated.OrderID,
@@ -183,7 +199,7 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 				UserID:         userID,
 				AmountMinor:    validated.AmountMinor,
 				Currency:       validated.Currency,
-				Credits:        topup.Credits,
+				Credits:        notifCredits,
 				BalanceBefore:  balBefore,
 				BalanceAfter:   balAfter,
 				HasBalanceInfo: hasBal,
@@ -198,11 +214,30 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 }
 
 func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string, amountMinor int64, webhookStatus string) error {
-	if s.cfg != nil && !s.cfg.BillingTopupEnabled {
+	if s.cfg != nil && (!s.cfg.BillingTopupEnabled || !s.cfg.PakasirEnabled) {
 		return ErrTopupDisabled
 	}
 	if orderID == "" || amountMinor <= 0 {
 		return ErrInvalidPaymentNotification
+	}
+
+	// 1. Fast local verification: ensure order exists and amount matches before calling outbound provider API
+	var localTopup models.Topup
+	if err := s.db.WithContext(ctx).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&localTopup).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrTopupNotFound
+		}
+		return fmt.Errorf("lookup topup for pakasir notification: %w", err)
+	}
+	if localTopup.AmountMinor != amountMinor {
+		return ErrInvalidPaymentNotification
+	}
+	if localTopup.Status == models.TopupStatusPaid {
+		return nil
+	}
+
+	if s.pakasirGateway == nil {
+		return ErrPaymentProvider
 	}
 
 	detail, err := s.pakasirGateway.GetTransactionDetail(ctx, orderID, amountMinor)
@@ -219,8 +254,33 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 		return ErrInvalidPaymentNotification
 	}
 
-	var topup models.Topup
+	payloadJSON, err := json.Marshal(detail)
+	if err != nil {
+		return fmt.Errorf("marshal pakasir payment event: %w", err)
+	}
+	eventKey := fmt.Sprintf("pakasir:%s:%s", orderID, detail.Status)
+
+	var creditedUserID uint
+	var wasTransitioned bool
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var event models.PaymentEvent
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_key"}},
+			DoNothing: true,
+		}).Create(&models.PaymentEvent{
+			Provider:        models.BillingProviderPakasir,
+			EventKey:        eventKey,
+			ProviderOrderID: orderID,
+			PayloadJSON:     string(payloadJSON),
+		})
+		if result.Error != nil {
+			return fmt.Errorf("record payment event: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+
+		var topup models.Topup
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topup).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrTopupNotFound
@@ -240,6 +300,7 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 			topup.Status = models.TopupStatusPaid
 			now := time.Now().UTC()
 			topup.PaidAt = &now
+			topup.ProviderRequestState = providerRequestTerminal
 			if err := tx.Save(&topup).Error; err != nil {
 				return fmt.Errorf("save paid topup: %w", err)
 			}
@@ -259,16 +320,31 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 			}, true); err != nil {
 				return fmt.Errorf("credit wallet balance: %w", err)
 			}
+			creditedUserID = walletUserID
+			wasTransitioned = true
 		case models.TopupStatusFailed, models.TopupStatusExpired:
 			topup.Status = status
+			topup.ProviderRequestState = providerRequestTerminal
 			if err := tx.Save(&topup).Error; err != nil {
 				return fmt.Errorf("save failed topup: %w", err)
 			}
+			wasTransitioned = true
+		}
+		if err := tx.Model(&event).Update("processed_at", time.Now().UTC()).Error; err != nil {
+			return fmt.Errorf("mark payment event processed: %w", err)
 		}
 		return nil
 	})
 
-	if err == nil && s.telegramNotifier != nil {
+	if err != nil {
+		return err
+	}
+
+	if creditedUserID != 0 {
+		s.retryDueInvoices(ctx, creditedUserID)
+	}
+
+	if wasTransitioned && s.telegramNotifier != nil {
 		var topup models.Topup
 		if fetchErr := s.db.WithContext(ctx).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topup).Error; fetchErr == nil {
 			walletUserID, _ := loadWalletUserID(s.db, topup.WalletID)
@@ -293,7 +369,7 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 		}
 	}
 
-	return err
+	return nil
 }
 
 func loadUserEmail(db *gorm.DB, userID uint) string {

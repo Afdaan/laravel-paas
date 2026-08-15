@@ -25,6 +25,7 @@ func TestBillingPostgres(t *testing.T) {
 	if err := DefensiveMigrationBootstrap(db); err != nil {
 		t.Fatal(err)
 	}
+	_ = db.Exec("DELETE FROM billable_specs WHERE slug LIKE 'reconcile%'; DELETE FROM topup_packages WHERE credits = 987654321;").Error
 	cfg := &config.Config{BaseDomain: "console.example.com", ProjectDomain: "apps.example.net"}
 	if err := Seed(db, cfg); err != nil {
 		t.Fatal(err)
@@ -47,7 +48,7 @@ func TestBillingPostgres(t *testing.T) {
 	if err := db.Where("credits = ? AND version = ?", 100, 1).First(&pkg).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.TopupPackage{Provider: pkg.Provider, Currency: pkg.Currency, Credits: pkg.Credits, AmountMinor: pkg.AmountMinor + 1, Version: 2, IsActive: true}).Error; err == nil {
+	if err := db.Create(&models.TopupPackage{Currency: pkg.Currency, Credits: pkg.Credits, AmountMinor: pkg.AmountMinor + 1, Version: 2, IsActive: true}).Error; err == nil {
 		t.Fatal("multiple active package versions allowed after first migration")
 	}
 	var spec models.BillableSpec
@@ -63,7 +64,8 @@ func TestBillingPostgres(t *testing.T) {
 	`).Error; err != nil {
 		t.Fatal(err)
 	}
-	duplicatePackageV1 := models.TopupPackage{Provider: models.BillingProviderMidtrans, Currency: models.BillingCurrencyIDR, Credits: 987654321, AmountMinor: 987654321, Version: 1, IsActive: true}
+	testRunID := time.Now().UnixNano()
+	duplicatePackageV1 := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: testRunID, AmountMinor: testRunID, Version: 1, IsActive: true}
 	duplicatePackageV2 := duplicatePackageV1
 	duplicatePackageV2.Version = 2
 	duplicatePackageV2.AmountMinor++
@@ -73,7 +75,8 @@ func TestBillingPostgres(t *testing.T) {
 	if err := db.Create(&duplicatePackageV2).Error; err != nil {
 		t.Fatal(err)
 	}
-	duplicateSpecV1 := models.BillableSpec{Type: models.BillableTypeProject, Name: "Reconcile", Slug: "reconcile", CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100, Version: 1, IsActive: true}
+	duplicateSpecSlug := fmt.Sprintf("reconcile-%d", testRunID)
+	duplicateSpecV1 := models.BillableSpec{Type: models.BillableTypeProject, Name: "Reconcile", Slug: duplicateSpecSlug, CPUMillicores: 500, MemoryMB: 1024, StorageGB: 5, MonthlyCredits: 100, Version: 1, IsActive: true}
 	duplicateSpecV2 := duplicateSpecV1
 	duplicateSpecV2.Version = 2
 	duplicateSpecV2.MonthlyCredits++
@@ -269,6 +272,81 @@ func TestValidateBillingTestDSN(t *testing.T) {
 				t.Fatalf("validateBillingTestDSN(%q) error = %v, wantErr=%t", test.dsn, err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestPostgresUpgradeFromLegacyTopupPackagesProviderSchema(t *testing.T) {
+	dsn := billingTestDSN(t)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Teardown tables and simulate legacy schema with provider NOT NULL and old constraints
+	_ = db.Exec("DROP TABLE IF EXISTS topups CASCADE").Error
+	_ = db.Exec("DROP TABLE IF EXISTS topup_packages CASCADE").Error
+	if err := db.Exec(`
+		CREATE TABLE topup_packages (
+			id bigserial PRIMARY KEY,
+			created_at timestamptz,
+			updated_at timestamptz,
+			provider text NOT NULL,
+			currency text NOT NULL,
+			credits bigint NOT NULL,
+			amount_minor bigint NOT NULL,
+			is_active boolean DEFAULT true,
+			sort_order integer DEFAULT 0,
+			CONSTRAINT chk_topup_packages_provider_currency CHECK (provider IN ('midtrans') AND currency IN ('IDR', 'USD')),
+			CONSTRAINT uni_topup_packages_provider_currency_credits UNIQUE (provider, currency, credits)
+		);
+		CREATE UNIQUE INDEX uni_topup_packages_one_active ON topup_packages (provider, currency, credits) WHERE is_active;
+		INSERT INTO topup_packages (created_at, updated_at, provider, currency, credits, amount_minor, is_active, sort_order)
+		VALUES (NOW(), NOW(), 'midtrans', 'IDR', 100, 100000, true, 1);
+	`).Error; err != nil {
+		t.Fatalf("failed to create legacy topup_packages table: %v", err)
+	}
+
+	// 2. Run migration
+	if err := DefensiveMigrationBootstrap(db); err != nil {
+		t.Fatalf("migration bootstrap failed: %v", err)
+	}
+
+	// 3. Verify existing legacy row was preserved and migrated
+	var legacyPkg models.TopupPackage
+	if err := db.Where("credits = ? AND currency = ?", 100, "IDR").First(&legacyPkg).Error; err != nil {
+		t.Fatalf("failed to find legacy package after migration: %v", err)
+	}
+	if legacyPkg.Version != 1 || legacyPkg.AmountMinor != 100000 {
+		t.Fatalf("unexpected legacy package data: %+v", legacyPkg)
+	}
+
+	// 4. Verify new package can be inserted without provider column
+	newPkg := models.TopupPackage{
+		Currency:    "IDR",
+		Credits:     250,
+		AmountMinor: 250000,
+		Version:     1,
+		IsActive:    true,
+		SortOrder:   2,
+	}
+	if err := db.Create(&newPkg).Error; err != nil {
+		t.Fatalf("failed to create new topup package on upgraded schema: %v", err)
+	}
+
+	// 5. Verify repricing (version 2) works on upgraded schema
+	if err := db.Model(&newPkg).Update("is_active", false).Error; err != nil {
+		t.Fatalf("failed to deactivate v1: %v", err)
+	}
+	v2Pkg := models.TopupPackage{
+		Currency:    "IDR",
+		Credits:     250,
+		AmountMinor: 275000,
+		Version:     2,
+		IsActive:    true,
+		SortOrder:   2,
+	}
+	if err := db.Create(&v2Pkg).Error; err != nil {
+		t.Fatalf("failed to create v2 topup package on upgraded schema: %v", err)
 	}
 }
 
