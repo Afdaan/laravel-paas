@@ -190,6 +190,11 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			return fmt.Errorf("lock existing topup: %w", err)
 		}
 
+		orderID, err := generateTopupProviderOrderID()
+		if err != nil {
+			return err
+		}
+
 		if input.PackageID > 0 {
 			var topupPackage models.TopupPackage
 			if err := tx.Where("id = ? AND is_active = ?", input.PackageID, true).First(&topupPackage).Error; err != nil {
@@ -204,7 +209,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 				TopupPackageID:       &topupPackage.ID,
 				ClientIdempotencyKey: clientKey,
 				Provider:             provider,
-				ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
+				ProviderOrderID:      orderID,
 				ProviderRequestState: providerRequestPending,
 				AmountMinor:          topupPackage.AmountMinor,
 				Currency:             topupPackage.Currency,
@@ -224,7 +229,7 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 				WalletID:             wallet.ID,
 				ClientIdempotencyKey: clientKey,
 				Provider:             provider,
-				ProviderOrderID:      topupProviderOrderID(wallet.ID, clientKey),
+				ProviderOrderID:      orderID,
 				ProviderRequestState: providerRequestPending,
 				AmountMinor:          input.AmountMinor,
 				Currency:             models.BillingCurrencyIDR,
@@ -259,6 +264,20 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 	return topupView(topup), nil
 }
 
+func isValidProviderOrderRef(ref string) bool {
+	if ref == "" || len(ref) > 255 || strings.TrimSpace(ref) != ref {
+		return false
+	}
+	for i := 0; i < len(ref); i++ {
+		c := ref[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (TopupView, error) {
 	if err := s.validatePaymentProcessing(ctx); err != nil {
 		return TopupView{}, err
@@ -279,6 +298,33 @@ func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (Top
 		return TopupView{}, fmt.Errorf("load topup for reconciliation: %w", err)
 	}
 
+	return s.reconcileTopupRecord(ctx, topup)
+}
+
+func (s *TopupService) ReconcileByProviderOrderID(ctx context.Context, userID uint, providerOrderID string) (TopupView, error) {
+	if err := s.validatePaymentProcessing(ctx); err != nil {
+		return TopupView{}, err
+	}
+	if userID == 0 || !isValidProviderOrderRef(providerOrderID) {
+		return TopupView{}, ErrInvalidTopupInput
+	}
+
+	var topup models.Topup
+	err := s.db.WithContext(ctx).
+		Joins("JOIN wallets ON wallets.id = topups.wallet_id").
+		Where("topups.provider_order_id = ? AND wallets.user_id = ?", providerOrderID, userID).
+		First(&topup).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return TopupView{}, ErrTopupNotFound
+	}
+	if err != nil {
+		return TopupView{}, fmt.Errorf("load topup for reconciliation: %w", err)
+	}
+
+	return s.reconcileTopupRecord(ctx, topup)
+}
+
+func (s *TopupService) reconcileTopupRecord(ctx context.Context, topup models.Topup) (TopupView, error) {
 	if topup.Provider == models.BillingProviderPakasir {
 		if err := s.ProcessPakasirWebhook(ctx, topup.ProviderOrderID, topup.AmountMinor, ""); err != nil {
 			return TopupView{}, err

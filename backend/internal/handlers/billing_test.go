@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -122,5 +125,124 @@ func TestUpdatePaymentProviderEndpoint(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 OK, got %d", resp.StatusCode)
+	}
+}
+
+type fakePakasirGatewayForHandlerTest struct {
+	detailStatus string
+}
+
+func (f *fakePakasirGatewayForHandlerTest) CreateTransaction(ctx context.Context, orderID string, amount int64, paymentType string) (billing.PakasirCreateResponse, error) {
+	return billing.PakasirCreateResponse{PaymentNumber: "https://app.pakasir.com/pay/runara/" + strconv.FormatInt(amount, 10) + "?order_id=" + orderID}, nil
+}
+
+func (f *fakePakasirGatewayForHandlerTest) SimulatePayment(ctx context.Context, orderID string, amount int64) error {
+	return nil
+}
+
+func (f *fakePakasirGatewayForHandlerTest) CancelTransaction(ctx context.Context, orderID string, amount int64) error {
+	return nil
+}
+
+func (f *fakePakasirGatewayForHandlerTest) GetTransactionDetail(ctx context.Context, orderID string, amount int64) (billing.PakasirTransactionDetail, error) {
+	return billing.PakasirTransactionDetail{
+		OrderID: orderID,
+		Amount:  amount,
+		Status:  f.detailStatus,
+	}, nil
+}
+
+func TestReconcileTopupByRefEndpoint(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+		t.Fatal(err)
+	}
+
+	user := models.User{Email: "user-ref-endpoint@example.test", Password: "test", Name: "Owner"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	other := models.User{Email: "other-ref-endpoint@example.test", Password: "test", Name: "Other"}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGatewayForHandlerTest{detailStatus: "completed"}
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "test-slug",
+		PakasirAPIKey:       "test-key",
+	}
+	topupSvc := billing.NewTopupService(db, billing.NewWalletService(db), cfg, nil, pakasirGw)
+	handler := NewBillingHandlerWithTopups(billing.NewCatalogService(db, cfg), topupSvc)
+
+	view, err := topupSvc.Create(context.Background(), user.ID, "idempotency-key-endpoint", billing.TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+	app.Post("/billing/topups/by-ref/:topupRef/reconcile", func(c *fiber.Ctx) error {
+		actingUserID, _ := strconv.ParseUint(c.Get("X-User-ID"), 10, 64)
+		c.Locals("user_id", uint(actingUserID))
+		return handler.ReconcileTopupByRef(c)
+	})
+
+	// 1. Owner can reconcile by ref -> 200 OK
+	req := httptest.NewRequest(http.MethodPost, "/billing/topups/by-ref/"+topup.ProviderOrderID+"/reconcile", nil)
+	req.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	// 2. Another user cannot reconcile that ref -> 404 Not Found
+	reqOther := httptest.NewRequest(http.MethodPost, "/billing/topups/by-ref/"+topup.ProviderOrderID+"/reconcile", nil)
+	reqOther.Header.Set("X-User-ID", strconv.FormatUint(uint64(other.ID), 10))
+	respOther, err := app.Test(reqOther)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respOther.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for cross-user reconcile, got %d", respOther.StatusCode)
+	}
+
+	// 3. Unknown ref -> 404 Not Found
+	reqUnknown := httptest.NewRequest(http.MethodPost, "/billing/topups/by-ref/topup-00000000000000000000000000000000/reconcile", nil)
+	reqUnknown.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	respUnknown, err := app.Test(reqUnknown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respUnknown.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for unknown ref, got %d", respUnknown.StatusCode)
+	}
+
+	// 4. Malformed ref -> 400 Bad Request
+	reqMalformed := httptest.NewRequest(http.MethodPost, "/billing/topups/by-ref/"+url.PathEscape("topup-123;drop table")+"/reconcile", nil)
+	reqMalformed.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	respMalformed, err := app.Test(reqMalformed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respMalformed.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for malformed ref, got %d", respMalformed.StatusCode)
 	}
 }

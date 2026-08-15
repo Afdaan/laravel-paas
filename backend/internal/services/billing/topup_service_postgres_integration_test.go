@@ -473,3 +473,77 @@ func TestTopupServicePostgresPartialRefundReversesCreditsProportionallyOnce(t *t
 	}
 	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusRefunded, 0, 3)
 }
+
+func TestTopupServicePostgresReconcileByProviderOrderID(t *testing.T) {
+	db := walletPostgresTestDB(t)
+	user := createPostgresWalletTestUser(t, db)
+	other := createPostgresWalletTestUser(t, db)
+	credits := int64(400000000 + time.Now().UTC().UnixNano()%99999999)
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+	gateway := &fakeMidtransGateway{}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), gateway)
+	view, err := service.Create(context.Background(), user.ID, fmt.Sprintf("postgres-reconcile-ref-%d", credits), TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.ReconcileByProviderOrderID(context.Background(), other.ID, topup.ProviderOrderID); err != ErrTopupNotFound {
+		t.Fatalf("cross-user postgres reconciliation = %v, want %v", err, ErrTopupNotFound)
+	}
+
+	gateway.status = signedNotificationForAmount(topup.ProviderOrderID, "settlement", "accept", fmt.Sprintf("txn-pg-%d", credits), credits)
+	reconciledView, err := service.ReconcileByProviderOrderID(context.Background(), user.ID, topup.ProviderOrderID)
+	if err != nil {
+		t.Fatalf("owner postgres reconciliation failed: %v", err)
+	}
+	if reconciledView.Status != models.TopupStatusPaid {
+		t.Fatalf("expected paid status, got %s", reconciledView.Status)
+	}
+	assertTopupState(t, db, user.ID, topup.ID, models.TopupStatusPaid, credits, 1)
+}
+
+func TestTopupServicePostgresConcurrentCreateSharesPersistedRandomReference(t *testing.T) {
+	db := walletPostgresTestDB(t)
+	user := createPostgresWalletTestUser(t, db)
+	credits := int64(600000000 + time.Now().UTC().UnixNano()%99999999)
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: credits, AmountMinor: credits, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+	gateway := &fakeMidtransGateway{}
+	service := NewTopupService(db, NewWalletService(db), topupIntegrationConfig(), gateway)
+	key := fmt.Sprintf("postgres-concurrent-create-%d", credits)
+
+	views := make([]TopupView, 4)
+	errs := runConcurrentCalls(t, []func() error{
+		func() error { var err error; views[0], err = service.Create(context.Background(), user.ID, key, TopupInput{PackageID: pkg.ID}); return err },
+		func() error { var err error; views[1], err = service.Create(context.Background(), user.ID, key, TopupInput{PackageID: pkg.ID}); return err },
+		func() error { var err error; views[2], err = service.Create(context.Background(), user.ID, key, TopupInput{PackageID: pkg.ID}); return err },
+		func() error { var err error; views[3], err = service.Create(context.Background(), user.ID, key, TopupInput{PackageID: pkg.ID}); return err },
+	})
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent create %d failed: %v", i, err)
+		}
+		if views[i].ID != views[0].ID || views[i].PaymentToken != views[0].PaymentToken || views[i].PaymentURL != views[0].PaymentURL {
+			t.Fatalf("view %d mismatch: %+v vs %+v", i, views[i], views[0])
+		}
+	}
+	var count int64
+	if err := db.Model(&models.Topup{}).Where("client_idempotency_key = ?", key).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 topup row, got %d", count)
+	}
+	if gateway.createCalls != 1 {
+		t.Fatalf("expected exactly 1 provider create call, got %d", gateway.createCalls)
+	}
+}

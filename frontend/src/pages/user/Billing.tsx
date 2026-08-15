@@ -316,8 +316,10 @@ export default function Billing() {
       return
     }
 
+    const rawTopupRef = params.get('topup_ref') ?? ''
     const rawTopupID = params.get('topup_id') ?? ''
     params.delete('payment_return')
+    params.delete('topup_ref')
     params.delete('topup_id')
     const remainingQuery = params.toString()
     window.history.replaceState(
@@ -326,15 +328,18 @@ export default function Billing() {
       `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`,
     )
 
+    const topupRef = rawTopupRef.trim()
     const topupID = /^\d+$/.test(rawTopupID) ? Number(rawTopupID) : 0
-    if (!Number.isSafeInteger(topupID) || topupID <= 0) {
+    if (!topupRef && (!Number.isSafeInteger(topupID) || topupID <= 0)) {
       void load()
       return
     }
 
     void (async () => {
       try {
-        const response = await billingAPI.reconcileTopup(topupID)
+        const response = topupRef
+          ? await billingAPI.reconcileTopupByRef(topupRef)
+          : await billingAPI.reconcileTopup(topupID)
         if (response.data.status === 'paid') {
           toast.success('Pembayaran Berhasil! Wallet Anda telah terisi.')
         } else {

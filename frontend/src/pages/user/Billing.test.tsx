@@ -13,6 +13,7 @@ vi.mock('@/services/api', () => ({
     status: vi.fn(),
     createTopup: vi.fn(),
     reconcileTopup: vi.fn(),
+    reconcileTopupByRef: vi.fn(),
     updateAutoRenew: vi.fn(),
     getProfile: vi.fn(),
     updateProfile: vi.fn(),
@@ -145,7 +146,25 @@ describe('Billing page', () => {
     expect(billingAPI.overview).toHaveBeenCalledTimes(1)
   })
 
-  it('reconciles a Pakasir top-up after payment redirect', async () => {
+  it('reconciles a Pakasir top-up after payment redirect using topup_ref', async () => {
+    window.history.replaceState({}, '', '/billing?payment_return=pakasir&topup_ref=topup-abcdef0123456789abcdef0123456789')
+    ;(billingAPI.reconcileTopupByRef as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { id: 42, status: 'paid' },
+    })
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    await waitFor(() =>
+      expect(billingAPI.reconcileTopupByRef).toHaveBeenCalledWith('topup-abcdef0123456789abcdef0123456789'),
+    )
+    await waitFor(() => expect(billingAPI.overview).toHaveBeenCalledTimes(1))
+    expect(window.location.search).toBe('')
+  })
+
+  it('reconciles a legacy Pakasir top-up after payment redirect with topup_id', async () => {
     window.history.replaceState({}, '', '/billing?payment_return=pakasir&topup_id=42')
     ;(billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { id: 42, status: 'paid' },

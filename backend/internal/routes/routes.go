@@ -225,6 +225,7 @@ func Setup(
 	billingRoutes.Get("/profile", billingHandler.GetBillingProfile)
 	billingMutations := billingRoutes.Group("", middleware.RequireNoBillingImpersonation())
 	billingMutations.Post("/topups", middleware.MaxBody(8*1024), billingHandler.CreateTopup)
+	billingMutations.Post("/topups/by-ref/:topupRef/reconcile", middleware.MaxBody(8*1024), billingHandler.ReconcileTopupByRef)
 	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), billingHandler.ReconcileTopup)
 	billingMutations.Put("/profile", middleware.MaxBody(16*1024), billingHandler.UpdateBillingProfile)
 	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), middleware.RateLimitAutoRenew(), billingHandler.UpdateAutoRenew)

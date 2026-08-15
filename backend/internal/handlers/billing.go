@@ -180,6 +180,19 @@ func (h *BillingHandler) ReconcileTopup(c *fiber.Ctx) error {
 	return c.JSON(view)
 }
 
+func (h *BillingHandler) ReconcileTopupByRef(c *fiber.Ctx) error {
+	ref := c.Params("topupRef")
+	if ref == "" {
+		return apperr.NewBadRequest("Invalid top-up reference")
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	view, err := h.topupService().ReconcileByProviderOrderID(c.UserContext(), userID, ref)
+	if err != nil {
+		return mapTopupError(err)
+	}
+	return c.JSON(view)
+}
+
 func (h *BillingHandler) UpdateAutoRenew(c *fiber.Ctx) error {
 	if h.catalog == nil {
 		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing catalog service is unavailable")

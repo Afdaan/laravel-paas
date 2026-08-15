@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -959,7 +959,11 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse return URL: %v", err)
 	}
-	if returnURL.Path != "/billing" || returnURL.Query().Get("payment_return") != "pakasir" || returnURL.Query().Get("topup_id") != strconv.FormatUint(uint64(view.ID), 10) {
+	var createdTopup models.Topup
+	if err := db.First(&createdTopup, view.ID).Error; err != nil {
+		t.Fatalf("load created topup: %v", err)
+	}
+	if returnURL.Path != "/billing" || returnURL.Query().Get("payment_return") != "pakasir" || returnURL.Query().Get("topup_ref") != createdTopup.ProviderOrderID || returnURL.Query().Get("topup_id") != "" {
 		t.Fatalf("unexpected return URL: %s", returnURL.String())
 	}
 	if pakasirGw.createdAmount != 10000 {
@@ -1370,5 +1374,212 @@ func TestTopupServiceSingleProviderResolutionPerCreate(t *testing.T) {
 	}
 	if pakasirGw.createCalls != 0 {
 		t.Fatalf("expected 0 pakasir calls, got %d", pakasirGw.createCalls)
+	}
+}
+
+type failingRandReader struct {
+	err error
+}
+
+func (r *failingRandReader) Read(p []byte) (n int, err error) {
+	return 0, r.err
+}
+
+func TestTopupProviderOrderIDRandomAndOpaque(t *testing.T) {
+	ref1, err1 := generateTopupProviderOrderID()
+	if err1 != nil {
+		t.Fatalf("unexpected error generating ref1: %v", err1)
+	}
+	ref2, err2 := generateTopupProviderOrderID()
+	if err2 != nil {
+		t.Fatalf("unexpected error generating ref2: %v", err2)
+	}
+
+	if !strings.HasPrefix(ref1, "topup-") || !strings.HasPrefix(ref2, "topup-") {
+		t.Fatalf("expected prefix 'topup-', got %s and %s", ref1, ref2)
+	}
+
+	hex1 := strings.TrimPrefix(ref1, "topup-")
+	hex2 := strings.TrimPrefix(ref2, "topup-")
+	if len(hex1) != 32 || len(hex2) != 32 {
+		t.Fatalf("expected 128 bits (32 hex chars) of output, got %d and %d", len(hex1), len(hex2))
+	}
+
+	if ref1 == ref2 {
+		t.Fatalf("consecutive random references collided: %s", ref1)
+	}
+}
+
+func TestTopupProviderOrderIDRNGFailureFailsClosed(t *testing.T) {
+	db, user, service, _ := topupServiceFixture(t)
+	origReader := topupRandReader
+	topupRandReader = &failingRandReader{err: errors.New("simulated entropy failure")}
+	defer func() { topupRandReader = origReader }()
+
+	if _, err := service.Create(context.Background(), user.ID, "rng-failure-key", TopupInput{PackageID: 1}); err == nil {
+		t.Fatal("expected Create to fail when RNG fails")
+	}
+
+	var count int64
+	if err := db.Model(&models.Topup{}).Where("client_idempotency_key = ?", "rng-failure-key").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 topups created on RNG failure, got %d", count)
+	}
+}
+
+func TestTopupIdempotentReplayReusesPersistedRandomReference(t *testing.T) {
+	db, user, service, gateway := topupServiceFixture(t)
+	view1, err := service.Create(context.Background(), user.ID, "idempotent-random-ref", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatalf("first create failed: %v", err)
+	}
+	view2, err := service.Create(context.Background(), user.ID, "idempotent-random-ref", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatalf("second create failed: %v", err)
+	}
+
+	if view1.ID != view2.ID || view1.PaymentToken != view2.PaymentToken || view1.PaymentURL != view2.PaymentURL {
+		t.Fatalf("replay did not reuse persisted topup: view1=%+v view2=%+v", view1, view2)
+	}
+
+	var topup models.Topup
+	if err := db.First(&topup, view1.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gateway.createCalls != 1 {
+		t.Fatalf("expected 1 provider create call, got %d", gateway.createCalls)
+	}
+}
+
+func TestTopupReconcileByProviderOrderID(t *testing.T) {
+	db, user, service, gateway := topupServiceFixture(t)
+	view, err := service.Create(context.Background(), user.ID, "topup-reconcile-ref", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	gateway.status = signedNotification(topup.ProviderOrderID, "settlement", "accept", "transaction-ref-1")
+	view, err = service.ReconcileByProviderOrderID(context.Background(), user.ID, topup.ProviderOrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gateway.statusCalls != 1 || view.Status != models.TopupStatusPaid {
+		t.Fatalf("view=%#v statusCalls=%d", view, gateway.statusCalls)
+	}
+	assertTopupState(t, db, user.ID, view.ID, models.TopupStatusPaid, 100000, 1)
+}
+
+func TestTopupReconcileByProviderOrderIDRejectsAnotherUser(t *testing.T) {
+	db, user, service, _ := topupServiceFixture(t)
+	other := models.User{Email: "other-ref@example.test", Password: "test", Name: "Other Ref User"}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err := service.Create(context.Background(), user.ID, "topup-ref-owner", TopupInput{PackageID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.ReconcileByProviderOrderID(context.Background(), other.ID, topup.ProviderOrderID); err != ErrTopupNotFound {
+		t.Fatalf("cross-user reconciliation error = %v, want %v", err, ErrTopupNotFound)
+	}
+}
+
+func TestTopupReconcileByProviderOrderIDRejectsMalformedReference(t *testing.T) {
+	_, user, service, _ := topupServiceFixture(t)
+	for _, malformed := range []string{
+		"",
+		"   ",
+		" topup-123 ",
+		"topup-123\n",
+		"topup-123;drop table topups;",
+		"topup 123",
+		strings.Repeat("a", 256),
+	} {
+		if _, err := service.ReconcileByProviderOrderID(context.Background(), user.ID, malformed); err != ErrInvalidTopupInput {
+			t.Fatalf("expected ErrInvalidTopupInput for %q, got %v", malformed, err)
+		}
+	}
+	if _, err := service.ReconcileByProviderOrderID(context.Background(), 0, "topup-valid-ref"); err != ErrInvalidTopupInput {
+		t.Fatalf("expected ErrInvalidTopupInput for zero user ID, got %v", err)
+	}
+}
+
+func TestTopupReconcilePakasirByProviderOrderID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: "pakasir-reconcile-ref@example.test", Password: "test", Name: "Pakasir Reconcile User"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pakasirGw := &fakePakasirGateway{}
+	cfg := &config.Config{
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "test-project",
+		PakasirAPIKey:       "test-key",
+		FrontendURL:         "https://runara.example",
+	}
+	service := NewTopupService(db, NewWalletService(db), cfg, nil, pakasirGw)
+
+	view, err := service.Create(context.Background(), user.ID, "client-pakasir-ref-key", TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatalf("unexpected error creating topup: %v", err)
+	}
+
+	var topup models.Topup
+	if err := db.First(&topup, view.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	reconciledView, err := service.ReconcileByProviderOrderID(context.Background(), user.ID, topup.ProviderOrderID)
+	if err != nil {
+		t.Fatalf("reconcile by provider order id error: %v", err)
+	}
+	if reconciledView.Status != models.TopupStatusPaid {
+		t.Fatalf("expected paid status, got %s", reconciledView.Status)
+	}
+
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		t.Fatalf("load credited wallet: %v", err)
+	}
+	if wallet.BalanceCredits != pkg.Credits {
+		t.Fatalf("wallet credits = %d, want %d", wallet.BalanceCredits, pkg.Credits)
+	}
+
+	// Idempotent retry: second reconcile does not double-credit
+	secondView, err := service.ReconcileByProviderOrderID(context.Background(), user.ID, topup.ProviderOrderID)
+	if err != nil {
+		t.Fatalf("second reconcile error: %v", err)
+	}
+	if secondView.Status != models.TopupStatusPaid {
+		t.Fatalf("expected paid status on second reconcile, got %s", secondView.Status)
+	}
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		t.Fatal(err)
+	}
+	if wallet.BalanceCredits != pkg.Credits {
+		t.Fatalf("wallet credits after duplicate reconcile = %d, want %d", wallet.BalanceCredits, pkg.Credits)
 	}
 }

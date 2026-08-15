@@ -461,6 +461,9 @@ export const billingAPI = {
   reconcileTopup: (topupID: number) =>
     api.post<import('@/types').TopupResponse>(`/billing/topups/${topupID}/reconcile`),
 
+  reconcileTopupByRef: (topupRef: string) =>
+    api.post<import('@/types').TopupResponse>(`/billing/topups/by-ref/${encodeURIComponent(topupRef)}/reconcile`),
+
   updateAutoRenew: (resourceId: number, resourceType: 'project' | 'database', autoRenew: boolean) =>
     api.put('/billing/resources/auto-renew', { resource_id: resourceId, resource_type: resourceType, auto_renew: autoRenew }),
 

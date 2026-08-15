@@ -5,10 +5,12 @@ package billing
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"strconv"
@@ -144,7 +146,7 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 				slug = "runara"
 			}
 			redirectURL := ""
-			redirectPath := fmt.Sprintf("/billing?payment_return=pakasir&topup_id=%d", topup.ID)
+			redirectPath := fmt.Sprintf("/billing?payment_return=pakasir&topup_ref=%s", url.QueryEscape(topup.ProviderOrderID))
 			if s.cfg != nil {
 				if s.cfg.FrontendURL != "" {
 					redirectURL = strings.TrimRight(s.cfg.FrontendURL, "/") + redirectPath
@@ -152,7 +154,7 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 					redirectURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + redirectPath
 				}
 			}
-			paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s&qris_only=1", slug, topup.AmountMinor, topup.ProviderOrderID)
+			paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s&qris_only=1", slug, topup.AmountMinor, url.QueryEscape(topup.ProviderOrderID))
 			if redirectURL != "" {
 				paymentURL += "&redirect=" + url.QueryEscape(redirectURL)
 			}
@@ -402,9 +404,14 @@ func topupIdempotencyMatch(topup models.Topup, input TopupInput) bool {
 	return topup.TopupPackageID == nil && topup.AmountMinor == input.AmountMinor
 }
 
-func topupProviderOrderID(walletID uint, clientKey string) string {
-	sum := sha256.Sum256([]byte(clientKey))
-	return fmt.Sprintf("topup-%d-%x", walletID, sum[:16])
+var topupRandReader io.Reader = rand.Reader
+
+func generateTopupProviderOrderID() (string, error) {
+	var buf [16]byte
+	if _, err := io.ReadFull(topupRandReader, buf[:]); err != nil {
+		return "", fmt.Errorf("generate provider order ID: %w", err)
+	}
+	return fmt.Sprintf("topup-%x", buf[:]), nil
 }
 
 func topupView(topup models.Topup) TopupView {
