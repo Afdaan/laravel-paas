@@ -280,16 +280,16 @@ func (s *TopupService) Reconcile(ctx context.Context, userID, topupID uint) (Top
 	}
 
 	if topup.Provider == models.BillingProviderPakasir {
-		if s.pakasirGateway != nil {
-			detail, err := s.pakasirGateway.GetTransactionDetail(ctx, topup.ProviderOrderID, topup.AmountMinor)
-			if err == nil && detail.OrderID != "" {
-				_ = s.ProcessPakasirWebhook(ctx, detail.OrderID, detail.Amount, detail.Status)
-			}
+		if err := s.ProcessPakasirWebhook(ctx, topup.ProviderOrderID, topup.AmountMinor, ""); err != nil {
+			return TopupView{}, err
 		}
 	} else if s.gateway != nil {
 		notification, err := s.gateway.GetTransactionStatus(ctx, topup.ProviderOrderID)
-		if err == nil {
-			_ = s.ProcessReconciledNotification(ctx, notification)
+		if err != nil {
+			return TopupView{}, err
+		}
+		if err := s.ProcessReconciledNotification(ctx, notification); err != nil {
+			return TopupView{}, err
 		}
 	}
 	if err := s.db.WithContext(ctx).First(&topup, topup.ID).Error; err != nil {

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -875,6 +877,7 @@ type fakePakasirGateway struct {
 	createdOrderID string
 	createdAmount  int64
 	method         string
+	paymentNumber  string
 }
 
 func (f *fakePakasirGateway) CreateTransaction(ctx context.Context, orderID string, amountMinor int64, method string) (PakasirCreateResponse, error) {
@@ -882,8 +885,12 @@ func (f *fakePakasirGateway) CreateTransaction(ctx context.Context, orderID stri
 	f.createdOrderID = orderID
 	f.createdAmount = amountMinor
 	f.method = method
+	paymentNumber := f.paymentNumber
+	if paymentNumber == "" {
+		paymentNumber = "https://app.pakasir.com/pay/test-project/" + orderID
+	}
 	return PakasirCreateResponse{
-		PaymentNumber: "https://app.pakasir.com/pay/test-project/" + orderID,
+		PaymentNumber: paymentNumber,
 		TotalPayment:  amountMinor,
 		Fee:           700,
 		ExpiredAt:     "2026-08-11 12:00:00",
@@ -925,7 +932,7 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pakasirGw := &fakePakasirGateway{}
+	pakasirGw := &fakePakasirGateway{paymentNumber: "00020101021226610016ID.CO.QRIS.WWW"}
 	cfg := &config.Config{
 		BillingEnabled:       true,
 		BillingTopupEnabled:  true,
@@ -933,6 +940,7 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 		PakasirEnabled:       true,
 		PakasirProjectSlug:   "test-project",
 		PakasirAPIKey:        "test-key",
+		FrontendURL:          "https://runara.example",
 	}
 	service := NewTopupService(db, NewWalletService(db), cfg, nil, pakasirGw)
 
@@ -942,6 +950,17 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 	}
 	if view.PaymentURL == "" || view.Credits != 100 {
 		t.Fatalf("unexpected topup view: %+v", view)
+	}
+	paymentURL, err := url.Parse(view.PaymentURL)
+	if err != nil {
+		t.Fatalf("parse payment URL: %v", err)
+	}
+	returnURL, err := url.Parse(paymentURL.Query().Get("redirect"))
+	if err != nil {
+		t.Fatalf("parse return URL: %v", err)
+	}
+	if returnURL.Path != "/billing" || returnURL.Query().Get("payment_return") != "pakasir" || returnURL.Query().Get("topup_id") != strconv.FormatUint(uint64(view.ID), 10) {
+		t.Fatalf("unexpected return URL: %s", returnURL.String())
 	}
 	if pakasirGw.createdAmount != 10000 {
 		t.Fatalf("pakasir gateway did not receive transaction: %+v", pakasirGw)

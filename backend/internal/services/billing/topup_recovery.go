@@ -144,11 +144,12 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 				slug = "runara"
 			}
 			redirectURL := ""
+			redirectPath := fmt.Sprintf("/billing?payment_return=pakasir&topup_id=%d", topup.ID)
 			if s.cfg != nil {
 				if s.cfg.FrontendURL != "" {
-					redirectURL = strings.TrimRight(s.cfg.FrontendURL, "/") + "/billing"
+					redirectURL = strings.TrimRight(s.cfg.FrontendURL, "/") + redirectPath
 				} else if s.cfg.BaseDomain != "" {
-					redirectURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + "/billing"
+					redirectURL = "https://" + strings.TrimRight(s.cfg.BaseDomain, "/") + redirectPath
 				}
 			}
 			paymentURL = fmt.Sprintf("https://app.pakasir.com/pay/%s/%d?order_id=%s&qris_only=1", slug, topup.AmountMinor, topup.ProviderOrderID)

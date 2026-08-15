@@ -458,7 +458,8 @@ export const billingAPI = {
   createTopup: (topupPackageID: number, idempotencyKey: string, amount?: number) =>
     api.post<import('@/types').TopupResponse>('/billing/topups', { topup_package_id: topupPackageID, ...(amount ? { amount } : {}) }, { headers: { 'Idempotency-Key': idempotencyKey } }),
 
-  reconcileTopup: (topupID: number) => api.post(`/billing/topups/${topupID}/reconcile`),
+  reconcileTopup: (topupID: number) =>
+    api.post<import('@/types').TopupResponse>(`/billing/topups/${topupID}/reconcile`),
 
   updateAutoRenew: (resourceId: number, resourceType: 'project' | 'database', autoRenew: boolean) =>
     api.put('/billing/resources/auto-renew', { resource_id: resourceId, resource_type: resourceType, auto_renew: autoRenew }),

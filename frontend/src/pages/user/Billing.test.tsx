@@ -97,6 +97,7 @@ const mockProfile = {
 describe('Billing page', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
+    window.history.replaceState({}, '', '/billing')
     ;(billingAPI.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockProfile })
   })
 
@@ -104,7 +105,7 @@ describe('Billing page', () => {
     cleanup()
     vi.useRealTimers()
     vi.clearAllMocks()
-    window.location.href = ''
+    window.history.replaceState({}, '', '/billing')
   })
 
   it('keeps independent fetch states and shows stale warning on polling failure', async () => {
@@ -142,6 +143,22 @@ describe('Billing page', () => {
     })
 
     expect(billingAPI.overview).toHaveBeenCalledTimes(1)
+  })
+
+  it('reconciles a Pakasir top-up after payment redirect', async () => {
+    window.history.replaceState({}, '', '/billing?payment_return=pakasir&topup_id=42')
+    ;(billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { id: 42, status: 'paid' },
+    })
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    await waitFor(() => expect(billingAPI.reconcileTopup).toHaveBeenCalledWith(42))
+    await waitFor(() => expect(billingAPI.overview).toHaveBeenCalledTimes(1))
+    expect(window.location.search).toBe('')
   })
 
   it('shows each resource renewal date', async () => {

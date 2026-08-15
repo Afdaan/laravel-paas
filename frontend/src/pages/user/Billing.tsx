@@ -95,7 +95,6 @@ export default function Billing() {
   const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
   const [showProfilePrompt, setShowProfilePrompt] = useState(false)
-  const autoRenewInFlight = useRef<string | null>(null)
   const topupKeys = useRef<Map<number, string>>(new Map())
   const customTopupKey = useRef<string | null>(null)
   const loadInFlight = useRef(false)
@@ -310,7 +309,43 @@ export default function Billing() {
   useEffect(() => {
     if (didLoadInitial.current) return
     didLoadInitial.current = true
-    void load()
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('payment_return') !== 'pakasir') {
+      void load()
+      return
+    }
+
+    const rawTopupID = params.get('topup_id') ?? ''
+    params.delete('payment_return')
+    params.delete('topup_id')
+    const remainingQuery = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`,
+    )
+
+    const topupID = /^\d+$/.test(rawTopupID) ? Number(rawTopupID) : 0
+    if (!Number.isSafeInteger(topupID) || topupID <= 0) {
+      void load()
+      return
+    }
+
+    void (async () => {
+      try {
+        const response = await billingAPI.reconcileTopup(topupID)
+        if (response.data.status === 'paid') {
+          toast.success('Pembayaran Berhasil! Wallet Anda telah terisi.')
+        } else {
+          toast.info('Pembayaran masih diproses. Status akan diperbarui otomatis.')
+        }
+      } catch {
+        toast.error('Gagal memverifikasi pembayaran Pakasir')
+      } finally {
+        await load()
+      }
+    })()
   }, [load])
 
   usePolling(() => void load(), 30_000)
