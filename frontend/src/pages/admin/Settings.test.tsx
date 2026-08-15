@@ -29,12 +29,9 @@ describe('AdminSettings Payment Provider and Generic Save', () => {
     useAuthStore.setState({
       user: {
         id: 1,
-        username: 'superadmin',
+        name: 'superadmin',
         email: 'superadmin@example.com',
         role: 'superadmin',
-        status: 'active',
-        created_at: '',
-        updated_at: '',
       },
     })
     vi.mocked(settingsAPI.list).mockResolvedValue({
@@ -127,12 +124,9 @@ describe('AdminSettings Payment Provider and Generic Save', () => {
     useAuthStore.setState({
       user: {
         id: 2,
-        username: 'regularadmin',
+        name: 'regularadmin',
         email: 'admin@example.com',
         role: 'admin',
-        status: 'active',
-        created_at: '',
-        updated_at: '',
       },
     })
 
@@ -192,6 +186,58 @@ describe('AdminSettings Payment Provider and Generic Save', () => {
         provider: 'pakasir',
         reason: 'Initial Pakasir configuration',
       })
+    })
+  })
+
+  it('completes provider switch flow when API request resolves after re-auth challenge', async () => {
+    let callCount = 0
+    vi.mocked(billingAPI.updatePaymentProvider).mockImplementation(async () => {
+      callCount++
+      if (callCount === 1) {
+        // First attempt rejected with RECENT_AUTH_REQUIRED
+        return new Promise((resolve, reject) => {
+          const handleReauth = () => {
+            window.removeEventListener('auth:reauthenticated', handleReauth)
+            // Retry resolves
+            resolve({ data: { success: true } } as any)
+          }
+          window.addEventListener('auth:reauthenticated', handleReauth)
+          window.dispatchEvent(new Event('auth:recent_auth_required'))
+        })
+      }
+      return { data: { success: true } } as any
+    })
+
+    render(<AdminSettings />)
+
+    await waitFor(() => {
+      expect(screen.queryByText('common.loading')).not.toBeInTheDocument()
+    })
+
+    const select = screen.getByLabelText(/Active Provider/i) as HTMLSelectElement
+    await act(async () => {
+      fireEvent.change(select, { target: { value: 'midtrans' } })
+    })
+
+    const reasonInput = await screen.findByPlaceholderText(/e\.g\. Gateway maintenance failover/i)
+    const confirmButton = screen.getByRole('button', { name: /Confirm Switch/i })
+
+    await act(async () => {
+      fireEvent.change(reasonInput, { target: { value: 'Failover' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(confirmButton)
+    })
+
+    // Simulate successful password reauthentication in modal
+    act(() => {
+      window.dispatchEvent(new Event('auth:reauthenticated'))
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Confirm Payment Gateway Switch')).not.toBeInTheDocument()
+      expect(select.value).toBe('midtrans')
     })
   })
 })

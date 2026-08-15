@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react'
+import { useState, useEffect, FormEvent, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { authAPI } from '@/services/api'
 import useTranslation from '@/lib/useTranslation'
@@ -24,23 +24,44 @@ export default function ReauthModal() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const isSubmittingRef = useRef(false)
+  const challengeOriginRef = useRef<string | null>(null)
+  const currentLocationRef = useRef(location.pathname)
+  currentLocationRef.current = location.pathname
 
-  // Automatically close modal if user logs out, token expires, or is on login page
+  // Automatically close modal if user logs out, token expires, is on login/setup page,
+  // or navigates away from the challenge origin page
   useEffect(() => {
     if (!token || location.pathname === '/login' || location.pathname === '/setup') {
+      if (open) {
+        setOpen(false)
+        setPassword('')
+        setError('')
+        challengeOriginRef.current = null
+        window.dispatchEvent(new Event('auth:reauth_cancelled'))
+      }
+      return
+    }
+
+    if (open && challengeOriginRef.current && location.pathname !== challengeOriginRef.current) {
       setOpen(false)
       setPassword('')
       setError('')
+      challengeOriginRef.current = null
+      window.dispatchEvent(new Event('auth:reauth_cancelled'))
     }
-  }, [token, location.pathname])
+  }, [token, location.pathname, open])
 
   useEffect(() => {
     const handleRecentAuthRequired = () => {
+      const currentPath = currentLocationRef.current
       // Don't show re-auth modal if user is on login/setup or unauthenticated
-      if (!useAuthStore.getState().token || window.location.pathname === '/login') {
+      if (!useAuthStore.getState().token || currentPath === '/login' || currentPath === '/setup') {
         return
       }
-      setPassword('')
+      if (!challengeOriginRef.current) {
+        challengeOriginRef.current = currentPath
+      }
       setError('')
       setOpen(true)
     }
@@ -49,6 +70,8 @@ export default function ReauthModal() {
       setOpen(false)
       setPassword('')
       setError('')
+      challengeOriginRef.current = null
+      window.dispatchEvent(new Event('auth:reauth_cancelled'))
     }
 
     window.addEventListener('auth:recent_auth_required', handleRecentAuthRequired)
@@ -61,8 +84,9 @@ export default function ReauthModal() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!password) return
+    if (!password || isSubmittingRef.current) return
 
+    isSubmittingRef.current = true
     setLoading(true)
     setError('')
 
@@ -70,19 +94,31 @@ export default function ReauthModal() {
       await authAPI.reauthenticate(password)
       setOpen(false)
       setPassword('')
+      challengeOriginRef.current = null
       window.dispatchEvent(new Event('auth:reauthenticated'))
     } catch (err: unknown) {
-      const resp = (err as { response?: { status?: number; data?: { message?: string; code?: string } } })?.response
-      // If 401 Unauthorized or session expired on re-auth endpoint, close modal and let global auth handler handle redirect
+      const resp = (err as { response?: { status?: number; data?: { message?: string; code?: string; error?: string } } })?.response
+      const code = resp?.data?.code
+
+      // If wrong password / credential check failed on re-auth endpoint, keep modal open and display error
+      if (resp?.status === 401 && (code === 'AUTH_FAILED' || code === 'INVALID_CREDENTIALS')) {
+        setError(resp?.data?.error || resp?.data?.message || t('common.reauthFailed'))
+        return
+      }
+
+      // If genuine session expiration (TOKEN_INVALID, TOKEN_REVOKED, UNAUTHORIZED, etc.)
       if (resp?.status === 401) {
         setOpen(false)
         setPassword('')
+        challengeOriginRef.current = null
+        window.dispatchEvent(new Event('auth:reauth_cancelled'))
         window.dispatchEvent(new Event('auth:expired'))
         return
       }
-      setError(resp?.data?.message || t('common.reauthFailed'))
+      setError(resp?.data?.message || resp?.data?.error || t('common.reauthFailed'))
     } finally {
       setLoading(false)
+      isSubmittingRef.current = false
     }
   }
 
@@ -91,6 +127,7 @@ export default function ReauthModal() {
     if (!isOpen) {
       setPassword('')
       setError('')
+      challengeOriginRef.current = null
       window.dispatchEvent(new Event('auth:reauth_cancelled'))
     }
   }

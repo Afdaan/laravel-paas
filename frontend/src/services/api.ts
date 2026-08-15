@@ -17,12 +17,24 @@ const api = axios.create({
 })
 
 export const getCSRFToken = () => {
-  const token = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith(`${import.meta.env.PROD ? '__Host-paas_csrf' : 'paas_csrf'}=`))
-    ?.split('=')[1]
+  if (typeof document === 'undefined' || !document.cookie) return ''
+  const cookies = document.cookie.split(';').map((c) => c.trim())
+  const prodPrefix = '__Host-paas_csrf='
+  const devPrefix = 'paas_csrf='
+  const targetPrefix = import.meta.env.PROD ? prodPrefix : devPrefix
 
-  return token ? decodeURIComponent(token) : ''
+  const exactMatch = cookies.find((row) => row.startsWith(targetPrefix))
+  if (exactMatch) {
+    const val = exactMatch.substring(targetPrefix.length)
+    return val ? decodeURIComponent(val) : ''
+  }
+  const fallbackPrefix = import.meta.env.PROD ? devPrefix : prodPrefix
+  const fallbackMatch = cookies.find((row) => row.startsWith(fallbackPrefix))
+  if (fallbackMatch) {
+    const val = fallbackMatch.substring(fallbackPrefix.length)
+    return val ? decodeURIComponent(val) : ''
+  }
+  return ''
 }
 
 // Request interceptor - add CSRF token for cookie-authenticated unsafe requests
@@ -31,11 +43,47 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && config.headers) {
     const csrfToken = getCSRFToken()
     if (csrfToken) {
-      config.headers['X-CSRF-Token'] = csrfToken
+      if (typeof (config.headers as any).set === 'function') {
+        (config.headers as any).set('X-CSRF-Token', csrfToken)
+      } else {
+        config.headers['X-CSRF-Token'] = csrfToken
+      }
     }
   }
   return config
 })
+
+export function isSessionExpiredError(
+  status: number | undefined,
+  errorData: unknown,
+  url: string | undefined
+): boolean {
+  if (status !== 401) return false
+
+  let code: string | undefined
+  if (typeof errorData === 'object' && errorData !== null) {
+    code = (errorData as { code?: string }).code
+  } else if (typeof errorData === 'string') {
+    try {
+      const parsed = JSON.parse(errorData)
+      code = parsed?.code
+    } catch {
+      // not JSON
+    }
+  }
+
+  // If wrong password / credentials during re-auth, login, or registration, session is not expired
+  const isAuthRoute =
+    url?.endsWith('/auth/re-auth') ||
+    url?.endsWith('/auth/login') ||
+    url?.endsWith('/auth/register')
+
+  if (isAuthRoute && (code === 'AUTH_FAILED' || code === 'INVALID_CREDENTIALS')) {
+    return false
+  }
+
+  return true
+}
 
 // Response interceptor - handle errors
 api.interceptors.response.use(
@@ -44,31 +92,69 @@ api.interceptors.response.use(
     const { config, response } = error
     if (!config) return Promise.reject(error)
 
-    // Global 401 Unauthorized handling
-    if (response?.status === 401) {
-      window.dispatchEvent(new Event('auth:expired'))
+    // Global 401 Unauthorized handling (skip login/re-auth credential failure AUTH_FAILED)
+    if (isSessionExpiredError(response?.status, response?.data, config.url)) {
+      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+        window.dispatchEvent(new Event('auth:expired'))
+      }
     }
 
-    // Global 403 handling (RECENT_AUTH_REQUIRED vs WAF / Cloudflare HTML)
-    const status = error.response?.status
-    const errorData = error.response?.data as { code?: string; message?: string; error?: string } | undefined
+    // Global 403 handling (RECENT_AUTH_REQUIRED vs CSRF_FAILED / IMPERSONATION_FORBIDDEN / FORBIDDEN)
+    const status = response?.status
+    const errorData = response?.data as { code?: string; message?: string; error?: string } | string | undefined
 
-    const errorString = typeof errorData === 'string' ? errorData : JSON.stringify(errorData || {})
+    const isAuthRoute =
+      config.url?.endsWith('/auth/re-auth') ||
+      config.url?.endsWith('/auth/login') ||
+      config.url?.endsWith('/auth/logout')
 
-    const isRecentAuthRequired = status === 403 && (
-      errorData?.code === 'RECENT_AUTH_REQUIRED' ||
-      errorData?.error === 'RECENT_AUTH_REQUIRED' ||
-      errorString.includes('RECENT_AUTH_REQUIRED') ||
-      errorString.toLowerCase().includes('recent password authentication')
-    )
+    const isAlreadyRetried = Boolean((config as any)._isReauthRetry)
+
+    let hasRecentAuthCode = false
+    if (typeof errorData === 'object' && errorData !== null) {
+      hasRecentAuthCode = errorData.code === 'RECENT_AUTH_REQUIRED'
+    } else if (typeof errorData === 'string') {
+      try {
+        const parsed = JSON.parse(errorData)
+        hasRecentAuthCode = parsed?.code === 'RECENT_AUTH_REQUIRED'
+      } catch {
+        hasRecentAuthCode = errorData.includes('RECENT_AUTH_REQUIRED')
+      }
+    }
+
+    const isRecentAuthRequired =
+      status === 403 &&
+      !isAuthRoute &&
+      !isAlreadyRetried &&
+      hasRecentAuthCode
 
     if (isRecentAuthRequired) {
+      const retryConfig = { ...config } as InternalAxiosRequestConfig & { _isReauthRetry?: boolean }
+      retryConfig._isReauthRetry = true
+
       return new Promise((resolve, reject) => {
-        const handleReauthSuccess = async () => {
+        let settled = false
+
+        const cleanup = () => {
           window.removeEventListener('auth:reauthenticated', handleReauthSuccess)
           window.removeEventListener('auth:reauth_cancelled', handleReauthCancelled)
+          window.removeEventListener('auth:expired', handleAuthExpired)
+        }
+
+        const handleReauthSuccess = async () => {
+          if (settled) return
+          settled = true
+          cleanup()
           try {
-            const retryRes = await api(config)
+            const freshCsrf = getCSRFToken()
+            if (freshCsrf && retryConfig.headers) {
+              if (typeof (retryConfig.headers as any).set === 'function') {
+                (retryConfig.headers as any).set('X-CSRF-Token', freshCsrf)
+              } else {
+                retryConfig.headers['X-CSRF-Token'] = freshCsrf
+              }
+            }
+            const retryRes = await api(retryConfig)
             resolve(retryRes)
           } catch (retryErr) {
             reject(retryErr)
@@ -76,13 +162,22 @@ api.interceptors.response.use(
         }
 
         const handleReauthCancelled = () => {
-          window.removeEventListener('auth:reauthenticated', handleReauthSuccess)
-          window.removeEventListener('auth:reauth_cancelled', handleReauthCancelled)
+          if (settled) return
+          settled = true
+          cleanup()
+          reject(error)
+        }
+
+        const handleAuthExpired = () => {
+          if (settled) return
+          settled = true
+          cleanup()
           reject(error)
         }
 
         window.addEventListener('auth:reauthenticated', handleReauthSuccess)
         window.addEventListener('auth:reauth_cancelled', handleReauthCancelled)
+        window.addEventListener('auth:expired', handleAuthExpired)
 
         window.dispatchEvent(new Event('auth:recent_auth_required'))
       })

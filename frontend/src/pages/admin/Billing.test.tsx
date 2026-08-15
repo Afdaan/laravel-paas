@@ -14,6 +14,7 @@ vi.mock('@/services/api', () => ({
     adminSuspensions: vi.fn(),
     createSpec: vi.fn(),
     createTopupPackage: vi.fn(),
+    adjustWalletCredits: vi.fn(),
   },
   usersAPI: {
     list: vi.fn().mockResolvedValue({ data: [] }),
@@ -53,6 +54,11 @@ const t = (key: string, data?: Record<string, unknown>) => {
     'billing.admin.noRecords': 'No records',
     'billing.admin.total': '{{count}} of {{total}}',
     'billing.admin.user': 'User',
+    'billing.admin.addCredits': 'Add Credits',
+    'billing.admin.creditsAmount': 'Credits amount',
+    'billing.admin.saveCredits': 'Save Credits',
+    'billing.admin.adjustmentSuccess': 'Credits adjusted successfully',
+    'billing.admin.adjustmentFailed': 'Failed to adjust credits',
     'billing.retry': 'Retry',
     'billing.loadError': 'Load error',
     'billing.refresh': 'Refresh',
@@ -134,5 +140,53 @@ describe('AdminBilling pricing form payload', () => {
     expect(payload.type).toBe('database')
     expect(payload.connection_limit).toBe(10)
     expect(payload.backup_retention_days).toBe(7)
+  })
+
+  it('generates and passes unique Idempotency-Key when submitting wallet credit adjustment', async () => {
+    const singleWalletPage = {
+      page: 1,
+      limit: 10,
+      total: 1,
+      data: [
+        {
+          id: 1,
+          user_id: 10,
+          user_name: 'Test User',
+          user_email: 'user10@example.test',
+          balance_credits: 50,
+          created_at: '2026-08-01T00:00:00Z',
+          updated_at: '2026-08-01T00:00:00Z',
+        },
+      ],
+    }
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockResolvedValue({ data: singleWalletPage })
+    ;(billingAPI.adjustWalletCredits as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { success: true } })
+
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminCatalog).toHaveBeenCalledTimes(1))
+
+    // Click "Add Credits" button in wallet list or header
+    const addCreditsButtons = await screen.findAllByRole('button', { name: /Add Credits/i })
+    await act(async () => fireEvent.click(addCreditsButtons[addCreditsButtons.length - 1]))
+
+    const creditsInput = await screen.findByLabelText(/Credits amount/i)
+    const reasonInput = screen.getByPlaceholderText(/Explain why credits are being granted|Audit reason/i)
+    const submitButton = screen.getByRole('button', { name: /Save Credits/i })
+
+    await act(async () => {
+      fireEvent.change(creditsInput, { target: { value: '25' } })
+      fireEvent.change(reasonInput, { target: { value: 'Grant compensation' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(submitButton)
+    })
+
+    await waitFor(() => {
+      expect(billingAPI.adjustWalletCredits).toHaveBeenCalledTimes(1)
+    })
+
+    const passedKey = (billingAPI.adjustWalletCredits as ReturnType<typeof vi.fn>).mock.calls[0][2]
+    expect(passedKey).toMatch(/^adj-/)
   })
 })

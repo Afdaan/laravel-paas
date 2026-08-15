@@ -76,4 +76,41 @@ func TestRequireRecentBillingAuthentication(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("stale browser session status = %d", resp.StatusCode)
 	}
+
+	// Legacy session with nil AuthTime
+	legacy := fiber.New()
+	legacy.Post("/", func(c *fiber.Ctx) error {
+		c.Locals("claims", &models.JWTClaims{AuthTime: nil})
+		c.Locals("token", "session-token")
+		if err := RequireRecentBillingAuthentication(cfg)(c); err != nil {
+			return c.SendStatus(http.StatusForbidden)
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+	resp, err = legacy.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("legacy session without auth_time status = %d", resp.StatusCode)
+	}
+
+	// Impersonated session is blocked
+	impersonated := fiber.New()
+	impersonated.Post("/", func(c *fiber.Ctx) error {
+		c.Locals("impersonating", true)
+		c.Locals("claims", &models.JWTClaims{AuthTime: jwt.NewNumericDate(time.Now().UTC())})
+		c.Locals("token", "session-token")
+		if err := RequireRecentBillingAuthentication(cfg)(c); err != nil {
+			return c.SendStatus(http.StatusForbidden)
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+	resp, err = impersonated.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("impersonated session status = %d", resp.StatusCode)
+	}
 }
