@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { ShieldCheck, Loader2 } from 'lucide-react'
+import { ShieldCheck, Loader2, Eye, EyeOff } from 'lucide-react'
 
 export default function ReauthModal() {
   const { t } = useTranslation()
@@ -22,6 +22,7 @@ export default function ReauthModal() {
   const { user, token } = useAuthStore()
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const isSubmittingRef = useRef(false)
@@ -63,6 +64,7 @@ export default function ReauthModal() {
         challengeOriginRef.current = currentPath
       }
       setError('')
+      setShowPassword(false)
       setOpen(true)
     }
 
@@ -160,17 +162,32 @@ export default function ReauthModal() {
 
           <div className="space-y-2">
             <Label htmlFor="reauth-password">{t('common.reauthPasswordLabel')}</Label>
-            <Input
-              id="reauth-password"
-              name="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              autoFocus
-              required
-            />
+            <div className="relative">
+              <Input
+                id="reauth-password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className="pr-11"
+                autoFocus
+                required
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-0 top-0 size-9 text-muted-foreground hover:text-foreground"
+                aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                aria-pressed={showPassword}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+              </Button>
+            </div>
             {error && (
               <p className="text-xs font-medium text-destructive">{error}</p>
             )}

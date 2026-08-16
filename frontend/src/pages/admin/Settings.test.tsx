@@ -195,7 +195,7 @@ describe('AdminSettings Payment Provider and Generic Save', () => {
       callCount++
       if (callCount === 1) {
         // First attempt rejected with RECENT_AUTH_REQUIRED
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           const handleReauth = () => {
             window.removeEventListener('auth:reauthenticated', handleReauth)
             // Retry resolves
