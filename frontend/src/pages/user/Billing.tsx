@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownRight,
+  ArrowRight,
   ArrowUpRight,
   Building,
   Building2,
@@ -24,6 +25,8 @@ import {
   ReceiptText,
   RefreshCw,
   Search,
+  ShieldCheck,
+  Sparkles,
   WalletCards,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -97,6 +100,14 @@ export default function Billing() {
     target_auto_renew: boolean
   } | null>(null)
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
+  const [pendingTopup, setPendingTopup] = useState<{
+    type: 'package' | 'custom'
+    package?: TopupPackage
+    customAmount?: number
+    credits: number
+    amountMinor: number
+    currency: string
+  } | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [staleWarning, setStaleWarning] = useState(false)
   const [showProfilePrompt, setShowProfilePrompt] = useState(false)
@@ -442,8 +453,9 @@ export default function Billing() {
       const idempotencyKey = topupKeys.current.get(packageID) ?? createTopupIdempotencyKey()
       topupKeys.current.set(packageID, idempotencyKey)
       const response = await billingAPI.createTopup(packageID, idempotencyKey)
-            if (response.data.payment_token && response.data.payment_token.startsWith('000201')) {
+      if (response.data.payment_token && response.data.payment_token.startsWith('000201')) {
         topupKeys.current.delete(packageID)
+        setPendingTopup(null)
         setActivePaymentModal(response.data)
         return
       }
@@ -452,6 +464,7 @@ export default function Billing() {
         throw new Error(t('billing.paymentSessionUnavailable'))
       }
       topupKeys.current.delete(packageID)
+      setPendingTopup(null)
       window.location.assign(response.data.payment_url)
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
@@ -463,9 +476,23 @@ export default function Billing() {
     }
   }
 
+  const baseRatePerCredit = useMemo(() => {
+    if (packages.status !== 'success' || packages.data.length === 0) return 1000
+    const activeIdrPackages = packages.data
+      .filter((p) => (p.currency === 'IDR' || !p.currency) && p.credits > 0 && p.amount_minor > 0)
+      .sort((a, b) => a.credits - b.credits)
+    if (activeIdrPackages.length === 0) return 1000
+    const base = activeIdrPackages[0]
+    const rate = Math.floor(base.amount_minor / base.credits)
+    return rate > 0 ? rate : 1000
+  }, [packages])
+
   const customAmountNum = parseInt(customAmount.replace(/\D/g, ''), 10) || 0
-  const customCredits = Math.floor(customAmountNum / 1000)
-  const customValid = customAmountNum >= 10_000 && customAmountNum <= 10_000_000 && customAmountNum % 1000 === 0
+  const customCredits = Math.floor(customAmountNum / baseRatePerCredit)
+  const customValid =
+    customAmountNum >= 10_000 &&
+    customAmountNum <= 10_000_000 &&
+    customAmountNum % 1000 === 0
 
   const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     customTopupKey.current = null
@@ -482,15 +509,18 @@ export default function Billing() {
     setCustomAmount(val.toLocaleString(language === 'id' ? 'id-ID' : 'en-US'))
   }
 
-  const startCustomTopup = async () => {
+  const startCustomTopup = async (amountToUse?: number) => {
     if (!checkProfileAndPrompt()) return
+    const amount = amountToUse ?? customAmountNum
+    if (amount <= 0) return
     setTopupPackageID(-1)
     try {
       const idempotencyKey = customTopupKey.current ?? createTopupIdempotencyKey()
       customTopupKey.current = idempotencyKey
-      const response = await billingAPI.createTopup(0, idempotencyKey, customAmountNum)
+      const response = await billingAPI.createTopup(0, idempotencyKey, amount)
       if (response.data.payment_token && response.data.payment_token.startsWith('000201')) {
         customTopupKey.current = null
+        setPendingTopup(null)
         setActivePaymentModal(response.data)
         return
       }
@@ -500,6 +530,7 @@ export default function Billing() {
       }
       customTopupKey.current = null
       setCustomAmount('')
+      setPendingTopup(null)
       window.location.assign(response.data.payment_url)
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
@@ -510,6 +541,47 @@ export default function Billing() {
       setTopupPackageID(null)
     }
   }
+
+  const handleInitiatePackageTopup = (pkg: TopupPackage) => {
+    if (!checkProfileAndPrompt()) return
+    setPendingTopup({
+      type: 'package',
+      package: pkg,
+      credits: pkg.credits,
+      amountMinor: pkg.amount_minor,
+      currency: pkg.currency,
+    })
+  }
+
+  const handleInitiateCustomTopup = () => {
+    if (!checkProfileAndPrompt()) return
+    if (!customValid || customAmountNum <= 0) return
+    setPendingTopup({
+      type: 'custom',
+      customAmount: customAmountNum,
+      credits: customCredits,
+      amountMinor: customAmountNum,
+      currency: 'IDR',
+    })
+  }
+
+  const handleConfirmTopup = async () => {
+    if (!pendingTopup) return
+    if (pendingTopup.type === 'package' && pendingTopup.package) {
+      await startTopup(pendingTopup.package.id)
+    } else if (pendingTopup.type === 'custom' && pendingTopup.customAmount) {
+      await startCustomTopup(pendingTopup.customAmount)
+    }
+  }
+
+  const conversionRateFormatted = useMemo(() => {
+    if (!pendingTopup) return ''
+    const unitAmount =
+      pendingTopup.type === 'package' && pendingTopup.package && pendingTopup.credits > 0
+        ? Math.floor(pendingTopup.amountMinor / pendingTopup.credits)
+        : baseRatePerCredit
+    return formatMoney(unitAmount, pendingTopup.currency)
+  }, [pendingTopup, baseRatePerCredit, formatMoney])
 
   const reconcileTopup = async (topupID: number) => {
     try {
@@ -752,7 +824,7 @@ export default function Billing() {
                           : 'border-border/60 bg-card hover:border-border/80'
                       }`}
                       disabled={topupPackageID !== null}
-                      onClick={() => void startTopup(pkg.id)}
+                      onClick={() => handleInitiatePackageTopup(pkg)}
                     >
                       {isPopular && (
                         <span className="absolute -top-2.5 right-3 rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary ring-1 ring-primary/30">
@@ -812,7 +884,7 @@ export default function Billing() {
                 <Button
                   size="sm"
                   disabled={!customValid || topupPackageID !== null}
-                  onClick={() => void startCustomTopup()}
+                  onClick={handleInitiateCustomTopup}
                   className="shrink-0 h-9 px-4 text-xs font-medium"
                 >
                   {topupPackageID === -1 ? t('billing.openingCheckout') : t('billing.customTopupButton')}
@@ -1683,6 +1755,138 @@ export default function Billing() {
               {t('billing.profile.completeProfileBtn')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Top-up Confirmation Modal (High-End Visual Architecture) */}
+      <Dialog open={pendingTopup !== null} onOpenChange={(open) => !open && setPendingTopup(null)}>
+        <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/80 bg-card text-foreground shadow-2xl rounded-2xl">
+          {pendingTopup && (
+            <div className="relative">
+              {/* Header with Ambient Glow & Eyebrow Badge */}
+              <div className="relative overflow-hidden border-b border-border/40 bg-gradient-to-b from-muted/40 via-muted/20 to-transparent p-6 pb-5">
+                {/* Ambient Radial Gradient Accent */}
+                <div className="pointer-events-none absolute -top-12 -right-12 size-40 rounded-full bg-primary/10 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-10 -left-10 size-32 rounded-full bg-blue-500/10 blur-2xl" />
+
+                <div className="relative z-10">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary mb-2.5 shadow-2xs">
+                    <Sparkles className="size-3" />
+                    <span>{t('billing.confirmTopupBadge')}</span>
+                  </div>
+                  <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+                    {t('billing.confirmTopupTitle')}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground leading-relaxed mt-1">
+                    {t('billing.confirmTopupDescription')}
+                  </DialogDescription>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4">
+                {/* Hero Credit Card (Double-Bezel Hardware Architecture) */}
+                <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-b from-primary/10 to-primary/[0.02] p-1.5 shadow-sm">
+                  <div className="rounded-xl border border-primary/20 bg-background/95 p-4 sm:p-5 relative overflow-hidden backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {t('billing.creditsToAdd')}
+                      </span>
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] font-bold tracking-wide uppercase px-2.5 py-0.5 bg-primary/15 text-primary border-primary/25"
+                      >
+                        {pendingTopup.type === 'package' ? t('billing.fixedPackage') : t('billing.customPackage')}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-4xl font-extrabold tracking-tight text-foreground tabular-nums font-sans">
+                        +{formatCredits(pendingTopup.credits)}
+                      </span>
+                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        {t('billing.credits')}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-border/40 pt-3">
+                      <span className="text-xs text-muted-foreground font-medium">{t('billing.packagePrice')}</span>
+                      <span className="text-base font-bold text-primary tabular-nums">
+                        {formatMoney(pendingTopup.amountMinor, pendingTopup.currency)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Breakdown (Double-Bezel Container) */}
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-1.5">
+                  <div className="rounded-xl border border-border/40 bg-card/90 p-3.5 space-y-2.5 text-xs">
+                    {/* Wallet Progression */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground font-medium">{t('billing.balanceProgression')}</span>
+                      <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
+                        <span className="text-muted-foreground">{formatCredits(overview.status === 'success' ? overview.data.wallet.balance_credits : 0)}</span>
+                        <ArrowRight className="size-3 text-primary shrink-0" />
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                          {formatCredits((overview.status === 'success' ? overview.data.wallet.balance_credits : 0) + pendingTopup.credits)} {t('billing.credits')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Rate Conversion */}
+                    <div className="flex items-center justify-between border-t border-border/30 pt-2.5">
+                      <span className="text-muted-foreground font-medium">{t('billing.conversionRate')}</span>
+                      <span className="font-mono text-[11px] font-medium text-foreground">
+                        {t('billing.conversionRateValue', { rate: conversionRateFormatted })}
+                      </span>
+                    </div>
+
+                    {/* Checkout Notice */}
+                    <div className="border-t border-border/30 pt-2.5 text-[11px] text-muted-foreground leading-relaxed">
+                      {t('billing.checkoutNotice')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Security Trust Note */}
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3 flex items-start gap-2.5">
+                  <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed text-muted-foreground">
+                    <p className="font-semibold text-foreground">{t('billing.paymentSecurityTitle')}</p>
+                    <p className="mt-0.5 text-muted-foreground/90">{t('billing.paymentSecurityNote')}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dialog Footer Actions */}
+              <div className="border-t border-border/40 bg-muted/30 px-6 py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPendingTopup(null)}
+                  disabled={topupPackageID !== null}
+                  className="h-9 px-4 rounded-xl text-xs font-semibold hover:bg-muted/80 transition-all active:scale-[0.98]"
+                >
+                  {t('billing.cancelTopup')}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => void handleConfirmTopup()}
+                  disabled={topupPackageID !== null}
+                  className="group relative h-9 px-4 rounded-xl text-xs font-bold shadow-md shadow-primary/20 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
+                >
+                  <span>{topupPackageID !== null ? t('billing.openingCheckout') : t('billing.proceedToPayment')}</span>
+                  <div className="size-5 rounded-full bg-primary-foreground/20 flex items-center justify-center transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
+                    {topupPackageID !== null ? (
+                      <RefreshCw className="size-3 animate-spin" />
+                    ) : (
+                      <ArrowUpRight className="size-3" />
+                    )}
+                  </div>
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
