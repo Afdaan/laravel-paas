@@ -1747,7 +1747,7 @@ export default function Billing() {
           {selectedInvoice && (
             <div>
               {/* Modal Top Bar */}
-              <div className="flex items-center justify-between px-6 py-3.5 border-b border-border/60 bg-muted/30">
+              <div className="flex items-center justify-between pl-5 pr-11 py-2.5 border-b border-border/60 bg-muted/30">
                 <div className="flex items-center gap-2">
                   <ReceiptText className="size-4 text-primary" />
                   <span className="font-mono text-xs font-bold text-foreground">
@@ -1772,9 +1772,9 @@ export default function Billing() {
                     variant="outline"
                     size="sm"
                     onClick={() => window.print()}
-                    className="h-7 text-xs font-semibold gap-1.5"
+                    className="h-7 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border-border/60 bg-background/60 hover:bg-background shadow-none transition-all gap-1.5"
                   >
-                    <Printer className="size-3" />
+                    <Printer className="size-3.5 opacity-70" />
                     {t('billing.printReceipt')}
                   </Button>
                 </div>
