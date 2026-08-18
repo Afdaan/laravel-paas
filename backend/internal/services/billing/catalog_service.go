@@ -155,6 +155,17 @@ type WalletView struct {
 	LedgerEntries  []WalletLedgerEntryView `json:"ledger_entries"`
 }
 
+type InvoiceItemView struct {
+	ID                 uint                `json:"id"`
+	BillableResourceID uint                `json:"billable_resource_id"`
+	ResourceType       models.BillableType `json:"resource_type"`
+	ResourceName       string              `json:"resource_name"`
+	SpecID             uint                `json:"spec_id"`
+	SpecName           string              `json:"spec_name"`
+	Description        string              `json:"description"`
+	Credits            int64               `json:"credits"`
+}
+
 type InvoiceView struct {
 	ID           uint                 `json:"id"`
 	PeriodStart  time.Time            `json:"period_start"`
@@ -164,6 +175,7 @@ type InvoiceView struct {
 	DueAt        *time.Time           `json:"due_at,omitempty"`
 	PaidAt       *time.Time           `json:"paid_at,omitempty"`
 	CreatedAt    time.Time            `json:"created_at"`
+	Items        []InvoiceItemView    `json:"items"`
 }
 
 type TopupHistoryView struct {
@@ -286,8 +298,30 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("period_start DESC, id DESC").Limit(50).Find(&invoices).Error; err != nil {
 		return OwnBillingOverview{}, fmt.Errorf("list own invoices: %w", err)
 	}
+	invoiceIDs := make([]uint, 0, len(invoices))
 	for _, invoice := range invoices {
-		overview.Invoices = append(overview.Invoices, InvoiceView{ID: invoice.ID, PeriodStart: invoice.PeriodStart, PeriodEnd: invoice.PeriodEnd, TotalCredits: invoice.TotalCredits, Status: invoice.Status, DueAt: invoice.DueAt, PaidAt: invoice.PaidAt, CreatedAt: invoice.CreatedAt})
+		invoiceIDs = append(invoiceIDs, invoice.ID)
+	}
+	itemsMap, err := s.listInvoiceItemsForInvoices(ctx, invoiceIDs)
+	if err != nil {
+		return OwnBillingOverview{}, err
+	}
+	for _, invoice := range invoices {
+		items := itemsMap[invoice.ID]
+		if items == nil {
+			items = []InvoiceItemView{}
+		}
+		overview.Invoices = append(overview.Invoices, InvoiceView{
+			ID:           invoice.ID,
+			PeriodStart:  invoice.PeriodStart,
+			PeriodEnd:    invoice.PeriodEnd,
+			TotalCredits: invoice.TotalCredits,
+			Status:       invoice.Status,
+			DueAt:        invoice.DueAt,
+			PaidAt:       invoice.PaidAt,
+			CreatedAt:    invoice.CreatedAt,
+			Items:        items,
+		})
 	}
 
 	var topups []models.Topup
@@ -871,6 +905,107 @@ func (s *CatalogService) ListAdminInvoices(ctx context.Context, page, limit int)
 		result.Data = append(result.Data, AdminInvoiceView{UserID: invoice.UserID, InvoiceView: invoiceViewFromModel(invoice)})
 	}
 	return result, nil
+}
+
+func (s *CatalogService) listInvoiceItemsForInvoices(ctx context.Context, invoiceIDs []uint) (map[uint][]InvoiceItemView, error) {
+	itemsMap := make(map[uint][]InvoiceItemView, len(invoiceIDs))
+	if len(invoiceIDs) == 0 {
+		return itemsMap, nil
+	}
+
+	if !s.db.Migrator().HasTable(&models.InvoiceItem{}) {
+		return itemsMap, nil
+	}
+
+	var items []models.InvoiceItem
+	if err := s.db.WithContext(ctx).
+		Preload("BillableResource").
+		Preload("Spec").
+		Where("invoice_id IN ?", invoiceIDs).
+		Order("id ASC").
+		Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("list invoice items: %w", err)
+	}
+
+	// For legacy records missing snapshotted ResourceName, collect IDs for fallback lookup
+	var projectIDs []uint
+	var databaseIDs []uint
+	for _, item := range items {
+		if item.ResourceName == "" {
+			switch item.BillableResource.Type {
+			case models.BillableTypeProject:
+				if item.BillableResource.ResourceID > 0 {
+					projectIDs = append(projectIDs, item.BillableResource.ResourceID)
+				}
+			case models.BillableTypeDatabase:
+				if item.BillableResource.ResourceID > 0 {
+					databaseIDs = append(databaseIDs, item.BillableResource.ResourceID)
+				}
+			}
+		}
+	}
+
+	projectNames := make(map[uint]string, len(projectIDs))
+	if len(projectIDs) > 0 {
+		var projects []models.Project
+		if err := s.db.WithContext(ctx).Select("id, name").Where("id IN ?", projectIDs).Find(&projects).Error; err != nil {
+			return nil, fmt.Errorf("lookup legacy invoice item projects: %w", err)
+		}
+		for _, project := range projects {
+			projectNames[project.ID] = project.Name
+		}
+	}
+
+	databaseNames := make(map[uint]string, len(databaseIDs))
+	if len(databaseIDs) > 0 {
+		type dbInfo struct {
+			ID   uint
+			Name string
+		}
+		var databases []dbInfo
+		if err := s.db.WithContext(ctx).Model(&models.DatabaseInstance{}).Select("id, name").Where("id IN ?", databaseIDs).Find(&databases).Error; err != nil {
+			return nil, fmt.Errorf("lookup legacy invoice item databases: %w", err)
+		}
+		for _, db := range databases {
+			databaseNames[db.ID] = db.Name
+		}
+	}
+
+	for _, item := range items {
+		resourceName := item.ResourceName
+		if resourceName == "" {
+			if item.BillableResource.Type == models.BillableTypeProject {
+				resourceName = projectNames[item.BillableResource.ResourceID]
+			} else {
+				resourceName = databaseNames[item.BillableResource.ResourceID]
+			}
+		}
+		if resourceName == "" {
+			resourceName = fmt.Sprintf("%s #%d", item.BillableResource.Type, item.BillableResource.ResourceID)
+		}
+
+		specName := item.SpecName
+		if specName == "" {
+			specName = item.Spec.Name
+		}
+		if specName == "" {
+			specName = item.Description
+		}
+
+		itemView := InvoiceItemView{
+			ID:                 item.ID,
+			BillableResourceID: item.BillableResourceID,
+			ResourceType:       item.BillableResource.Type,
+			ResourceName:       resourceName,
+			SpecID:             item.SpecID,
+			SpecName:           specName,
+			Description:        item.Description,
+			Credits:            item.Credits,
+		}
+		itemsMap[item.InvoiceID] = append(itemsMap[item.InvoiceID], itemView)
+	}
+
+	return itemsMap, nil
 }
 
 func (s *CatalogService) ListAdminTopups(ctx context.Context, page, limit int) (AdminCollection[AdminTopupView], error) {

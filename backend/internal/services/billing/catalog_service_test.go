@@ -20,7 +20,7 @@ func TestCatalogServiceListsBoundedAdminBillingCollections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Invoice{}, &models.Topup{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Invoice{}, &models.Topup{}, &models.BillableSpec{}, &models.BillableResource{}, &models.InvoiceItem{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
@@ -599,5 +599,109 @@ func TestCatalogServiceUpdateDefaultPaymentProviderRetryIsDeterministicAndSkipsD
 	var count2 int64
 	if err := db.Model(&models.BillingAuditEvent{}).Count(&count2).Error; err != nil || count2 != 1 {
 		t.Fatalf("expected count 1 after retry (no duplicates), got %d (err: %v)", count2, err)
+	}
+}
+
+func TestCatalogServiceInvoiceItemsSnapshotImmunity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.Project{}, &models.DatabaseInstance{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallet := models.Wallet{UserID: user.ID, BalanceCredits: 100}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatal(err)
+	}
+	proj := models.Project{UserID: user.ID, Name: "Initial App Name", Subdomain: "initial-app", Status: models.StatusRunning}
+	if err := db.Create(&proj).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Starter Spec", Slug: "starter-spec", CPUMillicores: 500, MemoryMB: 512, StorageGB: 1, MonthlyCredits: 45, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	resource := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeProject,
+		ResourceID:         proj.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusActive,
+		AutoRenew:          true,
+		CurrentPeriodStart: now,
+		NextInvoiceAt:      now.AddDate(0, 1, 0),
+		BillingAnchorDay:   now.Day(),
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	invoice := models.Invoice{
+		UserID:         user.ID,
+		WalletID:       wallet.ID,
+		PeriodStart:    now.AddDate(0, -1, 0),
+		PeriodEnd:      now,
+		TotalCredits:   45,
+		Status:         models.InvoiceStatusPaid,
+		IdempotencyKey: "test-snapshot-inv-1",
+	}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	item := models.InvoiceItem{
+		InvoiceID:          invoice.ID,
+		BillableResourceID: resource.ID,
+		SpecID:             spec.ID,
+		ResourceName:       "Initial App Name",
+		SpecName:           "Starter Spec",
+		Description:        "project resource monthly credits",
+		Credits:            45,
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Verify invoice overview returns snapshotted name
+	svc := NewCatalogService(db)
+	overview, err := svc.GetOwnBillingOverview(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetOwnBillingOverview failed: %v", err)
+	}
+	if len(overview.Invoices) != 1 || len(overview.Invoices[0].Items) != 1 {
+		t.Fatalf("expected 1 invoice with 1 item, got %+v", overview.Invoices)
+	}
+	if overview.Invoices[0].Items[0].ResourceName != "Initial App Name" {
+		t.Fatalf("expected ResourceName 'Initial App Name', got %q", overview.Invoices[0].Items[0].ResourceName)
+	}
+	if overview.Invoices[0].Items[0].SpecName != "Starter Spec" {
+		t.Fatalf("expected SpecName 'Starter Spec', got %q", overview.Invoices[0].Items[0].SpecName)
+	}
+
+	// 2. Rename and delete the live project
+	if err := db.Model(&proj).Updates(map[string]any{"name": "Renamed After Fact", "status": models.StatusDeleting}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Verify invoice overview STILL returns original snapshotted name (immutable historical record)
+	overviewAfterRename, err := svc.GetOwnBillingOverview(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetOwnBillingOverview failed after rename: %v", err)
+	}
+	if len(overviewAfterRename.Invoices) != 1 || len(overviewAfterRename.Invoices[0].Items) != 1 {
+		t.Fatalf("expected 1 invoice with 1 item, got %+v", overviewAfterRename.Invoices)
+	}
+	if overviewAfterRename.Invoices[0].Items[0].ResourceName != "Initial App Name" {
+		t.Fatalf("historical invoice resource name mutated! expected 'Initial App Name', got %q", overviewAfterRename.Invoices[0].Items[0].ResourceName)
+	}
+	if overviewAfterRename.Invoices[0].Items[0].SpecName != "Starter Spec" {
+		t.Fatalf("historical invoice spec name mutated! expected 'Starter Spec', got %q", overviewAfterRename.Invoices[0].Items[0].SpecName)
 	}
 }

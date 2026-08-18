@@ -1266,6 +1266,8 @@ type InvoiceItem struct {
 	BillableResource   BillableResource `gorm:"foreignKey:BillableResourceID" json:"-"`
 	SpecID             uint             `gorm:"not null;index:idx_invoice_items_spec_id" json:"spec_id"`
 	Spec               BillableSpec     `gorm:"foreignKey:SpecID" json:"-"`
+	ResourceName       string           `gorm:"size:255;not null;default:''" json:"resource_name"`
+	SpecName           string           `gorm:"size:255;not null;default:''" json:"spec_name"`
 	Description        string           `gorm:"size:500;not null" json:"description"`
 	Credits            int64            `gorm:"not null" json:"credits"`
 	CreatedAt          time.Time        `json:"created_at"`

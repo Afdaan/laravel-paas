@@ -227,6 +227,17 @@ export interface TopupPackage {
   sort_order: number;
 }
 
+export interface InvoiceItemView {
+  id: number;
+  billable_resource_id: number;
+  resource_type: 'project' | 'database';
+  resource_name: string;
+  spec_id: number;
+  spec_name: string;
+  description: string;
+  credits: number;
+}
+
 export interface BillingOverview {
   wallet: {
     balance_credits: number;
@@ -246,6 +257,7 @@ export interface BillingOverview {
     due_at?: string;
     paid_at?: string;
     created_at: string;
+    items?: InvoiceItemView[];
   }>;
   topups: Array<{
     id: number;

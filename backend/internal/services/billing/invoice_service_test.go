@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -584,5 +585,36 @@ func TestInvoiceServiceAutoRenewFalseDoesNotDebitAndMarksPaymentDue(t *testing.T
 	}
 	if dueInvoice.Status != models.InvoiceStatusPaymentDue {
 		t.Fatalf("expected invoice status payment_due, got %s", dueInvoice.Status)
+	}
+}
+
+func TestFindOrCreateInvoiceItemPropagatesDBError(t *testing.T) {
+	db, user, _, _, spec := invoiceServiceFixture(t)
+	project := models.Project{UserID: user.ID, Name: "DBErrorApp", GithubURL: "https://github.com/example/dberror", Subdomain: "dberror", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	invoice := models.Invoice{UserID: user.ID, WalletID: 1, PeriodStart: time.Now(), PeriodEnd: time.Now().AddDate(0, 1, 0), IdempotencyKey: "dberr-inv"}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a cancelled context to simulate a non-not-found DB error
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tx := db.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	_, _, err := findOrCreateInvoiceItem(tx, invoice.ID, &resource, &spec)
+	if err == nil {
+		t.Fatal("expected error on cancelled context during snapshot lookup, got nil")
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected real database context error, got ErrRecordNotFound: %v", err)
 	}
 }

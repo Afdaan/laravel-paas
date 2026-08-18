@@ -1867,22 +1867,22 @@ export default function Billing() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {overview.status === 'success' && overview.data.resources.length > 0 ? (
-                          overview.data.resources.map((res) => (
-                            <TableRow key={`${res.resource_type}-${res.resource_id}`} className="border-b border-border/30 last:border-0">
+                        {selectedInvoice.items && selectedInvoice.items.length > 0 ? (
+                          selectedInvoice.items.map((item) => (
+                            <TableRow key={item.id} className="border-b border-border/30 last:border-0">
                               <TableCell className="pl-4 py-2.5">
                                 <div className="flex items-center gap-2">
-                                  {res.resource_type === 'project' ? (
+                                  {item.resource_type === 'project' ? (
                                     <FolderGit2 className="size-3.5 text-cyan-500 shrink-0" />
                                   ) : (
                                     <Database className="size-3.5 text-purple-500 shrink-0" />
                                   )}
                                   <div>
                                     <p className="text-xs font-semibold text-foreground">
-                                      {res.resource_name || `${translateResourceType(res.resource_type)} #${res.resource_id}`}
+                                      {item.resource_name || `${translateResourceType(item.resource_type)} #${item.billable_resource_id}`}
                                     </p>
                                     <p className="text-[10px] text-muted-foreground">
-                                      {res.spec_name}
+                                      {item.spec_name || item.description}
                                     </p>
                                   </div>
                                 </div>
@@ -1891,10 +1891,10 @@ export default function Billing() {
                                 1 {t('billing.month')}
                               </TableCell>
                               <TableCell className="text-xs font-bold text-foreground text-right font-mono tabular-nums">
-                                {formatCredits(res.monthly_credits)} {t('billing.credits')}
+                                {formatCredits(item.credits)} {t('billing.credits')}
                               </TableCell>
                               <TableCell className="text-xs font-semibold text-foreground text-right pr-4 font-mono tabular-nums">
-                                Rp {(res.monthly_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
+                                Rp {(item.credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
                               </TableCell>
                             </TableRow>
                           ))

@@ -570,10 +570,42 @@ func findOrCreateInvoice(tx *gorm.DB, userID, walletID uint, periodStart, period
 }
 
 func findOrCreateInvoiceItem(tx *gorm.DB, invoiceID uint, resource *models.BillableResource, spec *models.BillableSpec) (models.InvoiceItem, bool, error) {
+	resourceName := ""
+	switch resource.Type {
+	case models.BillableTypeProject:
+		var proj models.Project
+		if err := tx.Select("id, name").Where("id = ?", resource.ResourceID).First(&proj).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return models.InvoiceItem{}, false, fmt.Errorf("lookup project snapshot name: %w", err)
+			}
+		} else {
+			resourceName = proj.Name
+		}
+	case models.BillableTypeDatabase:
+		var dbInst models.DatabaseInstance
+		if err := tx.Select("id, name").Where("id = ?", resource.ResourceID).First(&dbInst).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return models.InvoiceItem{}, false, fmt.Errorf("lookup database snapshot name: %w", err)
+			}
+		} else {
+			resourceName = dbInst.Name
+		}
+	}
+	if resourceName == "" {
+		resourceName = fmt.Sprintf("%s #%d", resource.Type, resource.ResourceID)
+	}
+
+	specName := spec.Name
+	if specName == "" {
+		specName = fmt.Sprintf("Spec #%d", spec.ID)
+	}
+
 	item := models.InvoiceItem{
 		InvoiceID:          invoiceID,
 		BillableResourceID: resource.ID,
 		SpecID:             spec.ID,
+		ResourceName:       resourceName,
+		SpecName:           specName,
 		Description:        fmt.Sprintf("%s resource %d monthly credits", resource.Type, resource.ResourceID),
 		Credits:            spec.MonthlyCredits,
 	}
