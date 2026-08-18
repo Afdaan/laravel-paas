@@ -264,6 +264,16 @@ export default function Billing() {
     },
     [t],
   )
+  const formatResourceDisplayName = useCallback(
+    (name?: string, type?: string) => {
+      const cleanName = name?.trim()
+      if (cleanName) {
+        return cleanName
+      }
+      return t('billing.unnamedService', { type: translateResourceType(type || 'project') })
+    },
+    [t, translateResourceType],
+  )
 
   const filteredInvoices = useMemo(() => {
     if (overview.status !== 'success') return []
@@ -409,8 +419,21 @@ export default function Billing() {
 
   const attentionResources = useMemo(() => {
     if (statuses.status !== 'success') return []
-    return statuses.data.filter(({ status }) => status === 'payment_due' || status === 'suspended')
-  }, [statuses])
+    return statuses.data
+      .filter(({ status }) => status === 'payment_due' || status === 'suspended')
+      .map((statusItem) => {
+        const matchingResource =
+          overview.status === 'success'
+            ? overview.data.resources.find(
+                (r) => r.resource_type === statusItem.resource_type && r.resource_id === statusItem.resource_id,
+              )
+            : undefined
+        return {
+          ...statusItem,
+          resource_name: matchingResource?.resource_name,
+        }
+      })
+  }, [statuses, overview])
 
   const startTopup = async (packageID: number) => {
     if (!checkProfileAndPrompt()) return
@@ -606,8 +629,8 @@ export default function Billing() {
               {attentionResources
                 .map((resource) =>
                   resource.oldest_due_at
-                    ? `${translateResourceType(resource.resource_type)} #${resource.resource_id}, ${t('billing.dueOn', { date: formatDate(resource.oldest_due_at) })} (${formatStatus(resource.status)})`
-                    : `${translateResourceType(resource.resource_type)} #${resource.resource_id} (${formatStatus(resource.status)})`,
+                    ? `${formatResourceDisplayName(resource.resource_name, resource.resource_type)}, ${t('billing.dueOn', { date: formatDate(resource.oldest_due_at) })} (${formatStatus(resource.status)})`
+                    : `${formatResourceDisplayName(resource.resource_name, resource.resource_type)} (${formatStatus(resource.status)})`,
                 )
                 .join('; ')}{' '}
               {t('billing.paymentRequiredDescription')}
@@ -842,7 +865,7 @@ export default function Billing() {
                       )}
                     </Badge>
                     <p className="truncate font-semibold text-foreground">
-                      {resource.resource_name || `${translateResourceType(resource.resource_type)} #${resource.resource_id}`}
+                      {formatResourceDisplayName(resource.resource_name, resource.resource_type)}
                     </p>
                     <Badge variant={statusVariant(resource.status)}>{formatStatus(resource.status)}</Badge>
                   </div>
@@ -884,9 +907,7 @@ export default function Billing() {
                         setPendingRenewChange({
                           resource_id: resource.resource_id,
                           resource_type: resource.resource_type,
-                          resource_name:
-                            resource.resource_name ||
-                            `${translateResourceType(resource.resource_type)} #${resource.resource_id}`,
+                          resource_name: formatResourceDisplayName(resource.resource_name, resource.resource_type),
                           target_auto_renew: checked,
                         })
                       }}
@@ -1879,7 +1900,7 @@ export default function Billing() {
                                   )}
                                   <div>
                                     <p className="text-xs font-semibold text-foreground">
-                                      {item.resource_name || `${translateResourceType(item.resource_type)} #${item.billable_resource_id}`}
+                                      {formatResourceDisplayName(item.resource_name, item.resource_type)}
                                     </p>
                                     <p className="text-[10px] text-muted-foreground">
                                       {item.spec_name || item.description}

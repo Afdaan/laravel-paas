@@ -980,10 +980,6 @@ func (s *CatalogService) listInvoiceItemsForInvoices(ctx context.Context, invoic
 				resourceName = databaseNames[item.BillableResource.ResourceID]
 			}
 		}
-		if resourceName == "" {
-			resourceName = fmt.Sprintf("%s #%d", item.BillableResource.Type, item.BillableResource.ResourceID)
-		}
-
 		specName := item.SpecName
 		if specName == "" {
 			specName = item.Spec.Name

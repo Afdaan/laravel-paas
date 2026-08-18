@@ -44,8 +44,9 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.lowBalance': 'Low balance',
         'billing.lowBalanceDescription': 'Low balance description',
         'billing.staleData': 'Showing previously loaded data. Refresh to update.',
-        'billing.resourceTypes.project': 'project',
-        'billing.resourceTypes.database': 'database',
+        'billing.resourceTypes.project': 'Project',
+        'billing.resourceTypes.database': 'Database',
+        'billing.unnamedService': '{{type}} Service',
         'billing.resourceBilling': 'Resource billing',
         'billing.resourceBillingDescription': 'Resource billing description',
         'billing.noBillableResources': 'No active billable resources.',
@@ -314,5 +315,46 @@ describe('Billing page', () => {
     expect(isValidPhoneNumber('6281234567890', 'ID')).toBe(true)
     expect(isValidPhoneNumber('81234567890', 'ID')).toBe(true)
     expect(isValidPhoneNumber('123', 'ID')).toBe(false)
+  })
+
+  it('renders valid user project name containing hash without masking and falls back to localized unnamed service when empty', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        resources: [
+          {
+            resource_id: 42,
+            resource_type: 'project',
+            resource_name: 'Project #42',
+            spec_name: 'Starter',
+            monthly_credits: 75,
+            status: 'active',
+            current_period_start: '2026-08-01T00:00:00Z',
+            next_invoice_at: '2026-09-01T00:00:00Z',
+            auto_renew: false,
+          },
+          {
+            resource_id: 99,
+            resource_type: 'database',
+            resource_name: '',
+            spec_name: 'Starter DB',
+            monthly_credits: 100,
+            status: 'active',
+            current_period_start: '2026-08-01T00:00:00Z',
+            next_invoice_at: '2026-09-01T00:00:00Z',
+            auto_renew: false,
+          },
+        ],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    // Explicit name with hash must be displayed intact
+    expect(await screen.findByText('Project #42')).toBeInTheDocument()
+    // Empty resource name must fall back to localized unnamed service
+    expect(await screen.findByText('Database Service')).toBeInTheDocument()
   })
 })

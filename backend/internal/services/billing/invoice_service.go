@@ -591,14 +591,7 @@ func findOrCreateInvoiceItem(tx *gorm.DB, invoiceID uint, resource *models.Billa
 			resourceName = dbInst.Name
 		}
 	}
-	if resourceName == "" {
-		resourceName = fmt.Sprintf("%s #%d", resource.Type, resource.ResourceID)
-	}
-
 	specName := spec.Name
-	if specName == "" {
-		specName = fmt.Sprintf("Spec #%d", spec.ID)
-	}
 
 	item := models.InvoiceItem{
 		InvoiceID:          invoiceID,

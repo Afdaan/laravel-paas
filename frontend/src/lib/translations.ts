@@ -1736,6 +1736,7 @@ export const translations = {
       periodLabel: "Period",
       amountIdr: "Amount (IDR)",
       noMatchingInvoices: "No invoices match the search filter.",
+      unnamedService: "{{type}} Service",
       topups: "Top-ups",
       noTopups: "No top-ups yet.",
       topupsUnavailable: "Top-up history unavailable.",
@@ -3771,6 +3772,7 @@ export const translations = {
       periodLabel: "Periode",
       amountIdr: "Nominal (IDR)",
       noMatchingInvoices: "Tidak ada invoice yang sesuai dengan filter.",
+      unnamedService: "Layanan {{type}}",
       walletActivityUnavailable: "Aktivitas wallet tidak tersedia.",
       resourceId: "Resource #{{id}}",
       profile: {
