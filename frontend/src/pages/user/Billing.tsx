@@ -5,9 +5,12 @@ import {
   ArrowUpRight,
   Building,
   Building2,
+  Calendar,
   CalendarClock,
+  Check,
   CheckCircle2,
   Coins,
+  Copy,
   CreditCard,
   Database,
   FileText,
@@ -17,8 +20,10 @@ import {
   MapPin,
   Phone,
   PlusCircle,
+  Printer,
   ReceiptText,
   RefreshCw,
+  Search,
   WalletCards,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -100,8 +105,27 @@ export default function Billing() {
   const loadInFlight = useRef(false)
   const hasLoadedProfileRef = useRef(false)
 
+  const [selectedInvoice, setSelectedInvoice] = useState<BillingOverview['invoices'][0] | null>(null)
+  const [copiedInvoiceID, setCopiedInvoiceID] = useState<number | null>(null)
+  const [invoiceSearch, setInvoiceSearch] = useState('')
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'all' | 'paid' | 'payment_due'>('all')
+
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({})
   const markTouched = (field: string) => setTouchedFields((prev) => ({ ...prev, [field]: true }))
+
+  const getInvoiceNumber = useCallback((inv: { id: number; period_start?: string; created_at?: string }) => {
+    const dateObj = new Date(inv.period_start || inv.created_at || Date.now())
+    const year = dateObj.getFullYear() || 2026
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+    return `INV-${year}${month}-${String(inv.id).padStart(4, '0')}`
+  }, [])
+
+  const handleCopyInvoiceNumber = (invoiceNumber: string, id: number) => {
+    void navigator.clipboard.writeText(invoiceNumber)
+    setCopiedInvoiceID(id)
+    toast.success(t('billing.copiedInvoice'))
+    setTimeout(() => setCopiedInvoiceID(null), 2000)
+  }
 
   const profileValidation = useMemo(() => {
     const companyNameClean = profile.company_name.trim()
@@ -240,6 +264,34 @@ export default function Billing() {
     },
     [t],
   )
+
+  const filteredInvoices = useMemo(() => {
+    if (overview.status !== 'success') return []
+    return overview.data.invoices.filter((invoice) => {
+      const invNumber = getInvoiceNumber(invoice).toLowerCase()
+      const searchClean = invoiceSearch.toLowerCase().trim()
+      const matchesSearch =
+        !searchClean ||
+        invNumber.includes(searchClean) ||
+        invoice.id.toString().includes(searchClean)
+      const matchesStatus =
+        invoiceStatusFilter === 'all' || invoice.status === invoiceStatusFilter
+      return matchesSearch && matchesStatus
+    })
+  }, [overview, invoiceSearch, invoiceStatusFilter, getInvoiceNumber])
+
+  const invoiceMetrics = useMemo(() => {
+    if (overview.status !== 'success') {
+      return { totalCreditsInvoiced: 0, count: 0, latestPaidInvoice: null }
+    }
+    const totalCredits = overview.data.invoices.reduce((acc, inv) => acc + (inv.total_credits || 0), 0)
+    const paidInvoices = overview.data.invoices.filter((inv) => inv.status === 'paid')
+    return {
+      totalCreditsInvoiced: totalCredits,
+      count: overview.data.invoices.length,
+      latestPaidInvoice: paidInvoices[0] || null,
+    }
+  }, [overview])
 
   const didLoadInitial = useRef(false)
 
@@ -997,50 +1049,237 @@ export default function Billing() {
 
             {/* Invoices Tab */}
             <TabsContent value="invoices" className="space-y-4">
+              {/* Financial Quick Metrics */}
+              {overview.status === 'success' && overview.data.invoices.length > 0 && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('billing.totalInvoiced')}
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-xl font-bold tracking-tight text-foreground tabular-nums">
+                        {formatCredits(invoiceMetrics.totalCreditsInvoiced)}
+                      </span>
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase">{t('billing.credits')}</span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground font-mono tabular-nums mt-0.5">
+                      ≈ Rp {(invoiceMetrics.totalCreditsInvoiced * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('billing.activeSubscriptions')}
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-xl font-bold tracking-tight text-foreground tabular-nums">
+                        {overview.data.resources.length}
+                      </span>
+                      <span className="text-[10px] font-medium text-muted-foreground">{t('billing.activeServicesCount', { count: overview.data.resources.length })}</span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">
+                      Auto-renew: {overview.data.resources.filter((r) => r.auto_renew).length}
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('billing.upcomingCharges')}
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <span className="text-xl font-bold tracking-tight text-foreground tabular-nums">
+                        {formatCredits(overview.data.upcoming_required_credits)}
+                      </span>
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase">{t('billing.credits')}</span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground font-mono tabular-nums mt-0.5">
+                      ≈ Rp {(overview.data.upcoming_required_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')} / {t('billing.month')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Table Controls (Search & Status Filter) */}
+              {overview.status === 'success' && overview.data.invoices.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+                  <div className="relative max-w-xs flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder={t('billing.searchInvoices')}
+                      value={invoiceSearch}
+                      onChange={(e) => setInvoiceSearch(e.target.value)}
+                      className="pl-8 text-xs h-8 bg-card"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceStatusFilter('all')}
+                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                        invoiceStatusFilter === 'all'
+                          ? 'bg-background text-foreground shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {t('billing.allStatuses')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceStatusFilter('paid')}
+                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                        invoiceStatusFilter === 'paid'
+                          ? 'bg-background text-emerald-600 dark:text-emerald-400 shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {formatStatus('paid')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceStatusFilter('payment_due')}
+                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                        invoiceStatusFilter === 'payment_due'
+                          ? 'bg-background text-destructive shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {formatStatus('payment_due')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Invoices Table */}
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[34%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">Billing Period</TableHead>
-                      <TableHead className="w-[23%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Credits Charged</TableHead>
-                      <TableHead className="w-[23%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Status</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">Date</TableHead>
+                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">
+                        {t('billing.invoiceNumber')}
+                      </TableHead>
+                      <TableHead className="w-[26%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                        {t('billing.servicePeriod')}
+                      </TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                        {t('billing.totalCharged')}
+                      </TableHead>
+                      <TableHead className="w-[14%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                        {t('billing.invoiceStatus')}
+                      </TableHead>
+                      <TableHead className="w-[12%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                        {t('billing.periodLabel')}
+                      </TableHead>
+                      <TableHead className="w-[10%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">
+                        {t('billing.viewReceipt')}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {overview.status === 'loading' && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">Loading invoices...</TableCell>
+                        <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">Loading invoices...</TableCell>
                       </TableRow>
                     )}
                     {overview.status === 'success' && overview.data.invoices.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noInvoices')}</TableCell>
+                        <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noInvoices')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.invoices.map((invoice) => (
-                      <TableRow key={invoice.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
-                        <TableCell className="font-semibold text-xs text-foreground pl-4">
-                          <div className="flex items-center gap-2">
-                            <ReceiptText className="size-3.5 text-muted-foreground shrink-0" />
-                            <span>{formatDate(invoice.period_start)} – {formatDate(invoice.period_end)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs font-semibold text-foreground tabular-nums">
-                          {formatCredits(invoice.total_credits)} {t('billing.credits')}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <Badge variant={statusVariant(invoice.status)} className="capitalize font-medium text-[11px] px-2.5 py-0.5">{formatStatus(invoice.status)}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
-                          {invoice.paid_at
-                            ? t('billing.paidOn', { date: formatDate(invoice.paid_at) })
-                            : invoice.due_at
-                              ? t('billing.dueOn', { date: formatDate(invoice.due_at) })
-                              : formatDate(invoice.created_at)}
+                    {overview.status === 'success' && overview.data.invoices.length > 0 && filteredInvoices.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
+                          {t('billing.noMatchingInvoices')}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )}
+                    {overview.status === 'success' && filteredInvoices.map((invoice) => {
+                      const invNumber = getInvoiceNumber(invoice)
+                      const isPaid = invoice.status === 'paid'
+                      return (
+                        <TableRow key={invoice.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0 group">
+                          {/* Invoice Number */}
+                          <TableCell className="font-mono text-xs font-bold text-foreground pl-4">
+                            <div className="flex items-center gap-1.5">
+                              <ReceiptText className="size-3.5 text-primary shrink-0" />
+                              <span className="truncate">{invNumber}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-5 text-muted-foreground/60 hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => handleCopyInvoiceNumber(invNumber, invoice.id)}
+                                title="Salin nomor invoice"
+                              >
+                                {copiedInvoiceID === invoice.id ? (
+                                  <Check className="size-2.5 text-emerald-500" />
+                                ) : (
+                                  <Copy className="size-2.5" />
+                                )}
+                              </Button>
+                            </div>
+                          </TableCell>
+
+                          {/* Period */}
+                          <TableCell className="text-xs text-foreground">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="size-3 text-muted-foreground shrink-0" />
+                              <span className="font-medium text-xs">
+                                {formatDate(invoice.period_start)} – {formatDate(invoice.period_end)}
+                              </span>
+                            </div>
+                          </TableCell>
+
+                          {/* Credits Charged & IDR Equivalent */}
+                          <TableCell className="text-xs font-semibold tabular-nums">
+                            <div>
+                              <span className="font-bold text-foreground">
+                                {formatCredits(invoice.total_credits)} {t('billing.credits')}
+                              </span>
+                              <span className="ml-1 text-[11px] text-muted-foreground font-normal">
+                                (Rp {(invoice.total_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')})
+                              </span>
+                            </div>
+                          </TableCell>
+
+                          {/* Status */}
+                          <TableCell className="text-xs">
+                            <Badge
+                              variant={statusVariant(invoice.status)}
+                              className={`capitalize font-medium text-[11px] px-2.5 py-0.5 inline-flex items-center gap-1.5 ${
+                                isPaid
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                  : ''
+                              }`}
+                            >
+                              <span className={`size-1.5 rounded-full shrink-0 ${isPaid ? 'bg-emerald-500' : 'bg-destructive'}`} />
+                              {formatStatus(invoice.status)}
+                            </Badge>
+                          </TableCell>
+
+                          {/* Date */}
+                          <TableCell className="text-xs text-muted-foreground tabular-nums">
+                            {invoice.paid_at
+                              ? t('billing.paidOn', { date: formatDate(invoice.paid_at) })
+                              : invoice.due_at
+                                ? t('billing.dueOn', { date: formatDate(invoice.due_at) })
+                                : formatDate(invoice.created_at)}
+                          </TableCell>
+
+                          {/* Action Button */}
+                          <TableCell className="text-xs text-right pr-4">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedInvoice(invoice)}
+                              className="h-7 px-2.5 text-[11px] font-semibold gap-1 text-foreground hover:bg-muted/80 shadow-2xs"
+                            >
+                              <ReceiptText className="size-3 text-primary" />
+                              {t('billing.viewReceipt')}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -1361,7 +1600,7 @@ export default function Billing() {
                     {t('billing.profile.country')}
                   </Label>
                   <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/30 text-xs font-medium text-foreground">
-                    🇮🇩 {t('billing.profile.countryValue')}
+                    {t('billing.profile.countryValue')}
                   </div>
                 </div>
               </div>
@@ -1478,6 +1717,250 @@ export default function Billing() {
               {checkingPaymentStatus ? 'Mengecek...' : 'Cek Status Pembayaran'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Detail / Official Tax Receipt Modal */}
+      <Dialog open={selectedInvoice !== null} onOpenChange={(open) => !open && setSelectedInvoice(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-0 border-border/80 bg-card text-foreground">
+          {selectedInvoice && (
+            <div>
+              {/* Modal Top Bar */}
+              <div className="flex items-center justify-between px-6 py-3.5 border-b border-border/60 bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <ReceiptText className="size-4 text-primary" />
+                  <span className="font-mono text-xs font-bold text-foreground">
+                    {getInvoiceNumber(selectedInvoice)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 text-muted-foreground hover:text-foreground"
+                    onClick={() => handleCopyInvoiceNumber(getInvoiceNumber(selectedInvoice), selectedInvoice.id)}
+                    title="Salin Nomor Invoice"
+                  >
+                    {copiedInvoiceID === selectedInvoice.id ? (
+                      <Check className="size-3 text-emerald-500" />
+                    ) : (
+                      <Copy className="size-3" />
+                    )}
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.print()}
+                    className="h-7 text-xs font-semibold gap-1.5"
+                  >
+                    <Printer className="size-3" />
+                    {t('billing.printReceipt')}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Official Printable Invoice Document */}
+              <div className="p-6 space-y-6 text-foreground bg-card">
+                {/* Document Header */}
+                <div className="flex flex-col sm:flex-row justify-between gap-4 pb-6 border-b border-border/60">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                        <ReceiptText className="size-4" />
+                      </div>
+                      <h2 className="text-base font-bold tracking-tight text-foreground">
+                        {t('billing.officialInvoiceTitle')}
+                      </h2>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('billing.electronicDocDisclaimer')}
+                    </p>
+                  </div>
+
+                  <div className="sm:text-right space-y-1">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2 py-0.5 rounded-md bg-muted/40 border border-border/60">
+                      {t('billing.invoiceNumber')}
+                    </span>
+                    <h3 className="text-base font-mono font-bold tracking-tight text-foreground pt-0.5">
+                      {getInvoiceNumber(selectedInvoice)}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {t('billing.servicePeriod')}: <span className="font-medium text-foreground">{formatDate(selectedInvoice.period_start)} – {formatDate(selectedInvoice.period_end)}</span>
+                    </p>
+                    {selectedInvoice.paid_at && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                        {t('billing.paidOn', { date: formatDate(selectedInvoice.paid_at) })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Billed To & Payment Meta */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl border border-border/60 bg-muted/20">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('billing.billedTo')}:
+                    </p>
+                    <h4 className="mt-0.5 text-xs font-bold text-foreground">
+                      {profile.company_name || profile.email || '—'}
+                    </h4>
+                    <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                      {profile.tax_id && (
+                        <p>
+                          <span className="font-medium">{t('billing.profile.taxId')}:</span>{' '}
+                          <span className="font-mono text-foreground">{profile.tax_id}</span>
+                        </p>
+                      )}
+                      {profile.address_line1 && (
+                        <p>
+                          {profile.address_line1}, {profile.city} {profile.postal_code}
+                        </p>
+                      )}
+                      {profile.email && <p>{profile.email}</p>}
+                    </div>
+                  </div>
+
+                  <div className="sm:text-right space-y-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {t('billing.invoiceStatus')}
+                      </p>
+                      <div className="mt-1 flex sm:justify-end">
+                        <Badge
+                          variant={statusVariant(selectedInvoice.status)}
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5"
+                        >
+                          {formatStatus(selectedInvoice.status)}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {t('billing.paymentMethod')}
+                      </p>
+                      <p className="text-xs font-medium text-foreground">{t('billing.paymentMethodWallet')}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Itemized Line Items Table */}
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {t('billing.itemDescription')}
+                  </h4>
+                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+                    <Table>
+                      <TableHeader className="bg-muted/40">
+                        <TableRow className="border-b border-border/40">
+                          <TableHead className="text-[10px] font-bold uppercase text-muted-foreground pl-4">
+                            {t('billing.itemDescription')}
+                          </TableHead>
+                          <TableHead className="text-[10px] font-bold uppercase text-muted-foreground">
+                            {t('billing.periodLabel')}
+                          </TableHead>
+                          <TableHead className="text-[10px] font-bold uppercase text-muted-foreground text-right">
+                            {t('billing.credits')}
+                          </TableHead>
+                          <TableHead className="text-[10px] font-bold uppercase text-muted-foreground text-right pr-4">
+                            {t('billing.amountIdr')}
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {overview.status === 'success' && overview.data.resources.length > 0 ? (
+                          overview.data.resources.map((res) => (
+                            <TableRow key={`${res.resource_type}-${res.resource_id}`} className="border-b border-border/30 last:border-0">
+                              <TableCell className="pl-4 py-2.5">
+                                <div className="flex items-center gap-2">
+                                  {res.resource_type === 'project' ? (
+                                    <FolderGit2 className="size-3.5 text-cyan-500 shrink-0" />
+                                  ) : (
+                                    <Database className="size-3.5 text-purple-500 shrink-0" />
+                                  )}
+                                  <div>
+                                    <p className="text-xs font-semibold text-foreground">
+                                      {res.resource_name || `${translateResourceType(res.resource_type)} #${res.resource_id}`}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {res.spec_name}
+                                    </p>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-[11px] text-muted-foreground font-mono">
+                                1 {t('billing.month')}
+                              </TableCell>
+                              <TableCell className="text-xs font-bold text-foreground text-right font-mono tabular-nums">
+                                {formatCredits(res.monthly_credits)} {t('billing.credits')}
+                              </TableCell>
+                              <TableCell className="text-xs font-semibold text-foreground text-right pr-4 font-mono tabular-nums">
+                                Rp {(res.monthly_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow className="border-b border-border/30 last:border-0">
+                            <TableCell className="pl-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <ReceiptText className="size-3.5 text-primary shrink-0" />
+                                <div>
+                                  <p className="text-xs font-semibold text-foreground">{t('billing.resourceBilling')}</p>
+                                  <p className="text-[10px] text-muted-foreground">{t('billing.resourceBillingDescription')}</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-[11px] text-muted-foreground font-mono">
+                              {formatDate(selectedInvoice.period_start)} – {formatDate(selectedInvoice.period_end)}
+                            </TableCell>
+                            <TableCell className="text-xs font-bold text-foreground text-right font-mono tabular-nums">
+                              {formatCredits(selectedInvoice.total_credits)} {t('billing.credits')}
+                            </TableCell>
+                            <TableCell className="text-xs font-semibold text-foreground text-right pr-4 font-mono tabular-nums">
+                              Rp {(selectedInvoice.total_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {/* Subtotal & Total Box */}
+                <div className="flex justify-end pt-1">
+                  <div className="w-full sm:w-72 space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3.5 text-xs">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('billing.subtotal')}</span>
+                      <span className="font-mono font-medium text-foreground tabular-nums">
+                        {formatCredits(selectedInvoice.total_credits)} {t('billing.credits')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('billing.taxRate')}</span>
+                      <span className="font-mono font-medium text-foreground">Rp 0</span>
+                    </div>
+                    <div className="border-t border-border/40 pt-2 flex justify-between items-baseline">
+                      <span className="font-bold text-foreground uppercase tracking-wider text-[11px]">
+                        {t('billing.totalCharged')}
+                      </span>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-primary font-mono tabular-nums">
+                          {formatCredits(selectedInvoice.total_credits)} {t('billing.credits')}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground font-mono tabular-nums">
+                          ≈ Rp {(selectedInvoice.total_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Electronic Stamp Footer */}
+                <div className="pt-3 border-t border-border/40 text-center text-[10px] text-muted-foreground leading-relaxed">
+                  {t('billing.electronicDocDisclaimer')}
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
