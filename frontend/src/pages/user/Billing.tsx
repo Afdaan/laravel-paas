@@ -10,6 +10,10 @@ import {
   CalendarClock,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Coins,
   Copy,
   CreditCard,
@@ -53,6 +57,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export function isValidPhoneNumber(phone: string, country: string = 'ID'): boolean {
   const trimmed = phone.trim()
@@ -74,6 +79,77 @@ export function isValidPhoneNumber(phone: string, country: string = 'ID'): boole
   }
 
   return digitsOnly.length >= 7 && digitsOnly.length <= 15
+}
+
+// ponytail: client-side slicing only — backend already caps these lists
+// (ledger 100, invoices 50, topups 50). Move to server paging if caps rise.
+function usePagination(total: number) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  // Clamp instead of resetting via effect, so shrinking filters can't strand
+  // the view on an empty page.
+  const current = Math.min(page, totalPages)
+  const start = (current - 1) * pageSize
+  return { page: current, pageSize, setPage, setPageSize, totalPages, start, end: start + pageSize, total }
+}
+
+function TablePagination({ state, label }: { state: ReturnType<typeof usePagination>; label: string }) {
+  const { page, pageSize, setPage, setPageSize, totalPages, start, end, total } = state
+  if (total === 0) return null
+  return (
+    <div className="flex flex-col gap-3 border-t border-border/40 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {start + 1}–{Math.min(end, total)} / {total}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+          <Select
+            value={pageSize.toString()}
+            onValueChange={(value) => {
+              setPageSize(Number(value))
+              setPage(1)
+            }}
+          >
+            <SelectTrigger size="sm" className="h-7 w-[70px] justify-between text-xs">
+              <SelectValue placeholder={pageSize} />
+            </SelectTrigger>
+            <SelectContent side="top" align="start" alignItemWithTrigger={false}>
+              {[10, 20, 30, 50, 100].map((size) => (
+                <SelectItem key={size} value={`${size}`} className="text-xs">
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {page} / {totalPages}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(1)} disabled={page === 1}>
+            <span className="sr-only">First page</span>
+            <ChevronsLeft className="size-3.5" />
+          </Button>
+          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(page - 1)} disabled={page === 1}>
+            <span className="sr-only">Previous page</span>
+            <ChevronLeft className="size-3.5" />
+          </Button>
+          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
+            <span className="sr-only">Next page</span>
+            <ChevronRight className="size-3.5" />
+          </Button>
+          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(totalPages)} disabled={page >= totalPages}>
+            <span className="sr-only">Last page</span>
+            <ChevronsRight className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function Billing() {
@@ -217,28 +293,30 @@ export default function Billing() {
     statusesRef.current = statuses
   })
 
-  const formatNumber = useCallback(
-    (value: number) => new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(value),
-    [language],
-  )
-  const formatCredits = useCallback((credits: number) => formatNumber(credits), [formatNumber])
+  // Intl constructors are expensive; building one per table cell dominated render
+  // cost on the 100-row ledger. Build once per language instead.
+  const locale = language === 'id' ? 'id-ID' : 'en-US'
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }), [locale])
+  const formatNumber = useCallback((value: number) => numberFormat.format(value), [numberFormat])
+  const formatCredits = formatNumber
   const formatDate = useCallback(
-    (value?: string) =>
-      value
-        ? new Intl.DateTimeFormat(language === 'id' ? 'id-ID' : 'en-US', { dateStyle: 'medium' }).format(
-            new Date(value),
-          )
-        : '—',
-    [language],
+    (value?: string) => (value ? dateFormat.format(new Date(value)) : '—'),
+    [dateFormat],
   )
-  const formatMoney = useCallback(
-    (amountMinor: number, currency: string) =>
-      new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US', {
-        style: 'currency',
-        currency,
-      }).format(toMajorUnits(amountMinor, currency)),
-    [language],
-  )
+  // ponytail: currency varies per row, so cache one formatter per currency seen.
+  // Cache is rebuilt with the closure whenever locale changes.
+  const formatMoney = useMemo(() => {
+    const cache = new Map<string, Intl.NumberFormat>()
+    return (amountMinor: number, currency: string) => {
+      let fmt = cache.get(currency)
+      if (!fmt) {
+        fmt = new Intl.NumberFormat(locale, { style: 'currency', currency })
+        cache.set(currency, fmt)
+      }
+      return fmt.format(toMajorUnits(amountMinor, currency))
+    }
+  }, [locale])
   const formatStatus = useCallback(
     (status: string) => {
       const translated = t(`billing.statuses.${status}`)
@@ -300,6 +378,9 @@ export default function Billing() {
     })
   }, [overview, invoiceSearch, invoiceStatusFilter, getInvoiceNumber])
 
+  const invoicePage = usePagination(filteredInvoices.length)
+  const topupPage = usePagination(overview.status === 'success' ? overview.data.topups.length : 0)
+
   const invoiceMetrics = useMemo(() => {
     if (overview.status !== 'success') {
       return { totalCreditsInvoiced: 0, count: 0, latestPaidInvoice: null }
@@ -327,9 +408,9 @@ export default function Billing() {
     markLoading(setPackages)
     markLoading(setStatuses)
 
-    const currentOverview = overview
-    const currentPackages = packages
-    const currentStatuses = statuses
+    const currentOverview = overviewRef.current
+    const currentPackages = packagesRef.current
+    const currentStatuses = statusesRef.current
 
     const [overviewResult, catalogResult, statusResult] = await Promise.allSettled([
       billingAPI.overview(),
@@ -376,7 +457,9 @@ export default function Billing() {
       }
     }
     loadInFlight.current = false
-  }, [overview, packages, statuses])
+    // Reads current state via refs, so this stays referentially stable and the
+    // polling effect no longer tears down and restarts on every render.
+  }, [])
 
   useEffect(() => {
     if (didLoadInitial.current) return
@@ -581,6 +664,49 @@ export default function Billing() {
         : baseRatePerCredit
     return formatMoney(unitAmount, pendingTopup.currency)
   }, [pendingTopup, baseRatePerCredit, formatMoney])
+
+  // Up to 100 rows; rebuilding them on every keystroke in the profile form or
+  // invoice search was the other half of the lag. Only rebuild when data changes.
+  const ledgerEntries = overview.status === 'success' ? overview.data.wallet.ledger_entries : null
+  const ledgerPage = usePagination(ledgerEntries?.length ?? 0)
+  const { start: ledgerStart, end: ledgerEnd } = ledgerPage
+  const ledgerRows = useMemo(() => {
+    if (!ledgerEntries) return null
+    return ledgerEntries.slice(ledgerStart, ledgerEnd).map((entry, index) => {
+      const isCredit = entry.amount_credits >= 0
+      return (
+        <TableRow key={index} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
+          <TableCell className="font-semibold text-xs text-foreground pl-4">
+            <div className="flex items-center gap-2.5">
+              <div className={`size-6 rounded-full flex items-center justify-center shrink-0 ${
+                isCredit
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
+                  : 'bg-amber-500/10 border border-amber-500/20 text-amber-500'
+              }`}>
+                {isCredit ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
+              </div>
+              <span className="capitalize font-medium text-xs">{translateLedgerType(entry.type)}</span>
+            </div>
+          </TableCell>
+          <TableCell className="text-xs">
+            <span className={`inline-flex items-center font-bold text-[11px] tabular-nums px-2.5 py-0.5 rounded-full ${
+              isCredit
+                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                : 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20'
+            }`}>
+              {isCredit ? `+${formatCredits(entry.amount_credits)}` : formatCredits(entry.amount_credits)} {t('billing.credits')}
+            </span>
+          </TableCell>
+          <TableCell className="text-xs font-semibold tabular-nums text-foreground/80">
+            {formatCredits(entry.balance_after)} {t('billing.credits')}
+          </TableCell>
+          <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
+            {formatDate(entry.created_at)}
+          </TableCell>
+        </TableRow>
+      )
+    })
+  }, [ledgerEntries, ledgerStart, ledgerEnd, formatCredits, formatDate, translateLedgerType, t])
 
   const reconcileTopup = async (topupID: number) => {
     try {
@@ -1100,42 +1226,10 @@ export default function Billing() {
                         <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noWalletActivity')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.wallet.ledger_entries.map((entry, index) => {
-                      const isCredit = entry.amount_credits >= 0
-                      return (
-                        <TableRow key={index} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
-                          <TableCell className="font-semibold text-xs text-foreground pl-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className={`size-6 rounded-full flex items-center justify-center shrink-0 ${
-                                isCredit
-                                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
-                                  : 'bg-amber-500/10 border border-amber-500/20 text-amber-500'
-                              }`}>
-                                {isCredit ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-                              </div>
-                              <span className="capitalize font-medium text-xs">{translateLedgerType(entry.type)}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <span className={`inline-flex items-center font-bold text-[11px] tabular-nums px-2.5 py-0.5 rounded-full ${
-                              isCredit
-                                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                                : 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20'
-                            }`}>
-                              {isCredit ? `+${formatCredits(entry.amount_credits)}` : formatCredits(entry.amount_credits)} {t('billing.credits')}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-xs font-semibold tabular-nums text-foreground/80">
-                            {formatCredits(entry.balance_after)} {t('billing.credits')}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
-                            {formatDate(entry.created_at)}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
+                    {ledgerRows}
                   </TableBody>
                 </Table>
+                <TablePagination state={ledgerPage} label={t('common.rowsPerPage')} />
               </div>
             </TabsContent>
 
@@ -1285,7 +1379,7 @@ export default function Billing() {
                         </TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && filteredInvoices.map((invoice) => {
+                    {overview.status === 'success' && filteredInvoices.slice(invoicePage.start, invoicePage.end).map((invoice) => {
                       const invNumber = getInvoiceNumber(invoice)
                       const isPaid = invoice.status === 'paid'
                       return (
@@ -1374,6 +1468,7 @@ export default function Billing() {
                     })}
                   </TableBody>
                 </Table>
+                <TablePagination state={invoicePage} label={t('common.rowsPerPage')} />
               </div>
             </TabsContent>
 
@@ -1401,7 +1496,7 @@ export default function Billing() {
                         <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noTopups')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.topups.map((topup) => (
+                    {overview.status === 'success' && overview.data.topups.slice(topupPage.start, topupPage.end).map((topup) => (
                       <TableRow key={topup.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
                         <TableCell className="font-mono text-xs font-semibold text-foreground/90 pl-4">
                           #topup-{topup.id}
@@ -1436,6 +1531,7 @@ export default function Billing() {
                     ))}
                   </TableBody>
                 </Table>
+                <TablePagination state={topupPage} label={t('common.rowsPerPage')} />
               </div>
             </TabsContent>
           </Tabs>
