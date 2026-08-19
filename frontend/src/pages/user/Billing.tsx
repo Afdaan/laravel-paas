@@ -26,7 +26,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  Sparkles,
   WalletCards,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -1758,114 +1757,81 @@ export default function Billing() {
         </DialogContent>
       </Dialog>
 
-      {/* Top-up Confirmation Modal (High-End Visual Architecture) */}
+      {/* Top-up Confirmation Modal */}
       <Dialog open={pendingTopup !== null} onOpenChange={(open) => !open && setPendingTopup(null)}>
-        <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/80 bg-card text-foreground shadow-2xl rounded-2xl">
+        <DialogContent className="sm:max-w-[440px] p-0 overflow-hidden bg-card text-foreground rounded-xl">
           {pendingTopup && (
-            <div className="relative">
-              {/* Header with Ambient Glow & Eyebrow Badge */}
-              <div className="relative overflow-hidden border-b border-border/40 bg-gradient-to-b from-muted/40 via-muted/20 to-transparent p-6 pb-5">
-                {/* Ambient Radial Gradient Accent */}
-                <div className="pointer-events-none absolute -top-12 -right-12 size-40 rounded-full bg-primary/10 blur-3xl" />
-                <div className="pointer-events-none absolute -bottom-10 -left-10 size-32 rounded-full bg-blue-500/10 blur-2xl" />
-
-                <div className="relative z-10">
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary mb-2.5 shadow-2xs">
-                    <Sparkles className="size-3" />
-                    <span>{t('billing.confirmTopupBadge')}</span>
-                  </div>
-                  <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
-                    {t('billing.confirmTopupTitle')}
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground leading-relaxed mt-1">
-                    {t('billing.confirmTopupDescription')}
-                  </DialogDescription>
-                </div>
+            <div>
+              <div className="px-6 pt-6 pb-5">
+                <DialogTitle className="text-base font-semibold tracking-tight">
+                  {t('billing.confirmTopupTitle')}
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {t('billing.confirmTopupDescription')}
+                </DialogDescription>
               </div>
 
-              {/* Modal Body */}
-              <div className="p-6 space-y-4">
-                {/* Hero Credit Card (Double-Bezel Hardware Architecture) */}
-                <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-b from-primary/10 to-primary/[0.02] p-1.5 shadow-sm">
-                  <div className="rounded-xl border border-primary/20 bg-background/95 p-4 sm:p-5 relative overflow-hidden backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        {t('billing.creditsToAdd')}
-                      </span>
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] font-bold tracking-wide uppercase px-2.5 py-0.5 bg-primary/15 text-primary border-primary/25"
-                      >
-                        {pendingTopup.type === 'package' ? t('billing.fixedPackage') : t('billing.customPackage')}
-                      </Badge>
-                    </div>
-
-                    <div className="mt-3 flex items-baseline gap-2">
-                      <span className="text-4xl font-extrabold tracking-tight text-foreground tabular-nums font-sans">
+              {/* Ledger */}
+              <div className="border-y border-border/60 bg-muted/20">
+                <div className="flex items-start justify-between px-6 py-5">
+                  <div>
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {t('billing.creditsToAdd')}
+                    </span>
+                    <div className="mt-1.5 flex items-baseline gap-1.5">
+                      <span className="text-3xl font-semibold tracking-tight tabular-nums">
                         +{formatCredits(pendingTopup.credits)}
                       </span>
-                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        {t('billing.credits')}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between border-t border-border/40 pt-3">
-                      <span className="text-xs text-muted-foreground font-medium">{t('billing.packagePrice')}</span>
-                      <span className="text-base font-bold text-primary tabular-nums">
-                        {formatMoney(pendingTopup.amountMinor, pendingTopup.currency)}
-                      </span>
+                      <span className="text-sm text-muted-foreground">{t('billing.credits')}</span>
                     </div>
                   </div>
+                  <Badge variant="secondary" className="mt-0.5 shrink-0 text-[10px] font-medium px-2 py-0.5">
+                    {pendingTopup.type === 'package' ? t('billing.fixedPackage') : t('billing.customPackage')}
+                  </Badge>
                 </div>
 
-                {/* Transaction Breakdown (Double-Bezel Container) */}
-                <div className="rounded-2xl border border-border/60 bg-muted/20 p-1.5">
-                  <div className="rounded-xl border border-border/40 bg-card/90 p-3.5 space-y-2.5 text-xs">
-                    {/* Wallet Progression */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground font-medium">{t('billing.balanceProgression')}</span>
-                      <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
-                        <span className="text-muted-foreground">{formatCredits(overview.status === 'success' ? overview.data.wallet.balance_credits : 0)}</span>
-                        <ArrowRight className="size-3 text-primary shrink-0" />
-                        <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                          {formatCredits((overview.status === 'success' ? overview.data.wallet.balance_credits : 0) + pendingTopup.credits)} {t('billing.credits')}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Rate Conversion */}
-                    <div className="flex items-center justify-between border-t border-border/30 pt-2.5">
-                      <span className="text-muted-foreground font-medium">{t('billing.conversionRate')}</span>
-                      <span className="font-mono text-[11px] font-medium text-foreground">
-                        {t('billing.conversionRateValue', { rate: conversionRateFormatted })}
+                <dl className="divide-y divide-border/50 border-t border-border/50 px-6 text-xs">
+                  <div className="flex items-center justify-between py-3">
+                    <dt className="text-muted-foreground">{t('billing.packagePrice')}</dt>
+                    <dd className="font-semibold tabular-nums">
+                      {formatMoney(pendingTopup.amountMinor, pendingTopup.currency)}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between py-3">
+                    <dt className="text-muted-foreground">{t('billing.conversionRate')}</dt>
+                    <dd className="tabular-nums">
+                      {t('billing.conversionRateValue', { rate: conversionRateFormatted })}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between py-3">
+                    <dt className="text-muted-foreground">{t('billing.balanceProgression')}</dt>
+                    <dd className="flex items-center gap-1.5 tabular-nums">
+                      <span className="text-muted-foreground">
+                        {formatCredits(overview.status === 'success' ? overview.data.wallet.balance_credits : 0)}
                       </span>
-                    </div>
-
-                    {/* Checkout Notice */}
-                    <div className="border-t border-border/30 pt-2.5 text-[11px] text-muted-foreground leading-relaxed">
-                      {t('billing.checkoutNotice')}
-                    </div>
+                      <ArrowRight className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+                      <span className="font-semibold">
+                        {formatCredits((overview.status === 'success' ? overview.data.wallet.balance_credits : 0) + pendingTopup.credits)} {t('billing.credits')}
+                      </span>
+                    </dd>
                   </div>
-                </div>
-
-                {/* Security Trust Note */}
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3 flex items-start gap-2.5">
-                  <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="text-[11px] leading-relaxed text-muted-foreground">
-                    <p className="font-semibold text-foreground">{t('billing.paymentSecurityTitle')}</p>
-                    <p className="mt-0.5 text-muted-foreground/90">{t('billing.paymentSecurityNote')}</p>
-                  </div>
-                </div>
+                </dl>
               </div>
 
-              {/* Dialog Footer Actions */}
-              <div className="border-t border-border/40 bg-muted/30 px-6 py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
+              <div className="flex items-start gap-2 px-6 py-4 text-[11px] leading-relaxed text-muted-foreground">
+                <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                <p>
+                  {t('billing.paymentSecurityNote')} {t('billing.checkoutNotice')}
+                </p>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t border-border/60 px-6 py-4 sm:flex-row sm:justify-end">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPendingTopup(null)}
                   disabled={topupPackageID !== null}
-                  className="h-9 px-4 rounded-xl text-xs font-semibold hover:bg-muted/80 transition-all active:scale-[0.98]"
+                  className="text-xs font-medium"
                 >
                   {t('billing.cancelTopup')}
                 </Button>
@@ -1873,16 +1839,10 @@ export default function Billing() {
                   size="sm"
                   onClick={() => void handleConfirmTopup()}
                   disabled={topupPackageID !== null}
-                  className="group relative h-9 px-4 rounded-xl text-xs font-bold shadow-md shadow-primary/20 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
+                  className="gap-1.5 text-xs font-semibold"
                 >
-                  <span>{topupPackageID !== null ? t('billing.openingCheckout') : t('billing.proceedToPayment')}</span>
-                  <div className="size-5 rounded-full bg-primary-foreground/20 flex items-center justify-center transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
-                    {topupPackageID !== null ? (
-                      <RefreshCw className="size-3 animate-spin" />
-                    ) : (
-                      <ArrowUpRight className="size-3" />
-                    )}
-                  </div>
+                  {topupPackageID !== null && <RefreshCw className="size-3 animate-spin" aria-hidden="true" />}
+                  {topupPackageID !== null ? t('billing.openingCheckout') : t('billing.proceedToPayment')}
                 </Button>
               </div>
             </div>
