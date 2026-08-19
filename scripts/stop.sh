@@ -311,6 +311,7 @@ start_backend() {
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
         -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
+        -e MYSQL_CONTAINER_NAME="$MYSQL_CONTAINER_NAME" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e MYSQL_USER="$MYSQL_USER" \
         -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
@@ -328,6 +329,7 @@ start_backend() {
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
         --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
@@ -386,10 +388,12 @@ start_worker() {
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
         -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
+        -e MYSQL_CONTAINER_NAME="$MYSQL_CONTAINER_NAME" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
         -e APP_ENV="${APP_ENV:-production}" \
         -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
         -e DOCKER_NETWORK=paas-network \

@@ -21,6 +21,11 @@ check_policy() {
     if grep -Eq '(/\.env:|JWT_|CSRF_|BILLING_|MIDTRANS_|INTERNAL_API_TOKEN)' <<<"$block"; then
       fail "worker secret boundary failed: $script" || return 1
     fi
+    for required_env in MYSQL_ROOT_PASSWORD MYSQL_CONTAINER_NAME POSTGRES_CONTAINER_NAME; do
+      if ! grep -q "$required_env" <<<"$block"; then
+        fail "worker provisioning env missing: $script ($required_env)" || return 1
+      fi
+    done
   done
 
   grep -qx '.env' "$root/.dockerignore" || fail '.env must stay excluded from Docker context' || return 1

@@ -72,15 +72,15 @@ USER_PG_PASSWORD=${USER_PG_PASSWORD:-"user-pg-rootpassword"}
 USER_PG_PORT=${USER_PG_PORT:-5433}
 sudo mkdir -p storage/user-postgres
 sudo chown -R $(id -u):$(id -g) storage/user-postgres
-docker run -d \\
-    --name "$POSTGRES_CONTAINER_NAME" \\
-    --network paas-network \\
-    --restart unless-stopped \\
-    -e POSTGRES_USER="postgres" \\
-    -e POSTGRES_PASSWORD="$USER_PG_PASSWORD" \\
-    -e POSTGRES_DB="postgres" \\
-    -p "$USER_PG_PORT":5432 \\
-    -v "$(pwd)/storage/user-postgres:/var/lib/postgresql/data" \\
+docker run -d \
+    --name "$POSTGRES_CONTAINER_NAME" \
+    --network paas-network \
+    --restart unless-stopped \
+    -e POSTGRES_USER="postgres" \
+    -e POSTGRES_PASSWORD="$USER_PG_PASSWORD" \
+    -e POSTGRES_DB="postgres" \
+    -p "$USER_PG_PORT":5432 \
+    -v "$(pwd)/storage/user-postgres:/var/lib/postgresql/data" \
     postgres:15-alpine
 
 # 6. Jalankan Redis

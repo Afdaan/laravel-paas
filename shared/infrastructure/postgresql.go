@@ -56,8 +56,11 @@ func (s *PostgreSQLService) CreateDatabase(dbName, password string) error {
 	checkRoleSQL := fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';", dbName)
 	checkRoleRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-t", "-c", checkRoleSQL)
+	if err != nil {
+		return classifyPostgreSQLError(err, checkRoleRes, "verify existence of role")
+	}
 
-	roleExists := err == nil && strings.Contains(checkRoleRes.Stdout, "1")
+	roleExists := strings.Contains(checkRoleRes.Stdout, "1")
 
 	if !roleExists {
 		// Create role with connection limit to prevent tenant connection storms and SQL injection
@@ -68,7 +71,7 @@ func (s *PostgreSQLService) CreateDatabase(dbName, password string) error {
 		res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", createRoleSQL)
 		if err != nil {
-			return apperr.New(500, "PG_ROLE_FAILED", "Failed to create PostgreSQL role: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "create PostgreSQL role")
 		}
 	} else {
 		// If role exists, safely update/rotate its password to ensure it matches the current session
@@ -83,8 +86,11 @@ func (s *PostgreSQLService) CreateDatabase(dbName, password string) error {
 	checkDBSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';", dbName)
 	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-t", "-c", checkDBSQL)
+	if err != nil {
+		return classifyPostgreSQLError(err, checkDBRes, "verify existence of database")
+	}
 
-	dbExists := err == nil && strings.Contains(checkDBRes.Stdout, "1")
+	dbExists := strings.Contains(checkDBRes.Stdout, "1")
 
 	if !dbExists {
 		// Create database owned by the new role
@@ -95,7 +101,7 @@ func (s *PostgreSQLService) CreateDatabase(dbName, password string) error {
 		res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", createDBSQL)
 		if err != nil {
-			return apperr.New(500, "PG_DB_FAILED", "Failed to create PostgreSQL database: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "create PostgreSQL database")
 		}
 	}
 
@@ -170,7 +176,7 @@ func (s *PostgreSQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint
 	checkRoleRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-t", "-c", checkRoleSQL)
 	if err != nil {
-		return ownership, apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
+		return ownership, classifyPostgreSQLError(err, checkRoleRes, "verify existence of role")
 	}
 
 	roleExists := strings.Contains(checkRoleRes.Stdout, "1")
@@ -187,7 +193,7 @@ func (s *PostgreSQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint
 	res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-c", createRoleSQL)
 	if err != nil {
-		return ownership, apperr.New(500, "PG_ROLE_FAILED", "Failed to create PostgreSQL role: "+res.Stderr)
+		return ownership, classifyPostgreSQLError(err, res, "create PostgreSQL role")
 	}
 	ownership.UserCreated = true
 	if checkpoint != nil {
@@ -205,7 +211,7 @@ func (s *PostgreSQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint
 	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-t", "-c", checkDBSQL)
 	if err != nil {
-		return ownership, apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
+		return ownership, classifyPostgreSQLError(err, checkDBRes, "verify existence of database")
 	}
 
 	dbExists := strings.Contains(checkDBRes.Stdout, "1")
@@ -222,7 +228,7 @@ func (s *PostgreSQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint
 	res, err = utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-c", createDBSQL)
 	if err != nil {
-		return ownership, apperr.New(500, "PG_DB_FAILED", "Failed to create PostgreSQL database: "+res.Stderr)
+		return ownership, classifyPostgreSQLError(err, res, "create PostgreSQL database")
 	}
 	ownership.DatabaseCreated = true
 	if checkpoint != nil {
@@ -276,7 +282,7 @@ func (s *PostgreSQLService) DropDatabaseCustomOwned(dbName, username string, own
 		dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS \"%s\";", dbName)
 		if res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", dropDBSQL); err != nil {
-			return apperr.New(500, "PG_DROP_DB_FAILED", "Failed to drop PostgreSQL database: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "drop PostgreSQL database")
 		}
 	}
 
@@ -284,7 +290,7 @@ func (s *PostgreSQLService) DropDatabaseCustomOwned(dbName, username string, own
 		dropRoleSQL := fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";", username)
 		if res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", dropRoleSQL); err != nil {
-			return apperr.New(500, "PG_DROP_ROLE_FAILED", "Failed to drop PostgreSQL role: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "drop PostgreSQL role")
 		}
 	}
 
@@ -310,13 +316,13 @@ func (s *PostgreSQLService) DropDatabase(dbName string) error {
 	dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS \"%s\";", dbName)
 	if res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-c", dropDBSQL); err != nil {
-		slog.Warn("Failed to drop PostgreSQL database", "db", dbName, "err", err, "stderr", res.Stderr)
+		return classifyPostgreSQLError(err, res, "drop PostgreSQL database")
 	}
 
 	dropRoleSQL := fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";", dbName)
 	if res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-c", dropRoleSQL); err != nil {
-		slog.Warn("Failed to drop PostgreSQL role", "role", dbName, "err", err, "stderr", res.Stderr)
+		return classifyPostgreSQLError(err, res, "drop PostgreSQL role")
 	}
 
 	return nil
@@ -335,7 +341,7 @@ func (s *PostgreSQLService) UpdatePassword(username, newPassword string) error {
 	res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"psql", "-U", "postgres", "-c", alterSQL)
 	if err != nil {
-		return apperr.New(500, "PG_PASSWORD_FAILED", "Failed to update PostgreSQL password: "+res.Stderr)
+		return classifyPostgreSQLError(err, res, "update PostgreSQL password")
 	}
 	return nil
 }
@@ -355,17 +361,17 @@ func (s *PostgreSQLService) UpdateStatus(dbName, username string, suspend bool) 
 		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", revokeSQL)
 		if err != nil {
-			return apperr.New(500, "PG_SUSPEND_FAILED", "Failed to revoke connect: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "revoke connect")
 		}
 
 		if res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", terminateSQL); err != nil {
-			return apperr.New(500, "PG_SUSPEND_FAILED", "Failed to terminate active connections: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "terminate active connections")
 		}
 		res, err = utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-tA", "-c", remainingConnectionsSQL)
 		if err != nil {
-			return apperr.New(500, "PG_SUSPEND_FAILED", "Failed to verify active connections: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "verify active connections")
 		}
 		if strings.TrimSpace(res.Stdout) != "0" {
 			return apperr.New(500, "PG_SUSPEND_FAILED", "Active PostgreSQL connections remain after suspension")
@@ -375,7 +381,7 @@ func (s *PostgreSQLService) UpdateStatus(dbName, username string, suspend bool) 
 		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"psql", "-U", "postgres", "-c", grantSQL)
 		if err != nil {
-			return apperr.New(500, "PG_RESUME_FAILED", "Failed to grant connect: "+res.Stderr)
+			return classifyPostgreSQLError(err, res, "grant connect")
 		}
 	}
 
@@ -391,4 +397,43 @@ func postgreSQLSuspendSQL(dbName, username string) (revokeSQL, terminateSQL, rem
 
 func postgreSQLResumeSQL(dbName, username string) string {
 	return fmt.Sprintf("ALTER ROLE \"%s\" LOGIN; GRANT CONNECT ON DATABASE \"%s\" TO \"%s\";", username, dbName, username)
+}
+
+func classifyPostgreSQLError(err error, res *utils.Result, action string) *apperr.AppError {
+	var stderr string
+	if res != nil {
+		stderr = res.Stderr
+	}
+
+	slog.Error("PostgreSQL provisioning operation failed", "action", action, "err", err, "stderr", stderr)
+
+	lowerStderr := strings.ToLower(stderr)
+	lowerErr := ""
+	if err != nil {
+		lowerErr = strings.ToLower(err.Error())
+	}
+
+	if strings.Contains(lowerStderr, "password authentication failed") ||
+		strings.Contains(lowerStderr, "fatal:  password authentication failed") ||
+		strings.Contains(lowerStderr, "role \"postgres\" does not exist") {
+		return apperr.New(500, "ADMIN_AUTH_FAILED", "PostgreSQL administrative authentication failed")
+	}
+
+	if strings.Contains(lowerStderr, "no such container") ||
+		strings.Contains(lowerStderr, "is not running") ||
+		(strings.Contains(lowerStderr, "container") && strings.Contains(lowerStderr, "not found")) {
+		return apperr.New(503, "ENGINE_UNREACHABLE", "PostgreSQL container is not running or unreachable")
+	}
+
+	if strings.Contains(lowerStderr, "could not connect to server") ||
+		strings.Contains(lowerStderr, "connection refused") ||
+		strings.Contains(lowerStderr, "is the server running") {
+		return apperr.New(503, "ENGINE_UNREACHABLE", "PostgreSQL engine is unreachable; provisioning aborted")
+	}
+
+	if strings.Contains(lowerErr, "timed out") || strings.Contains(lowerErr, "deadline exceeded") {
+		return apperr.New(504, "ENGINE_TIMEOUT", fmt.Sprintf("PostgreSQL operation timed out during %s", action))
+	}
+
+	return apperr.New(500, "PG_PROVISION_FAILED", fmt.Sprintf("Failed to %s: PostgreSQL operation failed", action))
 }

@@ -8,6 +8,7 @@ package infrastructure
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -124,6 +125,10 @@ func (s *MySQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint(dbNa
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
+	if rootPassword == "" {
+		slog.Error("MySQL root password is not configured in environment", "container", s.containerName)
+		return ownership, apperr.New(500, "ADMIN_AUTH_NOT_CONFIGURED", "Database administration credentials are not configured")
+	}
 
 	// NOTE: Check-then-create has an inherent TOCTOU window because MySQL/PostgreSQL
 	// DDL is non-transactional. This is acceptable because global control-plane
@@ -134,7 +139,7 @@ func (s *MySQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint(dbNa
 	checkDBRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword, "-N", "-e", checkDBSQL)
 	if err != nil {
-		return ownership, apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
+		return ownership, classifyMySQLError(err, checkDBRes, "verify existence of database")
 	}
 	if strings.TrimSpace(checkDBRes.Stdout) == dbName {
 		return ownership, apperr.New(409, "DB_ALREADY_EXISTS", fmt.Sprintf("MySQL database '%s' already exists", dbName))
@@ -145,7 +150,7 @@ func (s *MySQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint(dbNa
 	checkUserRes, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword, "-N", "-e", checkUserSQL)
 	if err != nil {
-		return ownership, apperr.New(503, "ENGINE_UNREACHABLE", "Could not verify existence of database/role; provisioning aborted")
+		return ownership, classifyMySQLError(err, checkUserRes, "verify existence of role")
 	}
 	if strings.TrimSpace(checkUserRes.Stdout) == username {
 		return ownership, apperr.New(409, "USER_ALREADY_EXISTS", fmt.Sprintf("MySQL user '%s' already exists", username))
@@ -155,7 +160,7 @@ func (s *MySQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint(dbNa
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("CREATE DATABASE `%s`;", dbName))
 	if err != nil {
-		return ownership, apperr.New(500, "DB_CREATE_FAILED", "Failed to create MySQL database: "+res.Stderr)
+		return ownership, classifyMySQLError(err, res, "create database")
 	}
 	ownership.DatabaseCreated = true
 	if checkpoint != nil {
@@ -168,7 +173,7 @@ func (s *MySQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint(dbNa
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s';", username, password))
 	if err != nil {
-		return ownership, apperr.New(500, "DB_PROVISION_FAILED", "Failed to create database user: "+res.Stderr)
+		return ownership, classifyMySQLError(err, res, "create database user")
 	}
 	ownership.UserCreated = true
 	if checkpoint != nil {
@@ -181,7 +186,7 @@ func (s *MySQLService) ProvisionDatabaseCustomWithConnectionLimitCheckpoint(dbNa
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("ALTER USER '%s'@'%%' WITH MAX_USER_CONNECTIONS %d; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;", username, connectionLimit, dbName, username))
 	if err != nil {
-		return ownership, apperr.New(500, "DB_PROVISION_FAILED", "Failed to configure database user: "+res.Stderr)
+		return ownership, classifyMySQLError(err, res, "configure database user")
 	}
 
 	return ownership, nil
@@ -211,6 +216,11 @@ func (s *MySQLService) DropDatabaseCustomOwned(dbName, username string, ownershi
 		return nil
 	}
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
+	if rootPassword == "" {
+		slog.Error("MySQL root password is not configured in environment", "container", s.containerName)
+		return apperr.New(500, "ADMIN_AUTH_NOT_CONFIGURED", "Database administration credentials are not configured")
+	}
+
 	statements := make([]string, 0, 2)
 	if ownership.DatabaseCreated {
 		statements = append(statements, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;", dbName))
@@ -222,7 +232,7 @@ func (s *MySQLService) DropDatabaseCustomOwned(dbName, username string, ownershi
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", strings.Join(statements, " "))
 	if err != nil {
-		return apperr.New(500, "DB_DROP_FAILED", "Failed to drop MySQL database/user: "+res.Stderr)
+		return classifyMySQLError(err, res, "drop MySQL database/user")
 	}
 	return nil
 }
@@ -238,12 +248,16 @@ func (s *MySQLService) CreateDatabase(dbName, password string) error {
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
+	if rootPassword == "" {
+		slog.Error("MySQL root password is not configured in environment", "container", s.containerName)
+		return apperr.New(500, "ADMIN_AUTH_NOT_CONFIGURED", "Database administration credentials are not configured")
+	}
 
 	res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`;", dbName))
 	if err != nil {
-		return apperr.New(500, "DB_CREATE_FAILED", "Failed to create MySQL database: "+res.Stderr)
+		return classifyMySQLError(err, res, "create MySQL database")
 	}
 
 	// Create user with connection limit to prevent tenant connection storms and SQL injection
@@ -254,7 +268,7 @@ func (s *MySQLService) CreateDatabase(dbName, password string) error {
 			dbName, password, dbName, password, dbName, dbName,
 		))
 	if err != nil {
-		return apperr.New(500, "DB_PROVISION_FAILED", "Failed to create database user or grant permissions: "+res.Stderr)
+		return classifyMySQLError(err, res, "create MySQL database user")
 	}
 
 	return nil
@@ -267,10 +281,18 @@ func (s *MySQLService) DropDatabase(dbName string) error {
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
-	_, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
+	if rootPassword == "" {
+		slog.Error("MySQL root password is not configured in environment", "container", s.containerName)
+		return apperr.New(500, "ADMIN_AUTH_NOT_CONFIGURED", "Database administration credentials are not configured")
+	}
+
+	res, err := utils.Run(1*time.Minute, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("DROP DATABASE IF EXISTS `%s`; DROP USER IF EXISTS '%s'@'%%';", dbName, dbName))
-	return err
+	if err != nil {
+		return classifyMySQLError(err, res, "drop MySQL database")
+	}
+	return nil
 }
 
 // UpdatePassword rotates the database user's password inside the MySQL engine.
@@ -283,11 +305,16 @@ func (s *MySQLService) UpdatePassword(username, newPassword string) error {
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
+	if rootPassword == "" {
+		slog.Error("MySQL root password is not configured in environment", "container", s.containerName)
+		return apperr.New(500, "ADMIN_AUTH_NOT_CONFIGURED", "Database administration credentials are not configured")
+	}
+
 	res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 		"mysql", "-uroot", "-p"+rootPassword,
 		"-e", fmt.Sprintf("ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; FLUSH PRIVILEGES;", username, newPassword))
 	if err != nil {
-		return apperr.New(500, "DB_PASSWORD_FAILED", "Failed to update MySQL password: "+res.Stderr)
+		return classifyMySQLError(err, res, "update MySQL password")
 	}
 	return nil
 }
@@ -305,22 +332,65 @@ func (s *MySQLService) UpdateStatus(dbName, username string, connectionLimit int
 	}
 
 	rootPassword := os.Getenv("MYSQL_ROOT_PASSWORD")
+	if rootPassword == "" {
+		slog.Error("MySQL root password is not configured in environment", "container", s.containerName)
+		return apperr.New(500, "ADMIN_AUTH_NOT_CONFIGURED", "Database administration credentials are not configured")
+	}
 
 	if suspend {
 		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"mysql", "-uroot", "-p"+rootPassword,
 			"-e", fmt.Sprintf("ALTER USER '%s'@'%%' ACCOUNT LOCK; FLUSH PRIVILEGES;", username))
 		if err != nil {
-			return apperr.New(500, "DB_SUSPEND_FAILED", "Failed to suspend MySQL database: "+res.Stderr)
+			return classifyMySQLError(err, res, "suspend MySQL database")
 		}
 	} else {
 		res, err := utils.Run(30*time.Second, "docker", "exec", s.containerName,
 			"mysql", "-uroot", "-p"+rootPassword,
 			"-e", fmt.Sprintf("ALTER USER '%s'@'%%' ACCOUNT UNLOCK; ALTER USER '%s'@'%%' WITH MAX_USER_CONNECTIONS %d; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;", username, username, connectionLimit, dbName, username))
 		if err != nil {
-			return apperr.New(500, "DB_RESUME_FAILED", "Failed to resume MySQL database: "+res.Stderr)
+			return classifyMySQLError(err, res, "resume MySQL database")
 		}
 	}
 
 	return nil
+}
+
+func classifyMySQLError(err error, res *utils.Result, action string) *apperr.AppError {
+	var stderr string
+	if res != nil {
+		stderr = res.Stderr
+	}
+
+	slog.Error("MySQL provisioning operation failed", "action", action, "err", err, "stderr", stderr)
+
+	lowerStderr := strings.ToLower(stderr)
+	lowerErr := ""
+	if err != nil {
+		lowerErr = strings.ToLower(err.Error())
+	}
+
+	if strings.Contains(lowerStderr, "access denied for user") || strings.Contains(stderr, "1045") {
+		return apperr.New(500, "ADMIN_AUTH_FAILED", "Database engine administrative authentication failed; verify root credentials")
+	}
+
+	if strings.Contains(lowerStderr, "no such container") ||
+		strings.Contains(lowerStderr, "is not running") ||
+		(strings.Contains(lowerStderr, "container") && strings.Contains(lowerStderr, "not found")) {
+		return apperr.New(503, "ENGINE_UNREACHABLE", "Database container is not running or unreachable")
+	}
+
+	if strings.Contains(lowerStderr, "can't connect to local mysql server") ||
+		strings.Contains(lowerStderr, "cant connect to local mysql server") ||
+		strings.Contains(stderr, "2002") ||
+		strings.Contains(lowerStderr, "connection refused") ||
+		strings.Contains(lowerStderr, "is restarting") {
+		return apperr.New(503, "ENGINE_UNREACHABLE", "Database engine is unreachable; provisioning aborted")
+	}
+
+	if strings.Contains(lowerErr, "timed out") || strings.Contains(lowerErr, "deadline exceeded") {
+		return apperr.New(504, "ENGINE_TIMEOUT", fmt.Sprintf("Database operation timed out during %s", action))
+	}
+
+	return apperr.New(500, "DB_PROVISION_FAILED", fmt.Sprintf("Failed to %s: database operation failed", action))
 }

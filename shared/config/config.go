@@ -43,17 +43,19 @@ type Config struct {
 	PGPassword string
 
 	// User Database (MySQL)
-	MYSQLHost         string
-	MYSQLPort         string
-	MYSQLDatabase     string
-	MYSQLUser         string
-	MYSQLPassword     string
-	MYSQLRootPassword string
+	MYSQLHost          string
+	MYSQLPort          string
+	MYSQLDatabase      string
+	MYSQLUser          string
+	MYSQLPassword      string
+	MYSQLRootPassword  string
+	MYSQLContainerName string
 
 	// User Database (PostgreSQL Engine)
-	UserPGHost     string
-	UserPGPort     string
-	UserPGPassword string
+	UserPGHost            string
+	UserPGPort            string
+	UserPGPassword        string
+	POSTGRESContainerName string
 
 	// JWT
 	JWTSecret           string
@@ -202,17 +204,19 @@ func Load() *Config {
 		PGPassword: getEnv("PG_PASSWORD", ""),
 
 		// User Database (MySQL)
-		MYSQLHost:         getEnv("MYSQL_HOST", "paas-mysql"),
-		MYSQLPort:         getEnv("MYSQL_PORT", "3306"),
-		MYSQLDatabase:     getEnv("MYSQL_DATABASE", "paas"),
-		MYSQLUser:         getEnv("MYSQL_USER", "paas"),
-		MYSQLPassword:     getEnv("MYSQL_PASSWORD", ""),
-		MYSQLRootPassword: getEnv("MYSQL_ROOT_PASSWORD", "rootpassword"),
+		MYSQLHost:          getEnv("MYSQL_HOST", "paas-mysql"),
+		MYSQLPort:          getEnv("MYSQL_PORT", "3306"),
+		MYSQLDatabase:      getEnv("MYSQL_DATABASE", "paas"),
+		MYSQLUser:          getEnv("MYSQL_USER", "paas"),
+		MYSQLPassword:      getEnv("MYSQL_PASSWORD", ""),
+		MYSQLRootPassword:  getEnv("MYSQL_ROOT_PASSWORD", "rootpassword"),
+		MYSQLContainerName: getEnv("MYSQL_CONTAINER_NAME", "paas-mysql"),
 
 		// User Database (PostgreSQL Engine)
-		UserPGHost:     getEnv("USER_PG_HOST", userPGHostDefault),
-		UserPGPort:     userPGPortVal,
-		UserPGPassword: getEnv("USER_PG_PASSWORD", "user-pg-rootpassword"),
+		UserPGHost:            getEnv("USER_PG_HOST", userPGHostDefault),
+		UserPGPort:            userPGPortVal,
+		UserPGPassword:        getEnv("USER_PG_PASSWORD", "user-pg-rootpassword"),
+		POSTGRESContainerName: getEnv("POSTGRES_CONTAINER_NAME", "paas-user-postgres"),
 
 		// JWT
 		JWTSecret:           getEnv("JWT_SECRET", "change-this-secret"),
