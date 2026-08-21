@@ -22,6 +22,7 @@ import { User } from '@/types'
 import { createAdjustmentIdempotencyKey, SUPPORTED_CURRENCIES, toMajorUnits } from '@/lib/billing-ui'
 import useAuthStore from '@/stores/authStore'
 import useTranslation from '@/lib/useTranslation'
+import { scrollIntoMain } from '@/lib/scrollIntoMain'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -316,7 +317,7 @@ export default function AdminBilling() {
       badge_text: spec.badge_text ?? '',
       reason: '',
     })
-    document.getElementById('spec-monthly-credits')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    scrollIntoMain('spec-monthly-credits')
   }
 
   const createSpec = async (event: React.FormEvent<HTMLFormElement>) => {

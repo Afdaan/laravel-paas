@@ -328,6 +328,33 @@ describe('Billing page', () => {
     expect(billingAPI.createTopup).not.toHaveBeenCalled()
   })
 
+  it('scrolls the main container, not the shell, when a top-up is blocked', async () => {
+    ;(billingAPI.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { company_name: '', email: '' } })
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    // The dashboard shell wraps <main> in overflow-hidden boxes. scrollIntoView
+    // would scroll those too and drag the sidebar/header out of view.
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const main = document.createElement('main')
+    main.id = 'main-content'
+    const scrollTo = vi.fn()
+    main.scrollTo = scrollTo as unknown as typeof main.scrollTo
+    document.body.appendChild(main)
+
+    render(<Billing />)
+    await waitFor(() => screen.getByText(/^100$/))
+
+    const packageButton = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(packageButton))
+
+    expect(scrollTo).toHaveBeenCalled()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    main.remove()
+  })
+
   it('validates phone numbers correctly for Indonesian and international formats', () => {
     expect(isValidPhoneNumber('081234567890', 'ID')).toBe(true)
     expect(isValidPhoneNumber('+6281234567890', 'ID')).toBe(true)

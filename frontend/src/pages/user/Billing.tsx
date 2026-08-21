@@ -42,6 +42,7 @@ import {
 } from '@/lib/billing-ui'
 import { usePolling } from '@/lib/usePolling'
 import useTranslation from '@/lib/useTranslation'
+import { scrollIntoMain } from '@/lib/scrollIntoMain'
 import type { BillingOverview, BillingStatus, TopupPackage, BillingProfile, TopupResponse } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -193,12 +194,7 @@ export default function Billing() {
     )
   }, [])
 
-  const scrollToBillingProfile = () => {
-    const el = document.getElementById('billing-profile-card')
-    if (el && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ behavior: 'smooth' })
-    }
-  }
+  const scrollToBillingProfile = () => scrollIntoMain('billing-profile-card')
 
   const checkProfileAndPrompt = (): boolean => {
     if (!isProfileSaved && !isProfileComplete(profile)) {
