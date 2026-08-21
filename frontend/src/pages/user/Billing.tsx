@@ -928,7 +928,7 @@ export default function Billing() {
                   />
                 </div>
                 {customAmountNum > 0 && customValid && (
-                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                  <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
                     = {customCredits.toLocaleString(language)} {t('billing.credits')}
                   </span>
                 )}
@@ -1155,7 +1155,7 @@ export default function Billing() {
                     {ledgerRows}
                   </TableBody>
                 </Table>
-                <TablePagination state={ledgerPage} />
+                <TablePagination state={ledgerPage} disabled={overview.status === 'loading'} />
               </div>
             </TabsContent>
 
@@ -1394,7 +1394,7 @@ export default function Billing() {
                     })}
                   </TableBody>
                 </Table>
-                <TablePagination state={invoicePage} />
+                <TablePagination state={invoicePage} disabled={overview.status === 'loading'} />
               </div>
             </TabsContent>
 
@@ -1457,7 +1457,7 @@ export default function Billing() {
                     ))}
                   </TableBody>
                 </Table>
-                <TablePagination state={topupPage} />
+                <TablePagination state={topupPage} disabled={overview.status === 'loading'} />
               </div>
             </TabsContent>
           </Tabs>

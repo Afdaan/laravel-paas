@@ -262,10 +262,6 @@ export default function AdminBilling() {
     }
   }, [invoicePage, t, topupPage, walletPage, walletLimit, invoiceLimit, topupLimit, isSuperAdmin])
 
-  const walletPaging = serverPagination(walletPage, walletLimit, wallets?.total ?? 0, setWalletPage, setWalletLimit)
-  const invoicePaging = serverPagination(invoicePage, invoiceLimit, invoices?.total ?? 0, setInvoicePage, setInvoiceLimit)
-  const topupPaging = serverPagination(topupPage, topupLimit, topups?.total ?? 0, setTopupPage, setTopupLimit)
-
   // .sort() mutates in place — sorting catalog.specs directly in JSX reordered
   // the state array on every render. Copy first.
   const sortedSpecs = useMemo(() => {
@@ -525,6 +521,38 @@ export default function AdminBilling() {
     })
   }, [topups, topupStatusFilter, topupSearch, getUserDetails])
 
+  // Search/status filters run client-side over the page the server returned, so
+  // while one is active the server total would describe rows the table isn't
+  // showing. Report the filtered count instead — the footer never contradicts
+  // the body.
+  // ponytail: real fix is a server-side `search` param; add when a page-local
+  // filter stops being enough.
+  const walletFiltered = walletSearch.trim() !== ''
+  const invoiceFiltered = invoiceSearch.trim() !== '' || invoiceStatusFilter !== 'all'
+  const topupFiltered = topupSearch.trim() !== '' || topupStatusFilter !== 'all'
+
+  const walletPaging = serverPagination(
+    walletFiltered ? 1 : walletPage,
+    walletLimit,
+    walletFiltered ? filteredWallets.length : (wallets?.total ?? 0),
+    setWalletPage,
+    setWalletLimit,
+  )
+  const invoicePaging = serverPagination(
+    invoiceFiltered ? 1 : invoicePage,
+    invoiceLimit,
+    invoiceFiltered ? filteredInvoices.length : (invoices?.total ?? 0),
+    setInvoicePage,
+    setInvoiceLimit,
+  )
+  const topupPaging = serverPagination(
+    topupFiltered ? 1 : topupPage,
+    topupLimit,
+    topupFiltered ? filteredTopups.length : (topups?.total ?? 0),
+    setTopupPage,
+    setTopupLimit,
+  )
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
       {/* Clean Anti-Slop Header */}
@@ -775,11 +803,11 @@ export default function AdminBilling() {
             <Table>
               <TableHeader>
                 <TableRow className="border-amber-500/20 hover:bg-transparent">
-                  <TableHead className="w-[200px]">User</TableHead>
-                  <TableHead>Resource</TableHead>
-                  <TableHead>Oldest Due Date</TableHead>
-                  <TableHead>Overdue Days</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
+                  <TableHead className="pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User</TableHead>
+                  <TableHead className="w-[200px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Resource</TableHead>
+                  <TableHead className="w-[140px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Oldest Due Date</TableHead>
+                  <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Overdue Days</TableHead>
+                  <TableHead className="w-[130px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -787,7 +815,7 @@ export default function AdminBilling() {
                   const userDetails = getUserDetails(item.user_id)
                   return (
                     <TableRow key={`${item.user_id}-${item.resource_type}-${item.resource_id}`} className="border-amber-500/20">
-                      <TableCell className="font-medium">
+                      <TableCell className="py-2 pl-4 font-medium">
                         <div className="flex items-center gap-2">
                           <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-xs font-bold text-amber-700 dark:text-amber-300">
                             {userDetails.initials}
@@ -806,9 +834,9 @@ export default function AdminBilling() {
                           #{item.resource_id}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(item.oldest_due_at)}</TableCell>
-                      <TableCell className="text-xs font-medium">{t('billing.days', { count: item.payment_due_days })}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="py-2 text-xs tabular-nums text-muted-foreground">{formatDate(item.oldest_due_at)}</TableCell>
+                      <TableCell className="py-2 text-xs font-medium tabular-nums">{t('billing.days', { count: item.payment_due_days })}</TableCell>
+                      <TableCell className="py-2 pr-4 text-right">
                         <Badge variant={statusVariant(item.status)}>{formatStatus(item.status)}</Badge>
                       </TableCell>
                     </TableRow>
@@ -857,7 +885,7 @@ export default function AdminBilling() {
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="relative w-full sm:w-64">
+                <div className="relative min-w-0 w-full sm:w-64">
                   <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                   <Input
                     placeholder="Search name, email, or user ID…"
@@ -880,7 +908,7 @@ export default function AdminBilling() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && Array.from({ length: 5 }).map((_, i) => (
+                  {loading && Array.from({ length: walletPaging.pageSize }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-9 w-48" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
@@ -983,8 +1011,8 @@ export default function AdminBilling() {
                 <CardDescription className="text-xs">Generated monthly resource usage invoices</CardDescription>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative w-full sm:w-60">
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1 sm:max-w-60">
                   <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                   <Input
                     placeholder="Search invoice or user…"
@@ -995,7 +1023,7 @@ export default function AdminBilling() {
                 </div>
 
                 <Select value={invoiceStatusFilter} onValueChange={(val) => val && setInvoiceStatusFilter(val)}>
-                  <SelectTrigger className="h-9 w-36 text-xs">
+                  <SelectTrigger className="h-9 w-36 shrink-0 text-xs">
                     <Filter className="size-3.5 mr-1 text-muted-foreground" />
                     <span className="capitalize">{invoiceStatusFilter === 'all' ? 'All Statuses' : formatStatus(invoiceStatusFilter)}</span>
                   </SelectTrigger>
@@ -1023,20 +1051,21 @@ export default function AdminBilling() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && Array.from({ length: 5 }).map((_, i) => (
+                  {loading && Array.from({ length: invoicePaging.pageSize }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-9 w-48" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-5 w-20 ml-auto" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-36" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="h-5 w-16 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-12 ml-auto" /></TableCell>
                     </TableRow>
                   ))}
 
                   {!loading && errors.invoices && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-sm text-destructive">
+                      <TableCell colSpan={7} className="py-8 text-center text-sm text-destructive">
                         {t('billing.loadError', { section: t('billing.invoices') })}
                         <Button size="sm" variant="outline" className="ml-3" onClick={() => void load()}>
                           {t('billing.retry')}
@@ -1100,7 +1129,7 @@ export default function AdminBilling() {
 
                   {!loading && filteredInvoices.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                         {t('billing.admin.noRecords')}
                       </TableCell>
                     </TableRow>
@@ -1122,8 +1151,8 @@ export default function AdminBilling() {
                 <CardDescription className="text-xs">Purchased credit package payments and status</CardDescription>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative w-full sm:w-60">
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1 sm:max-w-60">
                   <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                   <Input
                     placeholder="Search top-up or user…"
@@ -1134,7 +1163,7 @@ export default function AdminBilling() {
                 </div>
 
                 <Select value={topupStatusFilter} onValueChange={(val) => val && setTopupStatusFilter(val)}>
-                  <SelectTrigger className="h-9 w-36 text-xs">
+                  <SelectTrigger className="h-9 w-36 shrink-0 text-xs">
                     <Filter className="size-3.5 mr-1 text-muted-foreground" />
                     <span className="capitalize">{topupStatusFilter === 'all' ? 'All Statuses' : formatStatus(topupStatusFilter)}</span>
                   </SelectTrigger>
@@ -1158,11 +1187,11 @@ export default function AdminBilling() {
                     <TableHead className="w-[120px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Credits</TableHead>
                     <TableHead className="w-[150px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount Paid</TableHead>
                     <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</TableHead>
-                    <TableHead className="w-[110px] pr-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                    <TableHead className="w-[110px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading && Array.from({ length: 5 }).map((_, i) => (
+                  {loading && Array.from({ length: topupPaging.pageSize }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-9 w-48" /></TableCell>
@@ -1245,17 +1274,17 @@ export default function AdminBilling() {
         <TabsContent value="catalog" className="space-y-6">
           <div className="grid gap-6 xl:grid-cols-2">
             {/* Resource Plans */}
-            <Card>
-              <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+            <Card className="h-full">
+              <CardHeader className="flex flex-col gap-3 pb-3">
+                <div className="min-w-0">
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
                     <Boxes className="size-4 text-primary" />
                     {t('billing.admin.resourcePlans')}
                   </CardTitle>
                   <CardDescription className="text-xs">Active and historical compute resource pricing specs</CardDescription>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative w-full sm:w-44">
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
                       placeholder="Search spec…"
@@ -1265,7 +1294,7 @@ export default function AdminBilling() {
                     />
                   </div>
                   <Select value={specTypeFilter} onValueChange={(v) => v && setSpecTypeFilter(v)}>
-                    <SelectTrigger className="h-8 w-28 text-xs">
+                    <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
                       <span className="capitalize">{specTypeFilter === 'all' ? 'All Types' : specTypeFilter}</span>
                     </SelectTrigger>
                     <SelectContent side="bottom" align="end">
@@ -1275,7 +1304,7 @@ export default function AdminBilling() {
                     </SelectContent>
                   </Select>
                   <Select value={specActiveFilter} onValueChange={(v) => v && setSpecActiveFilter(v)}>
-                    <SelectTrigger className="h-8 w-28 text-xs">
+                    <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
                       <span className="capitalize">{specActiveFilter}</span>
                     </SelectTrigger>
                     <SelectContent side="bottom" align="end">
@@ -1286,10 +1315,13 @@ export default function AdminBilling() {
                   </Select>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+              <CardContent className="flex-1 space-y-3">
+                {loading && Array.from({ length: specPaging.pageSize }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
                 {!loading && errors.plans && (
                   <p className="text-sm text-destructive">{t('billing.loadError', { section: t('billing.admin.resourcePlans') })}</p>
+                )}
+                {!loading && !errors.plans && sortedSpecs.length === 0 && (
+                  <p className="py-8 text-center text-sm text-muted-foreground">{t('billing.admin.noRecords')}</p>
                 )}
                 {!loading &&
                   sortedSpecs
@@ -1304,7 +1336,7 @@ export default function AdminBilling() {
                             </Badge>
                             {spec.badge_text && <Badge className="text-[10px]">{spec.badge_text}</Badge>}
                           </div>
-                          <p className="text-xs font-semibold text-primary mt-0.5">
+                          <p className="text-xs font-semibold tabular-nums text-primary mt-0.5">
                             {formatCredits(spec.monthly_credits)} {t('billing.credits')} / mo
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
@@ -1329,17 +1361,17 @@ export default function AdminBilling() {
             </Card>
 
             {/* Topup Packages */}
-            <Card>
-              <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+            <Card className="h-full">
+              <CardHeader className="flex flex-col gap-3 pb-3">
+                <div className="min-w-0">
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
                     <Coins className="size-4 text-emerald-500" />
                     {t('billing.admin.topupPackages')}
                   </CardTitle>
                   <CardDescription className="text-xs font-normal">Purchasable credit bundle offers</CardDescription>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative w-full sm:w-44">
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
                       placeholder="Search amount…"
@@ -1349,7 +1381,7 @@ export default function AdminBilling() {
                     />
                   </div>
                   <Select value={packageActiveFilter} onValueChange={(v) => v && setPackageActiveFilter(v)}>
-                    <SelectTrigger className="h-8 w-28 text-xs">
+                    <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
                       <span className="capitalize">{packageActiveFilter}</span>
                     </SelectTrigger>
                     <SelectContent side="bottom" align="end">
@@ -1360,21 +1392,27 @@ export default function AdminBilling() {
                   </Select>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+              <CardContent className="flex-1 space-y-3">
+                {loading && Array.from({ length: packagePaging.pageSize }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                {!loading && errors.plans && (
+                  <p className="text-sm text-destructive">{t('billing.loadError', { section: t('billing.admin.topupPackages') })}</p>
+                )}
+                {!loading && !errors.plans && sortedPackages.length === 0 && (
+                  <p className="py-8 text-center text-sm text-muted-foreground">{t('billing.admin.noRecords')}</p>
+                )}
                 {!loading &&
                   sortedPackages
                     .slice(packagePaging.start, packagePaging.end)
                     .map((pkg) => (
                       <div key={pkg.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0">
                         <div>
-                          <div className="text-sm font-semibold text-foreground">
+                          <div className="text-sm font-semibold tabular-nums text-foreground">
                             {formatCredits(pkg.credits)} {t('billing.credits')}
                           </div>
-                          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          <div className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                             {formatMoney(pkg.amount_minor, pkg.currency)}
                           </div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                          <div className="text-[10px] tabular-nums text-muted-foreground mt-0.5">
                             Version v{pkg.version} • Order #{pkg.sort_order}
                           </div>
                         </div>
