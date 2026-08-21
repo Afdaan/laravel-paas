@@ -900,9 +900,26 @@ func (s *CatalogService) ListAdminInvoices(ctx context.Context, page, limit int)
 	if err := query.Order("created_at DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&invoices).Error; err != nil {
 		return AdminCollection[AdminInvoiceView]{}, fmt.Errorf("list invoices: %w", err)
 	}
+
+	invoiceIDs := make([]uint, 0, len(invoices))
+	for _, invoice := range invoices {
+		invoiceIDs = append(invoiceIDs, invoice.ID)
+	}
+	itemsMap, err := s.listInvoiceItemsForInvoices(ctx, invoiceIDs)
+	if err != nil {
+		return AdminCollection[AdminInvoiceView]{}, err
+	}
+
 	result := AdminCollection[AdminInvoiceView]{Data: make([]AdminInvoiceView, 0, len(invoices)), Page: page, Limit: limit, Total: total}
 	for _, invoice := range invoices {
-		result.Data = append(result.Data, AdminInvoiceView{UserID: invoice.UserID, InvoiceView: invoiceViewFromModel(invoice)})
+		view := invoiceViewFromModel(invoice)
+		// Line items drive the admin invoice detail modal. One extra query for
+		// the whole page, not one per invoice.
+		view.Items = itemsMap[invoice.ID]
+		if view.Items == nil {
+			view.Items = []InvoiceItemView{}
+		}
+		result.Data = append(result.Data, AdminInvoiceView{UserID: invoice.UserID, InvoiceView: view})
 	}
 	return result, nil
 }

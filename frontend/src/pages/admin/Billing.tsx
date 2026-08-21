@@ -65,7 +65,8 @@ type Catalog = {
 type Suspension = { user_id: number; resource_id: number; resource_type: string; status: string; oldest_due_at?: string; payment_due_days: number }
 type Page<T> = { data: T[]; page: number; limit: number; total: number }
 type Wallet = { user_id: number; balance_credits: number; updated_at: string }
-type Invoice = { id: number; user_id: number; total_credits: number; status: string; period_start: string; period_end: string; due_at?: string; paid_at?: string }
+type InvoiceItem = { id: number; resource_type: string; resource_name: string; spec_name: string; description: string; credits: number }
+type Invoice = { id: number; user_id: number; total_credits: number; status: string; period_start: string; period_end: string; due_at?: string; paid_at?: string; created_at?: string; items?: InvoiceItem[] }
 type Topup = { id: number; user_id: number; credits: number; amount_minor: number; currency: string; status: string; created_at: string; paid_at?: string }
 type TopupPackage = { id: number; credits: number; amount_minor: number; currency: string; sort_order: number }
 type SpecForm = {
@@ -177,6 +178,14 @@ export default function AdminBilling() {
   const [savingDirectCreditAdjustment, setSavingDirectCreditAdjustment] = useState(false)
   const [directCreditAdjustmentForm, setDirectCreditAdjustmentForm] = useState(emptyDirectCreditAdjustment)
   const [isDirectCreditModalOpen, setIsDirectCreditModalOpen] = useState(false)
+  const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null)
+
+  // Catalog filters
+  const [specSearch, setSpecSearch] = useState('')
+  const [specTypeFilter, setSpecTypeFilter] = useState<string>('all')
+  const [specActiveFilter, setSpecActiveFilter] = useState<string>('active')
+  const [packageSearch, setPackageSearch] = useState('')
+  const [packageActiveFilter, setPackageActiveFilter] = useState<string>('active')
 
   const locale = language === 'id' ? 'id-ID' : 'en-US'
   // Intl constructors are expensive; one per table cell dominated render cost.
@@ -259,20 +268,30 @@ export default function AdminBilling() {
 
   // .sort() mutates in place — sorting catalog.specs directly in JSX reordered
   // the state array on every render. Copy first.
-  const sortedSpecs = useMemo(
-    () =>
-      [...(catalog?.specs ?? [])].sort((a, b) =>
-        a.is_active === b.is_active ? b.version - a.version : a.is_active ? -1 : 1,
-      ),
-    [catalog],
-  )
-  const sortedPackages = useMemo(
-    () =>
-      [...(catalog?.packages ?? [])].sort((a, b) =>
-        a.is_active === b.is_active ? a.sort_order - b.sort_order : a.is_active ? -1 : 1,
-      ),
-    [catalog],
-  )
+  const sortedSpecs = useMemo(() => {
+    const query = specSearch.toLowerCase().trim()
+    return [...(catalog?.specs ?? [])]
+      .filter((spec) => {
+        if (specTypeFilter !== 'all' && spec.type !== specTypeFilter) return false
+        if (specActiveFilter === 'active' && !spec.is_active) return false
+        if (specActiveFilter === 'inactive' && spec.is_active) return false
+        if (!query) return true
+        return spec.name.toLowerCase().includes(query) || spec.slug.toLowerCase().includes(query)
+      })
+      .sort((a, b) => (a.is_active === b.is_active ? b.version - a.version : a.is_active ? -1 : 1))
+  }, [catalog, specSearch, specTypeFilter, specActiveFilter])
+
+  const sortedPackages = useMemo(() => {
+    const query = packageSearch.toLowerCase().trim()
+    return [...(catalog?.packages ?? [])]
+      .filter((pkg) => {
+        if (packageActiveFilter === 'active' && !pkg.is_active) return false
+        if (packageActiveFilter === 'inactive' && pkg.is_active) return false
+        if (!query) return true
+        return String(pkg.credits).includes(query) || String(toMajorUnits(pkg.amount_minor, pkg.currency)).includes(query)
+      })
+      .sort((a, b) => (a.is_active === b.is_active ? a.sort_order - b.sort_order : a.is_active ? -1 : 1))
+  }, [catalog, packageSearch, packageActiveFilter])
   const specPaging = usePagination(sortedSpecs.length)
   const packagePaging = usePagination(sortedPackages.length)
 
@@ -853,11 +872,11 @@ export default function AdminBilling() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[280px]">User Account</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead className="text-right">Credit Balance</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User Account</TableHead>
+                    <TableHead className="w-[120px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Role</TableHead>
+                    <TableHead className="w-[180px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Credit Balance</TableHead>
+                    <TableHead className="w-[140px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Last Updated</TableHead>
+                    <TableHead className="w-[140px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -886,26 +905,24 @@ export default function AdminBilling() {
                     const userDetails = getUserDetails(wallet.user_id)
                     return (
                       <TableRow key={wallet.user_id} className="transition-colors hover:bg-muted/40">
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                        <TableCell className="py-2 pl-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                               {userDetails.initials}
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-semibold text-sm truncate">{userDetails.name}</span>
-                                <Badge variant="outline" className="text-[10px] font-mono shrink-0 px-1 py-0">
-                                  #{wallet.user_id}
-                                </Badge>
+                                <span className="truncate text-xs font-semibold">{userDetails.name}</span>
+                                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">#{wallet.user_id}</span>
                               </div>
-                              <div className="text-xs text-muted-foreground truncate">{userDetails.email || 'No email registered'}</div>
+                              <div className="truncate text-[11px] text-muted-foreground">{userDetails.email || 'No email registered'}</div>
                             </div>
                           </div>
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="py-2">
                           {userDetails.found ? (
-                            <Badge variant="secondary" className="capitalize text-xs font-medium">
+                            <Badge variant="secondary" className="text-[10px] font-medium capitalize">
                               {userDetails.role}
                             </Badge>
                           ) : (
@@ -913,18 +930,18 @@ export default function AdminBilling() {
                           )}
                         </TableCell>
 
-                        <TableCell className="text-right">
-                          <span className="font-bold text-sm tracking-tight text-foreground">
+                        <TableCell className="py-2 text-right">
+                          <span className="text-xs font-semibold tabular-nums text-foreground">
                             {formatCredits(wallet.balance_credits)}
                           </span>
-                          <span className="text-xs text-muted-foreground ml-1.5">{t('billing.credits')}</span>
+                          <span className="ml-1 text-[11px] text-muted-foreground">{t('billing.credits')}</span>
                         </TableCell>
 
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="py-2 text-[11px] tabular-nums text-muted-foreground">
                           {formatDate(wallet.updated_at)}
                         </TableCell>
 
-                        <TableCell className="text-right">
+                        <TableCell className="py-2 pr-4 text-right">
                           {isSuperAdmin && (
                             <Button
                               size="sm"
@@ -996,12 +1013,13 @@ export default function AdminBilling() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">Invoice ID</TableHead>
-                    <TableHead className="w-[260px]">User Account</TableHead>
-                    <TableHead className="text-right">Credits Charged</TableHead>
-                    <TableHead>Billing Period</TableHead>
-                    <TableHead>Paid / Due Date</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
+                    <TableHead className="w-[110px] pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Invoice ID</TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User Account</TableHead>
+                    <TableHead className="w-[130px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Credits</TableHead>
+                    <TableHead className="w-[230px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Billing Period</TableHead>
+                    <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Paid / Due</TableHead>
+                    <TableHead className="w-[110px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                    <TableHead className="w-[80px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Detail</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1031,38 +1049,50 @@ export default function AdminBilling() {
                     const userDetails = getUserDetails(invoice.user_id)
                     return (
                       <TableRow key={invoice.id} className="transition-colors hover:bg-muted/40">
-                        <TableCell className="font-mono text-xs font-bold text-foreground">
+                        <TableCell className="py-2 pl-4 font-mono text-[11px] font-semibold text-foreground">
                           #INV-{invoice.id}
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="py-2">
                           <div className="flex items-center gap-2.5">
-                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-xs font-bold text-blue-500">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-[11px] font-semibold text-blue-500">
                               {userDetails.initials}
                             </div>
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold truncate">{userDetails.name}</div>
-                              <div className="text-[10px] text-muted-foreground truncate">{userDetails.email || `#${invoice.user_id}`}</div>
+                              <div className="truncate text-xs font-semibold">{userDetails.name}</div>
+                              <div className="truncate text-[11px] text-muted-foreground">{userDetails.email || `#${invoice.user_id}`}</div>
                             </div>
                           </div>
                         </TableCell>
 
-                        <TableCell className="text-right font-bold text-xs tracking-tight">
-                          {formatCredits(invoice.total_credits)} {t('billing.credits')}
+                        <TableCell className="py-2 text-right">
+                          <span className="text-xs font-semibold tabular-nums">{formatCredits(invoice.total_credits)}</span>
+                          <span className="ml-1 text-[11px] text-muted-foreground">{t('billing.credits')}</span>
                         </TableCell>
 
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="py-2 text-[11px] tabular-nums text-muted-foreground">
                           {formatDate(invoice.period_start)} – {formatDate(invoice.period_end)}
                         </TableCell>
 
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="py-2 text-[11px] tabular-nums text-muted-foreground">
                           {formatDate(invoice.paid_at || invoice.due_at)}
                         </TableCell>
 
-                        <TableCell className="text-right">
-                          <Badge variant={statusVariant(invoice.status)}>
+                        <TableCell className="py-2">
+                          <Badge variant={statusVariant(invoice.status)} className="text-[10px]">
                             {formatStatus(invoice.status)}
                           </Badge>
+                        </TableCell>
+
+                        <TableCell className="py-2 pr-4 text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-[11px] font-medium"
+                            onClick={() => setViewingInvoice(invoice)}
+                          >
+                            {t('billing.viewReceipt')}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     )
@@ -1123,12 +1153,12 @@ export default function AdminBilling() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">Top-up ID</TableHead>
-                    <TableHead className="w-[260px]">User Account</TableHead>
-                    <TableHead className="text-right">Credits</TableHead>
-                    <TableHead className="text-right">Amount Paid</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
+                    <TableHead className="w-[110px] pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Top-up ID</TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User Account</TableHead>
+                    <TableHead className="w-[120px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Credits</TableHead>
+                    <TableHead className="w-[150px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount Paid</TableHead>
+                    <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Date</TableHead>
+                    <TableHead className="w-[110px] pr-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1158,36 +1188,37 @@ export default function AdminBilling() {
                     const userDetails = getUserDetails(topup.user_id)
                     return (
                       <TableRow key={topup.id} className="transition-colors hover:bg-muted/40">
-                        <TableCell className="font-mono text-xs font-bold text-foreground">
+                        <TableCell className="py-2 pl-4 font-mono text-[11px] font-semibold text-foreground">
                           #TOP-{topup.id}
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="py-2">
                           <div className="flex items-center gap-2.5">
-                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-500">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-[11px] font-semibold text-emerald-500">
                               {userDetails.initials}
                             </div>
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold truncate">{userDetails.name}</div>
-                              <div className="text-[10px] text-muted-foreground truncate">{userDetails.email || `#${topup.user_id}`}</div>
+                              <div className="truncate text-xs font-semibold">{userDetails.name}</div>
+                              <div className="truncate text-[11px] text-muted-foreground">{userDetails.email || `#${topup.user_id}`}</div>
                             </div>
                           </div>
                         </TableCell>
 
-                        <TableCell className="text-right font-bold text-xs">
-                          {formatCredits(topup.credits)} {t('billing.credits')}
+                        <TableCell className="py-2 text-right">
+                          <span className="text-xs font-semibold tabular-nums">{formatCredits(topup.credits)}</span>
+                          <span className="ml-1 text-[11px] text-muted-foreground">{t('billing.credits')}</span>
                         </TableCell>
 
-                        <TableCell className="text-right font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                        <TableCell className="py-2 text-right text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                           {formatMoney(topup.amount_minor, topup.currency)}
                         </TableCell>
 
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="py-2 text-[11px] tabular-nums text-muted-foreground">
                           {formatDate(topup.paid_at || topup.created_at)}
                         </TableCell>
 
-                        <TableCell className="text-right">
-                          <Badge variant={statusVariant(topup.status)}>
+                        <TableCell className="py-2 pr-4 text-right">
+                          <Badge variant={statusVariant(topup.status)} className="text-[10px]">
                             {formatStatus(topup.status)}
                           </Badge>
                         </TableCell>
@@ -1215,12 +1246,45 @@ export default function AdminBilling() {
           <div className="grid gap-6 xl:grid-cols-2">
             {/* Resource Plans */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Boxes className="size-4 text-primary" />
-                  {t('billing.admin.resourcePlans')}
-                </CardTitle>
-                <CardDescription className="text-xs">Active and historical compute resource pricing specs</CardDescription>
+              <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Boxes className="size-4 text-primary" />
+                    {t('billing.admin.resourcePlans')}
+                  </CardTitle>
+                  <CardDescription className="text-xs">Active and historical compute resource pricing specs</CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative w-full sm:w-44">
+                    <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search spec…"
+                      value={specSearch}
+                      onChange={(e) => setSpecSearch(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                    />
+                  </div>
+                  <Select value={specTypeFilter} onValueChange={(v) => v && setSpecTypeFilter(v)}>
+                    <SelectTrigger className="h-8 w-28 text-xs">
+                      <span className="capitalize">{specTypeFilter === 'all' ? 'All Types' : specTypeFilter}</span>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" align="end">
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="project">Project</SelectItem>
+                      <SelectItem value="database">Database</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={specActiveFilter} onValueChange={(v) => v && setSpecActiveFilter(v)}>
+                    <SelectTrigger className="h-8 w-28 text-xs">
+                      <span className="capitalize">{specActiveFilter}</span>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" align="end">
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="all">All Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
@@ -1266,12 +1330,35 @@ export default function AdminBilling() {
 
             {/* Topup Packages */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Coins className="size-4 text-emerald-500" />
-                  {t('billing.admin.topupPackages')}
-                </CardTitle>
-                <CardDescription className="text-xs font-normal">Purchasable credit bundle offers</CardDescription>
+              <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Coins className="size-4 text-emerald-500" />
+                    {t('billing.admin.topupPackages')}
+                  </CardTitle>
+                  <CardDescription className="text-xs font-normal">Purchasable credit bundle offers</CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative w-full sm:w-44">
+                    <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search amount…"
+                      value={packageSearch}
+                      onChange={(e) => setPackageSearch(e.target.value)}
+                      className="pl-8 h-8 text-xs"
+                    />
+                  </div>
+                  <Select value={packageActiveFilter} onValueChange={(v) => v && setPackageActiveFilter(v)}>
+                    <SelectTrigger className="h-8 w-28 text-xs">
+                      <span className="capitalize">{packageActiveFilter}</span>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" align="end">
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="all">All Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
@@ -1511,6 +1598,79 @@ export default function AdminBilling() {
               <Button type="submit" disabled={savingCreditAdjustment}>{savingCreditAdjustment ? '…' : t('billing.admin.saveCredits')}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Detail Modal */}
+      <Dialog open={viewingInvoice !== null} onOpenChange={(open) => !open && setViewingInvoice(null)}>
+        <DialogContent className="max-w-lg p-0 overflow-hidden">
+          {viewingInvoice && (() => {
+            const userDetails = getUserDetails(viewingInvoice.user_id)
+            return (
+              <div>
+                <DialogHeader className="p-6 pb-4 border-b border-border/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <DialogTitle className="text-base font-semibold font-mono">
+                      #INV-{viewingInvoice.id}
+                    </DialogTitle>
+                    <Badge variant={statusVariant(viewingInvoice.status)} className="text-xs">
+                      {formatStatus(viewingInvoice.status)}
+                    </Badge>
+                  </div>
+                  <DialogDescription className="text-xs text-muted-foreground mt-1">
+                    {t('billing.periodLabel')}: {formatDate(viewingInvoice.period_start)} &ndash; {formatDate(viewingInvoice.period_end)}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="p-6 space-y-4 text-xs">
+                  {/* Account detail */}
+                  <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/20 p-3">
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">User Account</span>
+                      <div className="font-semibold text-sm mt-0.5">{userDetails.name}</div>
+                      <div className="text-muted-foreground">{userDetails.email || `#${viewingInvoice.user_id}`}</div>
+                    </div>
+                    <Badge variant="outline" className="font-mono text-xs">ID #{viewingInvoice.user_id}</Badge>
+                  </div>
+
+                  {/* Line items */}
+                  <div>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Line Items</span>
+                    {viewingInvoice.items && viewingInvoice.items.length > 0 ? (
+                      <div className="rounded-lg border border-border/50 divide-y divide-border/40 overflow-hidden">
+                        {viewingInvoice.items.map((item) => (
+                          <div key={item.id} className="p-3 flex items-start justify-between gap-3 bg-card/40">
+                            <div>
+                              <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                                <span>{item.resource_name || item.description || 'Resource Usage'}</span>
+                                <Badge variant="outline" className="text-[9px] capitalize py-0 px-1">{item.resource_type}</Badge>
+                              </div>
+                              <div className="text-[11px] text-muted-foreground mt-0.5">{item.spec_name}</div>
+                            </div>
+                            <div className="font-semibold tabular-nums text-xs whitespace-nowrap">
+                              {formatCredits(item.credits)} {t('billing.credits')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-muted-foreground border border-dashed rounded-lg">
+                        {t('billing.noMatchingInvoices')}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="border-t border-border/60 pt-3 flex items-center justify-between font-semibold text-sm">
+                    <span>Total Charged</span>
+                    <span className="tabular-nums text-primary">
+                      {formatCredits(viewingInvoice.total_credits)} {t('billing.credits')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
