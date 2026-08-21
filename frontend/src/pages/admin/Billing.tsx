@@ -33,6 +33,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TablePagination } from '@/components/ui/table-pagination'
+import { serverPagination, usePagination } from '@/lib/pagination'
 
 type Catalog = {
   specs: Array<{
@@ -80,7 +82,7 @@ type SpecForm = {
   reason: string
 }
 
-const PAGE_LIMIT = 20
+const PAGE_LIMIT = 10
 const emptySpec: SpecForm = { type: 'project', name: '', slug: '', cpu_millicores: '', memory_mb: '', storage_gb: '', monthly_credits: '', connection_limit: '', backup_retention_days: '', badge_text: '', reason: '' }
 const slugify = (text: string) => text.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '')
 
@@ -144,6 +146,9 @@ export default function AdminBilling() {
   const [walletPage, setWalletPage] = useState(1)
   const [invoicePage, setInvoicePage] = useState(1)
   const [topupPage, setTopupPage] = useState(1)
+  const [walletLimit, setWalletLimit] = useState(PAGE_LIMIT)
+  const [invoiceLimit, setInvoiceLimit] = useState(PAGE_LIMIT)
+  const [topupLimit, setTopupLimit] = useState(PAGE_LIMIT)
   
   // Period filter state
   const [selectedPeriod, setSelectedPeriod] = useState<string>('this_month')
@@ -174,9 +179,25 @@ export default function AdminBilling() {
   const [isDirectCreditModalOpen, setIsDirectCreditModalOpen] = useState(false)
 
   const locale = language === 'id' ? 'id-ID' : 'en-US'
-  const formatCredits = useCallback((value: number) => new Intl.NumberFormat(locale).format(value), [locale])
-  const formatDate = useCallback((value?: string) => (value ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(value)) : '—'), [locale])
-  const formatMoney = useCallback((amountMinor: number, currency: string) => new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(toMajorUnits(amountMinor, currency)), [locale])
+  // Intl constructors are expensive; one per table cell dominated render cost.
+  // Build once per locale instead.
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }), [locale])
+  const formatCredits = useCallback((value: number) => numberFormat.format(value), [numberFormat])
+  const formatDate = useCallback((value?: string) => (value ? dateFormat.format(new Date(value)) : '—'), [dateFormat])
+  // ponytail: currency varies per row, so cache one formatter per currency seen.
+  // Cache is rebuilt with the closure whenever locale changes.
+  const formatMoney = useMemo(() => {
+    const cache = new Map<string, Intl.NumberFormat>()
+    return (amountMinor: number, currency: string) => {
+      let fmt = cache.get(currency)
+      if (!fmt) {
+        fmt = new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 })
+        cache.set(currency, fmt)
+      }
+      return fmt.format(toMajorUnits(amountMinor, currency))
+    }
+  }, [locale])
 
   const formatStatus = useCallback(
     (status: string) => {
@@ -215,9 +236,9 @@ export default function AdminBilling() {
       }
       const results = await Promise.allSettled([
         billingAPI.adminCatalog(),
-        billingAPI.adminWallets({ page: walletPage, limit: PAGE_LIMIT }),
-        billingAPI.adminInvoices({ page: invoicePage, limit: PAGE_LIMIT }),
-        billingAPI.adminTopups({ page: topupPage, limit: PAGE_LIMIT }),
+        billingAPI.adminWallets({ page: walletPage, limit: walletLimit }),
+        billingAPI.adminInvoices({ page: invoicePage, limit: invoiceLimit }),
+        billingAPI.adminTopups({ page: topupPage, limit: topupLimit }),
         billingAPI.adminSuspensions(),
       ])
       const nextErrors: Record<string, string> = {}
@@ -230,7 +251,30 @@ export default function AdminBilling() {
     } finally {
       setLoading(false)
     }
-  }, [invoicePage, t, topupPage, walletPage, isSuperAdmin])
+  }, [invoicePage, t, topupPage, walletPage, walletLimit, invoiceLimit, topupLimit, isSuperAdmin])
+
+  const walletPaging = serverPagination(walletPage, walletLimit, wallets?.total ?? 0, setWalletPage, setWalletLimit)
+  const invoicePaging = serverPagination(invoicePage, invoiceLimit, invoices?.total ?? 0, setInvoicePage, setInvoiceLimit)
+  const topupPaging = serverPagination(topupPage, topupLimit, topups?.total ?? 0, setTopupPage, setTopupLimit)
+
+  // .sort() mutates in place — sorting catalog.specs directly in JSX reordered
+  // the state array on every render. Copy first.
+  const sortedSpecs = useMemo(
+    () =>
+      [...(catalog?.specs ?? [])].sort((a, b) =>
+        a.is_active === b.is_active ? b.version - a.version : a.is_active ? -1 : 1,
+      ),
+    [catalog],
+  )
+  const sortedPackages = useMemo(
+    () =>
+      [...(catalog?.packages ?? [])].sort((a, b) =>
+        a.is_active === b.is_active ? a.sort_order - b.sort_order : a.is_active ? -1 : 1,
+      ),
+    [catalog],
+  )
+  const specPaging = usePagination(sortedSpecs.length)
+  const packagePaging = usePagination(sortedPackages.length)
 
   useEffect(() => {
     void load()
@@ -909,34 +953,7 @@ export default function AdminBilling() {
             </CardContent>
 
             {/* Pagination Footer */}
-            {wallets && (
-              <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
-                <div>
-                  {t('billing.admin.total', { count: filteredWallets.length, total: wallets.total })}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={wallets.page <= 1 || loading}
-                    onClick={() => setWalletPage(wallets.page - 1)}
-                    className="h-8 text-xs"
-                  >
-                    {t('common.previous')}
-                  </Button>
-                  <span className="font-medium text-foreground">Page {wallets.page}</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={wallets.page * wallets.limit >= wallets.total || loading}
-                    onClick={() => setWalletPage(wallets.page + 1)}
-                    className="h-8 text-xs"
-                  >
-                    {t('common.next')}
-                  </Button>
-                </div>
-              </div>
-            )}
+            <TablePagination state={walletPaging} disabled={loading} />
           </Card>
         </TabsContent>
 
@@ -1062,34 +1079,7 @@ export default function AdminBilling() {
               </Table>
             </CardContent>
 
-            {invoices && (
-              <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
-                <div>
-                  {t('billing.admin.total', { count: filteredInvoices.length, total: invoices.total })}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={invoices.page <= 1 || loading}
-                    onClick={() => setInvoicePage(invoices.page - 1)}
-                    className="h-8 text-xs"
-                  >
-                    {t('common.previous')}
-                  </Button>
-                  <span className="font-medium text-foreground">Page {invoices.page}</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={invoices.page * invoices.limit >= invoices.total || loading}
-                    onClick={() => setInvoicePage(invoices.page + 1)}
-                    className="h-8 text-xs"
-                  >
-                    {t('common.next')}
-                  </Button>
-                </div>
-              </div>
-            )}
+            <TablePagination state={invoicePaging} disabled={loading} />
           </Card>
         </TabsContent>
 
@@ -1216,34 +1206,7 @@ export default function AdminBilling() {
               </Table>
             </CardContent>
 
-            {topups && (
-              <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
-                <div>
-                  {t('billing.admin.total', { count: filteredTopups.length, total: topups.total })}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={topups.page <= 1 || loading}
-                    onClick={() => setTopupPage(topups.page - 1)}
-                    className="h-8 text-xs"
-                  >
-                    {t('common.previous')}
-                  </Button>
-                  <span className="font-medium text-foreground">Page {topups.page}</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={topups.page * topups.limit >= topups.total || loading}
-                    onClick={() => setTopupPage(topups.page + 1)}
-                    className="h-8 text-xs"
-                  >
-                    {t('common.next')}
-                  </Button>
-                </div>
-              </div>
-            )}
+            <TablePagination state={topupPaging} disabled={loading} />
           </Card>
         </TabsContent>
 
@@ -1265,8 +1228,8 @@ export default function AdminBilling() {
                   <p className="text-sm text-destructive">{t('billing.loadError', { section: t('billing.admin.resourcePlans') })}</p>
                 )}
                 {!loading &&
-                  catalog?.specs
-                    .sort((a, b) => (a.is_active === b.is_active ? b.version - a.version : a.is_active ? -1 : 1))
+                  sortedSpecs
+                    .slice(specPaging.start, specPaging.end)
                     .map((spec) => (
                       <div key={spec.id} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0">
                         <div>
@@ -1298,6 +1261,7 @@ export default function AdminBilling() {
                       </div>
                     ))}
               </CardContent>
+              <TablePagination state={specPaging} disabled={loading} />
             </Card>
 
             {/* Topup Packages */}
@@ -1312,8 +1276,8 @@ export default function AdminBilling() {
               <CardContent className="space-y-3">
                 {loading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
                 {!loading &&
-                  catalog?.packages
-                    .sort((a, b) => (a.is_active === b.is_active ? a.sort_order - b.sort_order : a.is_active ? -1 : 1))
+                  sortedPackages
+                    .slice(packagePaging.start, packagePaging.end)
                     .map((pkg) => (
                       <div key={pkg.id} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0">
                         <div>
@@ -1340,6 +1304,7 @@ export default function AdminBilling() {
                       </div>
                     ))}
               </CardContent>
+              <TablePagination state={packagePaging} disabled={loading} />
             </Card>
           </div>
         </TabsContent>

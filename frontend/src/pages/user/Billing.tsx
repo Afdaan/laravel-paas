@@ -10,10 +10,6 @@ import {
   CalendarClock,
   Check,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Coins,
   Copy,
   CreditCard,
@@ -57,7 +53,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TablePagination } from '@/components/ui/table-pagination'
+import { usePagination } from '@/lib/pagination'
 
 export function isValidPhoneNumber(phone: string, country: string = 'ID'): boolean {
   const trimmed = phone.trim()
@@ -79,77 +76,6 @@ export function isValidPhoneNumber(phone: string, country: string = 'ID'): boole
   }
 
   return digitsOnly.length >= 7 && digitsOnly.length <= 15
-}
-
-// ponytail: client-side slicing only — backend already caps these lists
-// (ledger 100, invoices 50, topups 50). Move to server paging if caps rise.
-function usePagination(total: number) {
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  // Clamp instead of resetting via effect, so shrinking filters can't strand
-  // the view on an empty page.
-  const current = Math.min(page, totalPages)
-  const start = (current - 1) * pageSize
-  return { page: current, pageSize, setPage, setPageSize, totalPages, start, end: start + pageSize, total }
-}
-
-function TablePagination({ state, label }: { state: ReturnType<typeof usePagination>; label: string }) {
-  const { page, pageSize, setPage, setPageSize, totalPages, start, end, total } = state
-  if (total === 0) return null
-  return (
-    <div className="flex flex-col gap-3 border-t border-border/40 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {start + 1}–{Math.min(end, total)} / {total}
-        </span>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
-          <Select
-            value={pageSize.toString()}
-            onValueChange={(value) => {
-              setPageSize(Number(value))
-              setPage(1)
-            }}
-          >
-            <SelectTrigger size="sm" className="h-7 w-[70px] justify-between text-xs">
-              <SelectValue placeholder={pageSize} />
-            </SelectTrigger>
-            <SelectContent side="top" align="start" alignItemWithTrigger={false}>
-              {[10, 20, 30, 50, 100].map((size) => (
-                <SelectItem key={size} value={`${size}`} className="text-xs">
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {page} / {totalPages}
-        </span>
-        <div className="flex items-center gap-1">
-          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(1)} disabled={page === 1}>
-            <span className="sr-only">First page</span>
-            <ChevronsLeft className="size-3.5" />
-          </Button>
-          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(page - 1)} disabled={page === 1}>
-            <span className="sr-only">Previous page</span>
-            <ChevronLeft className="size-3.5" />
-          </Button>
-          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
-            <span className="sr-only">Next page</span>
-            <ChevronRight className="size-3.5" />
-          </Button>
-          <Button variant="outline" className="size-7 p-0" onClick={() => setPage(totalPages)} disabled={page >= totalPages}>
-            <span className="sr-only">Last page</span>
-            <ChevronsRight className="size-3.5" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function Billing() {
@@ -1229,7 +1155,7 @@ export default function Billing() {
                     {ledgerRows}
                   </TableBody>
                 </Table>
-                <TablePagination state={ledgerPage} label={t('common.rowsPerPage')} />
+                <TablePagination state={ledgerPage} />
               </div>
             </TabsContent>
 
@@ -1468,7 +1394,7 @@ export default function Billing() {
                     })}
                   </TableBody>
                 </Table>
-                <TablePagination state={invoicePage} label={t('common.rowsPerPage')} />
+                <TablePagination state={invoicePage} />
               </div>
             </TabsContent>
 
@@ -1531,7 +1457,7 @@ export default function Billing() {
                     ))}
                   </TableBody>
                 </Table>
-                <TablePagination state={topupPage} label={t('common.rowsPerPage')} />
+                <TablePagination state={topupPage} />
               </div>
             </TabsContent>
           </Tabs>
