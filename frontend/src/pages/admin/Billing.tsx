@@ -117,6 +117,16 @@ interface DirectCreditAdjustmentFormState {
 
 const INVOICE_STATUSES = ['paid', 'payment_due', 'void'] as const
 const TOPUP_STATUSES = ['paid', 'pending', 'expired', 'refunded'] as const
+const TYPE_FILTERS = {
+  all: 'billing.admin.allTypes',
+  project: 'billing.admin.project',
+  database: 'billing.admin.database',
+} as const
+const ACTIVE_FILTERS = {
+  active: 'billing.admin.activeOnly',
+  inactive: 'billing.admin.inactiveOnly',
+  all: 'billing.admin.allStatuses',
+} as const
 
 const emptyPackage: PackageFormState = { credits: '', currency: 'IDR', amount_minor: '', sort_order: '', reason: '' }
 const emptyPackageEdit: PackageEditFormState = { credits: '', amount_minor: '', sort_order: '', reason: '' }
@@ -792,11 +802,11 @@ export default function AdminBilling() {
             <Table>
               <TableHeader>
                 <TableRow className="border-amber-500/20 hover:bg-transparent">
-                  <TableHead className="pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.user')}</TableHead>
-                  <TableHead className="w-[200px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.resource')}</TableHead>
-                  <TableHead className="w-[140px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.oldestDueDate')}</TableHead>
-                  <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.overdueDays')}</TableHead>
-                  <TableHead className="w-[130px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.status')}</TableHead>
+                  <TableHead className="pl-4 text-xs font-medium text-muted-foreground">{t('billing.admin.user')}</TableHead>
+                  <TableHead className="w-[200px] text-xs font-medium text-muted-foreground">{t('billing.admin.resource')}</TableHead>
+                  <TableHead className="w-[140px] text-xs font-medium text-muted-foreground">{t('billing.admin.oldestDueDate')}</TableHead>
+                  <TableHead className="w-[130px] text-xs font-medium text-muted-foreground">{t('billing.admin.overdueDays')}</TableHead>
+                  <TableHead className="w-[130px] pr-4 text-right text-xs font-medium text-muted-foreground">{t('billing.admin.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -889,11 +899,11 @@ export default function AdminBilling() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.userAccount')}</TableHead>
-                    <TableHead className="w-[120px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.role')}</TableHead>
-                    <TableHead className="w-[180px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.creditBalance')}</TableHead>
-                    <TableHead className="w-[140px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.lastUpdated')}</TableHead>
-                    <TableHead className="w-[140px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.action')}</TableHead>
+                    <TableHead className="pl-4 text-xs font-medium text-muted-foreground">{t('billing.admin.userAccount')}</TableHead>
+                    <TableHead className="w-[120px] text-xs font-medium text-muted-foreground">{t('billing.admin.role')}</TableHead>
+                    <TableHead className="w-[180px] text-right text-xs font-medium text-muted-foreground">{t('billing.admin.creditBalance')}</TableHead>
+                    <TableHead className="w-[140px] text-xs font-medium text-muted-foreground">{t('billing.admin.lastUpdated')}</TableHead>
+                    <TableHead className="w-[140px] pr-4 text-right text-xs font-medium text-muted-foreground">{t('billing.admin.action')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1017,7 +1027,7 @@ export default function AdminBilling() {
                     <span className="capitalize">{invoiceStatusFilter === 'all' ? t('billing.allStatuses') : formatStatus(invoiceStatusFilter)}</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t('billing.allStatuses')}</SelectItem>
+                    <SelectItem value="all" className="capitalize">{t('billing.allStatuses')}</SelectItem>
                     {INVOICE_STATUSES.map((status) => (
                       <SelectItem key={status} value={status} className="capitalize">{formatStatus(status)}</SelectItem>
                     ))}
@@ -1030,13 +1040,13 @@ export default function AdminBilling() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[110px] pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.invoiceNumber')}</TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.userAccount')}</TableHead>
-                    <TableHead className="w-[130px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.credits')}</TableHead>
-                    <TableHead className="w-[230px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.billingPeriod')}</TableHead>
-                    <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.paidDue')}</TableHead>
-                    <TableHead className="w-[110px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.status')}</TableHead>
-                    <TableHead className="w-[80px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.detail')}</TableHead>
+                    <TableHead className="w-[110px] pl-4 text-xs font-medium text-muted-foreground">{t('billing.invoiceNumber')}</TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground">{t('billing.admin.userAccount')}</TableHead>
+                    <TableHead className="w-[130px] text-right text-xs font-medium text-muted-foreground">{t('billing.credits')}</TableHead>
+                    <TableHead className="w-[230px] text-xs font-medium text-muted-foreground">{t('billing.admin.billingPeriod')}</TableHead>
+                    <TableHead className="w-[130px] text-xs font-medium text-muted-foreground">{t('billing.admin.paidDue')}</TableHead>
+                    <TableHead className="w-[110px] text-xs font-medium text-muted-foreground">{t('billing.admin.status')}</TableHead>
+                    <TableHead className="w-[80px] pr-4 text-right text-xs font-medium text-muted-foreground">{t('billing.admin.detail')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1156,7 +1166,7 @@ export default function AdminBilling() {
                     <span className="capitalize">{topupStatusFilter === 'all' ? t('billing.allStatuses') : formatStatus(topupStatusFilter)}</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t('billing.allStatuses')}</SelectItem>
+                    <SelectItem value="all" className="capitalize">{t('billing.allStatuses')}</SelectItem>
                     {TOPUP_STATUSES.map((status) => (
                       <SelectItem key={status} value={status} className="capitalize">{formatStatus(status)}</SelectItem>
                     ))}
@@ -1169,12 +1179,12 @@ export default function AdminBilling() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[110px] pl-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.topupId')}</TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.userAccount')}</TableHead>
-                    <TableHead className="w-[120px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.credits')}</TableHead>
-                    <TableHead className="w-[150px] text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.amountPaid')}</TableHead>
-                    <TableHead className="w-[130px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.date')}</TableHead>
-                    <TableHead className="w-[110px] pr-4 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('billing.admin.status')}</TableHead>
+                    <TableHead className="w-[110px] pl-4 text-xs font-medium text-muted-foreground">{t('billing.admin.topupId')}</TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground">{t('billing.admin.userAccount')}</TableHead>
+                    <TableHead className="w-[120px] text-right text-xs font-medium text-muted-foreground">{t('billing.credits')}</TableHead>
+                    <TableHead className="w-[150px] text-right text-xs font-medium text-muted-foreground">{t('billing.admin.amountPaid')}</TableHead>
+                    <TableHead className="w-[130px] text-xs font-medium text-muted-foreground">{t('billing.admin.date')}</TableHead>
+                    <TableHead className="w-[110px] pr-4 text-right text-xs font-medium text-muted-foreground">{t('billing.admin.status')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1272,7 +1282,7 @@ export default function AdminBilling() {
                   <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="Search spec…"
+                      placeholder={t('billing.admin.searchSpecs')}
                       value={specSearch}
                       onChange={(e) => setSpecSearch(e.target.value)}
                       className="pl-8 h-8 text-xs"
@@ -1280,22 +1290,22 @@ export default function AdminBilling() {
                   </div>
                   <Select value={specTypeFilter} onValueChange={(v) => v && setSpecTypeFilter(v)}>
                     <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
-                      <span className="capitalize">{specTypeFilter === 'all' ? 'All Types' : specTypeFilter}</span>
+                      <span>{t(TYPE_FILTERS[specTypeFilter as keyof typeof TYPE_FILTERS])}</span>
                     </SelectTrigger>
                     <SelectContent side="bottom" align="end">
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="project">Project</SelectItem>
-                      <SelectItem value="database">Database</SelectItem>
+                      {Object.entries(TYPE_FILTERS).map(([value, key]) => (
+                        <SelectItem key={value} value={value}>{t(key)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <Select value={specActiveFilter} onValueChange={(v) => v && setSpecActiveFilter(v)}>
                     <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
-                      <span className="capitalize">{specActiveFilter}</span>
+                      <span>{t(ACTIVE_FILTERS[specActiveFilter as keyof typeof ACTIVE_FILTERS])}</span>
                     </SelectTrigger>
                     <SelectContent side="bottom" align="end">
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                      <SelectItem value="all">All Status</SelectItem>
+                      {Object.entries(ACTIVE_FILTERS).map(([value, key]) => (
+                        <SelectItem key={value} value={value}>{t(key)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1359,7 +1369,7 @@ export default function AdminBilling() {
                   <div className="relative min-w-0 flex-1">
                     <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="Search amount…"
+                      placeholder={t('billing.admin.searchPackages')}
                       value={packageSearch}
                       onChange={(e) => setPackageSearch(e.target.value)}
                       className="pl-8 h-8 text-xs"
@@ -1367,12 +1377,12 @@ export default function AdminBilling() {
                   </div>
                   <Select value={packageActiveFilter} onValueChange={(v) => v && setPackageActiveFilter(v)}>
                     <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
-                      <span className="capitalize">{packageActiveFilter}</span>
+                      <span>{t(ACTIVE_FILTERS[packageActiveFilter as keyof typeof ACTIVE_FILTERS])}</span>
                     </SelectTrigger>
                     <SelectContent side="bottom" align="end">
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                      <SelectItem value="all">All Status</SelectItem>
+                      {Object.entries(ACTIVE_FILTERS).map(([value, key]) => (
+                        <SelectItem key={value} value={value}>{t(key)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1648,7 +1658,7 @@ export default function AdminBilling() {
                 <div className="space-y-5 p-5 text-xs">
                   {/* Account detail */}
                   <div>
-                    <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="mb-2 block text-xs font-medium text-muted-foreground">
                       {t('billing.admin.userAccount')}
                     </span>
                     <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -1669,7 +1679,7 @@ export default function AdminBilling() {
 
                   {/* Line items */}
                   <div>
-                    <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="mb-2 block text-xs font-medium text-muted-foreground">
                       {t('billing.admin.lineItems')}
                     </span>
                     {viewingInvoice.items && viewingInvoice.items.length > 0 ? (
@@ -1702,7 +1712,7 @@ export default function AdminBilling() {
 
                 {/* Summary */}
                 <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-5 py-4">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <span className="text-xs font-medium text-muted-foreground">
                     {t('billing.totalCharged')}
                   </span>
                   <span className="text-sm font-bold tabular-nums text-foreground">

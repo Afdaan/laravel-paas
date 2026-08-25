@@ -132,10 +132,10 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[32%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">{t('billing.transactionType')}</TableHead>
-                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.amount')}</TableHead>
-                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.balanceAfterHeader')}</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">{t('billing.date')}</TableHead>
+                      <TableHead className="w-[32%] text-xs font-medium text-muted-foreground pl-4">{t('billing.transactionType')}</TableHead>
+                      <TableHead className="w-[24%] text-xs font-medium text-muted-foreground">{t('billing.amount')}</TableHead>
+                      <TableHead className="w-[24%] text-xs font-medium text-muted-foreground">{t('billing.balanceAfterHeader')}</TableHead>
+                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground text-right pr-4">{t('billing.date')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -162,7 +162,7 @@ export function BillingHistorySection({
               {overview.status === 'success' && overview.data.invoices.length > 0 && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {t('billing.totalInvoiced')}
                     </span>
                     <div className="mt-1.5 flex items-baseline gap-2">
@@ -175,7 +175,7 @@ export function BillingHistorySection({
                   </div>
 
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {t('billing.activeSubscriptions')}
                     </span>
                     <div className="mt-1.5 flex items-baseline gap-2">
@@ -190,7 +190,7 @@ export function BillingHistorySection({
                   </div>
 
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {t('billing.upcomingCharges')}
                     </span>
                     <div className="mt-1.5 flex items-baseline gap-2">
@@ -260,22 +260,22 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">
+                      <TableHead className="w-[18%] text-xs font-medium text-muted-foreground pl-4">
                         {t('billing.invoiceNumber')}
                       </TableHead>
-                      <TableHead className="w-[26%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                      <TableHead className="w-[26%] text-xs font-medium text-muted-foreground">
                         {t('billing.servicePeriod')}
                       </TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground">
                         {t('billing.totalCharged')}
                       </TableHead>
-                      <TableHead className="w-[14%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                      <TableHead className="w-[14%] text-xs font-medium text-muted-foreground">
                         {t('billing.invoiceStatus')}
                       </TableHead>
-                      <TableHead className="w-[12%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                      <TableHead className="w-[12%] text-xs font-medium text-muted-foreground">
                         {t('billing.periodLabel')}
                       </TableHead>
-                      <TableHead className="w-[10%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">
+                      <TableHead className="w-[10%] text-xs font-medium text-muted-foreground text-right pr-4">
                         {t('billing.viewInvoice')}
                       </TableHead>
                     </TableRow>
@@ -384,11 +384,11 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">{t('billing.orderId')}</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.creditsPurchased')}</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.amountPaid')}</TableHead>
-                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.status')}</TableHead>
-                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">{t('billing.date')}</TableHead>
+                      <TableHead className="w-[18%] text-xs font-medium text-muted-foreground pl-4">{t('billing.orderId')}</TableHead>
+                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground">{t('billing.creditsPurchased')}</TableHead>
+                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground">{t('billing.amountPaid')}</TableHead>
+                      <TableHead className="w-[18%] text-xs font-medium text-muted-foreground">{t('billing.status')}</TableHead>
+                      <TableHead className="w-[24%] text-xs font-medium text-muted-foreground text-right pr-4">{t('billing.date')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

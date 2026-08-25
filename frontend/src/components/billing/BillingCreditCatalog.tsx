@@ -64,7 +64,7 @@ export function BillingCreditCatalog({
                 <div className="group relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-1.5 transition-all hover:border-primary/40">
                   <div className="rounded-xl border border-primary/10 bg-background/80 p-5 backdrop-blur-sm">
                     <div className="flex items-center justify-between">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{t('billing.balance')}</p>
+                      <p className="text-xs font-medium text-muted-foreground">{t('billing.balance')}</p>
                       <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
                         <WalletCards className="size-3.5" />
                       </div>
@@ -85,7 +85,7 @@ export function BillingCreditCatalog({
                 <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-muted/20 p-1.5 transition-all hover:border-border">
                   <div className="rounded-xl border border-border/40 bg-card/90 p-5">
                     <div className="flex items-center justify-between">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{t('billing.upcomingCharges')}</p>
+                      <p className="text-xs font-medium text-muted-foreground">{t('billing.upcomingCharges')}</p>
                       <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
                         <CalendarClock className="size-3.5" />
                       </div>

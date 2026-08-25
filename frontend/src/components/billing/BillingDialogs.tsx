@@ -127,7 +127,7 @@ export function TopupConfirmationDialog({
               <div className="border-y border-border/60 bg-muted/20">
                 <div className="flex items-start justify-between px-6 py-5">
                   <div>
-                    <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {t('billing.creditsToAdd')}
                     </span>
                     <div className="mt-1.5 flex items-baseline gap-1.5">
@@ -353,7 +353,7 @@ export function InvoiceDialog({
                   </div>
 
                   <div className="sm:text-right space-y-1">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2 py-0.5 rounded-md bg-muted/40 border border-border/60">
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground px-2 py-0.5 rounded-md bg-muted/40 border border-border/60">
                       {t('billing.invoiceNumber')}
                     </span>
                     <h3 className="text-base font-mono font-bold tracking-tight text-foreground pt-0.5">
@@ -373,7 +373,7 @@ export function InvoiceDialog({
                 {/* Billed To & Payment Meta */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl border border-border/60 bg-muted/20">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <p className="text-xs font-medium text-muted-foreground">
                       {t('billing.billedTo')}:
                     </p>
                     <h4 className="mt-0.5 text-xs font-bold text-foreground">
@@ -397,7 +397,7 @@ export function InvoiceDialog({
 
                   <div className="sm:text-right space-y-2">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      <p className="text-xs font-medium text-muted-foreground">
                         {t('billing.invoiceStatus')}
                       </p>
                       <div className="mt-1 flex sm:justify-end">
@@ -405,7 +405,7 @@ export function InvoiceDialog({
                       </div>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      <p className="text-xs font-medium text-muted-foreground">
                         {t('billing.paymentMethod')}
                       </p>
                       <p className="text-xs font-medium text-foreground">{t('billing.paymentMethodWallet')}</p>
@@ -415,7 +415,7 @@ export function InvoiceDialog({
 
                 {/* Itemized Line Items Table */}
                 <div className="space-y-2">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <h4 className="text-xs font-medium text-muted-foreground">
                     {t('billing.itemDescription')}
                   </h4>
                   <div className="rounded-xl border border-border/60 overflow-hidden bg-card">

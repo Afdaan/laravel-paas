@@ -11,10 +11,10 @@ import useTranslation from '@/lib/useTranslation'
 type Tone = 'positive' | 'attention' | 'negative' | 'neutral'
 
 const TONES: Record<Tone, string> = {
-  positive: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 [&>i]:bg-emerald-500',
-  attention: 'border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400 [&>i]:bg-amber-500',
-  negative: 'border-destructive/25 bg-destructive/10 text-destructive [&>i]:bg-destructive',
-  neutral: 'border-border bg-muted/50 text-muted-foreground [&>i]:bg-muted-foreground',
+  positive: 'border-emerald-600/20 bg-emerald-600/8 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/8 dark:text-emerald-300',
+  attention: 'border-amber-600/20 bg-amber-600/8 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/8 dark:text-amber-300',
+  negative: 'border-destructive/20 bg-destructive/8 text-destructive',
+  neutral: 'border-border bg-muted/40 text-muted-foreground',
 }
 
 const STATUS_TONES: Record<string, Tone> = {
@@ -33,15 +33,7 @@ const STATUS_TONES: Record<string, Tone> = {
   inactive: 'neutral',
 }
 
-export function StatusBadge({
-  status,
-  className,
-  dot = true,
-}: {
-  status: string
-  className?: string
-  dot?: boolean
-}) {
+export function StatusBadge({ status, className }: { status: string; className?: string }) {
   const { t } = useTranslation()
   // Statuses live under two translation namespaces; fall back to the raw key.
   const invoice = t(`billing.statuses.${status}`)
@@ -56,13 +48,12 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        'inline-flex h-[22px] w-fit shrink-0 items-center gap-1.5 rounded-md border px-2',
-        'font-mono text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap',
+        'inline-flex h-[22px] w-fit shrink-0 items-center rounded border px-2',
+        'text-xs font-medium capitalize whitespace-nowrap',
         TONES[STATUS_TONES[status] ?? 'neutral'],
         className,
       )}
     >
-      {dot && <i className="size-1.5 shrink-0 rounded-full" />}
       {label}
     </span>
   )
