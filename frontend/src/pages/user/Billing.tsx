@@ -46,6 +46,11 @@ export default function Billing() {
     address_line1: '', address_line2: '', city: '', state_province: '',
     postal_code: '', country: 'ID'
   })
+  const isProfileDirtyRef = useRef(false)
+  const handleUpdateProfile = useCallback((updater: SetStateAction<BillingProfile>) => {
+    isProfileDirtyRef.current = true
+    setProfile(updater)
+  }, [])
   const [savingProfile, setSavingProfile] = useState(false)
   const [isProfileSaved, setIsProfileSaved] = useState(false)
   const [activePaymentModal, setActivePaymentModal] = useState<TopupResponse | null>(null)
@@ -125,21 +130,22 @@ export default function Billing() {
     const nextOverview = nextBillingRequestState(overviewResult, currentOverview, (response) => response.data)
     const nextPackages = nextBillingRequestState(catalogResult, currentPackages, (response) => response.data.packages)
     const nextStatuses = nextBillingRequestState(statusResult, currentStatuses, (response) => response.data)
-    setOverview(nextOverview)
-    setPackages(nextPackages)
-    setStatuses(nextStatuses)
     const hasStaleData =
       (overviewResult.status === 'rejected' && nextOverview.status === 'success') ||
       (catalogResult.status === 'rejected' && nextPackages.status === 'success') ||
       (statusResult.status === 'rejected' && nextStatuses.status === 'success')
-    setStaleWarning(hasStaleData)
+
+    let profileToSet: BillingProfile | null = null
+    let markProfileSaved = false
 
     if (!hasLoadedProfileRef.current) {
-      hasLoadedProfileRef.current = true
       try {
         const resProf = await billingAPI.getProfile()
+        // Mark loaded only after a conclusive response (success or authoritative not-found).
+        // Network errors / 5xx leave the flag unset so the next poll can retry.
+        hasLoadedProfileRef.current = true
         if (resProf.data) {
-          const loadedProf = {
+          const loadedProf: BillingProfile = {
             company_name: resProf.data.company_name ?? '',
             tax_id: resProf.data.tax_id ?? '',
             email: resProf.data.email ?? '',
@@ -151,16 +157,33 @@ export default function Billing() {
             postal_code: resProf.data.postal_code ?? '',
             country: resProf.data.country || 'ID',
           }
-          setProfile(loadedProf)
+          // Only hydrate profile if the user hasn't modified any form input (dirty protection)
+          if (!isProfileDirtyRef.current) {
+            profileToSet = loadedProf
+          }
           if (isBillingProfileComplete(loadedProf)) {
-            setIsProfileSaved(true)
+            markProfileSaved = true
           }
         }
       } catch (e) {
-        // ignore error (e.g. initial profile not created or backend unavailable)
+        // Transient error (network, 5xx): leave hasLoadedProfileRef.current = false
+        // so the next poll attempt will retry.
       }
     }
+
+    // Reset in-flight ref BEFORE batching state updates so the scheduled re-render
+    // evaluates loadInFlight.current === false (e.g. Refresh button is enabled).
     loadInFlight.current = false
+    setOverview(nextOverview)
+    setPackages(nextPackages)
+    setStatuses(nextStatuses)
+    setStaleWarning(hasStaleData)
+    if (profileToSet) {
+      setProfile(profileToSet)
+    }
+    if (markProfileSaved) {
+      setIsProfileSaved(true)
+    }
     // Reads current state via refs, so this stays referentially stable and the
     // polling effect no longer tears down and restarts on every render.
   }, [])
@@ -200,12 +223,12 @@ export default function Billing() {
           ? await billingAPI.reconcileTopupByRef(topupRef)
           : await billingAPI.reconcileTopup(topupID)
         if (response.data.status === 'paid') {
-          toast.success('Pembayaran Berhasil! Wallet Anda telah terisi.')
+          toast.success(t('billing.paymentSuccess'))
         } else {
-          toast.info('Pembayaran masih diproses. Status akan diperbarui otomatis.')
+          toast.info(t('billing.paymentPending'))
         }
       } catch {
-        toast.error('Gagal memverifikasi pembayaran Pakasir')
+        toast.error(t('billing.paymentVerifyFailed'))
       } finally {
         await load()
       }
@@ -422,9 +445,10 @@ export default function Billing() {
     setSavingProfile(true)
     try {
       const res = await billingAPI.updateProfile(profile)
+      isProfileDirtyRef.current = false
+      hasLoadedProfileRef.current = true
+      setIsProfileSaved(true)
       if (res.data) {
-        hasLoadedProfileRef.current = true
-        setIsProfileSaved(true)
         setProfile({
           company_name: res.data.company_name ?? profile.company_name,
           tax_id: res.data.tax_id ?? profile.tax_id,
@@ -448,33 +472,93 @@ export default function Billing() {
     }
   }
 
-  const handleCheckStatusModal = async () => {
-    if (!activePaymentModal) return
-    setCheckingPaymentStatus(true)
+  // Track active top-up ID via ref to isolate concurrent/stale async responses.
+  const activePaymentModalIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    activePaymentModalIdRef.current = activePaymentModal?.id ?? null
+  }, [activePaymentModal])
+
+  // In-flight guard keyed by top-up ID.
+  const inFlightTopupIdRef = useRef<number | null>(null)
+
+  const handleCheckStatusModal = async (isManual = false) => {
+    const currentModal = activePaymentModal
+    if (!currentModal) return
+    const topupId = currentModal.id
+
+    if (inFlightTopupIdRef.current === topupId) return
+    inFlightTopupIdRef.current = topupId
+    if (isManual) setCheckingPaymentStatus(true)
+
     try {
-      await billingAPI.reconcileTopup(activePaymentModal.id)
+      const response = await billingAPI.reconcileTopup(topupId)
+
+      // Guard against stale response: if user closed or switched to a different top-up, ignore
+      if (activePaymentModalIdRef.current !== topupId) {
+        return
+      }
+
+      const status = response.data.status
+      if (status === 'pending') {
+        if (isManual) {
+          toast.info(t('billing.paymentPending'))
+        }
+        return
+      }
+
+      // Terminal status received: refresh dashboard overview/status data
       await load()
-      const overviewRes = await billingAPI.overview()
-      const currentTopup = overviewRes.data.topups.find((t: any) => t.id === activePaymentModal.id)
-      if (currentTopup && currentTopup.status === 'paid') {
-        toast.success('Pembayaran Berhasil! Wallet Anda telah terisi.')
+
+      // Re-verify modal is still active for this top-up ID before dismissing
+      if (activePaymentModalIdRef.current !== topupId) {
+        return
+      }
+
+      if (status === 'paid') {
+        toast.success(t('billing.paymentSuccess'))
+        setActivePaymentModal(null)
+      } else if (status === 'failed' || status === 'expired') {
+        toast.error(t('billing.paymentFailed'))
         setActivePaymentModal(null)
       } else {
-        toast.info('Pembayaran belum diterima. Silakan selesaikan pembayaran.')
+        // Other terminal states: refunded, partial_refund, chargeback, void
+        toast.info(t('billing.paymentEnded'))
+        setActivePaymentModal(null)
       }
-    } catch (e) {
-      toast.error('Gagal mengecek status pembayaran')
+    } catch {
+      if (activePaymentModalIdRef.current === topupId && isManual) {
+        toast.error(t('billing.paymentVerifyFailed'))
+      }
     } finally {
-      setCheckingPaymentStatus(false)
+      if (inFlightTopupIdRef.current === topupId) {
+        inFlightTopupIdRef.current = null
+      }
+      if (isManual) {
+        setCheckingPaymentStatus(false)
+      }
     }
   }
+
+  // 5-second polling scoped to the currently active payment modal.
+  // Re-creates timer when activePaymentModal changes and cleans up when closed/unmounted.
+  useEffect(() => {
+    if (!activePaymentModal) return
+    const currentId = activePaymentModal.id
+    const interval = setInterval(() => {
+      if (activePaymentModalIdRef.current === currentId) {
+        void handleCheckStatusModal(false)
+      }
+    }, 5_000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePaymentModal?.id])
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-12 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 border-b border-border/60 pb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-1">
-            <span>Dashboard</span>
+            <span>{t('common.dashboard')}</span>
             <span className="text-muted-foreground/60">/</span>
             <span className="text-foreground font-semibold">{t('billing.nav')}</span>
           </div>
@@ -512,6 +596,7 @@ export default function Billing() {
       />
       <ResourceBillingCard
         overview={overview}
+        statuses={statuses}
         renewLoading={renewLoading}
         setPendingRenewChange={setPendingRenewChange}
       />
@@ -529,7 +614,7 @@ export default function Billing() {
       />
       <BillingProfileSection
         profile={profile}
-        setProfile={setProfile}
+        setProfile={handleUpdateProfile}
         savingProfile={savingProfile}
         isProfileSaved={isProfileSaved}
         handleSaveProfile={handleSaveProfile}
@@ -551,7 +636,7 @@ export default function Billing() {
         activePaymentModal={activePaymentModal}
         setActivePaymentModal={setActivePaymentModal}
         checkingPaymentStatus={checkingPaymentStatus}
-        handleCheckStatusModal={handleCheckStatusModal}
+        handleCheckStatusModal={() => handleCheckStatusModal(true)}
       />
       <InvoiceDialog
         selectedInvoice={selectedInvoice}

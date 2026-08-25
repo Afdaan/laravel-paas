@@ -11,6 +11,7 @@ import type { BillingOverview, BillingProfile, TopupResponse } from '@/types'
 import type { PendingRenewChange, PendingTopup } from './types'
 import { getInvoiceNumber } from './utils'
 import { useBillingFormatters } from './useBillingFormatters'
+import { StatusBadge } from './StatusBadge'
 
 type Invoice = BillingOverview['invoices'][number]
 
@@ -214,15 +215,16 @@ export function PaymentDialog({
   checkingPaymentStatus: boolean
   handleCheckStatusModal: () => Promise<void>
 }) {
+  const { t } = useBillingFormatters()
   const activePaymentURL = activePaymentModal?.payment_url
 
   return (
       <Dialog open={!!activePaymentModal} onOpenChange={(open) => !open && setActivePaymentModal(null)}>
         <DialogContent className="sm:max-w-md border-border">
           <DialogHeader>
-            <DialogTitle className="text-center text-lg font-bold">Pembayaran Top-up</DialogTitle>
+            <DialogTitle className="text-center text-lg font-bold">{t('billing.paymentDialogTitle')}</DialogTitle>
             <DialogDescription className="text-center text-xs text-muted-foreground">
-              Silakan selesaikan pembayaran untuk mengisi kredit wallet.
+              {t('billing.paymentDialogDescription')}
             </DialogDescription>
           </DialogHeader>
 
@@ -236,17 +238,17 @@ export function PaymentDialog({
                     level="M"
                     className="size-48 object-contain"
                   />
-                  <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">Scan QRIS via Mobile Banking / E-Wallet</p>
+                  <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">{t('billing.scanQris')}</p>
                 </div>
               ) : activePaymentModal.payment_token ? (
                 <div className="p-4 bg-muted rounded-md text-center">
-                  <p className="text-xs text-muted-foreground uppercase font-mono mb-1">Kode / Nomor Pembayaran</p>
+                  <p className="text-xs text-muted-foreground uppercase font-mono mb-1">{t('billing.paymentCode')}</p>
                   <p className="text-lg font-mono font-bold tracking-widest">{activePaymentModal.payment_token}</p>
                 </div>
               ) : null}
 
               <div className="text-center">
-                <p className="text-xs text-muted-foreground font-mono uppercase">Total Tagihan</p>
+                <p className="text-xs text-muted-foreground font-mono uppercase">{t('billing.totalBill')}</p>
                 <p className="text-xl font-bold text-foreground">
                   Rp {activePaymentModal.amount_minor.toLocaleString('id-ID')}
                 </p>
@@ -257,7 +259,7 @@ export function PaymentDialog({
           <DialogFooter className="flex flex-col sm:flex-row gap-2">
             {activePaymentURL && (
               <Button variant="outline" size="sm" onClick={() => window.location.assign(activePaymentURL)}>
-                Buka Link Pembayaran
+                {t('billing.openPaymentLink')}
               </Button>
             )}
             <Button
@@ -265,7 +267,7 @@ export function PaymentDialog({
               disabled={checkingPaymentStatus}
               size="sm"
             >
-              {checkingPaymentStatus ? 'Mengecek...' : 'Cek Status Pembayaran'}
+              {checkingPaymentStatus ? t('billing.checkingStatus') : t('billing.checkPaymentStatus')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -288,11 +290,8 @@ export function InvoiceDialog({
 }) {
   const {
     t,
-    language,
     formatCredits,
     formatDate,
-    formatStatus,
-    statusVariant,
     formatResourceDisplayName,
   } = useBillingFormatters()
 
@@ -313,7 +312,7 @@ export function InvoiceDialog({
                     size="icon"
                     className="size-6 text-muted-foreground hover:text-foreground"
                     onClick={() => handleCopyInvoiceNumber(getInvoiceNumber(selectedInvoice), selectedInvoice.id)}
-                    title="Salin Nomor Invoice"
+                    title={t('billing.copyInvoiceNumber')}
                   >
                     {copiedInvoiceID === selectedInvoice.id ? (
                       <Check className="size-3 text-emerald-500" />
@@ -330,7 +329,7 @@ export function InvoiceDialog({
                     className="h-7 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border-border/60 bg-background/60 hover:bg-background shadow-none transition-all gap-1.5"
                   >
                     <Printer className="size-3.5 opacity-70" />
-                    {t('billing.printReceipt')}
+                    {t('billing.printInvoice')}
                   </Button>
                 </div>
               </div>
@@ -345,11 +344,11 @@ export function InvoiceDialog({
                         <ReceiptText className="size-4" />
                       </div>
                       <h2 className="text-base font-bold tracking-tight text-foreground">
-                        {t('billing.officialInvoiceTitle')}
+                        {t('billing.invoiceStatementTitle')}
                       </h2>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {t('billing.electronicDocDisclaimer')}
+                      {t('billing.statementDisclaimer')}
                     </p>
                   </div>
 
@@ -402,12 +401,7 @@ export function InvoiceDialog({
                         {t('billing.invoiceStatus')}
                       </p>
                       <div className="mt-1 flex sm:justify-end">
-                        <Badge
-                          variant={statusVariant(selectedInvoice.status)}
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5"
-                        >
-                          {formatStatus(selectedInvoice.status)}
-                        </Badge>
+                        <StatusBadge status={selectedInvoice.status} />
                       </div>
                     </div>
                     <div>
@@ -437,9 +431,7 @@ export function InvoiceDialog({
                           <TableHead className="text-[10px] font-bold uppercase text-muted-foreground text-right">
                             {t('billing.credits')}
                           </TableHead>
-                          <TableHead className="text-[10px] font-bold uppercase text-muted-foreground text-right pr-4">
-                            {t('billing.amountIdr')}
-                          </TableHead>
+
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -469,9 +461,7 @@ export function InvoiceDialog({
                               <TableCell className="text-xs font-bold text-foreground text-right font-mono tabular-nums">
                                 {formatCredits(item.credits)} {t('billing.credits')}
                               </TableCell>
-                              <TableCell className="text-xs font-semibold text-foreground text-right pr-4 font-mono tabular-nums">
-                                Rp {(item.credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
-                              </TableCell>
+
                             </TableRow>
                           ))
                         ) : (
@@ -491,9 +481,7 @@ export function InvoiceDialog({
                             <TableCell className="text-xs font-bold text-foreground text-right font-mono tabular-nums">
                               {formatCredits(selectedInvoice.total_credits)} {t('billing.credits')}
                             </TableCell>
-                            <TableCell className="text-xs font-semibold text-foreground text-right pr-4 font-mono tabular-nums">
-                              Rp {(selectedInvoice.total_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
-                            </TableCell>
+
                           </TableRow>
                         )}
                       </TableBody>
@@ -512,7 +500,7 @@ export function InvoiceDialog({
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>{t('billing.taxRate')}</span>
-                      <span className="font-mono font-medium text-foreground">Rp 0</span>
+                      <span className="font-mono font-medium text-foreground">0</span>
                     </div>
                     <div className="border-t border-border/40 pt-2 flex justify-between items-baseline">
                       <span className="font-bold text-foreground uppercase tracking-wider text-[11px]">
@@ -522,9 +510,7 @@ export function InvoiceDialog({
                         <div className="text-sm font-bold text-primary font-mono tabular-nums">
                           {formatCredits(selectedInvoice.total_credits)} {t('billing.credits')}
                         </div>
-                        <div className="text-[11px] text-muted-foreground font-mono tabular-nums">
-                          ≈ Rp {(selectedInvoice.total_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
-                        </div>
+
                       </div>
                     </div>
                   </div>
@@ -532,7 +518,7 @@ export function InvoiceDialog({
 
                 {/* Legal Electronic Stamp Footer */}
                 <div className="pt-3 border-t border-border/40 text-center text-[10px] text-muted-foreground leading-relaxed">
-                  {t('billing.electronicDocDisclaimer')}
+                  {t('billing.statementDisclaimer')}
                 </div>
               </div>
             </div>

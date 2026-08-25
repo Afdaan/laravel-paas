@@ -75,6 +75,57 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.proceedToPayment': 'Proceed to Payment',
         'billing.cancelTopup': 'Cancel',
         'billing.paymentSecurityNote': 'Payment security note',
+        'billing.paymentRequired': 'Payment required',
+        'billing.paymentSuccess': 'Payment confirmed! Your wallet has been credited.',
+        'billing.paymentPending': 'Payment is still being processed.',
+        'billing.paymentVerifyFailed': 'Failed to verify payment',
+        'billing.paymentFailed': 'Payment failed or expired.',
+        'billing.paymentEnded': 'Payment session ended.',
+        'billing.copyInvoiceNumber': 'Copy invoice number',
+        'billing.viewInvoice': 'View Invoice',
+        'billing.printInvoice': 'Print',
+        'billing.invoiceStatementTitle': 'Credit Usage Statement',
+        'billing.statementDisclaimer': 'Internal credit statement.',
+        'billing.profile.companyName': 'Full Name / Company Name',
+        'billing.profile.email': 'Billing Email',
+        'billing.profile.phone': 'Phone Number',
+        'billing.paymentDialogTitle': 'Top-up Payment',
+        'billing.paymentDialogDescription': 'Complete the payment to credit your wallet.',
+        'billing.scanQris': 'Scan QRIS via Mobile Banking / E-Wallet',
+        'billing.paymentCode': 'Payment Code',
+        'billing.totalBill': 'Total Amount',
+        'billing.openPaymentLink': 'Open Payment Link',
+        'billing.checkingStatus': 'Checking...',
+        'billing.checkPaymentStatus': 'Check Payment Status',
+        'billing.historyDescription': 'Complete transaction ledger.',
+        'billing.transactionType': 'Transaction Type',
+        'billing.amount': 'Amount',
+        'billing.balanceAfterHeader': 'Balance After',
+        'billing.date': 'Date',
+        'billing.orderId': 'Order ID',
+        'billing.creditsPurchased': 'Credits Purchased',
+        'billing.amountPaid': 'Amount Paid',
+        'billing.status': 'Status',
+        'billing.loadingWalletHistory': 'Loading wallet history...',
+        'billing.loadingInvoices': 'Loading invoices...',
+        'billing.loadingTopups': 'Loading top-ups...',
+        'billing.invoices': 'Invoices',
+        'billing.topups': 'Top-ups',
+        'billing.walletActivity': 'Wallet activity',
+        'billing.viewReceipt': 'View Receipt',
+        'billing.noInvoices': 'No invoices yet.',
+        'billing.totalInvoiced': 'Total invoiced',
+        'billing.activeSubscriptions': 'Active subscriptions',
+        'billing.upcomingCharges': 'Upcoming charges',
+        'billing.searchInvoices': 'Search invoices...',
+        'billing.allStatuses': 'All statuses',
+        'billing.invoiceNumber': 'Invoice No.',
+        'billing.servicePeriod': 'Billing period',
+        'billing.totalCharged': 'Total charged',
+        'billing.invoiceStatus': 'Invoice status',
+        'billing.periodLabel': 'Period',
+        'billing.paidOn': 'Paid {{date}}',
+        'common.dashboard': 'Dashboard',
       }
       const base = map[key] ?? key
       if (!data) return base
@@ -570,6 +621,477 @@ describe('Billing page', () => {
     await act(async () => fireEvent.click(proceedButton))
 
     // QRIS Payment Modal should open
-    expect(await screen.findByText('Pembayaran Top-up')).toBeInTheDocument()
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+  })
+
+  it('shows oldest_due_at for suspended resource and never shows future next_invoice_at as overdue', async () => {
+    // Suspended since Aug 19; next_invoice_at is Sep 19 (future) — must NOT appear as overdue
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        resources: [
+          {
+            resource_id: 5,
+            resource_type: 'project',
+            resource_name: 'SuspendedApp',
+            spec_name: 'Starter',
+            monthly_credits: 75,
+            status: 'suspended',
+            current_period_start: '2026-08-01T00:00:00Z',
+            next_invoice_at: '2026-09-19T00:00:00Z', // future date — must NOT appear as due date
+            auto_renew: true,
+          },
+        ],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [
+        {
+          resource_id: 5,
+          resource_type: 'project',
+          status: 'suspended',
+          oldest_due_at: '2026-08-19T00:00:00Z', // this is the real overdue date
+          payment_due_days: 6,
+        },
+      ],
+    })
+
+    render(<Billing />)
+
+    await screen.findByText('SuspendedApp')
+    // oldest_due_at (Aug 19) should appear as the overdue date
+    expect(screen.getByText('Renewal payment due since Aug 19, 2026')).toBeInTheDocument()
+    // future next_invoice_at (Sep 19) must NOT appear as the overdue/payment-due date label
+    // (it can still appear in the currentPeriod row as the period end, which is fine)
+    expect(screen.queryByText('Renewal payment due since Sep 19, 2026')).not.toBeInTheDocument()
+    expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
+  })
+
+  it('shows neutral payment required copy when oldest_due_at is absent for suspended resource', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        resources: [
+          {
+            resource_id: 6,
+            resource_type: 'database',
+            resource_name: 'MainDB',
+            spec_name: 'Starter DB',
+            monthly_credits: 50,
+            status: 'payment_due',
+            current_period_start: '2026-08-01T00:00:00Z',
+            next_invoice_at: '2026-09-01T00:00:00Z',
+            auto_renew: false,
+          },
+        ],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    // Status entry has no oldest_due_at
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [
+        {
+          resource_id: 6,
+          resource_type: 'database',
+          status: 'payment_due',
+          payment_due_days: 0,
+        },
+      ],
+    })
+
+    render(<Billing />)
+
+    await screen.findByText('MainDB')
+    // Should show neutral copy, not a fabricated date
+    const paymentRequiredElements = screen.getAllByText('Payment required')
+    expect(paymentRequiredElements.length).toBeGreaterThan(0)
+    // Must not show the future next_invoice_at as a due-date label
+    expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Renewal payment due since Sep 1, 2026/)).not.toBeInTheDocument()
+  })
+
+  it('does not render any credits*1000 IDR equivalent in invoice receipt dialog', async () => {
+    const invoiceWithItems = {
+      ...mockOverview,
+      invoices: [
+        {
+          id: 1,
+          period_start: '2026-07-01T00:00:00Z',
+          period_end: '2026-08-01T00:00:00Z',
+          total_credits: 250,
+          status: 'paid',
+          paid_at: '2026-08-01T00:00:00Z',
+          created_at: '2026-07-01T00:00:00Z',
+          items: [
+            {
+              id: 1,
+              billable_resource_id: 1,
+              resource_type: 'project' as const,
+              resource_name: 'StorefrontInvoiceItem',
+              spec_id: 1,
+              spec_name: 'Starter',
+              description: 'Monthly billing',
+              credits: 250,
+            },
+          ],
+        },
+      ],
+    }
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: invoiceWithItems })
+    // Use a non-Rp1000 rate catalog to ensure IDR is not computed from credits
+    const nonStandardCatalog = {
+      specs: [],
+      packages: [{ id: 5, credits: 10, amount_minor: 15000, currency: 'IDR', sort_order: 1 }],
+    }
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: nonStandardCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    // Wait for the page to finish loading (balance should show)
+    await waitFor(() => screen.getByText(/500/))
+
+    // Navigate to Invoices tab to expose the table
+    const invoicesTab = screen.getByRole('tab', { name: /Invoices/i })
+    await act(async () => fireEvent.click(invoicesTab))
+
+    // Click View Receipt button for the invoice
+    const viewReceiptBtn = await screen.findByRole('button', { name: /View Invoice/i })
+    await act(async () => fireEvent.click(viewReceiptBtn))
+
+    // The invoice dialog must not show any Rp IDR value derived from credits
+    // 250 * 1000 = 250,000; 250 * 1500 = 375,000 — neither should appear
+    expect(screen.queryByText(/Rp 250,000/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Rp 375,000/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/≈ Rp/)).not.toBeInTheDocument()
+  })
+
+  it('polls reconcile every 5 seconds when payment modal is open and cleans up on close', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.createTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        id: 55,
+        credits: 100,
+        amount_minor: 100000,
+        currency: 'IDR',
+        status: 'pending',
+        payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+      },
+    })
+    // reconcileTopup returns pending each time (modal should stay open)
+    ;(billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { id: 55, status: 'pending' },
+    })
+    // overview called after reconcile still returns pending top-up
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        topups: [{ id: 55, credits: 100, amount_minor: 100000, currency: 'IDR', status: 'pending', created_at: '2026-08-25T00:00:00Z' }],
+      },
+    })
+
+    render(<Billing />)
+
+    // Open payment modal via QRIS top-up
+    await waitFor(() => screen.getByText(/^100$/))
+    const packageButton = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(packageButton))
+    const proceedButton = await screen.findByRole('button', { name: /Proceed to Payment/i })
+    await act(async () => fireEvent.click(proceedButton))
+
+    // Modal should be open
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+
+    const reconcileCallsBefore = (billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // Advance 5 seconds → first poll tick
+    await act(async () => { vi.advanceTimersByTime(5_000) })
+    await waitFor(() =>
+      expect((billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(reconcileCallsBefore),
+    )
+
+    // Advance another 5 seconds → second poll tick
+    const callsAfterFirst = (billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length
+    await act(async () => { vi.advanceTimersByTime(5_000) })
+    await waitFor(() =>
+      expect((billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(callsAfterFirst),
+    )
+
+    // Close modal — polling must stop. Dialog close button has aria-label="Close" from Radix.
+    const closeBtns = screen.getAllByRole('button')
+    const closeBtn = closeBtns.find((b) => /close/i.test(b.getAttribute('aria-label') ?? ''))
+    if (closeBtn) {
+      await act(async () => fireEvent.click(closeBtn))
+      const callsAfterClose = (billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length
+      await act(async () => { vi.advanceTimersByTime(10_000) })
+      expect((billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterClose)
+    }
+  })
+
+  it('retries billing profile load when first attempt fails with 5xx', async () => {
+    // First call: network error (5xx simulation)
+    ;(billingAPI.getProfile as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('Server error'))
+      .mockResolvedValueOnce({ data: mockProfile })
+
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+    // First load: getProfile fails — profile should stay empty
+    await waitFor(() => expect(billingAPI.getProfile).toHaveBeenCalledTimes(1))
+    const refreshButton = screen.getByRole('button', { name: /Refresh/i })
+    await waitFor(() => expect(refreshButton).not.toBeDisabled())
+    expect(screen.queryByDisplayValue('PT Acme Corp')).not.toBeInTheDocument()
+
+    // Simulate a retry by clicking the Refresh button, which calls load() again.
+    // hasLoadedProfileRef.current stays false after the first error, so getProfile
+    // will be called again on the next load() invocation.
+    await act(async () => fireEvent.click(refreshButton))
+
+    await waitFor(() => expect(billingAPI.getProfile).toHaveBeenCalledTimes(2))
+    // After successful retry, the profile should populate
+    expect(await screen.findByDisplayValue('PT Acme Corp')).toBeInTheDocument()
+  })
+
+  it('stops modal polling immediately on terminal failure status like failed or expired', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.createTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        id: 88,
+        credits: 100,
+        amount_minor: 100000,
+        currency: 'IDR',
+        status: 'pending',
+        payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+      },
+    })
+    // First poll returns failed status (terminal)
+    ;(billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { id: 88, status: 'failed' },
+    })
+
+    render(<Billing />)
+    await waitFor(() => screen.getByText(/^100$/))
+    const packageButton = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(packageButton))
+    const proceedButton = await screen.findByRole('button', { name: /Proceed to Payment/i })
+    await act(async () => fireEvent.click(proceedButton))
+
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+
+    // Advance timer 5 seconds to trigger poll tick
+    await act(async () => { vi.advanceTimersByTime(5_000) })
+
+    // Modal should close upon terminal failure
+    await waitFor(() => expect(screen.queryByText('Top-up Payment')).not.toBeInTheDocument())
+
+    const callsAfterTerminal = (billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length
+
+    // Further timer advancement must NOT trigger any more reconcile requests
+    await act(async () => { vi.advanceTimersByTime(15_000) })
+    expect((billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterTerminal)
+  })
+
+  it('stops modal polling immediately on terminal status refunded or chargeback', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.createTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        id: 89,
+        credits: 100,
+        amount_minor: 100000,
+        currency: 'IDR',
+        status: 'pending',
+        payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+      },
+    })
+    ;(billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { id: 89, status: 'refunded' },
+    })
+
+    render(<Billing />)
+    await waitFor(() => screen.getByText(/^100$/))
+    const packageButton = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(packageButton))
+    const proceedButton = await screen.findByRole('button', { name: /Proceed to Payment/i })
+    await act(async () => fireEvent.click(proceedButton))
+
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+
+    await act(async () => { vi.advanceTimersByTime(5_000) })
+    await waitFor(() => expect(screen.queryByText('Top-up Payment')).not.toBeInTheDocument())
+
+    const callsAfterTerminal = (billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length
+    await act(async () => { vi.advanceTimersByTime(15_000) })
+    expect((billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterTerminal)
+  })
+
+  it('isolates stale async response so an earlier top-up response does not close a newer modal', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    // Top-up A (id=101) deferred promise
+    let resolveReconcileA: ((value: any) => void) | null = null
+    const reconcileAPromise = new Promise((resolve) => {
+      resolveReconcileA = resolve
+    })
+
+    ;(billingAPI.createTopup as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        data: {
+          id: 101,
+          credits: 100,
+          amount_minor: 100000,
+          currency: 'IDR',
+          status: 'pending',
+          payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: 102,
+          credits: 250,
+          amount_minor: 225000,
+          currency: 'IDR',
+          status: 'pending',
+          payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+        },
+      })
+
+    ;(billingAPI.reconcileTopup as ReturnType<typeof vi.fn>).mockImplementation((id: number) => {
+      if (id === 101) return reconcileAPromise
+      return Promise.resolve({ data: { id: 102, status: 'pending' } })
+    })
+
+    render(<Billing />)
+
+    // Open Top-up A
+    await waitFor(() => screen.getByText(/^100$/))
+    const package100 = screen.getByText(/^100$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(package100))
+    const proceed1 = await screen.findByRole('button', { name: /Proceed to Payment/i })
+    await act(async () => fireEvent.click(proceed1))
+
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+
+    // Trigger poll for A (reconcile for 101 is now in-flight)
+    await act(async () => { vi.advanceTimersByTime(5_000) })
+    expect(billingAPI.reconcileTopup).toHaveBeenCalledWith(101)
+
+    // Close modal A by clicking close button (which has text 'Close')
+    const closeBtn = screen.getByRole('button', { name: /close/i })
+    await act(async () => fireEvent.click(closeBtn))
+    await waitFor(() => expect(screen.queryByText('Top-up Payment')).not.toBeInTheDocument())
+
+    // Now open Top-up B (id=102)
+    const package250 = screen.getByText(/^250$/).closest('button') as HTMLButtonElement
+    await act(async () => fireEvent.click(package250))
+    const proceed2 = await screen.findByRole('button', { name: /Proceed to Payment/i })
+    await act(async () => fireEvent.click(proceed2))
+
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+
+    // Now resolve Top-up A's deferred promise with 'paid'
+    await act(async () => {
+      resolveReconcileA!({ data: { id: 101, status: 'paid' } })
+    })
+
+    // Modal B (id=102) must still remain open! It should NOT be closed by stale response A
+    expect(screen.getByText('Top-up Payment')).toBeInTheDocument()
+  })
+
+  it('preserves user dirty profile form inputs across background retries when initial fetch fails', async () => {
+    // Initial fetch fails with 5xx
+    ;(billingAPI.getProfile as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('500 Internal Server Error'))
+      .mockResolvedValue({
+        data: {
+          company_name: 'Server Side Corp',
+          tax_id: '99.999.999.9-999.000',
+          email: 'server@corp.com',
+          phone: '+628999999999',
+          address_line1: 'Server Address 123',
+          city: 'Bandung',
+          postal_code: '40111',
+          country: 'ID',
+        },
+      })
+
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockOverview })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    await waitFor(() => expect(billingAPI.getProfile).toHaveBeenCalledTimes(1))
+    const refreshBtn = screen.getByRole('button', { name: /Refresh/i })
+    await waitFor(() => expect(refreshBtn).not.toBeDisabled())
+
+    // User types into the company name field (marking form dirty)
+    const nameInput = screen.getByLabelText(/Full Name \/ Company Name/i)
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'My In-Progress Edit' } })
+    })
+    expect(nameInput).toHaveValue('My In-Progress Edit')
+
+    // Simulate background retry via Refresh button
+    await act(async () => fireEvent.click(refreshBtn))
+    await waitFor(() => expect(billingAPI.getProfile).toHaveBeenCalledTimes(2))
+
+    // Form input MUST NOT be overwritten by the server's 'Server Side Corp' response
+    expect(nameInput).toHaveValue('My In-Progress Edit')
+    expect(screen.queryByDisplayValue('Server Side Corp')).not.toBeInTheDocument()
+  })
+
+  it('displays authoritative suspended status from billing status even when overview status is stale active', async () => {
+    // Overview has stale status 'active'
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        resources: [
+          {
+            resource_id: 10,
+            resource_type: 'project',
+            resource_name: 'StaleActiveApp',
+            spec_name: 'Starter',
+            monthly_credits: 75,
+            status: 'active', // stale overview snapshot
+            current_period_start: '2026-08-01T00:00:00Z',
+            next_invoice_at: '2026-09-19T00:00:00Z',
+            auto_renew: true,
+          },
+        ],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    // Status endpoint has fresh authoritative status 'suspended'
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [
+        {
+          resource_id: 10,
+          resource_type: 'project',
+          status: 'suspended',
+          oldest_due_at: '2026-08-19T00:00:00Z',
+          payment_due_days: 6,
+        },
+      ],
+    })
+
+    render(<Billing />)
+
+    await screen.findByText('StaleActiveApp')
+
+    // The card must show effective suspended status and overdue date from /billing/status
+    expect(screen.getByText('Renewal payment due since Aug 19, 2026')).toBeInTheDocument()
+    expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
   })
 })

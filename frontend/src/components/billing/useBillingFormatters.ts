@@ -35,15 +35,6 @@ export function useBillingFormatters() {
     },
     [t],
   )
-  const statusVariant = useCallback(
-    (status: string): 'secondary' | 'destructive' | 'outline' =>
-      status === 'paid' || status === 'active'
-        ? 'secondary'
-        : status === 'suspended' || status === 'payment_due'
-          ? 'destructive'
-          : 'outline',
-    [],
-  )
   const translateLedgerType = useCallback(
     (type: string) => {
       const key = `billing.ledgerTypes.${type}`
@@ -77,7 +68,6 @@ export function useBillingFormatters() {
     formatDate,
     formatMoney,
     formatStatus,
-    statusVariant,
     translateLedgerType,
     formatResourceDisplayName,
   }

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Calendar, Check, Copy, CreditCard, ReceiptText, Search, WalletCards } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,6 +12,7 @@ import { usePagination } from '@/lib/pagination'
 import type { BillingOverview } from '@/types'
 import { getInvoiceNumber } from './utils'
 import { useBillingFormatters } from './useBillingFormatters'
+import { StatusBadge } from './StatusBadge'
 
 type Invoice = BillingOverview['invoices'][number]
 
@@ -31,7 +31,7 @@ export function BillingHistorySection({
   setSelectedInvoice,
   reconcileTopup,
 }: BillingHistorySectionProps) {
-  const { t, language, formatCredits, formatDate, formatMoney, formatStatus, statusVariant, translateLedgerType } = useBillingFormatters()
+  const { t, formatCredits, formatDate, formatMoney, formatStatus, translateLedgerType } = useBillingFormatters()
   const [invoiceSearch, setInvoiceSearch] = useState('')
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'all' | 'paid' | 'payment_due'>('all')
   const filteredInvoices = useMemo(() => {
@@ -105,7 +105,7 @@ export function BillingHistorySection({
             {t('billing.history')}
           </CardTitle>
           <CardDescription className="text-xs text-muted-foreground">
-            Complete transaction ledger for invoices, credit top-ups, and balance adjustments.
+            {t('billing.historyDescription')}
           </CardDescription>
         </CardHeader>
 
@@ -132,16 +132,16 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[32%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">Transaction Type</TableHead>
-                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Amount</TableHead>
-                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Balance After</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">Date</TableHead>
+                      <TableHead className="w-[32%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">{t('billing.transactionType')}</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.amount')}</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.balanceAfterHeader')}</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">{t('billing.date')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {overview.status === 'loading' && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">Loading wallet history...</TableCell>
+                        <TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">{t('billing.loadingWalletHistory')}</TableCell>
                       </TableRow>
                     )}
                     {overview.status === 'success' && overview.data.wallet.ledger_entries.length === 0 && (
@@ -171,9 +171,7 @@ export function BillingHistorySection({
                       </span>
                       <span className="text-[10px] font-medium text-muted-foreground uppercase">{t('billing.credits')}</span>
                     </div>
-                    <span className="text-[11px] text-muted-foreground font-mono tabular-nums mt-0.5">
-                      ≈ Rp {(invoiceMetrics.totalCreditsInvoiced * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
-                    </span>
+
                   </div>
 
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
@@ -201,9 +199,7 @@ export function BillingHistorySection({
                       </span>
                       <span className="text-[10px] font-medium text-muted-foreground uppercase">{t('billing.credits')}</span>
                     </div>
-                    <span className="text-[11px] text-muted-foreground font-mono tabular-nums mt-0.5">
-                      ≈ Rp {(overview.data.upcoming_required_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')} / {t('billing.month')}
-                    </span>
+
                   </div>
                 </div>
               )}
@@ -280,14 +276,14 @@ export function BillingHistorySection({
                         {t('billing.periodLabel')}
                       </TableHead>
                       <TableHead className="w-[10%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">
-                        {t('billing.viewReceipt')}
+                        {t('billing.viewInvoice')}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {overview.status === 'loading' && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">Loading invoices...</TableCell>
+                        <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">{t('billing.loadingInvoices')}</TableCell>
                       </TableRow>
                     )}
                     {overview.status === 'success' && overview.data.invoices.length === 0 && (
@@ -304,7 +300,6 @@ export function BillingHistorySection({
                     )}
                     {overview.status === 'success' && filteredInvoices.slice(invoicePage.start, invoicePage.end).map((invoice) => {
                       const invNumber = getInvoiceNumber(invoice)
-                      const isPaid = invoice.status === 'paid'
                       return (
                         <TableRow key={invoice.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0 group">
                           {/* Invoice Number */}
@@ -317,7 +312,7 @@ export function BillingHistorySection({
                                 size="icon"
                                 className="size-5 text-muted-foreground/60 hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                                 onClick={() => handleCopyInvoiceNumber(invNumber, invoice.id)}
-                                title="Salin nomor invoice"
+                                title={t('billing.copyInvoiceNumber')}
                               >
                                 {copiedInvoiceID === invoice.id ? (
                                   <Check className="size-2.5 text-emerald-500" />
@@ -344,25 +339,13 @@ export function BillingHistorySection({
                               <span className="font-bold text-foreground">
                                 {formatCredits(invoice.total_credits)} {t('billing.credits')}
                               </span>
-                              <span className="ml-1 text-[11px] text-muted-foreground font-normal">
-                                (Rp {(invoice.total_credits * 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')})
-                              </span>
+
                             </div>
                           </TableCell>
 
                           {/* Status */}
                           <TableCell className="text-xs">
-                            <Badge
-                              variant={statusVariant(invoice.status)}
-                              className={`capitalize font-medium text-[11px] px-2.5 py-0.5 inline-flex items-center gap-1.5 ${
-                                isPaid
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                                  : ''
-                              }`}
-                            >
-                              <span className={`size-1.5 rounded-full shrink-0 ${isPaid ? 'bg-emerald-500' : 'bg-destructive'}`} />
-                              {formatStatus(invoice.status)}
-                            </Badge>
+                            <StatusBadge status={invoice.status} />
                           </TableCell>
 
                           {/* Date */}
@@ -383,7 +366,7 @@ export function BillingHistorySection({
                               className="h-7 px-2.5 text-[11px] font-semibold gap-1 text-foreground hover:bg-muted/80 shadow-2xs"
                             >
                               <ReceiptText className="size-3 text-primary" />
-                              {t('billing.viewReceipt')}
+                              {t('billing.viewInvoice')}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -401,17 +384,17 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">Order ID</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Credits Purchased</TableHead>
-                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Amount Paid</TableHead>
-                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">Status</TableHead>
-                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">Date</TableHead>
+                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 pl-4">{t('billing.orderId')}</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.creditsPurchased')}</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.amountPaid')}</TableHead>
+                      <TableHead className="w-[18%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80">{t('billing.status')}</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-bold uppercase tracking-wider text-muted-foreground/80 text-right pr-4">{t('billing.date')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {overview.status === 'loading' && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">Loading top-ups...</TableCell>
+                        <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">{t('billing.loadingTopups')}</TableCell>
                       </TableRow>
                     )}
                     {overview.status === 'success' && overview.data.topups.length === 0 && (
@@ -433,7 +416,7 @@ export function BillingHistorySection({
                           {formatMoney(topup.amount_minor, topup.currency)}
                         </TableCell>
                         <TableCell className="text-xs">
-                          <Badge variant={statusVariant(topup.status)} className="capitalize font-medium text-[11px] px-2.5 py-0.5">{formatStatus(topup.status)}</Badge>
+                          <StatusBadge status={topup.status} />
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
                           <div className="flex items-center justify-end gap-2.5">
