@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { act } from 'react'
-import Billing, { isValidPhoneNumber } from './Billing'
+import Billing from './Billing'
+import { isValidPhoneNumber } from '@/components/billing/utils'
 import { billingAPI } from '@/services/api'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
