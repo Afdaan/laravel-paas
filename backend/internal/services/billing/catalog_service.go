@@ -179,13 +179,15 @@ type InvoiceView struct {
 }
 
 type TopupHistoryView struct {
-	ID          uint               `json:"id"`
-	Credits     int64              `json:"credits"`
-	AmountMinor int64              `json:"amount_minor"`
-	Currency    string             `json:"currency"`
-	Status      models.TopupStatus `json:"status"`
-	PaidAt      *time.Time         `json:"paid_at,omitempty"`
-	CreatedAt   time.Time          `json:"created_at"`
+	ID           uint               `json:"id"`
+	Credits      int64              `json:"credits"`
+	AmountMinor  int64              `json:"amount_minor"`
+	Currency     string             `json:"currency"`
+	Status       models.TopupStatus `json:"status"`
+	PaymentToken string             `json:"payment_token,omitempty"`
+	PaymentURL   string             `json:"payment_url,omitempty"`
+	PaidAt       *time.Time         `json:"paid_at,omitempty"`
+	CreatedAt    time.Time          `json:"created_at"`
 }
 
 type BillableResourceView struct {
@@ -329,7 +331,20 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 		return OwnBillingOverview{}, fmt.Errorf("list own topups: %w", err)
 	}
 	for _, topup := range topups {
-		overview.Topups = append(overview.Topups, TopupHistoryView{ID: topup.ID, Credits: topup.Credits, AmountMinor: topup.AmountMinor, Currency: topup.Currency, Status: topup.Status, PaidAt: topup.PaidAt, CreatedAt: topup.CreatedAt})
+		view := TopupHistoryView{
+			ID:          topup.ID,
+			Credits:     topup.Credits,
+			AmountMinor: topup.AmountMinor,
+			Currency:    topup.Currency,
+			Status:      topup.Status,
+			PaidAt:      topup.PaidAt,
+			CreatedAt:   topup.CreatedAt,
+		}
+		if topup.Status == models.TopupStatusPending {
+			view.PaymentToken = topup.ProviderPaymentToken
+			view.PaymentURL = topup.ProviderPaymentURL
+		}
+		overview.Topups = append(overview.Topups, view)
 	}
 	resources, err := s.listOwnBillableResources(ctx, userID)
 	if err != nil {

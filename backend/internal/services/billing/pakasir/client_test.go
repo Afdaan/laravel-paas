@@ -117,7 +117,7 @@ func TestPakasirStatusMappingVariations(t *testing.T) {
 		{"failed", models.TopupStatusFailed, false},
 		{"cancelled", models.TopupStatusFailed, false},
 		{"canceled", models.TopupStatusFailed, false},
-		{"expired", models.TopupStatusFailed, false},
+		{"expired", models.TopupStatusExpired, false},
 		{"unknown_status", "", true},
 	}
 

@@ -86,6 +86,8 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.printInvoice': 'Print',
         'billing.invoiceStatementTitle': 'Credit Usage Statement',
         'billing.statementDisclaimer': 'Internal credit statement.',
+        'billing.payNow': 'Pay',
+        'billing.completePayment': 'Pay Now',
         'billing.profile.companyName': 'Full Name / Company Name',
         'billing.profile.email': 'Billing Email',
         'billing.profile.phone': 'Phone Number',
@@ -1093,5 +1095,45 @@ describe('Billing page', () => {
     // The card must show effective suspended status and overdue date from /billing/status
     expect(screen.getByText('Renewal payment due since Aug 19, 2026')).toBeInTheDocument()
     expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
+  })
+
+  it('allows user to resume and pay for a pending top-up directly from top-up history table', async () => {
+    const overviewWithPendingTopup = {
+      ...mockOverview,
+      topups: [
+        {
+          id: 52,
+          credits: 10,
+          amount_minor: 10000,
+          currency: 'IDR',
+          status: 'pending',
+          payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+          payment_url: 'https://app.pakasir.com/pay/52',
+          created_at: '2026-08-25T00:00:00Z',
+        },
+      ],
+    }
+
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: overviewWithPendingTopup })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    // Switch to Top-ups tab
+    const topupsTab = await screen.findByRole('tab', { name: /Top-ups/i })
+    await act(async () => fireEvent.click(topupsTab))
+
+    // #topup-52 should be listed
+    expect(await screen.findByText('#topup-52')).toBeInTheDocument()
+
+    // Pay button should be visible for pending topup with payment token/URL
+    const payButton = screen.getByRole('button', { name: /^Pay$/i })
+    expect(payButton).toBeInTheDocument()
+
+    // Clicking Pay should open the PaymentDialog modal
+    await act(async () => fireEvent.click(payButton))
+
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
   })
 })

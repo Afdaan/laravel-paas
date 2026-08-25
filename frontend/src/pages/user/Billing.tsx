@@ -611,6 +611,17 @@ export default function Billing() {
         handleCopyInvoiceNumber={handleCopyInvoiceNumber}
         setSelectedInvoice={setSelectedInvoice}
         reconcileTopup={reconcileTopup}
+        onPayPendingTopup={(topup) => {
+          setActivePaymentModal({
+            id: topup.id,
+            credits: topup.credits,
+            amount_minor: topup.amount_minor,
+            currency: topup.currency,
+            status: topup.status,
+            payment_token: topup.payment_token,
+            payment_url: topup.payment_url,
+          })
+        }}
       />
       <BillingProfileSection
         profile={profile}

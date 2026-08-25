@@ -21,7 +21,8 @@ import (
 )
 
 var (
-	ErrPaymentProvider = errors.New("payment provider unavailable")
+	ErrPaymentProvider     = errors.New("payment provider unavailable")
+	ErrTransactionNotFound = errors.New("transaction not found on payment gateway")
 )
 
 const (
@@ -177,6 +178,9 @@ func (c *Client) GetTransactionDetail(ctx context.Context, orderID string, amoun
 		return TransactionDetail{}, fmt.Errorf("%w: read pakasir detail response: %v", ErrPaymentProvider, err)
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		return TransactionDetail{}, ErrTransactionNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return TransactionDetail{}, fmt.Errorf("%w: pakasir transaction detail status %d", ErrPaymentProvider, resp.StatusCode)
 	}
@@ -269,8 +273,10 @@ func StatusToTopupStatus(status string) (models.TopupStatus, error) {
 		return models.TopupStatusPaid, nil
 	case "pending":
 		return models.TopupStatusPending, nil
-	case "failed", "cancelled", "canceled", "expired":
+	case "failed", "cancelled", "canceled":
 		return models.TopupStatusFailed, nil
+	case "expired":
+		return models.TopupStatusExpired, nil
 	default:
 		return "", fmt.Errorf("unknown pakasir status %q", status)
 	}

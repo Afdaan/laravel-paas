@@ -265,6 +265,8 @@ export interface BillingOverview {
     amount_minor: number;
     currency: string;
     status: string;
+    payment_token?: string;
+    payment_url?: string;
     paid_at?: string;
     created_at: string;
   }>;

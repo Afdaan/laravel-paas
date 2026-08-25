@@ -22,6 +22,7 @@ type BillingHistorySectionProps = {
   handleCopyInvoiceNumber: (invoiceNumber: string, id: number) => void
   setSelectedInvoice: (invoice: Invoice) => void
   reconcileTopup: (topupID: number) => Promise<void>
+  onPayPendingTopup?: (topup: BillingOverview['topups'][number]) => void
 }
 
 export function BillingHistorySection({
@@ -30,6 +31,7 @@ export function BillingHistorySection({
   handleCopyInvoiceNumber,
   setSelectedInvoice,
   reconcileTopup,
+  onPayPendingTopup,
 }: BillingHistorySectionProps) {
   const { t, formatCredits, formatDate, formatMoney, formatStatus, translateLedgerType } = useBillingFormatters()
   const [invoiceSearch, setInvoiceSearch] = useState('')
@@ -419,17 +421,29 @@ export function BillingHistorySection({
                           <StatusBadge status={topup.status} />
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
-                          <div className="flex items-center justify-end gap-2.5">
+                          <div className="flex items-center justify-end gap-2">
                             <span>{topup.paid_at ? t('billing.paidOn', { date: formatDate(topup.paid_at) }) : formatDate(topup.created_at)}</span>
                             {topup.status === 'pending' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void reconcileTopup(topup.id)}
-                                className="h-7 px-2.5 text-[11px] font-semibold"
-                              >
-                                {t('billing.checkStatus')}
-                              </Button>
+                              <div className="flex items-center gap-1.5">
+                                {onPayPendingTopup && (topup.payment_token || topup.payment_url) && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => onPayPendingTopup(topup)}
+                                    className="h-7 px-2.5 text-[11px] font-semibold"
+                                  >
+                                    <CreditCard className="mr-1 size-3" />
+                                    {t('billing.payNow')}
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void reconcileTopup(topup.id)}
+                                  className="h-7 px-2.5 text-[11px] font-semibold"
+                                >
+                                  {t('billing.checkStatus')}
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </TableCell>
