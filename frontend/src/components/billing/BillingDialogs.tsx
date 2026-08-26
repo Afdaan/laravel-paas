@@ -241,13 +241,13 @@ export function PaymentDialog({
                     {/* QR needs a literal white quiet zone in both themes; semantic tokens would invert it. */}
                     <QRCodeSVG value={qrisPayload} size={192} level="M" className="size-44" />
                   </div>
-                  <p className="pt-2 pb-1 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <p className="pt-2.5 pb-1 text-center text-xs text-muted-foreground">
                     {t('billing.scanQris')}
                   </p>
                 </div>
               ) : activePaymentModal.payment_token ? (
                 <div className="w-full min-w-0 rounded-xl border border-border/60 bg-muted/20 p-4 text-center">
-                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <p className="mb-1.5 text-xs text-muted-foreground">
                     {t('billing.paymentCode')}
                   </p>
                   <p className="font-mono text-sm font-semibold break-all text-foreground">
@@ -257,16 +257,21 @@ export function PaymentDialog({
               ) : null}
 
               <div className="w-full border-t border-border/60 pt-4 text-center">
-                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {t('billing.totalBill')}
-                </p>
-                <p className="mt-0.5 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                <p className="text-xs text-muted-foreground">{t('billing.totalBill')}</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
                   {formatMoney(activePaymentModal.amount_minor, activePaymentModal.currency)}
                 </p>
               </div>
 
-              <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <RefreshCw className="size-3 shrink-0 animate-spin [animation-duration:3s]" aria-hidden="true" />
+              <p
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="relative flex size-1.5 shrink-0" aria-hidden="true">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70 [animation-duration:2.4s]" />
+                  <span className="relative inline-flex size-full rounded-full bg-emerald-500" />
+                </span>
                 {t('billing.autoCheckingStatus')}
               </p>
             </div>
