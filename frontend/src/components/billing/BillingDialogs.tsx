@@ -268,20 +268,26 @@ export function PaymentDialog({
             </div>
           )}
 
-          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          {/* Column-reverse puts the primary action on top while keeping it last in
+              DOM/tab order, matching the visual hierarchy of a payment screen. */}
+          <DialogFooter className="flex flex-col-reverse gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={handleCheckStatusModal}
               disabled={checkingPaymentStatus}
-              className="gap-1.5"
+              className="w-full gap-1.5"
             >
               {checkingPaymentStatus && <RefreshCw className="size-3 shrink-0 animate-spin" aria-hidden="true" />}
               {checkingPaymentStatus ? t('billing.checkingStatus') : t('billing.checkPaymentStatus')}
             </Button>
             {activePaymentURL && (
               // Opens in a new tab so the dialog stays mounted and keeps polling for the paid status.
-              <Button size="sm" onClick={() => window.open(activePaymentURL, '_blank', 'noopener,noreferrer')}>
+              <Button
+                size="sm"
+                onClick={() => window.open(activePaymentURL, '_blank', 'noopener,noreferrer')}
+                className="w-full"
+              >
                 {t('billing.openPaymentLink')}
               </Button>
             )}
