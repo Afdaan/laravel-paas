@@ -236,14 +236,12 @@ export function PaymentDialog({
           {activePaymentModal && (
             <div className="flex flex-col items-center gap-5 py-2">
               {qrisPayload ? (
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-2">
-                  <div className="flex flex-col items-center rounded-lg bg-white p-4">
-                    {/* QR needs a literal white quiet zone in both themes; semantic tokens would invert it. */}
+                <div className="flex flex-col items-center gap-3">
+                  {/* QR needs a literal white quiet zone in both themes; semantic tokens would invert it. */}
+                  <div className="rounded-lg bg-white p-4">
                     <QRCodeSVG value={qrisPayload} size={192} level="M" className="size-44" />
                   </div>
-                  <p className="pt-2.5 pb-1 text-center text-xs text-muted-foreground">
-                    {t('billing.scanQris')}
-                  </p>
+                  <p className="text-center text-xs text-muted-foreground">{t('billing.scanQris')}</p>
                 </div>
               ) : activePaymentModal.payment_token ? (
                 <div className="w-full min-w-0 rounded-xl border border-border/60 bg-muted/20 p-4 text-center">
@@ -263,16 +261,9 @@ export function PaymentDialog({
                 </p>
               </div>
 
-              <p
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="relative flex size-1.5 shrink-0" aria-hidden="true">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70 [animation-duration:2.4s]" />
-                  <span className="relative inline-flex size-full rounded-full bg-emerald-500" />
-                </span>
+              <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
                 {t('billing.autoCheckingStatus')}
+                <span className="waiting-ellipsis" aria-hidden="true">...</span>
               </p>
             </div>
           )}

@@ -155,6 +155,27 @@
   100% { opacity: 0.15; }
 }
 
+/* Terminal-style waiting cue: reveals "..." one character at a time via
+   clip-path, so nothing glows and no layout property animates. The span
+   reserves its full width up front to keep the label from shifting. */
+.waiting-ellipsis {
+  display: inline-block;
+  width: 3ch;
+  clip-path: inset(0 100% 0 0);
+  animation: waiting-ellipsis 1.6s steps(4, jump-none) infinite;
+}
+
+@keyframes waiting-ellipsis {
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting-ellipsis {
+    animation: none;
+    clip-path: none;
+  }
+}
+
 .runara-press {
   box-shadow: 4px 4px 0 var(--foreground);
 }
