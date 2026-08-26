@@ -268,9 +268,10 @@ export function PaymentDialog({
             </div>
           )}
 
-          {/* Column-reverse puts the primary action on top while keeping it last in
-              DOM/tab order, matching the visual hierarchy of a payment screen. */}
-          <DialogFooter className="flex flex-col-reverse gap-2">
+          {/* DialogFooter defaults to sm:flex-row; override that variant explicitly
+              (not just the unprefixed class) or it wins at >=640px and the w-full
+              buttons below blow out past the dialog edge. Stacked at every width. */}
+          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-col-reverse sm:justify-stretch">
             <Button
               variant="outline"
               size="sm"
