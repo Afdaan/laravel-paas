@@ -65,8 +65,8 @@ export function BillingHistorySection({
       ledgerEntries.slice(ledgerPage.start, ledgerPage.end).map((entry, index) => {
         const isCredit = entry.amount_credits >= 0
         return (
-          <TableRow key={index} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
-            <TableCell className="font-semibold text-xs text-foreground pl-4">
+          <TableRow key={index} className="h-11 border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30">
+            <TableCell className="pl-4 text-xs text-foreground">
               <div className="flex items-center gap-2.5">
                 <div className={`size-6 rounded-full flex items-center justify-center shrink-0 ${
                   isCredit
@@ -75,11 +75,11 @@ export function BillingHistorySection({
                 }`}>
                   {isCredit ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
                 </div>
-                <span className="capitalize font-medium text-xs">{translateLedgerType(entry.type)}</span>
+                <span className="text-[11px] font-medium capitalize text-foreground/90">{translateLedgerType(entry.type)}</span>
               </div>
             </TableCell>
             <TableCell className="text-xs">
-              <span className={`inline-flex items-center font-bold text-[11px] tabular-nums px-2.5 py-0.5 rounded-full ${
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium tabular-nums ${
                 isCredit
                   ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
                   : 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20'
@@ -87,10 +87,10 @@ export function BillingHistorySection({
                 {isCredit ? `+${formatCredits(entry.amount_credits)}` : formatCredits(entry.amount_credits)} {t('billing.credits')}
               </span>
             </TableCell>
-            <TableCell className="text-xs font-semibold tabular-nums text-foreground/80">
+            <TableCell className="text-[11px] font-medium tabular-nums text-foreground/85">
               {formatCredits(entry.balance_after)} {t('billing.credits')}
             </TableCell>
-            <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
+            <TableCell className="pr-4 text-right text-[11px] tabular-nums text-muted-foreground">
               {formatDate(entry.created_at)}
             </TableCell>
           </TableRow>
@@ -134,10 +134,10 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[32%] text-xs font-medium text-muted-foreground pl-4">{t('billing.transactionType')}</TableHead>
-                      <TableHead className="w-[24%] text-xs font-medium text-muted-foreground">{t('billing.amount')}</TableHead>
-                      <TableHead className="w-[24%] text-xs font-medium text-muted-foreground">{t('billing.balanceAfterHeader')}</TableHead>
-                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground text-right pr-4">{t('billing.date')}</TableHead>
+                      <TableHead className="w-[32%] pl-4 text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.transactionType')}</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.amount')}</TableHead>
+                      <TableHead className="w-[24%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.balanceAfterHeader')}</TableHead>
+                      <TableHead className="w-[20%] pr-4 text-right text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.date')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -262,22 +262,22 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[18%] text-xs font-medium text-muted-foreground pl-4">
+                      <TableHead className="w-[18%] pl-4 text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">
                         {t('billing.invoiceNumber')}
                       </TableHead>
-                      <TableHead className="w-[26%] text-xs font-medium text-muted-foreground">
+                      <TableHead className="w-[26%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">
                         {t('billing.servicePeriod')}
                       </TableHead>
-                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground">
+                      <TableHead className="w-[20%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">
                         {t('billing.totalCharged')}
                       </TableHead>
-                      <TableHead className="w-[14%] text-xs font-medium text-muted-foreground">
+                      <TableHead className="w-[14%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">
                         {t('billing.invoiceStatus')}
                       </TableHead>
-                      <TableHead className="w-[12%] text-xs font-medium text-muted-foreground">
+                      <TableHead className="w-[12%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">
                         {t('billing.periodLabel')}
                       </TableHead>
-                      <TableHead className="w-[10%] text-xs font-medium text-muted-foreground text-right pr-4">
+                      <TableHead className="w-[10%] pr-4 text-right text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">
                         {t('billing.viewInvoice')}
                       </TableHead>
                     </TableRow>
@@ -303,11 +303,11 @@ export function BillingHistorySection({
                     {overview.status === 'success' && filteredInvoices.slice(invoicePage.start, invoicePage.end).map((invoice) => {
                       const invNumber = getInvoiceNumber(invoice)
                       return (
-                        <TableRow key={invoice.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0 group">
+                        <TableRow key={invoice.id} className="group h-11 border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30">
                           {/* Invoice Number */}
-                          <TableCell className="font-mono text-xs font-bold text-foreground pl-4">
+                          <TableCell className="pl-4 font-mono text-[11px] font-medium tracking-[-0.01em] text-foreground/90">
                             <div className="flex items-center gap-1.5">
-                              <ReceiptText className="size-3.5 text-primary shrink-0" />
+                              <ReceiptText className="size-3.5 shrink-0 text-muted-foreground/70" />
                               <span className="truncate">{invNumber}</span>
                               <Button
                                 variant="ghost"
@@ -326,19 +326,19 @@ export function BillingHistorySection({
                           </TableCell>
 
                           {/* Period */}
-                          <TableCell className="text-xs text-foreground">
+                          <TableCell className="text-[11px] tabular-nums text-foreground/90">
                             <div className="flex items-center gap-1.5">
                               <Calendar className="size-3 text-muted-foreground shrink-0" />
-                              <span className="font-medium text-xs">
-                                {formatDate(invoice.period_start)} – {formatDate(invoice.period_end)}
+                              <span className="font-medium">
+                                {formatDate(invoice.period_start)} - {formatDate(invoice.period_end)}
                               </span>
                             </div>
                           </TableCell>
 
                           {/* Credits Charged & IDR Equivalent */}
-                          <TableCell className="text-xs font-semibold tabular-nums">
+                          <TableCell className="text-xs tabular-nums">
                             <div>
-                              <span className="font-bold text-foreground">
+                              <span className="font-semibold text-foreground">
                                 {formatCredits(invoice.total_credits)} {t('billing.credits')}
                               </span>
 
@@ -347,11 +347,11 @@ export function BillingHistorySection({
 
                           {/* Status */}
                           <TableCell className="text-xs">
-                            <StatusBadge status={invoice.status} />
+                            <StatusBadge status={invoice.status} className="text-[11px]" />
                           </TableCell>
 
                           {/* Date */}
-                          <TableCell className="text-xs text-muted-foreground tabular-nums">
+                          <TableCell className="text-[11px] tabular-nums text-muted-foreground">
                             {invoice.paid_at
                               ? t('billing.paidOn', { date: formatDate(invoice.paid_at) })
                               : invoice.due_at
@@ -365,9 +365,9 @@ export function BillingHistorySection({
                               variant="outline"
                               size="sm"
                               onClick={() => setSelectedInvoice(invoice)}
-                              className="h-7 px-2.5 text-[11px] font-semibold gap-1 text-foreground hover:bg-muted/80 shadow-2xs"
+                              className="h-7 gap-1 px-2.5 text-[11px] font-medium text-foreground shadow-none hover:bg-muted/80"
                             >
-                              <ReceiptText className="size-3 text-primary" />
+                              <ReceiptText className="size-3 text-muted-foreground" />
                               {t('billing.viewInvoice')}
                             </Button>
                           </TableCell>
@@ -386,11 +386,11 @@ export function BillingHistorySection({
                 <Table>
                   <TableHeader className="bg-muted/40">
                     <TableRow className="border-b border-border/40 hover:bg-transparent">
-                      <TableHead className="w-[18%] text-xs font-medium text-muted-foreground pl-4">{t('billing.orderId')}</TableHead>
-                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground">{t('billing.creditsPurchased')}</TableHead>
-                      <TableHead className="w-[20%] text-xs font-medium text-muted-foreground">{t('billing.amountPaid')}</TableHead>
-                      <TableHead className="w-[18%] text-xs font-medium text-muted-foreground">{t('billing.status')}</TableHead>
-                      <TableHead className="w-[24%] text-xs font-medium text-muted-foreground text-right pr-4">{t('billing.date')}</TableHead>
+                      <TableHead className="w-[18%] pl-4 text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.orderId')}</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.creditsPurchased')}</TableHead>
+                      <TableHead className="w-[20%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.amountPaid')}</TableHead>
+                      <TableHead className="w-[18%] text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.status')}</TableHead>
+                      <TableHead className="w-[24%] pr-4 text-right text-[11px] font-medium tracking-[0.01em] text-muted-foreground/80">{t('billing.date')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -405,22 +405,22 @@ export function BillingHistorySection({
                       </TableRow>
                     )}
                     {overview.status === 'success' && overview.data.topups.slice(topupPage.start, topupPage.end).map((topup) => (
-                      <TableRow key={topup.id} className="hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0">
-                        <TableCell className="font-mono text-xs font-semibold text-foreground/90 pl-4">
+                      <TableRow key={topup.id} className="h-11 border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30">
+                        <TableCell className="pl-4 font-mono text-[11px] font-medium tracking-[-0.01em] text-foreground/90">
                           #topup-{topup.id}
                         </TableCell>
                         <TableCell className="text-xs">
-                          <span className="inline-flex items-center font-bold text-[11px] tabular-nums px-2.5 py-0.5 rounded-full text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+                          <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
                             +{formatCredits(topup.credits)} {t('billing.credits')}
                           </span>
                         </TableCell>
-                        <TableCell className="text-xs font-bold text-foreground tabular-nums">
+                        <TableCell className="text-xs font-semibold tabular-nums text-foreground">
                           {formatMoney(topup.amount_minor, topup.currency)}
                         </TableCell>
                         <TableCell className="text-xs">
-                          <StatusBadge status={topup.status} />
+                          <StatusBadge status={topup.status} className="text-[11px]" />
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground tabular-nums text-right pr-4">
+                        <TableCell className="pr-4 text-right text-[11px] tabular-nums text-muted-foreground">
                           <div className="flex items-center justify-end gap-2">
                             <span>{topup.paid_at ? t('billing.paidOn', { date: formatDate(topup.paid_at) }) : formatDate(topup.created_at)}</span>
                             {topup.status === 'pending' && (
@@ -429,7 +429,7 @@ export function BillingHistorySection({
                                   <Button
                                     size="sm"
                                     onClick={() => onPayPendingTopup(topup)}
-                                    className="h-7 gap-1.5 px-2.5 text-[11px] font-semibold"
+                                    className="h-7 gap-1.5 px-2.5 text-[11px] font-medium"
                                   >
                                     <CreditCard className="size-3" aria-hidden="true" />
                                     {t('billing.payNow')}
