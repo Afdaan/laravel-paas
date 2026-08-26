@@ -263,8 +263,7 @@ export function PaymentDialog({
                 </p>
               </div>
 
-              <p className="inline-flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+              <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
                 {t('billing.autoCheckingStatus')}
                 <span className="waiting-ellipsis" aria-hidden="true">...</span>
               </p>
