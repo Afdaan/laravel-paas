@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { AlertTriangle, ArrowRight, Check, Copy, Database, FolderGit2, Printer, ReceiptText, RefreshCw, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, Copy, Database, ExternalLink, FolderGit2, Printer, ReceiptText, RefreshCw, ShieldCheck } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 
 import { Badge } from '@/components/ui/badge'
@@ -223,23 +223,25 @@ export function PaymentDialog({
 
   return (
       <Dialog open={!!activePaymentModal} onOpenChange={(open) => !open && setActivePaymentModal(null)}>
-        <DialogContent className="sm:max-w-md border-border">
-          <DialogHeader>
+        <DialogContent className="gap-0 overflow-hidden border-border/70 p-0 sm:max-w-[420px]">
+          <DialogHeader className="px-6 pb-4 pt-6">
             <DialogTitle className="text-center text-base font-semibold tracking-tight">
               {t('billing.paymentDialogTitle')}
             </DialogTitle>
-            <DialogDescription className="text-center text-xs text-muted-foreground">
+            <DialogDescription className="mx-auto max-w-xs text-center text-xs leading-relaxed text-muted-foreground">
               {t('billing.paymentDialogDescription')}
             </DialogDescription>
           </DialogHeader>
 
           {activePaymentModal && (
-            <div className="flex flex-col items-center gap-5 py-2">
+            <div className="flex flex-col items-center gap-4 px-6 pb-5">
               {qrisPayload ? (
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-2.5">
                   {/* QR needs a literal white quiet zone in both themes; semantic tokens would invert it. */}
-                  <div className="rounded-lg bg-white p-4">
-                    <QRCodeSVG value={qrisPayload} size={192} level="M" className="size-44" />
+                  <div className="rounded-2xl bg-muted/60 p-1.5 ring-1 ring-border/60">
+                    <div className="rounded-xl bg-white p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                      <QRCodeSVG value={qrisPayload} size={176} level="M" className="size-44" />
+                    </div>
                   </div>
                   <p className="text-center text-xs text-muted-foreground">{t('billing.scanQris')}</p>
                 </div>
@@ -254,42 +256,45 @@ export function PaymentDialog({
                 </div>
               ) : null}
 
-              <div className="w-full border-t border-border/60 pt-4 text-center">
+              <div className="w-full rounded-xl bg-muted/35 px-4 py-3 text-center ring-1 ring-border/50">
                 <p className="text-xs text-muted-foreground">{t('billing.totalBill')}</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                <p className="mt-0.5 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
                   {formatMoney(activePaymentModal.amount_minor, activePaymentModal.currency)}
                 </p>
               </div>
 
-              <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+              <p className="inline-flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
                 {t('billing.autoCheckingStatus')}
                 <span className="waiting-ellipsis" aria-hidden="true">...</span>
               </p>
             </div>
           )}
 
-          {/* DialogFooter defaults to sm:flex-row; override that variant explicitly
-              (not just the unprefixed class) or it wins at >=640px and the w-full
-              buttons below blow out past the dialog edge. Stacked at every width. */}
-          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-col-reverse sm:justify-stretch">
+          <DialogFooter
+            className={activePaymentURL
+              ? 'mx-0 mb-0 grid grid-cols-2 gap-2 rounded-none border-t border-border/60 bg-muted/30 px-6 py-4 sm:grid-cols-2'
+              : 'mx-0 mb-0 flex justify-center rounded-none border-t border-border/60 bg-muted/30 px-6 py-4 sm:justify-center'}
+          >
             <Button
               variant="outline"
               size="sm"
               onClick={handleCheckStatusModal}
               disabled={checkingPaymentStatus}
-              className="w-full gap-1.5"
+              className={activePaymentURL ? 'gap-1.5 shadow-none' : 'min-w-36 gap-1.5 shadow-none'}
             >
-              {checkingPaymentStatus && <RefreshCw className="size-3 shrink-0 animate-spin" aria-hidden="true" />}
-              {checkingPaymentStatus ? t('billing.checkingStatus') : t('billing.checkPaymentStatus')}
+              <RefreshCw className={`size-3 shrink-0 ${checkingPaymentStatus ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {checkingPaymentStatus ? t('billing.checkingStatus') : t('billing.checkStatus')}
             </Button>
             {activePaymentURL && (
               // Opens in a new tab so the dialog stays mounted and keeps polling for the paid status.
               <Button
                 size="sm"
                 onClick={() => window.open(activePaymentURL, '_blank', 'noopener,noreferrer')}
-                className="w-full"
+                className="gap-1.5"
               >
-                {t('billing.openPaymentLink')}
+                {t('billing.completePayment')}
+                <ExternalLink className="size-3" aria-hidden="true" />
               </Button>
             )}
           </DialogFooter>

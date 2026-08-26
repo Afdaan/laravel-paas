@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, Calendar, Check, Copy, CreditCard, ReceiptText, Search, WalletCards } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Calendar, Check, Copy, CreditCard, ReceiptText, RefreshCw, Search, WalletCards } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -429,19 +429,21 @@ export function BillingHistorySection({
                                   <Button
                                     size="sm"
                                     onClick={() => onPayPendingTopup(topup)}
-                                    className="h-7 px-2.5 text-[11px] font-semibold"
+                                    className="h-7 gap-1.5 px-2.5 text-[11px] font-semibold"
                                   >
-                                    <CreditCard className="mr-1 size-3" />
+                                    <CreditCard className="size-3" aria-hidden="true" />
                                     {t('billing.payNow')}
                                   </Button>
                                 )}
                                 <Button
-                                  size="sm"
-                                  variant="outline"
+                                  size="icon-sm"
+                                  variant="ghost"
                                   onClick={() => void reconcileTopup(topup.id)}
-                                  className="h-7 px-2.5 text-[11px] font-semibold"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  title={t('billing.checkStatus')}
                                 >
-                                  {t('billing.checkStatus')}
+                                  <RefreshCw className="size-3.5" aria-hidden="true" />
+                                  <span className="sr-only">{t('billing.checkStatus')}</span>
                                 </Button>
                               </div>
                             )}
