@@ -219,14 +219,14 @@ export function BillingHistorySection({
                     />
                   </div>
 
-                  <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60 text-[11px]">
+                  <div className="inline-flex items-center gap-px rounded-md bg-muted/30 p-px text-[10px] ring-1 ring-border/50">
                     <button
                       type="button"
                       onClick={() => setInvoiceStatusFilter('all')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                      className={`h-7 rounded-[5px] px-2.5 font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                         invoiceStatusFilter === 'all'
-                          ? 'bg-background text-foreground shadow-xs'
-                          : 'text-muted-foreground hover:text-foreground'
+                          ? 'bg-background text-foreground'
+                          : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                       }`}
                     >
                       {t('billing.allStatuses')}
@@ -234,10 +234,10 @@ export function BillingHistorySection({
                     <button
                       type="button"
                       onClick={() => setInvoiceStatusFilter('paid')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                      className={`h-7 rounded-[5px] px-2.5 font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                         invoiceStatusFilter === 'paid'
-                          ? 'bg-background text-emerald-600 dark:text-emerald-400 shadow-xs'
-                          : 'text-muted-foreground hover:text-foreground'
+                          ? 'bg-background text-foreground'
+                          : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                       }`}
                     >
                       {formatStatus('paid')}
@@ -245,10 +245,10 @@ export function BillingHistorySection({
                     <button
                       type="button"
                       onClick={() => setInvoiceStatusFilter('payment_due')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                      className={`h-7 rounded-[5px] px-2.5 font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                         invoiceStatusFilter === 'payment_due'
-                          ? 'bg-background text-destructive shadow-xs'
-                          : 'text-muted-foreground hover:text-foreground'
+                          ? 'bg-background text-foreground'
+                          : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                       }`}
                     >
                       {formatStatus('payment_due')}
