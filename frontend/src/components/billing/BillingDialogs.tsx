@@ -215,7 +215,7 @@ export function PaymentDialog({
   checkingPaymentStatus: boolean
   handleCheckStatusModal: () => Promise<void>
 }) {
-  const { t } = useBillingFormatters()
+  const { t, formatMoney } = useBillingFormatters()
   const activePaymentURL = activePaymentModal?.payment_url
   // Sandbox tokens prefix the EMV payload with junk ("THIS.IS.JUST.AN.EXAMPLE...000201..."),
   // so match the EMV header anywhere instead of requiring it at position 0.
@@ -225,53 +225,70 @@ export function PaymentDialog({
       <Dialog open={!!activePaymentModal} onOpenChange={(open) => !open && setActivePaymentModal(null)}>
         <DialogContent className="sm:max-w-md border-border">
           <DialogHeader>
-            <DialogTitle className="text-center text-lg font-bold">{t('billing.paymentDialogTitle')}</DialogTitle>
+            <DialogTitle className="text-center text-base font-semibold tracking-tight">
+              {t('billing.paymentDialogTitle')}
+            </DialogTitle>
             <DialogDescription className="text-center text-xs text-muted-foreground">
               {t('billing.paymentDialogDescription')}
             </DialogDescription>
           </DialogHeader>
 
           {activePaymentModal && (
-            <div className="flex flex-col items-center justify-center space-y-4 py-4">
+            <div className="flex flex-col items-center gap-5 py-2">
               {qrisPayload ? (
-                <div className="bg-white p-4 border border-border rounded-lg flex flex-col items-center">
-                  <QRCodeSVG
-                    value={qrisPayload}
-                    size={200}
-                    level="M"
-                    className="size-48 object-contain"
-                  />
-                  <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">{t('billing.scanQris')}</p>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2">
+                  <div className="flex flex-col items-center rounded-lg bg-white p-4">
+                    {/* QR needs a literal white quiet zone in both themes; semantic tokens would invert it. */}
+                    <QRCodeSVG value={qrisPayload} size={192} level="M" className="size-44" />
+                  </div>
+                  <p className="pt-2 pb-1 text-center font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {t('billing.scanQris')}
+                  </p>
                 </div>
               ) : activePaymentModal.payment_token ? (
-                <div className="w-full min-w-0 p-4 bg-muted rounded-md text-center">
-                  <p className="text-xs text-muted-foreground uppercase font-mono mb-1">{t('billing.paymentCode')}</p>
-                  <p className="text-lg font-mono font-bold tracking-widest break-all">{activePaymentModal.payment_token}</p>
+                <div className="w-full min-w-0 rounded-xl border border-border/60 bg-muted/20 p-4 text-center">
+                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {t('billing.paymentCode')}
+                  </p>
+                  <p className="font-mono text-sm font-semibold break-all text-foreground">
+                    {activePaymentModal.payment_token}
+                  </p>
                 </div>
               ) : null}
 
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground font-mono uppercase">{t('billing.totalBill')}</p>
-                <p className="text-xl font-bold text-foreground">
-                  Rp {activePaymentModal.amount_minor.toLocaleString('id-ID')}
+              <div className="w-full border-t border-border/60 pt-4 text-center">
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {t('billing.totalBill')}
+                </p>
+                <p className="mt-0.5 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+                  {formatMoney(activePaymentModal.amount_minor, activePaymentModal.currency)}
                 </p>
               </div>
+
+              <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <RefreshCw className="size-3 shrink-0 animate-spin [animation-duration:3s]" aria-hidden="true" />
+                {t('billing.autoCheckingStatus')}
+              </p>
             </div>
           )}
 
-          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCheckStatusModal}
+              disabled={checkingPaymentStatus}
+              className="gap-1.5"
+            >
+              {checkingPaymentStatus && <RefreshCw className="size-3 shrink-0 animate-spin" aria-hidden="true" />}
+              {checkingPaymentStatus ? t('billing.checkingStatus') : t('billing.checkPaymentStatus')}
+            </Button>
             {activePaymentURL && (
-              <Button variant="outline" size="sm" onClick={() => window.location.assign(activePaymentURL)}>
+              // Opens in a new tab so the dialog stays mounted and keeps polling for the paid status.
+              <Button size="sm" onClick={() => window.open(activePaymentURL, '_blank', 'noopener,noreferrer')}>
                 {t('billing.openPaymentLink')}
               </Button>
             )}
-            <Button
-              onClick={handleCheckStatusModal}
-              disabled={checkingPaymentStatus}
-              size="sm"
-            >
-              {checkingPaymentStatus ? t('billing.checkingStatus') : t('billing.checkPaymentStatus')}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
