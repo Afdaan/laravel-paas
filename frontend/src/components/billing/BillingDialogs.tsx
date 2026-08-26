@@ -217,6 +217,9 @@ export function PaymentDialog({
 }) {
   const { t } = useBillingFormatters()
   const activePaymentURL = activePaymentModal?.payment_url
+  // Sandbox tokens prefix the EMV payload with junk ("THIS.IS.JUST.AN.EXAMPLE...000201..."),
+  // so match the EMV header anywhere instead of requiring it at position 0.
+  const qrisPayload = activePaymentModal?.payment_token?.match(/000201.*/s)?.[0]
 
   return (
       <Dialog open={!!activePaymentModal} onOpenChange={(open) => !open && setActivePaymentModal(null)}>
@@ -230,10 +233,10 @@ export function PaymentDialog({
 
           {activePaymentModal && (
             <div className="flex flex-col items-center justify-center space-y-4 py-4">
-              {activePaymentModal.payment_token && activePaymentModal.payment_token.startsWith('000201') ? (
+              {qrisPayload ? (
                 <div className="bg-white p-4 border border-border rounded-lg flex flex-col items-center">
                   <QRCodeSVG
-                    value={activePaymentModal.payment_token}
+                    value={qrisPayload}
                     size={200}
                     level="M"
                     className="size-48 object-contain"
@@ -241,9 +244,9 @@ export function PaymentDialog({
                   <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">{t('billing.scanQris')}</p>
                 </div>
               ) : activePaymentModal.payment_token ? (
-                <div className="p-4 bg-muted rounded-md text-center">
+                <div className="w-full min-w-0 p-4 bg-muted rounded-md text-center">
                   <p className="text-xs text-muted-foreground uppercase font-mono mb-1">{t('billing.paymentCode')}</p>
-                  <p className="text-lg font-mono font-bold tracking-widest">{activePaymentModal.payment_token}</p>
+                  <p className="text-lg font-mono font-bold tracking-widest break-all">{activePaymentModal.payment_token}</p>
                 </div>
               ) : null}
 
