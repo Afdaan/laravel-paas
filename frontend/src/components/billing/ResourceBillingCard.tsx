@@ -55,6 +55,9 @@ export function ResourceBillingCard({ overview, statuses, renewLoading, setPendi
 
               const dueDateLabel = (() => {
                 if (!isNonActive) {
+                  if (!resource.auto_renew) {
+                    return t('billing.periodEndsOn', { date: formatDate(resource.next_invoice_at) })
+                  }
                   return t('billing.renewsOn', { date: formatDate(resource.next_invoice_at) })
                 }
                 const oldestDueAt = billingStatus?.oldest_due_at

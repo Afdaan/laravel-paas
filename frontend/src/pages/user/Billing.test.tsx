@@ -55,6 +55,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.resourceBillingDescription': 'Resource billing description',
         'billing.noBillableResources': 'No active billable resources.',
         'billing.renewsOn': 'Renews on {{date}}',
+        'billing.periodEndsOn': 'Billing period ends on {{date}}',
         'billing.renewalPaymentDue': 'Renewal payment due since {{date}}',
        'billing.month': 'month',
        'billing.currentPeriod': 'Current period: {{start}} to {{end}}',
@@ -75,7 +76,6 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.proceedToPayment': 'Proceed to Payment',
         'billing.cancelTopup': 'Cancel',
         'billing.paymentSecurityNote': 'Payment security note',
-        'billing.paymentRequired': 'Payment required',
         'billing.paymentSuccess': 'Payment confirmed! Your wallet has been credited.',
         'billing.paymentPending': 'Payment is still being processed.',
         'billing.paymentVerifyFailed': 'Failed to verify payment',
@@ -250,7 +250,7 @@ describe('Billing page', () => {
     expect(window.location.search).toBe('')
   })
 
-  it('shows each resource renewal date', async () => {
+  it('shows the period end instead of promising renewal when auto-renew is disabled', async () => {
     ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: {
         ...mockOverview,
@@ -276,7 +276,8 @@ describe('Billing page', () => {
 
    expect(await screen.findByText('Storefront')).toBeInTheDocument()
    expect(screen.getByText('Current period: Aug 1, 2026 to Sep 1, 2026')).toBeInTheDocument()
-   expect(screen.getByText('Renews on Sep 1, 2026')).toBeInTheDocument()
+   expect(screen.getByText('Billing period ends on Sep 1, 2026')).toBeInTheDocument()
+   expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeInTheDocument()
     expect(screen.getByRole('switch')).not.toBeChecked()
   })

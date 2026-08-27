@@ -34,6 +34,7 @@ import {
   FolderLock,
   WalletCards,
   Coins,
+  AlertTriangle,
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
@@ -865,41 +866,66 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
 function HeaderCreditBadge() {
   const navigate = useNavigate()
-  const { language } = useTranslation()
+  const { t, language } = useTranslation()
   const [balance, setBalance] = useState<number | null>(null)
+  const [paymentDueCount, setPaymentDueCount] = useState<number | null>(null)
 
-  const fetchBalance = useCallback(async () => {
-    try {
-      const res = await billingAPI.overview()
-      if (res?.data?.wallet) {
-        setBalance(res.data.wallet.balance_credits)
-      }
-    } catch {
-      // Fallback silently if billing is unavailable or unmocked
+  const fetchBillingSummary = useCallback(async () => {
+    const [overviewResult, statusResult] = await Promise.allSettled([
+      billingAPI.overview(),
+      billingAPI.status(),
+    ])
+
+    if (overviewResult.status === 'fulfilled' && overviewResult.value.data.wallet) {
+      setBalance(overviewResult.value.data.wallet.balance_credits)
+    }
+    if (statusResult.status === 'fulfilled') {
+      setPaymentDueCount(
+        statusResult.value.data.filter(({ status }) => status === 'payment_due' || status === 'suspended').length,
+      )
     }
   }, [])
 
   useEffect(() => {
-    void fetchBalance()
-  }, [fetchBalance])
+    void fetchBillingSummary()
+  }, [fetchBillingSummary])
 
-  usePolling(() => void fetchBalance(), 30_000)
+  usePolling(() => void fetchBillingSummary(), 30_000)
 
-  if (balance === null) return null
+  const hasPaymentDue = paymentDueCount !== null && paymentDueCount > 0
+  if (balance === null && !hasPaymentDue) return null
 
-  const formatted = new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(balance)
+  const formatted = balance === null
+    ? null
+    : new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(balance)
 
   return (
-    <button
-      type="button"
-      onClick={() => navigate('/billing')}
-      title="Billing & Wallet"
-      className="group flex items-center gap-1.5 rounded-full border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-3 py-1 text-xs font-bold text-primary shadow-xs transition-all hover:border-primary/60 hover:bg-primary/15 hover:shadow-xs active:scale-95 cursor-pointer"
-    >
-      <Coins className="size-3.5 text-primary transition-transform group-hover:rotate-12 group-hover:scale-110" />
-      <span>{formatted}</span>
-      <span className="hidden sm:inline font-semibold text-muted-foreground text-[10px] uppercase">cr</span>
-    </button>
+    <div className="flex items-center gap-1.5">
+      {hasPaymentDue && (
+        <button
+          type="button"
+          onClick={() => navigate('/billing')}
+          title={t('billing.reviewOverdueBilling')}
+          aria-label={t('billing.reviewOverdueBilling')}
+          className="flex h-7 items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 text-[11px] font-medium text-destructive transition-colors hover:border-destructive/50 hover:bg-destructive/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <AlertTriangle className="size-3.5" aria-hidden="true" />
+          <span>{t('billing.paymentDueCount', { count: paymentDueCount })}</span>
+        </button>
+      )}
+      {formatted !== null && (
+        <button
+          type="button"
+          onClick={() => navigate('/billing')}
+          title={t('billing.nav')}
+          className="group flex items-center gap-1.5 rounded-full border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-3 py-1 text-xs font-bold text-primary shadow-xs transition-all hover:border-primary/60 hover:bg-primary/15 hover:shadow-xs active:scale-95 cursor-pointer"
+        >
+          <Coins className="size-3.5 text-primary transition-transform group-hover:rotate-12 group-hover:scale-110" />
+          <span>{formatted}</span>
+          <span className="hidden sm:inline font-semibold text-muted-foreground text-[10px] uppercase">cr</span>
+        </button>
+      )}
+    </div>
   )
 }
 

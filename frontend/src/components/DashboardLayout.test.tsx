@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { act } from 'react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import DashboardLayout from './DashboardLayout'
+import { billingAPI } from '../services/api'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
 
@@ -46,6 +47,7 @@ describe('DashboardLayout mobile drawer', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
     vi.clearAllMocks()
   })
 
@@ -107,5 +109,23 @@ describe('DashboardLayout mobile drawer', () => {
     await act(async () => fireEvent.keyDown(document, { key: 'Escape' }))
 
     expect(document.activeElement).toBe(openButton)
+  })
+
+  it('shows payment-due resources in the global header', async () => {
+    vi.spyOn(billingAPI, 'overview').mockResolvedValue({
+      data: { wallet: { balance_credits: 500 } },
+    } as never)
+    vi.spyOn(billingAPI, 'status').mockResolvedValue({
+      data: [
+        { resource_id: 1, resource_type: 'project', status: 'payment_due', payment_due_days: 1 },
+        { resource_id: 2, resource_type: 'database', status: 'suspended', payment_due_days: 8 },
+      ],
+    } as never)
+
+    renderLayout()
+
+    expect(await screen.findByRole('button', { name: 'billing.reviewOverdueBilling' })).toHaveTextContent(
+      'billing.paymentDueCount',
+    )
   })
 })
