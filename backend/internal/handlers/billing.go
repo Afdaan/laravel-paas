@@ -104,6 +104,48 @@ func (h *BillingHandler) ListTopups(c *fiber.Ctx) error {
 	return c.JSON(view)
 }
 
+func (h *BillingHandler) ListOwnInvoices(c *fiber.Ctx) error {
+	page, limit, err := billingCollectionPagination(c)
+	if err != nil {
+		return err
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	view, err := h.catalog.ListUserInvoices(c.UserContext(), userID, page, limit, billing.ListInvoicesFilter{
+		Search: c.Query("search"),
+		Status: c.Query("status"),
+	})
+	if err != nil {
+		return mapCatalogError(err)
+	}
+	return c.JSON(view)
+}
+
+func (h *BillingHandler) ListOwnTopups(c *fiber.Ctx) error {
+	page, limit, err := billingCollectionPagination(c)
+	if err != nil {
+		return err
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	view, err := h.catalog.ListUserTopups(c.UserContext(), userID, page, limit)
+	if err != nil {
+		return mapCatalogError(err)
+	}
+	return c.JSON(view)
+}
+
+func (h *BillingHandler) ListOwnLedgerEntries(c *fiber.Ctx) error {
+	page, limit, err := billingCollectionPagination(c)
+	if err != nil {
+		return err
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	view, err := h.catalog.ListUserLedgerEntries(c.UserContext(), userID, page, limit)
+	if err != nil {
+		return mapCatalogError(err)
+	}
+	return c.JSON(view)
+}
+
 func (h *BillingHandler) ListSuspensions(c *fiber.Ctx) error {
 	if h.suspensions == nil {
 		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing service is unavailable")
@@ -413,6 +455,8 @@ func mapTopupError(err error) error {
 		return apperr.New(409, "TOPUP_IDEMPOTENCY_CONFLICT", "The idempotency key belongs to a different top-up request")
 	case errors.Is(err, billing.ErrTopupNotFound):
 		return apperr.ErrNotFound
+	case errors.Is(err, billing.ErrTopupPendingLimitExceeded):
+		return apperr.New(429, "TOO_MANY_PENDING_TOPUPS", "You have reached the maximum number of pending top-ups. Please complete or wait for existing pending top-ups to expire.")
 	case errors.Is(err, billing.ErrTopupRecoveryRequired):
 		return apperr.New(409, "TOPUP_RECOVERY_REQUIRED", "Payment status is being reconciled before checkout can continue")
 	case errors.Is(err, billing.ErrInvalidPaymentNotification):

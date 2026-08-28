@@ -106,6 +106,10 @@ func (s *WalletService) apply(ctx context.Context, mutation LedgerMutation, cred
 		return result, nil
 	}
 
+	if errors.Is(err, ErrInsufficientBalance) || errors.Is(err, ErrInvalidMutation) || errors.Is(err, ErrIdempotencyConflict) || errors.Is(err, ErrBalanceOverflow) {
+		return MutationResult{}, err
+	}
+
 	existing, lookupErr := findMutationByKey(s.db.WithContext(ctx), mutation, credit)
 	if lookupErr == nil && existing != nil {
 		return *existing, nil
@@ -124,20 +128,12 @@ func (s *WalletService) applyInTransaction(tx *gorm.DB, mutation LedgerMutation,
 		return MutationResult{}, err
 	}
 
-	existing, err := findMutationByKey(tx, mutation, credit)
-	if err != nil {
-		return MutationResult{}, err
-	}
-	if existing != nil {
-		return *existing, nil
-	}
-
 	wallet, err := getOrCreateLockedWallet(tx, mutation.UserID)
 	if err != nil {
 		return MutationResult{}, err
 	}
 
-	existing, err = findMutationByKey(tx, mutation, credit)
+	existing, err := findMutationByKey(tx, mutation, credit)
 	if err != nil {
 		return MutationResult{}, err
 	}
@@ -194,7 +190,7 @@ func (s *WalletService) validateContext(ctx context.Context) error {
 }
 
 func getOrCreateLockedWallet(tx *gorm.DB, userID uint) (models.Wallet, error) {
-	if err := tx.Clauses(clause.OnConflict{
+	if err := tx.Session(&gorm.Session{}).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}},
 		DoNothing: true,
 	}).Create(&models.Wallet{UserID: userID}).Error; err != nil {
@@ -202,7 +198,7 @@ func getOrCreateLockedWallet(tx *gorm.DB, userID uint) (models.Wallet, error) {
 	}
 
 	var wallet models.Wallet
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&wallet).Error; err != nil {
+	if err := tx.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&wallet).Error; err != nil {
 		return models.Wallet{}, fmt.Errorf("lock wallet: %w", err)
 	}
 	return wallet, nil
@@ -210,7 +206,7 @@ func getOrCreateLockedWallet(tx *gorm.DB, userID uint) (models.Wallet, error) {
 
 func findMutationByKey(db *gorm.DB, mutation LedgerMutation, credit bool) (*MutationResult, error) {
 	var entry models.WalletLedgerEntry
-	err := db.Where("idempotency_key = ?", mutation.IdempotencyKey).First(&entry).Error
+	err := db.Session(&gorm.Session{}).Model(&models.WalletLedgerEntry{}).Where("idempotency_key = ?", mutation.IdempotencyKey).First(&entry).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -219,7 +215,7 @@ func findMutationByKey(db *gorm.DB, mutation LedgerMutation, credit bool) (*Muta
 	}
 
 	var wallet models.Wallet
-	if err := db.First(&wallet, entry.WalletID).Error; err != nil {
+	if err := db.Session(&gorm.Session{}).Model(&models.Wallet{}).Where("id = ?", entry.WalletID).First(&wallet).Error; err != nil {
 		return nil, fmt.Errorf("load wallet for existing ledger entry: %w", err)
 	}
 	if !sameMutation(wallet, entry, mutation, credit) {

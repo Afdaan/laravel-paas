@@ -106,11 +106,15 @@ var (
 	loginLimiter     = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per IP
 	queryLimiter     = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
 	proxyLimiter     = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
-	consoleLimiter   = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per project
-	importLimiter    = NewRateLimiter(3, 5*time.Minute)  // 3 req/5min per user
-	autoRenewLimiter       = NewRateLimiter(3, 1*time.Minute)   // 3 req/min per user
-	midtransWebhookLimiter = NewRateLimiter(300, 1*time.Minute) // 300 req/min per IP
-	pakasirWebhookLimiter  = NewRateLimiter(300, 1*time.Minute) // 300 req/min per IP
+	consoleLimiter            = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per project
+	importLimiter             = NewRateLimiter(3, 5*time.Minute)   // 3 req/5min per user
+	autoRenewLimiter          = NewRateLimiter(3, 1*time.Minute)   // 3 req/min per user
+	topupCreateUserLimiter    = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per user
+	topupCreateIPLimiter      = NewRateLimiter(15, 1*time.Minute)  // 15 req/min per IP
+	topupReconcileUserLimiter = NewRateLimiter(10, 1*time.Minute)  // 10 req/min per user
+	topupReconcileIPLimiter   = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per IP
+	midtransWebhookLimiter    = NewRateLimiter(300, 1*time.Minute) // 300 req/min per IP
+	pakasirWebhookLimiter     = NewRateLimiter(300, 1*time.Minute) // 300 req/min per IP
 )
 
 // RateLimitLogin applies rate limiting to login endpoint
@@ -305,6 +309,126 @@ func RateLimitPakasirWebhook(redis distributedRateLimiter) fiber.Handler {
 			c.Set("Retry-After", strconv.Itoa(sec))
 			return apperr.NewRateLimited(formatRateLimitMsg("Too many webhook requests", sec), sec)
 		}
+		return c.Next()
+	}
+}
+
+// RateLimitTopupCreate applies distributed and local rate limiting to topup creation
+func RateLimitTopupCreate(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		uidVal := c.Locals("user_id")
+		if uidVal == nil {
+			return apperr.ErrUnauthorized
+		}
+		ip := c.IP()
+		userKey := fmt.Sprintf("topup:create:user:%v", uidVal)
+		ipKey := fmt.Sprintf("topup:create:ip:%s", ip)
+
+		var userAllowed = true
+		var userSec = 0
+		var ipAllowed = true
+		var ipSec = 0
+
+		if redis != nil {
+			allowed, ttl, err := redis.RateLimit(userKey, 5, time.Minute)
+			if err != nil {
+				slog.Warn("Redis topup create user rate limit failed; falling back to local limiter", "error", err)
+				userAllowed, userSec = topupCreateUserLimiter.Allow(userKey)
+			} else if !allowed {
+				sec := int(math.Ceil(ttl.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many top-up requests", sec), sec)
+			}
+
+			allowedIP, ttlIP, errIP := redis.RateLimit(ipKey, 15, time.Minute)
+			if errIP != nil {
+				slog.Warn("Redis topup create IP rate limit failed; falling back to local limiter", "error", errIP)
+				ipAllowed, ipSec = topupCreateIPLimiter.Allow(ipKey)
+			} else if !allowedIP {
+				sec := int(math.Ceil(ttlIP.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many top-up requests from this IP", sec), sec)
+			}
+		} else {
+			userAllowed, userSec = topupCreateUserLimiter.Allow(userKey)
+			ipAllowed, ipSec = topupCreateIPLimiter.Allow(ipKey)
+		}
+
+		if !userAllowed {
+			c.Set("Retry-After", strconv.Itoa(userSec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many top-up requests", userSec), userSec)
+		}
+		if !ipAllowed {
+			c.Set("Retry-After", strconv.Itoa(ipSec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many top-up requests from this IP", ipSec), ipSec)
+		}
+
+		return c.Next()
+	}
+}
+
+// RateLimitTopupReconcile applies distributed and local rate limiting to topup reconciliation
+func RateLimitTopupReconcile(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		uidVal := c.Locals("user_id")
+		if uidVal == nil {
+			return apperr.ErrUnauthorized
+		}
+		ip := c.IP()
+		userKey := fmt.Sprintf("topup:reconcile:user:%v", uidVal)
+		ipKey := fmt.Sprintf("topup:reconcile:ip:%s", ip)
+
+		var userAllowed = true
+		var userSec = 0
+		var ipAllowed = true
+		var ipSec = 0
+
+		if redis != nil {
+			allowed, ttl, err := redis.RateLimit(userKey, 10, time.Minute)
+			if err != nil {
+				slog.Warn("Redis topup reconcile user rate limit failed; falling back to local limiter", "error", err)
+				userAllowed, userSec = topupReconcileUserLimiter.Allow(userKey)
+			} else if !allowed {
+				sec := int(math.Ceil(ttl.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many reconciliation requests", sec), sec)
+			}
+
+			allowedIP, ttlIP, errIP := redis.RateLimit(ipKey, 30, time.Minute)
+			if errIP != nil {
+				slog.Warn("Redis topup reconcile IP rate limit failed; falling back to local limiter", "error", errIP)
+				ipAllowed, ipSec = topupReconcileIPLimiter.Allow(ipKey)
+			} else if !allowedIP {
+				sec := int(math.Ceil(ttlIP.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many reconciliation requests from this IP", sec), sec)
+			}
+		} else {
+			userAllowed, userSec = topupReconcileUserLimiter.Allow(userKey)
+			ipAllowed, ipSec = topupReconcileIPLimiter.Allow(ipKey)
+		}
+
+		if !userAllowed {
+			c.Set("Retry-After", strconv.Itoa(userSec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many reconciliation requests", userSec), userSec)
+		}
+		if !ipAllowed {
+			c.Set("Retry-After", strconv.Itoa(ipSec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many reconciliation requests from this IP", ipSec), ipSec)
+		}
+
 		return c.Next()
 	}
 }

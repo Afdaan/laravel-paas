@@ -119,7 +119,12 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 		}
 	}
 
-	// 5. Run explicit, ordered AutoMigrate for models.
+	// 5. Pre-migrate legacy invoices before AutoMigrate unique index creation.
+	if err := preMigrateInvoices(db); err != nil {
+		return fmt.Errorf("pre-migrate invoices failed: %w", err)
+	}
+
+	// 6. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
 		&models.Project{},
@@ -390,6 +395,7 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"billable_resources", "uni_billable_resources_type_resource", []string{"type", "resource_id"}},
 		{"invoices", "uni_invoices_user_period", []string{"user_id", "period_start", "period_end"}},
 		{"invoices", "uni_invoices_idempotency_key", []string{"idempotency_key"}},
+		{"invoices", "uni_invoices_invoice_number", []string{"invoice_number"}},
 		{"invoice_items", "uni_invoice_items_invoice_resource", []string{"invoice_id", "billable_resource_id"}},
 		{"payment_events", "uni_payment_events_event_key", []string{"event_key"}},
 	}
@@ -702,6 +708,84 @@ func ensureActiveCatalogIndexes(db *gorm.DB) error {
 	return nil
 }
 
+func preMigrateInvoices(db *gorm.DB) error {
+	if !db.Migrator().HasTable("invoices") {
+		return nil
+	}
+
+	// 1. Ensure invoice_number and billing_profile_snapshot columns exist (nullable initially).
+	if isPostgres(db) {
+		if err := db.Exec(`
+			DO $$
+			BEGIN
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_name = 'invoices' AND column_name = 'invoice_number'
+				) THEN
+					ALTER TABLE invoices ADD COLUMN invoice_number VARCHAR(100);
+				END IF;
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_name = 'invoices' AND column_name = 'billing_profile_snapshot'
+				) THEN
+					ALTER TABLE invoices ADD COLUMN billing_profile_snapshot TEXT DEFAULT '';
+				END IF;
+			END $$;
+		`).Error; err != nil {
+			return fmt.Errorf("pre-migrate invoice columns postgres: %w", err)
+		}
+	} else {
+		if !db.Migrator().HasColumn(&models.Invoice{}, "invoice_number") {
+			_ = db.Exec(`ALTER TABLE invoices ADD COLUMN invoice_number VARCHAR(100);`)
+		}
+		if !db.Migrator().HasColumn(&models.Invoice{}, "billing_profile_snapshot") {
+			_ = db.Exec(`ALTER TABLE invoices ADD COLUMN billing_profile_snapshot TEXT DEFAULT '';`)
+		}
+	}
+
+	// 2. Backfill deterministic unique invoice numbers for any legacy rows missing invoice_number.
+	if isPostgres(db) {
+		_ = db.Exec(`DROP TRIGGER IF EXISTS trg_invoices_immutable_identity ON invoices;`).Error
+		if err := db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || TO_CHAR(period_start, 'YYYYMM') || '-' || LPAD(id::text, 4, '0')
+			WHERE invoice_number IS NULL OR invoice_number = '' OR invoice_number = '0';
+		`).Error; err != nil {
+			return fmt.Errorf("pre-migrate backfill invoice_number: %w", err)
+		}
+		if err := db.Exec(`
+			UPDATE invoices
+			SET billing_profile_snapshot = ''
+			WHERE billing_profile_snapshot IS NULL;
+		`).Error; err != nil {
+			return fmt.Errorf("pre-migrate backfill billing_profile_snapshot: %w", err)
+		}
+		var invalidCount int64
+		if err := db.Raw(`SELECT count(1) FROM invoices WHERE invoice_number IS NULL OR invoice_number = '';`).Scan(&invalidCount).Error; err != nil {
+			return fmt.Errorf("verify invoice_number backfill: %w", err)
+		}
+		if invalidCount > 0 {
+			return fmt.Errorf("invoice migration failed: %d invoices still have invalid invoice_number", invalidCount)
+		}
+		if err := db.Exec(`ALTER TABLE invoices ALTER COLUMN invoice_number SET NOT NULL;`).Error; err != nil {
+			return fmt.Errorf("pre-migrate set invoice_number not null: %w", err)
+		}
+	} else {
+		_ = db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || strftime('%Y%m', period_start) || '-' || printf('%04d', id)
+			WHERE invoice_number IS NULL OR invoice_number = '' OR invoice_number = '0';
+		`)
+		_ = db.Exec(`
+			UPDATE invoices
+			SET billing_profile_snapshot = ''
+			WHERE billing_profile_snapshot IS NULL;
+		`)
+	}
+
+	return nil
+}
+
 func reconcileBillingSchema(db *gorm.DB) error {
 	if isPostgres(db) {
 		if err := db.Exec("ALTER TABLE wallets DROP CONSTRAINT IF EXISTS chk_wallets_balance_nonnegative").Error; err != nil {
@@ -724,6 +808,20 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		}
 	}
 
+	if isPostgres(db) {
+		_ = db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || TO_CHAR(period_start, 'YYYYMM') || '-' || LPAD(id::text, 4, '0')
+			WHERE invoice_number = '' OR invoice_number IS NULL;
+		`)
+	} else {
+		_ = db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || strftime('%Y%m', period_start) || '-' || printf('%04d', id)
+			WHERE invoice_number = '' OR invoice_number IS NULL;
+		`)
+	}
+
 	constraints := []struct {
 		model any
 		name  string
@@ -740,6 +838,7 @@ func reconcileBillingSchema(db *gorm.DB) error {
 		{&models.BillableResource{}, "uni_billable_resources_type_resource", "UNIQUE (type, resource_id)"},
 		{&models.Invoice{}, "uni_invoices_user_period", "UNIQUE (user_id, period_start, period_end)"},
 		{&models.Invoice{}, "uni_invoices_idempotency_key", "UNIQUE (idempotency_key)"},
+		{&models.Invoice{}, "uni_invoices_invoice_number", "UNIQUE (invoice_number)"},
 		{&models.InvoiceItem{}, "uni_invoice_items_invoice_resource", "UNIQUE (invoice_id, billable_resource_id)"},
 		{&models.Invoice{}, "fk_invoices_wallet_owner", "FOREIGN KEY (wallet_id, user_id) REFERENCES wallets (id, user_id) ON DELETE RESTRICT ON UPDATE RESTRICT"},
 		{&models.PaymentEvent{}, "uni_payment_events_event_key", "UNIQUE (event_key)"},
@@ -850,7 +949,9 @@ func reconcileBillingSchema(db *gorm.DB) error {
 			END IF;
 			IF NEW.user_id IS DISTINCT FROM OLD.user_id OR NEW.wallet_id IS DISTINCT FROM OLD.wallet_id
 				OR NEW.period_start IS DISTINCT FROM OLD.period_start OR NEW.period_end IS DISTINCT FROM OLD.period_end
-				OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key THEN
+				OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+				OR (OLD.invoice_number IS NOT NULL AND OLD.invoice_number <> '' AND OLD.invoice_number <> '0' AND NEW.invoice_number IS DISTINCT FROM OLD.invoice_number)
+				OR (OLD.billing_profile_snapshot IS NOT NULL AND OLD.billing_profile_snapshot <> '' AND NEW.billing_profile_snapshot IS DISTINCT FROM OLD.billing_profile_snapshot) THEN
 				RAISE EXCEPTION 'invoice identity fields are immutable';
 			END IF;
 			RETURN NEW;

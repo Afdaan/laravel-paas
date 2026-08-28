@@ -350,9 +350,10 @@ func TestStaleSessionRecoversAccessToProtectedBillingRouteAfterReauth(t *testing
 	// Extract new session and CSRF tokens from cookies
 	var newSessionToken, newCSRFToken string
 	for _, cookie := range resp2.Cookies() {
-		if cookie.Name == "paas_session" {
+		switch cookie.Name {
+		case "paas_session":
 			newSessionToken = cookie.Value
-		} else if cookie.Name == "paas_csrf" {
+		case "paas_csrf":
 			newCSRFToken = cookie.Value
 		}
 	}

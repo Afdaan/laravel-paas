@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useMemo, type Dispatch, type SetStateAction } from 'react'
 import { AlertTriangle, ArrowRight, Check, Copy, Database, ExternalLink, FolderGit2, Printer, ReceiptText, RefreshCw, ShieldCheck } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 
@@ -305,13 +305,11 @@ export function PaymentDialog({
 export function InvoiceDialog({
   selectedInvoice,
   setSelectedInvoice,
-  profile,
   copiedInvoiceID,
   handleCopyInvoiceNumber,
 }: {
   selectedInvoice: Invoice | null
   setSelectedInvoice: Dispatch<SetStateAction<Invoice | null>>
-  profile: BillingProfile
   copiedInvoiceID: number | null
   handleCopyInvoiceNumber: (invoiceNumber: string, id: number) => void
 }) {
@@ -321,6 +319,20 @@ export function InvoiceDialog({
     formatDate,
     formatResourceDisplayName,
   } = useBillingFormatters()
+
+  const receiptProfile = useMemo<Partial<BillingProfile> | null>(() => {
+    if (selectedInvoice?.billing_profile_snapshot && selectedInvoice.billing_profile_snapshot.trim() !== '') {
+      try {
+        const parsed = JSON.parse(selectedInvoice.billing_profile_snapshot)
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          return parsed as Partial<BillingProfile>
+        }
+      } catch {
+        // malformed snapshot
+      }
+    }
+    return null
+  }, [selectedInvoice])
 
   return (
       <Dialog open={selectedInvoice !== null} onOpenChange={(open) => !open && setSelectedInvoice(null)}>
@@ -403,23 +415,36 @@ export function InvoiceDialog({
                     <p className="text-xs font-medium text-muted-foreground">
                       {t('billing.billedTo')}:
                     </p>
-                    <h4 className="mt-0.5 text-xs font-bold text-foreground">
-                      {profile.company_name || profile.email || '—'}
-                    </h4>
-                    <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-                      {profile.tax_id && (
-                        <p>
-                          <span className="font-medium">{t('billing.profile.taxId')}:</span>{' '}
-                          <span className="font-mono text-foreground">{profile.tax_id}</span>
+                    {receiptProfile ? (
+                      <>
+                        <h4 className="mt-0.5 text-xs font-bold text-foreground">
+                          {receiptProfile.company_name || receiptProfile.email || '—'}
+                        </h4>
+                        <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                          {receiptProfile.tax_id && (
+                            <p>
+                              <span className="font-medium">{t('billing.profile.taxId')}:</span>{' '}
+                              <span className="font-mono text-foreground">{receiptProfile.tax_id}</span>
+                            </p>
+                          )}
+                          {receiptProfile.address_line1 && (
+                            <p>
+                              {receiptProfile.address_line1}, {receiptProfile.city} {receiptProfile.postal_code}
+                            </p>
+                          )}
+                          {receiptProfile.email && <p>{receiptProfile.email}</p>}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-1 space-y-0.5">
+                        <h4 className="text-xs font-semibold text-muted-foreground italic">
+                          {t('billing.profileUnavailableAtIssuance')}
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground">
+                          {t('billing.profileUnavailableHint')}
                         </p>
-                      )}
-                      {profile.address_line1 && (
-                        <p>
-                          {profile.address_line1}, {profile.city} {profile.postal_code}
-                        </p>
-                      )}
-                      {profile.email && <p>{profile.email}</p>}
-                    </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="sm:text-right space-y-2">

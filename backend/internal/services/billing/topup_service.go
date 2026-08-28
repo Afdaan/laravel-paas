@@ -61,11 +61,13 @@ var (
 	ErrTopupIdempotencyConflict   = errors.New("topup idempotency key conflict")
 	ErrTopupNotFound              = errors.New("topup not found")
 	ErrTopupRecoveryRequired      = errors.New("topup checkout recovery required")
+	ErrTopupPendingLimitExceeded  = errors.New("maximum pending topups reached")
 	ErrInvalidPaymentNotification = errors.New("invalid payment notification")
 	ErrPaymentProvider            = errors.New("payment provider unavailable")
 )
 
 const (
+	MaxPendingTopupsPerWallet  = 5
 	midtransRequestTimeout     = 10 * time.Second
 	topupRequestTimeout        = midtransRequestTimeout + 2*time.Second
 	paymentRequestWaitInterval = 25 * time.Millisecond
@@ -181,6 +183,11 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 
 	var topup models.Topup
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedWallet models.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", wallet.ID, userID).First(&lockedWallet).Error; err != nil {
+			return fmt.Errorf("lock wallet for topup creation: %w", err)
+		}
+
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("wallet_id = ? AND client_idempotency_key = ?", wallet.ID, clientKey).First(&topup).Error; err == nil {
 			if !topupIdempotencyMatch(topup, input) {
 				return ErrTopupIdempotencyConflict
@@ -188,6 +195,14 @@ func (s *TopupService) Create(ctx context.Context, userID uint, clientKey string
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("lock existing topup: %w", err)
+		}
+
+		var pendingCount int64
+		if err := tx.Model(&models.Topup{}).Where("wallet_id = ? AND status = ?", wallet.ID, models.TopupStatusPending).Count(&pendingCount).Error; err != nil {
+			return fmt.Errorf("count pending topups: %w", err)
+		}
+		if pendingCount >= MaxPendingTopupsPerWallet {
+			return ErrTopupPendingLimitExceeded
 		}
 
 		orderID, err := generateTopupProviderOrderID()

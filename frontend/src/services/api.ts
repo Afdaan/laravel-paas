@@ -547,6 +547,15 @@ export const billingAPI = {
   overview: () =>
     api.get<BillingOverview>('/billing/overview'),
 
+  invoices: (params: { page?: number; limit?: number; search?: string; status?: string } = {}, config: { signal?: AbortSignal } = {}) =>
+    api.get<{ data: BillingOverview['invoices']; page: number; limit: number; total: number }>('/billing/invoices', { params, ...config }),
+
+  topups: (params: { page?: number; limit?: number } = {}) =>
+    api.get<{ data: BillingOverview['topups']; page: number; limit: number; total: number }>('/billing/topups', { params }),
+
+  ledger: (params: { page?: number; limit?: number } = {}) =>
+    api.get<{ data: BillingOverview['wallet']['ledger_entries']; page: number; limit: number; total: number }>('/billing/wallet/ledger', { params }),
+
   status: () =>
     api.get<BillingStatus[]>('/billing/status'),
 

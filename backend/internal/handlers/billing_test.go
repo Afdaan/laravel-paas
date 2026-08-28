@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
@@ -244,5 +245,100 @@ func TestReconcileTopupByRefEndpoint(t *testing.T) {
 	}
 	if respMalformed.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for malformed ref, got %d", respMalformed.StatusCode)
+	}
+}
+
+func TestListOwnInvoicesEndpoint(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Invoice{}, &models.InvoiceItem{}); err != nil {
+		t.Fatal(err)
+	}
+
+	user := models.User{Email: "list-invoices@example.com", Password: "p", Name: "Invoice User"}
+	db.Create(&user)
+	wallet := models.Wallet{UserID: user.ID}
+	db.Create(&wallet)
+
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	inv1 := models.Invoice{
+		UserID:         user.ID,
+		WalletID:       wallet.ID,
+		InvoiceNumber:  "INV-202608-0001",
+		PeriodStart:    now,
+		PeriodEnd:      now.AddDate(0, 1, 0),
+		TotalCredits:   100,
+		Status:         models.InvoiceStatusPaid,
+		IdempotencyKey: "h-inv-1",
+	}
+	db.Create(&inv1)
+
+	catalogSvc := billing.NewCatalogService(db)
+	handler := &BillingHandler{
+		catalog: catalogSvc,
+	}
+
+	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+	app.Get("/billing/invoices", func(c *fiber.Ctx) error {
+		actingUserID, _ := strconv.ParseUint(c.Get("X-User-ID"), 10, 64)
+		c.Locals("user_id", uint(actingUserID))
+		return handler.ListOwnInvoices(c)
+	})
+
+	// 1. Normal list -> 200 OK
+	req := httptest.NewRequest(http.MethodGet, "/billing/invoices?search=inv-202608&status=paid", nil)
+	req.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	// 2. Invalid status -> 400 Bad Request
+	reqInvalid := httptest.NewRequest(http.MethodGet, "/billing/invoices?status=MALICIOUS_STATUS", nil)
+	reqInvalid.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	respInvalid, err := app.Test(reqInvalid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respInvalid.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for invalid status, got %d", respInvalid.StatusCode)
+	}
+
+	// 3. Search query > 100 ASCII chars -> 400 Bad Request
+	reqLongSearch := httptest.NewRequest(http.MethodGet, "/billing/invoices?search="+strings.Repeat("A", 101), nil)
+	reqLongSearch.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	respLongSearch, err := app.Test(reqLongSearch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respLongSearch.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for 101-char search, got %d", respLongSearch.StatusCode)
+	}
+
+	// 4. Search query > 100 multibyte runes -> 400 Bad Request
+	reqLongRune := httptest.NewRequest(http.MethodGet, "/billing/invoices?search="+strings.Repeat("日", 101), nil)
+	reqLongRune.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	respLongRune, err := app.Test(reqLongRune)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respLongRune.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for 101-rune search, got %d", respLongRune.StatusCode)
+	}
+
+	// 5. Valid 100-rune multibyte search -> 200 OK
+	reqValidRune := httptest.NewRequest(http.MethodGet, "/billing/invoices?search="+strings.Repeat("日", 100), nil)
+	reqValidRune.Header.Set("X-User-ID", strconv.FormatUint(uint64(user.ID), 10))
+	respValidRune, err := app.Test(reqValidRune)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respValidRune.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for 100-rune search, got %d", respValidRune.StatusCode)
 	}
 }

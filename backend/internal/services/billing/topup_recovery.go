@@ -136,8 +136,8 @@ func (s *TopupService) ensurePaymentRequest(ctx context.Context, topup *models.T
 			return err
 		}
 		paymentToken = res.PaymentNumber
-		paymentURL = res.PaymentNumber
-		if !strings.HasPrefix(paymentURL, "http://") && !strings.HasPrefix(paymentURL, "https://") {
+		paymentURL = sanitizePakasirPaymentURL(res.PaymentNumber)
+		if paymentURL == "" {
 			slug := ""
 			if s.cfg != nil {
 				slug = s.cfg.PakasirProjectSlug
@@ -431,8 +431,32 @@ func topupView(topup models.Topup) TopupView {
 
 func loadWalletUserID(tx *gorm.DB, walletID uint) (uint, error) {
 	var wallet models.Wallet
-	if err := tx.Where("id = ?", walletID).First(&wallet).Error; err != nil {
+	if err := tx.Session(&gorm.Session{}).Where("id = ?", walletID).First(&wallet).Error; err != nil {
 		return 0, fmt.Errorf("load topup wallet: %w", err)
 	}
 	return wallet.UserID, nil
+}
+
+func sanitizePakasirPaymentURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme != "https" {
+		return ""
+	}
+	if parsed.User != nil {
+		return ""
+	}
+	if parsed.Port() != "" && parsed.Port() != "443" {
+		return ""
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "app.pakasir.com" && host != "pakasir.com" {
+		return ""
+	}
+	return parsed.String()
 }

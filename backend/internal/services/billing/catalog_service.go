@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
@@ -167,15 +168,17 @@ type InvoiceItemView struct {
 }
 
 type InvoiceView struct {
-	ID           uint                 `json:"id"`
-	PeriodStart  time.Time            `json:"period_start"`
-	PeriodEnd    time.Time            `json:"period_end"`
-	TotalCredits int64                `json:"total_credits"`
-	Status       models.InvoiceStatus `json:"status"`
-	DueAt        *time.Time           `json:"due_at,omitempty"`
-	PaidAt       *time.Time           `json:"paid_at,omitempty"`
-	CreatedAt    time.Time            `json:"created_at"`
-	Items        []InvoiceItemView    `json:"items"`
+	ID                     uint                 `json:"id"`
+	InvoiceNumber          string               `json:"invoice_number"`
+	BillingProfileSnapshot string               `json:"billing_profile_snapshot,omitempty"`
+	PeriodStart            time.Time            `json:"period_start"`
+	PeriodEnd              time.Time            `json:"period_end"`
+	TotalCredits           int64                `json:"total_credits"`
+	Status                 models.InvoiceStatus `json:"status"`
+	DueAt                  *time.Time           `json:"due_at,omitempty"`
+	PaidAt                 *time.Time           `json:"paid_at,omitempty"`
+	CreatedAt              time.Time            `json:"created_at"`
+	Items                  []InvoiceItemView    `json:"items"`
 }
 
 type TopupHistoryView struct {
@@ -214,6 +217,7 @@ type OwnBillingOverview struct {
 	Topups                  []TopupHistoryView     `json:"topups"`
 	Resources               []BillableResourceView `json:"resources"`
 	UpcomingRequiredCredits int64                  `json:"upcoming_required_credits"`
+	TotalInvoicedCredits    int64                  `json:"total_invoiced_credits"`
 }
 
 // AdminCollection is a bounded, sanitized billing history page.
@@ -315,16 +319,22 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 		if items == nil {
 			items = []InvoiceItemView{}
 		}
+		invNum := invoice.InvoiceNumber
+		if invNum == "" {
+			invNum = fmt.Sprintf("INV-%04d%02d-%04d", invoice.PeriodStart.Year(), invoice.PeriodStart.Month(), invoice.ID)
+		}
 		overview.Invoices = append(overview.Invoices, InvoiceView{
-			ID:           invoice.ID,
-			PeriodStart:  invoice.PeriodStart,
-			PeriodEnd:    invoice.PeriodEnd,
-			TotalCredits: invoice.TotalCredits,
-			Status:       invoice.Status,
-			DueAt:        invoice.DueAt,
-			PaidAt:       invoice.PaidAt,
-			CreatedAt:    invoice.CreatedAt,
-			Items:        items,
+			ID:                     invoice.ID,
+			InvoiceNumber:          invNum,
+			BillingProfileSnapshot: invoice.BillingProfileSnapshot,
+			PeriodStart:            invoice.PeriodStart,
+			PeriodEnd:              invoice.PeriodEnd,
+			TotalCredits:           invoice.TotalCredits,
+			Status:                 invoice.Status,
+			DueAt:                  invoice.DueAt,
+			PaidAt:                 invoice.PaidAt,
+			CreatedAt:              invoice.CreatedAt,
+			Items:                  items,
 		})
 	}
 
@@ -363,6 +373,12 @@ func (s *CatalogService) GetOwnBillingOverview(ctx context.Context, userID uint)
 		Select("COALESCE(SUM(billable_specs.monthly_credits), 0)").
 		Scan(&overview.UpcomingRequiredCredits).Error; err != nil {
 		return OwnBillingOverview{}, fmt.Errorf("sum upcoming billing requirement: %w", err)
+	}
+	if err := s.db.WithContext(ctx).Model(&models.Invoice{}).
+		Where("user_id = ?", userID).
+		Select("COALESCE(SUM(total_credits), 0)").
+		Scan(&overview.TotalInvoicedCredits).Error; err != nil {
+		return OwnBillingOverview{}, fmt.Errorf("aggregate total invoiced credits: %w", err)
 	}
 	return overview, nil
 }
@@ -505,7 +521,7 @@ func (s *CatalogService) listPaymentDuePeriods(ctx context.Context, resources []
 	if err := s.db.WithContext(ctx).Table("invoice_items").
 		Select("invoice_items.billable_resource_id, invoices.period_start, invoices.period_end").
 		Joins("JOIN invoices ON invoices.id = invoice_items.invoice_id").
-		Where("invoice_items.billable_resource_id IN ? AND invoice_items.credits > ? AND invoices.status = ?", resourceIDs, 0, models.InvoiceStatusPaymentDue).
+		Where("invoice_items.billable_resource_id IN ? AND invoices.status = ?", resourceIDs, models.InvoiceStatusPaymentDue).
 		Order("invoices.period_start ASC, invoices.id ASC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list payment-due resource periods: %w", err)
@@ -1119,6 +1135,174 @@ func (s *CatalogService) ListAdminTopups(ctx context.Context, page, limit int) (
 	return result, nil
 }
 
+type ListInvoicesFilter struct {
+	Search string
+	Status string
+}
+
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+func isValidInvoiceFilterStatus(status string) bool {
+	switch status {
+	case "", "all", string(models.InvoiceStatusPaid), string(models.InvoiceStatusPaymentDue), string(models.InvoiceStatusPending), string(models.InvoiceStatusVoid):
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *CatalogService) ListUserInvoices(ctx context.Context, userID uint, page, limit int, filter ...ListInvoicesFilter) (AdminCollection[InvoiceView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[InvoiceView]{}, err
+	}
+	if err := s.validateContext(ctx); err != nil {
+		return AdminCollection[InvoiceView]{}, err
+	}
+
+	query := s.db.WithContext(ctx).Model(&models.Invoice{}).Where("user_id = ?", userID)
+	if len(filter) > 0 {
+		f := filter[0]
+		status := strings.TrimSpace(f.Status)
+		if status != "" && status != "all" {
+			if !isValidInvoiceFilterStatus(status) {
+				return AdminCollection[InvoiceView]{}, ErrInvalidCatalogInput
+			}
+			query = query.Where("status = ?", status)
+		}
+		search := strings.TrimSpace(f.Search)
+		if search != "" {
+			if utf8.RuneCountInString(search) > 100 {
+				return AdminCollection[InvoiceView]{}, ErrInvalidCatalogInput
+			}
+			escaped := "%" + escapeLikePattern(strings.ToLower(search)) + "%"
+			query = query.Where("LOWER(invoice_number) LIKE ? ESCAPE '\\' OR CAST(id AS TEXT) LIKE ? ESCAPE '\\'", escaped, escaped)
+		}
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return AdminCollection[InvoiceView]{}, fmt.Errorf("count user invoices: %w", err)
+	}
+
+	var invoices []models.Invoice
+	if err := query.Order("period_start DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&invoices).Error; err != nil {
+		return AdminCollection[InvoiceView]{}, fmt.Errorf("list user invoices: %w", err)
+	}
+
+	invoiceIDs := make([]uint, 0, len(invoices))
+	for _, invoice := range invoices {
+		invoiceIDs = append(invoiceIDs, invoice.ID)
+	}
+	itemsMap, err := s.listInvoiceItemsForInvoices(ctx, invoiceIDs)
+	if err != nil {
+		return AdminCollection[InvoiceView]{}, err
+	}
+
+	result := AdminCollection[InvoiceView]{Data: make([]InvoiceView, 0, len(invoices)), Page: page, Limit: limit, Total: total}
+	for _, invoice := range invoices {
+		view := invoiceViewFromModel(invoice)
+		view.Items = itemsMap[invoice.ID]
+		if view.Items == nil {
+			view.Items = []InvoiceItemView{}
+		}
+		result.Data = append(result.Data, view)
+	}
+	return result, nil
+}
+
+func (s *CatalogService) ListUserTopups(ctx context.Context, userID uint, page, limit int) (AdminCollection[TopupHistoryView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[TopupHistoryView]{}, err
+	}
+	if err := s.validateContext(ctx); err != nil {
+		return AdminCollection[TopupHistoryView]{}, err
+	}
+
+	if s.wallets == nil {
+		s.wallets = NewWalletService(s.db)
+	}
+	wallet, err := s.wallets.GetOrCreateWallet(ctx, userID)
+	if err != nil {
+		return AdminCollection[TopupHistoryView]{}, fmt.Errorf("load user wallet: %w", err)
+	}
+
+	query := s.db.WithContext(ctx).Model(&models.Topup{}).Where("wallet_id = ?", wallet.ID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return AdminCollection[TopupHistoryView]{}, fmt.Errorf("count user topups: %w", err)
+	}
+
+	var topups []models.Topup
+	if err := query.Order("created_at DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&topups).Error; err != nil {
+		return AdminCollection[TopupHistoryView]{}, fmt.Errorf("list user topups: %w", err)
+	}
+
+	result := AdminCollection[TopupHistoryView]{Data: make([]TopupHistoryView, 0, len(topups)), Page: page, Limit: limit, Total: total}
+	for _, topup := range topups {
+		view := TopupHistoryView{
+			ID:          topup.ID,
+			Credits:     topup.Credits,
+			AmountMinor: topup.AmountMinor,
+			Currency:    topup.Currency,
+			Status:      topup.Status,
+			PaidAt:      topup.PaidAt,
+			CreatedAt:   topup.CreatedAt,
+		}
+		if topup.Status == models.TopupStatusPending {
+			view.PaymentToken = topup.ProviderPaymentToken
+			view.PaymentURL = topup.ProviderPaymentURL
+		}
+		result.Data = append(result.Data, view)
+	}
+	return result, nil
+}
+
+func (s *CatalogService) ListUserLedgerEntries(ctx context.Context, userID uint, page, limit int) (AdminCollection[WalletLedgerEntryView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[WalletLedgerEntryView]{}, err
+	}
+	if err := s.validateContext(ctx); err != nil {
+		return AdminCollection[WalletLedgerEntryView]{}, err
+	}
+
+	if s.wallets == nil {
+		s.wallets = NewWalletService(s.db)
+	}
+	wallet, err := s.wallets.GetOrCreateWallet(ctx, userID)
+	if err != nil {
+		return AdminCollection[WalletLedgerEntryView]{}, fmt.Errorf("load user wallet: %w", err)
+	}
+
+	query := s.db.WithContext(ctx).Model(&models.WalletLedgerEntry{}).Where("wallet_id = ?", wallet.ID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return AdminCollection[WalletLedgerEntryView]{}, fmt.Errorf("count user ledger entries: %w", err)
+	}
+
+	var entries []models.WalletLedgerEntry
+	if err := query.Order("created_at DESC, id DESC").Offset((page - 1) * limit).Limit(limit).Find(&entries).Error; err != nil {
+		return AdminCollection[WalletLedgerEntryView]{}, fmt.Errorf("list user ledger entries: %w", err)
+	}
+
+	result := AdminCollection[WalletLedgerEntryView]{Data: make([]WalletLedgerEntryView, 0, len(entries)), Page: page, Limit: limit, Total: total}
+	for _, entry := range entries {
+		result.Data = append(result.Data, WalletLedgerEntryView{
+			Type:          entry.Type,
+			AmountCredits: entry.AmountCredits,
+			BalanceAfter:  entry.BalanceAfter,
+			CreatedAt:     entry.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	return result, nil
+}
+
 func normalizeAdminCollectionPage(page, limit int) (int, int, error) {
 	if page < 1 || page > maxAdminCollectionPage || limit < 1 || limit > maxAdminCollectionLimit {
 		return 0, 0, ErrInvalidCatalogInput
@@ -1127,7 +1311,22 @@ func normalizeAdminCollectionPage(page, limit int) (int, int, error) {
 }
 
 func invoiceViewFromModel(invoice models.Invoice) InvoiceView {
-	return InvoiceView{ID: invoice.ID, PeriodStart: invoice.PeriodStart, PeriodEnd: invoice.PeriodEnd, TotalCredits: invoice.TotalCredits, Status: invoice.Status, DueAt: invoice.DueAt, PaidAt: invoice.PaidAt, CreatedAt: invoice.CreatedAt}
+	invNum := invoice.InvoiceNumber
+	if invNum == "" {
+		invNum = fmt.Sprintf("INV-%04d%02d-%04d", invoice.PeriodStart.Year(), invoice.PeriodStart.Month(), invoice.ID)
+	}
+	return InvoiceView{
+		ID:                     invoice.ID,
+		InvoiceNumber:          invNum,
+		BillingProfileSnapshot: invoice.BillingProfileSnapshot,
+		PeriodStart:            invoice.PeriodStart,
+		PeriodEnd:              invoice.PeriodEnd,
+		TotalCredits:           invoice.TotalCredits,
+		Status:                 invoice.Status,
+		DueAt:                  invoice.DueAt,
+		PaidAt:                 invoice.PaidAt,
+		CreatedAt:              invoice.CreatedAt,
+	}
 }
 
 func topupHistoryViewFromModel(topup models.Topup) TopupHistoryView {

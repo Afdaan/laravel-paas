@@ -19,6 +19,9 @@ vi.mock('@/services/api', () => ({
     payDueResource: vi.fn(),
     getProfile: vi.fn(),
     updateProfile: vi.fn(),
+    invoices: vi.fn(),
+    topups: vi.fn(),
+    ledger: vi.fn(),
   },
 }))
 
@@ -26,6 +29,8 @@ vi.mock('@/lib/useTranslation', () => ({
   default: () => ({
     t: (key: string, data?: Record<string, unknown>) => {
       const map: Record<string, string> = {
+        'billing.profileUnavailableAtIssuance': 'Profile not recorded at issuance',
+        'billing.profileUnavailableHint': 'This invoice was generated without a recorded profile snapshot.',
         'billing.nav': 'Billing',
         'billing.title': 'Billing',
         'billing.description': 'Description',
@@ -132,6 +137,10 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.totalCharged': 'Total charged',
         'billing.invoiceStatus': 'Invoice status',
         'billing.periodLabel': 'Period',
+        'billing.failedToLoadInvoices': 'Failed to load invoices',
+        'billing.failedToLoadTopups': 'Failed to load top-ups',
+        'billing.failedToLoadLedger': 'Failed to load wallet activity',
+        'billing.retry': 'Retry',
         'billing.paidOn': 'Paid {{date}}',
         'common.dashboard': 'Dashboard',
       }
@@ -175,6 +184,9 @@ describe('Billing page', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     window.history.replaceState({}, '', '/billing')
     ;(billingAPI.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockProfile })
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { data: [], total: 0 } })
+    ;(billingAPI.topups as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { data: [], total: 0 } })
+    ;(billingAPI.ledger as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { data: [], total: 0 } })
   })
 
   afterEach(() => {
@@ -756,6 +768,9 @@ describe('Billing page', () => {
       ],
     }
     ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: invoiceWithItems })
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { data: invoiceWithItems.invoices, total: invoiceWithItems.invoices.length },
+    })
     // Use a non-Rp1000 rate catalog to ensure IDR is not computed from credits
     const nonStandardCatalog = {
       specs: [],
@@ -1130,6 +1145,9 @@ describe('Billing page', () => {
     }
 
     ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: overviewWithPendingTopup })
+    ;(billingAPI.topups as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { data: overviewWithPendingTopup.topups, total: overviewWithPendingTopup.topups.length },
+    })
     ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
     ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
 
@@ -1150,5 +1168,342 @@ describe('Billing page', () => {
     await act(async () => fireEvent.click(payButton))
 
     expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+  })
+
+  it('renders snapshot billing profile when present and explicit unavailable message when empty or malformed', async () => {
+    const overviewWithSnapshotInvoices = {
+      ...mockOverview,
+      invoices: [
+        {
+          id: 10,
+          period_start: '2026-07-01T00:00:00Z',
+          period_end: '2026-08-01T00:00:00Z',
+          total_credits: 100,
+          status: 'paid',
+          paid_at: '2026-08-01T00:00:00Z',
+          created_at: '2026-07-01T00:00:00Z',
+          billing_profile_snapshot: JSON.stringify({
+            company_name: 'Historical PT Example',
+            tax_id: '01.234.567.8-999.000',
+            email: 'historical@example.com',
+            address_line1: 'Jl. Sejarah No. 1',
+            city: 'Jakarta',
+            postal_code: '10110',
+            country: 'ID',
+          }),
+          items: [],
+        },
+        {
+          id: 11,
+          period_start: '2026-06-01T00:00:00Z',
+          period_end: '2026-07-01T00:00:00Z',
+          total_credits: 100,
+          status: 'paid',
+          paid_at: '2026-07-01T00:00:00Z',
+          created_at: '2026-06-01T00:00:00Z',
+          billing_profile_snapshot: '',
+          items: [],
+        },
+      ],
+    }
+
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({ data: overviewWithSnapshotInvoices })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { data: overviewWithSnapshotInvoices.invoices, total: 2 },
+    })
+
+    render(<Billing />)
+
+    // Switch to Invoices tab
+    const invoicesTab = await screen.findByRole('tab', { name: /Invoices/i })
+    await act(async () => fireEvent.click(invoicesTab))
+
+    // Open first invoice dialog (with snapshot)
+    const viewButtons = await screen.findAllByRole('button', { name: /View Invoice/i })
+    await act(async () => fireEvent.click(viewButtons[0]))
+
+    // Historical profile should be rendered
+    expect(await screen.findByText('Historical PT Example')).toBeInTheDocument()
+    expect(screen.getByText('01.234.567.8-999.000')).toBeInTheDocument()
+
+    // Close modal
+    const closeBtn = screen.getByRole('button', { name: 'Close' })
+    await act(async () => fireEvent.click(closeBtn))
+
+    // Open second invoice dialog (empty snapshot)
+    const viewButtonsSecond = await screen.findAllByRole('button', { name: /View Invoice/i })
+    await act(async () => fireEvent.click(viewButtonsSecond[1]))
+
+    // Empty snapshot should render explicit unavailable copy, not current live profile
+    expect(await screen.findByText('Profile not recorded at issuance')).toBeInTheDocument()
+    expect(screen.queryByText('Historical PT Example')).not.toBeInTheDocument()
+  })
+
+  it('renders Pay button when server topups endpoint resolves with pending payment evidence', async () => {
+    const paginatedTopups = [
+      {
+        id: 77,
+        credits: 25,
+        amount_minor: 25000,
+        currency: 'IDR',
+        status: 'pending',
+        payment_token: '00020101021226590014ID.LINKAJA.WWW0118936009180000000000020300051450001083100012345678905204581253033605802ID5911LARAVELPAAS6007JAKARTA61051219062070703A016304ABCD',
+        payment_url: 'https://app.pakasir.com/pay/77',
+        created_at: '2026-08-28T00:00:00Z',
+      },
+      {
+        id: 76,
+        credits: 50,
+        amount_minor: 50000,
+        currency: 'IDR',
+        status: 'paid',
+        paid_at: '2026-08-27T00:00:00Z',
+        created_at: '2026-08-27T00:00:00Z',
+      },
+    ]
+
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ...mockOverview, topups: [] },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.topups as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { data: paginatedTopups, total: 2 },
+    })
+
+    render(<Billing />)
+
+    // Switch to Top-ups tab
+    const topupsTab = await screen.findByRole('tab', { name: /Top-ups/i })
+    await act(async () => fireEvent.click(topupsTab))
+
+    // #topup-77 should be displayed
+    expect(await screen.findByText('#topup-77')).toBeInTheDocument()
+
+    // Pay button must be visible for #topup-77 (pending with payment_url)
+    const payBtn = screen.getByRole('button', { name: /^Pay$/i })
+    expect(payBtn).toBeInTheDocument()
+
+    // Clicking Pay opens the payment dialog
+    await act(async () => fireEvent.click(payBtn))
+    expect(await screen.findByText('Top-up Payment')).toBeInTheDocument()
+  })
+
+  it('renders error alert and retry button on invoice pagination failure, then recovers upon retry', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ...mockOverview, invoices: [] },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'))
+
+    render(<Billing />)
+
+    // Switch to Invoices tab
+    const invoicesTab = await screen.findByRole('tab', { name: /Invoices/i })
+    await act(async () => fireEvent.click(invoicesTab))
+
+    // Error banner must be visible
+    expect(await screen.findByText('Failed to load invoices')).toBeInTheDocument()
+    const retryBtn = screen.getByRole('button', { name: /Retry/i })
+    expect(retryBtn).toBeInTheDocument()
+
+    // Mock successful recovery on retry
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            id: 99,
+            invoice_number: 'INV-202608-0099',
+            period_start: '2026-08-01T00:00:00Z',
+            period_end: '2026-09-01T00:00:00Z',
+            total_credits: 50,
+            status: 'paid',
+            created_at: '2026-08-01T00:00:00Z',
+          },
+        ],
+        total: 1,
+      },
+    })
+
+    // Click Retry
+    await act(async () => fireEvent.click(retryBtn))
+
+    // Error banner should disappear and invoice should appear
+    expect(screen.queryByText('Failed to load invoices')).not.toBeInTheDocument()
+    expect(await screen.findByText('INV-202608-0099')).toBeInTheDocument()
+  })
+
+  it('debounces rapid typing and passes search/status filters to invoices endpoint with AbortSignal', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ...mockOverview, invoices: [] },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { data: [], total: 0 },
+    })
+
+    render(<Billing />)
+
+    // Switch to Invoices tab
+    const invoicesTab = await screen.findByRole('tab', { name: /Invoices/i })
+    await act(async () => fireEvent.click(invoicesTab))
+
+    // Initial load call
+    const searchInput = await screen.findByPlaceholderText('Search invoices...')
+    expect(billingAPI.invoices).toHaveBeenCalledTimes(1)
+
+    // Enable fake timers specifically for the typing debounce assertion
+    vi.useFakeTimers()
+
+    // Rapid typing in search input
+    await act(async () => {
+      fireEvent.change(searchInput, { target: { value: 'INV' } })
+    })
+    await act(async () => {
+      fireEvent.change(searchInput, { target: { value: 'INV-202609' } })
+    })
+    await act(async () => {
+      fireEvent.change(searchInput, { target: { value: 'INV-202609-8888' } })
+    })
+
+    // Before timer advances: no new API call
+    expect(billingAPI.invoices).toHaveBeenCalledTimes(1)
+
+    // Advance timer past debounce threshold
+    await act(async () => {
+      vi.advanceTimersByTime(350)
+    })
+
+    // Now exactly 1 additional call was made with full search term and an AbortSignal
+    expect(billingAPI.invoices).toHaveBeenCalledTimes(2)
+    expect(billingAPI.invoices).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        page: 1,
+        search: 'INV-202609-8888',
+      }),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    )
+
+    // Filter by Paid status (immediate, no debounce delay)
+    const paidFilterBtn = screen.getByRole('button', { name: /^Paid$/i })
+    await act(async () => fireEvent.click(paidFilterBtn))
+
+    expect(billingAPI.invoices).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        page: 1,
+        search: 'INV-202609-8888',
+        status: 'paid',
+      }),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    )
+
+    vi.useRealTimers()
+  })
+
+  it('handles topups and ledger pagination error and retry parity', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: mockOverview,
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.ledger as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'))
+
+    render(<Billing />)
+
+    // 1. Wallet Activity tab is active on mount, ledger error banner should appear
+    expect(await screen.findByText('Failed to load wallet activity')).toBeInTheDocument()
+    const retryLedgerBtn = screen.getByRole('button', { name: /Retry/i })
+
+    // Mock successful ledger retry
+    ;(billingAPI.ledger as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            id: 99,
+            wallet_id: 1,
+            type: 'topup',
+            amount_credits: 50,
+            balance_after: 50,
+            created_at: '2026-08-01T00:00:00Z',
+          },
+        ],
+        total: 1,
+      },
+    })
+    await act(async () => fireEvent.click(retryLedgerBtn))
+    expect(screen.queryByText('Failed to load wallet activity')).not.toBeInTheDocument()
+
+    // 2. Switch to Top-ups tab and mock failure
+    ;(billingAPI.topups as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'))
+    const topupsTab = await screen.findByRole('tab', { name: /Top-ups/i })
+    await act(async () => fireEvent.click(topupsTab))
+
+    // Topup error banner should appear
+    expect(await screen.findByText('Failed to load top-ups')).toBeInTheDocument()
+    const retryTopupBtn = screen.getByRole('button', { name: /Retry/i })
+
+    // Mock successful topup retry
+    ;(billingAPI.topups as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            id: 99,
+            user_id: 1,
+            amount: 50000,
+            amount_minor: 50000,
+            currency: 'IDR',
+            credits: 50,
+            status: 'paid',
+            provider: 'pakasir',
+            provider_order_id: 'topup-99',
+            created_at: '2026-08-01T00:00:00Z',
+          },
+        ],
+        total: 1,
+      },
+    })
+    await act(async () => fireEvent.click(retryTopupBtn))
+    expect(screen.queryByText('Failed to load top-ups')).not.toBeInTheDocument()
+  })
+
+  it('renders backend lifetime total_invoiced_credits aggregate rather than truncated array sum', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        total_invoiced_credits: 4500,
+        invoices: [
+          {
+            id: 1,
+            period_start: '2026-08-01T00:00:00Z',
+            period_end: '2026-09-01T00:00:00Z',
+            total_credits: 50,
+            status: 'paid',
+            created_at: '2026-08-01T00:00:00Z',
+          },
+        ],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.invoices as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { data: [], total: 0 },
+    })
+
+    render(<Billing />)
+
+    // Switch to Invoices tab
+    const invoicesTab = await screen.findByRole('tab', { name: /Invoices/i })
+    await act(async () => fireEvent.click(invoicesTab))
+
+    // Quick metric for Total Invoiced should show 4,500, not 50
+    expect(await screen.findByText('4,500')).toBeInTheDocument()
   })
 })

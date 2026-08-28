@@ -276,3 +276,81 @@ func pointerValue(value *int) int {
 	}
 	return *value
 }
+
+type legacyInvoiceForMigrationTest struct {
+	ID             uint                 `gorm:"primaryKey"`
+	UserID         uint                 `gorm:"uniqueIndex:uni_invoices_user_period;not null"`
+	WalletID       uint                 `gorm:"not null"`
+	PeriodStart    time.Time            `gorm:"uniqueIndex:uni_invoices_user_period;not null"`
+	PeriodEnd      time.Time            `gorm:"uniqueIndex:uni_invoices_user_period;not null"`
+	TotalCredits   int64                `gorm:"not null"`
+	Status         models.InvoiceStatus `gorm:"size:20;not null;default:pending"`
+	IdempotencyKey string               `gorm:"uniqueIndex:uni_invoices_idempotency_key;size:255;not null"`
+	DueAt          *time.Time
+	PaidAt         *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (legacyInvoiceForMigrationTest) TableName() string {
+	return "invoices"
+}
+
+func TestPreMigrateInvoicesBackfillsLegacyInvoices(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+
+	// 1. Create legacy schema without invoice_number and billing_profile_snapshot
+	if err := db.AutoMigrate(&legacyInvoiceForMigrationTest{}); err != nil {
+		t.Fatalf("auto migrate legacy invoice: %v", err)
+	}
+
+	// Insert 3 legacy invoices
+	d1 := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	legacyInvoices := []legacyInvoiceForMigrationTest{
+		{ID: 1, UserID: 1, WalletID: 1, PeriodStart: d1, PeriodEnd: d1.AddDate(0, 1, 0), TotalCredits: 100, Status: models.InvoiceStatusPaid, IdempotencyKey: "legacy-1"},
+		{ID: 2, UserID: 1, WalletID: 1, PeriodStart: d2, PeriodEnd: d2.AddDate(0, 1, 0), TotalCredits: 150, Status: models.InvoiceStatusPaid, IdempotencyKey: "legacy-2"},
+		{ID: 3, UserID: 2, WalletID: 2, PeriodStart: d3, PeriodEnd: d3.AddDate(0, 1, 0), TotalCredits: 200, Status: models.InvoiceStatusPaid, IdempotencyKey: "legacy-3"},
+	}
+	if err := db.Create(&legacyInvoices).Error; err != nil {
+		t.Fatalf("create legacy invoices: %v", err)
+	}
+
+	// Run preMigrateInvoices
+	if err := preMigrateInvoices(db); err != nil {
+		t.Fatalf("preMigrateInvoices failed: %v", err)
+	}
+
+	// Verify all rows have unique, deterministic invoice numbers
+	var invoices []models.Invoice
+	if err := db.Order("id asc").Find(&invoices).Error; err != nil {
+		t.Fatalf("query invoices: %v", err)
+	}
+	if len(invoices) != 3 {
+		t.Fatalf("expected 3 invoices, got %d", len(invoices))
+	}
+	seen := make(map[string]bool)
+	for _, inv := range invoices {
+		if inv.InvoiceNumber == "" {
+			t.Fatalf("invoice %d has empty invoice_number", inv.ID)
+		}
+		if seen[inv.InvoiceNumber] {
+			t.Fatalf("duplicate invoice_number %s", inv.InvoiceNumber)
+		}
+		seen[inv.InvoiceNumber] = true
+	}
+
+	// Run DefensiveMigrationBootstrap to verify end-to-end compatibility
+	if err := DefensiveMigrationBootstrap(db); err != nil {
+		t.Fatalf("DefensiveMigrationBootstrap first pass failed: %v", err)
+	}
+
+	// Run DefensiveMigrationBootstrap a second time to verify idempotency
+	if err := DefensiveMigrationBootstrap(db); err != nil {
+		t.Fatalf("DefensiveMigrationBootstrap second pass failed: %v", err)
+	}
+}

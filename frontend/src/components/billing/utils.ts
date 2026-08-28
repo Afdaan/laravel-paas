@@ -1,7 +1,10 @@
 import type { BillingOverview, BillingProfile } from '@/types'
 import type { BillingProfileValidation } from './types'
 
-export function getInvoiceNumber(invoice: Pick<BillingOverview['invoices'][number], 'id' | 'period_start' | 'created_at'>) {
+export function getInvoiceNumber(invoice: Pick<BillingOverview['invoices'][number], 'id' | 'period_start' | 'created_at'> & { invoice_number?: string }) {
+  if (invoice.invoice_number && invoice.invoice_number.trim() !== '') {
+    return invoice.invoice_number
+  }
   const date = new Date(invoice.period_start || invoice.created_at || Date.now())
   const year = date.getFullYear() || 2026
   const month = String(date.getMonth() + 1).padStart(2, '0')

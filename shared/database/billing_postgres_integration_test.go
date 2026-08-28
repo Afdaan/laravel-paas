@@ -350,6 +350,79 @@ func TestPostgresUpgradeFromLegacyTopupPackagesProviderSchema(t *testing.T) {
 	}
 }
 
+func TestPostgresPreMigrateInvoicesBackfill(t *testing.T) {
+	dsn := billingTestDSN(t)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Ensure clean base schema
+	if err := DefensiveMigrationBootstrap(db); err != nil {
+		t.Fatal(err)
+	}
+
+	user := models.User{Email: "billing-pg-inv-" + time.Now().UTC().Format("20060102150405.000000000") + "@example.test", Password: "test", Name: "Invoice Migration Test"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallet := models.Wallet{UserID: user.ID, BalanceCredits: 1000}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Simulate true legacy schema: drop invoice_number and billing_profile_snapshot columns and constraints
+	_ = db.Exec("ALTER TABLE invoices DROP CONSTRAINT IF EXISTS uq_invoices_invoice_number;")
+	_ = db.Exec("DROP INDEX IF EXISTS idx_invoices_invoice_number;")
+	_ = db.Exec("DROP INDEX IF EXISTS uq_invoices_invoice_number;")
+	_ = db.Exec("ALTER TABLE invoices DROP COLUMN IF EXISTS invoice_number;")
+	_ = db.Exec("ALTER TABLE invoices DROP COLUMN IF EXISTS billing_profile_snapshot;")
+
+	// Insert legacy rows via raw SQL without the new columns
+	d1 := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
+	var inv1ID, inv2ID uint
+	if err := db.Raw(`
+		INSERT INTO invoices (user_id, wallet_id, period_start, period_end, total_credits, status, idempotency_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 50, 'paid', ?, NOW(), NOW()) RETURNING id;
+	`, user.ID, wallet.ID, d1, d1.AddDate(0, 1, 0), fmt.Sprintf("pg-legacy-1-%d", user.ID)).Scan(&inv1ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw(`
+		INSERT INTO invoices (user_id, wallet_id, period_start, period_end, total_credits, status, idempotency_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 75, 'paid', ?, NOW(), NOW()) RETURNING id;
+	`, user.ID, wallet.ID, d2, d2.AddDate(0, 1, 0), fmt.Sprintf("pg-legacy-2-%d", user.ID)).Scan(&inv2ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Run DefensiveMigrationBootstrap to execute preMigrateInvoices + AutoMigrate + unique constraints
+	if err := DefensiveMigrationBootstrap(db); err != nil {
+		t.Fatalf("DefensiveMigrationBootstrap failed to backfill and enforce unique constraint: %v", err)
+	}
+
+	// 4. Verify all rows have non-empty unique invoice numbers and snapshots
+	var checkInvs []models.Invoice
+	if err := db.Where("id IN (?, ?)", inv1ID, inv2ID).Order("id ASC").Find(&checkInvs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(checkInvs) != 2 {
+		t.Fatalf("expected 2 legacy invoices backfilled, got %d", len(checkInvs))
+	}
+	expectedInv1 := fmt.Sprintf("INV-202601-%04d", inv1ID)
+	expectedInv2 := fmt.Sprintf("INV-202602-%04d", inv2ID)
+	if checkInvs[0].InvoiceNumber != expectedInv1 {
+		t.Fatalf("expected invoice 1 number %s, got %s", expectedInv1, checkInvs[0].InvoiceNumber)
+	}
+	if checkInvs[1].InvoiceNumber != expectedInv2 {
+		t.Fatalf("expected invoice 2 number %s, got %s", expectedInv2, checkInvs[1].InvoiceNumber)
+	}
+
+	// 5. Run a second time to verify idempotency
+	if err := DefensiveMigrationBootstrap(db); err != nil {
+		t.Fatalf("second pass of DefensiveMigrationBootstrap failed: %v", err)
+	}
+}
+
 func billingTestDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("BILLING_TEST_DATABASE_URL")

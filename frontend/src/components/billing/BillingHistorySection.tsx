@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Calendar, Check, Copy, CreditCard, ReceiptText, RefreshCw, Search, WalletCards } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -8,13 +8,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TablePagination } from '@/components/ui/table-pagination'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { BillingRequestState } from '@/lib/billing-ui'
-import { usePagination } from '@/lib/pagination'
+import { serverPagination } from '@/lib/pagination'
+import { billingAPI } from '@/services/api'
 import type { BillingOverview } from '@/types'
 import { getInvoiceNumber } from './utils'
 import { useBillingFormatters } from './useBillingFormatters'
 import { StatusBadge } from './StatusBadge'
 
 type Invoice = BillingOverview['invoices'][number]
+type TopupItem = BillingOverview['topups'][number]
+type LedgerItem = BillingOverview['wallet']['ledger_entries'][number]
 
 type BillingHistorySectionProps = {
   overview: BillingRequestState<BillingOverview>
@@ -22,7 +25,8 @@ type BillingHistorySectionProps = {
   handleCopyInvoiceNumber: (invoiceNumber: string, id: number) => void
   setSelectedInvoice: (invoice: Invoice) => void
   reconcileTopup: (topupID: number) => Promise<void>
-  onPayPendingTopup?: (topup: BillingOverview['topups'][number]) => void
+  onPayPendingTopup?: (topup: TopupItem) => void
+  refreshKey?: number
 }
 
 export function BillingHistorySection({
@@ -32,37 +36,277 @@ export function BillingHistorySection({
   setSelectedInvoice,
   reconcileTopup,
   onPayPendingTopup,
+  refreshKey,
 }: BillingHistorySectionProps) {
   const { t, formatCredits, formatDate, formatMoney, formatStatus, translateLedgerType } = useBillingFormatters()
+  const [activeTab, setActiveTab] = useState('wallet_activity')
+
+  const tRef = useRef(t)
+  tRef.current = t
+
+  const invoiceReqSeq = useRef(0)
+  const topupReqSeq = useRef(0)
+  const ledgerReqSeq = useRef(0)
+
+  // Invoices Server Pagination
+  const [invoicePage, setInvoicePage] = useState(1)
+  const [invoiceLimit, setInvoiceLimit] = useState(10)
   const [invoiceSearch, setInvoiceSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<'all' | 'paid' | 'payment_due'>('all')
-  const filteredInvoices = useMemo(() => {
-    if (overview.status !== 'success') return []
-    const search = invoiceSearch.toLowerCase().trim()
-    return overview.data.invoices.filter((invoice) => {
-      const matchesSearch =
-        !search ||
-        getInvoiceNumber(invoice).toLowerCase().includes(search) ||
-        invoice.id.toString().includes(search)
-      return matchesSearch && (invoiceStatusFilter === 'all' || invoice.status === invoiceStatusFilter)
-    })
-  }, [overview, invoiceSearch, invoiceStatusFilter])
-  const invoicePage = usePagination(filteredInvoices.length)
-  const topupPage = usePagination(overview.status === 'success' ? overview.data.topups.length : 0)
-  const ledgerEntries = useMemo(
-    () => (overview.status === 'success' ? overview.data.wallet.ledger_entries : []),
-    [overview],
+  const [serverInvoices, setServerInvoices] = useState<{ data: Invoice[]; total: number; page: number; limit: number; search: string; status: string } | null>(null)
+  const [loadingInvoices, setLoadingInvoices] = useState(false)
+  const [invoiceError, setInvoiceError] = useState<string | null>(null)
+  const invoiceAbortControllerRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(invoiceSearch)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [invoiceSearch])
+
+  useEffect(() => {
+    return () => {
+      if (invoiceAbortControllerRef.current) {
+        invoiceAbortControllerRef.current.abort()
+      }
+    }
+  }, [])
+
+  // Topups Server Pagination
+  const [topupPage, setTopupPage] = useState(1)
+  const [topupLimit, setTopupLimit] = useState(10)
+  const [serverTopups, setServerTopups] = useState<{ data: TopupItem[]; total: number; page: number; limit: number } | null>(null)
+  const [loadingTopups, setLoadingTopups] = useState(false)
+  const [topupError, setTopupError] = useState<string | null>(null)
+
+  // Ledger Server Pagination
+  const [ledgerPage, setLedgerPage] = useState(1)
+  const [ledgerLimit, setLedgerLimit] = useState(10)
+  const [serverLedger, setServerLedger] = useState<{ data: LedgerItem[]; total: number; page: number; limit: number } | null>(null)
+  const [loadingLedger, setLoadingLedger] = useState(false)
+  const [ledgerError, setLedgerError] = useState<string | null>(null)
+
+  const fetchInvoices = useCallback(async (p: number, l: number, s: string, stat: 'all' | 'paid' | 'payment_due') => {
+    if (invoiceAbortControllerRef.current) {
+      invoiceAbortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    invoiceAbortControllerRef.current = controller
+    const seq = ++invoiceReqSeq.current
+    setLoadingInvoices(true)
+    try {
+      const res = await billingAPI.invoices({
+        page: p,
+        limit: l,
+        search: s.trim() || undefined,
+        status: stat !== 'all' ? stat : undefined,
+      }, { signal: controller.signal })
+      if (seq === invoiceReqSeq.current) {
+        if (res.data) {
+          setServerInvoices({
+            data: res.data.data,
+            total: res.data.total,
+            page: p,
+            limit: l,
+            search: s,
+            status: stat,
+          })
+          setInvoiceError(null)
+        }
+      }
+    } catch (err: any) {
+      if (err?.name === 'CanceledError' || err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
+        return
+      }
+      if (seq === invoiceReqSeq.current) {
+        setInvoiceError(tRef.current('billing.failedToLoadInvoices'))
+      }
+    } finally {
+      if (seq === invoiceReqSeq.current) {
+        setLoadingInvoices(false)
+      }
+    }
+  }, [])
+
+  const fetchTopups = useCallback(async (p: number, l: number) => {
+    const seq = ++topupReqSeq.current
+    setLoadingTopups(true)
+    try {
+      const res = await billingAPI.topups({ page: p, limit: l })
+      if (seq === topupReqSeq.current) {
+        if (res.data) {
+          setServerTopups({
+            data: res.data.data,
+            total: res.data.total,
+            page: p,
+            limit: l,
+          })
+          setTopupError(null)
+        }
+      }
+    } catch {
+      if (seq === topupReqSeq.current) {
+        setTopupError(tRef.current('billing.failedToLoadTopups'))
+      }
+    } finally {
+      if (seq === topupReqSeq.current) {
+        setLoadingTopups(false)
+      }
+    }
+  }, [])
+
+  const fetchLedger = useCallback(async (p: number, l: number) => {
+    const seq = ++ledgerReqSeq.current
+    setLoadingLedger(true)
+    try {
+      const res = await billingAPI.ledger({ page: p, limit: l })
+      if (seq === ledgerReqSeq.current) {
+        if (res.data) {
+          setServerLedger({
+            data: res.data.data,
+            total: res.data.total,
+            page: p,
+            limit: l,
+          })
+          setLedgerError(null)
+        }
+      }
+    } catch {
+      if (seq === ledgerReqSeq.current) {
+        setLedgerError(tRef.current('billing.failedToLoadLedger'))
+      }
+    } finally {
+      if (seq === ledgerReqSeq.current) {
+        setLoadingLedger(false)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (overview.status === 'success') {
+      if (activeTab === 'invoices') {
+        void fetchInvoices(invoicePage, invoiceLimit, debouncedSearch, invoiceStatusFilter)
+      } else if (activeTab === 'topups') {
+        void fetchTopups(topupPage, topupLimit)
+      } else if (activeTab === 'wallet_activity') {
+        void fetchLedger(ledgerPage, ledgerLimit)
+      }
+    }
+  }, [
+    activeTab,
+    invoicePage,
+    invoiceLimit,
+    debouncedSearch,
+    invoiceStatusFilter,
+    topupPage,
+    topupLimit,
+    ledgerPage,
+    ledgerLimit,
+    overview.status,
+    refreshKey,
+    fetchInvoices,
+    fetchTopups,
+    fetchLedger,
+  ])
+
+  const handleSearchChange = (val: string) => {
+    setInvoiceSearch(val)
+    setInvoicePage(1)
+  }
+
+  const handleStatusFilterChange = (val: 'all' | 'paid' | 'payment_due') => {
+    setInvoiceStatusFilter(val)
+    setInvoicePage(1)
+  }
+
+  const isInvoiceFilterActive = debouncedSearch.trim() !== '' || invoiceStatusFilter !== 'all'
+
+  const displayedInvoices = useMemo(() => {
+    if (
+      serverInvoices &&
+      serverInvoices.page === invoicePage &&
+      serverInvoices.limit === invoiceLimit &&
+      serverInvoices.search === debouncedSearch &&
+      serverInvoices.status === invoiceStatusFilter
+    ) {
+      return serverInvoices.data
+    }
+    if (!isInvoiceFilterActive && overview.status === 'success') {
+      const start = (invoicePage - 1) * invoiceLimit
+      return overview.data.invoices.slice(start, start + invoiceLimit)
+    }
+    return []
+  }, [serverInvoices, overview, invoicePage, invoiceLimit, debouncedSearch, invoiceStatusFilter, isInvoiceFilterActive])
+
+  const totalInvoices =
+    serverInvoices &&
+    serverInvoices.search === debouncedSearch &&
+    serverInvoices.status === invoiceStatusFilter
+      ? serverInvoices.total
+      : (!isInvoiceFilterActive && overview.status === 'success' ? overview.data.invoices.length : 0)
+
+  const invoicePaging = serverPagination(
+    invoicePage,
+    invoiceLimit,
+    totalInvoices,
+    setInvoicePage,
+    setInvoiceLimit,
   )
-  const ledgerPage = usePagination(ledgerEntries.length)
+
+  const displayedTopups = useMemo(() => {
+    if (serverTopups && serverTopups.page === topupPage && serverTopups.limit === topupLimit) {
+      return serverTopups.data
+    }
+    if (overview.status === 'success') {
+      const start = (topupPage - 1) * topupLimit
+      return overview.data.topups.slice(start, start + topupLimit)
+    }
+    return []
+  }, [serverTopups, overview, topupPage, topupLimit])
+
+  const totalTopups = serverTopups?.total ?? (overview.status === 'success' ? overview.data.topups.length : 0)
+  const topupPaging = serverPagination(
+    topupPage,
+    topupLimit,
+    totalTopups,
+    setTopupPage,
+    setTopupLimit,
+  )
+
+  const displayedLedger = useMemo(() => {
+    if (serverLedger && serverLedger.page === ledgerPage && serverLedger.limit === ledgerLimit) {
+      return serverLedger.data
+    }
+    if (overview.status === 'success') {
+      const start = (ledgerPage - 1) * ledgerLimit
+      return overview.data.wallet.ledger_entries.slice(start, start + ledgerLimit)
+    }
+    return []
+  }, [serverLedger, overview, ledgerPage, ledgerLimit])
+
+  const totalLedger = serverLedger?.total ?? (overview.status === 'success' ? overview.data.wallet.ledger_entries.length : 0)
+  const ledgerPaging = serverPagination(
+    ledgerPage,
+    ledgerLimit,
+    totalLedger,
+    setLedgerPage,
+    setLedgerLimit,
+  )
+
   const invoiceMetrics = useMemo(() => {
     if (overview.status !== 'success') return { totalCreditsInvoiced: 0 }
     return {
-      totalCreditsInvoiced: overview.data.invoices.reduce((total, invoice) => total + (invoice.total_credits || 0), 0),
+      totalCreditsInvoiced:
+        overview.data.total_invoiced_credits ??
+        overview.data.invoices.reduce((total, invoice) => total + (invoice.total_credits || 0), 0),
     }
   }, [overview])
+
   const ledgerRows = useMemo(
     () =>
-      ledgerEntries.slice(ledgerPage.start, ledgerPage.end).map((entry, index) => {
+      displayedLedger.map((entry, index) => {
         const isCredit = entry.amount_credits >= 0
         return (
           <TableRow key={index} className="h-11 border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30">
@@ -96,7 +340,7 @@ export function BillingHistorySection({
           </TableRow>
         )
       }),
-    [ledgerEntries, ledgerPage.start, ledgerPage.end, formatCredits, formatDate, translateLedgerType, t],
+    [displayedLedger, formatCredits, formatDate, translateLedgerType, t],
   )
 
   return (
@@ -112,7 +356,7 @@ export function BillingHistorySection({
         </CardHeader>
 
         <CardContent className="pt-6">
-          <Tabs defaultValue="wallet_activity" className="space-y-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
             <TabsList className="grid w-full grid-cols-3 max-w-md h-9 text-xs">
               <TabsTrigger value="wallet_activity" className="text-xs">
                 <WalletCards className="size-3.5 mr-1.5" />
@@ -130,6 +374,19 @@ export function BillingHistorySection({
 
             {/* Wallet Activity Tab */}
             <TabsContent value="wallet_activity" className="space-y-4">
+              {ledgerError && (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive flex items-center justify-between">
+                  <span>{ledgerError}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void fetchLedger(ledgerPage, ledgerLimit)}
+                    className="h-7 text-xs shadow-none hover:bg-background"
+                  >
+                    <RefreshCw className="size-3 mr-1" /> {t('billing.retry')}
+                  </Button>
+                </div>
+              )}
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
                 <Table>
                   <TableHeader className="bg-muted/40">
@@ -146,7 +403,7 @@ export function BillingHistorySection({
                         <TableCell colSpan={4} className="text-center py-6 text-xs text-muted-foreground">{t('billing.loadingWalletHistory')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.wallet.ledger_entries.length === 0 && (
+                    {overview.status === 'success' && displayedLedger.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noWalletActivity')}</TableCell>
                       </TableRow>
@@ -154,14 +411,28 @@ export function BillingHistorySection({
                     {ledgerRows}
                   </TableBody>
                 </Table>
-                <TablePagination state={ledgerPage} disabled={overview.status === 'loading'} />
+                <TablePagination state={ledgerPaging} disabled={overview.status === 'loading' || loadingLedger} />
               </div>
             </TabsContent>
 
             {/* Invoices Tab */}
             <TabsContent value="invoices" className="space-y-4">
+              {invoiceError && (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive flex items-center justify-between">
+                  <span>{invoiceError}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void fetchInvoices(invoicePage, invoiceLimit, invoiceSearch, invoiceStatusFilter)}
+                    className="h-7 text-xs shadow-none hover:bg-background"
+                  >
+                    <RefreshCw className="size-3 mr-1" /> {t('billing.retry')}
+                  </Button>
+                </div>
+              )}
+
               {/* Financial Quick Metrics */}
-              {overview.status === 'success' && overview.data.invoices.length > 0 && (
+              {overview.status === 'success' && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
                     <span className="text-xs font-medium text-muted-foreground">
@@ -173,7 +444,6 @@ export function BillingHistorySection({
                       </span>
                       <span className="text-[10px] font-medium text-muted-foreground uppercase">{t('billing.credits')}</span>
                     </div>
-
                   </div>
 
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 flex flex-col justify-between">
@@ -201,20 +471,19 @@ export function BillingHistorySection({
                       </span>
                       <span className="text-[10px] font-medium text-muted-foreground uppercase">{t('billing.credits')}</span>
                     </div>
-
                   </div>
                 </div>
               )}
 
               {/* Table Controls (Search & Status Filter) */}
-              {overview.status === 'success' && overview.data.invoices.length > 0 && (
+              {overview.status === 'success' && (
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
                   <div className="relative max-w-xs flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
                     <Input
                       placeholder={t('billing.searchInvoices')}
                       value={invoiceSearch}
-                      onChange={(e) => setInvoiceSearch(e.target.value)}
+                      onChange={(e) => handleSearchChange(e.target.value)}
                       className="pl-8 text-xs h-8 bg-card"
                     />
                   </div>
@@ -222,7 +491,7 @@ export function BillingHistorySection({
                   <div className="inline-flex items-center gap-px rounded-md bg-muted/30 p-px text-[10px] ring-1 ring-border/50">
                     <button
                       type="button"
-                      onClick={() => setInvoiceStatusFilter('all')}
+                      onClick={() => handleStatusFilterChange('all')}
                       className={`h-7 rounded-[5px] px-2.5 font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                         invoiceStatusFilter === 'all'
                           ? 'bg-background text-foreground'
@@ -233,7 +502,7 @@ export function BillingHistorySection({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setInvoiceStatusFilter('paid')}
+                      onClick={() => handleStatusFilterChange('paid')}
                       className={`h-7 rounded-[5px] px-2.5 font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                         invoiceStatusFilter === 'paid'
                           ? 'bg-background text-foreground'
@@ -244,7 +513,7 @@ export function BillingHistorySection({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setInvoiceStatusFilter('payment_due')}
+                      onClick={() => handleStatusFilterChange('payment_due')}
                       className={`h-7 rounded-[5px] px-2.5 font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                         invoiceStatusFilter === 'payment_due'
                           ? 'bg-background text-foreground'
@@ -288,19 +557,14 @@ export function BillingHistorySection({
                         <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">{t('billing.loadingInvoices')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.invoices.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noInvoices')}</TableCell>
-                      </TableRow>
-                    )}
-                    {overview.status === 'success' && overview.data.invoices.length > 0 && filteredInvoices.length === 0 && (
+                    {overview.status === 'success' && displayedInvoices.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
-                          {t('billing.noMatchingInvoices')}
+                          {isInvoiceFilterActive ? t('billing.noMatchingInvoices') : t('billing.noInvoices')}
                         </TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && filteredInvoices.slice(invoicePage.start, invoicePage.end).map((invoice) => {
+                    {overview.status === 'success' && displayedInvoices.map((invoice) => {
                       const invNumber = getInvoiceNumber(invoice)
                       return (
                         <TableRow key={invoice.id} className="group h-11 border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30">
@@ -341,7 +605,6 @@ export function BillingHistorySection({
                               <span className="font-semibold text-foreground">
                                 {formatCredits(invoice.total_credits)} {t('billing.credits')}
                               </span>
-
                             </div>
                           </TableCell>
 
@@ -376,12 +639,25 @@ export function BillingHistorySection({
                     })}
                   </TableBody>
                 </Table>
-                <TablePagination state={invoicePage} disabled={overview.status === 'loading'} />
+                <TablePagination state={invoicePaging} disabled={overview.status === 'loading' || loadingInvoices} />
               </div>
             </TabsContent>
 
             {/* Top-ups Tab */}
             <TabsContent value="topups" className="space-y-4">
+              {topupError && (
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive flex items-center justify-between">
+                  <span>{topupError}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void fetchTopups(topupPage, topupLimit)}
+                    className="h-7 text-xs shadow-none hover:bg-background"
+                  >
+                    <RefreshCw className="size-3 mr-1" /> {t('billing.retry')}
+                  </Button>
+                </div>
+              )}
               <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50">
                 <Table>
                   <TableHeader className="bg-muted/40">
@@ -399,12 +675,12 @@ export function BillingHistorySection({
                         <TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">{t('billing.loadingTopups')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.topups.length === 0 && (
+                    {overview.status === 'success' && displayedTopups.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-8 text-xs text-muted-foreground">{t('billing.noTopups')}</TableCell>
                       </TableRow>
                     )}
-                    {overview.status === 'success' && overview.data.topups.slice(topupPage.start, topupPage.end).map((topup) => (
+                    {overview.status === 'success' && displayedTopups.map((topup) => (
                       <TableRow key={topup.id} className="h-11 border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30">
                         <TableCell className="pl-4 font-mono text-[11px] font-medium tracking-[-0.01em] text-foreground/90">
                           #topup-{topup.id}
@@ -453,7 +729,7 @@ export function BillingHistorySection({
                     ))}
                   </TableBody>
                 </Table>
-                <TablePagination state={topupPage} disabled={overview.status === 'loading'} />
+                <TablePagination state={topupPaging} disabled={overview.status === 'loading' || loadingTopups} />
               </div>
             </TabsContent>
           </Tabs>

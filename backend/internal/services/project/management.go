@@ -99,9 +99,9 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 			return fmt.Errorf("terminate project billing: %w", err)
 		}
 		if locked.Status == models.StatusFailed {
-			invoiceService := billing.NewInvoiceService(tx, nil)
+			invoiceService := billing.NewInvoiceService(tx, billing.NewWalletService(tx))
 			if err := invoiceService.RefundInitialResourceTx(tx, locked.UserID, models.BillableTypeProject, locked.ID, "Failed project deleted"); err != nil {
-				slog.Warn("Failed to refund credits for failed project deletion", "project_id", locked.ID, "user_id", locked.UserID, "error", err)
+				return fmt.Errorf("refund initial project credits: %w", err)
 			}
 		}
 		task := models.ProjectDeletionTask{ProjectID: locked.ID, UserID: locked.UserID}

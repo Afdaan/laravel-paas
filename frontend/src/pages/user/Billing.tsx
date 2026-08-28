@@ -55,6 +55,7 @@ export default function Billing() {
   const [isProfileSaved, setIsProfileSaved] = useState(false)
   const [activePaymentModal, setActivePaymentModal] = useState<TopupResponse | null>(null)
   const [checkingPaymentStatus, setCheckingPaymentStatus] = useState(false)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   const { t, language, formatMoney } = useBillingFormatters()
   const [overview, setOverview] = useState<BillingRequestState<BillingOverview>>({ status: 'idle' })
@@ -178,6 +179,7 @@ export default function Billing() {
     setOverview(nextOverview)
     setPackages(nextPackages)
     setStatuses(nextStatuses)
+    setHistoryRefreshKey((k) => k + 1)
     setStaleWarning(hasStaleData)
     if (profileToSet) {
       setProfile(profileToSet)
@@ -632,6 +634,7 @@ export default function Billing() {
         handleCopyInvoiceNumber={handleCopyInvoiceNumber}
         setSelectedInvoice={setSelectedInvoice}
         reconcileTopup={reconcileTopup}
+        refreshKey={historyRefreshKey}
         onPayPendingTopup={(topup) => {
           setActivePaymentModal({
             id: topup.id,
@@ -673,7 +676,6 @@ export default function Billing() {
       <InvoiceDialog
         selectedInvoice={selectedInvoice}
         setSelectedInvoice={setSelectedInvoice}
-        profile={profile}
         copiedInvoiceID={copiedInvoiceID}
         handleCopyInvoiceNumber={handleCopyInvoiceNumber}
       />

@@ -2,12 +2,15 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -38,6 +41,10 @@ func NewInvoiceService(db *gorm.DB, wallets *WalletService) *InvoiceService {
 // The caller must create the underlying project or database in the same transaction.
 func (s *InvoiceService) ChargeInitialResourceTx(tx *gorm.DB, userID uint, resourceType models.BillableType, resourceID, specID uint, now time.Time) error {
 	if err := s.validateTransaction(tx, userID, resourceType, resourceID, specID); err != nil {
+		return err
+	}
+	// Global Lock Hierarchy: Lock Wallet first, then BillableResource, then Invoice, then InvoiceItem.
+	if _, err := getOrCreateLockedWallet(tx, userID); err != nil {
 		return err
 	}
 	// ponytail: Phase 5 charges a full fixed month from provisioning time; add proration only with explicit pricing rules.
@@ -76,6 +83,11 @@ func (s *InvoiceService) RefundInitialResourceTx(tx *gorm.DB, userID uint, resou
 	}
 	if tx == nil {
 		return fmt.Errorf("transaction is required for resource refund")
+	}
+
+	// Global Lock Hierarchy: Lock Wallet first, then BillableResource.
+	if _, err := getOrCreateLockedWallet(tx, userID); err != nil {
+		return err
 	}
 
 	var resource models.BillableResource
@@ -175,6 +187,17 @@ func (s *InvoiceService) PayDueResource(ctx context.Context, userID uint, resour
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Consistent Lock Order: Lock Wallet row FOR UPDATE first before resource/invoice locks.
+		var wallet models.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ?", userID).
+			First(&wallet).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrWalletNotFound
+			}
+			return fmt.Errorf("lock wallet for manual payment: %w", err)
+		}
+
 		var resource models.BillableResource
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND type = ? AND resource_id = ?", userID, resourceType, resourceID).
@@ -205,7 +228,7 @@ func (s *InvoiceService) PayDueResource(ctx context.Context, userID uint, resour
 		var item models.InvoiceItem
 		if err := tx.Select("invoice_items.*").
 			Joins("JOIN invoices ON invoices.id = invoice_items.invoice_id").
-			Where("invoice_items.billable_resource_id = ? AND invoice_items.credits > ? AND invoices.user_id = ? AND invoices.status = ?", resource.ID, 0, userID, models.InvoiceStatusPaymentDue).
+			Where("invoice_items.billable_resource_id = ? AND invoices.user_id = ? AND invoices.status = ?", resource.ID, userID, models.InvoiceStatusPaymentDue).
 			Order("invoices.period_start ASC, invoices.id ASC").
 			First(&item).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -222,6 +245,67 @@ func (s *InvoiceService) PayDueResource(ctx context.Context, userID uint, resour
 				return ErrResourcePaymentNotDue
 			}
 			return fmt.Errorf("lock overdue invoice: %w", err)
+		}
+
+		if item.Credits == 0 {
+			if wallet.BalanceCredits < 0 {
+				return ErrInsufficientCredits
+			}
+			paidAt := now.UTC()
+			if err := tx.Model(&invoice).Updates(map[string]any{
+				"status":  models.InvoiceStatusPaid,
+				"paid_at": &paidAt,
+			}).Error; err != nil {
+				return fmt.Errorf("mark reversal invoice paid: %w", err)
+			}
+
+			// Atomically restore all resources linked to this reversal debt invoice
+			var allItems []models.InvoiceItem
+			if err := tx.Where("invoice_id = ?", invoice.ID).Find(&allItems).Error; err != nil {
+				return fmt.Errorf("load all items for reversal invoice: %w", err)
+			}
+			for _, revItem := range allItems {
+				var revResource models.BillableResource
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ? AND user_id = ?", revItem.BillableResourceID, userID).
+					First(&revResource).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						continue
+					}
+					return fmt.Errorf("lock reversal resource %d: %w", revItem.BillableResourceID, err)
+				}
+				if revResource.BillingStatus == models.BillableResourceStatusDeleted {
+					continue
+				}
+
+				exists, existsErr := billableResourceExistsTx(tx, &revResource)
+				if existsErr != nil {
+					return fmt.Errorf("check reversal resource %d existence: %w", revResource.ID, existsErr)
+				}
+				if !exists {
+					if err := tx.Model(&revResource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+						return fmt.Errorf("terminate missing billable resource %d: %w", revResource.ID, err)
+					}
+					continue
+				}
+
+				revWasSuspended := revResource.BillingStatus == models.BillableResourceStatusSuspended
+				// Preserve billing period and anchor: do not overwrite current_period_start or next_invoice_at!
+				if err := tx.Model(&revResource).Update("billing_status", models.BillableResourceStatusActive).Error; err != nil {
+					return fmt.Errorf("restore reversal resource %d: %w", revResource.ID, err)
+				}
+				if revWasSuspended && revResource.Type == models.BillableTypeDatabase {
+					if err := ensureDatabaseStatusOperationTaskTx(tx, revResource, models.DBStatusActive); err != nil {
+						return fmt.Errorf("queue manually paid database resume: %w", err)
+					}
+				}
+				if revWasSuspended && revResource.Type == models.BillableTypeProject {
+					if err := completeProjectSuspensionTaskTx(tx, revResource); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
 		}
 
 		_, err = s.wallets.applyInTransaction(tx, LedgerMutation{
@@ -429,6 +513,21 @@ func (s *InvoiceService) runMonthlyWithDB(ctx context.Context, db *gorm.DB, now 
 
 func (s *InvoiceService) chargeDueResource(ctx context.Context, db *gorm.DB, resourceID uint, now time.Time) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Global Lock Hierarchy: Lock Wallet first, then BillableResource, then Invoice, then InvoiceItem.
+		var resMeta struct {
+			UserID uint
+		}
+		if err := tx.Model(&models.BillableResource{}).Select("user_id").Where("id = ?", resourceID).First(&resMeta).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("load resource user_id: %w", err)
+		}
+		wallet, err := getOrCreateLockedWallet(tx, resMeta.UserID)
+		if err != nil {
+			return err
+		}
+
 		var resource models.BillableResource
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&resource, resourceID).Error; err != nil {
 			return fmt.Errorf("lock due billable resource: %w", err)
@@ -466,10 +565,6 @@ func (s *InvoiceService) chargeDueResource(ctx context.Context, db *gorm.DB, res
 				return ErrInvalidInvoiceInput
 			}
 
-			wallet, err := getOrCreateLockedWallet(tx, resource.UserID)
-			if err != nil {
-				return err
-			}
 			invoice, err := findOrCreateInvoice(tx, resource.UserID, wallet.ID, periodStart, periodEnd)
 			if err != nil {
 				return err
@@ -649,13 +744,17 @@ func (s *InvoiceService) chargeResourceTx(tx *gorm.DB, resource *models.Billable
 }
 
 func findOrCreateInvoice(tx *gorm.DB, userID, walletID uint, periodStart, periodEnd time.Time) (models.Invoice, error) {
+	invNumber := generateCanonicalInvoiceNumber(periodStart)
+	profileSnapshot := snapshotBillingProfileTx(tx, userID)
 	invoice := models.Invoice{
-		UserID:         userID,
-		WalletID:       walletID,
-		PeriodStart:    periodStart,
-		PeriodEnd:      periodEnd,
-		Status:         models.InvoiceStatusPending,
-		IdempotencyKey: invoiceKey(userID, periodStart, periodEnd),
+		UserID:                 userID,
+		WalletID:               walletID,
+		InvoiceNumber:          invNumber,
+		BillingProfileSnapshot: profileSnapshot,
+		PeriodStart:            periodStart,
+		PeriodEnd:              periodEnd,
+		Status:                 models.InvoiceStatusPending,
+		IdempotencyKey:         invoiceKey(userID, periodStart, periodEnd),
 	}
 	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&invoice)
 	if result.Error != nil {
@@ -786,4 +885,24 @@ func invoiceKey(userID uint, periodStart, periodEnd time.Time) string {
 
 func invoiceItemLedgerKey(invoiceID, itemID uint) string {
 	return fmt.Sprintf("invoice:%d:item:%d", invoiceID, itemID)
+}
+
+func generateCanonicalInvoiceNumber(periodStart time.Time) string {
+	if periodStart.IsZero() {
+		periodStart = time.Now().UTC()
+	}
+	return fmt.Sprintf("INV-%04d%02d-%s", periodStart.Year(), periodStart.Month(), strings.ToLower(utils.GenerateRandom(6)))
+}
+
+func snapshotBillingProfileTx(tx *gorm.DB, userID uint) string {
+	if tx == nil || userID == 0 {
+		return ""
+	}
+	var profile models.BillingProfile
+	if err := tx.Where("user_id = ?", userID).First(&profile).Error; err == nil {
+		if data, err := json.Marshal(profile); err == nil {
+			return string(data)
+		}
+	}
+	return ""
 }

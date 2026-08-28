@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -120,7 +121,7 @@ func TestTopupRefundMovesActiveResourcesToPaymentDueWhenWalletBecomesNegative(t 
 		t.Fatalf("billing status=%s", resource.BillingStatus)
 	}
 	var paymentDueInvoice models.Invoice
-	if err := db.Where("idempotency_key = ?", fmt.Sprintf("topup:%d:payment-due", topup.ID)).First(&paymentDueInvoice).Error; err != nil {
+	if err := db.Where("idempotency_key = ?", fmt.Sprintf("topup:%s:payment-due", topup.ProviderOrderID)).First(&paymentDueInvoice).Error; err != nil {
 		t.Fatal(err)
 	}
 	if paymentDueInvoice.Status != models.InvoiceStatusPaymentDue || paymentDueInvoice.DueAt == nil || paymentDueInvoice.TotalCredits != 0 {
@@ -1581,5 +1582,176 @@ func TestTopupReconcilePakasirByProviderOrderID(t *testing.T) {
 	}
 	if wallet.BalanceCredits != pkg.Credits {
 		t.Fatalf("wallet credits after duplicate reconcile = %d, want %d", wallet.BalanceCredits, pkg.Credits)
+	}
+}
+
+func TestTopupPendingLimitEnforced(t *testing.T) {
+	db, user, service, _ := topupServiceFixture(t)
+
+	// Create up to MaxPendingTopupsPerWallet
+	for i := 0; i < MaxPendingTopupsPerWallet; i++ {
+		clientKey := fmt.Sprintf("pending-topup-key-%d", i)
+		view, err := service.Create(context.Background(), user.ID, clientKey, TopupInput{PackageID: 1})
+		if err != nil {
+			t.Fatalf("expected create #%d to succeed, got %v", i, err)
+		}
+		if view.Status != models.TopupStatusPending {
+			t.Fatalf("expected pending status, got %s", view.Status)
+		}
+	}
+
+	// Attempting to create one more should fail with ErrTopupPendingLimitExceeded
+	_, err := service.Create(context.Background(), user.ID, "pending-topup-key-exceeded", TopupInput{PackageID: 1})
+	if !errors.Is(err, ErrTopupPendingLimitExceeded) {
+		t.Fatalf("expected ErrTopupPendingLimitExceeded, got %v", err)
+	}
+
+	var dbPendingCount int64
+	if err := db.Model(&models.Topup{}).Where("status = ?", models.TopupStatusPending).Count(&dbPendingCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dbPendingCount != int64(MaxPendingTopupsPerWallet) {
+		t.Fatalf("expected exactly %d pending rows in DB, got %d", MaxPendingTopupsPerWallet, dbPendingCount)
+	}
+}
+
+func TestSanitizePakasirPaymentURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "valid app.pakasir.com https url",
+			input:    "https://app.pakasir.com/pay/runara/order-123",
+			expected: "https://app.pakasir.com/pay/runara/order-123",
+		},
+		{
+			name:     "valid pakasir.com https url",
+			input:    "https://pakasir.com/pay/runara/order-123",
+			expected: "https://pakasir.com/pay/runara/order-123",
+		},
+		{
+			name:     "http protocol rejected and empty returned",
+			input:    "http://app.pakasir.com/pay/runara/order-123",
+			expected: "",
+		},
+		{
+			name:     "evil domain rejected and empty returned",
+			input:    "https://evil-site.com/phishing",
+			expected: "",
+		},
+		{
+			name:     "userinfo rejected and empty returned",
+			input:    "https://admin:pass@app.pakasir.com/pay/runara/order-123",
+			expected: "",
+		},
+		{
+			name:     "custom non-443 port rejected and empty returned",
+			input:    "https://app.pakasir.com:8443/pay/runara/order-123",
+			expected: "",
+		},
+		{
+			name:     "empty input returns empty",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizePakasirPaymentURL(tt.input)
+			if got != tt.expected {
+				t.Errorf("sanitizePakasirPaymentURL(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTopupServiceCrossWalletReversalIndependence(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	user1 := models.User{Email: "user1-reversal-test@example.test", Password: "test", Name: "User 1"}
+	if err := db.Create(&user1).Error; err != nil {
+		t.Fatal(err)
+	}
+	user2 := models.User{Email: "user2-reversal-test@example.test", Password: "test", Name: "User 2"}
+	if err := db.Create(&user2).Error; err != nil {
+		t.Fatal(err)
+	}
+	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 250, AmountMinor: 25000, Version: 1, IsActive: true}
+	if err := db.Create(&pkg).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	walletService := NewWalletService(db)
+	wallet1, err := walletService.GetOrCreateWallet(context.Background(), user1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = walletService.GetOrCreateWallet(context.Background(), user2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gateway := &fakeMidtransGateway{}
+	cfg := &config.Config{
+		BillingEnabled:       true,
+		BillingTopupEnabled:  true,
+		BillingTopupProvider: models.BillingProviderMidtrans,
+		MidtransServerKey:    "server-key",
+		MidtransMerchantID:   "merchant-id",
+	}
+	service := NewTopupService(db, walletService, cfg, gateway)
+
+	// User 2 creates topup
+	view2, err := service.Create(context.Background(), user2.ID, "user2-topup-key", TopupInput{PackageID: pkg.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var topup2 models.Topup
+	if err := db.First(&topup2, view2.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Settle User 2's topup
+	if err := service.ProcessNotification(context.Background(), signedNotification(topup2.ProviderOrderID, "settlement", "accept", "tx-user2")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Manually inject a stale reversal entry into User 1's wallet with reference_id matching topup2.ID
+	refType := "topup"
+	refID := strconv.FormatUint(uint64(topup2.ID), 10)
+	staleEntry := models.WalletLedgerEntry{
+		WalletID:       wallet1.ID,
+		Type:           models.WalletLedgerEntryTopupReversal,
+		AmountCredits:  -pkg.Credits,
+		BalanceAfter:   -pkg.Credits,
+		ReferenceType:  &refType,
+		ReferenceID:    &refID,
+		IdempotencyKey: "stale-user1-reversal-key",
+	}
+	if err := db.Create(&staleEntry).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Reversal for User 2's topup MUST succeed and MUST NOT be blocked by User 1's ledger entry
+	gateway.status = signedNotification(topup2.ProviderOrderID, "refund", "", "tx-user2")
+	if err := service.ProcessNotification(context.Background(), signedNotification(topup2.ProviderOrderID, "refund", "", "tx-user2")); err != nil {
+		t.Fatalf("reversal for user 2 failed: %v", err)
+	}
+
+	// Verify User 2's wallet balance was deducted
+	wallet2After, err := walletService.GetOrCreateWallet(context.Background(), user2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wallet2After.BalanceCredits != 0 {
+		t.Fatalf("expected wallet 2 balance to be 0 after refund, got %d", wallet2After.BalanceCredits)
 	}
 }

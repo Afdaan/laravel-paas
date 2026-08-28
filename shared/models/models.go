@@ -1242,20 +1242,34 @@ type BillableResource struct {
 
 // Invoice aggregates one user's charges for an exact billing period.
 type Invoice struct {
-	ID             uint          `gorm:"primaryKey" json:"id"`
-	UserID         uint          `gorm:"uniqueIndex:uni_invoices_user_period;not null;index:idx_invoices_user_id" json:"user_id"`
-	User           User          `gorm:"foreignKey:UserID" json:"-"`
-	WalletID       uint          `gorm:"not null;index:idx_invoices_wallet_id" json:"wallet_id"`
-	Wallet         Wallet        `gorm:"-" json:"-"`
-	PeriodStart    time.Time     `gorm:"uniqueIndex:uni_invoices_user_period;not null" json:"period_start"`
-	PeriodEnd      time.Time     `gorm:"uniqueIndex:uni_invoices_user_period;not null" json:"period_end"`
-	TotalCredits   int64         `gorm:"not null" json:"total_credits"`
-	Status         InvoiceStatus `gorm:"size:20;not null;default:pending" json:"status"`
-	IdempotencyKey string        `gorm:"uniqueIndex:uni_invoices_idempotency_key;size:255;not null" json:"idempotency_key"`
-	DueAt          *time.Time    `json:"due_at,omitempty"`
-	PaidAt         *time.Time    `json:"paid_at,omitempty"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID                     uint          `gorm:"primaryKey" json:"id"`
+	UserID                 uint          `gorm:"uniqueIndex:uni_invoices_user_period;not null;index:idx_invoices_user_id" json:"user_id"`
+	User                   User          `gorm:"foreignKey:UserID" json:"-"`
+	WalletID               uint          `gorm:"not null;index:idx_invoices_wallet_id" json:"wallet_id"`
+	Wallet                 Wallet        `gorm:"-" json:"-"`
+	InvoiceNumber          string        `gorm:"size:100;not null;default:''" json:"invoice_number"`
+	BillingProfileSnapshot string        `gorm:"type:text;not null;default:''" json:"billing_profile_snapshot,omitempty"`
+	PeriodStart            time.Time     `gorm:"uniqueIndex:uni_invoices_user_period;not null" json:"period_start"`
+	PeriodEnd              time.Time     `gorm:"uniqueIndex:uni_invoices_user_period;not null" json:"period_end"`
+	TotalCredits           int64         `gorm:"not null" json:"total_credits"`
+	Status                 InvoiceStatus `gorm:"size:20;not null;default:pending" json:"status"`
+	IdempotencyKey         string        `gorm:"uniqueIndex:uni_invoices_idempotency_key;size:255;not null" json:"idempotency_key"`
+	DueAt                  *time.Time    `json:"due_at,omitempty"`
+	PaidAt                 *time.Time    `json:"paid_at,omitempty"`
+	CreatedAt              time.Time     `json:"created_at"`
+	UpdatedAt              time.Time     `json:"updated_at"`
+}
+
+func (i *Invoice) BeforeCreate(tx *gorm.DB) error {
+	if i.InvoiceNumber == "" {
+		period := i.PeriodStart
+		if period.IsZero() {
+			period = time.Now().UTC()
+		}
+		randomSuffix := strings.ToLower(utils.GenerateRandom(6))
+		i.InvoiceNumber = fmt.Sprintf("INV-%04d%02d-%s", period.Year(), period.Month(), randomSuffix)
+	}
+	return nil
 }
 
 type InvoiceItem struct {

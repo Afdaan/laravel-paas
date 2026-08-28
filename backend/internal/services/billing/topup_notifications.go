@@ -78,7 +78,7 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 	var creditedUserID uint
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var event models.PaymentEvent
-		result := tx.Clauses(clause.OnConflict{
+		result := tx.Session(&gorm.Session{}).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "event_key"}},
 			DoNothing: true,
 		}).Create(&models.PaymentEvent{
@@ -93,15 +93,29 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 		if result.RowsAffected == 0 {
 			return nil
 		}
-		if err := tx.Where("event_key = ?", eventKey).First(&event).Error; err != nil {
+		if err := tx.Session(&gorm.Session{}).Where("event_key = ?", eventKey).First(&event).Error; err != nil {
 			return fmt.Errorf("load recorded payment event: %w", err)
 		}
 
-		var topup models.Topup
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND provider_order_id = ?", models.BillingProviderMidtrans, validated.OrderID).First(&topup).Error; err != nil {
+		var topupRef struct {
+			ID       uint
+			WalletID uint
+		}
+		if err := tx.Session(&gorm.Session{}).Model(&models.Topup{}).Select("id, wallet_id").Where("provider = ? AND provider_order_id = ?", models.BillingProviderMidtrans, validated.OrderID).First(&topupRef).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrTopupNotFound
 			}
+			return fmt.Errorf("lookup topup reference: %w", err)
+		}
+
+		// Global Lock Hierarchy: Lock Wallet first, then Topup, then BillableResource, then Invoice.
+		var lockedWallet models.Wallet
+		if err := tx.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedWallet, topupRef.WalletID).Error; err != nil {
+			return fmt.Errorf("lock wallet for payment notification: %w", err)
+		}
+
+		var topup models.Topup
+		if err := tx.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).First(&topup, topupRef.ID).Error; err != nil {
 			return fmt.Errorf("lock topup for payment notification: %w", err)
 		}
 
@@ -129,7 +143,7 @@ func (s *TopupService) processNotification(ctx context.Context, notification Mid
 					UserID:         userID,
 					EntryType:      models.WalletLedgerEntryTopup,
 					AmountCredits:  topup.Credits,
-					IdempotencyKey: fmt.Sprintf("topup:%d:credit", topup.ID),
+					IdempotencyKey: fmt.Sprintf("topup:%s:credit", topup.ProviderOrderID),
 					ReferenceType:  "topup",
 					ReferenceID:    strconv.FormatUint(uint64(topup.ID), 10),
 				}, true); err != nil {
@@ -280,11 +294,25 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 			return nil
 		}
 
-		var topup models.Topup
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topup).Error; err != nil {
+		var topupRef struct {
+			ID       uint
+			WalletID uint
+		}
+		if err := tx.Model(&models.Topup{}).Select("id, wallet_id").Where("provider = ? AND provider_order_id = ?", models.BillingProviderPakasir, orderID).First(&topupRef).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrTopupNotFound
 			}
+			return fmt.Errorf("lookup topup reference: %w", err)
+		}
+
+		// Global Lock Hierarchy: Lock Wallet first, then Topup, then BillableResource, then Invoice.
+		var lockedWallet models.Wallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedWallet, topupRef.WalletID).Error; err != nil {
+			return fmt.Errorf("lock wallet for pakasir notification: %w", err)
+		}
+
+		var topup models.Topup
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&topup, topupRef.ID).Error; err != nil {
 			return fmt.Errorf("lock topup for pakasir notification: %w", err)
 		}
 		if topup.AmountMinor != amountMinor {
@@ -308,7 +336,7 @@ func (s *TopupService) ProcessPakasirWebhook(ctx context.Context, orderID string
 			if err != nil {
 				return err
 			}
-			idempotencyKey := fmt.Sprintf("topup:%s:%d", models.BillingProviderPakasir, topup.ID)
+			idempotencyKey := fmt.Sprintf("topup:%s:%s", models.BillingProviderPakasir, topup.ProviderOrderID)
 			topupIDStr := strconv.FormatUint(uint64(topup.ID), 10)
 			if _, err := s.wallets.applyInTransaction(tx, LedgerMutation{
 				UserID:         walletUserID,
@@ -414,9 +442,9 @@ func (s *TopupService) applyTopupReversalTx(tx *gorm.DB, topup *models.Topup, no
 		return err
 	}
 	var existingReversal int64
-	if err := tx.Model(&models.WalletLedgerEntry{}).
+	if err := tx.Session(&gorm.Session{}).Model(&models.WalletLedgerEntry{}).
 		Select("COALESCE(SUM(-amount_credits), 0)").
-		Where("type = ? AND reference_type = ? AND reference_id = ?", models.WalletLedgerEntryTopupReversal, "topup", strconv.FormatUint(uint64(topup.ID), 10)).
+		Where("wallet_id = ? AND type = ? AND reference_type = ? AND reference_id = ?", topup.WalletID, models.WalletLedgerEntryTopupReversal, "topup", strconv.FormatUint(uint64(topup.ID), 10)).
 		Scan(&existingReversal).Error; err != nil {
 		return fmt.Errorf("sum applied top-up reversals: %w", err)
 	}
@@ -434,24 +462,29 @@ func (s *TopupService) applyTopupReversalTx(tx *gorm.DB, topup *models.Topup, no
 	if err != nil {
 		return err
 	}
-	var activeResources []models.BillableResource
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("user_id = ? AND billing_status = ?", userID, models.BillableResourceStatusActive).
-		Find(&activeResources).Error; err != nil {
-		return fmt.Errorf("lock active resources before top-up reversal: %w", err)
-	}
+	// Global Lock Hierarchy: Apply Wallet debit (which locks Wallet) first, then lock active resources only if in debt.
 	reversal, err := s.wallets.applyInTransaction(tx, LedgerMutation{
 		UserID:         userID,
 		EntryType:      models.WalletLedgerEntryTopupReversal,
 		AmountCredits:  delta,
-		IdempotencyKey: fmt.Sprintf("topup:%d:reversal:%d", topup.ID, desiredReversal),
+		IdempotencyKey: fmt.Sprintf("topup:%s:reversal:%d", topup.ProviderOrderID, desiredReversal),
 		ReferenceType:  "topup",
 		ReferenceID:    strconv.FormatUint(uint64(topup.ID), 10),
 	}, false)
 	if err != nil {
 		return err
 	}
-	if reversal.BalanceAfter >= 0 || len(activeResources) == 0 {
+	if reversal.BalanceAfter >= 0 {
+		return nil
+	}
+
+	var activeResources []models.BillableResource
+	if err := tx.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND billing_status = ?", userID, models.BillableResourceStatusActive).
+		Find(&activeResources).Error; err != nil {
+		return fmt.Errorf("lock active resources before top-up reversal: %w", err)
+	}
+	if len(activeResources) == 0 {
 		return nil
 	}
 	now := time.Now().UTC()
@@ -462,7 +495,7 @@ func (s *TopupService) applyTopupReversalTx(tx *gorm.DB, topup *models.Topup, no
 	for _, resource := range activeResources {
 		resourceIDs = append(resourceIDs, resource.ID)
 	}
-	if err := tx.Model(&models.BillableResource{}).Where("id IN ?", resourceIDs).Update("billing_status", models.BillableResourceStatusPaymentDue).Error; err != nil {
+	if err := tx.Session(&gorm.Session{}).Model(&models.BillableResource{}).Where("id IN ?", resourceIDs).Update("billing_status", models.BillableResourceStatusPaymentDue).Error; err != nil {
 		return fmt.Errorf("move overdue resources to payment due after top-up reversal: %w", err)
 	}
 	return nil
@@ -492,22 +525,26 @@ func recordTopupReversalPaymentDueTx(tx *gorm.DB, topup *models.Topup, resources
 	if tx == nil || topup == nil || topup.ID == 0 || len(resources) == 0 {
 		return ErrInvalidPaymentNotification
 	}
-	idempotencyKey := fmt.Sprintf("topup:%d:payment-due", topup.ID)
+	idempotencyKey := fmt.Sprintf("topup:%s:payment-due", topup.ProviderOrderID)
 	var invoice models.Invoice
-	err := tx.Where("idempotency_key = ?", idempotencyKey).First(&invoice).Error
+	err := tx.Session(&gorm.Session{}).Where("idempotency_key = ?", idempotencyKey).First(&invoice).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		periodStart := topup.CreatedAt.UTC()
+		invNumber := generateCanonicalInvoiceNumber(periodStart)
+		profileSnapshot := snapshotBillingProfileTx(tx, resources[0].UserID)
 		invoice = models.Invoice{
-			UserID:         resources[0].UserID,
-			WalletID:       topup.WalletID,
-			PeriodStart:    periodStart,
-			PeriodEnd:      periodStart.Add(time.Second),
-			TotalCredits:   0,
-			Status:         models.InvoiceStatusPaymentDue,
-			IdempotencyKey: idempotencyKey,
-			DueAt:          &dueAt,
+			UserID:                 resources[0].UserID,
+			WalletID:               topup.WalletID,
+			InvoiceNumber:          invNumber,
+			BillingProfileSnapshot: profileSnapshot,
+			PeriodStart:            periodStart,
+			PeriodEnd:              periodStart.Add(time.Second),
+			TotalCredits:           0,
+			Status:                 models.InvoiceStatusPaymentDue,
+			IdempotencyKey:         idempotencyKey,
+			DueAt:                  &dueAt,
 		}
-		if err := tx.Create(&invoice).Error; err != nil {
+		if err := tx.Session(&gorm.Session{}).Create(&invoice).Error; err != nil {
 			return fmt.Errorf("create top-up reversal payment-due invoice: %w", err)
 		}
 	} else if err != nil {
@@ -522,7 +559,7 @@ func recordTopupReversalPaymentDueTx(tx *gorm.DB, topup *models.Topup, resources
 			Description:        "Top-up reversal payment due",
 			Credits:            0,
 		}
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
+		result := tx.Session(&gorm.Session{}).Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
 		if result.Error != nil {
 			return fmt.Errorf("create top-up reversal payment-due item: %w", result.Error)
 		}

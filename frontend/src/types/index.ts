@@ -250,6 +250,8 @@ export interface BillingOverview {
   };
   invoices: Array<{
     id: number;
+    invoice_number?: string;
+    billing_profile_snapshot?: string;
     period_start: string;
     period_end: string;
     total_credits: number;
@@ -288,6 +290,7 @@ export interface BillingOverview {
     auto_renew: boolean;
   }>;
   upcoming_required_credits: number;
+  total_invoiced_credits?: number;
 }
 
 export interface BillingStatus {
