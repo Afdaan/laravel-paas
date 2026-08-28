@@ -190,12 +190,19 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 	return hash, nil
 }
 
-// GetSSLStatus queries the remote Nginx VM for SSL certificate status
-func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error) {
-	return s.nginxService.GetSSLStatus(domain)
+// ListProjects returns paginated projects with filtering
+func (s *ProjectService) GetSSLStatus(project *models.Project, domain string) (*nginx.SSLStatusResponse, error) {
+	if project == nil || project.Subdomain == "" {
+		return nil, fmt.Errorf("cannot query ssl status for empty project")
+	}
+
+	projectDomain := s.cfg.ProjectDomain
+	if projectDomain == "" {
+		projectDomain = s.cfg.BaseDomain
+	}
+	return s.nginxService.GetSSLStatus(project.GetFullDomain(projectDomain), domain)
 }
 
-// ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
 	projects, total, err := s.projectRepo.List(page, limit, userID, status, search)
 	if err != nil {

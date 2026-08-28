@@ -212,12 +212,12 @@ func (w *DomainWorker) detectAndReconcileDrift(ctx context.Context) {
 		if isLocalOrTest {
 			sslDrift = false
 		} else {
-			sslStatus, err := w.projectService.GetSSLStatus(d.Domain)
+			sslStatus, err := w.projectService.GetSSLStatus(project, d.Domain)
 			if err != nil {
 				sslDrift = true
 				errCode = models.ErrPublicRouteUnreachable
 				sslErrStr = fmt.Sprintf("public routing Nginx verification failed: %v", err)
-			} else if sslStatus.Status == "failed" || sslStatus.Status == "expired" || sslStatus.Status == "ssl_failed" {
+			} else if sslStatus.Status != "ssl_active" {
 				sslDrift = true
 				errCode = models.ErrSSLIssuanceFailed
 				if sslStatus.Status == "expired" {
@@ -318,8 +318,14 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 			if d.Status == models.DomainStatusDegraded && d.ProvisioningCheckpoint == "completed" {
 				continue
 			}
+
+			project, err := w.projectService.GetProjectByID(d.ProjectID)
+			if err != nil {
+				continue
+			}
+
 			if d.Status == models.DomainStatusSSLQueued || d.Status == models.DomainStatusSSLProvisioning {
-				sslStatus, err := w.projectService.GetSSLStatus(d.Domain)
+				sslStatus, err := w.projectService.GetSSLStatus(project, d.Domain)
 				if err != nil {
 					slog.Warn("Recovery trace: Public routing Nginx unreachable during SSL polling", "domain", d.Domain, "error", err)
 					continue
@@ -329,6 +335,11 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 					metrics.GetCollector().IncrSSLRetry()
 				}
 				switch sslStatus.Status {
+				case "none":
+					if _, err := w.projectService.SyncProjectNginxFrom(project, "ssl_status_missing"); err != nil {
+						slog.Warn("Recovery trace: Failed to restore missing SSL provisioning state", "domain", d.Domain, "error", err)
+					}
+
 				case "ssl_active":
 					metrics.GetCollector().ObserveSSLIssueDuration(time.Since(d.CreatedAt))
 					d.ProvisioningCheckpoint = "completed"
@@ -361,9 +372,7 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 						_ = w.domainService.TransitionState(d, models.DomainStatusSSLFailed, models.ErrSSLIssuanceFailed, fmt.Sprintf("SSL issuance failed after %d retries: %s", d.VerificationRetryCount, sslStatus.Error))
 					} else {
 						slog.Warn("Recovery trace: SSL provisioning retry in progress", "domain", d.Domain, "attempt", d.VerificationRetryCount, "error", sslStatus.Error)
-						if proj, err := w.projectService.GetProjectByID(d.ProjectID); err == nil {
-							_, _ = w.projectService.SyncProjectNginxFrom(proj, "ssl_retry")
-						}
+						_, _ = w.projectService.SyncProjectNginxFrom(project, "ssl_retry")
 					}
 				case "ssl_provisioning":
 					if d.Status != models.DomainStatusSSLProvisioning {
@@ -382,11 +391,6 @@ func (w *DomainWorker) reconcilePendingDomains(ctx context.Context) {
 				if time.Since(*d.LastReconciliationAt).Minutes() < float64(backoffMinutes) {
 					continue
 				}
-			}
-
-			project, err := w.projectService.GetProjectByID(d.ProjectID)
-			if err != nil {
-				continue
 			}
 
 			verifyStart := time.Now()

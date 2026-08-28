@@ -23,7 +23,7 @@ import (
 
 type NginxReloader interface {
 	SyncProjectNginxFrom(project *models.Project, triggerSource string) (string, error)
-	GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error)
+	GetSSLStatus(project *models.Project, domain string) (*nginx.SSLStatusResponse, error)
 }
 
 // PollerState tracks starting time of each domain's SSL status poller

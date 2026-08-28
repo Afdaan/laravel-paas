@@ -565,6 +565,12 @@ func containsAny(a, b []string) bool {
 }
 
 func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint, projectID uint) {
+	project, err := s.projectRepo.GetByID(projectID)
+	if err != nil {
+		slog.Error("Failed to load project for SSL polling", "projectID", projectID, "error", err)
+		return
+	}
+
 	now := time.Now()
 	if val, loaded := s.activePollers.LoadOrStore(domainID, PollerState{StartedAt: now}); loaded {
 		state := val.(PollerState)
@@ -629,7 +635,7 @@ func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint
 				return
 			}
 
-			sslStatus, err := s.projectService.GetSSLStatus(d.Domain)
+			sslStatus, err := s.projectService.GetSSLStatus(project, d.Domain)
 			if err != nil {
 				slog.Warn("Failed to query SSL status in real-time polling", "domain", d.Domain, "error", err)
 				delay = getDelay()
@@ -640,6 +646,11 @@ func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint
 			slog.Info("Real-time SSL polling check result", "domain", d.Domain, "sslStatus", sslStatus.Status)
 
 			switch sslStatus.Status {
+			case "none":
+				if _, err := s.projectService.SyncProjectNginxFrom(project, "ssl_status_missing"); err != nil {
+					slog.Warn("Failed to restore missing SSL provisioning state", "domain", d.Domain, "error", err)
+				}
+
 			case "ssl_active":
 				d.ProvisioningCheckpoint = "completed"
 				d.SSLStatus = "active"

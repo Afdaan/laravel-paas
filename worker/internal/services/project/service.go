@@ -347,6 +347,14 @@ func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {
 	return s.projectRepo.GetByID(id)
 }
 
-func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error) {
-	return s.nginxService.GetSSLStatus(domain)
+func (s *ProjectService) GetSSLStatus(project *models.Project, domain string) (*nginx.SSLStatusResponse, error) {
+	if project == nil || project.Subdomain == "" {
+		return nil, fmt.Errorf("cannot query ssl status for empty project")
+	}
+
+	projectDomain := s.cfg.ProjectDomain
+	if projectDomain == "" {
+		projectDomain = s.cfg.BaseDomain
+	}
+	return s.nginxService.GetSSLStatus(project.GetFullDomain(projectDomain), domain)
 }

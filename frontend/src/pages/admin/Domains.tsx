@@ -35,10 +35,10 @@ const StatusBadge = ({ status }: { status?: string }) => {
   let color = 'text-amber-500 border-amber-500/30 bg-amber-500/10'
   let Icon = Clock
 
-  if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
+  if (['active', 'ssl_active'].includes(cleanStatus)) {
     color = 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10'
     Icon = CheckCircle2
-  } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
+  } else if (['dns_verified', 'ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
     color = 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10'
     Icon = Loader2
   } else if (['degraded'].includes(cleanStatus)) {

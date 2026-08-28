@@ -60,11 +60,11 @@ const StatusBadge = ({ status }: { status: string }) => {
   let textColor = 'text-amber-500/90'
   let bgColor = 'bg-amber-500/5 border-amber-500/15'
 
-  if (['active', 'ssl_active', 'dns_verified'].includes(cleanStatus)) {
+  if (['active', 'ssl_active'].includes(cleanStatus)) {
     dotColor = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
     textColor = 'text-emerald-500/90'
     bgColor = 'bg-emerald-500/5 border-emerald-500/15'
-  } else if (['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
+  } else if (['dns_verified', 'ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)) {
     dotColor = 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
     textColor = 'text-cyan-500/90'
     bgColor = 'bg-cyan-500/5 border-cyan-500/15'
@@ -78,7 +78,7 @@ const StatusBadge = ({ status }: { status: string }) => {
     bgColor = 'bg-rose-500/5 border-rose-500/15'
   }
 
-  const isSpinning = ['ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
+  const isSpinning = ['dns_verified', 'ssl_queued', 'ssl_provisioning', 'renewal_pending'].includes(cleanStatus)
 
   return (
     <Badge

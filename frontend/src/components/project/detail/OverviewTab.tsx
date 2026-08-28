@@ -56,7 +56,7 @@ export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCa
             {project.custom_domains && project.custom_domains.length > 0 && (
               <div className="space-y-2">
                 {project.custom_domains
-                  .filter((d) => ['active', 'ssl_active', 'dns_verified'].includes(d.status))
+                  .filter((d) => ['active', 'ssl_active'].includes(d.status))
                   .map((d) => (
                     <div
                       key={d.id}
@@ -94,15 +94,15 @@ export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCa
                   ))}
 
                 {/* Pending domains hint */}
-                {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 0 && (
+                {project.custom_domains.filter((d) => !['active', 'ssl_active'].includes(d.status)).length > 0 && (
                   <Button
                     variant="outline"
                     onClick={() => onTabChange('domains')}
                     className="w-full flex items-center justify-between px-4 py-2.5 h-auto rounded-xl border-dashed border-amber-500/20 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30 group"
                   >
                     <span className="text-[11px] font-semibold">
-                      {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length} domain
-                      {project.custom_domains.filter((d) => !['active', 'ssl_active', 'dns_verified'].includes(d.status)).length > 1 ? 's' : ''} pending verification
+                      {project.custom_domains.filter((d) => !['active', 'ssl_active'].includes(d.status)).length} domain
+                      {project.custom_domains.filter((d) => !['active', 'ssl_active'].includes(d.status)).length > 1 ? 's' : ''} pending verification / SSL provisioning
                     </span>
                     <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
                   </Button>

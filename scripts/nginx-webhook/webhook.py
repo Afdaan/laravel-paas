@@ -7,6 +7,7 @@ import queue
 import hmac
 import time
 import email.utils
+import re
 from logging.handlers import TimedRotatingFileHandler
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
@@ -376,8 +377,17 @@ def cert_covers_all(cert_name, domains):
 
 INSPECT_CACHE = {}
 
+def is_valid_hostname(value):
+    """Rejects path traversal and malformed certificate/domain identifiers."""
+    if not isinstance(value, str) or len(value) > 253:
+        return False
+    labels = value.rstrip(".").split(".")
+    return all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in labels)
+
 def inspect_certificate(cert_name):
     """Returns certificate text and validity dates for a Let's Encrypt cert name with caching."""
+    if not is_valid_hostname(cert_name):
+        return None
     cert_file = f"/etc/letsencrypt/live/{cert_name}/fullchain.pem"
     if not os.path.exists(cert_file):
         return None
@@ -409,6 +419,7 @@ def inspect_certificate(cert_name):
         data = {
             "cert_name": cert_name,
             "text": text_res.stdout.lower(),
+            "domains": {name.lower().rstrip(".") for name in re.findall(r"DNS:([^,\s]+)", text_res.stdout, re.IGNORECASE)},
             "issued_at": issued_at,
             "expires_at": expires_at,
         }
@@ -422,18 +433,9 @@ def inspect_certificate(cert_name):
         logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
         return None
 
-def find_certificate_covering_domain(domain):
-    """Finds any Let's Encrypt certificate whose SAN list covers the requested domain."""
-    live_dir = "/etc/letsencrypt/live"
-    if not os.path.isdir(live_dir):
-        return None
-
-    requested_san = f"dns:{domain.lower()}"
-    for cert_name in os.listdir(live_dir):
-        cert_info = inspect_certificate(cert_name)
-        if cert_info and requested_san in cert_info["text"]:
-            return cert_info
-    return None
+def certificate_covers_domain(cert_info, domain):
+    """Checks exact SAN ownership; unrelated certificate lineages must not satisfy project SSL."""
+    return bool(cert_info and domain.lower().rstrip(".") in cert_info["domains"])
 
 def _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port, project_dir, ssl_enabled):
     """Stages configuration atomically, verifies syntax, and schedules debounced reload."""
@@ -616,26 +618,33 @@ def ssl_status():
         logging.warning(f"Unauthorized ssl-status access from {client_ip}: {err_msg}")
         return jsonify({"error": f"Unauthorized: {err_msg}"}), 401
 
+    cert_name = request.args.get("cert_name")
     domain = request.args.get("domain")
-    if not domain:
-        return jsonify({"error": "Missing domain parameter"}), 400
+    if not cert_name or not domain:
+        return jsonify({"error": "Missing cert_name or domain parameter"}), 400
+    if not is_valid_hostname(cert_name) or not is_valid_hostname(domain):
+        return jsonify({"error": "Invalid cert_name or domain parameter"}), 400
 
-    status_info = SSL_STATUS_STORE.get(domain, {})
+    status_info = SSL_STATUS_STORE.get(cert_name, {})
     current_status = status_info.get("status", "none")
     error_msg = status_info.get("error", "")
     retry_count = status_info.get("retry_count", 0)
 
     expires_at = None
     issued_at = None
-    cert_info = inspect_certificate(domain) or find_certificate_covering_domain(domain)
-    if cert_info:
+    cert_info = inspect_certificate(cert_name)
+    if certificate_covers_domain(cert_info, domain):
         issued_at = cert_info["issued_at"]
         expires_at = cert_info["expires_at"]
         current_status = "ssl_active"
         error_msg = ""
-        logging.info(f"SSL status active for {domain}; covered by certificate {cert_info['cert_name']}")
+        logging.info(f"SSL status active for {domain}; covered by project certificate {cert_name}")
+    elif current_status == "ssl_active":
+        current_status = "ssl_failed"
+        error_msg = f"Project certificate {cert_name} does not cover {domain}"
 
     return jsonify({
+        "cert_name": cert_name,
         "domain": domain,
         "status": current_status,
         "error": error_msg,

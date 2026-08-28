@@ -43,6 +43,8 @@ sudo systemctl enable paas-webhook
 sudo systemctl start paas-webhook
 ```
 
+When upgrading SSL status handling, deploy and restart `webhook.py` before deploying backend/worker binaries. Old callers then fail closed until both sides use `cert_name` plus expected `domain`.
+
 ## 🛠 Features
 - **Auto-SSL**: Automatically provisions Let's Encrypt certificates.
 - **Port Detection**: Proxies traffic to the correct internal port of the Runara VPS.
