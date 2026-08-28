@@ -283,6 +283,8 @@ export interface BillingOverview {
     status: 'active' | 'payment_due' | 'suspended';
     current_period_start: string;
     next_invoice_at: string;
+    payment_due_period_start?: string;
+    payment_due_period_end?: string;
     auto_renew: boolean;
   }>;
   upcoming_required_credits: number;

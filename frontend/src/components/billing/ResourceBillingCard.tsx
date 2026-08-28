@@ -1,6 +1,7 @@
-import { CalendarClock, Database, FolderGit2 } from 'lucide-react'
+import { CalendarClock, Database, FolderGit2, Loader2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -15,10 +16,12 @@ type ResourceBillingCardProps = {
   /** Billing status array from /api/billing/status, used for oldest_due_at on non-active resources. */
   statuses: BillingRequestState<BillingStatus[]>
   renewLoading: Record<string, boolean>
+  paymentLoading: Record<string, boolean>
+  payDueResource: (resourceID: number, resourceType: 'project' | 'database') => Promise<void>
   setPendingRenewChange: (change: PendingRenewChange) => void
 }
 
-export function ResourceBillingCard({ overview, statuses, renewLoading, setPendingRenewChange }: ResourceBillingCardProps) {
+export function ResourceBillingCard({ overview, statuses, renewLoading, paymentLoading, payDueResource, setPendingRenewChange }: ResourceBillingCardProps) {
   const { t, formatCredits, formatDate, formatResourceDisplayName } = useBillingFormatters()
 
   // Compound key "resource_type:resource_id" prevents collisions when a project
@@ -52,6 +55,21 @@ export function ResourceBillingCard({ overview, statuses, renewLoading, setPendi
               // contradictory displays during partial/stale snapshot fetches.
               const effectiveStatus = billingStatus?.status ?? resource.status
               const isNonActive = effectiveStatus === 'payment_due' || effectiveStatus === 'suspended'
+              const paymentDuePeriod = resource.payment_due_period_start && resource.payment_due_period_end
+                ? { start: resource.payment_due_period_start, end: resource.payment_due_period_end }
+                : null
+              const resourceKey = `${resource.resource_type}-${resource.resource_id}`
+              const periodLabel = isNonActive
+                ? paymentDuePeriod
+                  ? t('billing.unpaidPeriod', {
+                      start: formatDate(paymentDuePeriod.start),
+                      end: formatDate(paymentDuePeriod.end),
+                    })
+                  : null
+                : t('billing.currentPeriod', {
+                    start: formatDate(resource.current_period_start),
+                    end: formatDate(resource.next_invoice_at),
+                  })
 
               const dueDateLabel = (() => {
                 if (!isNonActive) {
@@ -110,32 +128,41 @@ export function ResourceBillingCard({ overview, statuses, renewLoading, setPendi
                         </span>
                       ) : null}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('billing.currentPeriod', {
-                        start: formatDate(resource.current_period_start),
-                        end: formatDate(resource.next_invoice_at),
-                      })}
-                    </p>
+                    {periodLabel && <p className="text-xs text-muted-foreground">{periodLabel}</p>}
                   </div>
                   <div className="flex flex-col gap-2 sm:items-end">
                     <p className="text-sm font-medium text-foreground">
                       {dueDateLabel}
                     </p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{t('billing.autoRenew')}</span>
-                      <Switch
-                        id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
-                        checked={resource.auto_renew}
-                        disabled={renewLoading[`${resource.resource_type}-${resource.resource_id}`]}
-                        onCheckedChange={(checked) => {
-                          setPendingRenewChange({
-                            resource_id: resource.resource_id,
-                            resource_type: resource.resource_type,
-                            resource_name: formatResourceDisplayName(resource.resource_name, resource.resource_type),
-                            target_auto_renew: checked,
-                          })
-                        }}
-                      />
+                    <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                      {isNonActive && paymentDuePeriod && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 w-fit px-3 text-xs font-medium"
+                          disabled={paymentLoading[resourceKey]}
+                          onClick={() => void payDueResource(resource.resource_id, resource.resource_type)}
+                        >
+                          {paymentLoading[resourceKey] && <Loader2 className="size-3.5 animate-spin" />}
+                          {t('billing.payDueNow')}
+                        </Button>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{t('billing.autoRenew')}</span>
+                        <Switch
+                          id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
+                          checked={resource.auto_renew}
+                          disabled={renewLoading[resourceKey]}
+                          onCheckedChange={(checked) => {
+                            setPendingRenewChange({
+                              resource_id: resource.resource_id,
+                              resource_type: resource.resource_type,
+                              resource_name: formatResourceDisplayName(resource.resource_name, resource.resource_type),
+                              target_auto_renew: checked,
+                            })
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

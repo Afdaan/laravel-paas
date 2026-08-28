@@ -125,6 +125,61 @@ func TestInvoiceServiceRetriesPaymentDueAfterTopupWithoutDoubleDebit(t *testing.
 	assertInvoiceWallet(t, db, user.ID, 0, 4)
 }
 
+func TestInvoiceServicePaysNonRenewingResourceWithoutEnablingAutoRenew(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "manual-payment-initial-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Manual payment", GithubURL: "https://github.com/example/manual-payment", Subdomain: "manual-payment", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&resource).Update("auto_renew", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt); !errors.Is(err, ErrInsufficientCredits) {
+		t.Fatalf("manual payment error=%v", err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue || resource.AutoRenew {
+		t.Fatalf("resource changed after failed payment: %#v", resource)
+	}
+
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "manual-payment-recovery-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive || resource.AutoRenew || !resource.CurrentPeriodStart.Equal(dueAt) || !resource.NextInvoiceAt.Equal(nextBillingCycle(dueAt)) {
+		t.Fatalf("resource after manual payment=%#v", resource)
+	}
+	assertInvoiceWallet(t, db, user.ID, 0, 4)
+}
+
 func TestInvoiceServiceSettlesSuspendedPaymentDueWithoutStartingRuntime(t *testing.T) {
 	db, user, service, walletService, spec := invoiceServiceFixture(t)
 	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-suspended-initial-funds"}); err != nil {
@@ -179,7 +234,7 @@ func TestInvoiceServiceSettlesSuspendedPaymentDueWithoutStartingRuntime(t *testi
 	}
 }
 
-func TestInvoiceServiceQueuesDatabaseResumeAfterSuspendedInvoiceSettlement(t *testing.T) {
+func TestInvoiceServiceQueuesDatabaseResumeAfterManualSuspendedPayment(t *testing.T) {
 	db, user, service, walletService, spec := invoiceServiceFixture(t)
 	if err := db.AutoMigrate(&models.DatabaseStatusOperationTask{}); err != nil {
 		t.Fatal(err)
@@ -223,7 +278,7 @@ func TestInvoiceServiceQueuesDatabaseResumeAfterSuspendedInvoiceSettlement(t *te
 	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: databaseSpec.MonthlyCredits, IdempotencyKey: "database-resume-recovery"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RetryDueForUser(context.Background(), user.ID, dueAt); err != nil {
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeDatabase, database.ID, dueAt); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&resource, resource.ID).Error; err != nil {

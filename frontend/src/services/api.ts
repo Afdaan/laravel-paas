@@ -562,6 +562,9 @@ export const billingAPI = {
   updateAutoRenew: (resourceId: number, resourceType: 'project' | 'database', autoRenew: boolean) =>
     api.put('/billing/resources/auto-renew', { resource_id: resourceId, resource_type: resourceType, auto_renew: autoRenew }),
 
+  payDueResource: (resourceId: number, resourceType: 'project' | 'database') =>
+    api.post(`/billing/resources/${resourceType}/${resourceId}/pay`),
+
   adminCatalog: () => api.get('/admin/billing/catalog'),
   adminSuspensions: () => api.get('/admin/billing/suspensions'),
   adminWallet: (userID: number) => api.get(`/admin/billing/wallets/${userID}`),

@@ -191,19 +191,21 @@ type TopupHistoryView struct {
 }
 
 type BillableResourceView struct {
-	ResourceID         uint                          `json:"resource_id"`
-	ResourceType       models.BillableType           `json:"resource_type"`
-	ResourceName       string                        `json:"resource_name"`
-	SpecName           string                        `json:"spec_name"`
-	CPUMillicores      int                           `json:"cpu_millicores,omitempty"`
-	MemoryMB           int                           `json:"memory_mb,omitempty"`
-	StorageGB          int                           `json:"storage_gb,omitempty"`
-	Engine             string                        `json:"engine,omitempty"`
-	MonthlyCredits     int64                         `json:"monthly_credits"`
-	Status             models.BillableResourceStatus `json:"status"`
-	AutoRenew          bool                          `json:"auto_renew"`
-	CurrentPeriodStart time.Time                     `json:"current_period_start"`
-	NextInvoiceAt      time.Time                     `json:"next_invoice_at"`
+	ResourceID            uint                          `json:"resource_id"`
+	ResourceType          models.BillableType           `json:"resource_type"`
+	ResourceName          string                        `json:"resource_name"`
+	SpecName              string                        `json:"spec_name"`
+	CPUMillicores         int                           `json:"cpu_millicores,omitempty"`
+	MemoryMB              int                           `json:"memory_mb,omitempty"`
+	StorageGB             int                           `json:"storage_gb,omitempty"`
+	Engine                string                        `json:"engine,omitempty"`
+	MonthlyCredits        int64                         `json:"monthly_credits"`
+	Status                models.BillableResourceStatus `json:"status"`
+	AutoRenew             bool                          `json:"auto_renew"`
+	CurrentPeriodStart    time.Time                     `json:"current_period_start"`
+	NextInvoiceAt         time.Time                     `json:"next_invoice_at"`
+	PaymentDuePeriodStart *time.Time                    `json:"payment_due_period_start,omitempty"`
+	PaymentDuePeriodEnd   *time.Time                    `json:"payment_due_period_end,omitempty"`
 }
 
 type OwnBillingOverview struct {
@@ -239,7 +241,7 @@ type AdminTopupView struct {
 }
 
 type CatalogService struct {
-	db             *gorm.DB
+	db      *gorm.DB
 	wallets *WalletService
 	cfg     *config.Config
 }
@@ -427,6 +429,10 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 			databaseEngines[database.ID] = database.Engine
 		}
 	}
+	paymentDuePeriods, err := s.listPaymentDuePeriods(ctx, resources)
+	if err != nil {
+		return nil, err
+	}
 
 	views := make([]BillableResourceView, 0, len(resources))
 	orphanedIDs := make([]uint, 0)
@@ -439,7 +445,7 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 			orphanedIDs = append(orphanedIDs, resource.ID)
 			continue
 		}
-		views = append(views, BillableResourceView{
+		view := BillableResourceView{
 			ResourceID:         resource.ResourceID,
 			ResourceType:       resource.Type,
 			ResourceName:       resourceName,
@@ -453,7 +459,12 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 			AutoRenew:          resource.AutoRenew,
 			CurrentPeriodStart: resource.CurrentPeriodStart,
 			NextInvoiceAt:      resource.NextInvoiceAt,
-		})
+		}
+		if period, ok := paymentDuePeriods[resource.ID]; ok {
+			view.PaymentDuePeriodStart = &period.Start
+			view.PaymentDuePeriodEnd = &period.End
+		}
+		views = append(views, view)
 	}
 
 	if len(orphanedIDs) > 0 {
@@ -463,6 +474,48 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 	}
 
 	return views, nil
+}
+
+type paymentDuePeriod struct {
+	Start time.Time
+	End   time.Time
+}
+
+func (s *CatalogService) listPaymentDuePeriods(ctx context.Context, resources []models.BillableResource) (map[uint]paymentDuePeriod, error) {
+	periods := make(map[uint]paymentDuePeriod)
+	resourceIDs := make([]uint, 0, len(resources))
+	for _, resource := range resources {
+		if resource.BillingStatus == models.BillableResourceStatusPaymentDue || resource.BillingStatus == models.BillableResourceStatusSuspended {
+			resourceIDs = append(resourceIDs, resource.ID)
+		}
+	}
+	if len(resourceIDs) == 0 {
+		return periods, nil
+	}
+	if !s.db.Migrator().HasTable(&models.InvoiceItem{}) {
+		return periods, nil
+	}
+
+	type paymentDuePeriodRow struct {
+		BillableResourceID uint
+		PeriodStart        time.Time
+		PeriodEnd          time.Time
+	}
+	var rows []paymentDuePeriodRow
+	if err := s.db.WithContext(ctx).Table("invoice_items").
+		Select("invoice_items.billable_resource_id, invoices.period_start, invoices.period_end").
+		Joins("JOIN invoices ON invoices.id = invoice_items.invoice_id").
+		Where("invoice_items.billable_resource_id IN ? AND invoice_items.credits > ? AND invoices.status = ?", resourceIDs, 0, models.InvoiceStatusPaymentDue).
+		Order("invoices.period_start ASC, invoices.id ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list payment-due resource periods: %w", err)
+	}
+	for _, row := range rows {
+		if _, exists := periods[row.BillableResourceID]; !exists {
+			periods[row.BillableResourceID] = paymentDuePeriod{Start: row.PeriodStart, End: row.PeriodEnd}
+		}
+	}
+	return periods, nil
 }
 
 func (s *CatalogService) listModels(ctx context.Context, activeOnly bool) ([]models.BillableSpec, []models.TopupPackage, error) {
@@ -1196,6 +1249,13 @@ func (s *CatalogService) UpdateAutoRenew(ctx context.Context, userID uint, input
 
 		return nil
 	})
+}
+
+func (s *CatalogService) PayDueResource(ctx context.Context, userID uint, resourceType models.BillableType, resourceID uint, now time.Time) error {
+	if err := s.validateContext(ctx); err != nil {
+		return err
+	}
+	return NewInvoiceService(s.db, s.wallets).PayDueResource(ctx, userID, resourceType, resourceID, now)
 }
 
 func validAuditContext(audit AuditContext) bool {

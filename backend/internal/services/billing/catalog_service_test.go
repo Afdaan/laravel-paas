@@ -705,3 +705,53 @@ func TestCatalogServiceInvoiceItemsSnapshotImmunity(t *testing.T) {
 		t.Fatalf("historical invoice spec name mutated! expected 'Starter Spec', got %q", overviewAfterRename.Invoices[0].Items[0].SpecName)
 	}
 }
+
+func TestCatalogServiceReportsPaymentDueInvoicePeriod(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.Project{}, &models.DatabaseInstance{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallet := models.Wallet{UserID: user.ID}
+	if err := db.Create(&wallet).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Suspended app", Subdomain: "suspended-app", Status: models.StatusStopped}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Starter", Slug: "payment-due-period", MonthlyCredits: 75, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC), NextInvoiceAt: time.Date(2026, time.September, 19, 0, 0, 0, 0, time.UTC), BillingAnchorDay: 19}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	periodStart := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, time.September, 19, 0, 0, 0, 0, time.UTC)
+	invoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: periodStart, PeriodEnd: periodEnd, TotalCredits: spec.MonthlyCredits, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "payment-due-period"}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "project resource monthly credits", Credits: spec.MonthlyCredits}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	overview, err := NewCatalogService(db).GetOwnBillingOverview(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Resources) != 1 || overview.Resources[0].PaymentDuePeriodStart == nil || overview.Resources[0].PaymentDuePeriodEnd == nil {
+		t.Fatalf("payment-due resource period missing: %#v", overview.Resources)
+	}
+	if !overview.Resources[0].PaymentDuePeriodStart.Equal(periodStart) || !overview.Resources[0].PaymentDuePeriodEnd.Equal(periodEnd) {
+		t.Fatalf("payment-due resource period=%#v", overview.Resources[0])
+	}
+}

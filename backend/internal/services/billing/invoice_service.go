@@ -17,6 +17,8 @@ var (
 	ErrInvalidInvoiceInput       = errors.New("invalid invoice input")
 	ErrResourceAlreadyBilled     = errors.New("billable resource already exists")
 	ErrInsufficientCredits       = errors.New("insufficient wallet credits")
+	ErrBillableResourceNotFound  = errors.New("billable resource not found")
+	ErrResourcePaymentNotDue     = errors.New("resource payment is not due")
 )
 
 // InvoiceService owns billable-resource periods, invoice rows, and their wallet debits.
@@ -161,6 +163,105 @@ func (s *InvoiceService) RetryDueForUser(ctx context.Context, userID uint, now t
 		return ErrInvalidInvoiceInput
 	}
 	return s.runMonthlyWithRecovery(ctx, s.db, now, &userID)
+}
+
+// PayDueResource settles one overdue resource without changing its auto-renew preference.
+func (s *InvoiceService) PayDueResource(ctx context.Context, userID uint, resourceType models.BillableType, resourceID uint, now time.Time) error {
+	if s == nil || s.db == nil || s.wallets == nil || ctx == nil {
+		return ErrInvoiceServiceUnavailable
+	}
+	if userID == 0 || resourceID == 0 || (resourceType != models.BillableTypeProject && resourceType != models.BillableTypeDatabase) {
+		return ErrInvalidInvoiceInput
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resource models.BillableResource
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND type = ? AND resource_id = ?", userID, resourceType, resourceID).
+			First(&resource).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrBillableResourceNotFound
+			}
+			return fmt.Errorf("lock billable resource for manual payment: %w", err)
+		}
+		if resource.BillingStatus == models.BillableResourceStatusActive {
+			return nil
+		}
+		if resource.BillingStatus != models.BillableResourceStatusPaymentDue && resource.BillingStatus != models.BillableResourceStatusSuspended {
+			return ErrResourcePaymentNotDue
+		}
+
+		exists, err := billableResourceExistsTx(tx, &resource)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+				return fmt.Errorf("terminate missing billable resource: %w", err)
+			}
+			return ErrBillableResourceNotFound
+		}
+
+		var item models.InvoiceItem
+		if err := tx.Select("invoice_items.*").
+			Joins("JOIN invoices ON invoices.id = invoice_items.invoice_id").
+			Where("invoice_items.billable_resource_id = ? AND invoice_items.credits > ? AND invoices.user_id = ? AND invoices.status = ?", resource.ID, 0, userID, models.InvoiceStatusPaymentDue).
+			Order("invoices.period_start ASC, invoices.id ASC").
+			First(&item).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrResourcePaymentNotDue
+			}
+			return fmt.Errorf("load overdue invoice item: %w", err)
+		}
+
+		var invoice models.Invoice
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ? AND status = ?", item.InvoiceID, userID, models.InvoiceStatusPaymentDue).
+			First(&invoice).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrResourcePaymentNotDue
+			}
+			return fmt.Errorf("lock overdue invoice: %w", err)
+		}
+
+		_, err = s.wallets.applyInTransaction(tx, LedgerMutation{
+			UserID:         userID,
+			EntryType:      models.WalletLedgerEntryInvoiceDebit,
+			AmountCredits:  item.Credits,
+			IdempotencyKey: invoiceItemLedgerKey(invoice.ID, item.ID),
+			ReferenceType:  "invoice_item",
+			ReferenceID:    fmt.Sprintf("%d", item.ID),
+		}, false)
+		if errors.Is(err, ErrInsufficientBalance) {
+			return ErrInsufficientCredits
+		}
+		if err != nil {
+			return fmt.Errorf("debit overdue invoice item: %w", err)
+		}
+		if err := s.syncInvoiceStatusTx(tx, &invoice, now.UTC()); err != nil {
+			return err
+		}
+
+		wasSuspended := resource.BillingStatus == models.BillableResourceStatusSuspended
+		if err := tx.Model(&resource).Updates(map[string]any{
+			"billing_status":       models.BillableResourceStatusActive,
+			"current_period_start": invoice.PeriodStart,
+			"next_invoice_at":      invoice.PeriodEnd,
+		}).Error; err != nil {
+			return fmt.Errorf("restore manually paid resource: %w", err)
+		}
+		if wasSuspended && resource.Type == models.BillableTypeDatabase {
+			if err := ensureDatabaseStatusOperationTaskTx(tx, resource, models.DBStatusActive); err != nil {
+				return fmt.Errorf("queue manually paid database resume: %w", err)
+			}
+		}
+		if wasSuspended && resource.Type == models.BillableTypeProject {
+			if err := completeProjectSuspensionTaskTx(tx, resource); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *InvoiceService) RestoreCurrentPeriodResources(ctx context.Context, userID uint, now time.Time) error {

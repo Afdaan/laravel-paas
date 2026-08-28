@@ -16,6 +16,7 @@ vi.mock('@/services/api', () => ({
     reconcileTopup: vi.fn(),
     reconcileTopupByRef: vi.fn(),
     updateAutoRenew: vi.fn(),
+    payDueResource: vi.fn(),
     getProfile: vi.fn(),
     updateProfile: vi.fn(),
   },
@@ -57,8 +58,13 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.renewsOn': 'Renews on {{date}}',
         'billing.periodEndsOn': 'Billing period ends on {{date}}',
         'billing.renewalPaymentDue': 'Renewal payment due since {{date}}',
-       'billing.month': 'month',
-       'billing.currentPeriod': 'Current period: {{start}} to {{end}}',
+        'billing.month': 'month',
+        'billing.currentPeriod': 'Current period: {{start}} to {{end}}',
+        'billing.unpaidPeriod': 'Unpaid period: {{start}} to {{end}}',
+        'billing.payDueNow': 'Pay now',
+        'billing.overduePaymentSuccess': 'Payment complete',
+        'billing.overdueInsufficientCredits': 'Insufficient credits',
+        'billing.overduePaymentFailed': 'Payment failed',
         'billing.autoRenew': 'Auto-renew',
         'billing.autoRenewEnabled': 'Auto-renew enabled',
         'billing.autoRenewRateLimited': 'Too many auto-renew toggle requests. Please wait a moment before trying again.',
@@ -642,6 +648,8 @@ describe('Billing page', () => {
             status: 'suspended',
             current_period_start: '2026-08-01T00:00:00Z',
             next_invoice_at: '2026-09-19T00:00:00Z', // future date — must NOT appear as due date
+            payment_due_period_start: '2026-08-19T00:00:00Z',
+            payment_due_period_end: '2026-09-19T00:00:00Z',
             auto_renew: true,
           },
         ],
@@ -665,10 +673,15 @@ describe('Billing page', () => {
     await screen.findByText('SuspendedApp')
     // oldest_due_at (Aug 19) should appear as the overdue date
     expect(screen.getByText('Renewal payment due since Aug 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('Unpaid period: Aug 19, 2026 to Sep 19, 2026')).toBeInTheDocument()
+    expect(screen.queryByText('Current period: Aug 1, 2026 to Sep 19, 2026')).not.toBeInTheDocument()
     // future next_invoice_at (Sep 19) must NOT appear as the overdue/payment-due date label
     // (it can still appear in the currentPeriod row as the period end, which is fine)
     expect(screen.queryByText('Renewal payment due since Sep 19, 2026')).not.toBeInTheDocument()
     expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay now' })))
+    await waitFor(() => expect(billingAPI.payDueResource).toHaveBeenCalledWith(5, 'project'))
   })
 
   it('shows neutral payment required copy when oldest_due_at is absent for suspended resource', async () => {
@@ -712,6 +725,7 @@ describe('Billing page', () => {
     // Must not show the future next_invoice_at as a due-date label
     expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
     expect(screen.queryByText(/Renewal payment due since Sep 1, 2026/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pay now' })).not.toBeInTheDocument()
   })
 
   it('does not render any credits*1000 IDR equivalent in invoice receipt dialog', async () => {

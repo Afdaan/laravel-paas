@@ -229,6 +229,7 @@ func Setup(
 	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), billingHandler.ReconcileTopup)
 	billingMutations.Put("/profile", middleware.MaxBody(16*1024), billingHandler.UpdateBillingProfile)
 	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), middleware.RateLimitAutoRenew(), billingHandler.UpdateAutoRenew)
+	billingMutations.Post("/resources/:resourceType/:resourceID/pay", middleware.MaxBody(1024), billingHandler.PayDueResource)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -414,4 +415,3 @@ func Setup(
 
 	return app
 }
-

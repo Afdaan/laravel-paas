@@ -61,6 +61,7 @@ export default function Billing() {
   const [packages, setPackages] = useState<BillingRequestState<TopupPackage[]>>({ status: 'idle' })
   const [statuses, setStatuses] = useState<BillingRequestState<BillingStatus[]>>({ status: 'idle' })
   const [renewLoading, setRenewLoading] = useState<Record<string, boolean>>({})
+  const [paymentLoading, setPaymentLoading] = useState<Record<string, boolean>>({})
   const [pendingRenewChange, setPendingRenewChange] = useState<PendingRenewChange | null>(null)
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
   const [pendingTopup, setPendingTopup] = useState<PendingTopup | null>(null)
@@ -431,6 +432,24 @@ export default function Billing() {
     }
   }
 
+  const payDueResource = async (resourceID: number, resourceType: 'project' | 'database') => {
+    const key = `${resourceType}-${resourceID}`
+    setPaymentLoading((current) => ({ ...current, [key]: true }))
+    try {
+      await billingAPI.payDueResource(resourceID, resourceType)
+      await load()
+      toast.success(t('billing.overduePaymentSuccess'))
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data?.code === 'INSUFFICIENT_CREDITS') {
+        toast.error(t('billing.overdueInsufficientCredits'))
+      } else {
+        toast.error(t('billing.overduePaymentFailed'))
+      }
+    } finally {
+      setPaymentLoading((current) => ({ ...current, [key]: false }))
+    }
+  }
+
   const balanceData = overview.status === 'success' ? overview.data.wallet.balance_credits : null
   const upcomingCredits = overview.status === 'success' ? overview.data.upcoming_required_credits : null
   const showLowBalance =
@@ -598,6 +617,8 @@ export default function Billing() {
         overview={overview}
         statuses={statuses}
         renewLoading={renewLoading}
+        paymentLoading={paymentLoading}
+        payDueResource={payDueResource}
         setPendingRenewChange={setPendingRenewChange}
       />
       <RenewConfirmationDialog

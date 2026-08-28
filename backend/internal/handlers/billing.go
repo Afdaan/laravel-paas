@@ -208,6 +208,36 @@ func (h *BillingHandler) UpdateAutoRenew(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *BillingHandler) PayDueResource(c *fiber.Ctx) error {
+	if h.catalog == nil {
+		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing catalog service is unavailable")
+	}
+	resourceID, err := strconv.ParseUint(c.Params("resourceID"), 10, 64)
+	if err != nil || resourceID == 0 {
+		return apperr.NewBadRequest("Invalid resource ID")
+	}
+	resourceType, err := models.ParseBillableType(c.Params("resourceType"))
+	if err != nil {
+		return apperr.NewBadRequest("Invalid resource type")
+	}
+	userID, _ := c.Locals("user_id").(uint)
+	if err := h.catalog.PayDueResource(c.UserContext(), userID, resourceType, uint(resourceID), time.Now().UTC()); err != nil {
+		switch {
+		case errors.Is(err, billing.ErrInvalidInvoiceInput):
+			return apperr.NewBadRequest("Invalid overdue resource payment")
+		case errors.Is(err, billing.ErrBillableResourceNotFound):
+			return apperr.ErrNotFound
+		case errors.Is(err, billing.ErrResourcePaymentNotDue):
+			return apperr.New(409, "RESOURCE_PAYMENT_NOT_DUE", "This resource has no outstanding payment")
+		case errors.Is(err, billing.ErrInsufficientCredits):
+			return apperr.New(402, "INSUFFICIENT_CREDITS", "Insufficient credits. Add credits and try again.")
+		default:
+			return err
+		}
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *BillingHandler) MidtransWebhook(c *fiber.Ctx) error {
 	var notification billing.MidtransNotification
 	if err := decodeBillingWebhookJSON(c, &notification); err != nil {
