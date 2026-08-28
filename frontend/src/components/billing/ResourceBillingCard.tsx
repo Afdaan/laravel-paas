@@ -135,7 +135,7 @@ export function ResourceBillingCard({ overview, statuses, renewLoading, paymentL
                       {dueDateLabel}
                     </p>
                     <div className="flex flex-wrap items-center gap-3 sm:justify-end">
-                      {isNonActive && paymentDuePeriod && (
+                      {isNonActive && (
                         <Button
                           type="button"
                           size="sm"

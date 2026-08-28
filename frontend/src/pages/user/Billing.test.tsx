@@ -725,7 +725,7 @@ describe('Billing page', () => {
     // Must not show the future next_invoice_at as a due-date label
     expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
     expect(screen.queryByText(/Renewal payment due since Sep 1, 2026/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pay now' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pay now' })).toBeInTheDocument()
   })
 
   it('does not render any credits*1000 IDR equivalent in invoice receipt dialog', async () => {
