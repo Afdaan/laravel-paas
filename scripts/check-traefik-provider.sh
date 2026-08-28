@@ -11,8 +11,16 @@ port=18081
 token=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
 mkdir -m 700 "$tmp/dynamic"
-sed -e "s|paas-backend:8080|127.0.0.1:$port|" -e 's|address: ":80"|address: ":18080"|' \
+sed -e "s|paas-backend:8080|127.0.0.1:$port|" \
+  -e 's|address: ":80"|address: ":18080"|' \
+  -e 's|address: ":443"|address: ":18443"|' \
   "$root/docker/traefik/traefik.yml.template" > "$tmp/traefik.yml.template"
+sed -e 's/{{BASE_DOMAIN}}/platform.test/g' \
+  -e 's/{{PROJECT_DOMAIN}}/projects.test/g' \
+  -e "s|http://paas-backend:8080/proxy/|http://127.0.0.1:$port/proxy/|" \
+  -e "s|http://paas-backend:8080|http://127.0.0.1:$port/api/|" \
+  -e "s|http://paas-frontend:80|http://127.0.0.1:$port/frontend/|" \
+  "$root/docker/traefik/dynamic.yml.template" > "$tmp/dynamic/dynamic.yml"
 TRAEFIK_PRIVATE_DIR=$private_dir
 INTERNAL_API_TOKEN=$token
 config=$(render_traefik_static_config "$tmp/traefik.yml.template")
@@ -36,11 +44,20 @@ import sys
 port, token, output = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        with open(output, "w", encoding="utf-8") as f:
-            f.write(self.headers.get("X-Internal-Token", ""))
-        self.send_response(200 if self.headers.get("X-Internal-Token") == token else 403)
+        if self.path.startswith("/api/internal/traefik/config"):
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(self.headers.get("X-Internal-Token", ""))
+            self.send_response(200 if self.headers.get("X-Internal-Token") == token else 403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"http": {}}')
+            return
+
+        self.send_response(200)
+        self.send_header("Permissions-Policy", "camera=(self)")
+        self.send_header("X-Powered-By", "test-backend")
         self.end_headers()
-        self.wfile.write(b"http: {}\n")
+        self.wfile.write(b"ok")
     def log_message(self, *_):
         pass
 http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
@@ -60,3 +77,19 @@ done
 
 grep -qx "$token" "$tmp/header"
 grep -F 'Starting provider *http.Provider' "$tmp/traefik.log"
+
+for _ in $(seq 1 20); do
+  if curl -fsS -D "$tmp/project.headers" -o /dev/null -H 'Host: demo.projects.test' http://127.0.0.1:18080/ 2>/dev/null; then
+    break
+  fi
+  sleep 0.5
+done
+
+grep -Eiq '^Permissions-Policy: camera=\(self\)' "$tmp/project.headers"
+! grep -Eiq '^Permissions-Policy: .*camera=\(\)' "$tmp/project.headers"
+! grep -Eiq '^X-Powered-By:' "$tmp/project.headers"
+grep -Eiq '^X-Content-Type-Options: nosniff' "$tmp/project.headers"
+
+curl -fsS -D "$tmp/platform.headers" -o /dev/null -H 'Host: platform.test' http://127.0.0.1:18080/
+grep -Eiq '^Permissions-Policy: geolocation=\(\), microphone=\(\), camera=\(\)' "$tmp/platform.headers"
+grep -Eiq '^X-Frame-Options: DENY' "$tmp/platform.headers"

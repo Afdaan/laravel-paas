@@ -8,8 +8,16 @@
 http:
   # Middlewares
   middlewares:
-    # Security headers for all routes
+    # Compatibility-safe headers for user projects. Application-owned browser
+    # policies such as framing and device permissions pass through unchanged.
     security-headers:
+      headers:
+        contentTypeNosniff: true
+        customResponseHeaders:
+          X-Powered-By: ""
+
+    # Strict browser policy for the Runara dashboard and API only
+    platform-security-headers:
       headers:
         frameDeny: true
         contentTypeNosniff: true
@@ -55,7 +63,7 @@ http:
         - web
       priority: 100
       middlewares:
-        - security-headers
+        - platform-security-headers
         - rate-limit
 
     # Backend API HTTPS
@@ -67,7 +75,7 @@ http:
       priority: 100
       tls: {}
       middlewares:
-        - security-headers
+        - platform-security-headers
         - rate-limit
 
     # Frontend dashboard HTTP
@@ -78,7 +86,7 @@ http:
         - web
       priority: 1
       middlewares:
-        - security-headers
+        - platform-security-headers
 
     # Frontend dashboard HTTPS
     frontend-secure:
@@ -89,7 +97,7 @@ http:
       priority: 1
       tls: {}
       middlewares:
-        - security-headers
+        - platform-security-headers
 
 
 
@@ -111,4 +119,3 @@ http:
       loadBalancer:
         servers:
           - url: "http://paas-backend:8080/proxy/"
-
