@@ -173,6 +173,7 @@ def certbot_worker():
 
         if ssl_success:
             logging.info(f"[{subdomain}] Background SSL certificates successfully provisioned. Committing Nginx SSL config.")
+            INSPECT_CACHE.pop(domain, None)
             with GLOBAL_SYNC_LOCK:
                 success, msg, conf_hash = _apply_config_internal(subdomain, domain, all_domains_str, internal_ip, port, project_dir, ssl_enabled=True)
                 if success:
@@ -360,20 +361,10 @@ server {{
 
 def cert_covers_all(cert_name, domains):
     """Checks if an existing Let's Encrypt certificate covers all required domains."""
-    cert_file = f"/etc/letsencrypt/live/{cert_name}/fullchain.pem"
-    if not os.path.exists(cert_file):
+    cert_info = inspect_certificate(cert_name)
+    if not cert_info:
         return False
-    try:
-        cmd = ["openssl", "x509", "-in", cert_file, "-text", "-noout"]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        cert_text = result.stdout.lower()
-        for d in domains:
-            if f"dns:{d.lower()}" not in cert_text:
-                return False
-        return True
-    except Exception as e:
-        logging.error(f"Error inspecting certificate {cert_name}: {str(e)}")
-        return False
+    return all(certificate_covers_domain(cert_info, d) for d in domains)
 
 INSPECT_CACHE = {}
 
