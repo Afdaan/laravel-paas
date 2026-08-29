@@ -544,6 +544,10 @@ export const billingAPI = {
   catalog: () =>
     api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/billing/catalog'),
 
+  // Public, no auth required - used by the marketing landing page.
+  publicCatalog: () =>
+    api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/public/billing/catalog'),
+
   overview: () =>
     api.get<BillingOverview>('/billing/overview'),
 

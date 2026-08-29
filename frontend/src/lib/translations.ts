@@ -165,7 +165,7 @@ export const translations = {
       primaryNavigation: "Primary navigation",
       signIn: "Sign in",
       dashboard: "Dashboard",
-      nav: { features: "Features", workflow: "Deployment process", security: "FAQ" },
+      nav: { features: "Features", workflow: "Deployment process", pricing: "Pricing", security: "FAQ" },
       language: { toggle: "Change language", label: "Language" },
       hero: {
         title: "Deploy your applications with Runara",
@@ -221,7 +221,25 @@ export const translations = {
           readiness: { title: "Readiness", description: "The new container has to answer its health check and pass any configured release commands before it can take traffic." },
           release: { title: "Handover", description: "Traffic moves to the new container, then the previous one is stopped." }
         },
-        outcome: "If the replacement fails any check, Runara leaves it stopped and keeps the current release live. To roll back, redeploy an earlier revision — Runara reuses a cached image when one exists."
+        outcome: "If the replacement fails any check, Runara leaves it stopped and keeps the current release live. To roll back, redeploy an earlier revision - Runara reuses a cached image when one exists."
+      },
+      pricing: {
+        title: "Pay for what you run, top up when you need to.",
+        description: "Runara bills usage in credits. Compute and database plans draw from your balance monthly; add credits with any of the supported payment methods.",
+        plansLabel: "Compute and database plans",
+        plansDescription: "Each plan reserves a fixed CPU, memory, and storage allowance and draws a fixed monthly credit amount.",
+        topupLabel: "Add credits",
+        topupDescription: "Buy credits in fixed packages, priced in Indonesian Rupiah.",
+        methodsLabel: "Payment methods",
+        methods: {
+          qris: "QRIS",
+          bankTransfer: "Bank transfer",
+          ewallet: "E-wallet",
+          card: "Credit card"
+        },
+        unavailable: "Pricing is temporarily unavailable.",
+        noPlans: "No plans published yet.",
+        noPackages: "No packages published yet."
       },
       trust: {
         title: "Frequently asked questions.",
@@ -2210,7 +2228,7 @@ export const translations = {
       primaryNavigation: "Navigasi utama",
       signIn: "Masuk",
       dashboard: "Dashboard",
-      nav: { features: "Fitur", workflow: "Cara deploy", security: "FAQ" },
+      nav: { features: "Fitur", workflow: "Cara deploy", pricing: "Harga", security: "FAQ" },
       language: { toggle: "Ganti bahasa", label: "Bahasa" },
       hero: {
         title: "Deploy aplikasi di Runara",
@@ -2267,6 +2285,24 @@ export const translations = {
           release: { title: "Traffic handover", description: "Traffic pindah ke container baru, lalu container sebelumnya dihentikan." }
         },
         outcome: "Kalau rilis baru gagal di salah satu check, Runara menghentikannya dan rilis aktif tetap jalan. Mau rollback? Deploy ulang revisi sebelumnya; image cache dipakai kalau tersedia."
+      },
+      pricing: {
+        title: "Bayar sesuai pemakaian, top up kapan saja.",
+        description: "Runara pakai sistem kredit. Plan compute dan database motong saldo tiap bulan; tambah kredit lewat metode pembayaran yang tersedia.",
+        plansLabel: "Plan compute dan database",
+        plansDescription: "Tiap plan punya alokasi CPU, memori, dan storage tetap, dengan potongan kredit bulanan tetap.",
+        topupLabel: "Tambah kredit",
+        topupDescription: "Beli kredit lewat paket dengan harga tetap, dalam Rupiah.",
+        methodsLabel: "Metode pembayaran",
+        methods: {
+          qris: "QRIS",
+          bankTransfer: "Transfer bank",
+          ewallet: "E-wallet",
+          card: "Kartu kredit"
+        },
+        unavailable: "Info harga lagi tidak tersedia.",
+        noPlans: "Belum ada plan yang dipublikasikan.",
+        noPackages: "Belum ada paket yang dipublikasikan."
       },
       trust: {
         title: "Yang sering ditanya.",
