@@ -63,6 +63,37 @@ func TestRateLimitLoginMiddlewareHeaderAndErrorMsg(t *testing.T) {
 	assert.NotEmpty(t, resp.Header.Get("Retry-After"))
 }
 
+func TestRateLimitPublicCatalogAllowsAnonymousRequests(t *testing.T) {
+	previousLimiter := publicCatalogLimiter
+	publicCatalogLimiter = NewRateLimiter(60, time.Minute)
+	t.Cleanup(func() {
+		publicCatalogLimiter = previousLimiter
+	})
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			if appError, ok := err.(*apperr.AppError); ok {
+				return c.Status(appError.HTTPStatus).JSON(fiber.Map{"error": appError.Message})
+			}
+			return c.SendStatus(500)
+		},
+	})
+	app.Get("/catalog", RateLimitPublicCatalog(), func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	for requestNumber := 1; requestNumber <= 60; requestNumber++ {
+		response, err := app.Test(httptest.NewRequest("GET", "/catalog", nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, response.StatusCode, "expected anonymous request %d to be allowed", requestNumber)
+	}
+
+	response, err := app.Test(httptest.NewRequest("GET", "/catalog", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 429, response.StatusCode)
+	assert.NotEmpty(t, response.Header.Get("Retry-After"))
+}
+
 type mockLimiter struct {
 	allowed bool
 	ttl     time.Duration

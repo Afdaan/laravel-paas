@@ -103,9 +103,10 @@ func formatRateLimitMsg(baseMsg string, sec int) string {
 
 // Global rate limiters for different endpoint categories
 var (
-	loginLimiter     = NewRateLimiter(5, 1*time.Minute)  // 5 req/min per IP
-	queryLimiter     = NewRateLimiter(10, 1*time.Minute) // 10 req/min per user
-	proxyLimiter     = NewRateLimiter(60, 1*time.Minute) // 60 req/min per IP
+	loginLimiter              = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per IP
+	queryLimiter              = NewRateLimiter(10, 1*time.Minute)  // 10 req/min per user
+	publicCatalogLimiter      = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per IP
+	proxyLimiter              = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per IP
 	consoleLimiter            = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per project
 	importLimiter             = NewRateLimiter(3, 5*time.Minute)   // 3 req/5min per user
 	autoRenewLimiter          = NewRateLimiter(3, 1*time.Minute)   // 3 req/min per user
@@ -189,6 +190,18 @@ func RateLimitQuery() fiber.Handler {
 		if !allowed {
 			c.Set("Retry-After", strconv.Itoa(sec))
 			return apperr.NewRateLimited(formatRateLimitMsg("Too many database queries", sec), sec)
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitPublicCatalog limits anonymous catalog reads by client IP.
+func RateLimitPublicCatalog() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		allowed, sec := publicCatalogLimiter.Allow(c.IP())
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many catalog requests", sec), sec)
 		}
 		return c.Next()
 	}

@@ -184,7 +184,7 @@ func Setup(
 	api.Post("/webhooks/pakasir", middleware.NoStore(), middleware.RateLimitPakasirWebhook(redisService), middleware.MaxBody(8*1024), billingHandler.PakasirWebhook)
 
 	// Public billing catalog for the marketing landing page (no auth required).
-	api.Get("/public/billing/catalog", middleware.NoStore(), middleware.RateLimitQuery(), billingHandler.ListActiveCatalog)
+	api.Get("/public/billing/catalog", middleware.NoStore(), middleware.RateLimitPublicCatalog(), billingHandler.ListActiveCatalog)
 
 	// -----------------------------
 	// System Init (public, rate limited)
