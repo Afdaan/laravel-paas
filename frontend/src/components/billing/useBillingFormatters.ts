@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import { toMajorUnits } from '@/lib/billing-ui'
+import { currencyMinorUnitDigits, toMajorUnits } from '@/lib/billing-ui'
 import useTranslation from '@/lib/useTranslation'
 
 export function useBillingFormatters() {
@@ -19,7 +19,13 @@ export function useBillingFormatters() {
     return (amountMinor: number, currency: string) => {
       let formatter = cache.get(currency)
       if (!formatter) {
-        formatter = new Intl.NumberFormat(locale, { style: 'currency', currency })
+        const fractionDigits = currencyMinorUnitDigits(currency)
+        formatter = new Intl.NumberFormat(locale, {
+          style: 'currency',
+          currency,
+          minimumFractionDigits: fractionDigits,
+          maximumFractionDigits: fractionDigits,
+        })
         cache.set(currency, formatter)
       }
       return formatter.format(toMajorUnits(amountMinor, currency))

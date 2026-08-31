@@ -47,9 +47,13 @@ const CURRENCY_MINOR_UNITS: Record<string, number> = { IDR: 0, USD: 2 }
 
 export const SUPPORTED_CURRENCIES = Object.keys(CURRENCY_MINOR_UNITS)
 
+export function currencyMinorUnitDigits(currency: string): number {
+  return CURRENCY_MINOR_UNITS[currency] ?? 2
+}
+
 // Backend stores money in minor units; Intl currency formatting expects major units.
 // Unknown currencies fall back to 2 decimals — the conservative guess, since assuming
 // zero would display a cents amount as if it were 100x larger.
 export function toMajorUnits(amountMinor: number, currency: string): number {
-  return amountMinor / 10 ** (CURRENCY_MINOR_UNITS[currency] ?? 2)
+  return amountMinor / 10 ** currencyMinorUnitDigits(currency)
 }

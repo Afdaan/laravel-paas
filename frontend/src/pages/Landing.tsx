@@ -66,6 +66,15 @@ export default function Landing() {
 
   const { formatCredits, formatMoney } = useBillingFormatters()
   const [catalog, setCatalog] = useState<CatalogState>({ status: 'loading' })
+  const specGroups =
+    catalog.status === 'success'
+      ? Object.values(
+          catalog.data.specs.reduce<Record<string, { type: string; items: BillingCatalogSpec[] }>>((acc, spec) => {
+            ;(acc[spec.type] ??= { type: spec.type, items: [] }).items.push(spec)
+            return acc
+          }, {}),
+        )
+      : []
 
   useEffect(() => {
     document.documentElement.lang = language
@@ -286,56 +295,71 @@ export default function Landing() {
                 <div className="mt-14 grid gap-6 lg:mt-20 lg:grid-cols-12">
                   <article className="border border-border bg-card lg:col-span-7">
                     <div className="p-6 sm:p-8 lg:p-10">
-                      <h3 className="text-sm font-semibold text-primary">{t('landing.pricing.plansLabel')}</h3>
-                      <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t('landing.pricing.plansDescription')}</p>
-                      <dl className="mt-8 border-t border-border">
+                      <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">{t('landing.pricing.plansLabel')}</h3>
+                      <p className="mt-3 max-w-xl text-[15px] leading-6 tracking-[-0.01em] text-muted-foreground">{t('landing.pricing.plansDescription')}</p>
+                      <div className="mt-8">
                         {catalog.status === 'loading' &&
                           Array.from({ length: 3 }).map((_, i) => (
-                            <div key={i} className="h-16 animate-pulse border-b border-border bg-muted/30" />
+                            <div key={i} className="h-16 animate-pulse border-t border-border bg-muted/30" />
                           ))}
                         {catalog.status === 'success' &&
-                          catalog.data.specs.map((spec) => (
-                            <div key={spec.id} className="grid gap-2 border-b border-border py-5 sm:grid-cols-[minmax(9rem,0.65fr)_1.35fr] sm:gap-6">
-                              <dt className="text-sm font-bold">
-                                {spec.name}
-                                {spec.badge_text && (
-                                  <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                                    {spec.badge_text}
-                                  </span>
-                                )}
-                              </dt>
-                              <dd className="text-sm leading-6 text-muted-foreground">
-                                {spec.cpu_millicores / 1000} vCPU · {spec.memory_mb} MB RAM
-                                {spec.storage_gb ? ` · ${spec.storage_gb} GB storage` : ''}
-                                {' · '}
-                                <span className="font-semibold text-foreground">
-                                  {formatCredits(spec.monthly_credits)} {t('billing.credits')}
-                                </span>
-                                /mo
-                              </dd>
+                          catalog.data.specs.length > 0 &&
+                          specGroups.map(({ type, items }) => (
+                            <div key={type}>
+                              <p className="border-t border-border pt-5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/80">
+                                {t(`billing.resourceTypes.${type}`)}
+                              </p>
+                              <dl>
+                                {items.map((spec) => (
+                                  <div key={spec.id} className="grid gap-2 border-b border-border py-5 sm:grid-cols-[minmax(9rem,0.65fr)_1.35fr] sm:gap-6">
+                                    <dt className="text-base font-semibold tracking-[-0.02em] text-foreground">
+                                      {spec.name}
+                                      {spec.badge_text && (
+                                        <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-primary">
+                                          {spec.badge_text}
+                                        </span>
+                                      )}
+                                    </dt>
+                                    <dd className="font-mono text-[12px] leading-6 tracking-[-0.025em] text-muted-foreground tabular-nums sm:text-[13px]">
+                                      {spec.cpu_millicores / 1000} vCPU · {spec.memory_mb} MB RAM
+                                      {spec.storage_gb ? ` · ${spec.storage_gb} GB storage` : ''}
+                                      {' · '}
+                                      <span className="font-sans text-sm font-bold tracking-[-0.015em] text-foreground">
+                                        {formatCredits(spec.monthly_credits)} {t('billing.credits')}
+                                      </span>
+                                      <span className="font-sans text-xs tracking-normal">/mo</span>
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
                             </div>
                           ))}
                         {catalog.status === 'success' && catalog.data.specs.length === 0 && (
-                          <p className="border-b border-border py-5 text-sm text-muted-foreground">{t('landing.pricing.noPlans')}</p>
+                          <p className="border-t border-border py-5 text-sm text-muted-foreground">{t('landing.pricing.noPlans')}</p>
                         )}
-                      </dl>
+                      </div>
                     </div>
                   </article>
 
                   <article className="border border-border bg-card lg:col-span-5">
                     <div className="p-6 sm:p-8 lg:p-10">
                       <h3 className="text-sm font-semibold text-primary">{t('landing.pricing.topupLabel')}</h3>
-                      <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t('landing.pricing.topupDescription')}</p>
+                      <p className="mt-3 max-w-xl text-[15px] leading-6 tracking-[-0.01em] text-muted-foreground">{t('landing.pricing.topupDescription')}</p>
                       <dl className="mt-8 border-t border-border">
                         {catalog.status === 'loading' &&
                           Array.from({ length: 3 }).map((_, i) => (
-                            <div key={i} className="h-12 animate-pulse border-b border-border bg-muted/30" />
+                            <div key={i} className="h-16 animate-pulse border-b border-border bg-muted/30" />
                           ))}
                         {catalog.status === 'success' &&
                           catalog.data.packages.map((pkg) => (
-                            <div key={pkg.id} className="flex items-baseline justify-between gap-4 border-b border-border py-4">
-                              <dt className="text-sm font-bold">{formatCredits(pkg.credits)} {t('billing.credits')}</dt>
-                              <dd className="text-sm text-muted-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</dd>
+                            <div
+                              key={pkg.id}
+                              className="grid gap-1 border-b border-border py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-baseline sm:gap-4"
+                            >
+                              <dt className="text-sm font-medium text-foreground">{formatCredits(pkg.credits)} {t('billing.credits')}</dt>
+                              <dd className="whitespace-nowrap text-sm font-normal text-muted-foreground tabular-nums sm:pr-6 sm:text-right lg:pr-8">
+                                {formatMoney(pkg.amount_minor, pkg.currency)}
+                              </dd>
                             </div>
                           ))}
                         {catalog.status === 'success' && catalog.data.packages.length === 0 && (
@@ -347,7 +371,7 @@ export default function Landing() {
                         <h3 className="text-sm font-semibold text-primary">{t('landing.pricing.methodsLabel')}</h3>
                         <ul className="mt-4 grid grid-cols-2 gap-3">
                           {paymentMethods.map(({ key, icon: Icon }) => (
-                            <li key={key} className="flex items-center gap-2 border border-border px-3 py-2.5 text-sm font-medium">
+                            <li key={key} className="flex items-center gap-2 border border-border px-3 py-2.5 text-[13px] font-medium tracking-[-0.015em] transition-colors hover:border-primary/40">
                               <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
                               {t(`landing.pricing.methods.${key}`)}
                             </li>
