@@ -184,8 +184,10 @@ func Load() *Config {
 	jwtPreviousKeys, jwtPreviousErr := parseJWTPreviousKeys(getEnv("JWT_PREVIOUS_KEYS", ""))
 	csrfPreviousSecrets, csrfPreviousErr := parseCSRFPreviousSecrets(getEnv("CSRF_SECRET_PREVIOUS", ""))
 	trustedProxyCIDRsRaw, trustedProxyCIDRsConfigured := os.LookupEnv("TRUSTED_PROXY_CIDRS")
-	if !trustedProxyCIDRsConfigured {
-		trustedProxyCIDRsRaw = "127.0.0.1/32"
+	trustedProxyCIDRsRaw = strings.TrimSpace(trustedProxyCIDRsRaw)
+	if !trustedProxyCIDRsConfigured || trustedProxyCIDRsRaw == "" {
+		trustedProxyCIDRsRaw = "127.0.0.1/32,::1/128"
+		trustedProxyCIDRsConfigured = false
 	}
 	trustedProxyCIDRs, trustedProxyCIDRsErr := parseCIDRList(trustedProxyCIDRsRaw)
 

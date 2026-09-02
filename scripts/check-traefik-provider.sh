@@ -29,6 +29,24 @@ config=$(render_traefik_static_config "$tmp/traefik.yml.template")
 [ "$(stat -c '%a:%u' "$config")" = "600:$(id -u)" ]
 [ "$(realpath "$config")" != "$(realpath "$tmp/dynamic")/traefik.yml" ]
 
+# Verify rendered config does NOT auto-trust Docker bridge gateways
+! grep -E '172\.(17|18|19|20|28|29)\.0\.1/32' "$config"
+
+# Verify invalid, wildcard, and broad CIDR values are strictly rejected
+for bad_cidr in '1.2.3.4/0' '0:0:0:0:0:0:0:0/0' '::::/128' '172.28.0.0/16' '10.0.0.0/8' 'fc00::/7' '999.1.1.1' '0.0.0.0'; do
+  if (TRAEFIK_PRIVATE_DIR=$invalid_private_dir INTERNAL_API_TOKEN="$token" TRAEFIK_TRUSTED_IPS="$bad_cidr" render_traefik_static_config "$tmp/traefik.yml.template") >/dev/null 2>&1; then
+    printf 'insecure/invalid CIDR accepted: %s\n' "$bad_cidr" >&2
+    exit 1
+  fi
+done
+
+# Verify valid exact peer CIDR normalization
+valid_test_dir="$tmp/valid_test"
+mkdir -m 700 "$valid_test_dir"
+valid_config=$(TRAEFIK_PRIVATE_DIR="$valid_test_dir" INTERNAL_API_TOKEN="$token" TRAEFIK_TRUSTED_IPS="172.29.0.4, 2001:db8::1" render_traefik_static_config "$tmp/traefik.yml.template")
+grep -F '172.29.0.4/32' "$valid_config"
+grep -F '2001:db8::1/128' "$valid_config"
+
 for invalid in '"' '\\' $'\r' $'\n' ' ' g; do
   if (TRAEFIK_PRIVATE_DIR=$invalid_private_dir INTERNAL_API_TOKEN="${token:0:63}$invalid" render_traefik_static_config "$tmp/traefik.yml.template") >/dev/null 2>&1; then
     printf 'unsafe token accepted\n' >&2

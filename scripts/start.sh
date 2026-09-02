@@ -53,6 +53,7 @@ init_vars() {
     HOST_ROOT_PATH=${HOST_ROOT_PATH:-"$PROJECT_ROOT"}
     MYSQL_CONTAINER_NAME=${MYSQL_CONTAINER_NAME:-"paas-mysql"}
     POSTGRES_CONTAINER_NAME=${POSTGRES_CONTAINER_NAME:-"paas-user-postgres"}
+    TRAEFIK_STATIC_IP="${TRAEFIK_STATIC_IP:-172.28.0.2}"
 
     PROJECTS_PATH="${PROJECTS_PATH:-${PROJECT_ROOT}/storage/projects}"
     DATA_PATH="${DATA_PATH:-${PROJECT_ROOT}/storage/data}"
@@ -65,7 +66,16 @@ init_vars() {
 }
 
 prepare_env() {
-    docker network create paas-network 2>/dev/null || true
+    if ! docker network inspect paas-network >/dev/null 2>&1; then
+        echo -e "${YELLOW}Creating paas-network network...${NC}"
+        if ! docker network create --subnet=172.28.0.0/16 --ip-range=172.28.1.0/24 paas-network 2>/dev/null; then
+            echo -e "${YELLOW}Retrying basic paas-network creation...${NC}"
+            if ! docker network create paas-network; then
+                echo -e "${RED}[ERROR] Failed to create docker network paas-network.${NC}"
+                exit 1
+            fi
+        fi
+    fi
     sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
 
     # Deployment user identity for deterministic ownership
@@ -362,9 +372,19 @@ start_traefik() {
         return 1
     fi
 
+    local traefik_ip_param=""
+    local net_subnet=$(docker network inspect paas-network --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)
+    if [[ "$net_subnet" == *"172.28.0.0/16"* ]]; then
+        local ip_in_use=$(docker ps -q 2>/dev/null | xargs docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null | grep "^${TRAEFIK_STATIC_IP}$" || true)
+        if [ -z "$ip_in_use" ]; then
+            traefik_ip_param="--ip $TRAEFIK_STATIC_IP"
+        fi
+    fi
+
     docker run -d \
         --name paas-traefik \
         --network paas-network \
+        $traefik_ip_param \
         --restart unless-stopped \
         -p ${HTTP_PORT}:80 \
         -p ${HTTPS_PORT}:443 \
@@ -375,13 +395,44 @@ start_traefik() {
         traefik:v3.6
 }
 
+resolve_trusted_proxies() {
+    local traefik_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' paas-traefik 2>/dev/null || true)
+    local traefik_cidr=""
+    if [ -n "$traefik_ip" ]; then
+        traefik_cidr="${traefik_ip}/32"
+    else
+        local net_subnet=$(docker network inspect paas-network --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)
+        if [[ "$net_subnet" == *"172.28.0.0/16"* ]] && [ -n "$TRAEFIK_STATIC_IP" ]; then
+            traefik_cidr="${TRAEFIK_STATIC_IP}/32"
+        fi
+    fi
+
+    local base_proxies="127.0.0.1/32,::1/128"
+    if [ -n "$traefik_cidr" ]; then
+        base_proxies="${base_proxies},${traefik_cidr}"
+    fi
+
+    if [ -n "$TRUSTED_PROXY_CIDRS" ]; then
+        # Merge base proxies with any user-configured proxies while deduplicating entries
+        echo "${base_proxies},${TRUSTED_PROXY_CIDRS}" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -
+    else
+        echo "$base_proxies"
+    fi
+}
+
 start_backend() {
     echo -e "${YELLOW}Deploying backend with auto-increment tag...${NC}"
     if [ ! -d "${PROJECT_ROOT}/backend" ]; then
         echo -e "${RED}Error: backend directory not found${NC}"
         return 1
     fi
+    local traefik_running=$(docker inspect -f '{{.State.Running}}' paas-traefik 2>/dev/null || echo "false")
+    if [ "$traefik_running" != "true" ]; then
+        echo -e "${YELLOW}paas-traefik is not running, starting Traefik first...${NC}"
+        start_traefik
+    fi
     local backend_tag=$(get_next_service_tag "backend")
+    local backend_trusted_proxies=$(resolve_trusted_proxies)
     deploy_with_anti_downtime "backend" "${PROJECT_ROOT}/backend" "$backend_tag" \
         --network paas-network \
         --restart unless-stopped \
@@ -395,7 +446,7 @@ start_backend() {
         -e APP_MODE="$APP_MODE" \
         -e APP_ENV="${APP_ENV:-production}" \
         -e FRONTEND_URL="${FRONTEND_URL:-http://$BASE_DOMAIN}" \
-        -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
+        -e TRUSTED_PROXY_CIDRS="$backend_trusted_proxies" \
         -e INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
@@ -457,6 +508,11 @@ start_backend() {
 
 start_worker() {
     echo -e "${YELLOW}Building standalone worker cluster image...${NC}"
+    local traefik_running=$(docker inspect -f '{{.State.Running}}' paas-traefik 2>/dev/null || echo "false")
+    if [ "$traefik_running" != "true" ]; then
+        echo -e "${YELLOW}paas-traefik is not running, starting Traefik first...${NC}"
+        start_traefik
+    fi
     local worker_tag=$(get_next_service_tag "worker")
     DOCKER_BUILDKIT=1 docker build -t "paas-worker:$worker_tag" -t "paas-worker:latest" -f "${PROJECT_ROOT}/worker/Dockerfile" "${PROJECT_ROOT}" || true
     local redis_auth_param=""
@@ -467,6 +523,7 @@ start_worker() {
     docker images "paas-worker" --format "{{.Tag}}" | grep -E '^[0-9]+$' | grep -v "^${worker_tag}$" | xargs -I {} docker rmi "paas-worker:{}" 2>/dev/null || true
 
     echo -e "${YELLOW}Deploying standalone worker manager...${NC}"
+    local worker_trusted_proxies=$(resolve_trusted_proxies)
     docker rm -f paas-worker-manager 2>/dev/null || true
     docker run -d \
         --name paas-worker-manager \
@@ -508,7 +565,7 @@ start_worker() {
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
         -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
         -e APP_ENV="${APP_ENV:-production}" \
-        -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
+        -e TRUSTED_PROXY_CIDRS="$worker_trusted_proxies" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
@@ -538,11 +595,11 @@ start_frontend() {
 start_all() {
     prepare_env
     run_backups
+    start_traefik
     start_mysql
     start_postgres
     start_user_postgres
     start_redis
-    start_traefik
     start_buildkit
     start_backend
     start_worker

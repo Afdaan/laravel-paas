@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-redis/redismock/v9"
 )
@@ -181,6 +182,47 @@ func TestEnqueueEnvUpdateIfQuiet_LRangeError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "read error") {
 		t.Errorf("Expected read error, got: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Expectations were not met: %v", err)
+	}
+}
+
+func TestRateLimitScriptAllowedAndExceeded(t *testing.T) {
+	redisClient, mock := redismock.NewClientMock()
+	redisService := NewRedisServiceWithClient(redisClient)
+
+	key := "test:rate:limit:key"
+	limit := 10
+	duration := 60 * time.Second
+	durationMs := duration.Milliseconds()
+
+	// 1. Allowed request
+	mock.ExpectEvalSha(rateLimitScript.Hash(), []string{key}, durationMs, limit).
+		SetVal([]interface{}{int64(1), int64(0)})
+
+	allowed, ttl, err := redisService.RateLimit(key, limit, duration)
+	if err != nil {
+		t.Fatalf("RateLimit failed: %v", err)
+	}
+	if !allowed || ttl != 0 {
+		t.Errorf("Expected allowed=true and ttl=0, got allowed=%v, ttl=%v", allowed, ttl)
+	}
+
+	// 2. Exceeded request (self-healed with remaining TTL in ms)
+	mock.ExpectEvalSha(rateLimitScript.Hash(), []string{key}, durationMs, limit).
+		SetVal([]interface{}{int64(0), int64(45000)})
+
+	allowed, ttl, err = redisService.RateLimit(key, limit, duration)
+	if err != nil {
+		t.Fatalf("RateLimit failed: %v", err)
+	}
+	if allowed {
+		t.Error("Expected allowed=false, got true")
+	}
+	if ttl != 45*time.Second {
+		t.Errorf("Expected ttl=45s, got %v", ttl)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

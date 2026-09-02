@@ -540,6 +540,19 @@ else
     return 0
 end
 `)
+
+	rateLimitScript = redis.NewScript(`
+local current = redis.call("incr", KEYS[1])
+local ttl = redis.call("pttl", KEYS[1])
+if current == 1 or ttl < 0 then
+    redis.call("pexpire", KEYS[1], ARGV[1])
+    ttl = tonumber(ARGV[1])
+end
+if current > tonumber(ARGV[2]) then
+    return {0, ttl}
+end
+return {1, 0}
+`)
 )
 
 func generateLockToken() string {
@@ -758,26 +771,41 @@ func (r *RedisService) IsJTIRevoked(jti string) (bool, error) {
 	return exists > 0, err
 }
 
-// RateLimit checks and increments a rate limit counter
+// RateLimit checks and increments a rate limit counter atomically using Redis Lua script.
 func (r *RedisService) RateLimit(key string, limit int, duration time.Duration) (bool, time.Duration, error) {
-	count, err := r.client.Incr(r.ctx, key).Result()
+	if limit <= 0 {
+		return false, duration, nil
+	}
+	durationMs := duration.Milliseconds()
+	if durationMs <= 0 {
+		durationMs = 1000
+	}
+
+	result, err := rateLimitScript.Run(r.ctx, r.client, []string{key}, durationMs, limit).Result()
 	if err != nil {
 		return false, 0, err
 	}
 
-	if count == 1 {
-		r.client.Expire(r.ctx, key, duration)
+	vals, ok := result.([]interface{})
+	if !ok || len(vals) < 2 {
+		return false, 0, fmt.Errorf("invalid rate limit script response")
 	}
 
-	if count > int64(limit) {
-		ttl, _ := r.client.TTL(r.ctx, key).Result()
-		if ttl < time.Second {
-			ttl = time.Second
-		}
-		return false, ttl, nil // Limit exceeded
+	allowedVal, ok1 := vals[0].(int64)
+	ttlVal, ok2 := vals[1].(int64)
+	if !ok1 || !ok2 {
+		return false, 0, fmt.Errorf("unexpected types in rate limit response")
 	}
 
-	return true, 0, nil
+	if allowedVal == 1 {
+		return true, 0, nil
+	}
+
+	remaining := time.Duration(ttlVal) * time.Millisecond
+	if remaining < time.Second {
+		remaining = time.Second
+	}
+	return false, remaining, nil
 }
 
 // IncrDriftFailure increments the consecutive drift check failure count for a domain and returns the current count.

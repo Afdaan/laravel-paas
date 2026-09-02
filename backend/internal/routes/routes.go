@@ -168,7 +168,7 @@ func Setup(
 	// Subdomain Proxy for User Projects (protected + rate limited)
 	// ===========================================
 	proxyGroup := app.Group("/proxy", middleware.ProxyAuth())
-	proxyGroup.Use(middleware.RateLimitProxy())
+	proxyGroup.Use(middleware.RateLimitProxy(redisService))
 	proxyGroup.Use(middleware.ValidateProxyTarget())
 	proxyGroup.All("/*", projectHandler.ProxyToProject)
 	proxyGroup.All("", projectHandler.ProxyToProject)
@@ -184,7 +184,7 @@ func Setup(
 	api.Post("/webhooks/pakasir", middleware.NoStore(), middleware.RateLimitPakasirWebhook(redisService), middleware.MaxBody(8*1024), billingHandler.PakasirWebhook)
 
 	// Public billing catalog for the marketing landing page (no auth required).
-	api.Get("/public/billing/catalog", middleware.NoStore(), middleware.RateLimitPublicCatalog(), billingHandler.ListActiveCatalog)
+	api.Get("/public/billing/catalog", middleware.NoStore(), middleware.RateLimitPublicCatalog(redisService), billingHandler.ListActiveCatalog)
 
 	// -----------------------------
 	// System Init (public, rate limited)
@@ -218,7 +218,7 @@ func Setup(
 	protected.Put("/auth/profile", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.UpdateProfile)
 	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.GenerateStreamToken)
 	protected.Post("/auth/return-to-admin", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.ReturnToAdmin)
-	protected.Post("/auth/re-auth", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitLogin(redisService), authHandler.Reauthenticate)
+	protected.Post("/auth/re-auth", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitReauth(redisService), authHandler.Reauthenticate)
 
 	// Billing catalog remains available while payment collection stays disabled.
 	billingRoutes := protected.Group("/billing", middleware.NoStore())
@@ -234,7 +234,7 @@ func Setup(
 	billingMutations.Post("/topups/by-ref/:topupRef/reconcile", middleware.MaxBody(8*1024), middleware.RateLimitTopupReconcile(redisService), billingHandler.ReconcileTopupByRef)
 	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), middleware.RateLimitTopupReconcile(redisService), billingHandler.ReconcileTopup)
 	billingMutations.Put("/profile", middleware.MaxBody(16*1024), billingHandler.UpdateBillingProfile)
-	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), middleware.RateLimitAutoRenew(), billingHandler.UpdateAutoRenew)
+	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), middleware.RateLimitAutoRenew(redisService), billingHandler.UpdateAutoRenew)
 	billingMutations.Post("/resources/:resourceType/:resourceID/pay", middleware.MaxBody(1024), billingHandler.PayDueResource)
 
 	// GitHub Integration
@@ -360,7 +360,7 @@ func Setup(
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
-	projects.Post("/:id/console", middleware.RateLimitConsole(), projectHandler.RunConsoleCommand)
+	projects.Post("/:id/console", middleware.RateLimitConsole(redisService), projectHandler.RunConsoleCommand)
 	projects.Get("/:id/env", projectHandler.GetEnv)
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
 
@@ -394,15 +394,15 @@ func Setup(
 	projectDatabases.Get("/export", databaseHandler.ExportDatabase)
 	projectDatabaseMutations.Delete("/tables/:table/rows", databaseHandler.DeleteTableRow)
 	projectDatabaseMutations.Put("/tables/:table/rows", databaseHandler.UpdateTableRow)
-	projectDatabaseMutations.Post("/query", middleware.RateLimitQuery(), databaseHandler.ExecuteQuery)
-	projectDatabaseMutations.Post("/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
+	projectDatabaseMutations.Post("/query", middleware.RateLimitQuery(redisService), databaseHandler.ExecuteQuery)
+	projectDatabaseMutations.Post("/import", middleware.RateLimitImport(redisService), databaseHandler.ImportDatabase)
 	projectDatabaseMutations.Post("/reset", databaseHandler.ResetDatabase)
 
 	// ===========================================
 	// Subdomain & Custom Domain Project Ingress Proxy Fallback
 	// Proxy requests to project containers. Only bypass /api to system handlers if host is Control Plane host.
 	// ===========================================
-	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
+	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(redisService), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
 		host := c.Hostname()
 		path := c.Path()
 

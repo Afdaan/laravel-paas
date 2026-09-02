@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,6 +76,37 @@ func TestProductionRequiresExplicitTrustedProxyCIDRs(t *testing.T) {
 	cfg.TrustedProxyCIDRsConfigured = false
 	if err := cfg.ValidateProductionSecurity(); err == nil || err.Error() != "TRUSTED_PROXY_CIDRS must be explicitly configured in production" {
 		t.Fatalf("unexpected validation result: %v", err)
+	}
+}
+
+func TestEmptyTrustedProxyCIDRsTreatedAsUnconfigured(t *testing.T) {
+	t.Setenv("TRUSTED_PROXY_CIDRS", "   ")
+	t.Setenv("JWT_SECRET", "abcdefghijklmnopqrstuvwxyz123456")
+	t.Setenv("CSRF_SECRET", "abcdefghijklmnopqrstuvwxyz123456")
+	t.Setenv("CREDENTIAL_ENCRYPTION_KEY", "abcdefghijklmnopqrstuvwxyz123456")
+	t.Setenv("UID_SALT", "abcdefghijklmnopqrstuvwxyz123456")
+	t.Setenv("INTERNAL_API_TOKEN", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("APP_ENV", "production")
+
+	cfg := Load()
+	if cfg.TrustedProxyCIDRsConfigured {
+		t.Fatal("expected empty TRUSTED_PROXY_CIDRS to be treated as unconfigured (false)")
+	}
+	if len(cfg.TrustedProxyCIDRs) != 2 || cfg.TrustedProxyCIDRs[0] != "127.0.0.1/32" {
+		t.Fatalf("expected loopback fallback for empty TRUSTED_PROXY_CIDRS, got: %v", cfg.TrustedProxyCIDRs)
+	}
+	if err := cfg.ValidateProductionSecurity(); err == nil {
+		t.Fatal("expected production validation error for empty TRUSTED_PROXY_CIDRS")
+	}
+}
+
+func TestUnconfiguredTrustedProxyCIDRsDoesNotIncludeTenantSubnets(t *testing.T) {
+	t.Setenv("TRUSTED_PROXY_CIDRS", "")
+	cfg := Load()
+	for _, cidr := range cfg.TrustedProxyCIDRs {
+		if strings.HasPrefix(cidr, "10.") || strings.HasPrefix(cidr, "172.16.") || strings.HasPrefix(cidr, "192.168.") {
+			t.Fatalf("unconfigured proxy should not trust broad RFC1918 subnets, found: %s", cidr)
+		}
 	}
 }
 
