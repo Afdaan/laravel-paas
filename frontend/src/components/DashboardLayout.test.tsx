@@ -51,12 +51,13 @@ describe('DashboardLayout mobile drawer', () => {
     vi.clearAllMocks()
   })
 
-  const renderLayout = () =>
+  const renderLayout = (initialPath = '/dashboard') =>
     render(
-      <MemoryRouter initialEntries={['/dashboard']}>
+      <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
           <Route path="/" element={<DashboardLayout />}>
             <Route path="dashboard" element={<div data-testid="outlet">Outlet</div>} />
+            <Route path="billing" element={<div data-testid="billing-outlet">Billing</div>} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -127,5 +128,16 @@ describe('DashboardLayout mobile drawer', () => {
     expect(await screen.findByRole('button', { name: 'billing.reviewOverdueBilling' })).toHaveTextContent(
       'billing.paymentDueCount',
     )
+  })
+
+  it('does not duplicate billing summary requests on the billing page', async () => {
+    const overviewSpy = vi.spyOn(billingAPI, 'overview').mockResolvedValue({ data: {} } as never)
+    const statusSpy = vi.spyOn(billingAPI, 'status').mockResolvedValue({ data: [] } as never)
+
+    renderLayout('/billing')
+
+    await act(async () => Promise.resolve())
+    expect(overviewSpy).not.toHaveBeenCalled()
+    expect(statusSpy).not.toHaveBeenCalled()
   })
 })

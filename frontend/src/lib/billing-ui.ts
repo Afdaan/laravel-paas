@@ -10,7 +10,16 @@ export function nextBillingRequestState<TResponse, T>(
   select: (value: TResponse) => T,
 ): BillingRequestState<T> {
   if (result.status === 'fulfilled') {
-    return { status: 'success', data: select(result.value) }
+    const data = select(result.value)
+    // Keep the previous object identity when a refresh returns unchanged data —
+    // stops overview/packages/statuses from re-rendering their whole subtree
+    // (list remounts, memo recalcs) when nothing changed.
+    // ponytail: JSON.stringify equality, fine at this payload size; swap for a
+    // real deep-equal if a field ever needs key-order-independent comparison.
+    if (current.status === 'success' && JSON.stringify(current.data) === JSON.stringify(data)) {
+      return current
+    }
+    return { status: 'success', data }
   }
   if (current.status === 'success') return current
   if (current.status === 'loading' || current.status === 'idle') {

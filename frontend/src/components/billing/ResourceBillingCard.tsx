@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { CalendarClock, Database, FolderGit2, Loader2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -21,17 +22,18 @@ type ResourceBillingCardProps = {
   setPendingRenewChange: (change: PendingRenewChange) => void
 }
 
-export function ResourceBillingCard({ overview, statuses, renewLoading, paymentLoading, payDueResource, setPendingRenewChange }: ResourceBillingCardProps) {
+export const ResourceBillingCard = memo(function ResourceBillingCard({ overview, statuses, renewLoading, paymentLoading, payDueResource, setPendingRenewChange }: ResourceBillingCardProps) {
   const { t, formatCredits, formatDate, formatResourceDisplayName } = useBillingFormatters()
 
-  // Compound key "resource_type:resource_id" prevents collisions when a project
-  // and a database share the same numeric resource_id.
-  const statusLookup: Record<string, BillingStatus> = {}
-  if (statuses.status === 'success') {
-    for (const s of statuses.data) {
-      statusLookup[`${s.resource_type}:${s.resource_id}`] = s
+  const statusLookup = useMemo(() => {
+    const lookup: Record<string, BillingStatus> = {}
+    if (statuses.status === 'success') {
+      for (const status of statuses.data) {
+        lookup[`${status.resource_type}:${status.resource_id}`] = status
+      }
     }
-  }
+    return lookup
+  }, [statuses])
 
   return (
     <Card className="border-border/60 shadow-sm">
@@ -171,4 +173,4 @@ export function ResourceBillingCard({ overview, statuses, renewLoading, paymentL
         </CardContent>
     </Card>
   )
-}
+})

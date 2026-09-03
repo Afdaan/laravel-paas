@@ -1,6 +1,5 @@
-import type { ChangeEvent } from 'react'
+import { memo, type ChangeEvent } from 'react'
 import { ArrowUpRight, CalendarClock, Coins, PlusCircle, WalletCards } from 'lucide-react'
-import { motion } from 'framer-motion'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,7 +22,7 @@ type BillingCreditCatalogProps = {
   handleInitiateCustomTopup: () => void
 }
 
-export function BillingCreditCatalog({
+export const BillingCreditCatalog = memo(function BillingCreditCatalog({
   overview,
   packages,
   topupPackageID,
@@ -38,7 +37,7 @@ export function BillingCreditCatalog({
   const { t, language, formatNumber, formatCredits, formatMoney } = useBillingFormatters()
 
   return (
-    <Card className="overflow-hidden border-border/60 shadow-xs transition-all hover:border-border/80">
+    <Card className="overflow-hidden border-border/60 shadow-xs transition-colors hover:border-border/80">
         <CardHeader className="bg-muted/20 border-b border-border/40 pb-4">
           <div>
             <CardTitle className="text-lg font-bold flex items-center gap-2 text-foreground">
@@ -61,8 +60,8 @@ export function BillingCreditCatalog({
             {overview.status === 'success' && (
               <>
                 {/* Balance Card - Double Bezel Shell */}
-                <div className="group relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-1.5 transition-all hover:border-primary/40">
-                  <div className="rounded-xl border border-primary/10 bg-background/80 p-5 backdrop-blur-sm">
+                <div className="group relative overflow-hidden rounded-2xl border border-primary/20 bg-primary/5 p-1.5 transition-colors hover:border-primary/40">
+                  <div className="rounded-xl border border-primary/10 bg-background/80 p-5">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium text-muted-foreground">{t('billing.balance')}</p>
                       <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -82,7 +81,7 @@ export function BillingCreditCatalog({
                 </div>
 
                 {/* Upcoming Charges Card - Double Bezel Shell */}
-                <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-muted/20 p-1.5 transition-all hover:border-border">
+                <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-muted/20 p-1.5 transition-colors hover:border-border">
                   <div className="rounded-xl border border-border/40 bg-card/90 p-5">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium text-muted-foreground">{t('billing.upcomingCharges')}</p>
@@ -127,13 +126,10 @@ export function BillingCreditCatalog({
                 packages.data.map((pkg, idx) => {
                   const isPopular = idx === 1 || packages.data.length === 1
                   return (
-                    <motion.button
+                    <button
                       key={pkg.id}
                       type="button"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ type: 'spring', stiffness: 120, damping: 20, delay: idx * 0.05 }}
-                      className={`group relative flex flex-col rounded-xl border p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.98] disabled:opacity-60 ${
+                      className={`group relative flex flex-col rounded-xl border p-5 text-left transition-[transform,box-shadow,border-color,background-color] duration-150 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.98] disabled:opacity-60 ${
                         isPopular
                           ? 'border-primary/40 bg-primary/[0.04] shadow-xs hover:border-primary/60'
                           : 'border-border/60 bg-card hover:border-border/80'
@@ -161,7 +157,7 @@ export function BillingCreditCatalog({
                           <ArrowUpRight className="size-3 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                         </span>
                       </div>
-                    </motion.button>
+                    </button>
                   )
                 })}
               {packages.status === 'success' && packages.data.length === 0 && (
@@ -213,4 +209,4 @@ export function BillingCreditCatalog({
         </CardContent>
     </Card>
   )
-}
+})

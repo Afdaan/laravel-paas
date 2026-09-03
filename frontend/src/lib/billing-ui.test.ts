@@ -36,6 +36,17 @@ describe('billing UI guards', () => {
     )
     expect(result).toEqual({ status: 'success', data: [1, 2] })
   })
+
+  it('preserves request state identity when refreshed data is unchanged', () => {
+    const current = { status: 'success' as const, data: { balance_credits: 250 } }
+    const result = nextBillingRequestState<{ balance_credits: number }, { balance_credits: number }>(
+      { status: 'fulfilled', value: { balance_credits: 250 } },
+      current,
+      (value) => value,
+    )
+
+    expect(result).toBe(current)
+  })
 })
 
 describe('toMajorUnits', () => {

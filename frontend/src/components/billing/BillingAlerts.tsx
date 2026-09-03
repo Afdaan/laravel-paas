@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,7 +11,7 @@ type BillingAlertsProps = {
   showLowBalance: boolean
 }
 
-export function BillingAlerts({ staleWarning, attentionResources, showLowBalance }: BillingAlertsProps) {
+export const BillingAlerts = memo(function BillingAlerts({ staleWarning, attentionResources, showLowBalance }: BillingAlertsProps) {
   const { t, formatDate, formatStatus, formatResourceDisplayName } = useBillingFormatters()
 
   return (
@@ -57,4 +58,4 @@ export function BillingAlerts({ staleWarning, attentionResources, showLowBalance
       )}
     </>
   )
-}
+})

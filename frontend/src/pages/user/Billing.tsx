@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -15,13 +17,6 @@ import axios from 'axios'
 
 import { BillingAlerts } from '@/components/billing/BillingAlerts'
 import { BillingCreditCatalog } from '@/components/billing/BillingCreditCatalog'
-import {
-  InvoiceDialog,
-  PaymentDialog,
-  ProfileRequiredDialog,
-  RenewConfirmationDialog,
-  TopupConfirmationDialog,
-} from '@/components/billing/BillingDialogs'
 import { BillingHistorySection } from '@/components/billing/BillingHistorySection'
 import { BillingProfileSection } from '@/components/billing/BillingProfileSection'
 import { ResourceBillingCard } from '@/components/billing/ResourceBillingCard'
@@ -40,6 +35,13 @@ import { usePolling } from '@/lib/usePolling'
 import { billingAPI } from '@/services/api'
 import type { BillingOverview, BillingStatus, TopupPackage, BillingProfile, TopupResponse } from '@/types'
 
+const loadBillingDialogs = () => import('@/components/billing/BillingDialogs')
+const InvoiceDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.InvoiceDialog })))
+const PaymentDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.PaymentDialog })))
+const ProfileRequiredDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.ProfileRequiredDialog })))
+const RenewConfirmationDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.RenewConfirmationDialog })))
+const TopupConfirmationDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.TopupConfirmationDialog })))
+
 export default function Billing() {
   const [profile, setProfile] = useState<BillingProfile>({
     company_name: '', tax_id: '', email: '', phone: '',
@@ -55,7 +57,6 @@ export default function Billing() {
   const [isProfileSaved, setIsProfileSaved] = useState(false)
   const [activePaymentModal, setActivePaymentModal] = useState<TopupResponse | null>(null)
   const [checkingPaymentStatus, setCheckingPaymentStatus] = useState(false)
-  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   const { t, language, formatMoney } = useBillingFormatters()
   const [overview, setOverview] = useState<BillingRequestState<BillingOverview>>({ status: 'idle' })
@@ -77,33 +78,28 @@ export default function Billing() {
   const [selectedInvoice, setSelectedInvoice] = useState<BillingOverview['invoices'][0] | null>(null)
   const [copiedInvoiceID, setCopiedInvoiceID] = useState<number | null>(null)
 
-  const handleCopyInvoiceNumber = (invoiceNumber: string, id: number) => {
+  const handleCopyInvoiceNumber = useCallback((invoiceNumber: string, id: number) => {
     void navigator.clipboard.writeText(invoiceNumber)
     setCopiedInvoiceID(id)
     toast.success(t('billing.copiedInvoice'))
     setTimeout(() => setCopiedInvoiceID(null), 2000)
-  }
+  }, [t])
 
-  const scrollToBillingProfile = () => scrollIntoMain('billing-profile-card')
+  const scrollToBillingProfile = useCallback(() => scrollIntoMain('billing-profile-card'), [])
+  const isProfileComplete = useMemo(() => isBillingProfileComplete(profile), [profile])
 
-  const checkProfileAndPrompt = (): boolean => {
-    if (!isProfileSaved && !isBillingProfileComplete(profile)) {
+  const checkProfileAndPrompt = useCallback((): boolean => {
+    if (!isProfileSaved && !isProfileComplete) {
       toast.error(t('billing.profile.profileRequired'))
       setShowProfilePrompt(true)
       scrollToBillingProfile()
       return false
     }
     return true
-  }
+  }, [isProfileComplete, isProfileSaved, scrollToBillingProfile, t])
   const overviewRef = useRef(overview)
   const packagesRef = useRef(packages)
   const statusesRef = useRef(statuses)
-
-  useEffect(() => {
-    overviewRef.current = overview
-    packagesRef.current = packages
-    statusesRef.current = statuses
-  })
 
   const didLoadInitial = useRef(false)
 
@@ -123,10 +119,12 @@ export default function Billing() {
     const currentPackages = packagesRef.current
     const currentStatuses = statusesRef.current
 
-    const [overviewResult, catalogResult, statusResult] = await Promise.allSettled([
+    const shouldLoadProfile = !hasLoadedProfileRef.current
+    const [overviewResult, catalogResult, statusResult, profileResult] = await Promise.allSettled([
       billingAPI.overview(),
       billingAPI.catalog(),
       billingAPI.status(),
+      shouldLoadProfile ? billingAPI.getProfile() : Promise.resolve(null),
     ])
 
     const nextOverview = nextBillingRequestState(overviewResult, currentOverview, (response) => response.data)
@@ -140,46 +138,41 @@ export default function Billing() {
     let profileToSet: BillingProfile | null = null
     let markProfileSaved = false
 
-    if (!hasLoadedProfileRef.current) {
-      try {
-        const resProf = await billingAPI.getProfile()
-        // Mark loaded only after a conclusive response (success or authoritative not-found).
-        // Network errors / 5xx leave the flag unset so the next poll can retry.
-        hasLoadedProfileRef.current = true
-        if (resProf.data) {
-          const loadedProf: BillingProfile = {
-            company_name: resProf.data.company_name ?? '',
-            tax_id: resProf.data.tax_id ?? '',
-            email: resProf.data.email ?? '',
-            phone: resProf.data.phone ?? '',
-            address_line1: resProf.data.address_line1 ?? '',
-            address_line2: resProf.data.address_line2 ?? '',
-            city: resProf.data.city ?? '',
-            state_province: resProf.data.state_province ?? '',
-            postal_code: resProf.data.postal_code ?? '',
-            country: resProf.data.country || 'ID',
-          }
-          // Only hydrate profile if the user hasn't modified any form input (dirty protection)
-          if (!isProfileDirtyRef.current) {
-            profileToSet = loadedProf
-          }
-          if (isBillingProfileComplete(loadedProf)) {
-            markProfileSaved = true
-          }
+    if (shouldLoadProfile && profileResult.status === 'fulfilled' && profileResult.value) {
+      const resProf = profileResult.value
+      // Mark loaded only after a conclusive response. Rejected requests retry on the next refresh.
+      hasLoadedProfileRef.current = true
+      if (resProf.data) {
+        const loadedProf: BillingProfile = {
+          company_name: resProf.data.company_name ?? '',
+          tax_id: resProf.data.tax_id ?? '',
+          email: resProf.data.email ?? '',
+          phone: resProf.data.phone ?? '',
+          address_line1: resProf.data.address_line1 ?? '',
+          address_line2: resProf.data.address_line2 ?? '',
+          city: resProf.data.city ?? '',
+          state_province: resProf.data.state_province ?? '',
+          postal_code: resProf.data.postal_code ?? '',
+          country: resProf.data.country || 'ID',
         }
-      } catch (e) {
-        // Transient error (network, 5xx): leave hasLoadedProfileRef.current = false
-        // so the next poll attempt will retry.
+        if (!isProfileDirtyRef.current) {
+          profileToSet = loadedProf
+        }
+        if (isBillingProfileComplete(loadedProf)) {
+          markProfileSaved = true
+        }
       }
     }
 
     // Reset in-flight ref BEFORE batching state updates so the scheduled re-render
     // evaluates loadInFlight.current === false (e.g. Refresh button is enabled).
     loadInFlight.current = false
+    overviewRef.current = nextOverview
+    packagesRef.current = nextPackages
+    statusesRef.current = nextStatuses
     setOverview(nextOverview)
     setPackages(nextPackages)
     setStatuses(nextStatuses)
-    setHistoryRefreshKey((k) => k + 1)
     setStaleWarning(hasStaleData)
     if (profileToSet) {
       setProfile(profileToSet)
@@ -236,24 +229,45 @@ export default function Billing() {
         await load()
       }
     })()
-  }, [load])
+  }, [load, t])
 
-  usePolling(() => void load(), 30_000)
+  usePolling(() => void load(), 60_000)
+
+  useEffect(() => {
+    const preload = () => {
+      void loadBillingDialogs().catch(() => undefined)
+    }
+    const idleWindow = window as Window & {
+      requestIdleCallback?: Window['requestIdleCallback']
+      cancelIdleCallback?: Window['cancelIdleCallback']
+    }
+
+    if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
+      const idleCallbackID = idleWindow.requestIdleCallback(preload, { timeout: 2_000 })
+      return () => idleWindow.cancelIdleCallback?.(idleCallbackID)
+    }
+
+    const timeoutID = window.setTimeout(preload, 1_000)
+    return () => window.clearTimeout(timeoutID)
+  }, [])
 
   const attentionResources = useMemo(() => {
     if (statuses.status !== 'success') return []
+    const resourceNames = new Map<string, string | undefined>(
+      overview.status === 'success'
+        ? overview.data.resources.map((resource) => [
+            `${resource.resource_type}:${resource.resource_id}`,
+            resource.resource_name,
+          ] as const)
+        : [],
+    )
+
     return statuses.data
       .filter(({ status }) => status === 'payment_due' || status === 'suspended')
       .map((statusItem) => {
-        const matchingResource =
-          overview.status === 'success'
-            ? overview.data.resources.find(
-                (r) => r.resource_type === statusItem.resource_type && r.resource_id === statusItem.resource_id,
-              )
-            : undefined
         return {
           ...statusItem,
-          resource_name: matchingResource?.resource_name,
+          resource_name: resourceNames.get(`${statusItem.resource_type}:${statusItem.resource_id}`),
         }
       })
   }, [statuses, overview])
@@ -306,7 +320,7 @@ export default function Billing() {
     customAmountNum <= 10_000_000 &&
     customAmountNum % 1000 === 0
 
-  const handleCustomAmountChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleCustomAmountChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     customTopupKey.current = null
     const raw = e.target.value.replace(/\D/g, '')
     if (!raw) {
@@ -319,7 +333,7 @@ export default function Billing() {
       return
     }
     setCustomAmount(val.toLocaleString(language === 'id' ? 'id-ID' : 'en-US'))
-  }
+  }, [language])
 
   const startCustomTopup = async (amountToUse?: number) => {
     if (!checkProfileAndPrompt()) return
@@ -354,7 +368,7 @@ export default function Billing() {
     }
   }
 
-  const handleInitiatePackageTopup = (pkg: TopupPackage) => {
+  const handleInitiatePackageTopup = useCallback((pkg: TopupPackage) => {
     if (!checkProfileAndPrompt()) return
     setPendingTopup({
       type: 'package',
@@ -363,9 +377,9 @@ export default function Billing() {
       amountMinor: pkg.amount_minor,
       currency: pkg.currency,
     })
-  }
+  }, [checkProfileAndPrompt])
 
-  const handleInitiateCustomTopup = () => {
+  const handleInitiateCustomTopup = useCallback(() => {
     if (!checkProfileAndPrompt()) return
     if (!customValid || customAmountNum <= 0) return
     setPendingTopup({
@@ -375,7 +389,7 @@ export default function Billing() {
       amountMinor: customAmountNum,
       currency: 'IDR',
     })
-  }
+  }, [checkProfileAndPrompt, customAmountNum, customCredits, customValid])
 
   const handleConfirmTopup = async () => {
     if (!pendingTopup) return
@@ -395,7 +409,7 @@ export default function Billing() {
     return formatMoney(unitAmount, pendingTopup.currency)
   }, [pendingTopup, baseRatePerCredit, formatMoney])
 
-  const reconcileTopup = async (topupID: number) => {
+  const reconcileTopup = useCallback(async (topupID: number) => {
     try {
       await billingAPI.reconcileTopup(topupID)
       await load()
@@ -403,7 +417,7 @@ export default function Billing() {
     } catch {
       toast.error(t('billing.statusRefreshFailed'))
     }
-  }
+  }, [load, t])
 
   const confirmRenewChange = async () => {
     if (!pendingRenewChange) return
@@ -434,7 +448,7 @@ export default function Billing() {
     }
   }
 
-  const payDueResource = async (resourceID: number, resourceType: 'project' | 'database') => {
+  const payDueResource = useCallback(async (resourceID: number, resourceType: 'project' | 'database') => {
     const key = `${resourceType}-${resourceID}`
     setPaymentLoading((current) => ({ ...current, [key]: true }))
     try {
@@ -450,7 +464,19 @@ export default function Billing() {
     } finally {
       setPaymentLoading((current) => ({ ...current, [key]: false }))
     }
-  }
+  }, [load, t])
+
+  const handlePayPendingTopup = useCallback((topup: BillingOverview['topups'][number]) => {
+    setActivePaymentModal({
+      id: topup.id,
+      credits: topup.credits,
+      amount_minor: topup.amount_minor,
+      currency: topup.currency,
+      status: topup.status,
+      payment_token: topup.payment_token,
+      payment_url: topup.payment_url,
+    })
+  }, [])
 
   const balanceData = overview.status === 'success' ? overview.data.wallet.balance_credits : null
   const upcomingCredits = overview.status === 'success' ? overview.data.upcoming_required_credits : null
@@ -461,7 +487,7 @@ export default function Billing() {
     attentionResources.length === 0
 
 
-  const handleSaveProfile = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSaveProfile = useCallback(async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setSavingProfile(true)
     try {
@@ -491,7 +517,7 @@ export default function Billing() {
     } finally {
       setSavingProfile(false)
     }
-  }
+  }, [profile, t])
 
   // Track active top-up ID via ref to isolate concurrent/stale async responses.
   const activePaymentModalIdRef = useRef<number | null>(null)
@@ -575,7 +601,7 @@ export default function Billing() {
   }, [activePaymentModal?.id])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 pb-12 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-6xl space-y-8 pb-12">
       <div className="flex flex-col gap-4 border-b border-border/60 pb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-1">
@@ -623,29 +649,13 @@ export default function Billing() {
         payDueResource={payDueResource}
         setPendingRenewChange={setPendingRenewChange}
       />
-      <RenewConfirmationDialog
-        pendingRenewChange={pendingRenewChange}
-        setPendingRenewChange={setPendingRenewChange}
-        confirmRenewChange={confirmRenewChange}
-      />
       <BillingHistorySection
         overview={overview}
         copiedInvoiceID={copiedInvoiceID}
         handleCopyInvoiceNumber={handleCopyInvoiceNumber}
         setSelectedInvoice={setSelectedInvoice}
         reconcileTopup={reconcileTopup}
-        refreshKey={historyRefreshKey}
-        onPayPendingTopup={(topup) => {
-          setActivePaymentModal({
-            id: topup.id,
-            credits: topup.credits,
-            amount_minor: topup.amount_minor,
-            currency: topup.currency,
-            status: topup.status,
-            payment_token: topup.payment_token,
-            payment_url: topup.payment_url,
-          })
-        }}
+        onPayPendingTopup={handlePayPendingTopup}
       />
       <BillingProfileSection
         profile={profile}
@@ -654,31 +664,57 @@ export default function Billing() {
         isProfileSaved={isProfileSaved}
         handleSaveProfile={handleSaveProfile}
       />
-      <ProfileRequiredDialog
-        showProfilePrompt={showProfilePrompt}
-        setShowProfilePrompt={setShowProfilePrompt}
-        scrollToBillingProfile={scrollToBillingProfile}
-      />
-      <TopupConfirmationDialog
-        pendingTopup={pendingTopup}
-        setPendingTopup={setPendingTopup}
-        topupPackageID={topupPackageID}
-        overview={overview}
-        conversionRateFormatted={conversionRateFormatted}
-        handleConfirmTopup={handleConfirmTopup}
-      />
-      <PaymentDialog
-        activePaymentModal={activePaymentModal}
-        setActivePaymentModal={setActivePaymentModal}
-        checkingPaymentStatus={checkingPaymentStatus}
-        handleCheckStatusModal={() => handleCheckStatusModal(true)}
-      />
-      <InvoiceDialog
-        selectedInvoice={selectedInvoice}
-        setSelectedInvoice={setSelectedInvoice}
-        copiedInvoiceID={copiedInvoiceID}
-        handleCopyInvoiceNumber={handleCopyInvoiceNumber}
-      />
+      <Suspense
+        fallback={(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70" role="status">
+            <div className="rounded-lg border border-border bg-card p-3 shadow-lg">
+              <RefreshCw className="size-4 animate-spin text-primary" aria-hidden="true" />
+              <span className="sr-only">{t('common.loading')}</span>
+            </div>
+          </div>
+        )}
+      >
+        {pendingRenewChange && (
+          <RenewConfirmationDialog
+            pendingRenewChange={pendingRenewChange}
+            setPendingRenewChange={setPendingRenewChange}
+            confirmRenewChange={confirmRenewChange}
+          />
+        )}
+        {showProfilePrompt && (
+          <ProfileRequiredDialog
+            showProfilePrompt={showProfilePrompt}
+            setShowProfilePrompt={setShowProfilePrompt}
+            scrollToBillingProfile={scrollToBillingProfile}
+          />
+        )}
+        {pendingTopup && (
+          <TopupConfirmationDialog
+            pendingTopup={pendingTopup}
+            setPendingTopup={setPendingTopup}
+            topupPackageID={topupPackageID}
+            overview={overview}
+            conversionRateFormatted={conversionRateFormatted}
+            handleConfirmTopup={handleConfirmTopup}
+          />
+        )}
+        {activePaymentModal && (
+          <PaymentDialog
+            activePaymentModal={activePaymentModal}
+            setActivePaymentModal={setActivePaymentModal}
+            checkingPaymentStatus={checkingPaymentStatus}
+            handleCheckStatusModal={() => handleCheckStatusModal(true)}
+          />
+        )}
+        {selectedInvoice && (
+          <InvoiceDialog
+            selectedInvoice={selectedInvoice}
+            setSelectedInvoice={setSelectedInvoice}
+            copiedInvoiceID={copiedInvoiceID}
+            handleCopyInvoiceNumber={handleCopyInvoiceNumber}
+          />
+        )}
+      </Suspense>
     </div>
   )
 }

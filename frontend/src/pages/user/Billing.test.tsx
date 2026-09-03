@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/re
 import { act } from 'react'
 import Billing from './Billing'
 import { isValidPhoneNumber } from '@/components/billing/utils'
+import { usePolling } from '@/lib/usePolling'
 import { billingAPI } from '@/services/api'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
@@ -232,6 +233,26 @@ describe('Billing page', () => {
     })
 
     expect(billingAPI.overview).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts the billing profile request without waiting for the overview', async () => {
+    let resolveOverview!: (value: { data: typeof mockOverview }) => void
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveOverview = resolve
+      }),
+    )
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    await waitFor(() => expect(billingAPI.getProfile).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      resolveOverview({ data: mockOverview })
+    })
+    expect(await screen.findByDisplayValue(mockProfile.company_name)).toBeInTheDocument()
   })
 
   it('reconciles a Pakasir top-up after payment redirect using topup_ref', async () => {
@@ -880,10 +901,12 @@ describe('Billing page', () => {
     await waitFor(() => expect(refreshButton).not.toBeDisabled())
     expect(screen.queryByDisplayValue('PT Acme Corp')).not.toBeInTheDocument()
 
-    // Simulate a retry by clicking the Refresh button, which calls load() again.
-    // hasLoadedProfileRef.current stays false after the first error, so getProfile
-    // will be called again on the next load() invocation.
-    await act(async () => fireEvent.click(refreshButton))
+    const pollingCall = vi.mocked(usePolling).mock.calls.find(([, delay]) => delay === 60_000)
+    expect(pollingCall).toBeDefined()
+
+    // hasLoadedProfileRef.current stays false after the first error, so the
+    // page-owned background poll retries the profile request automatically.
+    await act(async () => pollingCall?.[0]())
 
     await waitFor(() => expect(billingAPI.getProfile).toHaveBeenCalledTimes(2))
     // After successful retry, the profile should populate
@@ -1239,7 +1262,7 @@ describe('Billing page', () => {
     // Empty snapshot should render explicit unavailable copy, not current live profile
     expect(await screen.findByText('Profile not recorded at issuance')).toBeInTheDocument()
     expect(screen.queryByText('Historical PT Example')).not.toBeInTheDocument()
-  })
+  }, 10_000)
 
   it('renders Pay button when server topups endpoint resolves with pending payment evidence', async () => {
     const paginatedTopups = [

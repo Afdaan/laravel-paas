@@ -629,7 +629,7 @@ export default function AdminBilling() {
       {/* KPI Overview Grid with Sparklines & Dynamic Status */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Stat Card 1: Wallets */}
-        <Card className="relative overflow-hidden transition-all hover:border-border/80">
+        <Card className="relative overflow-hidden transition-colors hover:border-border/80">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('billing.admin.wallets')}
@@ -667,7 +667,7 @@ export default function AdminBilling() {
         </Card>
 
         {/* Stat Card 2: Invoices */}
-        <Card className="relative overflow-hidden transition-all hover:border-border/80">
+        <Card className="relative overflow-hidden transition-colors hover:border-border/80">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('billing.invoices')}
@@ -709,7 +709,7 @@ export default function AdminBilling() {
         </Card>
 
         {/* Stat Card 3: Top-ups & Revenue */}
-        <Card className="relative overflow-hidden transition-all hover:border-border/80">
+        <Card className="relative overflow-hidden transition-colors hover:border-border/80">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('billing.topups')}
@@ -751,7 +751,7 @@ export default function AdminBilling() {
         </Card>
 
         {/* Stat Card 4: Suspensions */}
-        <Card className={`relative overflow-hidden transition-all hover:border-border/80 ${suspensions && suspensions.length > 0 ? 'border-amber-500/40 bg-amber-500/5' : ''}`}>
+        <Card className={`relative overflow-hidden transition-colors hover:border-border/80 ${suspensions && suspensions.length > 0 ? 'border-amber-500/40 bg-amber-500/5' : ''}`}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('billing.admin.suspensions')}

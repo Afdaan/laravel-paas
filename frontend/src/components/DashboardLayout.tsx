@@ -866,9 +866,11 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
 function HeaderCreditBadge() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { t, language } = useTranslation()
   const [balance, setBalance] = useState<number | null>(null)
   const [paymentDueCount, setPaymentDueCount] = useState<number | null>(null)
+  const isBillingPage = location.pathname === '/billing'
 
   const fetchBillingSummary = useCallback(async () => {
     const [overviewResult, statusResult] = await Promise.allSettled([
@@ -887,10 +889,11 @@ function HeaderCreditBadge() {
   }, [])
 
   useEffect(() => {
+    if (isBillingPage) return
     void fetchBillingSummary()
-  }, [fetchBillingSummary])
+  }, [fetchBillingSummary, isBillingPage])
 
-  usePolling(() => void fetchBillingSummary(), 30_000)
+  usePolling(() => void fetchBillingSummary(), isBillingPage ? null : 30_000)
 
   const hasPaymentDue = paymentDueCount !== null && paymentDueCount > 0
   if (balance === null && !hasPaymentDue) return null

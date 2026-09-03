@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { memo, useMemo, useState, type FormEvent } from 'react'
 import { AlertTriangle, Building, Building2, CheckCircle2, FileText, Hash, Mail, MapPin, Phone, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,7 @@ type BillingProfileSectionProps = {
   handleSaveProfile: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }
 
-export function BillingProfileSection({
+export const BillingProfileSection = memo(function BillingProfileSection({
   profile,
   setProfile,
   savingProfile,
@@ -318,4 +318,4 @@ export function BillingProfileSection({
         </CardContent>
       </Card>
   )
-}
+})

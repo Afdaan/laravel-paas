@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Calendar, Check, Copy, CreditCard, ReceiptText, RefreshCw, Search, WalletCards } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -26,17 +26,15 @@ type BillingHistorySectionProps = {
   setSelectedInvoice: (invoice: Invoice) => void
   reconcileTopup: (topupID: number) => Promise<void>
   onPayPendingTopup?: (topup: TopupItem) => void
-  refreshKey?: number
 }
 
-export function BillingHistorySection({
+export const BillingHistorySection = memo(function BillingHistorySection({
   overview,
   copiedInvoiceID,
   handleCopyInvoiceNumber,
   setSelectedInvoice,
   reconcileTopup,
   onPayPendingTopup,
-  refreshKey,
 }: BillingHistorySectionProps) {
   const { t, formatCredits, formatDate, formatMoney, formatStatus, translateLedgerType } = useBillingFormatters()
   const [activeTab, setActiveTab] = useState('wallet_activity')
@@ -204,8 +202,7 @@ export function BillingHistorySection({
     topupLimit,
     ledgerPage,
     ledgerLimit,
-    overview.status,
-    refreshKey,
+    overview,
     fetchInvoices,
     fetchTopups,
     fetchLedger,
@@ -736,4 +733,4 @@ export function BillingHistorySection({
         </CardContent>
       </Card>
   )
-}
+})
