@@ -59,6 +59,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.resourceTypes.database': 'Database',
         'billing.resource': 'Resource',
         'billing.plan': 'Plan',
+        'billing.resourceActions': 'Renewal & actions',
         'billing.unnamedService': '{{type}} Service',
         'billing.resourceBilling': 'Resource billing',
         'billing.resourceBillingDescription': 'Resource billing description',
@@ -351,6 +352,7 @@ describe('Billing page', () => {
     render(<Billing />)
 
     expect(await screen.findByText('Project 1')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Renewal & actions' })).toBeInTheDocument()
     expect(screen.getByText('Project 10')).toBeInTheDocument()
     expect(screen.queryByText('Project 11')).not.toBeInTheDocument()
 

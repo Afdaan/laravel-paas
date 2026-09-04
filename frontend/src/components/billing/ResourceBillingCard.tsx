@@ -73,11 +73,11 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                   <TableHead className="w-[13%] text-[11px] text-muted-foreground/80">
                     {t('billing.status')}
                   </TableHead>
-                  <TableHead className="w-[29%] text-[11px] text-muted-foreground/80">
+                  <TableHead className="w-[27%] text-[11px] text-muted-foreground/80">
                     {t('billing.servicePeriod')}
                   </TableHead>
-                  <TableHead className="w-[14%] pr-4 text-right text-[11px] text-muted-foreground/80">
-                    {t('common.actions')}
+                  <TableHead className="w-[16%] pr-4 text-right text-[11px] text-muted-foreground/80">
+                    {t('billing.resourceActions')}
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -171,7 +171,7 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                     <p className="text-xs font-medium text-foreground">{dueDateLabel}</p>
                     {periodLabel && <p className="mt-1 text-[11px] text-muted-foreground">{periodLabel}</p>}
                   </TableCell>
-                  <TableCell className="py-3 pr-4">
+                  <TableCell className="min-w-[170px] py-3 pr-4">
                     <div className="flex items-center justify-end gap-3">
                       {isNonActive && (
                         <Button
@@ -185,8 +185,7 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           {t('billing.payDueNow')}
                         </Button>
                       )}
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">{t('billing.autoRenew')}</span>
+                      <div className="flex items-center">
                         <Switch
                           id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
                           aria-label={`${t('billing.autoRenew')}: ${resourceName}`}
