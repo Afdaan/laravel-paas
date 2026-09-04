@@ -57,6 +57,8 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.staleData': 'Showing previously loaded data. Refresh to update.',
         'billing.resourceTypes.project': 'Project',
         'billing.resourceTypes.database': 'Database',
+        'billing.resource': 'Resource',
+        'billing.plan': 'Plan',
         'billing.unnamedService': '{{type}} Service',
         'billing.resourceBilling': 'Resource billing',
         'billing.resourceBillingDescription': 'Resource billing description',
@@ -144,6 +146,12 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.retry': 'Retry',
         'billing.paidOn': 'Paid {{date}}',
         'common.dashboard': 'Dashboard',
+        'common.actions': 'Actions',
+        'common.rowsPerPage': 'Rows per page',
+        'common.first': 'First',
+        'common.previous': 'Previous',
+        'common.next': 'Next',
+        'common.last': 'Last',
       }
       const base = map[key] ?? key
       if (!data) return base
@@ -319,6 +327,38 @@ describe('Billing page', () => {
    expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeInTheDocument()
     expect(screen.getByRole('switch')).not.toBeChecked()
+  })
+
+  it('paginates billing resources to keep the page compact', async () => {
+    const resources = Array.from({ length: 12 }, (_, index) => ({
+      resource_id: index + 1,
+      resource_type: 'project' as const,
+      resource_name: `Project ${index + 1}`,
+      spec_name: 'Starter',
+      monthly_credits: 75,
+      status: 'active',
+      current_period_start: '2026-09-01T00:00:00Z',
+      next_invoice_at: '2026-10-01T00:00:00Z',
+      auto_renew: true,
+    }))
+
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ...mockOverview, resources },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+
+    render(<Billing />)
+
+    expect(await screen.findByText('Project 1')).toBeInTheDocument()
+    expect(screen.getByText('Project 10')).toBeInTheDocument()
+    expect(screen.queryByText('Project 11')).not.toBeInTheDocument()
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next' })))
+
+    expect(await screen.findByText('Project 11')).toBeInTheDocument()
+    expect(screen.getByText('Project 12')).toBeInTheDocument()
+    expect(screen.queryByText('Project 1')).not.toBeInTheDocument()
   })
 
   it('reuses the idempotency key when an ambiguous checkout attempt fails', async () => {

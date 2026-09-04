@@ -7,6 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import type { BillingRequestState } from '@/lib/billing-ui'
+import { usePagination } from '@/lib/pagination'
+import { TablePagination } from '@/components/ui/table-pagination'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { BillingOverview, BillingStatus } from '@/types'
 import type { PendingRenewChange } from './types'
 import { useBillingFormatters } from './useBillingFormatters'
@@ -35,23 +38,51 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
     return lookup
   }, [statuses])
 
+  const resources = overview.status === 'success' ? overview.data.resources : []
+  const resourcePaging = usePagination(resources.length)
+  const displayedResources = resources.slice(resourcePaging.start, resourcePaging.end)
+
   return (
     <Card className="border-border/60 shadow-sm">
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-xl font-bold">
-            <CalendarClock className="size-5 text-primary" />
-            {t('billing.resourceBilling')}
-          </CardTitle>
-          <CardDescription>{t('billing.resourceBillingDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {overview.status === 'loading' && <Skeleton className="h-24 rounded-xl" />}
-          {overview.status === 'error' && <p className="text-sm text-muted-foreground">{t('billing.unavailable')}</p>}
-          {overview.status === 'success' && overview.data.resources.length === 0 && (
-            <p className="text-sm text-muted-foreground">{t('billing.noBillableResources')}</p>
-          )}
-          {overview.status === 'success' &&
-            overview.data.resources.map((resource) => {
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-xl font-bold">
+          <CalendarClock className="size-5 text-primary" />
+          {t('billing.resourceBilling')}
+        </CardTitle>
+        <CardDescription>{t('billing.resourceBillingDescription')}</CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        {overview.status === 'loading' && <Skeleton className="mx-4 mb-4 h-40 rounded-xl" />}
+        {overview.status === 'error' && (
+          <p className="px-4 pb-5 text-sm text-muted-foreground">{t('billing.unavailable')}</p>
+        )}
+        {overview.status === 'success' && resources.length === 0 && (
+          <p className="px-4 pb-5 text-sm text-muted-foreground">{t('billing.noBillableResources')}</p>
+        )}
+        {overview.status === 'success' && resources.length > 0 && (
+          <div className="overflow-hidden border-t border-border/40">
+            <Table className="min-w-[980px]">
+              <TableHeader className="bg-muted/20">
+                <TableRow className="border-border/40 hover:bg-transparent">
+                  <TableHead className="w-[24%] pl-4 text-[11px] text-muted-foreground/80">
+                    {t('billing.resource')}
+                  </TableHead>
+                  <TableHead className="w-[20%] text-[11px] text-muted-foreground/80">
+                    {t('billing.plan')}
+                  </TableHead>
+                  <TableHead className="w-[13%] text-[11px] text-muted-foreground/80">
+                    {t('billing.status')}
+                  </TableHead>
+                  <TableHead className="w-[29%] text-[11px] text-muted-foreground/80">
+                    {t('billing.servicePeriod')}
+                  </TableHead>
+                  <TableHead className="w-[14%] pr-4 text-right text-[11px] text-muted-foreground/80">
+                    {t('common.actions')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayedResources.map((resource) => {
               const billingStatus = statusLookup[`${resource.resource_type}:${resource.resource_id}`]
               // Use billing status as authoritative effective status when present to prevent
               // contradictory displays during partial/stale snapshot fetches.
@@ -61,6 +92,7 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                 ? { start: resource.payment_due_period_start, end: resource.payment_due_period_end }
                 : null
               const resourceKey = `${resource.resource_type}-${resource.resource_id}`
+              const resourceName = formatResourceDisplayName(resource.resource_name, resource.resource_type)
               const periodLabel = isNonActive
                 ? paymentDuePeriod
                   ? t('billing.unpaidPeriod', {
@@ -88,55 +120,59 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
               })()
 
               return (
-                <div
+                <TableRow
                   key={`${resource.resource_type}-${resource.resource_id}`}
-                  className="flex flex-col gap-4 rounded-xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="border-border/40"
                 >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <TableCell className="min-w-[220px] py-3 pl-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/40">
+                        {resource.resource_type === 'project' ? (
+                          <FolderGit2 className="size-4 text-cyan-500" />
+                        ) : (
+                          <Database className="size-4 text-purple-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="max-w-[180px] truncate text-xs font-semibold text-foreground" title={resourceName}>
+                          {resourceName}
+                        </p>
                       <Badge
                         variant="outline"
-                        className="bg-background/80 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                          className="mt-1 h-5 bg-background/80 px-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground"
                       >
-                        {resource.resource_type === 'project' ? (
-                          <>
-                            <FolderGit2 className="mr-1 size-3 text-cyan-500" />
-                            {t('billing.resourceTypes.project')}
-                          </>
-                        ) : (
-                          <>
-                            <Database className="mr-1 size-3 text-purple-500" />
-                            {t('billing.resourceTypes.database')}
-                          </>
-                        )}
+                          {t(`billing.resourceTypes.${resource.resource_type}`)}
                       </Badge>
-                      <p className="truncate font-semibold text-foreground">
-                        {formatResourceDisplayName(resource.resource_name, resource.resource_type)}
-                      </p>
-                      <StatusBadge status={effectiveStatus} />
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {resource.spec_name} · {formatCredits(resource.monthly_credits)} {t('billing.credits')} / {t('billing.month')}
+                  </TableCell>
+                  <TableCell className="min-w-[190px] py-3">
+                    <p className="text-xs font-medium text-foreground">{resource.spec_name}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {formatCredits(resource.monthly_credits)} {t('billing.credits')} / {t('billing.month')}
+                    </p>
                       {resource.resource_type === 'project' && resource.cpu_millicores && resource.memory_mb ? (
-                        <span className="ml-1 text-xs text-muted-foreground/80">
-                          ({resource.cpu_millicores}m CPU · {resource.memory_mb} MB RAM)
-                        </span>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+                        {resource.cpu_millicores}m CPU · {resource.memory_mb} MB RAM
+                      </p>
                       ) : null}
                       {resource.resource_type === 'database' && (resource.engine || resource.storage_gb) ? (
-                        <span className="ml-1 text-xs text-muted-foreground/80">
-                          ({[resource.engine?.toUpperCase(), resource.storage_gb ? `${resource.storage_gb} GB` : null]
+                      <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+                        {[resource.engine?.toUpperCase(), resource.storage_gb ? `${resource.storage_gb} GB` : null]
                             .filter(Boolean)
-                            .join(' · ')})
-                        </span>
+                          .join(' · ')}
+                      </p>
                       ) : null}
-                    </p>
-                    {periodLabel && <p className="text-xs text-muted-foreground">{periodLabel}</p>}
-                  </div>
-                  <div className="flex flex-col gap-2 sm:items-end">
-                    <p className="text-sm font-medium text-foreground">
-                      {dueDateLabel}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                  </TableCell>
+                  <TableCell className="py-3">
+                    <StatusBadge status={effectiveStatus} />
+                  </TableCell>
+                  <TableCell className="min-w-[280px] py-3">
+                    <p className="text-xs font-medium text-foreground">{dueDateLabel}</p>
+                    {periodLabel && <p className="mt-1 text-[11px] text-muted-foreground">{periodLabel}</p>}
+                  </TableCell>
+                  <TableCell className="py-3 pr-4">
+                    <div className="flex items-center justify-end gap-3">
                       {isNonActive && (
                         <Button
                           type="button"
@@ -149,28 +185,34 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           {t('billing.payDueNow')}
                         </Button>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">{t('billing.autoRenew')}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground">{t('billing.autoRenew')}</span>
                         <Switch
                           id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
+                          aria-label={`${t('billing.autoRenew')}: ${resourceName}`}
                           checked={resource.auto_renew}
                           disabled={renewLoading[resourceKey]}
                           onCheckedChange={(checked) => {
                             setPendingRenewChange({
                               resource_id: resource.resource_id,
                               resource_type: resource.resource_type,
-                              resource_name: formatResourceDisplayName(resource.resource_name, resource.resource_type),
+                              resource_name: resourceName,
                               target_auto_renew: checked,
                             })
                           }}
                         />
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </TableCell>
+                </TableRow>
               )
-            })}
-        </CardContent>
+                })}
+              </TableBody>
+            </Table>
+            <TablePagination state={resourcePaging} />
+          </div>
+        )}
+      </CardContent>
     </Card>
   )
 })
