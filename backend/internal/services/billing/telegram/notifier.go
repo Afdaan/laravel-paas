@@ -17,6 +17,8 @@ import (
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type NotificationMessage struct {
@@ -164,7 +166,7 @@ func (c *Client) sendMessage(ctx context.Context, text string) error {
 }
 
 func formatTelegramMessage(msg NotificationMessage) string {
-	providerName := strings.Title(strings.ToLower(msg.Provider))
+	providerName := cases.Title(language.English).String(strings.ToLower(msg.Provider))
 	if providerName == "" {
 		providerName = "Payment Gateway"
 	}

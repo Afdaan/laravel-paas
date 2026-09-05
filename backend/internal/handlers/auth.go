@@ -152,13 +152,13 @@ func (h *AuthHandler) GenerateStreamToken(c *fiber.Ctx) error {
 
 func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 	if impersonating, _ := c.Locals("impersonating").(bool); impersonating {
-		h.auditImpersonation(c, nil, nil, "start", "rejected")
+		h.auditImpersonationBestEffort(c, nil, nil, "start", "rejected")
 		return apperr.New(409, "ALREADY_IMPERSONATING", "Return to the administrator session first")
 	}
 	actorID, _ := c.Locals("user_id").(uint)
 	actor, err := h.userService.GetUserByID(actorID)
 	if err != nil || !actor.IsAdmin() {
-		h.auditImpersonation(c, &actorID, nil, "start", "rejected")
+		h.auditImpersonationBestEffort(c, &actorID, nil, "start", "rejected")
 		return apperr.ErrForbidden
 	}
 	targetID, err := c.ParamsInt("id")
@@ -167,7 +167,7 @@ func (h *AuthHandler) LoginAsUser(c *fiber.Ctx) error {
 	}
 	target, err := h.userService.GetUserByID(uint(targetID))
 	if err != nil || target.Role != models.RoleUser {
-		h.auditImpersonation(c, &actor.ID, nil, "start", "rejected")
+		h.auditImpersonationBestEffort(c, &actor.ID, nil, "start", "rejected")
 		return apperr.New(403, "FORBIDDEN", "Cannot impersonate administrator accounts")
 	}
 	backup, _ := c.Locals("token").(string)

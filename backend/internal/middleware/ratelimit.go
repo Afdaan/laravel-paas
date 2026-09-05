@@ -105,10 +105,8 @@ func formatRateLimitMsg(baseMsg string, sec int) string {
 var (
 	loginIPLimiter            = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per IP
 	loginEmailLimiter         = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per email
-	loginLimiter              = loginIPLimiter                     // Backwards compatibility
 	reauthUserLimiter         = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per user
 	reauthIPLimiter           = NewRateLimiter(15, 1*time.Minute)  // 15 req/min per IP
-	reauthLimiter             = reauthUserLimiter                  // Backwards compatibility
 	queryLimiter              = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per user
 	publicCatalogLimiter      = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
 	proxyLimiter              = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP

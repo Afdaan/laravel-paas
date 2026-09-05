@@ -21,19 +21,24 @@ func TestPakasirClientCreateTransaction(t *testing.T) {
 		}
 
 		var req map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+			return
+		}
 
 		if req["project"] != "test-project" || req["api_key"] != "test-key" || req["order_id"] != "order-123" {
 			t.Errorf("unexpected request body: %v", req)
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(CreateResponse{
+		if err := json.NewEncoder(w).Encode(CreateResponse{
 			PaymentNumber: "00020126360014ID.LINKAJA.WWW01189360091100030005020210510408544453033605802ID5911PAAS TOPUP6007JAKARTA61051211062070703A0163041234",
 			TotalPayment:  50000,
 			Fee:           700,
 			ExpiredAt:     "2026-08-11 12:00:00",
-		})
+		}); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -68,7 +73,7 @@ func TestPakasirClientGetTransactionDetail(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(DetailResponse{
+		if err := json.NewEncoder(w).Encode(DetailResponse{
 			Transaction: TransactionDetail{
 				Amount:        50000,
 				OrderID:       "order-123",
@@ -77,7 +82,9 @@ func TestPakasirClientGetTransactionDetail(t *testing.T) {
 				PaymentMethod: "qris",
 				CompletedAt:   "2026-08-10 10:00:00",
 			},
-		})
+		}); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 

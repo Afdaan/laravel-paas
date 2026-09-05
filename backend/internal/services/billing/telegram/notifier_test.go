@@ -49,14 +49,19 @@ func TestTelegramNotifierSendMessage(t *testing.T) {
 		}
 
 		var payload map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&payload)
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("failed to decode request payload: %v", err)
+			return
+		}
 
 		if payload["chat_id"] != "123456789" || payload["parse_mode"] != "HTML" {
 			t.Errorf("unexpected payload: %v", payload)
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"ok": true}); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 

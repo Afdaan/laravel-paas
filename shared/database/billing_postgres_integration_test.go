@@ -217,38 +217,39 @@ func TestDefensiveMigrationBootstrapWaitsForSessionLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := db.Connection(func(connection *gorm.DB) error {
-		sessionConn, err := postgresSessionConn(connection)
-		if err != nil {
-			return err
-		}
-		if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_lock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
-			return err
-		}
-		locked := true
-		defer func() {
-			if locked {
-				_, _ = sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity)
-			}
-		}()
-
-		completed := make(chan error, 1)
-		go func() { completed <- DefensiveMigrationBootstrap(blockedDB) }()
-		select {
-		case err := <-completed:
-			return fmt.Errorf("migration bypassed session lock: %w", err)
-		case <-time.After(100 * time.Millisecond):
-		}
-		if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
-			return err
-		}
-		locked = false
-		if err := <-completed; err != nil {
-			return fmt.Errorf("migration after session lock release: %w", err)
-		}
-		return nil
-	}); err != nil {
+	sqlDB, err := db.DB()
+	if err != nil {
 		t.Fatal(err)
+	}
+	sessionConn, err := sqlDB.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sessionConn.Close()
+
+	if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_lock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
+		t.Fatal(err)
+	}
+	locked := true
+	defer func() {
+		if locked {
+			_, _ = sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity)
+		}
+	}()
+
+	completed := make(chan error, 1)
+	go func() { completed <- DefensiveMigrationBootstrap(blockedDB) }()
+	select {
+	case err := <-completed:
+		t.Fatalf("migration bypassed session lock: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
+		t.Fatal(err)
+	}
+	locked = false
+	if err := <-completed; err != nil {
+		t.Fatalf("migration after session lock release: %v", err)
 	}
 }
 

@@ -73,7 +73,7 @@ const AdminSettings = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     fetchSettings()

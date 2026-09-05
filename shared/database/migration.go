@@ -9,7 +9,6 @@ package database
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -57,14 +56,6 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		}
 	}()
 	return defensiveMigrationBootstrap(db)
-}
-
-func postgresSessionConn(db *gorm.DB) (*sql.Conn, error) {
-	connection, ok := db.Statement.ConnPool.(*sql.Conn)
-	if !ok {
-		return nil, fmt.Errorf("expected PostgreSQL session connection, got %T", db.Statement.ConnPool)
-	}
-	return connection, nil
 }
 
 func defensiveMigrationBootstrap(db *gorm.DB) error {
