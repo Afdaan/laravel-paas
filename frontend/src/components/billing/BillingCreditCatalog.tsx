@@ -148,7 +148,7 @@ export const BillingCreditCatalog = memo(function BillingCreditCatalog({
                       </div>
                       <div className="mt-0.5 text-xs font-medium text-muted-foreground">{t('billing.credits')}</div>
 
-                      <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-3 mt-4">
+                      <div className="mt-auto flex flex-col gap-2 border-t border-border/40 pt-3 mt-4">
                         <span className="text-xs font-bold text-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</span>
                         <span className="flex items-center gap-1 text-xs font-medium text-primary">
                           {topupPackageID === pkg.id ? t('billing.openingCheckout') : t('billing.choosePackage')}
