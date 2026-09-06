@@ -1,10 +1,11 @@
 import { memo, type ChangeEvent } from 'react'
-import { ArrowUpRight, CalendarClock, Coins, PlusCircle, WalletCards } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, PlusCircle, WalletCards, Coins } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import type { BillingRequestState } from '@/lib/billing-ui'
 import type { BillingOverview, TopupPackage } from '@/types'
 import { useBillingFormatters } from './useBillingFormatters'
@@ -129,26 +130,23 @@ export const BillingCreditCatalog = memo(function BillingCreditCatalog({
                     <button
                       key={pkg.id}
                       type="button"
-                      className={`group relative flex flex-col rounded-xl border p-5 text-left transition-[transform,box-shadow,border-color,background-color] duration-150 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.98] disabled:opacity-60 ${
-                        isPopular
-                          ? 'border-primary/40 bg-primary/[0.04] shadow-xs hover:border-primary/60'
-                          : 'border-border/60 bg-card hover:border-border/80'
-                      }`}
+                      className={cn(
+                        'group relative flex flex-col rounded-lg border p-5 text-left transition-colors duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60',
+                        isPopular ? 'border-foreground bg-card' : 'border-border/60 bg-card hover:border-border'
+                      )}
                       disabled={topupPackageID !== null}
                       onClick={() => handleInitiatePackageTopup(pkg)}
                     >
                       {isPopular && (
-                        <span className="absolute -top-2.5 right-3 rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary ring-1 ring-primary/30">
+                        <span className="absolute top-0 right-5 -translate-y-1/2 bg-card px-1.5 text-[10px] font-bold uppercase tracking-wider text-foreground">
                           {t('billing.bestValue')}
                         </span>
                       )}
 
-                      <div>
-                        <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
-                          {formatCredits(pkg.credits)}
-                        </div>
-                        <div className="mt-0.5 text-xs font-medium text-muted-foreground">{t('billing.credits')}</div>
+                      <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">
+                        {formatCredits(pkg.credits)}
                       </div>
+                      <div className="mt-0.5 text-xs font-medium text-muted-foreground">{t('billing.credits')}</div>
 
                       <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-3 mt-4">
                         <span className="text-xs font-bold text-foreground">{formatMoney(pkg.amount_minor, pkg.currency)}</span>
