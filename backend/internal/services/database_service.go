@@ -1651,7 +1651,7 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 	backupName := fmt.Sprintf("%s_backup_%s.sql", project.GetDatabaseName(), timestamp)
 
 	// Check folders
-	backupDir := filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), "backups")
+	backupDir := filepath.Join(s.cfg.ProjectsPath, "database-backups", project.DatabaseInstance.UID)
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return nil, err
 	}
@@ -1660,7 +1660,7 @@ func (s *DatabaseService) CreateBackup(projectID uint) (*models.DatabaseBackup, 
 	// Register pending record
 	backup := &models.DatabaseBackup{
 		DatabaseInstanceID: project.DatabaseInstance.ID,
-		ProjectID:          project.ID,
+		ProjectID:          &project.ID,
 		Name:               backupName,
 		Path:               backupPath,
 		Size:               "0 KB",

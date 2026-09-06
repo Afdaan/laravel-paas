@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -131,6 +132,7 @@ func (s *NginxWebhookService) DeleteProject(project *models.Project, domain stri
 
 // SSLStatusResponse represents the JSON payload returned by the remote Nginx VM /ssl-status endpoint.
 type SSLStatusResponse struct {
+	CertName   string `json:"cert_name"`
 	Domain     string `json:"domain"`
 	Status     string `json:"status"`
 	Error      string `json:"error"`
@@ -140,13 +142,16 @@ type SSLStatusResponse struct {
 }
 
 // GetSSLStatus queries the remote Nginx VM for Let's Encrypt certificate issuance status and valid dates.
-func (s *NginxWebhookService) GetSSLStatus(domain string) (*SSLStatusResponse, error) {
+func (s *NginxWebhookService) GetSSLStatus(certName, domain string) (*SSLStatusResponse, error) {
 	if !s.cfg.NginxWebhookEnabled || s.cfg.NginxWebhookURL == "" {
 		return s.GetSSLStatusFromTLS(domain)
 	}
 
 	baseURL := strings.TrimSuffix(s.cfg.NginxWebhookURL, "/webhook")
-	targetURL := fmt.Sprintf("%s/ssl-status?domain=%s", baseURL, domain)
+	query := url.Values{}
+	query.Set("cert_name", certName)
+	query.Set("domain", domain)
+	targetURL := fmt.Sprintf("%s/ssl-status?%s", baseURL, query.Encode())
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", targetURL, nil)

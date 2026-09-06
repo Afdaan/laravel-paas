@@ -6,13 +6,17 @@
 package setting
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
+	"gorm.io/gorm"
 )
 
 type SettingService struct {
@@ -27,22 +31,55 @@ func NewSettingService(repo repositories.SettingRepository, redisService *infras
 	}
 }
 
-// Get fetches a setting value with a fallback default (Cached)
+func isUncachedSetting(key string) bool {
+	return key == models.SettingDefaultPaymentProvider
+}
+
+// GetUncached fetches a setting value directly from the database without checking or populating Redis.
+// It returns found = false, err = nil if the key is not found (gorm.ErrRecordNotFound).
+// It returns err != nil if the underlying query fails or context is canceled.
+func (s *SettingService) GetUncached(ctx context.Context, key string) (string, bool, error) {
+	if s == nil || s.repo == nil {
+		return "", false, nil
+	}
+	setting, err := s.repo.GetByKey(ctx, key)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return setting.Value, true, nil
+}
+
+// Get fetches a setting value with a fallback default (Cached, except for finance-critical routing settings)
 func (s *SettingService) Get(key, defaultValue string) string {
+	if isUncachedSetting(key) {
+		val, found, err := s.GetUncached(context.Background(), key)
+		if err != nil || !found {
+			return defaultValue
+		}
+		return val
+	}
+
 	var value string
 	cacheKey := "setting:" + key
 
 	// Try Redis
-	if err := s.redisService.GetCache(cacheKey, &value); err == nil {
-		return value
+	if s.redisService != nil {
+		if err := s.redisService.GetCache(cacheKey, &value); err == nil {
+			return value
+		}
 	}
 
 	// Fetch from DB
 	value = s.repo.GetValue(key, defaultValue)
 
 	// Save to Redis (long expiry since settings change rarely)
-	if err := s.redisService.SetCache(cacheKey, value, 24*time.Hour); err != nil {
-		slog.Warn("Failed to cache setting in Redis", "key", key, "error", err)
+	if s.redisService != nil {
+		if err := s.redisService.SetCache(cacheKey, value, 24*time.Hour); err != nil {
+			slog.Warn("Failed to cache setting in Redis", "key", key, "error", err)
+		}
 	}
 
 	return value
@@ -67,16 +104,27 @@ func (s *SettingService) ListAllModels() ([]models.Setting, error) {
 	return s.repo.ListAll()
 }
 
+// Invalidate removes a cached setting from Redis. For uncached settings, it is a safe no-op.
+func (s *SettingService) Invalidate(key string) error {
+	if s == nil || s.redisService == nil || isUncachedSetting(key) {
+		return nil
+	}
+	return s.redisService.DeleteCache("setting:" + key)
+}
+
 // Update settings from a map of interface values (handling type conversion)
 func (s *SettingService) UpdateBulk(settings map[string]interface{}) error {
 	for key, value := range settings {
+		if key == models.SettingBaseDomain || key == models.SettingProjectDomain {
+			return apperr.New(409, "SETTING_MANAGED_BY_ENV", "Domain settings are managed by deployment configuration")
+		}
 		// Convert any incoming type (bool, float, etc) to string
 		strValue := fmt.Sprintf("%v", value)
 		if err := s.repo.Upsert(key, strValue); err != nil {
 			return err
 		}
 		// Invalidate Cache
-		if err := s.redisService.DeleteCache("setting:" + key); err != nil {
+		if err := s.Invalidate(key); err != nil {
 			slog.Warn("Failed to invalidate setting cache", "key", key, "error", err)
 		}
 	}

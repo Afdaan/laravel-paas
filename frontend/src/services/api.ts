@@ -5,6 +5,7 @@
 // ===========================================
 
 import axios, { InternalAxiosRequestConfig, AxiosError, AxiosRequestConfig } from 'axios'
+import type { BillingOverview, BillingStatus, TopupPackage, BillingCatalogSpec } from '@/types'
 
 // Create axios instance
 const api = axios.create({
@@ -16,12 +17,24 @@ const api = axios.create({
 })
 
 export const getCSRFToken = () => {
-  const token = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith('paas_csrf='))
-    ?.split('=')[1]
+  if (typeof document === 'undefined' || !document.cookie) return ''
+  const cookies = document.cookie.split(';').map((c) => c.trim())
+  const prodPrefix = '__Host-paas_csrf='
+  const devPrefix = 'paas_csrf='
+  const targetPrefix = import.meta.env.PROD ? prodPrefix : devPrefix
 
-  return token ? decodeURIComponent(token) : ''
+  const exactMatch = cookies.find((row) => row.startsWith(targetPrefix))
+  if (exactMatch) {
+    const val = exactMatch.substring(targetPrefix.length)
+    return val ? decodeURIComponent(val) : ''
+  }
+  const fallbackPrefix = import.meta.env.PROD ? devPrefix : prodPrefix
+  const fallbackMatch = cookies.find((row) => row.startsWith(fallbackPrefix))
+  if (fallbackMatch) {
+    const val = fallbackMatch.substring(fallbackPrefix.length)
+    return val ? decodeURIComponent(val) : ''
+  }
+  return ''
 }
 
 // Request interceptor - add CSRF token for cookie-authenticated unsafe requests
@@ -30,11 +43,47 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && config.headers) {
     const csrfToken = getCSRFToken()
     if (csrfToken) {
-      config.headers['X-CSRF-Token'] = csrfToken
+      if (typeof (config.headers as any).set === 'function') {
+        (config.headers as any).set('X-CSRF-Token', csrfToken)
+      } else {
+        config.headers['X-CSRF-Token'] = csrfToken
+      }
     }
   }
   return config
 })
+
+export function isSessionExpiredError(
+  status: number | undefined,
+  errorData: unknown,
+  url: string | undefined
+): boolean {
+  if (status !== 401) return false
+
+  let code: string | undefined
+  if (typeof errorData === 'object' && errorData !== null) {
+    code = (errorData as { code?: string }).code
+  } else if (typeof errorData === 'string') {
+    try {
+      const parsed = JSON.parse(errorData)
+      code = parsed?.code
+    } catch {
+      // not JSON
+    }
+  }
+
+  // If wrong password / credentials during re-auth, login, or registration, session is not expired
+  const isAuthRoute =
+    url?.endsWith('/auth/re-auth') ||
+    url?.endsWith('/auth/login') ||
+    url?.endsWith('/auth/register')
+
+  if (isAuthRoute && (code === 'AUTH_FAILED' || code === 'INVALID_CREDENTIALS')) {
+    return false
+  }
+
+  return true
+}
 
 // Response interceptor - handle errors
 api.interceptors.response.use(
@@ -43,9 +92,95 @@ api.interceptors.response.use(
     const { config, response } = error
     if (!config) return Promise.reject(error)
 
-    // Global 401 Unauthorized handling
-    if (response?.status === 401) {
-      window.dispatchEvent(new Event('auth:expired'))
+    // Global 401 Unauthorized handling (skip login/re-auth credential failure AUTH_FAILED)
+    if (isSessionExpiredError(response?.status, response?.data, config.url)) {
+      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+        window.dispatchEvent(new Event('auth:expired'))
+      }
+    }
+
+    // Global 403 handling (RECENT_AUTH_REQUIRED vs CSRF_FAILED / IMPERSONATION_FORBIDDEN / FORBIDDEN)
+    const status = response?.status
+    const errorData = response?.data as { code?: string; message?: string; error?: string } | string | undefined
+
+    const isAuthRoute =
+      config.url?.endsWith('/auth/re-auth') ||
+      config.url?.endsWith('/auth/login') ||
+      config.url?.endsWith('/auth/logout')
+
+    const isAlreadyRetried = Boolean((config as any)._isReauthRetry)
+
+    let hasRecentAuthCode = false
+    if (typeof errorData === 'object' && errorData !== null) {
+      hasRecentAuthCode = errorData.code === 'RECENT_AUTH_REQUIRED'
+    } else if (typeof errorData === 'string') {
+      try {
+        const parsed = JSON.parse(errorData)
+        hasRecentAuthCode = parsed?.code === 'RECENT_AUTH_REQUIRED'
+      } catch {
+        hasRecentAuthCode = errorData.includes('RECENT_AUTH_REQUIRED')
+      }
+    }
+
+    const isRecentAuthRequired =
+      status === 403 &&
+      !isAuthRoute &&
+      !isAlreadyRetried &&
+      hasRecentAuthCode
+
+    if (isRecentAuthRequired) {
+      const retryConfig = { ...config } as InternalAxiosRequestConfig & { _isReauthRetry?: boolean }
+      retryConfig._isReauthRetry = true
+
+      return new Promise((resolve, reject) => {
+        let settled = false
+
+        const cleanup = () => {
+          window.removeEventListener('auth:reauthenticated', handleReauthSuccess)
+          window.removeEventListener('auth:reauth_cancelled', handleReauthCancelled)
+          window.removeEventListener('auth:expired', handleAuthExpired)
+        }
+
+        const handleReauthSuccess = async () => {
+          if (settled) return
+          settled = true
+          cleanup()
+          try {
+            const freshCsrf = getCSRFToken()
+            if (freshCsrf && retryConfig.headers) {
+              if (typeof (retryConfig.headers as any).set === 'function') {
+                (retryConfig.headers as any).set('X-CSRF-Token', freshCsrf)
+              } else {
+                retryConfig.headers['X-CSRF-Token'] = freshCsrf
+              }
+            }
+            const retryRes = await api(retryConfig)
+            resolve(retryRes)
+          } catch (retryErr) {
+            reject(retryErr)
+          }
+        }
+
+        const handleReauthCancelled = () => {
+          if (settled) return
+          settled = true
+          cleanup()
+          reject(error)
+        }
+
+        const handleAuthExpired = () => {
+          if (settled) return
+          settled = true
+          cleanup()
+          reject(error)
+        }
+
+        window.addEventListener('auth:reauthenticated', handleReauthSuccess)
+        window.addEventListener('auth:reauth_cancelled', handleReauthCancelled)
+        window.addEventListener('auth:expired', handleAuthExpired)
+
+        window.dispatchEvent(new Event('auth:recent_auth_required'))
+      })
     }
 
     // Global Server Updating/Swap handling (502 Bad Gateway / 503 Service Unavailable)
@@ -93,6 +228,9 @@ export const authAPI = {
 
   updateProfile: (data: { name: string; email: string; password?: string }) =>
     api.put('/auth/profile', data),
+
+  reauthenticate: (password: string) =>
+    api.post('/auth/re-auth', { password }),
 }
 
 // ===========================================
@@ -355,7 +493,7 @@ export const databaseAPI = {
   reinstallInstance: (dbUid: string) =>
     api.post(`/databases/${dbUid}/reinstall`),
 
-  create: (data: { engine: string; name: string; username: string; password: string }) =>
+  create: (data: { engine: string; name: string; username: string; password: string; billable_spec_id: number }) =>
     api.post('/databases', data),
 
   delete: (uid: string) =>
@@ -397,6 +535,62 @@ export const domainsAPI = {
 
   transfer: (projectId: number | string, domainId: number | string, targetProjectUid: string) =>
     api.post(`/projects/${projectId}/domains/${domainId}/transfer`, { target_project_uid: targetProjectUid }),
+}
+
+export const billingAPI = {
+  getProfile: () => api.get('/billing/profile'),
+  updateProfile: (data: any) => api.put('/billing/profile', data),
+  getUserProfileAdmin: (userID: number) => api.get(`/admin/billing/users/${userID}/billing-profile`),
+  catalog: () =>
+    api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/billing/catalog'),
+
+  // Public, no auth required - used by the marketing landing page.
+  publicCatalog: () =>
+    api.get<{ specs: BillingCatalogSpec[]; packages: TopupPackage[] }>('/public/billing/catalog'),
+
+  overview: () =>
+    api.get<BillingOverview>('/billing/overview'),
+
+  invoices: (params: { page?: number; limit?: number; search?: string; status?: string } = {}, config: { signal?: AbortSignal } = {}) =>
+    api.get<{ data: BillingOverview['invoices']; page: number; limit: number; total: number }>('/billing/invoices', { params, ...config }),
+
+  topups: (params: { page?: number; limit?: number } = {}) =>
+    api.get<{ data: BillingOverview['topups']; page: number; limit: number; total: number }>('/billing/topups', { params }),
+
+  ledger: (params: { page?: number; limit?: number } = {}) =>
+    api.get<{ data: BillingOverview['wallet']['ledger_entries']; page: number; limit: number; total: number }>('/billing/wallet/ledger', { params }),
+
+  status: () =>
+    api.get<BillingStatus[]>('/billing/status'),
+
+  createTopup: (topupPackageID: number, idempotencyKey: string, amount?: number) =>
+    api.post<import('@/types').TopupResponse>('/billing/topups', { topup_package_id: topupPackageID, ...(amount ? { amount } : {}) }, { headers: { 'Idempotency-Key': idempotencyKey } }),
+
+  reconcileTopup: (topupID: number) =>
+    api.post<import('@/types').TopupResponse>(`/billing/topups/${topupID}/reconcile`),
+
+  reconcileTopupByRef: (topupRef: string) =>
+    api.post<import('@/types').TopupResponse>(`/billing/topups/by-ref/${encodeURIComponent(topupRef)}/reconcile`),
+
+  updateAutoRenew: (resourceId: number, resourceType: 'project' | 'database', autoRenew: boolean) =>
+    api.put('/billing/resources/auto-renew', { resource_id: resourceId, resource_type: resourceType, auto_renew: autoRenew }),
+
+  payDueResource: (resourceId: number, resourceType: 'project' | 'database') =>
+    api.post(`/billing/resources/${resourceType}/${resourceId}/pay`),
+
+  adminCatalog: () => api.get('/admin/billing/catalog'),
+  adminSuspensions: () => api.get('/admin/billing/suspensions'),
+  adminWallet: (userID: number) => api.get(`/admin/billing/wallets/${userID}`),
+  adminWallets: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/wallets', { params }),
+  adminInvoices: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/invoices', { params }),
+  adminTopups: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/topups', { params }),
+  createSpec: (data: unknown) => api.post('/admin/billing/specs', data),
+  createTopupPackage: (data: unknown) => api.post('/admin/billing/topup-packages', data),
+  updateTopupPackage: (id: number, data: unknown) => api.put(`/admin/billing/topup-packages/${id}`, data),
+  adjustWalletCredits: (userID: number, data: unknown, idempotencyKey: string) =>
+    api.post(`/admin/billing/wallets/${userID}/credits`, data, { headers: { 'Idempotency-Key': idempotencyKey } }),
+  updatePaymentProvider: (data: { provider: string; reason: string }) =>
+    api.put('/admin/billing/payment-provider', data),
 }
 
 export const secretStoreAPI = {

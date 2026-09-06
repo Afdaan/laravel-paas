@@ -14,6 +14,7 @@ const (
 	SettingBuildTimeout         = "build_timeout_seconds"
 	SettingMaxDomainsPerProject = "max_domains_per_project"
 	SettingMaxImageRetention    = "max_image_retention"
+	SettingDefaultPaymentProvider = "default_payment_provider"
 )
 
 // Default Settings Values
@@ -28,4 +29,5 @@ const (
 	DefaultBuildTimeout         = "1800"
 	DefaultMaxDomainsPerProject = "3"
 	DefaultMaxImageRetention    = "3"
+	DefaultPaymentProvider    = "pakasir"
 )

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { projectsAPI, githubAPI, databaseAPI } from '../../services/api'
+import { projectsAPI, githubAPI, databaseAPI, billingAPI } from '../../services/api'
 import { AxiosError } from 'axios'
 import useTranslation from '../../lib/useTranslation'
-import { GithubAppInstallation, GithubRepository, DatabaseInstance } from '../../types'
+import { GithubAppInstallation, GithubRepository, DatabaseInstance, BillingCatalogSpec } from '../../types'
 import {
   Rocket,
   Database,
@@ -17,7 +17,18 @@ import {
   Terminal,
   Play,
   GitBranch,
-  ExternalLink
+  ExternalLink,
+  Check,
+  CreditCard,
+  Cpu,
+  HardDrive,
+  Network,
+  ShieldCheck,
+  RefreshCw,
+  Server,
+  Ban,
+  Layers,
+  Cloud
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -61,6 +72,8 @@ interface NewProjectForm {
   github_installation_id?: number;
   github_repo_owner?: string;
   github_repo_name?: string;
+  billable_spec_id: number;
+  database_billable_spec_id: number;
 }
 
 interface ValidationErrors {
@@ -70,6 +83,8 @@ interface ValidationErrors {
   database_username?: string;
   database_password?: string;
   existing_database_uid?: string;
+  billable_spec_id?: string;
+  database_billable_spec_id?: string;
 }
 
 const databaseEngines = [
@@ -163,14 +178,40 @@ function UserNewProject() {
     start_command: '',
     port: '',
     queue_enabled: false,
-    enable_database: true,
-    database_option: 'new',
+    enable_database: false,
+    database_option: 'none',
     database_engine: 'mysql',
     existing_database_uid: '',
+    billable_spec_id: 0,
+    database_billable_spec_id: 0,
   })
+  const [billingSpecs, setBillingSpecs] = useState<BillingCatalogSpec[]>([])
+  const [billingCatalogError, setBillingCatalogError] = useState(false)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [existingDatabases, setExistingDatabases] = useState<DatabaseInstance[]>([])
   const [isLoadingDatabases, setIsLoadingDatabases] = useState(false)
+
+  const loadBillingCatalog = useCallback(async () => {
+    try {
+      const { data } = await billingAPI.catalog()
+      setBillingSpecs(data.specs)
+      const projectSpec = data.specs.find((spec) => spec.type === 'project')
+      const databaseSpec = data.specs.find((spec) => spec.type === 'database')
+      setFormData((current) => ({
+        ...current,
+        billable_spec_id: current.billable_spec_id || projectSpec?.id || 0,
+        database_billable_spec_id: current.database_billable_spec_id || databaseSpec?.id || 0,
+      }))
+      setBillingCatalogError(false)
+    } catch {
+      setBillingCatalogError(true)
+      toast.error(t('billing.catalogLoadFailed'))
+    }
+  }, [t])
+
+  useEffect(() => {
+    void loadBillingCatalog()
+  }, [loadBillingCatalog])
 
   const generatePassword = useCallback(() => {
     const lowerChars = 'abcdefghijklmnopqrstuvwxyz'
@@ -441,7 +482,8 @@ function UserNewProject() {
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
 
-      const dbUser = `dbuser_${dbName.slice(0, 25)}`
+      const randSuffix = Math.random().toString(36).substring(2, 6)
+      const dbUser = `dbuser_${dbName.slice(0, 18)}_${randSuffix}`
 
       setFormData(prev => ({
         ...prev,
@@ -480,7 +522,8 @@ function UserNewProject() {
       const dbName = value.toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '')
-      const dbUser = `dbuser_${dbName.slice(0, 25)}`
+      const randSuffix = Math.random().toString(36).substring(2, 6)
+      const dbUser = `dbuser_${dbName.slice(0, 18)}_${randSuffix}`
       setFormData(prev => ({
         ...prev,
         database_name: isDbNameManuallyEdited ? prev.database_name : dbName,
@@ -543,6 +586,9 @@ function UserNewProject() {
       errors.existing_database_uid = t('newProject.dbConfig.existing.placeholder')
     }
 
+    if (!formData.billable_spec_id) errors.billable_spec_id = t('billing.selectProjectPlan')
+    if (formData.database_option === 'new' && !formData.database_billable_spec_id) errors.database_billable_spec_id = t('billing.selectDatabasePlan')
+
     setValidationErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -565,10 +611,10 @@ function UserNewProject() {
       toast.success(t('common.success'))
       navigate(`/projects/${response.data.project.uid}`)
     } catch (error: unknown) {
-      const axiosError = error as AxiosError<{ error: string }>
+      const axiosError = error as AxiosError<{ error: string; reason?: string }>
       let errorMsg = axiosError.response?.data?.error || t('common.actionFailed')
 
-      if (errorMsg === 'Project limit reached' || axiosError.response?.status === 403) {
+      if (errorMsg === 'Project limit reached' || axiosError.response?.data?.reason === 'PROJECT_LIMIT_REACHED') {
         errorMsg = t('newProject.restrictedDesc')
       }
 
@@ -988,90 +1034,100 @@ function UserNewProject() {
                       </div>
                     </div>
 
-                    {/* Database Options Cards */}
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {[
-                          { value: 'none', key: 'none' as const, badgeClass: "border-border bg-muted/20 text-muted-foreground" },
-                          { value: 'sqlite', key: 'sqlite' as const, badgeClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-500" },
-                          { value: 'new', key: 'new' as const, badgeClass: "border-primary/20 bg-primary/10 text-primary" },
-                        ].map((opt) => (
-                          <Card
+                    {/* Database Options Cards - Pristine 5-Column Bento without Text Truncation */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      {[
+                        {
+                          value: 'none' as const,
+                          key: 'none' as const,
+                          icon: Ban,
+                          iconColor: "text-muted-foreground",
+                          iconBg: "bg-muted/40 border-border/40",
+                          badgeClass: "border-border/60 bg-muted/30 text-muted-foreground font-mono",
+                        },
+                        {
+                          value: 'sqlite' as const,
+                          key: 'sqlite' as const,
+                          icon: HardDrive,
+                          iconColor: "text-emerald-500",
+                          iconBg: "bg-emerald-500/10 border-emerald-500/20",
+                          badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-mono",
+                        },
+                        {
+                          value: 'new' as const,
+                          key: 'new' as const,
+                          icon: Server,
+                          iconColor: "text-primary",
+                          iconBg: "bg-primary/10 border-primary/20",
+                          badgeClass: "border-primary/30 bg-primary/10 text-primary font-mono",
+                        },
+                        {
+                          value: 'existing' as const,
+                          key: 'existing' as const,
+                          icon: Layers,
+                          iconColor: "text-amber-500",
+                          iconBg: "bg-amber-500/10 border-amber-500/20",
+                          badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-400 font-mono",
+                        },
+                        {
+                          value: 'external' as const,
+                          key: 'external' as const,
+                          icon: Cloud,
+                          iconColor: "text-purple-400",
+                          iconBg: "bg-purple-500/10 border-purple-500/20",
+                          badgeClass: "border-purple-500/30 bg-purple-500/10 text-purple-400 font-mono",
+                        },
+                      ].map((opt) => {
+                        const isSelected = formData.database_option === opt.value
+                        const Icon = opt.icon
+                        return (
+                          <div
                             key={opt.value}
+                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value }))}
                             className={cn(
-                              "p-4 cursor-pointer border transition-all duration-200 flex flex-col justify-between hover:shadow-md",
-                              formData.database_option === opt.value
-                                ? "border-primary bg-primary/5 ring-1 ring-primary/25"
-                                : "border-border/80 bg-background/50"
+                              "group relative cursor-pointer p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between select-none bg-card/40 hover:bg-card/80 h-full min-h-[195px]",
+                              isSelected
+                                ? "border-primary/60 bg-primary/5 ring-1 ring-primary/25 shadow-xs"
+                                : "border-border/60"
                             )}
-                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as typeof prev.database_option }))}
                           >
                             <div className="space-y-2">
+                              {/* Header: Icon + Radio Indicator */}
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground">{t(`newProject.dbConfig.options.${opt.key}.label`)}</span>
+                                <div className={cn("p-1.5 rounded-lg border shrink-0", opt.iconBg)}>
+                                  <Icon className={cn("w-4 h-4", opt.iconColor)} />
+                                </div>
                                 <div className={cn(
-                                  "w-4 h-4 rounded-full border flex items-center justify-center",
-                                  formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
+                                  "w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all p-0.5 shrink-0",
+                                  isSelected ? "border-primary bg-primary/10" : "border-muted-foreground/30 group-hover:border-muted-foreground/60"
                                 )}>
-                                  {formData.database_option === opt.value && (
-                                    <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                                  )}
+                                  {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
                                 </div>
                               </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{t(`newProject.dbConfig.options.${opt.key}.desc`)}</p>
-                            </div>
-                            <div className="mt-4">
-                              <span className={cn(
-                                "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
-                                opt.badgeClass
-                              )}>
-                                {t(`newProject.dbConfig.options.${opt.key}.badge`)}
-                              </span>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[
-                          { value: 'existing', key: 'existing' as const, badgeClass: "border-amber-500/20 bg-amber-500/10 text-amber-500" },
-                          { value: 'external', key: 'external' as const, badgeClass: "border-purple-500/20 bg-purple-500/10 text-purple-500" },
-                        ].map((opt) => (
-                          <Card
-                            key={opt.value}
-                            className={cn(
-                              "p-4 cursor-pointer border transition-all duration-200 flex flex-col justify-between hover:shadow-md",
-                              formData.database_option === opt.value
-                                ? "border-primary bg-primary/5 ring-1 ring-primary/25"
-                                : "border-border/80 bg-background/50"
-                            )}
-                            onClick={() => setFormData(prev => ({ ...prev, database_option: opt.value as typeof prev.database_option }))}
-                          >
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-foreground">{t(`newProject.dbConfig.options.${opt.key}.label`)}</span>
-                                <div className={cn(
-                                  "w-4 h-4 rounded-full border flex items-center justify-center",
-                                  formData.database_option === opt.value ? "border-primary" : "border-muted-foreground"
-                                )}>
-                                  {formData.database_option === opt.value && (
-                                    <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                                  )}
-                                </div>
-                              </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{t(`newProject.dbConfig.options.${opt.key}.desc`)}</p>
+                              {/* Title (Full Card Width) */}
+                              <h4 className="font-bold text-[12px] text-foreground tracking-tight group-hover:text-primary transition-colors leading-tight pt-1">
+                                {t(`newProject.dbConfig.options.${opt.key}.label`)}
+                              </h4>
+
+                              {/* Description (Full Card Width) */}
+                              <p className="text-[10.5px] text-muted-foreground leading-relaxed">
+                                {t(`newProject.dbConfig.options.${opt.key}.desc`)}
+                              </p>
                             </div>
-                            <div className="mt-4">
+
+                            {/* Footer Badge */}
+                            <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-between">
                               <span className={cn(
-                                "text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider",
+                                "text-[8px] font-bold px-1.5 py-0.5 rounded-full border uppercase tracking-tight whitespace-nowrap overflow-hidden text-ellipsis",
                                 opt.badgeClass
                               )}>
                                 {t(`newProject.dbConfig.options.${opt.key}.badge`)}
                               </span>
                             </div>
-                          </Card>
-                        ))}
-                      </div>
+                          </div>
+                        )
+                      })}
                     </div>
 
                     {/* New Managed DB Section */}
@@ -1160,21 +1216,15 @@ function UserNewProject() {
                                 setFormData(prev => ({ ...prev, database_password: generatePassword() }))
                                 setValidationErrors(prev => ({ ...prev, database_password: undefined }))
                               }}
-                              className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1 text-xs"
+                              className="h-11 px-4 rounded-xl border-border bg-background hover:bg-muted/30 font-semibold gap-1.5 text-xs flex items-center"
                             >
+                              <RefreshCw className="w-3.5 h-3.5 opacity-70" />
                               {t('newProject.dbConfig.configureNew.generate')}
                             </Button>
                           </div>
                           {validationErrors.database_password && (
                             <p className="text-xs text-destructive font-medium pl-1">{validationErrors.database_password}</p>
                           )}
-                        </div>
-
-                        <div className="p-3 bg-primary/10 rounded-xl border border-primary/20 flex gap-2.5 items-start">
-                          <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                          <span className="text-[10px] text-muted-foreground leading-relaxed">
-                            {t('newProject.dbConfig.configureNew.info')}
-                          </span>
                         </div>
                       </div>
                     )}
@@ -1376,6 +1426,42 @@ function UserNewProject() {
             </div>
           </Card>
 
+          <Card className="space-y-6 p-6">
+            <div>
+              <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-primary" />
+                {t('billing.plans')}
+              </Label>
+              <p className="mt-1 text-xs text-muted-foreground">{t('billing.plansDescription')}</p>
+            </div>
+
+            {billingCatalogError && (
+              <Button type="button" variant="outline" size="sm" onClick={() => void loadBillingCatalog()}>
+                {t('billing.catalogRetry')}
+              </Button>
+            )}
+
+            <PlanSelector
+              label={t('billing.projectPlan')}
+              specs={billingSpecs.filter((spec) => spec.type === 'project')}
+              value={formData.billable_spec_id}
+              onChange={(id) => setFormData((current) => ({ ...current, billable_spec_id: id }))}
+              error={validationErrors.billable_spec_id}
+            />
+
+            {formData.database_option === 'new' && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300 border-t pt-5 space-y-4">
+                <PlanSelector
+                  label={t('billing.databasePlan')}
+                  specs={billingSpecs.filter((spec) => spec.type === 'database')}
+                  value={formData.database_billable_spec_id}
+                  onChange={(id) => setFormData((current) => ({ ...current, database_billable_spec_id: id }))}
+                  error={validationErrors.database_billable_spec_id}
+                />
+              </div>
+            )}
+          </Card>
+
           {/* Submit Button (Only shown/enabled once source is selected/populated) */}
           {(connectionMode === 'manual' || selectedRepoFullName) && (
             <Button
@@ -1404,3 +1490,159 @@ function UserNewProject() {
 }
 
 export default UserNewProject
+
+function PlanSelector({
+  label,
+  specs,
+  value,
+  onChange,
+  error,
+}: {
+  label: string
+  specs: BillingCatalogSpec[]
+  value: number
+  onChange: (id: number) => void
+  error?: string
+}) {
+  const { t } = useTranslation()
+  const groupRef = useRef<HTMLDivElement>(null)
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+      return
+    }
+    event.preventDefault()
+    const buttons = groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    if (!buttons || buttons.length === 0) return
+    const nextIndex =
+      event.key === 'ArrowDown' || event.key === 'ArrowRight'
+        ? (index + 1) % buttons.length
+        : (index - 1 + buttons.length) % buttons.length
+    buttons[nextIndex]?.focus()
+    buttons[nextIndex]?.click()
+  }
+
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+        {specs[0]?.type === 'database' ? (
+          <Database className="w-3.5 h-3.5 text-muted-foreground" />
+        ) : (
+          <Server className="w-3.5 h-3.5 text-muted-foreground" />
+        )}
+        {label}
+      </legend>
+
+      <div
+        ref={groupRef}
+        role="radiogroup"
+        aria-label={label}
+        aria-invalid={!!error}
+        aria-describedby={error ? `${label}-error` : undefined}
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      >
+        {specs.map((spec, index) => {
+          const selected = value === spec.id
+
+          // Dynamic badge text set by superadmin (rendered ONLY if configured)
+          const badgeText = spec.badge_text?.trim()
+
+          // Formatted specs resources
+          const vCpuText = spec.cpu_millicores ? `${(spec.cpu_millicores / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} vCPU (${spec.cpu_millicores}m)` : null
+          const ramText = spec.memory_mb ? (spec.memory_mb >= 1024 ? `${spec.memory_mb / 1024} GB RAM` : `${spec.memory_mb} MB RAM`) : null
+          const connText = spec.connection_limit ? t('billing.connections', { count: spec.connection_limit }) : null
+          const backupText = spec.backup_retention_days ? t('billing.backupRetention', { count: spec.backup_retention_days }) : null
+
+          return (
+            <button
+              key={spec.id}
+              type="button"
+              role="radio"
+              tabIndex={selected ? 0 : -1}
+              aria-checked={selected}
+              onClick={() => onChange(spec.id)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
+              className={cn(
+                'relative flex flex-col justify-between gap-4 rounded-lg border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected
+                  ? 'border-2 border-primary bg-card shadow-xs'
+                  : 'border-border/70 hover:border-foreground/20 hover:bg-muted/30'
+              )}
+            >
+              {/* Header section with optional Admin Badge & Selection Circle */}
+              <div className="space-y-2 w-full">
+                <div className="flex items-center justify-between gap-2">
+                  {badgeText ? (
+                    <span className="text-[10px] font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded border border-border/60 bg-muted/50 text-muted-foreground">
+                      {badgeText}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+
+                  {/* Radio Indicator */}
+                  <div className={cn(
+                    'w-4 h-4 rounded-full border flex items-center justify-center transition-colors',
+                    selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/30'
+                  )}>
+                    {selected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground">{spec.name}</h4>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <span className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
+                      {spec.monthly_credits.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{t('billing.credits')} / {t('billing.perMonth')}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resource Specifications Details */}
+              <div className="w-full pt-3 border-t border-border/50 space-y-1.5 text-xs text-muted-foreground">
+                {vCpuText && (
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{vCpuText}</span>
+                  </div>
+                )}
+                {ramText && (
+                  <div className="flex items-center gap-2">
+                    <HardDrive className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{ramText}</span>
+                  </div>
+                )}
+                {connText && (
+                  <div className="flex items-center gap-2">
+                    <Network className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{connText}</span>
+                  </div>
+                )}
+                {backupText && (
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                    <span className="font-mono text-[11px] tabular-nums">{backupText}</span>
+                  </div>
+                )}
+                {spec.type === 'project' && (
+                  <div className="flex items-center gap-2 pt-0.5 text-[11px]">
+                    <Check className="w-3 h-3 shrink-0 opacity-70" />
+                    <span>{t('billing.autoSslGit')}</span>
+                  </div>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      {error && (
+        <p id={`${label}-error`} className="text-xs text-destructive font-medium">
+          {error}
+        </p>
+      )}
+      {specs.length === 0 && !error && <p className="text-xs text-destructive">{t('billing.noPlans')}</p>}
+    </fieldset>
+  )
+}

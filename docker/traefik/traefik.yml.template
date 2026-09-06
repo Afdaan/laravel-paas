@@ -4,16 +4,20 @@
 
 api:
   dashboard: true
-  insecure: true
+  insecure: false
 
 entryPoints:
   web:
     address: ":80"
     forwardedHeaders:
       trustedIPs:
-        - "127.0.0.1/32"
-        - "192.168.0.0/16" # Private network range (covers your 192.168.255.x)
-        - "172.16.0.0/12" # Docker internal network range
+__TRAEFIK_TRUSTED_IPS__
+  websecure:
+    address: ":443"
+    forwardedHeaders:
+      trustedIPs:
+__TRAEFIK_TRUSTED_IPS__
+
 
 providers:
   docker:
@@ -25,9 +29,11 @@ providers:
     watch: true
   http:
     endpoint: "http://paas-backend:8080/api/internal/traefik/config"
+    headers:
+      X-Internal-Token: "__INTERNAL_API_TOKEN__"
     pollInterval: "2s"
     pollTimeout: "5s"
 
-
 log:
-  level: INFO
+  level: DEBUG
+

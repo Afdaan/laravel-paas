@@ -203,3 +203,126 @@ export interface DatabaseMetrics {
   active_connections: number;
   size_kb: number;
 }
+
+export interface BillingCatalogSpec {
+  id: number;
+  type: 'project' | 'database';
+  name: string;
+  slug: string;
+  cpu_millicores: number;
+  memory_mb: number;
+  storage_gb: number;
+  monthly_credits: number;
+  connection_limit?: number;
+  backup_retention_days?: number;
+  badge_text?: string;
+}
+
+export interface TopupPackage {
+  provider?: string;
+  id: number;
+  credits: number;
+  currency: string;
+  amount_minor: number;
+  sort_order: number;
+}
+
+export interface InvoiceItemView {
+  id: number;
+  billable_resource_id: number;
+  resource_type: 'project' | 'database';
+  resource_name: string;
+  spec_id: number;
+  spec_name: string;
+  description: string;
+  credits: number;
+}
+
+export interface BillingOverview {
+  wallet: {
+    balance_credits: number;
+    ledger_entries: Array<{
+      type: string;
+      amount_credits: number;
+      balance_after: number;
+      created_at: string;
+    }>;
+  };
+  invoices: Array<{
+    id: number;
+    invoice_number?: string;
+    billing_profile_snapshot?: string;
+    period_start: string;
+    period_end: string;
+    total_credits: number;
+    status: string;
+    due_at?: string;
+    paid_at?: string;
+    created_at: string;
+    items?: InvoiceItemView[];
+  }>;
+  topups: Array<{
+    id: number;
+    credits: number;
+    amount_minor: number;
+    currency: string;
+    status: string;
+    payment_token?: string;
+    payment_url?: string;
+    paid_at?: string;
+    created_at: string;
+  }>;
+  resources: Array<{
+    resource_id: number;
+    resource_type: 'project' | 'database';
+    resource_name: string;
+    spec_name: string;
+    cpu_millicores?: number;
+    memory_mb?: number;
+    storage_gb?: number;
+    engine?: string;
+    monthly_credits: number;
+    status: 'active' | 'payment_due' | 'suspended';
+    current_period_start: string;
+    next_invoice_at: string;
+    payment_due_period_start?: string;
+    payment_due_period_end?: string;
+    auto_renew: boolean;
+  }>;
+  upcoming_required_credits: number;
+  total_invoiced_credits?: number;
+}
+
+export interface BillingStatus {
+  resource_id: number;
+  resource_type: 'project' | 'database';
+  status: 'active' | 'payment_due' | 'suspended';
+  oldest_due_at?: string;
+  payment_due_days: number;
+}
+
+
+export interface BillingProfile {
+  id?: number;
+  user_id?: number;
+  company_name: string;
+  tax_id: string;
+  email: string;
+  phone: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state_province: string;
+  postal_code: string;
+  country: string;
+}
+
+export interface TopupResponse {
+  id: number;
+  credits: number;
+  amount_minor: number;
+  currency: string;
+  status: string;
+  payment_token?: string;
+  payment_url?: string;
+}

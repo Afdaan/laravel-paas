@@ -7,13 +7,16 @@
 package database
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -22,11 +25,40 @@ import (
 	"gorm.io/gorm"
 )
 
+const defensiveMigrationLockIdentity = "runara:defensive-migration-bootstrap"
+
 // DefensiveMigrationBootstrap orchestrates the safe migration pipeline.
 // Existence checks matter because historical databases experience schema drift
 // over time across different environments. Blindly dropping or renaming constraints
 // can cause production outages or duplicated indexes if the names do not match perfectly.
 func DefensiveMigrationBootstrap(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return defensiveMigrationBootstrap(db)
+	}
+	// Hold a dedicated session lock while migrations run through GORM's normal
+	// pool. GORM AutoMigrate requires *sql.DB and can panic when bound directly
+	// to *sql.Conn; PostgreSQL advisory locks are session-scoped globally.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get database for migration lock: %w", err)
+	}
+	sessionConn, err := sqlDB.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("open migration lock session: %w", err)
+	}
+	defer sessionConn.Close()
+	if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_lock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
+		return fmt.Errorf("acquire database migration lock: %w", err)
+	}
+	defer func() {
+		if _, err := sessionConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtextextended($1, 0))", defensiveMigrationLockIdentity); err != nil {
+			slog.Error("Failed to release database migration lock", "error", err)
+		}
+	}()
+	return defensiveMigrationBootstrap(db)
+}
+
+func defensiveMigrationBootstrap(db *gorm.DB) error {
 	slog.Info("Starting defensive database migration bootstrap...")
 
 	// 1. Verify GORM and Database compatibility / connectivity.
@@ -45,16 +77,18 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 
 	// 4. Clean up duplicate deployment events before applying new unique indexes.
 	// This resolves SQLSTATE 23505 duplicate key violations during AutoMigrate.
-	slog.Info("Cleaning up duplicate deployment events...")
-	if err := db.Exec(`
-		DELETE FROM deployment_events a
-		USING deployment_events b
-		WHERE a.project_id = b.project_id
-		  AND a.job_id = b.job_id
-		  AND a.sequence_number = b.sequence_number
-		  AND a.id < b.id
-	`).Error; err != nil {
-		slog.Warn("Failed to clean duplicate deployment events", "error", err)
+	if db.Migrator().HasTable(&models.DeploymentEvent{}) {
+		slog.Info("Cleaning up duplicate deployment events...")
+		if err := db.Exec(`
+			DELETE FROM deployment_events a
+			USING deployment_events b
+			WHERE a.project_id = b.project_id
+			  AND a.job_id = b.job_id
+			  AND a.sequence_number = b.sequence_number
+			  AND a.id < b.id
+		`).Error; err != nil {
+			slog.Warn("Failed to clean duplicate deployment events", "error", err)
+		}
 	}
 
 	// 4.5 Migrate database_instances table fields user_id and project_id.
@@ -62,7 +96,26 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		return fmt.Errorf("failed database_instances table migration: %w", err)
 	}
 
-	// 5. Run explicit, ordered AutoMigrate for models.
+	// Reconcile legacy billing package identity before AutoMigrate creates versioned indexes.
+	if isPostgres(db) && db.Migrator().HasTable(&models.TopupPackage{}) {
+		if err := reconcileTopupPackageIdentity(db); err != nil {
+			return err
+		}
+	}
+
+	// Reconcile topups provider_payment_token column size to text for Pakasir QRIS strings.
+	if isPostgres(db) && db.Migrator().HasTable(&models.Topup{}) {
+		if err := db.Exec(`ALTER TABLE topups ALTER COLUMN provider_payment_token TYPE text`).Error; err != nil {
+			slog.Warn("Failed to alter topups provider_payment_token column type to text", "error", err)
+		}
+	}
+
+	// 5. Pre-migrate legacy invoices before AutoMigrate unique index creation.
+	if err := preMigrateInvoices(db); err != nil {
+		return fmt.Errorf("pre-migrate invoices failed: %w", err)
+	}
+
+	// 6. Run explicit, ordered AutoMigrate for models.
 	modelsList := []interface{}{
 		&models.User{},
 		&models.Project{},
@@ -76,14 +129,33 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		&models.IdempotentOperation{},
 		&models.PendingReconcile{},
 		&models.AuditLog{},
+		&models.ImpersonationAudit{},
 		&models.GithubAppInstallation{},
 		&models.DatabaseInstance{},
+		&models.DatabaseCleanupTask{},
+		&models.DatabaseReinstallRecoveryTask{},
+		&models.DatabaseCredentialRotationTask{},
+		&models.ProjectEnvSyncTask{},
+		&models.ProjectDeletionTask{},
+		&models.ProjectSuspensionTask{},
+		&models.DatabaseStatusOperationTask{},
 		&models.DatabaseBackup{},
 		&models.SecretStore{},
 		&models.SecretStoreItem{},
 		&models.SecretStoreItemValue{},
 		&models.SecretStoreBinding{},
 		&models.SecretStoreActivityLog{},
+		&models.Wallet{},
+		&models.WalletLedgerEntry{},
+		&models.BillingProfile{},
+		&models.BillingAuditEvent{},
+		&models.TopupPackage{},
+		&models.Topup{},
+		&models.BillableSpec{},
+		&models.BillableResource{},
+		&models.Invoice{},
+		&models.InvoiceItem{},
+		&models.PaymentEvent{},
 	}
 
 	for _, m := range modelsList {
@@ -93,10 +165,27 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 			return fmt.Errorf("AutoMigrate failed for table %s: %w", tableName, err)
 		}
 	}
-
+	if err := repairBillingCatalog(db); err != nil {
+		return fmt.Errorf("repair billing catalog failed: %w", err)
+	}
+	if err := seedBillingCatalog(db); err != nil {
+		return fmt.Errorf("seed billing catalog failed: %w", err)
+	}
+	if err := reconcileDuplicateActiveBillingCatalog(db); err != nil {
+		return err
+	}
+	if err := ensureActiveCatalogIndexes(db); err != nil {
+		return err
+	}
+	if err := backfillBillableResourceAnchors(db); err != nil {
+		return err
+	}
 	// 5. Post-migration Safe Schema Reconciliation using exact historical names.
 	if err := ReconcileSchemas(db); err != nil {
 		return fmt.Errorf("schema reconciliation failed: %w", err)
+	}
+	if err := retireDeletedBillableResources(db); err != nil {
+		return err
 	}
 
 	// 5.1. Populate empty UIDs for database_instances to support secure communications.
@@ -121,8 +210,6 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		return fmt.Errorf("migration verification failed: %d database instances still have empty UIDs", count)
 	}
 
-	slog.Info("Defensive migration bootstrap completed successfully.")
-
 	cfg := config.Load()
 
 	// Perform filesystem migration to user tenant subdirectories.
@@ -139,6 +226,11 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 	if err := BackfillDatabaseInstances(db); err != nil {
 		slog.Warn("Failed to backfill database instances", "error", err)
 	}
+	if cfg.BillingEnabled {
+		if err := ensureBillableResourceCoverage(db); err != nil {
+			return err
+		}
+	}
 
 	// Backfill Laravel APP_KEY for existing Laravel projects.
 	if err := BackfillLaravelAppKeys(db, cfg); err != nil {
@@ -150,6 +242,72 @@ func DefensiveMigrationBootstrap(db *gorm.DB) error {
 		slog.Warn("Failed to backfill primary custom domains", "error", err)
 	}
 
+	slog.Info("Defensive migration bootstrap completed successfully.")
+	return nil
+}
+
+func ensureBillableResourceCoverage(db *gorm.DB) error {
+	var unmappedProjects int64
+	if err := db.Model(&models.Project{}).
+		Where("status <> ?", models.StatusDeleting).
+		Where("NOT EXISTS (SELECT 1 FROM billable_resources WHERE billable_resources.type = ? AND billable_resources.resource_id = projects.id)", models.BillableTypeProject).
+		Count(&unmappedProjects).Error; err != nil {
+		return fmt.Errorf("check unmapped billable projects: %w", err)
+	}
+	var unmappedDatabases int64
+	if err := db.Model(&models.DatabaseInstance{}).
+		Where("status <> ?", models.DBStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM billable_resources WHERE billable_resources.type = ? AND billable_resources.resource_id = database_instances.id)", models.BillableTypeDatabase).
+		Count(&unmappedDatabases).Error; err != nil {
+		return fmt.Errorf("check unmapped billable databases: %w", err)
+	}
+	if unmappedProjects == 0 && unmappedDatabases == 0 {
+		return nil
+	}
+	return fmt.Errorf("billing activation blocked: %d project(s) and %d database(s) require explicit billable-spec mapping", unmappedProjects, unmappedDatabases)
+}
+
+func retireDeletedBillableResources(db *gorm.DB) error {
+	if err := db.Model(&models.BillableResource{}).
+		Where("type = ? AND billing_status <> ?", models.BillableTypeProject, models.BillableResourceStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?)", models.StatusDeleting).
+		Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+		return fmt.Errorf("retire deleted project billable resources: %w", err)
+	}
+	if err := db.Model(&models.BillableResource{}).
+		Where("type = ? AND billing_status <> ?", models.BillableTypeDatabase, models.BillableResourceStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?)", models.DBStatusDeleted).
+		Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+		return fmt.Errorf("retire deleted database billable resources: %w", err)
+	}
+	return nil
+}
+
+func backfillBillableResourceAnchors(db *gorm.DB) error {
+	var resources []models.BillableResource
+	if err := db.Model(&models.BillableResource{}).Where("billing_anchor_day = ?", 0).Find(&resources).Error; err != nil {
+		return fmt.Errorf("list billable resources without anchor: %w", err)
+	}
+	for _, resource := range resources {
+		var firstInvoice models.Invoice
+		if err := db.Model(&models.Invoice{}).
+			Select("invoices.*").
+			Joins("JOIN invoice_items ON invoice_items.invoice_id = invoices.id").
+			Where("invoice_items.billable_resource_id = ?", resource.ID).
+			Order("invoices.period_start ASC, invoice_items.id ASC").
+			First(&firstInvoice).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("billing anchor for resource %d is unprovable; add an explicit billing anchor before enabling billing", resource.ID)
+			}
+			return fmt.Errorf("load first invoice for billable resource %d: %w", resource.ID, err)
+		}
+		anchorStart := firstInvoice.PeriodStart.UTC()
+		anchorDay := anchorStart.Day()
+		monthEnd := anchorDay == time.Date(anchorStart.Year(), anchorStart.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		if err := db.Model(&resource).Updates(map[string]any{"billing_anchor_day": anchorDay, "billing_anchor_month_end": monthEnd}).Error; err != nil {
+			return fmt.Errorf("backfill billable resource anchor %d: %w", resource.ID, err)
+		}
+	}
 	return nil
 }
 
@@ -218,6 +376,19 @@ func EnsureUniqueIndexesAreConstraints(db *gorm.DB) error {
 		{"idempotent_operations", "uni_idempotent_operations_key", []string{"key"}},
 		{"pending_reconciles", "uni_pending_reconciles_domain_id", []string{"domain_id"}},
 		{"database_instances", "uni_database_instances_project_id", []string{"project_id"}},
+		{"wallets", "uni_wallets_user_id", []string{"user_id"}},
+		{"wallets", "uni_wallets_id_user_id", []string{"id", "user_id"}},
+		{"wallet_ledger_entries", "uni_wallet_ledger_entries_idempotency_key", []string{"idempotency_key"}},
+		{"topup_packages", "uni_topup_packages_identity_version", []string{"currency", "credits", "version"}},
+		{"topups", "uni_topups_wallet_client_key", []string{"wallet_id", "client_idempotency_key"}},
+		{"topups", "uni_topups_provider_order", []string{"provider", "provider_order_id"}},
+		{"billable_specs", "uni_billable_specs_slug_version", []string{"type", "slug", "version"}},
+		{"billable_resources", "uni_billable_resources_type_resource", []string{"type", "resource_id"}},
+		{"invoices", "uni_invoices_user_period", []string{"user_id", "period_start", "period_end"}},
+		{"invoices", "uni_invoices_idempotency_key", []string{"idempotency_key"}},
+		{"invoices", "uni_invoices_invoice_number", []string{"invoice_number"}},
+		{"invoice_items", "uni_invoice_items_invoice_resource", []string{"invoice_id", "billable_resource_id"}},
+		{"payment_events", "uni_payment_events_event_key", []string{"event_key"}},
 	}
 
 	for _, def := range uniqueDefs {
@@ -381,6 +552,550 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile SecretStoreBinding unique constraint
 	_ = EnsureConstraint(db, &models.SecretStoreBinding{}, "uni_secret_store_bindings_proj_store_env", "UNIQUE (project_id, secret_store_id, environment)")
 
+	if err := reconcileBillingSchema(db); err != nil {
+		return err
+	}
+	if err := repairBillingCatalog(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func reconcileTopupPackageIdentity(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return nil
+	}
+
+	var hasLegacyProvider bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'topup_packages'
+			  AND column_name = 'provider'
+		)
+	`).Scan(&hasLegacyProvider).Error; err != nil {
+		return fmt.Errorf("check legacy provider column: %w", err)
+	}
+
+	if hasLegacyProvider {
+		if err := db.Exec(`
+			ALTER TABLE topup_packages ADD COLUMN IF NOT EXISTS version integer;
+			UPDATE topup_packages SET version = 1 WHERE version IS NULL;
+			ALTER TABLE topup_packages ALTER COLUMN version SET DEFAULT 1;
+			ALTER TABLE topup_packages ALTER COLUMN version SET NOT NULL;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS chk_topup_packages_provider_currency;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_provider_currency_credits;
+			DROP INDEX IF EXISTS uni_topup_packages_provider_currency_credits;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_one_active;
+			DROP INDEX IF EXISTS uni_topup_packages_one_active;
+			ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_identity_version;
+			DROP INDEX IF EXISTS uni_topup_packages_identity_version;
+			ALTER TABLE topup_packages DROP COLUMN IF EXISTS provider;
+		`).Error; err != nil {
+			return fmt.Errorf("migrate topup package version and drop legacy provider: %w", err)
+		}
+	}
+
+	correct, err := hasTopupPackageIdentityVersionConstraint(db)
+	if err != nil {
+		return err
+	}
+	if correct {
+		return nil
+	}
+
+	if err := db.Exec(`
+		ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS uni_topup_packages_identity_version;
+		DROP INDEX IF EXISTS uni_topup_packages_identity_version;
+		ALTER TABLE topup_packages ADD CONSTRAINT uni_topup_packages_identity_version UNIQUE (currency, credits, version);
+	`).Error; err != nil {
+		return fmt.Errorf("reconcile topup package identity: %w", err)
+	}
+	return nil
+}
+
+func hasTopupPackageIdentityVersionConstraint(db *gorm.DB) (bool, error) {
+	var exists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_constraint
+			WHERE conrelid = 'topup_packages'::regclass
+			  AND conname = 'uni_topup_packages_identity_version'
+			  AND contype = 'u'
+			  AND pg_get_constraintdef(oid) = 'UNIQUE (currency, credits, version)'
+		)
+	`).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("check topup package identity constraint: %w", err)
+	}
+	return exists, nil
+}
+
+func reconcileDuplicateActiveBillingCatalog(db *gorm.DB) error {
+	if !isPostgres(db) || !db.Migrator().HasTable(&models.TopupPackage{}) || !db.Migrator().HasTable(&models.BillableSpec{}) {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		topupResult := tx.Exec(`
+			WITH ranked AS (
+				SELECT id, ROW_NUMBER() OVER (
+					PARTITION BY currency, credits
+					ORDER BY version DESC, id DESC
+				) AS rank
+				FROM topup_packages
+				WHERE is_active
+			)
+			UPDATE topup_packages
+			SET is_active = false, updated_at = NOW()
+			WHERE id IN (SELECT id FROM ranked WHERE rank > 1);
+		`)
+		if topupResult.Error != nil {
+			return fmt.Errorf("deactivate duplicate active topup packages: %w", topupResult.Error)
+		}
+
+		specResult := tx.Exec(`
+			WITH ranked AS (
+				SELECT id, ROW_NUMBER() OVER (
+					PARTITION BY type, slug
+					ORDER BY version DESC, id DESC
+				) AS rank
+				FROM billable_specs
+				WHERE is_active
+			)
+			UPDATE billable_specs
+			SET is_active = false, updated_at = NOW()
+			WHERE id IN (SELECT id FROM ranked WHERE rank > 1);
+		`)
+		if specResult.Error != nil {
+			return fmt.Errorf("deactivate duplicate active billable specs: %w", specResult.Error)
+		}
+		if topupResult.RowsAffected > 0 || specResult.RowsAffected > 0 {
+			slog.Warn("Reconciled duplicate active billing catalog rows", "deactivated_topup_packages", topupResult.RowsAffected, "deactivated_billable_specs", specResult.RowsAffected)
+		}
+		return nil
+	})
+}
+
+func ensureActiveCatalogIndexes(db *gorm.DB) error {
+	if !isPostgres(db) || !db.Migrator().HasTable(&models.TopupPackage{}) || !db.Migrator().HasTable(&models.BillableSpec{}) {
+		return nil
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uni_topup_packages_one_active
+		ON topup_packages (currency, credits)
+		WHERE is_active;
+	`).Error; err != nil {
+		return fmt.Errorf("create active topup package index: %w", err)
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uni_billable_specs_one_active
+		ON billable_specs (type, slug)
+		WHERE is_active;
+	`).Error; err != nil {
+		return fmt.Errorf("create active billable spec index: %w", err)
+	}
+	return nil
+}
+
+func preMigrateInvoices(db *gorm.DB) error {
+	if !db.Migrator().HasTable("invoices") {
+		return nil
+	}
+
+	// 1. Ensure invoice_number and billing_profile_snapshot columns exist (nullable initially).
+	if isPostgres(db) {
+		if err := db.Exec(`
+			DO $$
+			BEGIN
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_name = 'invoices' AND column_name = 'invoice_number'
+				) THEN
+					ALTER TABLE invoices ADD COLUMN invoice_number VARCHAR(100);
+				END IF;
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_name = 'invoices' AND column_name = 'billing_profile_snapshot'
+				) THEN
+					ALTER TABLE invoices ADD COLUMN billing_profile_snapshot TEXT DEFAULT '';
+				END IF;
+			END $$;
+		`).Error; err != nil {
+			return fmt.Errorf("pre-migrate invoice columns postgres: %w", err)
+		}
+	} else {
+		if !db.Migrator().HasColumn(&models.Invoice{}, "invoice_number") {
+			_ = db.Exec(`ALTER TABLE invoices ADD COLUMN invoice_number VARCHAR(100);`)
+		}
+		if !db.Migrator().HasColumn(&models.Invoice{}, "billing_profile_snapshot") {
+			_ = db.Exec(`ALTER TABLE invoices ADD COLUMN billing_profile_snapshot TEXT DEFAULT '';`)
+		}
+	}
+
+	// 2. Backfill deterministic unique invoice numbers for any legacy rows missing invoice_number.
+	if isPostgres(db) {
+		_ = db.Exec(`DROP TRIGGER IF EXISTS trg_invoices_immutable_identity ON invoices;`).Error
+		if err := db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || TO_CHAR(period_start, 'YYYYMM') || '-' || LPAD(id::text, 4, '0')
+			WHERE invoice_number IS NULL OR invoice_number = '' OR invoice_number = '0';
+		`).Error; err != nil {
+			return fmt.Errorf("pre-migrate backfill invoice_number: %w", err)
+		}
+		if err := db.Exec(`
+			UPDATE invoices
+			SET billing_profile_snapshot = ''
+			WHERE billing_profile_snapshot IS NULL;
+		`).Error; err != nil {
+			return fmt.Errorf("pre-migrate backfill billing_profile_snapshot: %w", err)
+		}
+		var invalidCount int64
+		if err := db.Raw(`SELECT count(1) FROM invoices WHERE invoice_number IS NULL OR invoice_number = '';`).Scan(&invalidCount).Error; err != nil {
+			return fmt.Errorf("verify invoice_number backfill: %w", err)
+		}
+		if invalidCount > 0 {
+			return fmt.Errorf("invoice migration failed: %d invoices still have invalid invoice_number", invalidCount)
+		}
+		if err := db.Exec(`ALTER TABLE invoices ALTER COLUMN invoice_number SET NOT NULL;`).Error; err != nil {
+			return fmt.Errorf("pre-migrate set invoice_number not null: %w", err)
+		}
+	} else {
+		_ = db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || strftime('%Y%m', period_start) || '-' || printf('%04d', id)
+			WHERE invoice_number IS NULL OR invoice_number = '' OR invoice_number = '0';
+		`)
+		_ = db.Exec(`
+			UPDATE invoices
+			SET billing_profile_snapshot = ''
+			WHERE billing_profile_snapshot IS NULL;
+		`)
+	}
+
+	return nil
+}
+
+func reconcileBillingSchema(db *gorm.DB) error {
+	if isPostgres(db) {
+		if err := db.Exec("ALTER TABLE wallets DROP CONSTRAINT IF EXISTS chk_wallets_balance_nonnegative").Error; err != nil {
+			return fmt.Errorf("remove wallet nonnegative constraint: %w", err)
+		}
+		if err := upgradeTopupStatusConstraint(db); err != nil {
+			return err
+		}
+		if err := dropCheckMissingMarker(db, "billable_resources", "chk_billable_resources_status", "deleted"); err != nil {
+			return err
+		}
+		if err := db.Exec("ALTER TABLE topup_packages DROP CONSTRAINT IF EXISTS chk_topup_packages_provider_currency").Error; err != nil {
+			return fmt.Errorf("drop legacy topup package provider constraint: %w", err)
+		}
+		if err := dropCheckMissingMarker(db, "topups", "chk_topups_provider_currency", "pakasir"); err != nil {
+			return err
+		}
+		if err := dropCheckMissingMarker(db, "payment_events", "chk_payment_events_provider", "pakasir"); err != nil {
+			return err
+		}
+	}
+
+	if isPostgres(db) {
+		_ = db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || TO_CHAR(period_start, 'YYYYMM') || '-' || LPAD(id::text, 4, '0')
+			WHERE invoice_number = '' OR invoice_number IS NULL;
+		`)
+	} else {
+		_ = db.Exec(`
+			UPDATE invoices
+			SET invoice_number = 'INV-' || strftime('%Y%m', period_start) || '-' || printf('%04d', id)
+			WHERE invoice_number = '' OR invoice_number IS NULL;
+		`)
+	}
+
+	constraints := []struct {
+		model any
+		name  string
+		check string
+	}{
+		{&models.Wallet{}, "uni_wallets_user_id", "UNIQUE (user_id)"},
+		{&models.BillingProfile{}, "uni_billing_profiles_user_id", "UNIQUE (user_id)"},
+		{&models.Wallet{}, "uni_wallets_id_user_id", "UNIQUE (id, user_id)"},
+		{&models.WalletLedgerEntry{}, "uni_wallet_ledger_entries_idempotency_key", "UNIQUE (idempotency_key)"},
+		{&models.TopupPackage{}, "uni_topup_packages_identity_version", "UNIQUE (currency, credits, version)"},
+		{&models.Topup{}, "uni_topups_wallet_client_key", "UNIQUE (wallet_id, client_idempotency_key)"},
+		{&models.Topup{}, "uni_topups_provider_order", "UNIQUE (provider, provider_order_id)"},
+		{&models.BillableSpec{}, "uni_billable_specs_slug_version", "UNIQUE (type, slug, version)"},
+		{&models.BillableResource{}, "uni_billable_resources_type_resource", "UNIQUE (type, resource_id)"},
+		{&models.Invoice{}, "uni_invoices_user_period", "UNIQUE (user_id, period_start, period_end)"},
+		{&models.Invoice{}, "uni_invoices_idempotency_key", "UNIQUE (idempotency_key)"},
+		{&models.Invoice{}, "uni_invoices_invoice_number", "UNIQUE (invoice_number)"},
+		{&models.InvoiceItem{}, "uni_invoice_items_invoice_resource", "UNIQUE (invoice_id, billable_resource_id)"},
+		{&models.Invoice{}, "fk_invoices_wallet_owner", "FOREIGN KEY (wallet_id, user_id) REFERENCES wallets (id, user_id) ON DELETE RESTRICT ON UPDATE RESTRICT"},
+		{&models.PaymentEvent{}, "uni_payment_events_event_key", "UNIQUE (event_key)"},
+	}
+	for _, constraint := range constraints {
+		if err := EnsureConstraint(db, constraint.model, constraint.name, constraint.check); err != nil {
+			return err
+		}
+	}
+	if !isPostgres(db) {
+		return nil
+	}
+
+	foreignKeys := []struct {
+		model     any
+		name, col string
+		reference string
+	}{
+		{&models.Wallet{}, "fk_wallets_user", "user_id", "users"},
+		{&models.BillingProfile{}, "fk_billing_profiles_user", "user_id", "users"},
+		{&models.WalletLedgerEntry{}, "fk_wallet_ledger_entries_wallet", "wallet_id", "wallets"},
+		{&models.WalletLedgerEntry{}, "fk_wallet_ledger_entries_created_by", "created_by", "users"},
+		{&models.Topup{}, "fk_topups_wallet", "wallet_id", "wallets"},
+		{&models.Topup{}, "fk_topups_package", "topup_package_id", "topup_packages"},
+		{&models.BillableResource{}, "fk_billable_resources_user", "user_id", "users"},
+		{&models.BillableResource{}, "fk_billable_resources_spec", "spec_id", "billable_specs"},
+		{&models.Invoice{}, "fk_invoices_user", "user_id", "users"},
+		{&models.InvoiceItem{}, "fk_invoice_items_invoice", "invoice_id", "invoices"},
+		{&models.InvoiceItem{}, "fk_invoice_items_resource", "billable_resource_id", "billable_resources"},
+		{&models.InvoiceItem{}, "fk_invoice_items_spec", "spec_id", "billable_specs"},
+	}
+	for _, fk := range foreignKeys {
+		if err := EnsureForeignKey(db, fk.model, fk.name, fk.col, fk.reference, "id", "RESTRICT", "RESTRICT"); err != nil {
+			return err
+		}
+	}
+
+	checks := []struct {
+		model      any
+		name, rule string
+	}{
+		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_nonzero", "amount_credits <> 0"},
+		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_type", "type IN ('topup', 'topup_reversal', 'invoice_debit', 'invoice_refund', 'adjustment')"},
+		{&models.WalletLedgerEntry{}, "chk_wallet_ledger_entries_amount_direction", "(type IN ('topup', 'invoice_refund') AND amount_credits > 0) OR (type IN ('topup_reversal', 'invoice_debit') AND amount_credits < 0) OR type = 'adjustment'"},
+		{&models.TopupPackage{}, "chk_topup_packages_positive", "credits > 0 AND amount_minor > 0 AND version > 0"},
+		{&models.TopupPackage{}, "chk_topup_packages_currency", "currency IN ('IDR', 'USD')"},
+		{&models.Topup{}, "chk_topups_positive", "credits > 0 AND amount_minor > 0"},
+		{&models.Topup{}, "chk_topups_provider_currency", "provider IN ('midtrans', 'pakasir') AND currency IN ('IDR', 'USD')"},
+		{&models.Topup{}, "chk_topups_status", "status IN ('pending', 'paid', 'failed', 'expired', 'partial_refund', 'refunded', 'partial_chargeback', 'chargeback')"},
+		{&models.BillableSpec{}, "chk_billable_specs_type", "type IN ('project', 'database')"},
+		{&models.BillableSpec{}, "chk_billable_specs_positive", "cpu_millicores > 0 AND memory_mb > 0 AND storage_gb > 0 AND monthly_credits > 0 AND version > 0"},
+		{&models.BillableResource{}, "chk_billable_resources_type", "type IN ('project', 'database')"},
+		{&models.BillableResource{}, "chk_billable_resources_status", "billing_status IN ('active', 'payment_due', 'suspended', 'deleted')"},
+		{&models.BillableResource{}, "chk_billable_resources_period", "next_invoice_at > current_period_start"},
+		{&models.BillableResource{}, "chk_billable_resources_anchor_day", "billing_anchor_day BETWEEN 1 AND 31"},
+		{&models.Invoice{}, "chk_invoices_total_nonnegative", "total_credits >= 0"},
+		{&models.Invoice{}, "chk_invoices_status", "status IN ('pending', 'paid', 'payment_due', 'void')"},
+		{&models.Invoice{}, "chk_invoices_period", "period_end > period_start"},
+		{&models.InvoiceItem{}, "chk_invoice_items_credits_nonnegative", "credits >= 0"},
+		{&models.PaymentEvent{}, "chk_payment_events_provider", "provider IN ('midtrans', 'pakasir')"},
+	}
+	for _, check := range checks {
+		if err := EnsureConstraint(db, check.model, check.name, "CHECK ("+check.rule+")"); err != nil {
+			return err
+		}
+	}
+
+	if err := db.Exec(`
+		CREATE OR REPLACE FUNCTION reject_wallet_ledger_entry_mutation() RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION 'wallet ledger entries are append-only';
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_topup_package_price_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'topup packages cannot be deleted';
+			END IF;
+			IF NEW.credits <> OLD.credits OR NEW.currency <> OLD.currency
+				OR NEW.amount_minor <> OLD.amount_minor
+				OR NEW.version <> OLD.version THEN
+				RAISE EXCEPTION 'topup package prices are immutable';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_billable_spec_price_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'billable specs cannot be deleted';
+			END IF;
+			IF NEW.type IS DISTINCT FROM OLD.type OR NEW.name IS DISTINCT FROM OLD.name
+				OR NEW.slug IS DISTINCT FROM OLD.slug OR NEW.cpu_millicores IS DISTINCT FROM OLD.cpu_millicores
+				OR NEW.memory_mb IS DISTINCT FROM OLD.memory_mb OR NEW.storage_gb IS DISTINCT FROM OLD.storage_gb
+				OR NEW.monthly_credits IS DISTINCT FROM OLD.monthly_credits
+				OR NEW.connection_limit IS DISTINCT FROM OLD.connection_limit
+				OR NEW.backup_retention_days IS DISTINCT FROM OLD.backup_retention_days
+				OR NEW.version IS DISTINCT FROM OLD.version THEN
+				RAISE EXCEPTION 'billable spec prices are immutable';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_invoice_identity_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'invoices cannot be deleted';
+			END IF;
+			IF NEW.user_id IS DISTINCT FROM OLD.user_id OR NEW.wallet_id IS DISTINCT FROM OLD.wallet_id
+				OR NEW.period_start IS DISTINCT FROM OLD.period_start OR NEW.period_end IS DISTINCT FROM OLD.period_end
+				OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+				OR (OLD.invoice_number IS NOT NULL AND OLD.invoice_number <> '' AND OLD.invoice_number <> '0' AND NEW.invoice_number IS DISTINCT FROM OLD.invoice_number)
+				OR (OLD.billing_profile_snapshot IS NOT NULL AND OLD.billing_profile_snapshot <> '' AND NEW.billing_profile_snapshot IS DISTINCT FROM OLD.billing_profile_snapshot) THEN
+				RAISE EXCEPTION 'invoice identity fields are immutable';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+	CREATE OR REPLACE FUNCTION reject_invoice_item_identity_mutation() RETURNS trigger AS $$
+		BEGIN
+			IF TG_OP = 'DELETE' THEN
+				RAISE EXCEPTION 'invoice items cannot be deleted';
+			END IF;
+			IF NEW.invoice_id IS DISTINCT FROM OLD.invoice_id OR NEW.billable_resource_id IS DISTINCT FROM OLD.billable_resource_id
+				OR NEW.spec_id IS DISTINCT FROM OLD.spec_id OR NEW.description IS DISTINCT FROM OLD.description
+				OR NEW.credits IS DISTINCT FROM OLD.credits THEN
+				RAISE EXCEPTION 'invoice item identity fields are immutable';
+			END IF;
+			RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	CREATE OR REPLACE FUNCTION reject_topup_economic_mutation() RETURNS trigger AS $$
+	BEGIN
+		IF TG_OP = 'DELETE' THEN
+			RAISE EXCEPTION 'topups cannot be deleted';
+		END IF;
+		IF NEW.wallet_id IS DISTINCT FROM OLD.wallet_id
+			OR NEW.topup_package_id IS DISTINCT FROM OLD.topup_package_id
+			OR NEW.client_idempotency_key IS DISTINCT FROM OLD.client_idempotency_key
+			OR NEW.provider IS DISTINCT FROM OLD.provider
+			OR NEW.provider_order_id IS DISTINCT FROM OLD.provider_order_id
+			OR (OLD.provider_transaction_id IS NOT NULL AND NEW.provider_transaction_id IS DISTINCT FROM OLD.provider_transaction_id)
+			OR NEW.amount_minor IS DISTINCT FROM OLD.amount_minor
+			OR NEW.currency IS DISTINCT FROM OLD.currency
+			OR NEW.credits IS DISTINCT FROM OLD.credits THEN
+			RAISE EXCEPTION 'topup economic and provider identity fields are immutable';
+		END IF;
+		IF OLD.paid_at IS NOT NULL AND NEW.paid_at IS DISTINCT FROM OLD.paid_at THEN
+			RAISE EXCEPTION 'topup paid timestamp is immutable once set';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	CREATE OR REPLACE FUNCTION reject_payment_event_mutation() RETURNS trigger AS $$
+	BEGIN
+		IF TG_OP = 'DELETE' THEN
+			RAISE EXCEPTION 'payment events cannot be deleted';
+		END IF;
+		IF NEW.provider IS DISTINCT FROM OLD.provider
+			OR NEW.event_key IS DISTINCT FROM OLD.event_key
+			OR NEW.provider_order_id IS DISTINCT FROM OLD.provider_order_id
+			OR NEW.payload_json IS DISTINCT FROM OLD.payload_json
+			OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+			RAISE EXCEPTION 'payment event evidence is append-only';
+		END IF;
+		IF OLD.processed_at IS NOT NULL AND NEW.processed_at IS DISTINCT FROM OLD.processed_at THEN
+			RAISE EXCEPTION 'payment event processed timestamp is immutable once set';
+		END IF;
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_impersonation_audit_mutation() RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION 'impersonation audit entries are append-only';
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE OR REPLACE FUNCTION reject_billing_audit_event_mutation() RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION 'billing audit events are append-only';
+		END;
+		$$ LANGUAGE plpgsql;
+		DROP TRIGGER IF EXISTS trg_wallet_ledger_entries_append_only ON wallet_ledger_entries;
+		CREATE TRIGGER trg_wallet_ledger_entries_append_only
+		BEFORE UPDATE OR DELETE ON wallet_ledger_entries
+		FOR EACH ROW EXECUTE FUNCTION reject_wallet_ledger_entry_mutation();
+		DROP TRIGGER IF EXISTS trg_topup_packages_immutable_price ON topup_packages;
+		CREATE TRIGGER trg_topup_packages_immutable_price
+		BEFORE UPDATE OR DELETE ON topup_packages
+		FOR EACH ROW EXECUTE FUNCTION reject_topup_package_price_mutation();
+		DROP TRIGGER IF EXISTS trg_billable_specs_immutable_price ON billable_specs;
+		CREATE TRIGGER trg_billable_specs_immutable_price
+		BEFORE UPDATE OR DELETE ON billable_specs
+		FOR EACH ROW EXECUTE FUNCTION reject_billable_spec_price_mutation();
+		DROP TRIGGER IF EXISTS trg_invoices_immutable_identity ON invoices;
+		CREATE TRIGGER trg_invoices_immutable_identity
+		BEFORE UPDATE OR DELETE ON invoices
+		FOR EACH ROW EXECUTE FUNCTION reject_invoice_identity_mutation();
+	DROP TRIGGER IF EXISTS trg_invoice_items_immutable_identity ON invoice_items;
+	CREATE TRIGGER trg_invoice_items_immutable_identity
+	BEFORE UPDATE OR DELETE ON invoice_items
+	FOR EACH ROW EXECUTE FUNCTION reject_invoice_item_identity_mutation();
+	DROP TRIGGER IF EXISTS trg_topups_immutable_economic_identity ON topups;
+	CREATE TRIGGER trg_topups_immutable_economic_identity
+	BEFORE UPDATE OR DELETE ON topups
+	FOR EACH ROW EXECUTE FUNCTION reject_topup_economic_mutation();
+	DROP TRIGGER IF EXISTS trg_payment_events_append_only ON payment_events;
+	CREATE TRIGGER trg_payment_events_append_only
+	BEFORE UPDATE OR DELETE ON payment_events
+	FOR EACH ROW EXECUTE FUNCTION reject_payment_event_mutation();
+		DROP TRIGGER IF EXISTS trg_impersonation_audits_append_only ON impersonation_audits;
+		CREATE TRIGGER trg_impersonation_audits_append_only
+		BEFORE UPDATE OR DELETE ON impersonation_audits
+		FOR EACH ROW EXECUTE FUNCTION reject_impersonation_audit_mutation();
+		DROP TRIGGER IF EXISTS trg_billing_audit_events_append_only ON billing_audit_events;
+		CREATE TRIGGER trg_billing_audit_events_append_only
+		BEFORE UPDATE OR DELETE ON billing_audit_events
+		FOR EACH ROW EXECUTE FUNCTION reject_billing_audit_event_mutation();
+	`).Error; err != nil {
+		return fmt.Errorf("create billing immutability triggers: %w", err)
+	}
+	return nil
+}
+
+// dropCheckMissingMarker drops a CHECK constraint whose definition lacks marker, so the
+// EnsureConstraint pass can recreate it. EnsureConstraint is a no-op when the name exists,
+// which makes dropping the only way to widen an existing rule.
+func dropCheckMissingMarker(db *gorm.DB, table, constraint, marker string) error {
+	var definition string
+	err := db.Raw(`
+		SELECT pg_get_constraintdef(c.oid)
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		WHERE t.relname = ? AND c.conname = ?
+	`, table, constraint).Scan(&definition).Error
+	if err != nil {
+		return fmt.Errorf("read %s constraint: %w", constraint, err)
+	}
+	if definition == "" || strings.Contains(definition, marker) {
+		return nil
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", table, constraint)).Error; err != nil {
+		return fmt.Errorf("upgrade %s constraint: %w", constraint, err)
+	}
+	return nil
+}
+
+func upgradeTopupStatusConstraint(db *gorm.DB) error {
+	if !isPostgres(db) {
+		return nil
+	}
+	var definition string
+	err := db.Raw(`
+		SELECT pg_get_constraintdef(c.oid)
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		WHERE t.relname = 'topups' AND c.conname = 'chk_topups_status'
+	`).Scan(&definition).Error
+	if err != nil {
+		return fmt.Errorf("read topup status constraint: %w", err)
+	}
+	if definition == "" || (strings.Contains(definition, "partial_refund") && strings.Contains(definition, "partial_chargeback")) {
+		return nil
+	}
+	if err := db.Exec("ALTER TABLE topups DROP CONSTRAINT chk_topups_status").Error; err != nil {
+		return fmt.Errorf("upgrade topup status constraint: %w", err)
+	}
 	return nil
 }
 
@@ -429,11 +1144,13 @@ func EnsureForeignKey(db *gorm.DB, model interface{}, fkName string, column stri
 }
 
 func verifyCompatibility(db *gorm.DB) error {
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get underlying SQL DB: %w", err)
+	if db == nil {
+		return errors.New("database handle is nil")
 	}
-	if err := sqlDB.Ping(); err != nil {
+	// db.Connection installs a session-scoped *sql.Conn so PostgreSQL advisory
+	// locks span the full migration. gorm.DB() rejects that connection type;
+	// execute the probe through the active GORM session instead.
+	if err := db.Exec("SELECT 1").Error; err != nil {
 		return fmt.Errorf("database ping failed: %w", err)
 	}
 
@@ -813,7 +1530,11 @@ func migrateDatabaseInstancesTable(db *gorm.DB) error {
 	}
 
 	// 1. Add user_id column if not exists
-	if !db.Migrator().HasColumn(&models.DatabaseInstance{}, "user_id") {
+	hasUserID, err := databaseInstancesHasUserID(db)
+	if err != nil {
+		return err
+	}
+	if !hasUserID {
 		slog.Info("Migrating database_instances: adding user_id column")
 		if isPostgres(db) {
 			if err := db.Exec("ALTER TABLE database_instances ADD COLUMN user_id INTEGER;").Error; err != nil {
@@ -855,4 +1576,23 @@ func migrateDatabaseInstancesTable(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func databaseInstancesHasUserID(db *gorm.DB) (bool, error) {
+	if !isPostgres(db) {
+		return db.Migrator().HasColumn(&models.DatabaseInstance{}, "user_id"), nil
+	}
+	var exists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = CURRENT_SCHEMA()
+			  AND table_name = 'database_instances'
+			  AND column_name = 'user_id'
+		)
+	`).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("check database_instances.user_id column: %w", err)
+	}
+	return exists, nil
 }

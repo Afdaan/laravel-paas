@@ -177,64 +177,7 @@ func (m *WorkerManager) manageWorkers() {
 			// Remove any colliding name just in case
 			_ = exec.Command("docker", "rm", "-f", containerName).Run()
 
-			projectsHostPath := m.cfg.HostProjectsPath
-			dataHostPath := m.cfg.HostDataPath
-			templatesHostPath := m.cfg.HostTemplatesPath
-			railpacksHostPath := m.cfg.HostRailpacksPath
-			dockerSock := m.cfg.DockerSocket
-
-			runArgs := []string{
-				"run", "-d",
-				"--name", containerName,
-				"--network", models.NetworkName,
-				"--restart", "unless-stopped",
-				"--cpus", "2.0",
-				"--memory", "3g",
-				"--memory-swap", "4g",
-				"--label", fmt.Sprintf("id.paas.worker.slot=%d", slot),
-				"--label", fmt.Sprintf("id.paas.worker.version=%s", targetVersion),
-				"-v", fmt.Sprintf("%s:/var/www/html/storage/app", projectsHostPath),
-				"-v", fmt.Sprintf("%s:/app/storage/projects", projectsHostPath),
-				"-v", fmt.Sprintf("%s:/app/data", dataHostPath),
-				"-v", fmt.Sprintf("%s:/app/docker/templates:ro", templatesHostPath),
-				"-v", fmt.Sprintf("%s:/app/railpacks:ro", railpacksHostPath),
-				"-v", fmt.Sprintf("%s/.env:/app/.env:ro", m.cfg.HostRootPath),
-				"-v", fmt.Sprintf("%s:%s", dockerSock, dockerSock),
-				"-e", "APP_MODE=docker",
-				"-e", "PROJECTS_PATH=/app/storage/projects",
-				"-e", "RAILPACKS_PATH=/app/railpacks",
-				"-e", fmt.Sprintf("SLOT=%d", slot),
-				"-e", fmt.Sprintf("VERSION=%s", targetVersion),
-				"-e", fmt.Sprintf("PG_HOST=%s", m.cfg.PGHost),
-				"-e", fmt.Sprintf("PG_PORT=%s", m.cfg.PGPort),
-				"-e", fmt.Sprintf("PG_USER=%s", m.cfg.PGUser),
-				"-e", fmt.Sprintf("PG_PASSWORD=%s", m.cfg.PGPassword),
-				"-e", fmt.Sprintf("PG_DATABASE=%s", m.cfg.PGDatabase),
-				"-e", fmt.Sprintf("REDIS_HOST=%s", m.cfg.RedisHost),
-				"-e", fmt.Sprintf("REDIS_PORT=%s", m.cfg.RedisPort),
-				"-e", fmt.Sprintf("REDIS_PASSWORD=%s", m.cfg.RedisPassword),
-				"-e", fmt.Sprintf("MYSQL_HOST=%s", m.cfg.MYSQLHost),
-				"-e", fmt.Sprintf("MYSQL_PORT=%s", m.cfg.MYSQLPort),
-				"-e", fmt.Sprintf("MYSQL_USER=%s", m.cfg.MYSQLUser),
-				"-e", fmt.Sprintf("MYSQL_PASSWORD=%s", m.cfg.MYSQLPassword),
-				"-e", fmt.Sprintf("MYSQL_DATABASE=%s", m.cfg.MYSQLDatabase),
-				"-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", m.cfg.MYSQLRootPassword),
-				"-e", fmt.Sprintf("BASE_DOMAIN=%s", m.cfg.BaseDomain),
-				"-e", fmt.Sprintf("PROJECT_DOMAIN=%s", m.cfg.ProjectDomain),
-				"-e", fmt.Sprintf("JWT_SECRET=%s", m.cfg.JWTSecret),
-				"-e", fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY=%s", m.cfg.CredentialEncryptionKey),
-				"-e", fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY_PREVIOUS=%s", strings.Join(m.cfg.CredentialEncryptionPreviousKeys, ",")),
-				"-e", fmt.Sprintf("CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS=%t", m.cfg.CredentialEncryptionAllowInsecurePrevious),
-				"-e", fmt.Sprintf("NGINX_WEBHOOK_ENABLED=%t", m.cfg.NginxWebhookEnabled),
-				"-e", fmt.Sprintf("NGINX_WEBHOOK_URL=%s", m.cfg.NginxWebhookURL),
-				"-e", fmt.Sprintf("NGINX_WEBHOOK_KEY=%s", m.cfg.NginxWebhookKey),
-				"-e", fmt.Sprintf("INTERNAL_IP=%s", m.cfg.InternalIP),
-				"-e", fmt.Sprintf("ACME_EMAIL=%s", m.cfg.ACMEEmail),
-				"-e", fmt.Sprintf("UID_SALT=%s", m.cfg.UIDSalt),
-				"-e", fmt.Sprintf("GITHUB_APP_ID=%s", m.cfg.GithubAppID),
-				"-e", fmt.Sprintf("GITHUB_APP_PRIVATE_KEY_PATH=%s", m.cfg.GithubAppPrivateKeyPath),
-				fmt.Sprintf("paas-worker:%s", targetVersion),
-			}
+			runArgs := buildWorkerRunArgs(m.cfg, slot, targetVersion, containerName)
 
 			if err := exec.Command("docker", runArgs...).Run(); err != nil {
 				slog.Error("Worker manager: failed to start worker container", "slot", slot, "error", err)
@@ -256,5 +199,78 @@ func (m *WorkerManager) manageWorkers() {
 				}
 			}
 		}
+	}
+}
+
+func buildWorkerRunArgs(cfg *config.Config, slot int, targetVersion, containerName string) []string {
+	projectsHostPath := cfg.HostProjectsPath
+	dataHostPath := cfg.HostDataPath
+	templatesHostPath := cfg.HostTemplatesPath
+	railpacksHostPath := cfg.HostRailpacksPath
+	dockerSock := cfg.DockerSocket
+
+	return []string{
+		"run", "-d",
+		"--name", containerName,
+		"--network", models.NetworkName,
+		"--restart", "unless-stopped",
+		"--cpus", "2.0",
+		"--memory", "3g",
+		"--memory-swap", "4g",
+		"--label", fmt.Sprintf("id.paas.worker.slot=%d", slot),
+		"--label", fmt.Sprintf("id.paas.worker.version=%s", targetVersion),
+		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", projectsHostPath),
+		"-v", fmt.Sprintf("%s:/app/storage/projects", projectsHostPath),
+		"-v", fmt.Sprintf("%s:/app/data", dataHostPath),
+		"-v", fmt.Sprintf("%s:/app/docker/templates:ro", templatesHostPath),
+		"-v", fmt.Sprintf("%s:/app/railpacks:ro", railpacksHostPath),
+		"-v", fmt.Sprintf("%s:%s", dockerSock, dockerSock),
+		"-e", "APP_MODE=docker",
+		"-e", "PROJECTS_PATH=/app/storage/projects",
+		"-e", "RAILPACKS_PATH=/app/railpacks",
+		"-e", fmt.Sprintf("SLOT=%d", slot),
+		"-e", fmt.Sprintf("VERSION=%s", targetVersion),
+		"-e", fmt.Sprintf("PG_HOST=%s", cfg.PGHost),
+		"-e", fmt.Sprintf("PG_PORT=%s", cfg.PGPort),
+		"-e", fmt.Sprintf("PG_USER=%s", cfg.PGUser),
+		"-e", fmt.Sprintf("PG_PASSWORD=%s", cfg.PGPassword),
+		"-e", fmt.Sprintf("PG_DATABASE=%s", cfg.PGDatabase),
+		"-e", fmt.Sprintf("REDIS_HOST=%s", cfg.RedisHost),
+		"-e", fmt.Sprintf("REDIS_PORT=%s", cfg.RedisPort),
+		"-e", fmt.Sprintf("REDIS_PASSWORD=%s", cfg.RedisPassword),
+		"-e", fmt.Sprintf("MYSQL_HOST=%s", cfg.MYSQLHost),
+		"-e", fmt.Sprintf("MYSQL_PORT=%s", cfg.MYSQLPort),
+		"-e", fmt.Sprintf("MYSQL_USER=%s", cfg.MYSQLUser),
+		"-e", fmt.Sprintf("MYSQL_PASSWORD=%s", cfg.MYSQLPassword),
+		"-e", fmt.Sprintf("MYSQL_DATABASE=%s", cfg.MYSQLDatabase),
+		"-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", cfg.MYSQLRootPassword),
+		"-e", fmt.Sprintf("MYSQL_CONTAINER_NAME=%s", infrastructure.MySQLContainerName()),
+		"-e", fmt.Sprintf("POSTGRES_CONTAINER_NAME=%s", infrastructure.PostgreSQLContainerName()),
+		"-e", fmt.Sprintf("USER_PG_HOST=%s", cfg.UserPGHost),
+		"-e", fmt.Sprintf("USER_PG_PORT=%s", cfg.UserPGPort),
+		"-e", fmt.Sprintf("USER_PG_PASSWORD=%s", cfg.UserPGPassword),
+		"-e", fmt.Sprintf("BASE_DOMAIN=%s", cfg.BaseDomain),
+		"-e", fmt.Sprintf("PROJECT_DOMAIN=%s", cfg.ProjectDomain),
+		"-e", fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY=%s", cfg.CredentialEncryptionKey),
+		"-e", fmt.Sprintf("CREDENTIAL_ENCRYPTION_KEY_PREVIOUS=%s", strings.Join(cfg.CredentialEncryptionPreviousKeys, ",")),
+		"-e", fmt.Sprintf("CREDENTIAL_ENCRYPTION_ALLOW_INSECURE_PREVIOUS=%t", cfg.CredentialEncryptionAllowInsecurePrevious),
+		"-e", fmt.Sprintf("NGINX_WEBHOOK_ENABLED=%t", cfg.NginxWebhookEnabled),
+		"-e", fmt.Sprintf("NGINX_WEBHOOK_URL=%s", cfg.NginxWebhookURL),
+		"-e", fmt.Sprintf("NGINX_WEBHOOK_KEY=%s", cfg.NginxWebhookKey),
+		"-e", fmt.Sprintf("INTERNAL_IP=%s", cfg.InternalIP),
+		"-e", fmt.Sprintf("ACME_EMAIL=%s", cfg.ACMEEmail),
+		"-e", fmt.Sprintf("UID_SALT=%s", cfg.UIDSalt),
+		"-e", fmt.Sprintf("APP_ENV=%s", cfg.AppEnv),
+		"-e", fmt.Sprintf("TRUSTED_PROXY_CIDRS=%s", strings.Join(cfg.TrustedProxyCIDRs, ",")),
+		"-e", fmt.Sprintf("GITHUB_APP_ID=%s", cfg.GithubAppID),
+		"-e", fmt.Sprintf("GITHUB_APP_PRIVATE_KEY_PATH=%s", cfg.GithubAppPrivateKeyPath),
+		"-e", fmt.Sprintf("GITHUB_APP_WEBHOOK_SECRET=%s", cfg.GithubAppWebhookSecret),
+		"-e", fmt.Sprintf("DOCKER_SOCKET=%s", dockerSock),
+		"-e", fmt.Sprintf("HOST_ROOT_PATH=%s", cfg.HostRootPath),
+		"-e", fmt.Sprintf("HOST_PROJECTS_PATH=%s", projectsHostPath),
+		"-e", fmt.Sprintf("HOST_DATA_PATH=%s", dataHostPath),
+		"-e", fmt.Sprintf("HOST_TEMPLATES_PATH=%s", templatesHostPath),
+		"-e", fmt.Sprintf("HOST_RAILPACKS_PATH=%s", railpacksHostPath),
+		fmt.Sprintf("paas-worker:%s", targetVersion),
 	}
 }

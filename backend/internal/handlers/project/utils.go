@@ -24,24 +24,26 @@ import (
 
 // CreateProjectRequest represents project creation payload
 type CreateProjectRequest struct {
-	Name                 string `json:"name"`
-	GithubURL            string `json:"github_url"`
-	Branch               string `json:"branch"`
-	DatabaseOption       string `json:"database_option"`
-	DatabaseName         string `json:"database_name"`
-	BaseDirectory        string `json:"base_directory"`
-	BuildCommand         string `json:"build_command"`
-	StartCommand         string `json:"start_command"`
-	QueueEnabled         bool   `json:"queue_enabled"`
-	EnableDatabase       bool   `json:"enable_database"`
-	DatabaseEngine       string `json:"database_engine"`
-	DatabaseUsername     string `json:"database_username"`
-	DatabasePassword     string `json:"database_password"`
-	ExistingDatabaseUID  string `json:"existing_database_uid"`
-	GithubInstallationID *int64 `json:"github_installation_id,omitempty"`
-	GithubRepoOwner      string `json:"github_repo_owner,omitempty"`
-	GithubRepoName       string `json:"github_repo_name,omitempty"`
-	Port                 *int   `json:"port,omitempty"`
+	Name                   string `json:"name"`
+	GithubURL              string `json:"github_url"`
+	Branch                 string `json:"branch"`
+	DatabaseOption         string `json:"database_option"`
+	DatabaseName           string `json:"database_name"`
+	BaseDirectory          string `json:"base_directory"`
+	BuildCommand           string `json:"build_command"`
+	StartCommand           string `json:"start_command"`
+	QueueEnabled           bool   `json:"queue_enabled"`
+	EnableDatabase         bool   `json:"enable_database"`
+	DatabaseEngine         string `json:"database_engine"`
+	DatabaseUsername       string `json:"database_username"`
+	DatabasePassword       string `json:"database_password"`
+	ExistingDatabaseUID    string `json:"existing_database_uid"`
+	BillableSpecID         uint   `json:"billable_spec_id"`
+	DatabaseBillableSpecID uint   `json:"database_billable_spec_id"`
+	GithubInstallationID   *int64 `json:"github_installation_id,omitempty"`
+	GithubRepoOwner        string `json:"github_repo_owner,omitempty"`
+	GithubRepoName         string `json:"github_repo_name,omitempty"`
+	Port                   *int   `json:"port,omitempty"`
 }
 
 // ListOwn returns user's own projects
@@ -640,12 +642,40 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	var project models.Project
 	cacheKey := fmt.Sprintf("proxy:subdomain:%s", subdomain)
 
+	// Helper to build target URL and preserve original request path + forwarded headers
+	buildProxyTargetAndHeaders := func(proj *models.Project) string {
+		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), proj.GetInternalPort())
+		reqURL := c.OriginalURL()
+		if reqURL == "" || reqURL == "/" {
+			reqURL = "/"
+		} else if !strings.HasPrefix(reqURL, "/") {
+			reqURL = "/" + reqURL
+		}
+
+		// Preserve original Host and X-Forwarded headers so PHP/Laravel/Nginx gets the real host
+		c.Request().Header.SetHost(host)
+		c.Request().Header.Set("Host", host)
+		c.Request().Header.Set("X-Forwarded-Host", host)
+
+		proto := c.Protocol()
+		if fwdProto := c.Get("X-Forwarded-Proto"); fwdProto != "" {
+			proto = fwdProto
+		}
+		c.Request().Header.Set("X-Forwarded-Proto", proto)
+		if proto == "https" {
+			c.Request().Header.Set("X-Forwarded-Port", "443")
+		} else {
+			c.Request().Header.Set("X-Forwarded-Port", "80")
+		}
+
+		return targetURL + reqURL
+	}
+
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
-		targetURL := fmt.Sprintf("http://%s:%s", *project.ContainerID, project.GetInternalPort())
-		path := c.Params("*")
-		target := targetURL + "/" + path
+		target := buildProxyTargetAndHeaders(&project)
+
 
 		// Throttled update of LastAccessedAt to once per minute to preserve DB performance
 		now := time.Now()
@@ -686,12 +716,11 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 4. Forward with internal Docker routing
-	targetURL := fmt.Sprintf("http://%s:%s", *project_db.ContainerID, project_db.GetInternalPort())
-	path := c.Params("*")
-	target := targetURL + "/" + path
+	target := buildProxyTargetAndHeaders(project_db)
 
 	return proxy.Forward(target)(c)
 }
+
 
 // GetQueueStats returns deployment queue statistics and job lists
 func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {

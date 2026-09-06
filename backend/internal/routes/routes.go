@@ -6,6 +6,13 @@
 package routes
 
 import (
+	"net"
+	"net/url"
+	"strings"
+	"time"
+
+
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -17,6 +24,7 @@ import (
 	projectHandlerPkg "github.com/laravel-paas/backend/internal/handlers/project"
 	"github.com/laravel-paas/backend/internal/middleware"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/services/billing"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -42,14 +50,53 @@ func Setup(
 	secretStoreService *services.SecretStoreService,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
-		ErrorHandler: handlers.ErrorHandler,
-		AppName:      "Runara API",
+		ErrorHandler:            handlers.ErrorHandler,
+		AppName:                 "Runara API",
+		BodyLimit:               4 * 1024 * 1024,
+		ReadTimeout:             15 * time.Second,
+		WriteTimeout:            30 * time.Second,
+		IdleTimeout:             60 * time.Second,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		EnableIPValidation:      true,
+		TrustedProxies:          cfg.TrustedProxyCIDRs,
 	})
+
+	isControlPlaneHost := func(host string) bool {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		host = strings.ToLower(host)
+
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "paas-backend" {
+			return true
+		}
+
+		if cfg != nil {
+			if cfg.BaseDomain != "" {
+				base := strings.ToLower(cfg.BaseDomain)
+				if host == base || host == "app."+base || host == "paas."+base || host == "api."+base || host == "admin."+base {
+					return true
+				}
+			}
+			if cfg.FrontendURL != "" {
+				if u, err := url.Parse(cfg.FrontendURL); err == nil && u.Hostname() != "" {
+					if strings.EqualFold(u.Hostname(), host) {
+						return true
+					}
+				}
+			}
+		}
+
+		return false
+	}
+
 
 	// ===========================================
 	// Global Middlewares
 	// ===========================================
 	app.Use(recover.New())
+	app.Use(middleware.RequestSecurity())
 	app.Use(logger.New(logger.Config{
 		Next: func(c *fiber.Ctx) bool {
 			// Skip logging for high-frequency polling endpoints to keep console clean
@@ -67,7 +114,7 @@ func Setup(
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.FrontendURL,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-CSRF-Token",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-CSRF-Token,Idempotency-Key",
 		AllowCredentials: true,
 	}))
 
@@ -79,37 +126,65 @@ func Setup(
 	})
 
 	// Prometheus Metrics Endpoint
-	app.Get("/metrics", middleware.InternalOnly(), metrics.PrometheusHandler())
-
-	// API Routes
-	api := app.Group("/api")
+	app.Get("/metrics", middleware.InternalOnly(cfg), metrics.PrometheusHandler())
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(authService, cfg, userService)
+	authHandler := handlers.NewAuthHandler(authService, cfg, userService, db)
 	userHandler := handlers.NewUserHandler(userService)
 	projectHandler := projectHandlerPkg.NewProjectHandler(cfg, db, redisService, projectService, userService, dockerService, secretStoreService)
-	settingHandler := handlers.NewSettingHandler(settingService)
+	settingHandler := handlers.NewSettingHandler(settingService, cfg)
 	systemHandler := handlers.NewSystemHandler(userService, dockerService)
 	feedbackHandler := handlers.NewFeedbackHandler(feedbackService)
 	databaseHandler := handlers.NewDatabaseHandler(db, cfg, databaseService, projectService, redisService, secretStoreService)
 	githubService := infrastructure.NewGithubService(cfg, redisService)
 	githubAppHandler := handlers.NewGithubAppHandler(db, cfg, githubService, redisService, projectService)
 	secretStoreHandler := handlers.NewSecretStoreHandler(db, cfg, secretStoreService)
+	walletService := billing.NewWalletService(db)
+	billingProfileService := billing.NewBillingProfileService(db)
+	topupService := billing.NewTopupService(db, walletService, cfg, billing.NewMidtransClient(cfg), billing.NewPakasirClient(cfg))
+	topupService.SetSettingService(settingService)
+	catalogService := billing.NewCatalogServiceWithWallets(db, walletService, cfg)
+	billingHandler := handlers.NewBillingHandlerWithTopups(
+		catalogService,
+		topupService,
+		billing.NewSuspensionService(db, cfg),
+	)
+	billingHandler.SetBillingProfileService(billingProfileService)
+
+	// API Routes
+	api := app.Group("/api")
+
+	// Ensure PaaS Control Plane API routes are only evaluated for Control Plane hosts.
+	// If a request hits /api/* on a project subdomain or custom domain, forward it to projectHandler.ProxyToProject!
+	api.Use(func(c *fiber.Ctx) error {
+		if !isControlPlaneHost(c.Hostname()) {
+			return projectHandler.ProxyToProject(c)
+		}
+		return c.Next()
+	})
+
 
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
 	// ===========================================
-	proxyGroup := app.Group("/proxy", middleware.ProxyAuth(cfg.JWTSecret, redisService, userService))
-	proxyGroup.Use(middleware.RateLimitProxy())
+	proxyGroup := app.Group("/proxy", middleware.ProxyAuth())
+	proxyGroup.Use(middleware.RateLimitProxy(redisService))
 	proxyGroup.Use(middleware.ValidateProxyTarget())
 	proxyGroup.All("/*", projectHandler.ProxyToProject)
+	proxyGroup.All("", projectHandler.ProxyToProject)
+
 
 	// -----------------------------
 	// Auth Routes (public, rate limited)
 	// -----------------------------
-	auth := api.Group("/auth")
+	auth := api.Group("/auth", middleware.NoStore(), middleware.MaxBody(8*1024))
 	auth.Post("/login", middleware.RateLimitLogin(redisService), authHandler.Login)
 	api.Post("/webhooks/github-app", githubAppHandler.Webhook)
+	api.Post("/webhooks/midtrans", middleware.NoStore(), middleware.RateLimitMidtransWebhook(redisService), middleware.MaxBody(8*1024), billingHandler.MidtransWebhook)
+	api.Post("/webhooks/pakasir", middleware.NoStore(), middleware.RateLimitPakasirWebhook(redisService), middleware.MaxBody(8*1024), billingHandler.PakasirWebhook)
+
+	// Public billing catalog for the marketing landing page (no auth required).
+	api.Get("/public/billing/catalog", middleware.NoStore(), middleware.RateLimitPublicCatalog(redisService), billingHandler.ListActiveCatalog)
 
 	// -----------------------------
 	// System Init (public, rate limited)
@@ -121,20 +196,46 @@ func Setup(
 	// -----------------------------
 	// Internal System Routes (Publicly accessible but meant for internal mesh network)
 	// -----------------------------
-	internal := api.Group("/internal", middleware.InternalOnly())
+	internal := api.Group("/internal", middleware.InternalOnly(cfg))
 	internal.Get("/traefik/config", domainHandler.GetTraefikConfig)
+
+	// Stream routes accept short-lived stream tokens only on explicit endpoints.
+	streamAuth := middleware.JWTStreamAuth(cfg, authService, userService, userService)
+	api.Get("/projects/:id/logs/stream", streamAuth, projectHandler.StreamLogs)
+	api.Get("/projects/:id/build-logs/stream", streamAuth, projectHandler.StreamBuildLogs)
+	api.Get("/projects/:id/deployment-events/stream", streamAuth, projectHandler.StreamDeploymentEvents)
+	api.Get("/projects/:id/domains/:domainID/events/stream", streamAuth, domainHandler.StreamEvents)
+	api.Get("/projects/:id/domains/events/stream", streamAuth, domainHandler.StreamProjectEvents)
 
 	// -----------------------------
 	// Protected Routes
 	// -----------------------------
-	protected := api.Group("", middleware.JWTAuth(cfg.JWTSecret, redisService, userService, userService))
+	protected := api.Group("", middleware.JWTAuth(cfg, authService, userService, userService))
 
 	// Auth (protected)
-	protected.Post("/auth/logout", authHandler.Logout)
-	protected.Get("/auth/me", authHandler.Me)
-	protected.Put("/auth/profile", authHandler.UpdateProfile)
-	protected.Post("/auth/stream-token", authHandler.GenerateStreamToken)
-	protected.Post("/auth/return-to-admin", authHandler.ReturnToAdmin)
+	protected.Post("/auth/logout", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.Logout)
+	protected.Get("/auth/me", middleware.NoStore(), authHandler.Me)
+	protected.Put("/auth/profile", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.UpdateProfile)
+	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.GenerateStreamToken)
+	protected.Post("/auth/return-to-admin", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.ReturnToAdmin)
+	protected.Post("/auth/re-auth", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitReauth(redisService), authHandler.Reauthenticate)
+
+	// Billing catalog remains available while payment collection stays disabled.
+	billingRoutes := protected.Group("/billing", middleware.NoStore())
+	billingRoutes.Get("/catalog", billingHandler.ListActiveCatalog)
+	billingRoutes.Get("/overview", billingHandler.GetOwnBillingOverview)
+	billingRoutes.Get("/status", billingHandler.GetOwnPaymentDueStatus)
+	billingRoutes.Get("/profile", billingHandler.GetBillingProfile)
+	billingRoutes.Get("/invoices", billingHandler.ListOwnInvoices)
+	billingRoutes.Get("/topups", billingHandler.ListOwnTopups)
+	billingRoutes.Get("/wallet/ledger", billingHandler.ListOwnLedgerEntries)
+	billingMutations := billingRoutes.Group("", middleware.RequireNoBillingImpersonation())
+	billingMutations.Post("/topups", middleware.MaxBody(8*1024), middleware.RateLimitTopupCreate(redisService), billingHandler.CreateTopup)
+	billingMutations.Post("/topups/by-ref/:topupRef/reconcile", middleware.MaxBody(8*1024), middleware.RateLimitTopupReconcile(redisService), billingHandler.ReconcileTopupByRef)
+	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), middleware.RateLimitTopupReconcile(redisService), billingHandler.ReconcileTopup)
+	billingMutations.Put("/profile", middleware.MaxBody(16*1024), billingHandler.UpdateBillingProfile)
+	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), middleware.RateLimitAutoRenew(redisService), billingHandler.UpdateAutoRenew)
+	billingMutations.Post("/resources/:resourceType/:resourceID/pay", middleware.MaxBody(1024), billingHandler.PayDueResource)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -153,6 +254,20 @@ func Setup(
 	// Admin Routes
 	// -----------------------------
 	admin := protected.Group("/admin", middleware.RequireAdmin())
+	adminBilling := admin.Group("/billing", middleware.NoStore())
+	adminBilling.Get("/catalog", billingHandler.ListCatalog)
+	adminBilling.Get("/wallets", billingHandler.ListWallets)
+	adminBilling.Get("/wallets/:userID", billingHandler.GetWallet)
+	adminBilling.Get("/users/:userID/billing-profile", billingHandler.GetUserBillingProfileAdmin)
+	adminBilling.Get("/invoices", billingHandler.ListInvoices)
+	adminBilling.Get("/topups", billingHandler.ListTopups)
+	adminBilling.Get("/suspensions", billingHandler.ListSuspensions)
+	superadminBilling := adminBilling.Group("", middleware.RequireSuperAdmin(), middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg))
+	superadminBilling.Post("/specs", middleware.MaxBody(8*1024), billingHandler.CreateBillableSpec)
+	superadminBilling.Post("/topup-packages", middleware.MaxBody(8*1024), billingHandler.CreateTopupPackage)
+	superadminBilling.Put("/topup-packages/:id", middleware.MaxBody(8*1024), billingHandler.UpdateTopupPackage)
+	superadminBilling.Post("/wallets/:userID/credits", middleware.MaxBody(8*1024), billingHandler.AdjustWalletCredits)
+	superadminBilling.Put("/payment-provider", middleware.MaxBody(8*1024), billingHandler.UpdatePaymentProvider)
 
 	// User management
 	admin.Get("/users", userHandler.List)
@@ -202,10 +317,10 @@ func Setup(
 	secretstores.Put("/:id", secretStoreHandler.Update)
 	secretstores.Delete("/:id", secretStoreHandler.Delete)
 	secretstores.Post("/:id/secrets", secretStoreHandler.SetSecret)
-	secretstores.Post("/:id/items/:itemID/reveal", secretStoreHandler.RevealSecret)
+	secretstores.Post("/:id/items/:itemID/reveal", middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg), secretStoreHandler.RevealSecret)
 	secretstores.Post("/:id/bindings", secretStoreHandler.Bind)
 	secretstores.Delete("/:id/bindings/:bindingID", secretStoreHandler.Unbind)
-	secretstores.Post("/:id/export", secretStoreHandler.Export)
+	secretstores.Post("/:id/export", middleware.RequireNoBillingImpersonation(), middleware.RequireRecentBillingAuthentication(cfg), secretStoreHandler.Export)
 	secretstores.Post("/:id/import", secretStoreHandler.Import)
 
 	// SecretStore Item Management (Milestone 2)
@@ -219,19 +334,19 @@ func Setup(
 	// -----------------------------
 	databases := protected.Group("/databases")
 	databases.Get("/", databaseHandler.ListUserDatabases)
-	databases.Post("/", databaseHandler.CreateDatabase)
-	databases.Delete("/:uid", databaseHandler.DeleteDatabase)
-	databases.Post("/:uid/attach", databaseHandler.AttachDatabase)
-	databases.Post("/:uid/detach", databaseHandler.DetachDatabase)
-	databases.Post("/:uid/reset", databaseHandler.ResetDatabaseInstance)
-	databases.Post("/:uid/reinstall", databaseHandler.ReinstallDatabaseInstance)
+	databases.Post("/", middleware.RequireNoBillingImpersonation(), databaseHandler.CreateDatabase)
+	databases.Delete("/:uid", middleware.RequireNoBillingImpersonation(), databaseHandler.DeleteDatabase)
+	databases.Post("/:uid/attach", middleware.RequireNoBillingImpersonation(), databaseHandler.AttachDatabase)
+	databases.Post("/:uid/detach", middleware.RequireNoBillingImpersonation(), databaseHandler.DetachDatabase)
+	databases.Post("/:uid/reset", middleware.RequireNoBillingImpersonation(), databaseHandler.ResetDatabaseInstance)
+	databases.Post("/:uid/reinstall", middleware.RequireNoBillingImpersonation(), databaseHandler.ReinstallDatabaseInstance)
 
 	// -----------------------------
 	// Project Routes (Users)
 	// -----------------------------
 	projects := protected.Group("/projects")
 	projects.Get("/", projectHandler.ListOwn)
-	projects.Post("/", projectHandler.Create)
+	projects.Post("/", middleware.RequireNoBillingImpersonation(), projectHandler.Create)
 	projects.Get("/:id", projectHandler.Get)
 	projects.Get("/:id/branches", projectHandler.ListBranches)
 	projects.Put("/:id", projectHandler.Update)
@@ -240,15 +355,12 @@ func Setup(
 	projects.Post("/:id/stop", projectHandler.Stop)
 	projects.Post("/:id/start", projectHandler.Start)
 	projects.Post("/:id/restart", projectHandler.Restart)
-	projects.Delete("/:id", projectHandler.Delete)
+	projects.Delete("/:id", middleware.RequireNoBillingImpersonation(), projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
-	projects.Get("/:id/logs/stream", projectHandler.StreamLogs)
 	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
-	projects.Get("/:id/build-logs/stream", projectHandler.StreamBuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
-	projects.Get("/:id/deployment-events/stream", projectHandler.StreamDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
-	projects.Post("/:id/console", middleware.RateLimitConsole(), projectHandler.RunConsoleCommand)
+	projects.Post("/:id/console", middleware.RateLimitConsole(redisService), projectHandler.RunConsoleCommand)
 	projects.Get("/:id/env", projectHandler.GetEnv)
 	projects.Put("/:id/env", projectHandler.UpdateEnv)
 
@@ -258,30 +370,54 @@ func Setup(
 	// -----------------------------
 	// Database Management Routes
 	// -----------------------------
-	projects.Post("/:id/database/credentials", databaseHandler.GetCredentials)
-	projects.Post("/:id/database/rotate-credentials", databaseHandler.RotateCredentials)
-	projects.Post("/:id/database/status", databaseHandler.UpdateStatus)
-	projects.Get("/:id/database/overview", databaseHandler.GetOverview)
-	projects.Get("/:id/database/schema", databaseHandler.GetSchema)
-	projects.Post("/:id/database/designer", databaseHandler.ExecuteDesignerAction)
-	projects.Get("/:id/database/backups", databaseHandler.ListBackups)
-	projects.Post("/:id/database/backups", databaseHandler.CreateBackup)
-	projects.Post("/:id/database/backups/:backup/restore", databaseHandler.RestoreBackup)
-	projects.Delete("/:id/database/backups/:backup", databaseHandler.DeleteBackup)
-	projects.Get("/:id/database/backups/:backup/download", databaseHandler.DownloadBackup)
-	projects.Get("/:id/database/metrics", databaseHandler.GetMetrics)
-	projects.Post("/:id/database/transfer", databaseHandler.TransferDatabase)
+	projectDatabases := projects.Group("/:id/database")
+	projectDatabases.Get("/overview", databaseHandler.GetOverview)
+	projectDatabases.Get("/schema", databaseHandler.GetSchema)
+	projectDatabases.Get("/backups", databaseHandler.ListBackups)
+	projectDatabases.Get("/backups/:backup/download", databaseHandler.DownloadBackup)
+	projectDatabases.Get("/metrics", databaseHandler.GetMetrics)
+
+	projectDatabaseMutations := projectDatabases.Group("", middleware.RequireNoBillingImpersonation())
+	projectDatabaseMutations.Post("/credentials", middleware.RequireRecentBillingAuthentication(cfg), databaseHandler.GetCredentials)
+	projectDatabaseMutations.Post("/rotate-credentials", databaseHandler.RotateCredentials)
+	projectDatabaseMutations.Post("/status", databaseHandler.UpdateStatus)
+	projectDatabaseMutations.Post("/designer", databaseHandler.ExecuteDesignerAction)
+	projectDatabaseMutations.Post("/backups", databaseHandler.CreateBackup)
+	projectDatabaseMutations.Post("/backups/:backup/restore", databaseHandler.RestoreBackup)
+	projectDatabaseMutations.Delete("/backups/:backup", databaseHandler.DeleteBackup)
+	projectDatabaseMutations.Post("/transfer", databaseHandler.TransferDatabase)
 
 	// Fallback/Legacy endpoints
-	projects.Get("/:id/database/tables", databaseHandler.ListTables)
-	projects.Get("/:id/database/tables/:table", databaseHandler.GetTableStructure)
-	projects.Get("/:id/database/tables/:table/data", databaseHandler.GetTableData)
-	projects.Delete("/:id/database/tables/:table/rows", databaseHandler.DeleteTableRow)
-	projects.Put("/:id/database/tables/:table/rows", databaseHandler.UpdateTableRow)
-	projects.Post("/:id/database/query", middleware.RateLimitQuery(), databaseHandler.ExecuteQuery)
-	projects.Get("/:id/database/export", databaseHandler.ExportDatabase)
-	projects.Post("/:id/database/import", middleware.RateLimitImport(), databaseHandler.ImportDatabase)
-	projects.Post("/:id/database/reset", databaseHandler.ResetDatabase)
+	projectDatabases.Get("/tables", databaseHandler.ListTables)
+	projectDatabases.Get("/tables/:table", databaseHandler.GetTableStructure)
+	projectDatabases.Get("/tables/:table/data", databaseHandler.GetTableData)
+	projectDatabases.Get("/export", databaseHandler.ExportDatabase)
+	projectDatabaseMutations.Delete("/tables/:table/rows", databaseHandler.DeleteTableRow)
+	projectDatabaseMutations.Put("/tables/:table/rows", databaseHandler.UpdateTableRow)
+	projectDatabaseMutations.Post("/query", middleware.RateLimitQuery(redisService), databaseHandler.ExecuteQuery)
+	projectDatabaseMutations.Post("/import", middleware.RateLimitImport(redisService), databaseHandler.ImportDatabase)
+	projectDatabaseMutations.Post("/reset", databaseHandler.ResetDatabase)
+
+	// ===========================================
+	// Subdomain & Custom Domain Project Ingress Proxy Fallback
+	// Proxy requests to project containers. Only bypass /api to system handlers if host is Control Plane host.
+	// ===========================================
+	app.Use(middleware.ProxyAuth(), middleware.RateLimitProxy(redisService), middleware.ValidateProxyTarget(), func(c *fiber.Ctx) error {
+		host := c.Hostname()
+		path := c.Path()
+
+		// Bypass to system API handlers only if the request is for the Control Plane host itself
+		if isControlPlaneHost(host) {
+			if strings.HasPrefix(path, "/api") || path == "/health" || path == "/metrics" {
+				return c.Next()
+			}
+		}
+
+		// User project subdomains or custom domains proxy ALL requests (including /api/*) to project containers
+		return projectHandler.ProxyToProject(c)
+	})
+
+
 
 	return app
 }

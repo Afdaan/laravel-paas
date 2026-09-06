@@ -31,11 +31,10 @@ import (
 
 func main() {
 	_ = godotenv.Load()
-	_ = godotenv.Load("../.env")
 
 	cfg := config.Load()
 	logger.Setup(cfg)
-	if err := cfg.ValidateProductionSecurity(); err != nil {
+	if err := cfg.ValidateProductionWorkerSecurity(); err != nil {
 		slog.Error("Insecure production configuration", "error", err)
 		os.Exit(1)
 	}

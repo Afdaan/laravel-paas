@@ -1,19 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { settingsAPI } from '../../services/api'
-import useTranslation from '../../lib/useTranslation'
+import { settingsAPI, billingAPI } from '@/services/api'
+import useAuthStore from '@/stores/authStore'
+import useTranslation from '@/lib/useTranslation'
 import {
   Globe,
   Shield,
   Activity,
-  Cpu,
-  Database,
   Save,
   AlertCircle,
   Server,
   Network,
-  Clock,
-  Layout,
   Zap,
   Loader2,
   RefreshCw
@@ -22,14 +19,21 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Slider } from '@/components/ui/slider'
 import { NumberStepper } from '@/components/ui/number-stepper'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 
 interface PlatformSettings {
+  default_payment_provider?: string;
   base_domain?: string;
   project_domain?: string;
   max_projects_per_user?: number;
-  project_expiry_days?: number;
   cpu_limit_percent?: number;
   memory_limit_mb?: number;
   admin_idle_timeout?: number;
@@ -40,15 +44,30 @@ interface PlatformSettings {
 
 const AdminSettings = () => {
   const { t } = useTranslation()
+  const isSuperAdmin = useAuthStore(state => state.user?.role === 'superadmin')
   const [settings, setSettings] = useState<PlatformSettings>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Payment provider state
+  const [savedProvider, setSavedProvider] = useState('')
+  const [selectedProvider, setSelectedProvider] = useState('')
+  const [pendingProvider, setPendingProvider] = useState('')
+  const [providerReason, setProviderReason] = useState('')
+  const [isProviderModalOpen, setIsProviderModalOpen] = useState(false)
+  const [isChangingProvider, setIsChangingProvider] = useState(false)
 
   const fetchSettings = useCallback(async () => {
     setIsLoading(true)
     try {
       const response = await settingsAPI.list()
-      setSettings(response.data.map || {})
+      const map = response.data.map || {}
+      setSettings(map)
+      const rawProvider = (map.default_payment_provider || '').trim().toLowerCase()
+      const isValid = rawProvider === 'pakasir' || rawProvider === 'midtrans'
+      const provider = isValid ? rawProvider : ''
+      setSavedProvider(provider)
+      setSelectedProvider(provider)
     } catch (error) {
       toast.error(t('admin.settings.loading'))
     } finally {
@@ -64,13 +83,52 @@ const AdminSettings = () => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
+  const handleProviderSelect = (newProvider: string) => {
+    if (newProvider === savedProvider) {
+      setSelectedProvider(newProvider)
+      return
+    }
+    setPendingProvider(newProvider)
+    setSelectedProvider(newProvider)
+    setProviderReason('')
+    setIsProviderModalOpen(true)
+  }
+
+  const handleConfirmProviderSwitch = async () => {
+    if (!providerReason.trim()) return
+    setIsChangingProvider(true)
+    try {
+      await billingAPI.updatePaymentProvider({
+        provider: pendingProvider,
+        reason: providerReason.trim(),
+      })
+      setSavedProvider(pendingProvider)
+      setSelectedProvider(pendingProvider)
+      setSettings(prev => ({ ...prev, default_payment_provider: pendingProvider }))
+      setIsProviderModalOpen(false)
+      setProviderReason('')
+      toast.success('Payment provider updated successfully')
+    } catch (error: any) {
+      setSelectedProvider(savedProvider)
+      toast.error(error?.response?.data?.message || 'Failed to update payment provider')
+    } finally {
+      setIsChangingProvider(false)
+    }
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      // Convert all values to strings as backend expects map[string]string
+      // Exclude base_domain, project_domain, and default_payment_provider (which has a dedicated finance endpoint)
       const payload: Record<string, string> = {}
       Object.entries(settings).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
+        if (
+          key !== 'base_domain' &&
+          key !== 'project_domain' &&
+          key !== 'default_payment_provider' &&
+          value !== undefined &&
+          value !== null
+        ) {
           payload[key] = String(value)
         }
       })
@@ -135,7 +193,8 @@ const AdminSettings = () => {
               </div>
               <Input
                 value={settings.base_domain || ''}
-                onChange={(e) => handleChange('base_domain', e.target.value)}
+                readOnly
+                aria-readonly="true"
                 placeholder={t('admin.settings.coreFqdnPlaceholder')}
               />
               <p className="text-xs text-muted-foreground flex items-center gap-2">
@@ -150,7 +209,8 @@ const AdminSettings = () => {
               </Label>
               <Input
                 value={settings.project_domain || ''}
-                onChange={(e) => handleChange('project_domain', e.target.value)}
+                readOnly
+                aria-readonly="true"
                 placeholder={t('admin.settings.projectPoolPlaceholder')}
               />
               <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/10 flex items-center gap-3">
@@ -175,38 +235,7 @@ const AdminSettings = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Layout size={14} className="text-emerald-500 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.identityQuota')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={1}
-                    max={10}
-                    value={settings.max_projects_per_user || 3}
-                    onChange={(val) => handleChange('max_projects_per_user', val)}
-                    unit={t('admin.settings.projects')}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Clock size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.expiryCycle')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={0}
-                    value={settings.project_expiry_days || 30}
-                    onChange={(val) => handleChange('project_expiry_days', val)}
-                    unit={t('admin.settings.days')}
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
               <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
                 <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
                   <Shield size={14} className="text-rose-500 shrink-0 mt-0.5" />
@@ -237,38 +266,6 @@ const AdminSettings = () => {
                   />
                 </div>
               </div>
-
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Globe size={14} className="text-teal-500 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.domainLimit')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={1}
-                    max={20}
-                    value={settings.max_domains_per_project || 3}
-                    onChange={(val) => handleChange('max_domains_per_project', val)}
-                    unit={t('common.domains')}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between p-5 rounded-xl bg-background/50 border border-emerald-500/10 hover:border-emerald-500/30 transition-colors min-h-[120px]">
-                <Label className="flex items-start gap-2 text-[10px] uppercase font-bold tracking-widest text-muted-foreground leading-tight">
-                  <Server size={14} className="text-indigo-400 shrink-0 mt-0.5" />
-                  <span>{t('admin.settings.maxImageRetention')}</span>
-                </Label>
-                <div className="mt-4">
-                  <NumberStepper
-                    min={1}
-                    max={20}
-                    value={settings.max_image_retention || 3}
-                    onChange={(val) => handleChange('max_image_retention', val)}
-                    unit={t('admin.settings.images')}
-                  />
-                </div>
-              </div>
             </div>
 
             <div className="p-4 rounded-lg bg-muted/50 border space-y-2">
@@ -281,64 +278,95 @@ const AdminSettings = () => {
           </CardContent>
         </Card>
 
-        {/* Compute Specs */}
-        <Card className="lg:col-span-2 overflow-hidden relative group border-rose-500/20 bg-gradient-to-br from-background to-rose-500/5">
+        {/* Payment Gateway Provider Selector */}
+        <Card className="lg:col-span-2 overflow-hidden relative group border-emerald-500/20 bg-gradient-to-br from-background to-emerald-500/5">
           <CardHeader className="flex flex-row items-center gap-4 pb-2">
-            <div className="w-12 h-12 bg-rose-500/10 rounded-xl flex items-center justify-center text-rose-500">
+            <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500">
               <Zap className="w-6 h-6" />
             </div>
             <div>
-              <CardTitle className="text-xl">{t('admin.settings.computeSpecs')}</CardTitle>
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">{t('admin.settings.provisioningProfile')}</p>
+              <CardTitle className="text-xl">Default Payment Gateway Provider</CardTitle>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mt-1">Active Gateway Routing</p>
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-10 pt-8">
-            <div className="space-y-6 bg-background/50 p-6 rounded-xl border">
+          <CardContent className="pt-4">
+            <div className="space-y-4 max-w-md">
               <div className="flex items-center justify-between">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Cpu size={16} className="text-rose-500" />
-                  {t('admin.settings.cpuLimit')}
-                </Label>
-                <span className="text-lg font-bold text-foreground">{settings.cpu_limit_percent || 50}% <span className="text-sm text-muted-foreground">{t('admin.settings.cores')}</span></span>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Active Provider</Label>
+                {!isSuperAdmin && (
+                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 uppercase tracking-widest">
+                    Superadmin Required
+                  </span>
+                )}
               </div>
-              <Slider
-                value={[settings.cpu_limit_percent || 50]}
-                min={10}
-                max={100}
-                step={5}
-                onValueChange={(val) => handleChange('cpu_limit_percent', Array.isArray(val) ? val[0] : val)}
-                className="py-4"
-              />
-              <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                <span>{t('admin.settings.lowPriority')}</span>
-                <span>{t('admin.settings.burst')}</span>
-              </div>
-            </div>
-
-            <div className="space-y-6 bg-background/50 p-6 rounded-xl border">
-              <div className="flex items-center justify-between">
-                <Label className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  <Database size={16} className="text-indigo-500" />
-                  {t('admin.settings.memoryLimit')}
-                </Label>
-                <span className="text-lg font-bold text-foreground">{settings.memory_limit_mb || 512} <span className="text-sm text-muted-foreground">{t('admin.settings.mbRam')}</span></span>
-              </div>
-              <Slider
-                value={[settings.memory_limit_mb || 512]}
-                min={128}
-                max={2048}
-                step={128}
-                onValueChange={(val) => handleChange('memory_limit_mb', Array.isArray(val) ? val[0] : val)}
-                className="py-4"
-              />
-              <div className="flex justify-between text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                <span>128 MB</span>
-                <span>2048 MB</span>
-              </div>
+              <select
+                aria-label="Active Provider"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={selectedProvider}
+                disabled={!isSuperAdmin || isChangingProvider}
+                onChange={(e) => handleProviderSelect(e.target.value)}
+              >
+                {!savedProvider && <option value="" disabled>Select a payment provider...</option>}
+                <option value="pakasir">Pakasir (Direct QRIS/VA)</option>
+                <option value="midtrans">Midtrans (Snap Gateway)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                All top-ups without an explicit package provider override will use this payment gateway. Changing this setting takes effect immediately across all users and requires superadmin authorization with an audit reason.
+              </p>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Payment Provider Change Confirmation Modal */}
+      <Dialog open={isProviderModalOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsProviderModalOpen(false)
+          setSelectedProvider(savedProvider)
+          setProviderReason('')
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Payment Gateway Switch</DialogTitle>
+            <DialogDescription>
+              Switching default payment gateway to <strong className="capitalize">{pendingProvider}</strong>. All subsequent top-up checkouts will route through this gateway. An audit log entry will be recorded.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="provider-switch-reason" className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+              Reason for Change <span className="text-rose-500">*</span>
+            </Label>
+            <Input
+              id="provider-switch-reason"
+              placeholder="e.g. Gateway maintenance failover"
+              value={providerReason}
+              onChange={(e) => setProviderReason(e.target.value)}
+              disabled={isChangingProvider}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              disabled={isChangingProvider}
+              onClick={() => {
+                setIsProviderModalOpen(false)
+                setSelectedProvider(savedProvider)
+                setProviderReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!providerReason.trim() || isChangingProvider}
+              onClick={handleConfirmProviderSwitch}
+            >
+              {isChangingProvider ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Confirm Switch
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

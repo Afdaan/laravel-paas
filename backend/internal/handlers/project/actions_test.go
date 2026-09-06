@@ -9,16 +9,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
-	"strings"
 	"unsafe"
 
 	"github.com/glebarez/sqlite"
 	"github.com/go-redis/redismock/v9"
 	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/backend/internal/handlers"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/services/billing"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
@@ -35,6 +37,10 @@ func setUnexportedField(field reflect.Value, value interface{}) {
 
 // Setup a clean in-memory database and project handler with a unique database name
 func setupTestApp(t *testing.T, dbName string) (*fiber.App, *gorm.DB, redismock.ClientMock) {
+	return setupTestAppWithBilling(t, dbName, false)
+}
+
+func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (*fiber.App, *gorm.DB, redismock.ClientMock) {
 	// 1. Initialize SQLite in-memory DB with unique name to isolate state between tests
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", dbName)), &gorm.Config{})
 	if err != nil {
@@ -46,6 +52,12 @@ func setupTestApp(t *testing.T, dbName string) (*fiber.App, *gorm.DB, redismock.
 		&models.User{},
 		&models.Project{},
 		&models.DatabaseInstance{},
+		&models.Wallet{},
+		&models.WalletLedgerEntry{},
+		&models.BillableSpec{},
+		&models.BillableResource{},
+		&models.Invoice{},
+		&models.InvoiceItem{},
 		&models.SecretStore{},
 		&models.SecretStoreItem{},
 		&models.SecretStoreItemValue{},
@@ -75,6 +87,7 @@ func setupTestApp(t *testing.T, dbName string) (*fiber.App, *gorm.DB, redismock.
 		JWTSecret:               "test-secret-key-1234567890-test-secret-key-1234567890",
 		UIDSalt:                 "test-salt",
 		CredentialEncryptionKey: "test-key-32-chars-long-123456789", // 32 bytes
+		BillingEnabled:          billingEnabled,
 	}
 
 	projectRepo := repositories.NewProjectRepository(db)
@@ -106,7 +119,7 @@ func setupTestApp(t *testing.T, dbName string) (*fiber.App, *gorm.DB, redismock.
 	)
 
 	// 5. Initialize Fiber App and register local route for testing
-	app := fiber.New()
+	app := fiber.New(fiber.Config{ErrorHandler: handlers.ErrorHandler})
 	app.Post("/projects", func(c *fiber.Ctx) error {
 		c.Locals("user_id", user.ID)
 		c.Locals("role", string(user.Role))
@@ -145,6 +158,140 @@ func TestCreateProject_InvalidDatabaseOption(t *testing.T) {
 	if respJSON["error"] != expectedErr {
 		t.Errorf("expected error %q, got %q", expectedErr, respJSON["error"])
 	}
+}
+
+func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(t *testing.T) {
+	app, db, mock := setupTestAppWithBilling(t, "billing_managed_database_rollback", true)
+	var user models.User
+	if err := db.First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	projectSpec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Project", Slug: "project-billing-rollback", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+	databaseSpec := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Database", Slug: "database-billing-rollback", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, ConnectionLimit: intPointer(50), BackupRetentionDays: intPointer(7), Version: 1, IsActive: true}
+	if err := db.Create(&projectSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&databaseSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallets := billing.NewWalletService(db)
+	if _, err := wallets.Credit(context.Background(), billing.LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 100, IdempotencyKey: "project-billing-rollback-funds"}); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+	reqPayload := CreateProjectRequest{
+		Name:                   "Billed Project",
+		GithubURL:              "https://github.com/test/billed-project",
+		Branch:                 "main",
+		DatabaseOption:         "new",
+		DatabaseEngine:         "mysql",
+		BillableSpecID:         projectSpec.ID,
+		DatabaseBillableSpecID: databaseSpec.ID,
+	}
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusPaymentRequired {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+
+	for _, model := range []any{&models.Project{}, &models.DatabaseInstance{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}} {
+		var count int64
+		if err := db.Model(model).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("model=%T count=%d err=%v", model, count, err)
+		}
+	}
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil || wallet.BalanceCredits != 100 {
+		t.Fatalf("wallet=%#v err=%v", wallet, err)
+	}
+	var ledgerCount int64
+	if err := db.Model(&models.WalletLedgerEntry{}).Where("wallet_id = ?", wallet.ID).Count(&ledgerCount).Error; err != nil || ledgerCount != 1 {
+		t.Fatalf("ledger=%d err=%v", ledgerCount, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
+	app, db, mock := setupTestAppWithBilling(t, "billing_deducts_credits_success", true)
+	var user models.User
+	if err := db.First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	projectSpec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Project", Slug: "project-billing-success", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+	databaseSpec := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Database", Slug: "database-billing-success", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 50, ConnectionLimit: intPointer(50), BackupRetentionDays: intPointer(7), Version: 1, IsActive: true}
+	if err := db.Create(&projectSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&databaseSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallets := billing.NewWalletService(db)
+	if _, err := wallets.Credit(context.Background(), billing.LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 500, IdempotencyKey: "project-billing-success-funds"}); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
+	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
+	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+	mock.ExpectLLen("deployment:queue").SetVal(1)
+
+	reqPayload := CreateProjectRequest{
+		Name:                   "Billed Project Success",
+		GithubURL:              "https://github.com/test/billed-project-success",
+		Branch:                 "main",
+		DatabaseOption:         "new",
+		DatabaseEngine:         "mysql",
+		BillableSpecID:         projectSpec.ID,
+		DatabaseBillableSpecID: databaseSpec.ID,
+	}
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		t.Fatalf("wallet fetch error: %v", err)
+	}
+	// Expected balance: 500 initial - 100 (project) - 50 (database) = 350 credits
+	if wallet.BalanceCredits != 350 {
+		t.Fatalf("expected balance=350, got balance=%d", wallet.BalanceCredits)
+	}
+
+	var ledgerEntries []models.WalletLedgerEntry
+	if err := db.Where("wallet_id = ?", wallet.ID).Find(&ledgerEntries).Error; err != nil || len(ledgerEntries) != 3 {
+		t.Fatalf("expected 3 ledger entries (1 topup + 2 debits), got count=%d, err=%v", len(ledgerEntries), err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+
+func intPointer(value int) *int {
+	return &value
 }
 
 func TestCreateProject_RollbackOnAttachFailure(t *testing.T) {
@@ -287,7 +434,6 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
 	// Mock settings expectations checked at the end of successful create (PopulateURL)
-	mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -476,8 +622,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 		mock.ExpectLLen("deployment:queue").SetVal(1)
-		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
-
 		reqPayload := CreateProjectRequest{
 			Name:             "distinctproj",
 			GithubURL:        "https://github.com/test/repo",
@@ -531,8 +675,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 		mock.ExpectLLen("deployment:queue").SetVal(1)
-		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
-
 		reqPayload := CreateProjectRequest{
 			Name:             "spacedproj",
 			GithubURL:        "https://github.com/test/repo",
@@ -578,8 +720,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
 		mock.ExpectLLen("deployment:queue").SetVal(1)
-		mock.ExpectGet("setting:project_domain").SetVal("\"localhost\"")
-
 		reqPayload := CreateProjectRequest{
 			Name:           "this-is-a-very-long-project-name-to-test-generated-defaults-and-suffix-preservation",
 			GithubURL:      "https://github.com/test/repo",

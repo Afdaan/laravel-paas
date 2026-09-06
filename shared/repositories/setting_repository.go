@@ -6,12 +6,14 @@
 package repositories
 
 import (
+	"context"
+
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 )
 
 type SettingRepository interface {
-	GetByKey(key string) (*models.Setting, error)
+	GetByKey(ctx context.Context, key string) (*models.Setting, error)
 	GetValue(key string, defaultValue string) string
 	Upsert(key string, value string) error
 	ListAll() ([]models.Setting, error)
@@ -25,9 +27,13 @@ func NewSettingRepository(db *gorm.DB) SettingRepository {
 	return &settingRepository{db: db}
 }
 
-func (r *settingRepository) GetByKey(key string) (*models.Setting, error) {
+func (r *settingRepository) GetByKey(ctx context.Context, key string) (*models.Setting, error) {
 	var setting models.Setting
-	if err := r.db.Where("setting_key = ?", key).First(&setting).Error; err != nil {
+	query := r.db
+	if ctx != nil {
+		query = query.WithContext(ctx)
+	}
+	if err := query.Where("setting_key = ?", key).First(&setting).Error; err != nil {
 		return nil, err
 	}
 	return &setting, nil

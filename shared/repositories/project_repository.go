@@ -42,6 +42,7 @@ type ProjectRepository interface {
 	UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error
 	UpdateDeploymentHeartbeat(id uint) error
 	PromoteRolloutContainer(id uint, newContainerID string) error
+	PromoteRolloutContainerWithWorker(id uint, newContainerID string, workerContainerID *string) error
 	ResolveInstallationID(userID uint, owner string) (int64, error)
 	VerifyInstallationID(installationID int64, owner string) (bool, error)
 	SaveDatabaseInstance(instance *models.DatabaseInstance) error
@@ -207,6 +208,14 @@ func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOl
 
 func (r *projectRepository) Delete(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		// Invoice items retain the billable resource by foreign key. Mark it
+		// terminal instead of deleting history when physical project cleanup ends.
+		if err := tx.Model(&models.BillableResource{}).
+			Where("type = ? AND resource_id = ?", models.BillableTypeProject, id).
+			Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+			return err
+		}
+
 		// 1. Fetch associated custom domains to clean up domain-specific children first
 		var domainIDs []uint
 		if err := tx.Model(&models.CustomDomain{}).Where("project_id = ?", id).Pluck("id", &domainIDs).Error; err != nil {
@@ -236,13 +245,13 @@ func (r *projectRepository) Delete(id uint) error {
 			return err
 		}
 
-		// Delete associated database backups
-		if err := tx.Unscoped().Where("project_id = ?", id).Delete(&models.DatabaseBackup{}).Error; err != nil {
+		// Detach associated database instances instead of deleting them
+		if err := tx.Model(&models.DatabaseInstance{}).Where("project_id = ?", id).Update("project_id", nil).Error; err != nil {
 			return err
 		}
 
-		// Detach associated database instances instead of deleting them
-		if err := tx.Model(&models.DatabaseInstance{}).Where("project_id = ?", id).Update("project_id", nil).Error; err != nil {
+		// Preserve recovery evidence for detached managed databases.
+		if err := tx.Model(&models.DatabaseBackup{}).Where("project_id = ?", id).Update("project_id", nil).Error; err != nil {
 			return err
 		}
 
@@ -360,6 +369,19 @@ func (r *projectRepository) PromoteRolloutContainer(id uint, newContainerID stri
 			"container_id":         &newContainerID,
 			"rollout_container_id": nil,
 			"status":               models.StatusRunning,
+		}
+		return tx.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
+	})
+}
+
+func (r *projectRepository) PromoteRolloutContainerWithWorker(id uint, newContainerID string, workerContainerID *string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"container_id":                &newContainerID,
+			"worker_container_id":         workerContainerID,
+			"rollout_container_id":        nil,
+			"rollout_worker_container_id": nil,
+			"status":                      models.StatusRunning,
 		}
 		return tx.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
 	})

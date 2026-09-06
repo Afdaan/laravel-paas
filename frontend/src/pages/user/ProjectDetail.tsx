@@ -1126,17 +1126,17 @@ function UserProjectDetail() {
                 </a>
               )}
             </div>
-            {project.custom_domains && project.custom_domains.length > 0 && (
+            {project.custom_domains && project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length > 0 && (
               <a
-                href={`https://${project.custom_domains[0].domain}`}
+                href={`https://${project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status))[0].domain}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group/domain"
               >
                 <Badge variant="outline" className="gap-1.5 bg-primary/10 text-primary border-primary/20 cursor-pointer hover:bg-primary/20 transition-colors">
                   <Globe className="w-3.5 h-3.5" />
-                  {project.custom_domains[0].domain}
-                  {project.custom_domains.length > 1 && ` (+${project.custom_domains.length - 1})`}
+                  {project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status))[0].domain}
+                  {project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length > 1 && ` (+${project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length - 1})`}
                   <ExternalLink className="w-2.5 h-2.5 opacity-40 group-hover/domain:opacity-100 transition-opacity" />
                 </Badge>
               </a>

@@ -1,0 +1,1021 @@
+package billing
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"github.com/laravel-paas/shared/models"
+	"gorm.io/gorm"
+)
+
+func TestInvoiceServiceChargesInitialResourceAtomically(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 500, IdempotencyKey: "invoice-initial-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, 101, spec.ID, now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, 101).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.CurrentPeriodStart != now || !resource.NextInvoiceAt.Equal(nextBillingCycle(now)) || resource.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("resource=%#v", resource)
+	}
+	var invoice models.Invoice
+	if err := db.First(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if invoice.Status != models.InvoiceStatusPaid || invoice.TotalCredits != spec.MonthlyCredits {
+		t.Fatalf("invoice=%#v", invoice)
+	}
+	assertInvoiceWallet(t, db, user.ID, 400, 2)
+}
+
+func TestInvoiceServiceRejectsInitialProvisioningWithoutCredits(t *testing.T) {
+	db, user, service, _, spec := invoiceServiceFixture(t)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, 102, spec.ID, time.Now().UTC())
+	})
+	if err != ErrInsufficientCredits {
+		t.Fatalf("charge error=%v", err)
+	}
+	var resources, invoices, entries int64
+	if err := db.Model(&models.BillableResource{}).Count(&resources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.Invoice{}).Count(&invoices).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.WalletLedgerEntry{}).Count(&entries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resources != 0 || invoices != 0 || entries != 0 {
+		t.Fatalf("resources=%d invoices=%d entries=%d", resources, invoices, entries)
+	}
+}
+
+func TestInvoiceServiceRetriesPaymentDueAfterTopupWithoutDoubleDebit(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-retry-initial-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Retry", GithubURL: "https://github.com/example/retry", Subdomain: "invoice-retry", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue || !resource.NextInvoiceAt.Equal(dueAt) {
+		t.Fatalf("resource=%#v", resource)
+	}
+	var dueInvoice models.Invoice
+	if err := db.Where("period_start = ?", dueAt).First(&dueInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dueInvoice.Status != models.InvoiceStatusPaymentDue {
+		t.Fatalf("invoice=%#v", dueInvoice)
+	}
+	if dueInvoice.DueAt == nil {
+		t.Fatal("payment-due invoice missing due timestamp")
+	}
+	firstDueAt := *dueInvoice.DueAt
+
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-retry-topup"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive || !resource.NextInvoiceAt.Equal(nextBillingCycle(dueAt)) {
+		t.Fatalf("resource=%#v", resource)
+	}
+	if err := db.First(&dueInvoice, dueInvoice.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dueInvoice.Status != models.InvoiceStatusPaid || dueInvoice.DueAt == nil || !dueInvoice.DueAt.Equal(firstDueAt) {
+		t.Fatalf("invoice=%#v", dueInvoice)
+	}
+	assertInvoiceWallet(t, db, user.ID, 0, 4)
+}
+
+func TestInvoiceServicePaysNonRenewingResourceWithoutEnablingAutoRenew(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "manual-payment-initial-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Manual payment", GithubURL: "https://github.com/example/manual-payment", Subdomain: "manual-payment", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&resource).Update("auto_renew", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt); !errors.Is(err, ErrInsufficientCredits) {
+		t.Fatalf("manual payment error=%v", err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue || resource.AutoRenew {
+		t.Fatalf("resource changed after failed payment: %#v", resource)
+	}
+
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "manual-payment-recovery-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive || resource.AutoRenew || !resource.CurrentPeriodStart.Equal(dueAt) || !resource.NextInvoiceAt.Equal(nextBillingCycle(dueAt)) {
+		t.Fatalf("resource after manual payment=%#v", resource)
+	}
+	assertInvoiceWallet(t, db, user.ID, 0, 4)
+}
+
+func TestInvoiceServiceSettlesSuspendedPaymentDueWithoutStartingRuntime(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-suspended-initial-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Suspended", GithubURL: "https://github.com/example/suspended", Subdomain: "invoice-suspended", Status: models.StatusStopped}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&resource).Update("billing_status", models.BillableResourceStatusSuspended).Error; err != nil {
+		t.Fatal(err)
+	}
+	stopAttemptedAt := dueAt.Add(time.Minute)
+	task := models.ProjectSuspensionTask{ProjectID: project.ID, BillableResourceID: resource.ID, UserID: user.ID, MainContainerID: "main-suspended", MainWasRunning: true, StopAttemptedAt: &stopAttemptedAt}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-suspended-recovery-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RetryDueForUser(context.Background(), user.ID, dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive || !resource.NextInvoiceAt.Equal(nextBillingCycle(dueAt)) {
+		t.Fatalf("resource=%#v", resource)
+	}
+	if err := db.First(&project, project.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if project.Status != models.StatusStopped {
+		t.Fatalf("payment recovery started project: %#v", project)
+	}
+	if err := db.First(&task, task.ID).Error; err != nil || task.CompletedAt == nil || task.ResumeRequestedAt == nil || task.ResumeCompletedAt != nil {
+		t.Fatalf("payment recovery left suspension task active: %#v err=%v", task, err)
+	}
+}
+
+func TestInvoiceServiceQueuesDatabaseResumeAfterManualSuspendedPayment(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if err := db.AutoMigrate(&models.DatabaseStatusOperationTask{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "database-resume-initial"}); err != nil {
+		t.Fatal(err)
+	}
+	connectionLimit := 15
+	database := models.DatabaseInstance{UserID: user.ID, Engine: "mysql", Name: "invoice_resume", Username: "invoice_resume_user", Password: "password", Host: "mysql", Port: 3306, ConnectionLimit: connectionLimit, Status: models.DBStatusActive}
+	if err := db.Create(&database).Error; err != nil {
+		t.Fatal(err)
+	}
+	databaseSpec := models.BillableSpec{Type: models.BillableTypeDatabase, Name: "Database", Slug: "invoice-resume-database", CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: spec.MonthlyCredits, Version: 1, IsActive: true}
+	if err := db.Create(&databaseSpec).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeDatabase, database.ID, databaseSpec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeDatabase, database.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&resource).Update("billing_status", models.BillableResourceStatusSuspended).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&database).Update("status", models.DBStatusSuspended).Error; err != nil {
+		t.Fatal(err)
+	}
+	staleTask := models.DatabaseStatusOperationTask{DatabaseInstanceID: database.ID, DatabaseInstanceUID: database.UID, Engine: database.Engine, Name: database.Name, Username: database.Username, DesiredStatus: models.DBStatusSuspended}
+	if err := db.Create(&staleTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: databaseSpec.MonthlyCredits, IdempotencyKey: "database-resume-recovery"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeDatabase, database.ID, dueAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("billing status=%s", resource.BillingStatus)
+	}
+	if err := db.Where("database_instance_id = ?", database.ID).First(&staleTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	if staleTask.DesiredStatus != models.DBStatusActive || staleTask.PhysicalApplied {
+		t.Fatalf("resume task=%#v", staleTask)
+	}
+}
+
+func TestInvoiceServiceRestoresCurrentPeriodPaymentDueAfterTopup(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 1, IdempotencyKey: "chargeback-recovery-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Chargeback recovery", GithubURL: "https://github.com/example/chargeback-recovery", Subdomain: "chargeback-recovery", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeProject,
+		ResourceID:         project.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusPaymentDue,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		NextInvoiceAt:      now.AddDate(0, 1, 0),
+		BillingAnchorDay:   now.Day(),
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RetryDueForUser(context.Background(), user.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("billing status=%s", resource.BillingStatus)
+	}
+	if !resource.NextInvoiceAt.Equal(now.AddDate(0, 1, 0)) {
+		t.Fatalf("next invoice=%s", resource.NextInvoiceAt)
+	}
+}
+
+func TestInvoiceServiceSchedulerRecoversSuspendedCurrentPeriodAfterMissedTopupRetry(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 1, IdempotencyKey: "missed-topup-retry-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Missed payment recovery", GithubURL: "https://github.com/example/missed-payment-recovery", Subdomain: "missed-payment-recovery", Status: models.StatusStopped}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeProject,
+		ResourceID:         project.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusSuspended,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		NextInvoiceAt:      now.AddDate(0, 1, 0),
+		BillingAnchorDay:   now.Day(),
+	}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	dueAt := now.Add(-24 * time.Hour)
+	evidence := models.Invoice{
+		UserID:         user.ID,
+		WalletID:       wallet.ID,
+		PeriodStart:    resource.CurrentPeriodStart,
+		PeriodEnd:      resource.NextInvoiceAt,
+		TotalCredits:   0,
+		Status:         models.InvoiceStatusPaymentDue,
+		IdempotencyKey: "chargeback-evidence-missed-retry",
+		DueAt:          &dueAt,
+	}
+	if err := db.Create(&evidence).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.InvoiceItem{InvoiceID: evidence.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "Chargeback payment recovery", Credits: 0}).Error; err != nil {
+		t.Fatal(err)
+	}
+	task := models.ProjectSuspensionTask{ProjectID: project.ID, BillableResourceID: resource.ID, UserID: user.ID}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RunMonthly(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive || !resource.NextInvoiceAt.Equal(now.AddDate(0, 1, 0)) {
+		t.Fatalf("resource=%#v", resource)
+	}
+	if err := db.First(&evidence, evidence.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Status != models.InvoiceStatusPaid || evidence.PaidAt == nil || evidence.DueAt == nil || !evidence.DueAt.Equal(dueAt) {
+		t.Fatalf("evidence=%#v", evidence)
+	}
+	if err := db.First(&task, task.ID).Error; err != nil || task.CompletedAt == nil {
+		t.Fatalf("task=%#v err=%v", task, err)
+	}
+}
+
+func TestInvoiceServiceContinuesDueResourcesAfterOneFailure(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-continue-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
+	invalid := models.BillableResource{UserID: user.ID, Type: models.BillableType("invalid"), ResourceID: 999, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now.AddDate(0, -1, 0), NextInvoiceAt: now}
+	if err := db.Create(&invalid).Error; err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Continue", GithubURL: "https://github.com/example/continue", Subdomain: "invoice-continue", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	valid := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: now.AddDate(0, -1, 0), NextInvoiceAt: now, BillingAnchorDay: now.Day()}
+	if err := db.Create(&valid).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunMonthly(context.Background(), now); err == nil {
+		t.Fatal("scheduler succeeded despite invalid due resource")
+	}
+	if err := db.First(&valid, valid.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if valid.BillingStatus != models.BillableResourceStatusActive || !valid.NextInvoiceAt.Equal(nextBillingCycle(now)) {
+		t.Fatalf("valid resource=%#v", valid)
+	}
+	assertInvoiceWallet(t, db, user.ID, 0, 2)
+}
+
+func TestNextBillingCyclePreservesMonthEnd(t *testing.T) {
+	jan31 := time.Date(2026, time.January, 31, 12, 0, 0, 0, time.UTC)
+	feb28 := time.Date(2026, time.February, 28, 12, 0, 0, 0, time.UTC)
+	mar31 := time.Date(2026, time.March, 31, 12, 0, 0, 0, time.UTC)
+	if got := nextBillingCycle(jan31); !got.Equal(feb28) {
+		t.Fatalf("January 31 next cycle=%s", got)
+	}
+	if got := nextBillingCycle(feb28); !got.Equal(mar31) {
+		t.Fatalf("February month-end next cycle=%s", got)
+	}
+}
+
+func TestNextBillingCycleRetainsOriginalAnchorAfterFebruary(t *testing.T) {
+	for name, test := range map[string]struct {
+		start, feb, march time.Time
+		anchorDay         int
+		anchorMonthEnd    bool
+	}{
+		"January 29":        {time.Date(2025, time.January, 29, 12, 0, 0, 0, time.UTC), time.Date(2025, time.February, 28, 12, 0, 0, 0, time.UTC), time.Date(2025, time.March, 29, 12, 0, 0, 0, time.UTC), 29, false},
+		"Leap January 30":   {time.Date(2024, time.January, 30, 12, 0, 0, 0, time.UTC), time.Date(2024, time.February, 29, 12, 0, 0, 0, time.UTC), time.Date(2024, time.March, 30, 12, 0, 0, 0, time.UTC), 30, false},
+		"January month end": {time.Date(2025, time.January, 31, 12, 0, 0, 0, time.UTC), time.Date(2025, time.February, 28, 12, 0, 0, 0, time.UTC), time.Date(2025, time.March, 31, 12, 0, 0, 0, time.UTC), 31, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := nextBillingCycleWithAnchor(test.start, test.anchorDay, test.anchorMonthEnd); !got.Equal(test.feb) {
+				t.Fatalf("first cycle=%s", got)
+			}
+			if got := nextBillingCycleWithAnchor(test.feb, test.anchorDay, test.anchorMonthEnd); !got.Equal(test.march) {
+				t.Fatalf("second cycle=%s", got)
+			}
+		})
+	}
+}
+
+func invoiceServiceFixture(t *testing.T) (*gorm.DB, models.User, *InvoiceService, *WalletService, models.BillableSpec) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Project{}, &models.DatabaseInstance{}, &models.DatabaseStatusOperationTask{}, &models.ProjectSuspensionTask{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Invoice"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Project", Slug: t.Name(), CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
+	if err := db.Create(&spec).Error; err != nil {
+		t.Fatal(err)
+	}
+	walletService := NewWalletService(db)
+	return db, user, NewInvoiceService(db, walletService), walletService, spec
+}
+
+func TestInvoiceServiceStopsBillingDeletedResource(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: spec.MonthlyCredits, IdempotencyKey: "invoice-deleted-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "Deleted", GithubURL: "https://github.com/example/deleted", Subdomain: "invoice-deleted", Status: models.StatusDeleting}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunMonthly(context.Background(), nextBillingCycle(initial)); err != nil {
+		t.Fatal(err)
+	}
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("resource=%#v", resource)
+	}
+	assertInvoiceWallet(t, db, user.ID, 0, 2)
+}
+
+func assertInvoiceWallet(t *testing.T, db *gorm.DB, userID uint, wantBalance, wantEntries int64) {
+	t.Helper()
+	var wallet models.Wallet
+	if err := db.Where("user_id = ?", userID).First(&wallet).Error; err != nil || wallet.BalanceCredits != wantBalance {
+		t.Fatalf("wallet=%#v err=%v", wallet, err)
+	}
+	var entries int64
+	if err := db.Model(&models.WalletLedgerEntry{}).Where("wallet_id = ?", wallet.ID).Count(&entries).Error; err != nil || entries != wantEntries {
+		t.Fatalf("entries=%d err=%v", entries, err)
+	}
+}
+
+func TestInvoiceRecoveryDoesNotReactivateDeletedProject(t *testing.T) {
+	db, user, service, wallets, spec := invoiceServiceFixture(t)
+	now := time.Now().UTC()
+	wallet, err := wallets.GetOrCreateWallet(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: 999999, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: now.Add(-time.Hour), NextInvoiceAt: now.Add(time.Hour), BillingAnchorDay: now.Day()}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	dueAt := now.Add(-time.Minute)
+	invoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: now.Add(-time.Hour), PeriodEnd: now, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "deleted-project-recovery", DueAt: &dueAt}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "Top-up reversal payment due", Credits: 0}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RestoreCurrentPeriodResources(context.Background(), user.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&resource, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("billing status=%s", resource.BillingStatus)
+	}
+}
+
+func TestInvoiceServiceRefundsInitialResource(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 500, IdempotencyKey: "refund-test-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, 202, spec.ID, now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertInvoiceWallet(t, db, user.ID, 400, 2)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.RefundInitialResourceTx(tx, user.ID, models.BillableTypeProject, 202, "Provisioning failed")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertInvoiceWallet(t, db, user.ID, 500, 3)
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, 202).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("expected resource status deleted, got %s", resource.BillingStatus)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.RefundInitialResourceTx(tx, user.ID, models.BillableTypeProject, 202, "Provisioning failed again")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertInvoiceWallet(t, db, user.ID, 500, 3)
+}
+
+func TestInvoiceServiceAutoRenewFalseDoesNotDebitAndMarksPaymentDue(t *testing.T) {
+	db, user, service, walletService, spec := invoiceServiceFixture(t)
+	// Give plenty of wallet credits (5000 credits)
+	if _, err := walletService.Credit(context.Background(), LedgerMutation{UserID: user.ID, EntryType: models.WalletLedgerEntryTopup, AmountCredits: 5000, IdempotencyKey: "autorenew-funds"}); err != nil {
+		t.Fatal(err)
+	}
+	project := models.Project{UserID: user.ID, Name: "NoRenewApp", GithubURL: "https://github.com/example/norenew", Subdomain: "norenew", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	initial := time.Date(2026, time.June, 30, 12, 0, 0, 0, time.UTC)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.ChargeInitialResourceTx(tx, user.ID, models.BillableTypeProject, project.ID, spec.ID, initial)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Initial charge took spec.MonthlyCredits (100) -> 4900 credits left
+	assertInvoiceWallet(t, db, user.ID, 4900, 2)
+
+	// User disables auto_renew
+	if err := db.Model(&models.BillableResource{}).Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).Update("auto_renew", false).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	dueAt := nextBillingCycle(initial)
+	if err := service.RunMonthly(context.Background(), dueAt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Balance MUST remain 4900 (NOT debited because auto_renew is false!)
+	assertInvoiceWallet(t, db, user.ID, 4900, 2)
+
+	var resource models.BillableResource
+	if err := db.Where("type = ? AND resource_id = ?", models.BillableTypeProject, project.ID).First(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resource.BillingStatus != models.BillableResourceStatusPaymentDue {
+		t.Fatalf("expected billing_status payment_due, got %s", resource.BillingStatus)
+	}
+
+	var dueInvoice models.Invoice
+	if err := db.Where("period_start = ?", dueAt).First(&dueInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dueInvoice.Status != models.InvoiceStatusPaymentDue {
+		t.Fatalf("expected invoice status payment_due, got %s", dueInvoice.Status)
+	}
+}
+
+func TestFindOrCreateInvoiceItemPropagatesDBError(t *testing.T) {
+	db, user, _, _, spec := invoiceServiceFixture(t)
+	project := models.Project{UserID: user.ID, Name: "DBErrorApp", GithubURL: "https://github.com/example/dberror", Subdomain: "dberror", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.BillableResource{UserID: user.ID, Type: models.BillableTypeProject, ResourceID: project.ID, SpecID: spec.ID, BillingStatus: models.BillableResourceStatusActive}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	invoice := models.Invoice{UserID: user.ID, WalletID: 1, PeriodStart: time.Now(), PeriodEnd: time.Now().AddDate(0, 1, 0), IdempotencyKey: "dberr-inv"}
+	if err := db.Create(&invoice).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a cancelled context to simulate a non-not-found DB error
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tx := db.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	_, _, err := findOrCreateInvoiceItem(tx, invoice.ID, &resource, &spec)
+	if err == nil {
+		t.Fatal("expected error on cancelled context during snapshot lookup, got nil")
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected real database context error, got ErrRecordNotFound: %v", err)
+	}
+}
+
+func TestPayDueResourceZeroCreditReversalRestoresAllAttachedResources(t *testing.T) {
+	db, user, service, wallets, spec := invoiceServiceFixture(t)
+	now := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+
+	wallet, err := wallets.GetOrCreateWallet(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create project and database
+	project := models.Project{UserID: user.ID, Name: "RevMultiApp", GithubURL: "https://github.com/example/revmulti", Subdomain: "revmulti", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	database := models.DatabaseInstance{UserID: user.ID, Engine: "mysql", Status: models.DBStatusActive, Name: "revmulti_db", Username: "u", Password: "p", Host: "localhost", Port: 3306}
+	if err := db.Create(&database).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	projRes := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeProject,
+		ResourceID:         project.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusSuspended,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		NextInvoiceAt:      now,
+	}
+	if err := db.Create(&projRes).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	dbRes := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeDatabase,
+		ResourceID:         database.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusSuspended,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		NextInvoiceAt:      now,
+	}
+	if err := db.Create(&dbRes).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Single 0-credit reversal invoice covering both resources
+	revInvoice := models.Invoice{
+		UserID:         user.ID,
+		WalletID:       wallet.ID,
+		InvoiceNumber:  "INV-202609-REVMULTI",
+		PeriodStart:    now,
+		PeriodEnd:      now.AddDate(0, 1, 0),
+		TotalCredits:   0,
+		Status:         models.InvoiceStatusPaymentDue,
+		IdempotencyKey: "rev-multi-test-key",
+	}
+	if err := db.Create(&revInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	item1 := models.InvoiceItem{InvoiceID: revInvoice.ID, BillableResourceID: projRes.ID, SpecID: spec.ID, Description: "reversal proj", Credits: 0}
+	item2 := models.InvoiceItem{InvoiceID: revInvoice.ID, BillableResourceID: dbRes.ID, SpecID: spec.ID, Description: "reversal db", Credits: 0}
+	if err := db.Create(&item1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&item2).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. When wallet balance is negative, PayDueResource fails with ErrInsufficientCredits
+	if err := db.Model(wallet).Update("balance_credits", -100).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, now)
+	if !errors.Is(err, ErrInsufficientCredits) {
+		t.Fatalf("expected ErrInsufficientCredits with negative wallet, got %v", err)
+	}
+
+	// 2. When wallet balance is positive (>= 0), PayDueResource succeeds and restores BOTH resources
+	if err := db.Model(wallet).Update("balance_credits", 50).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, now); err != nil {
+		t.Fatalf("PayDueResource failed: %v", err)
+	}
+
+	// Verify invoice is marked paid
+	var checkInv models.Invoice
+	if err := db.First(&checkInv, revInvoice.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkInv.Status != models.InvoiceStatusPaid {
+		t.Fatalf("expected invoice status paid, got %s", checkInv.Status)
+	}
+
+	// Verify BOTH resources are now active
+	var checkProjRes models.BillableResource
+	if err := db.First(&checkProjRes, projRes.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkProjRes.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("expected project resource to be active, got %s", checkProjRes.BillingStatus)
+	}
+
+	var checkDbRes models.BillableResource
+	if err := db.First(&checkDbRes, dbRes.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkDbRes.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("expected database resource to be active, got %s", checkDbRes.BillingStatus)
+	}
+}
+
+func TestPayDueResourceZeroCreditReversalPreservesDifferentCyclesAndAnchors(t *testing.T) {
+	db, user, service, wallets, spec := invoiceServiceFixture(t)
+	settleTime := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+
+	wallet, err := wallets.GetOrCreateWallet(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project := models.Project{UserID: user.ID, Name: "CycleApp", GithubURL: "https://github.com/example/cycleapp", Subdomain: "cycleapp", Status: models.StatusRunning}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	database := models.DatabaseInstance{UserID: user.ID, Engine: "mysql", Status: models.DBStatusActive, Name: "cycle_db", Username: "u", Password: "p", Host: "localhost", Port: 3306}
+	if err := db.Create(&database).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Resource 1: Anchor 15th, Period: Aug 15 -> Sep 15
+	projPeriodStart := time.Date(2026, time.August, 15, 0, 0, 0, 0, time.UTC)
+	projNextInvoice := time.Date(2026, time.September, 15, 0, 0, 0, 0, time.UTC)
+	projRes := models.BillableResource{
+		UserID:                user.ID,
+		Type:                  models.BillableTypeProject,
+		ResourceID:            project.ID,
+		SpecID:                spec.ID,
+		BillingStatus:         models.BillableResourceStatusSuspended,
+		CurrentPeriodStart:    projPeriodStart,
+		NextInvoiceAt:         projNextInvoice,
+		BillingAnchorDay:      15,
+		BillingAnchorMonthEnd: false,
+	}
+	if err := db.Create(&projRes).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Resource 2: Anchor 28th, Period: Aug 28 -> Sep 28
+	dbPeriodStart := time.Date(2026, time.August, 28, 0, 0, 0, 0, time.UTC)
+	dbNextInvoice := time.Date(2026, time.September, 28, 0, 0, 0, 0, time.UTC)
+	dbRes := models.BillableResource{
+		UserID:                user.ID,
+		Type:                  models.BillableTypeDatabase,
+		ResourceID:            database.ID,
+		SpecID:                spec.ID,
+		BillingStatus:         models.BillableResourceStatusSuspended,
+		CurrentPeriodStart:    dbPeriodStart,
+		NextInvoiceAt:         dbNextInvoice,
+		BillingAnchorDay:      28,
+		BillingAnchorMonthEnd: false,
+	}
+	if err := db.Create(&dbRes).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Reversal evidence invoice from an old top-up: Period is 1-second long in August!
+	oldTopupTime := time.Date(2026, time.August, 1, 10, 0, 0, 0, time.UTC)
+	revInvoice := models.Invoice{
+		UserID:         user.ID,
+		WalletID:       wallet.ID,
+		InvoiceNumber:  "INV-202608-REVEVID",
+		PeriodStart:    oldTopupTime,
+		PeriodEnd:      oldTopupTime.Add(time.Second),
+		TotalCredits:   0,
+		Status:         models.InvoiceStatusPaymentDue,
+		IdempotencyKey: "rev-cycle-test-key",
+	}
+	if err := db.Create(&revInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	item1 := models.InvoiceItem{InvoiceID: revInvoice.ID, BillableResourceID: projRes.ID, SpecID: spec.ID, Description: "rev item 1", Credits: 0}
+	item2 := models.InvoiceItem{InvoiceID: revInvoice.ID, BillableResourceID: dbRes.ID, SpecID: spec.ID, Description: "rev item 2", Credits: 0}
+	if err := db.Create(&item1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&item2).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Model(wallet).Update("balance_credits", 100).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Settle reversal debt invoice via PayDueResource
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeProject, project.ID, settleTime); err != nil {
+		t.Fatalf("PayDueResource failed: %v", err)
+	}
+
+	// Verify project resource retained its exact billing period and anchor
+	var checkProj models.BillableResource
+	if err := db.First(&checkProj, projRes.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkProj.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("expected active status, got %s", checkProj.BillingStatus)
+	}
+	if !checkProj.CurrentPeriodStart.Equal(projPeriodStart) {
+		t.Fatalf("expected CurrentPeriodStart %v, got %v", projPeriodStart, checkProj.CurrentPeriodStart)
+	}
+	if !checkProj.NextInvoiceAt.Equal(projNextInvoice) {
+		t.Fatalf("expected NextInvoiceAt %v, got %v", projNextInvoice, checkProj.NextInvoiceAt)
+	}
+	if checkProj.BillingAnchorDay != 15 {
+		t.Fatalf("expected BillingAnchorDay 15, got %d", checkProj.BillingAnchorDay)
+	}
+
+	// Verify database resource retained its exact billing period and anchor
+	var checkDB models.BillableResource
+	if err := db.First(&checkDB, dbRes.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkDB.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("expected active status, got %s", checkDB.BillingStatus)
+	}
+	if !checkDB.CurrentPeriodStart.Equal(dbPeriodStart) {
+		t.Fatalf("expected CurrentPeriodStart %v, got %v", dbPeriodStart, checkDB.CurrentPeriodStart)
+	}
+	if !checkDB.NextInvoiceAt.Equal(dbNextInvoice) {
+		t.Fatalf("expected NextInvoiceAt %v, got %v", dbNextInvoice, checkDB.NextInvoiceAt)
+	}
+	if checkDB.BillingAnchorDay != 28 {
+		t.Fatalf("expected BillingAnchorDay 28, got %d", checkDB.BillingAnchorDay)
+	}
+
+	// Monthly scheduler run on Sep 1st must NOT generate new invoices because next_invoice_at is Sep 15 and Sep 28
+	if err := service.RunMonthly(context.Background(), settleTime); err != nil {
+		t.Fatalf("RunMonthly failed: %v", err)
+	}
+	var totalInvoices int64
+	if err := db.Model(&models.Invoice{}).Where("user_id = ?", user.ID).Count(&totalInvoices).Error; err != nil {
+		t.Fatal(err)
+	}
+	if totalInvoices != 1 {
+		t.Fatalf("expected exactly 1 invoice (reversal only), got %d invoices after RunMonthly on Sep 1st", totalInvoices)
+	}
+}
+
+func TestPayDueResourceZeroCreditReversalHandlesDeletedAndMissingResources(t *testing.T) {
+	db, user, service, wallets, spec := invoiceServiceFixture(t)
+	now := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+
+	wallet, err := wallets.GetOrCreateWallet(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Project is in deleting status
+	project := models.Project{UserID: user.ID, Name: "DeletingApp", GithubURL: "https://github.com/example/deletingapp", Subdomain: "deletingapp", Status: models.StatusDeleting}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	database := models.DatabaseInstance{UserID: user.ID, Engine: "mysql", Status: models.DBStatusActive, Name: "active_db", Username: "u", Password: "p", Host: "localhost", Port: 3306}
+	if err := db.Create(&database).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	projRes := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeProject,
+		ResourceID:         project.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusSuspended,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		NextInvoiceAt:      now.AddDate(0, 1, 0),
+	}
+	if err := db.Create(&projRes).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	dbRes := models.BillableResource{
+		UserID:             user.ID,
+		Type:               models.BillableTypeDatabase,
+		ResourceID:         database.ID,
+		SpecID:             spec.ID,
+		BillingStatus:      models.BillableResourceStatusSuspended,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		NextInvoiceAt:      now.AddDate(0, 1, 0),
+	}
+	if err := db.Create(&dbRes).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	revInvoice := models.Invoice{
+		UserID:         user.ID,
+		WalletID:       wallet.ID,
+		InvoiceNumber:  "INV-202609-REVDELETING",
+		PeriodStart:    now,
+		PeriodEnd:      now.Add(time.Second),
+		TotalCredits:   0,
+		Status:         models.InvoiceStatusPaymentDue,
+		IdempotencyKey: "rev-del-test-key",
+	}
+	if err := db.Create(&revInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	item1 := models.InvoiceItem{InvoiceID: revInvoice.ID, BillableResourceID: projRes.ID, SpecID: spec.ID, Description: "reversal proj deleting", Credits: 0}
+	item2 := models.InvoiceItem{InvoiceID: revInvoice.ID, BillableResourceID: dbRes.ID, SpecID: spec.ID, Description: "reversal db active", Credits: 0}
+	if err := db.Create(&item1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&item2).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Model(wallet).Update("balance_credits", 100).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Settle reversal debt invoice
+	if err := service.PayDueResource(context.Background(), user.ID, models.BillableTypeDatabase, database.ID, now); err != nil {
+		t.Fatalf("PayDueResource failed: %v", err)
+	}
+
+	// Deleting project must be marked deleted, not active
+	var checkProj models.BillableResource
+	if err := db.First(&checkProj, projRes.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkProj.BillingStatus != models.BillableResourceStatusDeleted {
+		t.Fatalf("expected deleting project resource to be deleted, got %s", checkProj.BillingStatus)
+	}
+
+	// Active database must be active
+	var checkDB models.BillableResource
+	if err := db.First(&checkDB, dbRes.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkDB.BillingStatus != models.BillableResourceStatusActive {
+		t.Fatalf("expected database resource to be active, got %s", checkDB.BillingStatus)
+	}
+}

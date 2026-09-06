@@ -8,12 +8,20 @@
 http:
   # Middlewares
   middlewares:
-    # Security headers for all routes
+    # Compatibility-safe headers for user projects. Application-owned browser
+    # policies such as framing and device permissions pass through unchanged.
     security-headers:
+      headers:
+        contentTypeNosniff: true
+        customResponseHeaders:
+          X-Powered-By: ""
+
+    # Strict browser policy for the Runara dashboard and API only
+    platform-security-headers:
       headers:
         frameDeny: true
         contentTypeNosniff: true
-        browserXssFilter: true
+        permissionsPolicy: "geolocation=(), microphone=(), camera=()"
         referrerPolicy: "strict-origin-when-cross-origin"
         customResponseHeaders:
           X-Powered-By: ""
@@ -24,28 +32,11 @@ http:
         average: 100
         burst: 50
 
-    # CORS for API
-    cors:
-      headers:
-        accessControlAllowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - OPTIONS
-        accessControlAllowHeaders:
-          - Content-Type
-          - Authorization
-        accessControlAllowOriginList:
-          - "*"
-        accessControlMaxAge: 100
-        addVaryHeader: true
-
   # Routers for Runara platform
   routers:
-    # User projects (highest priority - subdomain matching)
-    user-projects:
-      rule: "Host(`*.{{PROJECT_DOMAIN}}`) || Host(`*.{{BASE_DOMAIN}}`)"
+    # User projects HTTP (port 80)
+    user-projects-http:
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.{{PROJECT_DOMAIN}}$`)"
       service: dynamic-projects
       entryPoints:
         - web
@@ -53,27 +44,63 @@ http:
       middlewares:
         - security-headers
 
-    # Backend API (high priority)
-    api:
+    # User projects HTTPS (port 443)
+    user-projects-secure:
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.{{PROJECT_DOMAIN}}$`)"
+      service: dynamic-projects
+      entryPoints:
+        - websecure
+      priority: 200
+      tls: {}
+      middlewares:
+        - security-headers
+
+    # Backend API HTTP
+    api-http:
       rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
       service: backend
       entryPoints:
         - web
       priority: 100
       middlewares:
-        - cors
-        - security-headers
+        - platform-security-headers
         - rate-limit
 
-    # Frontend dashboard (lowest priority)
-    frontend:
+    # Backend API HTTPS
+    api-secure:
+      rule: "Host(`{{BASE_DOMAIN}}`) && PathPrefix(`/api`)"
+      service: backend
+      entryPoints:
+        - websecure
+      priority: 100
+      tls: {}
+      middlewares:
+        - platform-security-headers
+        - rate-limit
+
+    # Frontend dashboard HTTP
+    frontend-http:
       rule: "Host(`{{BASE_DOMAIN}}`)"
       service: frontend
       entryPoints:
         - web
       priority: 1
       middlewares:
-        - security-headers
+        - platform-security-headers
+
+    # Frontend dashboard HTTPS
+    frontend-secure:
+      rule: "Host(`{{BASE_DOMAIN}}`)"
+      service: frontend
+      entryPoints:
+        - websecure
+      priority: 1
+      tls: {}
+      middlewares:
+        - platform-security-headers
+
+
+
 
   # Services
   services:
@@ -91,4 +118,4 @@ http:
     dynamic-projects:
       loadBalancer:
         servers:
-          - url: "http://paas-backend:8080/proxy"
+          - url: "http://paas-backend:8080/proxy/"

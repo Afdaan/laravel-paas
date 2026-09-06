@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -90,12 +91,16 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID uint, project
 	s.StartLockHeartbeat(lockCtx, cancelLock, &domain, token, 30*time.Second)
 
 	rateKey := fmt.Sprintf("ratelimit:domain_verify_v2:%d", domainID)
-	allowed, err := s.redisService.RateLimit(rateKey, 20, 1*time.Hour)
+	allowed, ttl, err := s.redisService.RateLimit(rateKey, 20, 1*time.Hour)
 	if err != nil {
 		return nil, err
 	}
 	if !allowed {
-		return nil, apperr.New(429, "RATE_LIMIT_EXCEEDED", "Verification rate limit exceeded. Please try again later.")
+		sec := int(math.Ceil(ttl.Seconds()))
+		if sec < 1 {
+			sec = 1
+		}
+		return nil, apperr.NewRateLimited(fmt.Sprintf("Verification rate limit exceeded. Please try again in %d seconds.", sec), sec)
 	}
 
 	isAlreadyActive := domain.Status == models.DomainStatusActive
@@ -560,6 +565,12 @@ func containsAny(a, b []string) bool {
 }
 
 func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint, projectID uint) {
+	project, err := s.projectRepo.GetByID(projectID)
+	if err != nil {
+		slog.Error("Failed to load project for SSL polling", "projectID", projectID, "error", err)
+		return
+	}
+
 	now := time.Now()
 	if val, loaded := s.activePollers.LoadOrStore(domainID, PollerState{StartedAt: now}); loaded {
 		state := val.(PollerState)
@@ -624,7 +635,7 @@ func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint
 				return
 			}
 
-			sslStatus, err := s.projectService.GetSSLStatus(d.Domain)
+			sslStatus, err := s.projectService.GetSSLStatus(project, d.Domain)
 			if err != nil {
 				slog.Warn("Failed to query SSL status in real-time polling", "domain", d.Domain, "error", err)
 				delay = getDelay()
@@ -635,6 +646,11 @@ func (s *DomainService) pollSSLStatusRealtime(ctx context.Context, domainID uint
 			slog.Info("Real-time SSL polling check result", "domain", d.Domain, "sslStatus", sslStatus.Status)
 
 			switch sslStatus.Status {
+			case "none":
+				if _, err := s.projectService.SyncProjectNginxFrom(project, "ssl_status_missing"); err != nil {
+					slog.Warn("Failed to restore missing SSL provisioning state", "domain", d.Domain, "error", err)
+				}
+
 			case "ssl_active":
 				d.ProvisioningCheckpoint = "completed"
 				d.SSLStatus = "active"

@@ -1,0 +1,23 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 76,
+  "EndLine": 76,
+  "StartColumn": 4,
+  "EndColumn": 62,
+  "Match": "CredentialEncryptionKey: \"REDACTED\"",
+  "Secret": "REDACTED",
+  "File": "backend/internal/handlers/project/actions_test.go",
+  "SymlinkFile": "",
+  "Commit": "4646d8e979ee4c292ce04f4848feba19c57ce9e8",
+  "Link": "https://github.com/Afdaan/laravel-paas/blob/4646d8e979ee4c292ce04f4848feba19c57ce9e8/backend/internal/handlers/project/actions_test.go#L76",
+  "Entropy": 4.324699,
+  "Author": "Afdaan",
+  "Email": "obarya24@gmail.com",
+  "Date": "2026-06-19T08:49:54Z",
+  "Message": "feat(projects): add database option flow -  Record explicit database choices for project creation and route -  database actions through UID-based endpoints. Add SQLite setup, - existing database attach safety, and regression tests for the new - create path.",
+  "Tags": [],
+  "Fingerprint": "4646d8e979ee4c292ce04f4848feba19c57ce9e8:backend/internal/handlers/project/actions_test.go:generic-api-key:76"
+ }
+]
