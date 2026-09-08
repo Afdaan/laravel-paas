@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useId, useMemo } from 'react'
 import { CalendarClock, Database, FolderGit2, Loader2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +27,7 @@ type ResourceBillingCardProps = {
 
 export const ResourceBillingCard = memo(function ResourceBillingCard({ overview, statuses, renewLoading, paymentLoading, payDueResource, setPendingRenewChange }: ResourceBillingCardProps) {
   const { t, formatCredits, formatDate, formatResourceDisplayName } = useBillingFormatters()
+  const autoRenewHintID = useId()
 
   const statusLookup = useMemo(() => {
     const lookup: Record<string, BillingStatus> = {}
@@ -64,19 +65,22 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
             <Table className="min-w-[980px]">
               <TableHeader className="bg-muted/20">
                 <TableRow className="border-border/40 hover:bg-transparent">
-                  <TableHead className="w-[24%] pl-4 text-[11px] text-muted-foreground/80">
+                  <TableHead className="w-[22%] pl-4 text-[11px] text-muted-foreground/80">
                     {t('billing.resource')}
                   </TableHead>
-                  <TableHead className="w-[20%] text-[11px] text-muted-foreground/80">
+                  <TableHead className="w-[16%] text-[11px] text-muted-foreground/80">
                     {t('billing.plan')}
                   </TableHead>
                   <TableHead className="w-[13%] text-[11px] text-muted-foreground/80">
                     {t('billing.status')}
                   </TableHead>
-                  <TableHead className="w-[27%] text-[11px] text-muted-foreground/80">
+                  <TableHead className="w-[29%] text-[11px] text-muted-foreground/80">
                     {t('billing.servicePeriod')}
                   </TableHead>
-                  <TableHead className="w-[16%] pr-4 text-right text-[11px] text-muted-foreground/80">
+                  <TableHead className="w-[10%] text-center text-[11px] text-muted-foreground/80">
+                    {t('billing.autoRenew')}
+                  </TableHead>
+                  <TableHead className="w-[10%] pr-4 text-right text-[11px] text-muted-foreground/80">
                     {t('billing.resourceActions')}
                   </TableHead>
                 </TableRow>
@@ -171,8 +175,24 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                     <p className="text-xs font-medium text-foreground">{dueDateLabel}</p>
                     {periodLabel && <p className="mt-1 text-[11px] text-muted-foreground">{periodLabel}</p>}
                   </TableCell>
-                  <TableCell className="min-w-[170px] py-3 pr-4">
-                    <div className="flex flex-col items-end gap-2">
+                  <TableCell className="py-3 text-center">
+                    <Switch
+                      id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
+                      aria-label={`${t('billing.autoRenew')}: ${resourceName}`}
+                      aria-describedby={autoRenewHintID}
+                      checked={resource.auto_renew}
+                      disabled={renewLoading[resourceKey]}
+                      onCheckedChange={(checked) => {
+                        setPendingRenewChange({
+                          resource_id: resource.resource_id,
+                          resource_type: resource.resource_type,
+                          resource_name: resourceName,
+                          target_auto_renew: checked,
+                        })
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="py-3 pr-4 text-right">
                       {isNonActive && (
                         <Button
                           type="button"
@@ -185,33 +205,6 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           {t('billing.payDueNow')}
                         </Button>
                       )}
-                      <div className="flex items-center gap-2">
-                        <label
-                          htmlFor={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          {t('billing.autoRenew')}
-                        </label>
-                        <Switch
-                          id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
-                          aria-label={`${t('billing.autoRenew')}: ${resourceName}`}
-                          aria-describedby={`auto-renew-hint-${resourceKey}`}
-                          checked={resource.auto_renew}
-                          disabled={renewLoading[resourceKey]}
-                          onCheckedChange={(checked) => {
-                            setPendingRenewChange({
-                              resource_id: resource.resource_id,
-                              resource_type: resource.resource_type,
-                              resource_name: resourceName,
-                              target_auto_renew: checked,
-                            })
-                          }}
-                        />
-                      </div>
-                      <p id={`auto-renew-hint-${resourceKey}`} className="max-w-[220px] whitespace-normal text-right text-[11px] text-muted-foreground">
-                        {t(resource.auto_renew ? 'billing.resourceAutoRenewOnHint' : 'billing.resourceAutoRenewOffHint')}
-                      </p>
-                    </div>
                   </TableCell>
                 </TableRow>
               )
@@ -219,6 +212,9 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
               </TableBody>
             </Table>
             <TablePagination state={resourcePaging} />
+            <p id={autoRenewHintID} className="border-t border-border/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+              {t('billing.resourceAutoRenewHint')}
+            </p>
           </div>
         )}
       </CardContent>

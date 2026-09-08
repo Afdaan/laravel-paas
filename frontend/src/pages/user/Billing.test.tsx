@@ -60,7 +60,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.resourceTypes.database': 'Database',
         'billing.resource': 'Resource',
         'billing.plan': 'Plan',
-        'billing.resourceActions': 'Renewal & actions',
+        'billing.resourceActions': translations.en.billing.resourceActions,
         'billing.unnamedService': '{{type}} Service',
         'billing.resourceBilling': 'Resource billing',
         'billing.resourceBillingDescription': translations.en.billing.resourceBillingDescription,
@@ -71,8 +71,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.month': 'month',
         'billing.currentPeriod': 'Current period: {{start}} to {{end}}',
         'billing.unpaidPeriod': translations.en.billing.unpaidPeriod,
-        'billing.resourceAutoRenewOnHint': translations.en.billing.resourceAutoRenewOnHint,
-        'billing.resourceAutoRenewOffHint': translations.en.billing.resourceAutoRenewOffHint,
+        'billing.resourceAutoRenewHint': translations.en.billing.resourceAutoRenewHint,
         'billing.payDueNow': 'Pay now',
         'billing.overduePaymentSuccess': 'Payment complete',
         'billing.overdueInsufficientCredits': 'Insufficient credits',
@@ -331,8 +330,8 @@ describe('Billing page', () => {
    expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeInTheDocument()
     expect(screen.getByRole('switch')).not.toBeChecked()
-    expect(screen.getByText('Auto-renew', { selector: 'label' })).toBeVisible()
-    expect(screen.getByRole('switch')).toHaveAccessibleDescription(translations.en.billing.resourceAutoRenewOffHint)
+    expect(screen.getByRole('columnheader', { name: 'Auto-renew' })).toBeVisible()
+    expect(screen.getByRole('switch')).toHaveAccessibleDescription(translations.en.billing.resourceAutoRenewHint)
     expect(screen.queryByRole('button', { name: 'Pay now' })).not.toBeInTheDocument()
   })
 
@@ -358,7 +357,10 @@ describe('Billing page', () => {
     render(<Billing />)
 
     expect(await screen.findByText('Project 1')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Renewal & actions' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Auto-renew' })).toBeInTheDocument()
+    expect(screen.getAllByText(translations.en.billing.resourceAutoRenewHint)).toHaveLength(1)
+    expect(screen.getByText(translations.en.billing.resourceAutoRenewHint).closest('table')).toBeNull()
     expect(screen.getByText('Project 10')).toBeInTheDocument()
     expect(screen.queryByText('Project 11')).not.toBeInTheDocument()
 
@@ -754,9 +756,10 @@ describe('Billing page', () => {
     await screen.findByText('SuspendedApp')
     // oldest_due_at (Aug 19) should appear as the overdue date
     expect(screen.getByText('Unpaid since Aug 19, 2026')).toBeInTheDocument()
-    expect(screen.getByText('Service period awaiting payment: Aug 19, 2026 to Sep 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('For service: Aug 19, 2026 – Sep 19, 2026')).toBeInTheDocument()
     expect(screen.getByText('Payment is due at the start of each service period. The period end date is not the payment deadline.')).toBeVisible()
-    expect(screen.getByRole('switch')).toHaveAccessibleDescription(translations.en.billing.resourceAutoRenewOnHint)
+    expect(screen.getByRole('switch')).toHaveAccessibleDescription(translations.en.billing.resourceAutoRenewHint)
+    expect(screen.getByRole('switch').closest('td')).not.toBe(screen.getByRole('button', { name: 'Pay now' }).closest('td'))
     expect(screen.queryByText('Current period: Aug 1, 2026 to Sep 19, 2026')).not.toBeInTheDocument()
     // future next_invoice_at (Sep 19) must NOT appear as the overdue/payment-due date label
     // (it can still appear in the currentPeriod row as the period end, which is fine)
