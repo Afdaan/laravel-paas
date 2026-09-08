@@ -172,7 +172,7 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                     {periodLabel && <p className="mt-1 text-[11px] text-muted-foreground">{periodLabel}</p>}
                   </TableCell>
                   <TableCell className="min-w-[170px] py-3 pr-4">
-                    <div className="flex items-center justify-end gap-3">
+                    <div className="flex flex-col items-end gap-2">
                       {isNonActive && (
                         <Button
                           type="button"
@@ -185,10 +185,17 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           {t('billing.payDueNow')}
                         </Button>
                       )}
-                      <div className="flex items-center">
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          {t('billing.autoRenew')}
+                        </label>
                         <Switch
                           id={`auto-renew-${resource.resource_type}-${resource.resource_id}`}
                           aria-label={`${t('billing.autoRenew')}: ${resourceName}`}
+                          aria-describedby={`auto-renew-hint-${resourceKey}`}
                           checked={resource.auto_renew}
                           disabled={renewLoading[resourceKey]}
                           onCheckedChange={(checked) => {
@@ -201,6 +208,9 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           }}
                         />
                       </div>
+                      <p id={`auto-renew-hint-${resourceKey}`} className="max-w-[220px] whitespace-normal text-right text-[11px] text-muted-foreground">
+                        {t(resource.auto_renew ? 'billing.resourceAutoRenewOnHint' : 'billing.resourceAutoRenewOffHint')}
+                      </p>
                     </div>
                   </TableCell>
                 </TableRow>

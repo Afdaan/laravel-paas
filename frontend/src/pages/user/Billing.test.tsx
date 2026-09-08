@@ -5,6 +5,7 @@ import Billing from './Billing'
 import { isValidPhoneNumber } from '@/components/billing/utils'
 import { usePolling } from '@/lib/usePolling'
 import { billingAPI } from '@/services/api'
+import { translations } from '@/lib/translations'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
 
@@ -62,14 +63,16 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.resourceActions': 'Renewal & actions',
         'billing.unnamedService': '{{type}} Service',
         'billing.resourceBilling': 'Resource billing',
-        'billing.resourceBillingDescription': 'Resource billing description',
+        'billing.resourceBillingDescription': translations.en.billing.resourceBillingDescription,
         'billing.noBillableResources': 'No active billable resources.',
         'billing.renewsOn': 'Renews on {{date}}',
-        'billing.periodEndsOn': 'Billing period ends on {{date}}',
-        'billing.renewalPaymentDue': 'Renewal payment due since {{date}}',
+        'billing.periodEndsOn': translations.en.billing.periodEndsOn,
+        'billing.renewalPaymentDue': translations.en.billing.renewalPaymentDue,
         'billing.month': 'month',
         'billing.currentPeriod': 'Current period: {{start}} to {{end}}',
-        'billing.unpaidPeriod': 'Unpaid period: {{start}} to {{end}}',
+        'billing.unpaidPeriod': translations.en.billing.unpaidPeriod,
+        'billing.resourceAutoRenewOnHint': translations.en.billing.resourceAutoRenewOnHint,
+        'billing.resourceAutoRenewOffHint': translations.en.billing.resourceAutoRenewOffHint,
         'billing.payDueNow': 'Pay now',
         'billing.overduePaymentSuccess': 'Payment complete',
         'billing.overdueInsufficientCredits': 'Insufficient credits',
@@ -324,10 +327,13 @@ describe('Billing page', () => {
 
    expect(await screen.findByText('Storefront')).toBeInTheDocument()
    expect(screen.getByText('Current period: Aug 1, 2026 to Sep 1, 2026')).toBeInTheDocument()
-   expect(screen.getByText('Billing period ends on Sep 1, 2026')).toBeInTheDocument()
+   expect(screen.getByText('Service period ends on Sep 1, 2026')).toBeInTheDocument()
    expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeInTheDocument()
     expect(screen.getByRole('switch')).not.toBeChecked()
+    expect(screen.getByText('Auto-renew', { selector: 'label' })).toBeVisible()
+    expect(screen.getByRole('switch')).toHaveAccessibleDescription(translations.en.billing.resourceAutoRenewOffHint)
+    expect(screen.queryByRole('button', { name: 'Pay now' })).not.toBeInTheDocument()
   })
 
   it('paginates billing resources to keep the page compact', async () => {
@@ -747,12 +753,14 @@ describe('Billing page', () => {
 
     await screen.findByText('SuspendedApp')
     // oldest_due_at (Aug 19) should appear as the overdue date
-    expect(screen.getByText('Renewal payment due since Aug 19, 2026')).toBeInTheDocument()
-    expect(screen.getByText('Unpaid period: Aug 19, 2026 to Sep 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('Unpaid since Aug 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('Service period awaiting payment: Aug 19, 2026 to Sep 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('Payment is due at the start of each service period. The period end date is not the payment deadline.')).toBeVisible()
+    expect(screen.getByRole('switch')).toHaveAccessibleDescription(translations.en.billing.resourceAutoRenewOnHint)
     expect(screen.queryByText('Current period: Aug 1, 2026 to Sep 19, 2026')).not.toBeInTheDocument()
     // future next_invoice_at (Sep 19) must NOT appear as the overdue/payment-due date label
     // (it can still appear in the currentPeriod row as the period end, which is fine)
-    expect(screen.queryByText('Renewal payment due since Sep 19, 2026')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unpaid since Sep 19, 2026')).not.toBeInTheDocument()
     expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
 
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay now' })))
@@ -799,7 +807,7 @@ describe('Billing page', () => {
     expect(paymentRequiredElements.length).toBeGreaterThan(0)
     // Must not show the future next_invoice_at as a due-date label
     expect(screen.queryByText('Renews on Sep 1, 2026')).not.toBeInTheDocument()
-    expect(screen.queryByText(/Renewal payment due since Sep 1, 2026/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Unpaid since Sep 1, 2026/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pay now' })).toBeInTheDocument()
   })
 
@@ -1188,7 +1196,7 @@ describe('Billing page', () => {
     await screen.findByText('StaleActiveApp')
 
     // The card must show effective suspended status and overdue date from /billing/status
-    expect(screen.getByText('Renewal payment due since Aug 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('Unpaid since Aug 19, 2026')).toBeInTheDocument()
     expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
   })
 
