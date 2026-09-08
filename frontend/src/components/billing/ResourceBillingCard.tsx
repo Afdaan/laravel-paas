@@ -80,7 +80,7 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                   <TableHead className="w-[10%] text-center text-[11px] text-muted-foreground/80">
                     {t('billing.autoRenew')}
                   </TableHead>
-                  <TableHead className="w-[10%] pr-4 text-right text-[11px] text-muted-foreground/80">
+                  <TableHead className="w-[10%] min-w-[140px] px-4 text-center text-[11px] text-muted-foreground/80">
                     {t('billing.resourceActions')}
                   </TableHead>
                 </TableRow>
@@ -192,7 +192,7 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                       }}
                     />
                   </TableCell>
-                  <TableCell className="py-3 pr-4 text-right">
+                  <TableCell className="px-4 py-3 text-center">
                       {isNonActive && (
                         <Button
                           type="button"
