@@ -209,6 +209,7 @@ type BillableResourceView struct {
 	NextInvoiceAt         time.Time                     `json:"next_invoice_at"`
 	PaymentDuePeriodStart *time.Time                    `json:"payment_due_period_start,omitempty"`
 	PaymentDuePeriodEnd   *time.Time                    `json:"payment_due_period_end,omitempty"`
+	PaymentDueCredits     *int64                        `json:"payment_due_credits,omitempty"`
 }
 
 type OwnBillingOverview struct {
@@ -479,6 +480,7 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 		if period, ok := paymentDuePeriods[resource.ID]; ok {
 			view.PaymentDuePeriodStart = &period.Start
 			view.PaymentDuePeriodEnd = &period.End
+			view.PaymentDueCredits = &period.Credits
 		}
 		views = append(views, view)
 	}
@@ -493,8 +495,9 @@ func (s *CatalogService) listOwnBillableResources(ctx context.Context, userID ui
 }
 
 type paymentDuePeriod struct {
-	Start time.Time
-	End   time.Time
+	Start   time.Time
+	End     time.Time
+	Credits int64
 }
 
 func (s *CatalogService) listPaymentDuePeriods(ctx context.Context, resources []models.BillableResource) (map[uint]paymentDuePeriod, error) {
@@ -516,10 +519,11 @@ func (s *CatalogService) listPaymentDuePeriods(ctx context.Context, resources []
 		BillableResourceID uint
 		PeriodStart        time.Time
 		PeriodEnd          time.Time
+		PaymentDueCredits  int64
 	}
 	var rows []paymentDuePeriodRow
 	if err := s.db.WithContext(ctx).Table("invoice_items").
-		Select("invoice_items.billable_resource_id, invoices.period_start, invoices.period_end").
+		Select("invoice_items.billable_resource_id, invoices.period_start, invoices.period_end, invoice_items.credits AS payment_due_credits").
 		Joins("JOIN invoices ON invoices.id = invoice_items.invoice_id").
 		Where("invoice_items.billable_resource_id IN ? AND invoices.status = ?", resourceIDs, models.InvoiceStatusPaymentDue).
 		Order("invoices.period_start ASC, invoices.id ASC").
@@ -528,7 +532,7 @@ func (s *CatalogService) listPaymentDuePeriods(ctx context.Context, resources []
 	}
 	for _, row := range rows {
 		if _, exists := periods[row.BillableResourceID]; !exists {
-			periods[row.BillableResourceID] = paymentDuePeriod{Start: row.PeriodStart, End: row.PeriodEnd}
+			periods[row.BillableResourceID] = paymentDuePeriod{Start: row.PeriodStart, End: row.PeriodEnd, Credits: row.PaymentDueCredits}
 		}
 	}
 	return periods, nil

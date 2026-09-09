@@ -8,12 +8,69 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { BillingRequestState } from '@/lib/billing-ui'
 import type { BillingOverview, BillingProfile, TopupResponse } from '@/types'
-import type { PendingRenewChange, PendingTopup } from './types'
+import type { PendingDuePayment, PendingRenewChange, PendingTopup } from './types'
 import { getInvoiceNumber } from './utils'
 import { useBillingFormatters } from './useBillingFormatters'
 import { StatusBadge } from './StatusBadge'
 
 type Invoice = BillingOverview['invoices'][number]
+
+export function DuePaymentConfirmationDialog({
+  pendingDuePayment,
+  setPendingDuePayment,
+  confirmDuePayment,
+}: {
+  pendingDuePayment: PendingDuePayment | null
+  setPendingDuePayment: Dispatch<SetStateAction<PendingDuePayment | null>>
+  confirmDuePayment: () => Promise<void>
+}) {
+  const { t, formatCredits, formatDate } = useBillingFormatters()
+  const paymentAmountAvailable = pendingDuePayment?.credits !== undefined
+
+  return (
+    <Dialog open={pendingDuePayment !== null} onOpenChange={(open) => !open && setPendingDuePayment(null)}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{t('billing.confirmDuePaymentTitle')}</DialogTitle>
+          <DialogDescription className="pt-2 leading-relaxed">
+            {t('billing.confirmDuePaymentDescription', { name: pendingDuePayment?.resource_name ?? '' })}
+          </DialogDescription>
+        </DialogHeader>
+        {pendingDuePayment?.period_start && pendingDuePayment.period_end && (
+          <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-xs">
+            <p className="font-medium text-foreground">{pendingDuePayment.resource_name}</p>
+            <p className="mt-1 text-muted-foreground">
+              {t('billing.confirmDuePaymentPeriod', {
+                start: formatDate(pendingDuePayment.period_start),
+                end: formatDate(pendingDuePayment.period_end),
+              })}
+            </p>
+          </div>
+        )}
+        <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">{t('billing.confirmDuePaymentAmount')}</span>
+          {paymentAmountAvailable ? (
+            <span className="font-semibold tabular-nums text-foreground">
+              {formatCredits(pendingDuePayment.credits ?? 0)} {t('billing.credits')}
+            </span>
+          ) : (
+            <span className="max-w-[220px] text-right text-xs text-destructive">
+              {t('billing.confirmDuePaymentAmountUnavailable')}
+            </span>
+          )}
+        </div>
+        <DialogFooter className="mt-4 gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => setPendingDuePayment(null)}>
+            {t('billing.cancel')}
+          </Button>
+          <Button disabled={!paymentAmountAvailable} onClick={() => void confirmDuePayment()}>
+            {t('billing.confirmDuePaymentAction')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export function RenewConfirmationDialog({
   pendingRenewChange,

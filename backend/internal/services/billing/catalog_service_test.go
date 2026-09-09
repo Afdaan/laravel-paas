@@ -450,13 +450,13 @@ func TestCatalogServiceUpdatePaymentProvider(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		BillingEnabled:       true,
-		BillingTopupEnabled:  true,
-		PakasirEnabled:       true,
-		PakasirProjectSlug:   "slug-1",
-		PakasirAPIKey:        "key-1",
-		MidtransServerKey:    "midtrans-server-key",
-		MidtransMerchantID:   "midtrans-merchant-id",
+		BillingEnabled:      true,
+		BillingTopupEnabled: true,
+		PakasirEnabled:      true,
+		PakasirProjectSlug:  "slug-1",
+		PakasirAPIKey:       "key-1",
+		MidtransServerKey:   "midtrans-server-key",
+		MidtransMerchantID:  "midtrans-merchant-id",
 	}
 	service := NewCatalogService(db, cfg)
 	audit := catalogAudit("req-provider-1", "Switching provider to pakasir")
@@ -739,11 +739,18 @@ func TestCatalogServiceReportsPaymentDueInvoicePeriod(t *testing.T) {
 	}
 	periodStart := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
 	periodEnd := time.Date(2026, time.September, 19, 0, 0, 0, 0, time.UTC)
-	invoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: periodStart, PeriodEnd: periodEnd, TotalCredits: spec.MonthlyCredits, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "payment-due-period"}
+	invoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: periodStart, PeriodEnd: periodEnd, TotalCredits: 0, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "payment-due-period"}
 	if err := db.Create(&invoice).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "project resource monthly credits", Credits: spec.MonthlyCredits}).Error; err != nil {
+	if err := db.Create(&models.InvoiceItem{InvoiceID: invoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "project resource zero-credit reversal", Credits: 0}).Error; err != nil {
+		t.Fatal(err)
+	}
+	newerInvoice := models.Invoice{UserID: user.ID, WalletID: wallet.ID, PeriodStart: periodEnd, PeriodEnd: periodEnd.AddDate(0, 1, 0), TotalCredits: spec.MonthlyCredits, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "newer-payment-due-period"}
+	if err := db.Create(&newerInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.InvoiceItem{InvoiceID: newerInvoice.ID, BillableResourceID: resource.ID, SpecID: spec.ID, Description: "newer project resource monthly credits", Credits: spec.MonthlyCredits}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -756,6 +763,9 @@ func TestCatalogServiceReportsPaymentDueInvoicePeriod(t *testing.T) {
 	}
 	if !overview.Resources[0].PaymentDuePeriodStart.Equal(periodStart) || !overview.Resources[0].PaymentDuePeriodEnd.Equal(periodEnd) {
 		t.Fatalf("payment-due resource period=%#v", overview.Resources[0])
+	}
+	if overview.Resources[0].PaymentDueCredits == nil || *overview.Resources[0].PaymentDueCredits != 0 {
+		t.Fatalf("oldest payment-due resource credits=%#v", overview.Resources[0].PaymentDueCredits)
 	}
 }
 

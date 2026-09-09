@@ -20,7 +20,7 @@ import { BillingCreditCatalog } from '@/components/billing/BillingCreditCatalog'
 import { BillingHistorySection } from '@/components/billing/BillingHistorySection'
 import { BillingProfileSection } from '@/components/billing/BillingProfileSection'
 import { ResourceBillingCard } from '@/components/billing/ResourceBillingCard'
-import type { PendingRenewChange, PendingTopup } from '@/components/billing/types'
+import type { PendingDuePayment, PendingRenewChange, PendingTopup } from '@/components/billing/types'
 import { isBillingProfileComplete } from '@/components/billing/utils'
 import { useBillingFormatters } from '@/components/billing/useBillingFormatters'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,7 @@ import { billingAPI } from '@/services/api'
 import type { BillingOverview, BillingStatus, TopupPackage, BillingProfile, TopupResponse } from '@/types'
 
 const loadBillingDialogs = () => import('@/components/billing/BillingDialogs')
+const DuePaymentConfirmationDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.DuePaymentConfirmationDialog })))
 const InvoiceDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.InvoiceDialog })))
 const PaymentDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.PaymentDialog })))
 const ProfileRequiredDialog = lazy(() => loadBillingDialogs().then((module) => ({ default: module.ProfileRequiredDialog })))
@@ -65,6 +66,7 @@ export default function Billing() {
   const [renewLoading, setRenewLoading] = useState<Record<string, boolean>>({})
   const [paymentLoading, setPaymentLoading] = useState<Record<string, boolean>>({})
   const [pendingRenewChange, setPendingRenewChange] = useState<PendingRenewChange | null>(null)
+  const [pendingDuePayment, setPendingDuePayment] = useState<PendingDuePayment | null>(null)
   const [topupPackageID, setTopupPackageID] = useState<number | null>(null)
   const [pendingTopup, setPendingTopup] = useState<PendingTopup | null>(null)
   const [customAmount, setCustomAmount] = useState('')
@@ -448,8 +450,11 @@ export default function Billing() {
     }
   }
 
-  const payDueResource = useCallback(async (resourceID: number, resourceType: 'project' | 'database') => {
+  const confirmDuePayment = useCallback(async () => {
+    if (!pendingDuePayment) return
+    const { resource_id: resourceID, resource_type: resourceType } = pendingDuePayment
     const key = `${resourceType}-${resourceID}`
+    setPendingDuePayment(null)
     setPaymentLoading((current) => ({ ...current, [key]: true }))
     try {
       await billingAPI.payDueResource(resourceID, resourceType)
@@ -464,7 +469,7 @@ export default function Billing() {
     } finally {
       setPaymentLoading((current) => ({ ...current, [key]: false }))
     }
-  }, [load, t])
+  }, [load, pendingDuePayment, t])
 
   const handlePayPendingTopup = useCallback((topup: BillingOverview['topups'][number]) => {
     setActivePaymentModal({
@@ -646,7 +651,7 @@ export default function Billing() {
         statuses={statuses}
         renewLoading={renewLoading}
         paymentLoading={paymentLoading}
-        payDueResource={payDueResource}
+        setPendingDuePayment={setPendingDuePayment}
         setPendingRenewChange={setPendingRenewChange}
       />
       <BillingHistorySection
@@ -674,6 +679,13 @@ export default function Billing() {
           </div>
         )}
       >
+        {pendingDuePayment && (
+          <DuePaymentConfirmationDialog
+            pendingDuePayment={pendingDuePayment}
+            setPendingDuePayment={setPendingDuePayment}
+            confirmDuePayment={confirmDuePayment}
+          />
+        )}
         {pendingRenewChange && (
           <RenewConfirmationDialog
             pendingRenewChange={pendingRenewChange}

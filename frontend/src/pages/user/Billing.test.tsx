@@ -73,6 +73,13 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.unpaidPeriod': translations.en.billing.unpaidPeriod,
         'billing.resourceAutoRenewHint': translations.en.billing.resourceAutoRenewHint,
         'billing.payDueNow': 'Pay now',
+        'billing.confirmDuePaymentTitle': translations.en.billing.confirmDuePaymentTitle,
+        'billing.confirmDuePaymentDescription': translations.en.billing.confirmDuePaymentDescription,
+        'billing.confirmDuePaymentPeriod': translations.en.billing.confirmDuePaymentPeriod,
+        'billing.confirmDuePaymentAmount': translations.en.billing.confirmDuePaymentAmount,
+        'billing.confirmDuePaymentAmountUnavailable': translations.en.billing.confirmDuePaymentAmountUnavailable,
+        'billing.confirmDuePaymentAction': translations.en.billing.confirmDuePaymentAction,
+        'billing.cancel': 'Cancel',
         'billing.overduePaymentSuccess': 'Payment complete',
         'billing.overdueInsufficientCredits': 'Insufficient credits',
         'billing.overduePaymentFailed': 'Payment failed',
@@ -733,6 +740,7 @@ describe('Billing page', () => {
             next_invoice_at: '2026-09-19T00:00:00Z', // future date — must NOT appear as due date
             payment_due_period_start: '2026-08-19T00:00:00Z',
             payment_due_period_end: '2026-09-19T00:00:00Z',
+            payment_due_credits: 75,
             auto_renew: true,
           },
         ],
@@ -767,7 +775,51 @@ describe('Billing page', () => {
     expect(screen.queryByText('Renews on Sep 19, 2026')).not.toBeInTheDocument()
 
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay now' })))
+    expect(billingAPI.payDueResource).not.toHaveBeenCalled()
+    expect(await screen.findByRole('dialog', { name: 'Confirm payment?' })).toBeInTheDocument()
+    expect(screen.getByText('Service period: Aug 19, 2026 – Sep 19, 2026')).toBeInTheDocument()
+    expect(screen.getByText('75 credits')).toBeInTheDocument()
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancel' })))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm payment?' })).not.toBeInTheDocument())
+    expect(billingAPI.payDueResource).not.toHaveBeenCalled()
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay now' })))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay bill' })))
     await waitFor(() => expect(billingAPI.payDueResource).toHaveBeenCalledWith(5, 'project'))
+  })
+
+  it('shows a zero-credit reversal amount without disabling confirmation', async () => {
+    ;(billingAPI.overview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        ...mockOverview,
+        resources: [{
+          resource_id: 8,
+          resource_type: 'project',
+          resource_name: 'ReversalApp',
+          spec_name: 'Starter',
+          monthly_credits: 75,
+          status: 'payment_due',
+          current_period_start: '2026-08-01T00:00:00Z',
+          next_invoice_at: '2026-09-01T00:00:00Z',
+          payment_due_period_start: '2026-08-01T00:00:00Z',
+          payment_due_period_end: '2026-09-01T00:00:00Z',
+          payment_due_credits: 0,
+          auto_renew: true,
+        }],
+      },
+    })
+    ;(billingAPI.catalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockCatalog })
+    ;(billingAPI.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [{ resource_id: 8, resource_type: 'project', status: 'payment_due', payment_due_days: 1 }],
+    })
+
+    render(<Billing />)
+
+    await screen.findByText('ReversalApp')
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay now' })))
+    expect(screen.getByText('0 credits')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pay bill' })).toBeEnabled()
+    expect(billingAPI.payDueResource).not.toHaveBeenCalled()
   })
 
   it('shows neutral payment required copy when oldest_due_at is absent for suspended resource', async () => {

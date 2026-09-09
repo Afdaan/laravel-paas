@@ -13,6 +13,15 @@ export type PendingRenewChange = {
   target_auto_renew: boolean
 }
 
+export type PendingDuePayment = {
+  resource_id: number
+  resource_type: 'project' | 'database'
+  resource_name: string
+  period_start?: string
+  period_end?: string
+  credits?: number
+}
+
 export type PendingTopup = {
   type: 'package' | 'custom'
   package?: TopupPackage

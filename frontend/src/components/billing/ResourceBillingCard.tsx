@@ -11,7 +11,7 @@ import { usePagination } from '@/lib/pagination'
 import { TablePagination } from '@/components/ui/table-pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { BillingOverview, BillingStatus } from '@/types'
-import type { PendingRenewChange } from './types'
+import type { PendingDuePayment, PendingRenewChange } from './types'
 import { useBillingFormatters } from './useBillingFormatters'
 import { StatusBadge } from './StatusBadge'
 
@@ -21,11 +21,11 @@ type ResourceBillingCardProps = {
   statuses: BillingRequestState<BillingStatus[]>
   renewLoading: Record<string, boolean>
   paymentLoading: Record<string, boolean>
-  payDueResource: (resourceID: number, resourceType: 'project' | 'database') => Promise<void>
+  setPendingDuePayment: (payment: PendingDuePayment) => void
   setPendingRenewChange: (change: PendingRenewChange) => void
 }
 
-export const ResourceBillingCard = memo(function ResourceBillingCard({ overview, statuses, renewLoading, paymentLoading, payDueResource, setPendingRenewChange }: ResourceBillingCardProps) {
+export const ResourceBillingCard = memo(function ResourceBillingCard({ overview, statuses, renewLoading, paymentLoading, setPendingDuePayment, setPendingRenewChange }: ResourceBillingCardProps) {
   const { t, formatCredits, formatDate, formatResourceDisplayName } = useBillingFormatters()
   const autoRenewHintID = useId()
 
@@ -199,7 +199,14 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           size="sm"
                           className="h-8 w-fit px-3 text-xs font-medium"
                           disabled={paymentLoading[resourceKey]}
-                          onClick={() => void payDueResource(resource.resource_id, resource.resource_type)}
+                          onClick={() => setPendingDuePayment({
+                            resource_id: resource.resource_id,
+                            resource_type: resource.resource_type,
+                            resource_name: resourceName,
+                            period_start: resource.payment_due_period_start,
+                            period_end: resource.payment_due_period_end,
+                            credits: resource.payment_due_credits,
+                          })}
                         >
                           {paymentLoading[resourceKey] && <Loader2 className="size-3.5 animate-spin" />}
                           {t('billing.payDueNow')}

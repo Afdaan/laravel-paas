@@ -287,6 +287,7 @@ export interface BillingOverview {
     next_invoice_at: string;
     payment_due_period_start?: string;
     payment_due_period_end?: string;
+    payment_due_credits?: number;
     auto_renew: boolean;
   }>;
   upcoming_required_credits: number;
