@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
+import { usePaginationScroll } from '@/lib/usePaginationScroll'
 
 interface NetworkData {
   id: string;
@@ -43,6 +44,7 @@ const AdminNetworks = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [limit, setLimit] = useState('all')
   const [page, setPage] = useState(1)
+  const { paginationAnchorRef, updatePagination } = usePaginationScroll()
 
   const fetchData = useCallback(async () => {
     try {
@@ -130,7 +132,7 @@ const AdminNetworks = () => {
         </div>
       </div>
 
-      <Card>
+      <Card ref={paginationAnchorRef}>
         <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative flex-1 w-full max-w-2xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -252,7 +254,16 @@ const AdminNetworks = () => {
             </div>
             <div className="flex items-center space-x-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rows per page</p>
-              <Select value={limit} onValueChange={(val) => { if (val) { setLimit(val); setPage(1); } }}>
+              <Select
+                value={limit}
+                onValueChange={(value) => {
+                  if (!value) return
+                  updatePagination(() => {
+                    setLimit(value)
+                    setPage(1)
+                  })
+                }}
+              >
                 <SelectTrigger className="h-8 w-[82px] justify-between">
                   <SelectValue placeholder={t('common.all')}>
                     {limit === 'all' ? t('common.all') : limit}

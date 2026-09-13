@@ -38,6 +38,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { usePaginationScroll } from '@/lib/usePaginationScroll'
 
 interface ImportResults {
   total: number;
@@ -92,6 +93,7 @@ const AdminUsers = () => {
   const [editingUser, setEditingUser] = useState<UserType | null>(null)
   const [importResults, setImportResults] = useState<ImportResults | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { paginationAnchorRef, updatePagination } = usePaginationScroll()
 
   const [formData, setFormData] = useState({
     name: '',
@@ -287,7 +289,7 @@ const AdminUsers = () => {
         </Card>
       )}
 
-      <Card>
+      <Card ref={paginationAnchorRef}>
         <div className="p-6 border-b flex flex-col md:flex-row items-center gap-4">
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -445,8 +447,10 @@ const AdminUsers = () => {
                 <Select
                   value={limit.toString()}
                   onValueChange={(value) => {
-                    setLimit(Number(value))
-                    setPage(1)
+                    updatePagination(() => {
+                      setLimit(Number(value))
+                      setPage(1)
+                    })
                   }}
                 >
                   <SelectTrigger size="sm" className="h-8 w-[82px] justify-between">
@@ -479,7 +483,7 @@ const AdminUsers = () => {
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setPage(1)}
+                  onClick={() => updatePagination(() => setPage(1))}
                   disabled={page === 1}
                 >
                   <span className="sr-only">Go to first page</span>
@@ -488,7 +492,7 @@ const AdminUsers = () => {
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  onClick={() => updatePagination(() => setPage(p => Math.max(1, p - 1)))}
                   disabled={page === 1}
                 >
                   <span className="sr-only">Go to previous page</span>
@@ -497,7 +501,7 @@ const AdminUsers = () => {
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => updatePagination(() => setPage(p => Math.min(totalPages, p + 1)))}
                   disabled={page === totalPages || totalPages === 0}
                 >
                   <span className="sr-only">Go to next page</span>
@@ -506,7 +510,7 @@ const AdminUsers = () => {
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setPage(totalPages)}
+                  onClick={() => updatePagination(() => setPage(totalPages))}
                   disabled={page === totalPages || totalPages === 0}
                 >
                   <span className="sr-only">Go to last page</span>

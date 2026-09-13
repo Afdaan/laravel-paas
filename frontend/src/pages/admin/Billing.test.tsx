@@ -217,23 +217,33 @@ describe('AdminBilling pricing form payload', () => {
     expect(screen.getByText('1–10 / 12')).toBeInTheDocument()
 
     const pagination = screen.getByText('1–10 / 12').parentElement?.parentElement as HTMLElement
+    const card = pagination.closest('[data-slot="card"]') as HTMLElement
+    const main = document.createElement('main')
+    main.id = 'main-content'
+    main.scrollTop = 300
+    const scrollTo = vi.fn()
+    main.scrollTo = scrollTo as unknown as typeof main.scrollTo
+    document.body.appendChild(main)
     const rect = (top: number) => ({ top, bottom: top + 40, left: 0, right: 100, width: 100, height: 40, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
-    vi.spyOn(pagination, 'getBoundingClientRect').mockReturnValueOnce(rect(500)).mockReturnValueOnce(rect(200))
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(rect(100))
+    vi.spyOn(main, 'getBoundingClientRect').mockReturnValue(rect(20))
     let frame: FrameRequestCallback | undefined
     const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       frame = callback
       return 1
     })
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined)
 
-    await act(async () => fireEvent.click(within(pagination).getByRole('button', { name: 'Next' })))
-    await act(async () => frame?.(0))
+    try {
+      await act(async () => fireEvent.click(within(pagination).getByRole('button', { name: 'Next' })))
+      await act(async () => frame?.(0))
 
-    expect(screen.getByText('database #11')).toBeInTheDocument()
-    expect(screen.getByText('database #12')).toBeInTheDocument()
-    expect(screen.queryByText('database #1')).not.toBeInTheDocument()
-    expect(scrollBy).toHaveBeenCalledWith(0, -300)
-    requestFrame.mockRestore()
-    scrollBy.mockRestore()
+      expect(screen.getByText('database #11')).toBeInTheDocument()
+      expect(screen.getByText('database #12')).toBeInTheDocument()
+      expect(screen.queryByText('database #1')).not.toBeInTheDocument()
+      expect(scrollTo).toHaveBeenCalledWith({ top: 356, behavior: 'auto' })
+    } finally {
+      requestFrame.mockRestore()
+      main.remove()
+    }
   })
 })

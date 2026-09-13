@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-r
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PAGE_SIZES, type PaginationState } from '@/lib/pagination'
+import { scheduleScrollElementIntoMain } from '@/lib/scrollIntoMain'
 import useTranslation from '@/lib/useTranslation'
 
 export function TablePagination({
@@ -19,18 +20,11 @@ export function TablePagination({
   const containerRef = useRef<HTMLDivElement>(null)
   if (total === 0) return null
 
-  const preservePosition = (update: () => void) => {
+  const updatePagination = (update: () => void) => {
     const container = containerRef.current
-    if (!container) {
-      update()
-      return
-    }
-    const previousTop = container.getBoundingClientRect().top
+    const anchor = container?.closest('[data-pagination-scroll-anchor], [data-slot="card"]') ?? container
     update()
-    requestAnimationFrame(() => {
-      const offset = container.getBoundingClientRect().top - previousTop
-      if (offset !== 0) window.scrollBy(0, offset)
-    })
+    if (anchor) scheduleScrollElementIntoMain(anchor)
   }
 
   return (
@@ -46,7 +40,7 @@ export function TablePagination({
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             {t('common.rowsPerPage')}
           </span>
-          <Select value={pageSize.toString()} onValueChange={(value) => preservePosition(() => setPageSize(Number(value)))} disabled={disabled}>
+          <Select value={pageSize.toString()} onValueChange={(value) => updatePagination(() => setPageSize(Number(value)))} disabled={disabled}>
             <SelectTrigger size="sm" className="h-7 w-[70px] justify-between text-xs">
               <SelectValue placeholder={pageSize} />
             </SelectTrigger>
@@ -65,14 +59,14 @@ export function TablePagination({
           {page} / {totalPages}
         </span>
         <div className="flex items-center gap-1">
-          <Button variant="outline" className="size-7 p-0" onClick={() => preservePosition(() => setPage(1))} disabled={disabled || page === 1}>
+          <Button variant="outline" className="size-7 p-0" onClick={() => updatePagination(() => setPage(1))} disabled={disabled || page === 1}>
             <span className="sr-only">{t('common.first')}</span>
             <ChevronsLeft className="size-3.5" />
           </Button>
           <Button
             variant="outline"
             className="size-7 p-0"
-            onClick={() => preservePosition(() => setPage(page - 1))}
+            onClick={() => updatePagination(() => setPage(page - 1))}
             disabled={disabled || page === 1}
           >
             <span className="sr-only">{t('common.previous')}</span>
@@ -81,7 +75,7 @@ export function TablePagination({
           <Button
             variant="outline"
             className="size-7 p-0"
-            onClick={() => preservePosition(() => setPage(page + 1))}
+            onClick={() => updatePagination(() => setPage(page + 1))}
             disabled={disabled || page >= totalPages}
           >
             <span className="sr-only">{t('common.next')}</span>
@@ -90,7 +84,7 @@ export function TablePagination({
           <Button
             variant="outline"
             className="size-7 p-0"
-            onClick={() => preservePosition(() => setPage(totalPages))}
+            onClick={() => updatePagination(() => setPage(totalPages))}
             disabled={disabled || page >= totalPages}
           >
             <span className="sr-only">{t('common.last')}</span>

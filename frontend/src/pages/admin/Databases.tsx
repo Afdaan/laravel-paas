@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { usePaginationScroll } from '@/lib/usePaginationScroll'
 
 interface AdminDatabaseInfo {
   project_id: number;
@@ -65,6 +66,7 @@ const AdminDatabases = () => {
   // Pagination
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
+  const { paginationAnchorRef, updatePagination } = usePaginationScroll()
 
   const fetchDatabases = useCallback(async () => {
     setIsLoading(true)
@@ -116,7 +118,7 @@ const AdminDatabases = () => {
         </div>
       </div>
 
-      <Card className="gap-0 py-0 border border-border/50 shadow-sm bg-card/50 backdrop-blur-xl overflow-hidden">
+      <Card ref={paginationAnchorRef} className="gap-0 py-0 border border-border/50 shadow-sm bg-card/50 backdrop-blur-xl overflow-hidden">
         <CardHeader className="p-6 border-b border-border/50 bg-muted/20">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="relative flex-1 w-full max-w-2xl">
@@ -254,8 +256,10 @@ const AdminDatabases = () => {
                 <Select
                   value={limit.toString()}
                   onValueChange={(value) => {
-                    setLimit(Number(value))
-                    setPage(1)
+                    updatePagination(() => {
+                      setLimit(Number(value))
+                      setPage(1)
+                    })
                   }}
                 >
                   <SelectTrigger size="sm" className="h-8 w-[82px] justify-between">
@@ -288,7 +292,7 @@ const AdminDatabases = () => {
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setPage(1)}
+                  onClick={() => updatePagination(() => setPage(1))}
                   disabled={page === 1}
                 >
                   <span className="sr-only">Go to first page</span>
@@ -297,7 +301,7 @@ const AdminDatabases = () => {
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  onClick={() => updatePagination(() => setPage(p => Math.max(1, p - 1)))}
                   disabled={page === 1}
                 >
                   <span className="sr-only">Go to previous page</span>
@@ -306,7 +310,7 @@ const AdminDatabases = () => {
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => updatePagination(() => setPage(p => Math.min(totalPages, p + 1)))}
                   disabled={page === totalPages || totalPages === 0}
                 >
                   <span className="sr-only">Go to next page</span>
@@ -315,7 +319,7 @@ const AdminDatabases = () => {
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setPage(totalPages)}
+                  onClick={() => updatePagination(() => setPage(totalPages))}
                   disabled={page === totalPages || totalPages === 0}
                 >
                   <span className="sr-only">Go to last page</span>

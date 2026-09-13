@@ -11,14 +11,22 @@
  *
  * Scrolling the one real container instead leaves the shell where it belongs.
  */
-export function scrollIntoMain(elementId: string, offset = 24) {
-  const el = document.getElementById(elementId)
-  if (!el) return
+export function scrollElementIntoMain(element: Element, offset = 24, behavior: ScrollBehavior = 'smooth') {
   const main = document.getElementById('main-content')
   if (!main || typeof main.scrollTo !== 'function') {
-    el.scrollIntoView?.({ behavior: 'smooth' })
+    element.scrollIntoView?.({ behavior, block: 'start' })
     return
   }
-  const top = main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - offset
-  main.scrollTo({ top, behavior: 'smooth' })
+  const top = main.scrollTop + element.getBoundingClientRect().top - main.getBoundingClientRect().top - offset
+  main.scrollTo({ top: Math.max(0, top), behavior })
+}
+
+export function scheduleScrollElementIntoMain(element: Element, offset = 24) {
+  window.requestAnimationFrame(() => scrollElementIntoMain(element, offset, 'auto'))
+}
+
+export function scrollIntoMain(elementId: string, offset = 24) {
+  const element = document.getElementById(elementId)
+  if (!element) return
+  scrollElementIntoMain(element, offset)
 }
