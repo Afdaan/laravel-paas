@@ -62,6 +62,11 @@ const t = (key: string, data?: Record<string, unknown>) => {
     'billing.retry': 'Retry',
     'billing.loadError': 'Load error',
     'billing.refresh': 'Refresh',
+    'common.rowsPerPage': 'Rows per page',
+    'common.first': 'First',
+    'common.previous': 'Previous',
+    'common.next': 'Next',
+    'common.last': 'Last',
   }
   const base = map[key] ?? key
   if (!data) return base
@@ -188,5 +193,30 @@ describe('AdminBilling pricing form payload', () => {
 
     const passedKey = (billingAPI.adjustWalletCredits as ReturnType<typeof vi.fn>).mock.calls[0][2]
     expect(passedKey).toMatch(/^adj-/)
+  })
+
+  it('paginates suspended resources to keep the table bounded', async () => {
+    const suspensions = Array.from({ length: 12 }, (_, index) => ({
+      user_id: index + 1,
+      resource_id: index + 1,
+      resource_type: 'database',
+      status: 'payment_due',
+      oldest_due_at: '2026-09-07T00:00:00Z',
+      payment_due_days: 6,
+    }))
+    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockResolvedValue({ data: suspensions })
+
+    render(<AdminBilling />)
+
+    expect(await screen.findByText('database #1')).toBeInTheDocument()
+    expect(screen.getByText('database #10')).toBeInTheDocument()
+    expect(screen.queryByText('database #11')).not.toBeInTheDocument()
+    expect(screen.getByText('1–10 / 12')).toBeInTheDocument()
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next' })))
+
+    expect(screen.getByText('database #11')).toBeInTheDocument()
+    expect(screen.getByText('database #12')).toBeInTheDocument()
+    expect(screen.queryByText('database #1')).not.toBeInTheDocument()
   })
 })

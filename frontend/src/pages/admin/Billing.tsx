@@ -289,6 +289,8 @@ export default function AdminBilling() {
   }, [catalog, packageSearch, packageActiveFilter])
   const specPaging = usePagination(sortedSpecs.length)
   const packagePaging = usePagination(sortedPackages.length)
+  const suspensionPaging = usePagination(suspensions?.length ?? 0)
+  const displayedSuspensions = suspensions?.slice(suspensionPaging.start, suspensionPaging.end) ?? []
 
   useEffect(() => {
     void load()
@@ -810,7 +812,7 @@ export default function AdminBilling() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {suspensions.map((item) => {
+                {displayedSuspensions.map((item) => {
                   const userDetails = getUserDetails(item.user_id)
                   return (
                     <TableRow key={`${item.user_id}-${item.resource_type}-${item.resource_id}`} className="border-amber-500/20 transition-colors hover:bg-amber-500/5">
@@ -843,6 +845,7 @@ export default function AdminBilling() {
                 })}
               </TableBody>
             </Table>
+            <TablePagination state={suspensionPaging} />
           </CardContent>
         </Card>
       )}
