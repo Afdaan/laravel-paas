@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { act } from 'react'
 import AdminBilling from './Billing'
 import { billingAPI } from '@/services/api'
@@ -51,6 +51,8 @@ const t = (key: string, data?: Record<string, unknown>) => {
     'billing.invoices': 'Invoices',
     'billing.topups': 'Topups',
     'billing.admin.suspensions': 'Suspensions',
+    'billing.admin.suspensionsTab': 'Overdue',
+    'billing.admin.suspensionsDescription': 'Suspended resources',
     'billing.admin.noRecords': 'No records',
     'billing.admin.total': '{{count}} of {{total}}',
     'billing.admin.user': 'User',
@@ -208,15 +210,30 @@ describe('AdminBilling pricing form payload', () => {
 
     render(<AdminBilling />)
 
+    await act(async () => fireEvent.click(await screen.findByRole('tab', { name: /Overdue/ })))
     expect(await screen.findByText('database #1')).toBeInTheDocument()
     expect(screen.getByText('database #10')).toBeInTheDocument()
     expect(screen.queryByText('database #11')).not.toBeInTheDocument()
     expect(screen.getByText('1–10 / 12')).toBeInTheDocument()
 
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next' })))
+    const pagination = screen.getByText('1–10 / 12').parentElement?.parentElement as HTMLElement
+    const rect = (top: number) => ({ top, bottom: top + 40, left: 0, right: 100, width: 100, height: 40, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(pagination, 'getBoundingClientRect').mockReturnValueOnce(rect(500)).mockReturnValueOnce(rect(200))
+    let frame: FrameRequestCallback | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frame = callback
+      return 1
+    })
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined)
+
+    await act(async () => fireEvent.click(within(pagination).getByRole('button', { name: 'Next' })))
+    await act(async () => frame?.(0))
 
     expect(screen.getByText('database #11')).toBeInTheDocument()
     expect(screen.getByText('database #12')).toBeInTheDocument()
     expect(screen.queryByText('database #1')).not.toBeInTheDocument()
+    expect(scrollBy).toHaveBeenCalledWith(0, -300)
+    requestFrame.mockRestore()
+    scrollBy.mockRestore()
   })
 })

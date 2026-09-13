@@ -788,68 +788,6 @@ export default function AdminBilling() {
         </Card>
       </div>
 
-      {/* Suspensions Warning Section if any */}
-      {suspensions && suspensions.length > 0 && (
-        <Card className="border-amber-500/40 bg-amber-500/5">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="size-5 text-amber-600 dark:text-amber-400" />
-              <CardTitle className="text-base font-semibold">{t('billing.admin.suspensions')}</CardTitle>
-            </div>
-            <CardDescription className="text-xs text-amber-700 dark:text-amber-300">
-              {t('billing.admin.suspensionsDescription')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-amber-500/20 hover:bg-transparent">
-                  <TableHead className="pl-4 text-xs font-medium text-muted-foreground">{t('billing.admin.user')}</TableHead>
-                  <TableHead className="w-[200px] text-xs font-medium text-muted-foreground">{t('billing.admin.resource')}</TableHead>
-                  <TableHead className="w-[140px] text-xs font-medium text-muted-foreground">{t('billing.admin.oldestDueDate')}</TableHead>
-                  <TableHead className="w-[130px] text-xs font-medium text-muted-foreground">{t('billing.admin.overdueDays')}</TableHead>
-                  <TableHead className="w-[130px] pr-4 text-right text-xs font-medium text-muted-foreground">{t('billing.admin.status')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {displayedSuspensions.map((item) => {
-                  const userDetails = getUserDetails(item.user_id)
-                  return (
-                    <TableRow key={`${item.user_id}-${item.resource_type}-${item.resource_id}`} className="border-amber-500/20 transition-colors hover:bg-amber-500/5">
-                      <TableCell className="py-2 pl-4 font-medium">
-                        <div className="flex items-center gap-2">
-                          <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-xs font-bold text-amber-700 dark:text-amber-300">
-                            {userDetails.initials}
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold">{userDetails.name}</div>
-                            <div className="text-[10px] text-muted-foreground">{userDetails.email || `#${item.user_id}`}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize text-xs font-normal">
-                          {t(`billing.resourceTypes.${item.resource_type}`) !== `billing.resourceTypes.${item.resource_type}`
-                            ? t(`billing.resourceTypes.${item.resource_type}`)
-                            : item.resource_type}{' '}
-                          #{item.resource_id}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="py-2 text-xs tabular-nums text-muted-foreground">{formatDate(item.oldest_due_at)}</TableCell>
-                      <TableCell className="py-2 text-xs font-medium tabular-nums">{t('billing.days', { count: item.payment_due_days })}</TableCell>
-                      <TableCell className="py-2 pr-4 text-right">
-                        <StatusBadge status={item.status} />
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-            <TablePagination state={suspensionPaging} />
-          </CardContent>
-        </Card>
-      )}
-
       {/* Main Tabbed Data Center */}
       <Tabs defaultValue="wallets" className="w-full space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-2">
@@ -858,6 +796,15 @@ export default function AdminBilling() {
               <WalletCards className="size-3.5" />
               {t('billing.admin.wallets')}
               {wallets && <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">{wallets.total}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="suspensions" className="gap-2 text-xs font-medium">
+              <ShieldAlert className="size-3.5" />
+              {t('billing.admin.suspensionsTab')}
+              {suspensions && (
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
+                  {suspensions.length}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="invoices" className="gap-2 text-xs font-medium">
               <ReceiptText className="size-3.5" />
@@ -1001,6 +948,85 @@ export default function AdminBilling() {
 
             {/* Pagination Footer */}
             <TablePagination state={walletPaging} disabled={loading} />
+          </Card>
+        </TabsContent>
+
+        {/* ================= SUSPENSIONS TAB ================= */}
+        <TabsContent value="suspensions" className="space-y-4">
+          <Card className={suspensions && suspensions.length > 0 ? 'border-amber-500/40' : ''}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="size-5 text-amber-600 dark:text-amber-400" />
+                <CardTitle className="text-base font-semibold">{t('billing.admin.suspensions')}</CardTitle>
+              </div>
+              <CardDescription className="text-xs">{t('billing.admin.suspensionsDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4 text-xs font-medium text-muted-foreground">{t('billing.admin.user')}</TableHead>
+                    <TableHead className="w-[200px] text-xs font-medium text-muted-foreground">{t('billing.admin.resource')}</TableHead>
+                    <TableHead className="w-[140px] text-xs font-medium text-muted-foreground">{t('billing.admin.oldestDueDate')}</TableHead>
+                    <TableHead className="w-[130px] text-xs font-medium text-muted-foreground">{t('billing.admin.overdueDays')}</TableHead>
+                    <TableHead className="w-[130px] pr-4 text-right text-xs font-medium text-muted-foreground">{t('billing.admin.status')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {!loading && errors.suspensions && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-destructive">
+                        {t('billing.loadError', { section: t('billing.admin.suspensions') })}
+                        <Button size="sm" variant="outline" className="ml-3" onClick={() => void load()}>
+                          {t('billing.retry')}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  {!loading && !errors.suspensions && displayedSuspensions.map((item) => {
+                    const userDetails = getUserDetails(item.user_id)
+                    return (
+                      <TableRow key={`${item.user_id}-${item.resource_type}-${item.resource_id}`} className="transition-colors hover:bg-muted/40">
+                        <TableCell className="py-2 pl-4 font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-xs font-bold text-amber-700 dark:text-amber-300">
+                              {userDetails.initials}
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold">{userDetails.name}</div>
+                              <div className="text-[10px] text-muted-foreground">{userDetails.email || `#${item.user_id}`}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="capitalize text-xs font-normal">
+                            {t(`billing.resourceTypes.${item.resource_type}`) !== `billing.resourceTypes.${item.resource_type}`
+                              ? t(`billing.resourceTypes.${item.resource_type}`)
+                              : item.resource_type}{' '}
+                            #{item.resource_id}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 text-xs tabular-nums text-muted-foreground">{formatDate(item.oldest_due_at)}</TableCell>
+                        <TableCell className="py-2 text-xs font-medium tabular-nums">{t('billing.days', { count: item.payment_due_days })}</TableCell>
+                        <TableCell className="py-2 pr-4 text-right">
+                          <StatusBadge status={item.status} />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+
+                  {!loading && !errors.suspensions && displayedSuspensions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                        {t('billing.admin.noRecords')}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+            <TablePagination state={suspensionPaging} disabled={loading} />
           </Card>
         </TabsContent>
 
